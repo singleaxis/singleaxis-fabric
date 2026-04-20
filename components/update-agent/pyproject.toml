@@ -19,7 +19,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  "cryptography>=42.0,<44.0",     # Ed25519 signature verification
+  "cryptography>=42.0,<47.0",     # Ed25519 signature verification
   "fastapi>=0.112,<1.0",          # admission webhook HTTP server
   "uvicorn>=0.30,<1.0",
   "jsonschema>=4.22,<5.0",
