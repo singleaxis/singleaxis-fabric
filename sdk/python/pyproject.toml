@@ -23,7 +23,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
   "opentelemetry-api>=1.27",
-  "opentelemetry-sdk>=1.27",
+  "opentelemetry-sdk>=1.41.0",
   "pydantic>=2.8,<3.0",
 ]
 
