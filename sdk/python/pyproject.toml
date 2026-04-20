@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25.0"]
+requires = ["hatchling>=1.29.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -29,26 +29,26 @@ dependencies = [
 
 [project.optional-dependencies]
 otlp = [
-  "opentelemetry-exporter-otlp-proto-http>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.41.0",
 ]
 # Orchestration-framework adapters. Each extra pulls exactly the
 # upstream package its matching `fabric.adapters.*` module imports —
 # core SDK install stays free of orchestration dependencies.
 langgraph = [
-  "langgraph>=0.2,<1.0",
+  "langgraph>=1.1.8,<2.0",
 ]
 agent-framework = [
-  "agent-framework-core>=0.1,<2.0",
+  "agent-framework-core>=1.0.1,<2.0",
 ]
 crewai = [
-  "crewai>=0.80,<1.0",
+  "crewai>=1.14.2,<2.0",
 ]
 dev = [
-  "pytest>=8.3",
-  "pytest-cov>=5.0",
-  "ruff>=0.6.9",
-  "mypy>=1.11.2",
-  "opentelemetry-exporter-otlp-proto-http>=1.27",
+  "pytest>=9.0.3",
+  "pytest-cov>=7.1.0",
+  "ruff>=0.15.11",
+  "mypy>=1.20.1",
+  "opentelemetry-exporter-otlp-proto-http>=1.41.0",
 ]
 
 [project.urls]
