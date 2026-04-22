@@ -13,10 +13,15 @@ Authoritative shape: [`specs/008-deployment-model.md`](../../specs/008-deploymen
 - [x] Default `values.yaml` documenting subchart toggles
 - [x] Two profiles: `permissive-dev`, `eu-ai-act-high-risk`
 - [x] Cross-cutting namespace + NetworkPolicy + NOTES templates
-- [x] Fabric-authored subcharts:
+- [x] Fabric-authored Layer 1 subcharts:
   - [`otel-collector/`](./charts/otel-collector) — telemetry processors
-  - [`judge-workers/`](./charts/judge-workers) — async LLM-as-judge
-  - [`escalation-service/`](./charts/escalation-service) — pause/review/resume
+  - [`nemo-sidecar/`](./charts/nemo-sidecar) — NeMo Colang guardrails
+  - [`langfuse/`](./charts/langfuse) — local observability UI
+  - [`redteam-runner/`](./charts/redteam-runner) — scheduled adversarial probes
+  - [`update-agent/`](./charts/update-agent) — GitOps signed-manifest pull
+- [ ] Layer 2 subcharts (`judge-workers/`, `escalation-service/`) live
+      in a separate SingleAxis-internal repo during Phase 1; not part
+      of the public OSS distribution.
 - [ ] Context Graph subchart (Phase 2 — awaiting Postgres migration story)
 - [ ] Telemetry Bridge subchart (Phase 2)
 - [ ] Signed manifest channel + Update Agent (Phase 2)
@@ -80,9 +85,11 @@ charts/fabric/
 │   ├── networkpolicy.yaml
 │   └── NOTES.txt
 ├── charts/
-│   ├── otel-collector/      (shipped)
-│   ├── judge-workers/       (shipped this release)
-│   └── escalation-service/  (shipped this release)
+│   ├── otel-collector/      (Layer 1, shipped)
+│   ├── nemo-sidecar/        (Layer 1, shipped)
+│   ├── langfuse/            (Layer 1, shipped)
+│   ├── redteam-runner/      (Layer 1, shipped)
+│   └── update-agent/        (Layer 1, shipped)
 └── profiles/
     ├── permissive-dev.yaml
     └── eu-ai-act-high-risk.yaml

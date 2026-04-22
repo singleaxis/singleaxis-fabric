@@ -1,0 +1,25 @@
+{{- if .Values.argocd.enabled -}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.argocd.application.name }}
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "update-agent.labels" . | nindent 4 }}
+  annotations:
+    # PreSync hook runs the CLI verifier before the sync — keeps the
+    # webhook as the authoritative gate but gives the operator a
+    # fast-fail signal at sync time instead of at admit time.
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  project: {{ .Values.argocd.project.name }}
+  source:
+    repoURL: {{ .Values.argocd.application.repoURL | quote }}
+    path: {{ .Values.argocd.application.path | quote }}
+    targetRevision: {{ .Values.argocd.application.targetRevision | quote }}
+  destination:
+    namespace: {{ (index .Values.argocd.project.destinations 0).namespace | quote }}
+    server: {{ (index .Values.argocd.project.destinations 0).server | quote }}
+  syncPolicy:
+    {{- toYaml .Values.argocd.application.syncPolicy | nindent 4 }}
+{{- end }}

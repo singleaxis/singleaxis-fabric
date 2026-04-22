@@ -1,0 +1,26 @@
+apiVersion: v2
+name: nemo-sidecar
+description: |
+  SingleAxis Fabric NeMo Colang guardrails sidecar (spec 005). Phase 1
+  ships a TCP Deployment + Service suitable for shared-node dev
+  clusters and smoke testing. Production deployments inject this
+  container as a per-agent-pod sidecar for <100ms P99 UDS latency —
+  the injection webhook lands in Phase 2.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - guardrails
+  - nemo
+  - colang
+  - fabric
+home: https://github.com/singleaxis/singleaxis-fabric
+sources:
+  - https://github.com/singleaxis/singleaxis-fabric/tree/main/components/nemo-sidecar
+maintainers:
+  - name: SingleAxis
+    url: https://singleaxis.com
+annotations:
+  category: Guardrails
+  licenses: Apache-2.0

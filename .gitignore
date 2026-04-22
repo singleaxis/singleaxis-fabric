@@ -53,8 +53,11 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # --- Helm ---
-charts/*/charts/
+# Note: first-party subcharts under charts/fabric/charts/<name>/ ARE
+# committed. Only ignore .tgz packages produced by `helm dependency
+# update` and the deprecated lock file.
 charts/*/*.tgz
+charts/*/charts/*.tgz
 charts/*/requirements.lock
 
 # --- Terraform ---

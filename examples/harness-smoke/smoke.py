@@ -65,9 +65,7 @@ def _build_client() -> Fabric:
     presidio_sock = HARNESS_ROOT / "presidio.sock"
     nemo_sock = HARNESS_ROOT / "nemo.sock"
     if not presidio_sock.exists() or not nemo_sock.exists():
-        sys.exit(
-            f"Harness sockets missing under {HARNESS_ROOT}. Run `make up` first."
-        )
+        sys.exit(f"Harness sockets missing under {HARNESS_ROOT}. Run `make up` first.")
     return Fabric(
         FabricConfig(tenant_id="harness", agent_id="smoke", profile="permissive-dev"),
         presidio=UDSPresidioClient(str(presidio_sock)),
@@ -88,7 +86,9 @@ def _happy_path(fabric: Fabric) -> None:
             result_count=1,
             source_document_ids=("kb/42",),
         )
-        decision.remember(kind=MemoryKind.EPISODIC, key="last_query", content=clean_input)
+        decision.remember(
+            kind=MemoryKind.EPISODIC, key="last_query", content=clean_input
+        )
         final = decision.guard_output_final(
             "Your balance is $0.00. Email: [REDACTED_EMAIL]."
         )

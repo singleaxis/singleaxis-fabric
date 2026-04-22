@@ -1,0 +1,91 @@
+{{- if .Values.bootstrap.enabled -}}
+{{- $keys := .Values.bootstrap.keys -}}
+{{- if and (not $keys.existingSecret) (not (and $keys.publicKey $keys.secretKey)) -}}
+  {{- fail "langfuse.bootstrap: set bootstrap.keys.existingSecret OR both bootstrap.keys.publicKey+secretKey" -}}
+{{- end -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "langfuse.fullname" . }}-bootstrap
+  labels:
+    {{- include "langfuse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    # Run after the Langfuse Deployment is installed/upgraded and
+    # remove the Job object on next upgrade so re-runs are clean.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.bootstrap.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.bootstrap.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "langfuse.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "langfuse.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.bootstrap.image.repository }}:{{ .Values.bootstrap.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.bootstrap.image.pullPolicy }}
+          args: ["run"]
+          env:
+            - name: LANGFUSE_HOST
+              value: "http://{{ include "langfuse.fullname" . }}:{{ .Values.service.port }}"
+            - name: FABRIC_PROFILE
+              value: {{ .Values.bootstrap.profile | quote }}
+            {{- if $keys.existingSecret }}
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $keys.existingSecret }}
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $keys.existingSecret }}
+                  key: LANGFUSE_SECRET_KEY
+            {{- else }}
+            - name: LANGFUSE_PUBLIC_KEY
+              value: {{ $keys.publicKey | quote }}
+            - name: LANGFUSE_SECRET_KEY
+              value: {{ $keys.secretKey | quote }}
+            {{- end }}
+            {{- if .Values.bootstrap.curatedConfigMap }}
+            - name: FABRIC_CURATED_DIR
+              value: /etc/fabric/curated-override
+            {{- end }}
+          resources:
+            {{- toYaml .Values.bootstrap.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          {{- if .Values.bootstrap.curatedConfigMap }}
+          volumeMounts:
+            - name: curated-override
+              mountPath: /etc/fabric/curated-override
+              readOnly: true
+          {{- end }}
+      {{- if .Values.bootstrap.curatedConfigMap }}
+      volumes:
+        - name: curated-override
+          configMap:
+            name: {{ .Values.bootstrap.curatedConfigMap }}
+      {{- end }}
+{{- end -}}

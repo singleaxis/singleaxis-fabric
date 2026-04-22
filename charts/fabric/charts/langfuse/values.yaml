@@ -1,0 +1,142 @@
+# Default values for the Langfuse subchart.
+#
+# This chart is a deliberately minimal wrapper: one Deployment, one
+# Service, and an auto-generated Secret for NEXTAUTH_SECRET/SALT. Real
+# production deployments should use the upstream Langfuse Helm chart
+# instead and keep this subchart disabled.
+
+replicaCount: 1
+
+image:
+  repository: langfuse/langfuse
+  tag: ""              # defaults to .Chart.AppVersion (currently 2.x)
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# Langfuse's upstream image drops privileges internally; the chart
+# still enforces non-root at the pod level to match every other
+# Fabric subchart.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false  # Langfuse writes prisma migrations on boot
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  port: 3000
+
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /api/public/health
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+
+readinessProbe:
+  httpGet:
+    path: /api/public/ready
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- Langfuse-specific configuration ---
+
+# Postgres DSN. Either supply an inline string (`database.url`) — only
+# appropriate for dev — or reference an existing Secret via
+# `database.dsnSecret.{name,key}`. Pointing this at the context-graph
+# Postgres is supported; Langfuse creates its own prisma-managed tables
+# in the same database.
+database:
+  url: ""
+  dsnSecret:
+    name: ""
+    key: "url"
+
+# External URL Langfuse advertises to the browser (ingress hostname,
+# LB DNS, etc). Defaults to the in-cluster Service URL, which is fine
+# for API-only deployments.
+nextauthUrl: ""
+
+# When auth.randomSecrets is true, the chart renders a Secret with
+# random NEXTAUTH_SECRET and SALT on first install and reuses them on
+# upgrade via the Helm "lookup" pattern. Disable and supply your own
+# Secret via auth.existingSecret for multi-replica deployments.
+auth:
+  randomSecrets: true
+  existingSecret: ""   # Secret with keys: NEXTAUTH_SECRET, SALT
+
+# Expose telemetry to OTLP? Langfuse v2 is a passive sink; traces are
+# pushed to it over HTTP by the application. These env vars are here
+# so operators can point the Fabric telemetry-bridge at Langfuse.
+# Forwarded as-is into the container environment.
+extraEnv: []
+
+# --- Fabric-curated bootstrap Job ---
+#
+# One-shot Job that runs the fabric-langfuse-bootstrap CLI against
+# this Langfuse instance. Applies the curated bundle for the active
+# Fabric profile (score configs, prompt presets, saved-view URLs) via
+# Langfuse's public API. Idempotent; safe to re-run on upgrade.
+#
+# The curated bundle is embedded in the bootstrap image under
+# /etc/fabric/curated. Override by mounting your own ConfigMap at that
+# path via curatedConfigMap.
+bootstrap:
+  enabled: false
+  image:
+    repository: ghcr.io/singleaxis/fabric-langfuse-bootstrap
+    tag: ""             # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  # Which profile overlay to apply. Must match one of the files in
+  # the image (or in the overriding curatedConfigMap).
+  profile: permissive-dev
+  # Langfuse project keys the Job uses. Default points at the Secret
+  # the umbrella chart provisions at install time; production should
+  # reference an existing Secret holding rotated keys.
+  keys:
+    existingSecret: ""        # Secret with keys: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+    publicKey: ""             # inline (dev only)
+    secretKey: ""             # inline (dev only)
+  # Optional: override the curated bundle baked into the image by
+  # supplying a ConfigMap (keys ending in `.yaml` under a `curated/`
+  # prefix are mounted as-is). Leave empty to use the shipped bundle.
+  curatedConfigMap: ""
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits:   { cpu: 200m, memory: 256Mi }

@@ -1,0 +1,91 @@
+# Default values for the nemo-sidecar subchart.
+#
+# Latency posture (P99, per check, inside the sidecar process):
+#   /v1/check  <100ms  passthrough or Colang rails
+# When the container is colocated with the agent (sidecar pattern)
+# calls ride UDS and skip the TCP stack; the shared-Deployment mode
+# shipped here is for smoke-tests and dev clusters only.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/singleaxis/fabric-nemo-sidecar
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: "1000m"
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 5
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+# Rails configuration.
+#
+# Resolution order:
+#   1. If `railsConfigMap.name` is set → mount that ConfigMap.
+#   2. Else if `starterRails.enabled` → mount the in-chart starter
+#      bundle (deterministic `jailbreak defence` flow, no LLM).
+#   3. Else → passthrough engine (fail-open). Dev only.
+#
+# The starter bundle keeps fresh installs from shipping fail-open,
+# but is intentionally minimal. Production profiles should supply a
+# full ConfigMap via `railsConfigMap.name`.
+railsConfigMap:
+  name: ""
+  mountPath: /etc/fabric/rails
+
+starterRails:
+  enabled: true

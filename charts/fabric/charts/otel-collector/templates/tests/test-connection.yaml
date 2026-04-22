@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "otel-collector.fullname" . }}-test-connection
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+  annotations:
+    # helm test lifecycle; delete on success so the pod doesn't linger.
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: health-probe
+      # `curlimages/curl` is the canonical, widely-mirrored curl image
+      # (Docker Hub official, non-root by default, pinned tag so kind
+      # can cache it reliably). We pin by digest-less tag here to keep
+      # the manifest readable; reproducibility is CI's job, not the
+      # smoke test's. Previous value `ghcr.io/curl/curl-container/
+      # curl-multi:latest` failed to pull under kind — the GHCR path
+      # isn't a stable/curl-published image.
+      image: curlimages/curl:8.10.1
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      command: ["/bin/sh", "-c"]
+      args:
+        - >
+          curl --silent --show-error --fail --max-time 5
+          http://{{ include "otel-collector.fullname" . }}:{{ .Values.service.ports.health }}/

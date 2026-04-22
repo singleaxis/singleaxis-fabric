@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """The :class:`Fabric` client — entry point agents import.
 
 The client holds configuration (tenant, agent, profile) and hands out

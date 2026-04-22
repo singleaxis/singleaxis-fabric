@@ -1,0 +1,17 @@
+.DS_Store
+.git/
+.gitignore
+.svn/
+.vscode/
+.idea/
+*.tmproj
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.editorconfig
+.project
+.tox/
+.coverage
+ci/

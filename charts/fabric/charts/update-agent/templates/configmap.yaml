@@ -1,0 +1,26 @@
+{{/*
+Verifier config, consumed by `fabric-update-agent serve --config`.
+Schema mirrors fabric_update_agent.config.VerifierConfig; extra keys
+are ignored so operators can safely templatize downstream.
+
+Fail-closed on the placeholder publicKey — see validateTrustedKeys
+in _helpers.tpl. Shipping the literal "REPLACE_AT_INSTALL_TIME…"
+into a rendered manifest means signature verification would always
+fail silently, which is worse than failing the render.
+*/}}
+{{- include "update-agent.validateTrustedKeys" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "update-agent.configMapName" . }}
+  labels:
+    {{- include "update-agent.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    fabric_version: {{ .Values.config.fabricVersion | default .Chart.AppVersion | quote }}
+    fail_closed: {{ .Values.config.failClosed }}
+    trusted_keys:
+      {{- range concat .Values.config.trustedKeys .Values.config.extraTrustedKeys }}
+      - id: {{ .id | quote }}
+        public_key: {{ .publicKey | quote }}
+      {{- end }}

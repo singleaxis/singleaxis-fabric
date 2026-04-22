@@ -67,7 +67,7 @@ def _wait_for_ready(client: LangfuseBootstrapClient, deadline_seconds: float) ->
         try:
             if client.health():
                 return True
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _LOG.debug("health probe error (will retry): %s", e)
         if time.monotonic() >= end:
             return False

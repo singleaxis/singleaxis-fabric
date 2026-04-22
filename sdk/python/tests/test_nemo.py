@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """End-to-end tests for the NeMo UDS client.
 
 Same shape as ``test_presidio.py``: a fake Unix-socket HTTP server

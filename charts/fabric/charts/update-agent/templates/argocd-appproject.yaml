@@ -1,0 +1,28 @@
+{{- if .Values.argocd.enabled -}}
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: {{ .Values.argocd.project.name }}
+  namespace: {{ .Values.argocd.namespace }}
+  labels:
+    {{- include "update-agent.labels" . | nindent 4 }}
+spec:
+  description: {{ .Values.argocd.project.description | quote }}
+  sourceRepos:
+    {{- range .Values.argocd.project.sourceRepos }}
+    - {{ . | quote }}
+    {{- end }}
+  destinations:
+    {{- range .Values.argocd.project.destinations }}
+    - namespace: {{ .namespace | quote }}
+      server: {{ .server | quote }}
+    {{- end }}
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+{{- end }}

@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Agent Framework adapter — escalation bridges to ctx.request_info."""
 
 from __future__ import annotations
@@ -97,7 +99,8 @@ def test_request_escalation_accepts_custom_response_type() -> None:
     with client.decision(session_id="s", request_id="r") as dec:
         asyncio.run(
             request_escalation(
-                ctx, dec,
+                ctx,
+                dec,
                 EscalationSummary(reason="x"),
                 response_type=CustomResponse,
             ),

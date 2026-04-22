@@ -1,0 +1,154 @@
+# Default values for the Fabric OTel Collector subchart.
+# See charts/fabric/charts/otel-collector/README.md for the rationale
+# behind each block.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/singleaxis/fabric-otelcol
+  tag: ""              # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# Distroless nonroot posture per spec 008.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  # All three ports the collector listens on. Disable any you don't
+  # terminate in your deployment to shrink the exposed surface.
+  ports:
+    otlpGrpc: 4317
+    otlpHttp: 4318
+    health: 13133
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: health
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: health
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+# The Fabric-authored processors. Each block maps directly to the
+# processor's own config keys in the rendered Collector config. Set
+# `.enabled: false` to omit the processor from the pipeline entirely.
+fabric:
+  # Deny-by-default schema allowlist. Always on in production.
+  guard:
+    enabled: true
+    eventClassAttribute: event_class
+    dropUnknownClasses: true
+    maxFieldBytes: 8192
+    extraAllowedFields: {}
+
+  # OPA policy gate. Bundle is optional — without it the processor is
+  # wired but passes everything through, which lets an operator stage
+  # the pipeline before shipping Rego.
+  policy:
+    enabled: true
+    bundlePath: ""       # e.g. /etc/fabric/policy
+    query: data.fabric.egress.allow
+    eventClassAttribute: event_class
+
+  # Presidio redaction via a Unix-socket sidecar. Disabled by default
+  # because it requires a co-located sidecar container; turn on once
+  # you wire `.sidecar` below or mount the socket from another pod.
+  #
+  # When ``enabled: true``, the chart fail-closes unless one of:
+  #   - ``existingSocketProvider`` names the out-of-band component
+  #     that mounts ``unixSocket`` (e.g. a separately-deployed
+  #     presidio-sidecar chart or DaemonSet).
+  #   - ``acceptMissingProvider: true`` is set (smoke/CI renders
+  #     only — runtime will error on every event).
+  redact:
+    enabled: false
+    unixSocket: /var/run/fabric/presidio.sock
+    timeoutMs: 500
+    eventClassAttribute: event_class
+    skipAttributes:
+      - tenant_id
+      - agent_id
+      - decision_id
+    existingSocketProvider: ""
+    acceptMissingProvider: false
+
+  # Deterministic HMAC sampler. Either `hmacKey` (inline, not
+  # recommended outside dev) or `hmacKeySecret` (Secret name + key)
+  # must be set when `.enabled: true`.
+  sampler:
+    enabled: true
+    hmacKey: ""
+    hmacKeySecret:
+      name: ""
+      key: hmac_key
+    defaultRate: 1.0
+    rates:
+      decision_summary: 0.1
+      cost_usage_aggregate: 1.0
+      escalation: 1.0
+      red_team_result: 1.0
+
+# OTLP/HTTP egress target. For the in-Collector topology this is the
+# Fabric ingest endpoint; the Bridge handles signing/encryption when
+# present.
+exporter:
+  endpoint: http://fabric-ingest:8080
+  insecure: true
+
+# Also write to the debug exporter? Useful in dev, noisy in prod.
+debugExporter:
+  enabled: false
+  verbosity: basic
+
+memoryLimiter:
+  checkIntervalSeconds: 1
+  limitMib: 512
+
+batch:
+  timeoutSeconds: 5
+  sendBatchSize: 512

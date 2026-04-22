@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """The ``decision()`` context manager.
 
 Every agent decision is wrapped in a :class:`Decision`. On enter we

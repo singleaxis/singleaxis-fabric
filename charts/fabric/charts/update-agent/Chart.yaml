@@ -1,0 +1,28 @@
+apiVersion: v2
+name: update-agent
+description: |
+  SingleAxis Fabric — pre-apply manifest verifier (Layer 1).
+  Runs as a Kubernetes ValidatingAdmissionWebhook over the
+  ``fabric-system`` namespace; denies any resource whose Fabric
+  signature / version / schema annotations don't check out.
+  Disabled by default in dev profiles; required for any production
+  installation that consumes the SingleAxis GitOps update channel.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - gitops
+  - admission
+  - security
+  - fabric
+home: https://github.com/singleaxis/singleaxis-fabric
+sources:
+  - https://github.com/singleaxis/singleaxis-fabric
+maintainers:
+  - name: SingleAxis
+    url: https://singleaxis.com
+icon: ""
+annotations:
+  category: Security
+  licenses: Apache-2.0

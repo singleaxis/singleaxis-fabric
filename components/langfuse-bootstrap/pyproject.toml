@@ -69,7 +69,17 @@ select = ["E", "F", "I", "N", "UP", "B", "S", "C4", "PIE", "RET", "SIM", "PL", "
 ignore = ["PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "PLR2004"]
+# S105/S106 flag hardcoded "test" credentials in fixtures; these aren't
+# real secrets, they're just the strings tests use to exercise the
+# client auth path.
+"tests/**" = ["S101", "S105", "S106", "PLR2004"]
+# typer.Option(...) in argument defaults is the library's ergonomic;
+# suppressing B008 here keeps the CLI entrypoint idiomatic.
+"src/fabric_langfuse_bootstrap/__main__.py" = ["B008"]
+# HTTP status codes 200/404 are well-understood; naming them is worse
+# than the number. Late imports break an import cycle documented in
+# the module docstring.
+"src/fabric_langfuse_bootstrap/client.py" = ["PLR2004", "PLC0415"]
 
 [tool.mypy]
 python_version = "3.12"

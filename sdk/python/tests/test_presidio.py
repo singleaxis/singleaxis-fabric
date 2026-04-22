@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """End-to-end tests for the Presidio UDS client.
 
 Spins up a local Unix-socket HTTP server that plays the sidecar's

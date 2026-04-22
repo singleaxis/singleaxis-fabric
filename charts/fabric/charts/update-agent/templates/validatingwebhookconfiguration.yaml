@@ -1,0 +1,62 @@
+{{/*
+ValidatingWebhookConfiguration wiring the API server to the
+verifier Service. The caBundle is populated either from the
+self-signed Secret we rendered, or injected by cert-manager.
+*/}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "update-agent.fullname" . }}
+  labels:
+    {{- include "update-agent.labels" . | nindent 4 }}
+  {{- if eq .Values.tls.mode "certManager" }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ printf "%s/%s" .Release.Namespace (include "update-agent.certificateName" .) | quote }}
+  {{- end }}
+webhooks:
+  - name: {{ include "update-agent.webhookName" . }}
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    clientConfig:
+      service:
+        name: {{ include "update-agent.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /admit
+        port: {{ .Values.service.port }}
+      {{- if eq .Values.tls.mode "selfSigned" }}
+      {{- /* Resolved via the shared memoized helper so the caBundle
+             always matches the Secret we render — on both fresh
+             installs and upgrades. See _helpers.tpl. */ -}}
+      {{- $tls := fromYaml (include "update-agent.tlsData" .) }}
+      caBundle: {{ $tls.caCert }}
+      {{- end }}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            {{- range .Values.webhook.watchedNamespaces }}
+            - {{ . | quote }}
+            {{- end }}
+    rules:
+      {{- range .Values.webhook.rules }}
+      - apiGroups:
+          {{- range .apiGroups }}
+          - {{ . | quote }}
+          {{- end }}
+        apiVersions:
+          {{- range .apiVersions }}
+          - {{ . | quote }}
+          {{- end }}
+        operations:
+          {{- range .operations }}
+          - {{ . | quote }}
+          {{- end }}
+        resources:
+          {{- range .resources }}
+          - {{ . | quote }}
+          {{- end }}
+        scope: Namespaced
+      {{- end }}

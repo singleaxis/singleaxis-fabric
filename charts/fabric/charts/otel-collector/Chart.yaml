@@ -1,0 +1,25 @@
+apiVersion: v2
+name: otel-collector
+description: |
+  SingleAxis Fabric OpenTelemetry Collector distribution. Ships the
+  fabricguard, fabricpolicy, fabricredact, and fabricsampler processors
+  plus the standard OTLP receivers and exporters.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - opentelemetry
+  - observability
+  - compliance
+  - fabric
+home: https://github.com/singleaxis/singleaxis-fabric
+sources:
+  - https://github.com/singleaxis/singleaxis-fabric/tree/main/components/otel-collector-fabric
+maintainers:
+  - name: SingleAxis
+    url: https://singleaxis.com
+icon: ""
+annotations:
+  category: Observability
+  licenses: Apache-2.0

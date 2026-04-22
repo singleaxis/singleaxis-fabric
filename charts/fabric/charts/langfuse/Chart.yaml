@@ -1,0 +1,26 @@
+apiVersion: v2
+name: langfuse
+description: |
+  Langfuse — default Layer-3 (observability) sink for SingleAxis Fabric.
+  Ships a single-Deployment Langfuse v2 wrapper suitable for dev and
+  light production; tenants running at scale should swap in the
+  upstream Langfuse chart and keep this one disabled.
+type: application
+version: 0.1.0
+appVersion: "2.93.0"
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - observability
+  - llm
+  - tracing
+  - fabric
+home: https://github.com/singleaxis/singleaxis-fabric
+sources:
+  - https://github.com/langfuse/langfuse
+maintainers:
+  - name: SingleAxis
+    url: https://singleaxis.com
+icon: ""
+annotations:
+  category: Observability
+  licenses: Apache-2.0

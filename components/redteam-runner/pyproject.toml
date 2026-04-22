@@ -93,3 +93,11 @@ strict = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
+
+# Garak and PyRIT are optional extras; the runner falls back to stub
+# drivers when they aren't installed. Silence "cannot find stub"
+# errors so the default dev install (without the `suites` extra)
+# still passes strict mypy.
+[[tool.mypy.overrides]]
+module = ["pyrit.*", "garak.*"]
+ignore_missing_imports = true

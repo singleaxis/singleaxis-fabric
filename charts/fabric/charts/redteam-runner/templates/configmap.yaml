@@ -1,0 +1,16 @@
+{{/*
+Chart-owned ConfigMap rendered from `runConfig.inline`. Skipped
+entirely when the operator references their own ConfigMap via
+`runConfig.existingConfigMap` — no shadowing.
+*/}}
+{{- if not .Values.runConfig.existingConfigMap -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "redteam-runner.configMapName" . }}
+  labels:
+    {{- include "redteam-runner.labels" . | nindent 4 }}
+data:
+  run.yaml: |
+    {{- .Values.runConfig.inline | nindent 4 }}
+{{- end -}}

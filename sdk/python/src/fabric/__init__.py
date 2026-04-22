@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """SingleAxis Fabric SDK (Python).
 
 Phase 1 public surface — agents import from here. Anything not

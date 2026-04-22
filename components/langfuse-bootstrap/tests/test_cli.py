@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import httpx
-import pytest
 import respx
 import yaml
 from typer.testing import CliRunner
 
 from fabric_langfuse_bootstrap.__main__ import app
-
 
 HOST = "http://langfuse.test"
 
