@@ -1,7 +1,7 @@
 # nemo-sidecar subchart
 
 NeMo Colang guardrails sidecar. Spec:
-[`specs/005-nemo-sidecar.md`](../../../specs/005-nemo-sidecar.md).
+[`specs/005-guardrails-inline.md`](../../../../specs/005-guardrails-inline.md).
 
 ## What this ships
 

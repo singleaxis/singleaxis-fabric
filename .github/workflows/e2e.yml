@@ -86,11 +86,19 @@ jobs:
         # every subchart except otel-collector off because their
         # images have not been published yet. hmacKey is inline for
         # this throwaway test cluster — never do this in prod.
+        #
+        # `--set namespace.create=false`: permissive-dev.yaml flips
+        # chart-owned namespace creation on (so operators can label the
+        # ns via the chart). For e2e we let helm's `--create-namespace`
+        # flag handle it instead — otherwise helm creates fabric-system
+        # pre-install to store the release secret, and then the chart's
+        # own Namespace manifest collides with "already exists".
         run: |
           helm install ci charts/fabric \
             --create-namespace \
             --namespace "${NAMESPACE}" \
             --values charts/fabric/profiles/permissive-dev.yaml \
+            --set namespace.create=false \
             --set nemoSidecar.enabled=false \
             --set langfuse.enabled=false \
             --set redteamRunner.enabled=false \

@@ -44,11 +44,15 @@ repos:
     hooks:
       - id: helm-docs
 
-  - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.42.0
+  # markdownlint-cli2 reads `.markdownlint-cli2.jsonc` from the repo
+  # root, which is the single source of truth shared with the CI job
+  # (DavidAnson/markdownlint-cli2-action). Earlier we used
+  # markdownlint-cli with a different rule list, which drifted from
+  # CI — switching to cli2 collapses both into one config.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.13.0
     hooks:
-      - id: markdownlint
-        args: ["--disable", "MD013", "MD033", "MD041", "--"]
+      - id: markdownlint-cli2
 
   # Conventional-commit enforcement lives in CI (commitlint-github-action@v6,
   # see `.github/workflows/ci.yml`). Running gitlint here duplicates

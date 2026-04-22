@@ -83,9 +83,9 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
-      - uses: lycheeverse/lychee-action@v1
+      - uses: lycheeverse/lychee-action@v2
         with:
-          args: --verbose --no-progress --exclude-mail '**/*.md'
+          args: --verbose --no-progress --config lychee.toml '**/*.md'
           fail: true
 
   spec-schema:
@@ -349,7 +349,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: image
           image-ref: fabric-otelcol:trivy
