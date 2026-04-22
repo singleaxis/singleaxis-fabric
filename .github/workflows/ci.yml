@@ -349,7 +349,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.36.0
+        # Upstream only publishes v-prefixed tags (`v0.36.0`). Pinning
+        # `@0.36.0` (no prefix) was failing CI with "unable to find
+        # version 0.36.0" — the unprefixed `0.24.0` tag that used to
+        # resolve was removed upstream at some point.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: fabric-otelcol:trivy

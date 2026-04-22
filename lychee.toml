@@ -10,8 +10,9 @@ max_retries = 2
 timeout = 20
 max_concurrency = 8
 
-# Skip mailto links (already set via CLI, mirrored here for clarity).
-exclude_mail = true
+# Skip mailto links (lychee's config key is `include_mail`; setting it to
+# false excludes them).
+include_mail = false
 
 # Skip private / loopback / link-local addresses — `localhost:3000` appears in
 # dev-cluster docs as an example UI URL, not a resolvable resource.

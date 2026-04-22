@@ -106,7 +106,7 @@ jobs:
             --set otel-collector.image.repository=fabric-otelcol \
             --set otel-collector.image.tag=e2e \
             --set otel-collector.image.pullPolicy=IfNotPresent \
-            --set otel-collector.fabric.sampler.hmacKey=cafebabe \
+            --set otel-collector.fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
             --wait \
             --timeout 5m
 

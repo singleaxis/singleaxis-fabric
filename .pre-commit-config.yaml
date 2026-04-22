@@ -12,6 +12,16 @@ repos:
       - id: check-merge-conflict
       - id: check-symlinks
       - id: check-yaml
+        # Helm chart templates contain Go template directives (`{{- if
+        # .Values.foo }}`) that are not valid YAML on their own. Exclude
+        # anything under a chart's templates/ directory, plus our helm-
+        # specific test fixtures. `Chart.yaml` / `values.yaml` are still
+        # checked because they are real YAML.
+        exclude: |
+          (?x)^(
+            charts/.*/templates/.*\.ya?ml|
+            charts/.*/tests/.*/expected\.ya?ml
+          )$
       - id: check-json
       - id: check-toml
       - id: detect-private-key
@@ -39,10 +49,16 @@ repos:
   # keep type-checking in CI and keep pre-commit focused on fast
   # local-loop hygiene (ruff, gitleaks, file validity, EOF/whitespace).
 
-  - repo: https://github.com/norwoodj/helm-docs
-    rev: v1.14.2
-    hooks:
-      - id: helm-docs
+  # helm-docs is intentionally NOT a pre-commit hook. The norwoodj/helm-docs
+  # hook expects the `helm-docs` binary to already be installed on PATH and
+  # errors out otherwise ("Please install helm-docs to run the pre-commit
+  # hook"). We don't want `pre-commit run` in CI to require extra tooling
+  # installed on the runner — pre-commit is scoped to fast local-loop
+  # hygiene (ruff, gitleaks, markdownlint, file validity). Chart doc drift
+  # is caught by the dedicated `Helm / Kubernetes lint` CI job and by
+  # reviewers; bringing helm-docs back as a pre-commit hook would mean
+  # either bundling the binary here or requiring every local contributor
+  # to `brew install norwoodj/tap/helm-docs` before their first commit.
 
   # markdownlint-cli2 reads `.markdownlint-cli2.jsonc` from the repo
   # root, which is the single source of truth shared with the CI job
