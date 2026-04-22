@@ -367,7 +367,7 @@ jobs:
           # trips exit-code:1. We want HIGH/CRITICAL as the gate.
           limit-severities-for-sarif: "true"
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-image.sarif
