@@ -6,6 +6,29 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-rc.2] - 2026-04-23
+
+Re-cut of `0.1.0-rc.1` to exercise the signing path end-to-end. No
+functional changes to Fabric itself — same code, same charts, same
+SDK — only a release-pipeline fix so chart signatures actually land.
+
+### Fixed
+
+- **`release.yml` / `publish-chart`**: cosign sign was hitting
+  `GET /ghcr.io/token ... UNAUTHORIZED` on `rc.1`. `helm registry login`
+  writes to `~/.config/helm/registry/config.json`; cosign reads
+  `~/.docker/config.json`. Added a `docker/login-action` step before the
+  sign step so cosign can pull the just-pushed manifest by digest.
+  `publish-image` was already doing this — `publish-chart` just never
+  was.
+
+### Known issues
+
+- Carried forward from `rc.1`: `OpenSSF Scorecard` currently fails on
+  `main` because top-level `security-events: write` trips
+  scorecard-action's workflow verification. Cosmetic, not
+  release-blocking. Will be cleaned up before `0.1.0`.
+
 ## [0.1.0-rc.1] - 2026-04-20
 
 First public pre-release of SingleAxis Fabric — the Layer-1 OSS substrate

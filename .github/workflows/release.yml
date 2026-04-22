@@ -252,6 +252,16 @@ jobs:
       - uses: azure/setup-helm@v4
         with:
           version: "v3.15.0"
+      # Both logins are needed: `helm push` uses the helm-specific
+      # credential store, but `cosign sign` reads ~/.docker/config.json
+      # to pull the just-pushed manifest by digest. Without docker
+      # login, cosign hits a 401 from ghcr.io/token on signing.
+      - name: Log in to GHCR (docker auth for cosign)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Log in to GHCR (Helm OCI)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" \
