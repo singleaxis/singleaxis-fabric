@@ -17,7 +17,14 @@ spec:
       type: RuntimeDefault
   containers:
     - name: health-probe
-      image: ghcr.io/curl/curl-container/curl-multi:latest
+      # `curlimages/curl` is the canonical, widely-mirrored curl image
+      # (Docker Hub official, non-root by default, pinned tag so kind
+      # can cache it reliably). We pin by digest-less tag here to keep
+      # the manifest readable; reproducibility is CI's job, not the
+      # smoke test's. Previous value `ghcr.io/curl/curl-container/
+      # curl-multi:latest` failed to pull under kind — the GHCR path
+      # isn't a stable/curl-published image.
+      image: curlimages/curl:8.10.1
       imagePullPolicy: IfNotPresent
       securityContext:
         allowPrivilegeEscalation: false
