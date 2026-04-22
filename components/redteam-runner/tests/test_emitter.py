@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
@@ -11,7 +11,7 @@ from fabric_redteam_runner.emitter import InMemoryEmitter, OTelEmitter
 from fabric_redteam_runner.results import RunResult
 
 
-def _spans_for(result: RunResult) -> list[object]:
+def _spans_for(result: RunResult) -> list[ReadableSpan]:
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -29,14 +29,14 @@ def test_otel_emitter_emits_one_run_span_and_n_probe_spans(run_result: RunResult
     probe_spans = [s for s in spans if s.name == "fabric.redteam.probe"]
     assert len(probe_spans) == 2
 
-    run_attrs = dict(run_span.attributes)
+    run_attrs = dict(run_span.attributes or {})
     assert run_attrs["event_class"] == "redteam_run"
     assert run_attrs["fabric.redteam.run_id"] == "run-abc"
     assert run_attrs["fabric.redteam.probe_count"] == 2
     assert run_attrs["fabric.redteam.fail_count"] == 1
 
     # Probe spans carry per-probe attributes.
-    verdicts = sorted(s.attributes["fabric.redteam.verdict"] for s in probe_spans)
+    verdicts = sorted(str((s.attributes or {})["fabric.redteam.verdict"]) for s in probe_spans)
     assert verdicts == ["fail", "pass"]
 
 

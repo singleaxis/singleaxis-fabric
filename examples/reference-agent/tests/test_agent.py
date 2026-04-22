@@ -51,5 +51,6 @@ def test_agent_records_retrieval_and_memory_via_custom_llm(capsys) -> None:
 
 def test_simulated_judge_rejects_out_of_range_score() -> None:
     import pytest
+
     with pytest.raises(ValueError, match="score must be"):
         SimulatedJudge(score=1.5)

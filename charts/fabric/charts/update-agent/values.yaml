@@ -1,0 +1,166 @@
+# Default values for the update-agent subchart.
+
+replicaCount: 2                    # HA by default; admission must be reliable
+
+image:
+  repository: ghcr.io/singleaxis/fabric-update-agent
+  tag: ""                          # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  port: 443
+  targetPort: 8443
+
+resources:
+  limits:
+    cpu: "500m"
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: https
+    scheme: HTTPS
+  initialDelaySeconds: 2
+  periodSeconds: 5
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: https
+    scheme: HTTPS
+  initialDelaySeconds: 10
+  periodSeconds: 20
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- Verifier config ---
+#
+# What the webhook believes about the cluster + who it trusts.
+# ``fabricVersion`` must match the umbrella chart's version; CI
+# guarantees alignment for the bundled version, operators should
+# override this explicitly when running a mixed-version fleet.
+#
+# ``trustedKeys`` is the list of Ed25519 signers the verifier
+# accepts. The default ships the SingleAxis release key baked into
+# the chart. Operators running against a tenant mirror supply their
+# mirror's key via ``extraTrustedKeys``.
+config:
+  fabricVersion: ""                # "" → use .Chart.AppVersion
+  failClosed: true
+  trustedKeys:
+    - id: singleaxis-release
+      # Placeholder — replace at install time with the real release
+      # key. Shipping an empty string would render the chart unable
+      # to verify anything, which is worse than a clearly fake key.
+      publicKey: "REPLACE_AT_INSTALL_TIME_WITH_REAL_KEY_32_BYTES_BASE64"
+  extraTrustedKeys: []
+  # - id: tenant-mirror
+  #   publicKey: "..."
+
+# --- Webhook wiring ---
+#
+# Namespaces the webhook watches. Defaults to ``fabric-system`` only
+# so the verifier never blocks an unrelated application's apply.
+# Add tenant-specific namespaces (e.g. `fabric-policy`) as the
+# operator widens the GitOps channel's surface.
+webhook:
+  watchedNamespaces:
+    - fabric-system
+  # "Fail" = apply is rejected when the webhook is unreachable.
+  # Production should leave this on; "Ignore" is for break-glass
+  # only.
+  failurePolicy: Fail
+  timeoutSeconds: 5
+  # Resources the webhook intercepts. ConfigMaps + Secrets cover
+  # the channel's deliverables; the operator can extend this list
+  # when registering additional schemas at runtime.
+  rules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["configmaps", "secrets"]
+
+# --- TLS ---
+#
+# The webhook server needs a cert the API server trusts. Two modes:
+#
+#   tls.mode: selfSigned  — chart renders a Secret with a fresh
+#                           self-signed cert, and the
+#                           ValidatingWebhookConfiguration's
+#                           caBundle is populated from it. Fine for
+#                           dev + airgapped tenants.
+#
+#   tls.mode: certManager — chart assumes cert-manager is installed
+#                           and renders a Certificate CR pointing
+#                           at ``tls.certManager.issuerRef``. The
+#                           webhook's caBundle is populated via the
+#                           cert-manager.io/inject-ca-from
+#                           annotation.
+tls:
+  mode: selfSigned                 # one of: selfSigned | certManager
+  certManager:
+    issuerRef:
+      name: fabric-ca-issuer
+      kind: ClusterIssuer
+      group: cert-manager.io
+
+# --- ArgoCD integration (optional) ---
+#
+# Ship an ArgoCD Application + AppProject that targets the
+# SingleAxis manifest repo. Disabled by default — most tenants
+# already have an ArgoCD instance configured outside the chart.
+argocd:
+  enabled: false
+  namespace: argocd
+  project:
+    name: fabric
+    description: "SingleAxis Fabric — manifest channel"
+    sourceRepos:
+      - https://github.com/singleaxis/fabric-manifests
+    destinations:
+      - namespace: fabric-system
+        server: https://kubernetes.default.svc
+  application:
+    name: fabric-manifests
+    repoURL: https://github.com/singleaxis/fabric-manifests
+    path: tenants/default
+    targetRevision: HEAD
+    syncPolicy:
+      automated:
+        prune: true
+        selfHeal: true

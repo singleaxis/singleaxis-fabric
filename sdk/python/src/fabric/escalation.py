@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Escalation pause primitive.
 
 Spec 007 describes the full escalation workflow: pause → SASF review

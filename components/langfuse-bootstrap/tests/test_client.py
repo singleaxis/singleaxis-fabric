@@ -11,7 +11,6 @@ import respx
 from fabric_langfuse_bootstrap.client import LangfuseBootstrapClient, LangfuseError
 from fabric_langfuse_bootstrap.config import ScoreConfig, ScoreDataType
 
-
 HOST = "http://langfuse.test"
 PK = "pk-lf-test"
 SK = "sk-lf-test"
@@ -74,11 +73,7 @@ def test_apply_score_config_skips_when_present(client: LangfuseBootstrapClient) 
     respx.get(f"{HOST}/api/public/score-configs").mock(
         return_value=httpx.Response(
             200,
-            json={
-                "data": [
-                    {"id": "sc_existing", "name": "groundedness", "dataType": "NUMERIC"}
-                ]
-            },
+            json={"data": [{"id": "sc_existing", "name": "groundedness", "dataType": "NUMERIC"}]},
         )
     )
     create_route = respx.post(f"{HOST}/api/public/score-configs")
@@ -108,9 +103,7 @@ def test_apply_score_config_raises_on_api_error(client: LangfuseBootstrapClient)
 
 @respx.mock
 def test_apply_prompt_creates_when_missing(client: LangfuseBootstrapClient) -> None:
-    respx.get(f"{HOST}/api/public/v2/prompts/my-prompt").mock(
-        return_value=httpx.Response(404)
-    )
+    respx.get(f"{HOST}/api/public/v2/prompts/my-prompt").mock(return_value=httpx.Response(404))
     create = respx.post(f"{HOST}/api/public/v2/prompts").mock(
         return_value=httpx.Response(200, json={"name": "my-prompt", "version": 1})
     )

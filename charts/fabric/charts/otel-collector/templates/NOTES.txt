@@ -1,0 +1,32 @@
+The Fabric OTel Collector has been deployed to {{ .Release.Namespace }}.
+
+Service:       {{ include "otel-collector.fullname" . }}
+OTLP/gRPC:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.otlpGrpc }}
+OTLP/HTTP:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.otlpHttp }}
+Health check:  {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.health }}
+
+Fabric processors active:
+{{- if .Values.fabric.guard.enabled }}  - fabricguard (deny-by-default schema allowlist){{- end }}
+{{- if .Values.fabric.redact.enabled }}  - fabricredact (Presidio sidecar redaction){{- end }}
+{{- if .Values.fabric.policy.enabled }}  - fabricpolicy (OPA policy gate){{- end }}
+{{- if .Values.fabric.sampler.enabled }}  - fabricsampler (HMAC-keyed deterministic sampler){{- end }}
+
+Verify health:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "otel-collector.fullname" . }} 13133:{{ .Values.service.ports.health }}
+  curl http://localhost:13133/
+
+Run the bundled smoke test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+{{- if and .Values.fabric.policy.enabled (eq .Values.fabric.policy.bundlePath "") }}
+
+WARNING: fabricpolicy is enabled but bundlePath is empty. The
+processor is wired but no Rego is loaded — all records will pass.
+Set .Values.fabric.policy.bundlePath before relying on the gate.
+{{- end }}
+{{- if and .Values.fabric.redact.enabled (not (hasKey .Values "presidioSidecar")) }}
+
+NOTE: fabricredact is enabled. Make sure a Presidio sidecar listens
+on {{ .Values.fabric.redact.unixSocket }} inside the pod. This chart
+does not bundle the sidecar yet — see specs/004-telemetry-bridge.md.
+{{- end }}

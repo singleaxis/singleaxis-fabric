@@ -42,6 +42,11 @@ agent-framework = [
 ]
 crewai = [
   "crewai>=0.80,<1.0",
+  # Force-upgrade litellm (transitive via crewai) past CVE-2026-35030
+  # (critical) / CVE-2026-35029 (high) / GHSA-69x8-hrgq-fjj8 (high).
+  # crewai>=0.80 permits litellm>=1.83.0 on resolve; pin explicitly so
+  # Trivy doesn't keep flagging the lockfile.
+  "litellm>=1.83.0",
 ]
 dev = [
   "pytest>=8.3",

@@ -1,0 +1,99 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "redteam-runner.fullname" . }}
+  labels:
+    {{- include "redteam-runner.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  {{- with .Values.timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.startingDeadlineSeconds }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "redteam-runner.labels" . | nindent 8 }}
+    spec:
+      backoffLimit: {{ .Values.job.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          labels:
+            {{- include "redteam-runner.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: redteam-runner
+          {{- with .Values.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "redteam-runner.serviceAccountName" . }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: runner
+              image: {{ include "redteam-runner.image" . | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args:
+                - "run"
+                - "--config"
+                - "/etc/fabric/redteam/run.yaml"
+                - "--otlp-endpoint"
+                - {{ .Values.otel.endpoint | quote }}
+                - "--fail-on-findings={{ .Values.failOnFindings }}"
+              env:
+                - name: OTEL_SERVICE_NAME
+                  value: {{ .Values.otel.serviceName | quote }}
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: {{ .Values.otel.endpoint | quote }}
+                {{- with .Values.extraEnv }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+              volumeMounts:
+                - name: run-config
+                  mountPath: /etc/fabric/redteam
+                  readOnly: true
+                # Writable /tmp so Garak/PyRIT can cache downloaded
+                # models + probe datasets despite readOnlyRootFilesystem.
+                - name: tmp
+                  mountPath: /tmp
+                - name: home
+                  mountPath: /home/fabric
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+          volumes:
+            - name: run-config
+              configMap:
+                name: {{ include "redteam-runner.configMapName" . }}
+                items:
+                  - key: run.yaml
+                    path: run.yaml
+            - name: tmp
+              emptyDir:
+                sizeLimit: 2Gi
+            - name: home
+              emptyDir:
+                sizeLimit: 1Gi
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

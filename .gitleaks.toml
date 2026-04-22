@@ -1,0 +1,49 @@
+# gitleaks configuration for SingleAxis Fabric.
+#
+# Consumed by `.github/workflows/security.yml` (`Secret scanning` job) and by
+# the `gitleaks` pre-commit hook. We extend the upstream default ruleset
+# rather than redefining it from scratch — the `gitleaks:default` directive
+# pulls in every built-in detector.
+
+[extend]
+useDefault = true
+
+# Allowlist: known-safe strings that the generic-api-key / high-entropy
+# detectors flag as secrets but are actually test fixtures or protocol
+# constants. Every entry here must have a comment explaining WHY it is
+# safe, so a future reviewer can tell the difference between a legitimate
+# allow and a weakened scanner.
+[allowlist]
+description = "Known-safe test fixtures"
+
+# gitleaks matches a per-file regex list, not per-secret. These files
+# contain synthetic cryptographic test vectors, not real secrets.
+paths = [
+  # Fabric sampler processor test fixture. `testKeyHex` is a throw-away
+  # 32-byte HMAC key built from the repeated nibble pattern
+  # `00112233445566778899aabbccddeeff`. It is used only by the Go unit
+  # tests for the sampler processor and never reaches production — the
+  # collector refuses to start if the real hmacKey is under 16 bytes.
+  '''components/otel-collector-fabric/processor/fabricsamplerprocessor/processor_test\.go''',
+
+  # Docker-compose harness env template. Every non-comment value is a
+  # stable `harness` string (public key `pk-lf-harness`, secret key
+  # `sk-lf-harness`, basic-auth base64 thereof, `fabric-admin` password,
+  # `harness-*-change-me` placeholders). Shipped so operators can copy
+  # to `.env` before rotating on a real deployment; never deployed as-is.
+  '''deploy/compose/\.env\.example''',
+
+  # The e2e kind-smoke workflow seeds the sampler with the same 32-byte
+  # test fixture defined above so the collector passes its
+  # `hmac key >= 16 bytes` check. Same risk profile as the Go test: it
+  # is a synthetic value used only in CI and kind clusters.
+  '''\.github/workflows/e2e\.yml''',
+]
+
+# Literal regexes that are safe anywhere in the tree. Keep this list
+# deliberately tight; prefer path-level allowlisting above.
+regexes = [
+  # The exact 32-byte test key above, written out so gitleaks won't flag
+  # it if the file is ever renamed or copied into another test.
+  '''00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff''',
+]

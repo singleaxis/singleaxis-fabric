@@ -1,0 +1,49 @@
+// markdownlint-cli2 config for SingleAxis Fabric.
+//
+// Rationale for the relaxed rules:
+//   MD013 line-length   — prose wraps at ~80 but code blocks and
+//                         tables legitimately run long; keep the rule
+//                         but bump the cap and skip code/tables.
+//   MD024 duplicate      — CHANGELOG uses repeated `### Added` etc.
+//   MD025 multi-h1       — some docs have multiple top-level sections.
+//   MD033 inline HTML    — occasional <details>/<summary> blocks.
+//   MD034 bare URLs      — we sometimes paste URLs without angle
+//                         brackets (e.g. troubleshooting READMEs).
+//   MD036 emphasis-head  — CHANGELOG uses *(nothing yet)* as a stub.
+//   MD040 code-lang      — some fenced blocks are raw output samples.
+//   MD041 first-line-h1  — GitHub templates (PR/issue) don't start
+//                         with one.
+{
+  "config": {
+    "default": true,
+    "MD013": {
+      "line_length": 120,
+      "code_blocks": false,
+      "tables": false,
+      "headings": false
+    },
+    "MD012": false,
+    "MD022": false,
+    "MD024": { "siblings_only": true },
+    "MD025": false,
+    "MD029": false,
+    "MD032": false,
+    "MD033": false,
+    "MD034": false,
+    "MD036": false,
+    "MD040": false,
+    "MD041": false,
+    "MD060": false
+  },
+  "globs": [
+    "**/*.md",
+    "!**/node_modules/**",
+    "!**/_internal/**",
+    "!**/.venv/**",
+    "!**/venv/**",
+    "!**/vendor/**",
+    "!**/dist/**",
+    "!**/build/**",
+    "!**/site-packages/**"
+  ]
+}

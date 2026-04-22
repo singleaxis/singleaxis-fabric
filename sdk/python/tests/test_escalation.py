@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Escalation pause primitive — summary, span tagging, exception flow."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """OpenTelemetry plumbing used by the Fabric SDK.
 
 The SDK does not install a global tracer provider on behalf of the

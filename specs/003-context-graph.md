@@ -235,7 +235,10 @@ scope (agent / session / tenant). See
 ### Default backend: Postgres + pgvector
 
 - **Node tables:** one per node type; primary key is the node ID.
-- **Edge table:** unified edge table with `(from_type, from_id, to_type, to_id, edge_type, timestamp, properties JSONB)`. Indexed on `(from_type, from_id, edge_type)` and `(to_type, to_id, edge_type)`.
+- **Edge table:** unified edge table with
+  `(from_type, from_id, to_type, to_id, edge_type, timestamp, properties JSONB)`.
+  Indexed on `(from_type, from_id, edge_type)` and
+  `(to_type, to_id, edge_type)`.
 - **Vector columns:** `pgvector` columns on `Retrieval` for query
   embeddings and on `Decision` for output embeddings (for similarity
   search during evidence export and cross-decision analytics).

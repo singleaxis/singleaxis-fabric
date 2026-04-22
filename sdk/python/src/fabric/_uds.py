@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """HTTP over a Unix-domain socket.
 
 Stdlib-only — we deliberately avoid pulling ``requests`` or ``httpx``

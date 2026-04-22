@@ -1,0 +1,112 @@
+{{- include "otel-collector.validateSampler" . -}}
+{{- include "otel-collector.validateRedact" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-collector.fullname" . }}-config
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:{{ .Values.service.ports.otlpGrpc }}
+          http:
+            endpoint: 0.0.0.0:{{ .Values.service.ports.otlpHttp }}
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:{{ .Values.service.ports.health }}
+
+    processors:
+      memory_limiter:
+        check_interval: {{ .Values.memoryLimiter.checkIntervalSeconds }}s
+        limit_mib: {{ .Values.memoryLimiter.limitMib }}
+
+      {{- if .Values.fabric.guard.enabled }}
+      fabricguard:
+        event_class_attribute: {{ .Values.fabric.guard.eventClassAttribute | quote }}
+        drop_unknown_classes: {{ .Values.fabric.guard.dropUnknownClasses }}
+        max_field_bytes: {{ .Values.fabric.guard.maxFieldBytes }}
+        {{- with .Values.fabric.guard.extraAllowedFields }}
+        extra_allowed_fields:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+      {{- if .Values.fabric.policy.enabled }}
+      fabricpolicy:
+        bundle_path: {{ .Values.fabric.policy.bundlePath | quote }}
+        query: {{ .Values.fabric.policy.query | quote }}
+        event_class_attribute: {{ .Values.fabric.policy.eventClassAttribute | quote }}
+      {{- end }}
+
+      {{- if .Values.fabric.redact.enabled }}
+      fabricredact:
+        unix_socket: {{ .Values.fabric.redact.unixSocket | quote }}
+        timeout: {{ .Values.fabric.redact.timeoutMs }}ms
+        event_class_attribute: {{ .Values.fabric.redact.eventClassAttribute | quote }}
+        {{- with .Values.fabric.redact.skipAttributes }}
+        skip_attributes:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+      {{- if .Values.fabric.sampler.enabled }}
+      fabricsampler:
+        {{- if .Values.fabric.sampler.hmacKey }}
+        hmac_key_hex: {{ .Values.fabric.sampler.hmacKey | quote }}
+        {{- else }}
+        hmac_key_file: /etc/fabric/sampler/hmac_key
+        {{- end }}
+        default_rate: {{ .Values.fabric.sampler.defaultRate }}
+        {{- with .Values.fabric.sampler.rates }}
+        rates:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+      batch:
+        timeout: {{ .Values.batch.timeoutSeconds }}s
+        send_batch_size: {{ .Values.batch.sendBatchSize }}
+
+    exporters:
+      otlphttp/fabric:
+        endpoint: {{ .Values.exporter.endpoint | quote }}
+        tls:
+          insecure: {{ .Values.exporter.insecure }}
+      {{- if .Values.debugExporter.enabled }}
+      debug:
+        verbosity: {{ .Values.debugExporter.verbosity }}
+      {{- end }}
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          level: info
+      pipelines:
+        logs:
+          receivers: [otlp]
+          processors:
+            - memory_limiter
+            {{- if .Values.fabric.guard.enabled }}
+            - fabricguard
+            {{- end }}
+            {{- if .Values.fabric.redact.enabled }}
+            - fabricredact
+            {{- end }}
+            {{- if .Values.fabric.policy.enabled }}
+            - fabricpolicy
+            {{- end }}
+            {{- if .Values.fabric.sampler.enabled }}
+            - fabricsampler
+            {{- end }}
+            - batch
+          exporters:
+            - otlphttp/fabric
+            {{- if .Values.debugExporter.enabled }}
+            - debug
+            {{- end }}

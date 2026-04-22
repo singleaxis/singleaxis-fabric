@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Retrieval recording.
 
 Per spec 003, every decision captures the context the agent pulled in

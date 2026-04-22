@@ -19,10 +19,33 @@ jobs:
     name: DCO sign-off check
     runs-on: ubuntu-latest
     steps:
-      - name: Check DCO
-        uses: christophebedard/dco-check@v1.1.0
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.12"
+          fetch-depth: 0
+      - name: Check DCO sign-off on all PR commits
+        if: github.event_name == 'pull_request'
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          missing=0
+          for sha in $(git rev-list "${base}..${head}"); do
+            if ! git log -1 --format=%B "${sha}" | grep -qiE '^Signed-off-by: .+ <.+@.+>'; then
+              echo "::error::Commit ${sha} is missing a DCO Signed-off-by trailer."
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "${missing}" -gt 0 ]; then
+            echo "See CONTRIBUTING.md for how to sign commits (git commit -s)."
+            exit 1
+          fi
+      - name: Check DCO sign-off on HEAD (push events)
+        if: github.event_name == 'push'
+        run: |
+          if ! git log -1 --format=%B HEAD | grep -qiE '^Signed-off-by: .+ <.+@.+>'; then
+            echo "::error::HEAD commit is missing a DCO Signed-off-by trailer."
+            echo "See CONTRIBUTING.md for how to sign commits (git commit -s)."
+            exit 1
+          fi
 
   commit-lint:
     name: Conventional commits
@@ -60,9 +83,9 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
-      - uses: lycheeverse/lychee-action@v1
+      - uses: lycheeverse/lychee-action@v2
         with:
-          args: --verbose --no-progress --exclude-mail '**/*.md'
+          args: --verbose --no-progress --config lychee.toml '**/*.md'
           fail: true
 
   spec-schema:
@@ -78,7 +101,7 @@ jobs:
       - name: Validate specs
         run: |
           python - <<'PY'
-          import pathlib, sys, yaml, jsonschema
+          import datetime, pathlib, sys, yaml, jsonschema
           from jsonschema import Draft202012Validator
 
           schema = {
@@ -105,6 +128,10 @@ jobs:
               continue
             _, fm, _ = text.split("---", 2)
             meta = yaml.safe_load(fm)
+            # YAML auto-parses ISO dates as datetime.date; normalise to
+            # string so the regex validator sees the canonical form.
+            if isinstance(meta.get("last_updated"), datetime.date):
+              meta["last_updated"] = meta["last_updated"].isoformat()
             for e in validator.iter_errors(meta):
               print(f"{p}: {e.message}")
               errors += 1
@@ -120,7 +147,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ruff
-        run: pip install ruff==0.6.9
+        run: pip install ruff==0.13.0
       - name: ruff check
         run: |
           if find . -name "pyproject.toml" -not -path "./node_modules/*" | grep -q .; then
@@ -322,7 +349,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.24.0
+        # Upstream only publishes v-prefixed tags (`v0.36.0`). Pinning
+        # `@0.36.0` (no prefix) was failing CI with "unable to find
+        # version 0.36.0" — the unprefixed `0.24.0` tag that used to
+        # resolve was removed upstream at some point.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: fabric-otelcol:trivy
@@ -331,6 +362,10 @@ jobs:
           exit-code: "1"
           format: sarif
           output: trivy-image.sarif
+          # Without this, the action unsets TRIVY_SEVERITY for SARIF
+          # output (see entrypoint.sh), so any MEDIUM/LOW finding also
+          # trips exit-code:1. We want HIGH/CRITICAL as the gate.
+          limit-severities-for-sarif: "true"
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()

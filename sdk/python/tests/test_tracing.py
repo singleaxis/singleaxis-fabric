@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """``install_default_provider`` + ``get_tracer`` basics."""
 
 from __future__ import annotations

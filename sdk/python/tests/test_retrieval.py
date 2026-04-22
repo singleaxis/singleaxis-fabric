@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Retrieval recording — span events + rolling aggregates."""
 
 from __future__ import annotations

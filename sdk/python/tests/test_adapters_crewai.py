@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """CrewAI adapter — callbacks record on decision span; escalation returns payload."""
 
 from __future__ import annotations
@@ -16,14 +18,11 @@ def _client() -> Fabric:
 
 
 def _event_attrs(
-    span_exporter: InMemorySpanExporter, event_name: str,
+    span_exporter: InMemorySpanExporter,
+    event_name: str,
 ) -> list[dict[str, object]]:
     span = span_exporter.get_finished_spans()[0]
-    return [
-        dict(ev.attributes or {})
-        for ev in span.events
-        if ev.name == event_name
-    ]
+    return [dict(ev.attributes or {}) for ev in span.events if ev.name == event_name]
 
 
 def test_step_callback_records_step_event_with_tool_and_log(

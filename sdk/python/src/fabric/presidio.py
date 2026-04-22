@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Presidio redaction client for the SDK.
 
 Talks to the ``fabric-presidio-sidecar`` (a FastAPI app shipped at

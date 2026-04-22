@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Guardrail types exported from the public API.
 
 Phase 1 of the SDK ships the types and the decision-span attribute

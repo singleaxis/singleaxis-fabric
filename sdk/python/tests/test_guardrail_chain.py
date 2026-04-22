@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """End-to-end Decision → GuardrailChain → fake {Presidio,NeMo} wiring."""
 
 from __future__ import annotations

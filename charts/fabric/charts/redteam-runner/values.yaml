@@ -1,0 +1,129 @@
+# Default values for the redteam-runner subchart.
+#
+# The subchart is **disabled by default** — red-team CronJobs attack a
+# concrete agent endpoint, so an operator must opt in and point it at
+# their own target. See charts/fabric/charts/redteam-runner/README.md
+# for the walk-through.
+
+# --- Image ---
+#
+# Use the ``-suites`` tag for anything beyond a smoke test. The bare
+# tag ships without Garak + PyRIT; drivers short-circuit to
+# ``Verdict.ERROR``. This is fine for pipeline rehearsals but exercises
+# none of the probes.
+image:
+  repository: ghcr.io/singleaxis/fabric-redteam-runner
+  tag: ""                          # defaults to .Chart.AppVersion
+  suffix: "-suites"                # "" for the bare image
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# --- Schedule ---
+#
+# Conservative default (weekly, Sunday 02:00 UTC). Compliance profiles
+# override via profiles/<name>.yaml — e.g. eu-ai-act-high-risk bumps
+# this to daily.
+schedule: "0 2 * * 0"
+timeZone: ""                        # K8s 1.27+; leave empty to use UTC
+concurrencyPolicy: Forbid           # never overlap runs
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 3
+startingDeadlineSeconds: 300
+
+# Per-Job knobs. CronJob's jobTemplate inherits these.
+job:
+  backoffLimit: 2
+  activeDeadlineSeconds: 3600       # 60 minutes; long Garak probes need it
+  ttlSecondsAfterFinished: 86400    # keep one day of finished Jobs
+
+# --- Run config ---
+#
+# The CronJob mounts a ConfigMap at /etc/fabric/redteam/ and the CLI
+# reads run.yaml from there. Two ways to supply the config:
+#
+#   runConfig.inline:  YAML snippet rendered into a ConfigMap
+#                      owned by the chart. Good for dev + simple prod.
+#
+#   runConfig.existingConfigMap: reference an operator-managed
+#                      ConfigMap. The key must be ``run.yaml``.
+#                      Wins when both are set.
+#
+# Use ``extraEnv`` to inject credentials — the config supports
+# ``${env:NAME}`` placeholders so you never bake bearer tokens into
+# the ConfigMap.
+runConfig:
+  existingConfigMap: ""
+  inline: |
+    tenant_id: ""
+    agent_id: ""
+    profile: permissive-dev
+    target:
+      url: ""
+      headers: {}
+      timeout_seconds: 30
+    suites: []
+
+# --- Telemetry ---
+#
+# Where the CronJob POSTs OTLP spans. Defaults to the in-cluster
+# collector installed by the umbrella chart. Override when the
+# collector lives outside the cluster.
+otel:
+  endpoint: "http://fabric-otel-collector:4318"
+  serviceName: "fabric-redteam-runner"
+
+# Extra environment variables forwarded into the container. Use
+# ``valueFrom.secretKeyRef`` here to inject bearer tokens / API keys
+# that your run config references via ${env:NAME}.
+extraEnv: []
+# - name: AGENT_BEARER
+#   valueFrom:
+#     secretKeyRef:
+#       name: fabric-redteam-creds
+#       key: bearer
+
+# Exit nonzero on FAIL verdicts. Default on so a failing CronJob is
+# visible in K8s; flip to false when you want the run to always
+# report "success" and let Langfuse dashboards drive alerting.
+failOnFindings: true
+
+# --- Pod / container ---
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop: [ALL]
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 4Gi                     # Garak + PyRIT pull heavyweight ML deps
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

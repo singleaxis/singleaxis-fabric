@@ -1,0 +1,27 @@
+NeMo guardrails sidecar is installed as a shared Deployment.
+
+Service: {{ include "nemo-sidecar.fullname" . }}:{{ .Values.service.port }}
+Routes:
+  GET  /healthz
+  POST /v1/check       — evaluate a prompt/output against the rails config
+
+{{- if .Values.railsConfigMap.name }}
+
+Rails config: mounted from ConfigMap "{{ .Values.railsConfigMap.name }}" at
+{{ .Values.railsConfigMap.mountPath }}.
+{{- else }}
+
+WARNING: no railsConfigMap.name is set. The sidecar is running the
+passthrough engine (fail-open) — every /v1/check returns allow. This
+is dev-only. Production profiles must set .Values.railsConfigMap.name
+to a ConfigMap containing the Colang rails.
+{{- end }}
+
+NOTE: Phase 1 ships this as a shared TCP Deployment for smoke tests
+and dev clusters. Production deployments should inject this container
+as a per-agent-pod sidecar over a Unix domain socket — the injection
+webhook lands in Phase 2.
+
+Smoke test:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "nemo-sidecar.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl -s http://127.0.0.1:{{ .Values.service.port }}/healthz

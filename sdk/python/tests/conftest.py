@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """Shared pytest fixtures for the Fabric SDK.
 
 The SDK deliberately doesn't install a global tracer provider on

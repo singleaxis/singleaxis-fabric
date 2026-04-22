@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """NeMo Colang rail client for the SDK.
 
 Spec 005 calls for NeMo Guardrails to run in-process. In practice

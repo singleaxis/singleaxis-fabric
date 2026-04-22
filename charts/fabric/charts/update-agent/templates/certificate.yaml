@@ -1,0 +1,34 @@
+{{- if eq .Values.tls.mode "certManager" -}}
+{{/*
+cert-manager Certificate resource. Issuer is whatever the operator
+wired up (``.Values.tls.certManager.issuerRef``); the CA bundle is
+injected into the ValidatingWebhookConfiguration via the
+``cert-manager.io/inject-ca-from`` annotation on that resource.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "update-agent.certificateName" . }}
+  labels:
+    {{- include "update-agent.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "update-agent.tlsSecretName" . }}
+  commonName: {{ printf "%s.%s.svc" (include "update-agent.fullname" .) .Release.Namespace | quote }}
+  dnsNames:
+    - {{ printf "%s.%s.svc" (include "update-agent.fullname" .) .Release.Namespace | quote }}
+    - {{ printf "%s.%s.svc.cluster.local" (include "update-agent.fullname" .) .Release.Namespace | quote }}
+  duration: 8760h   # 365 days
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  issuerRef:
+    name: {{ .Values.tls.certManager.issuerRef.name | quote }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind | quote }}
+    group: {{ .Values.tls.certManager.issuerRef.group | quote }}
+{{- end }}

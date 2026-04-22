@@ -1,0 +1,27 @@
+apiVersion: v2
+name: redteam-runner
+description: |
+  SingleAxis Fabric — scheduled adversarial testing (Layer 1).
+  Renders a CronJob that runs Garak + PyRIT against the tenant's
+  agent endpoint and emits results as OTel spans the Fabric collector
+  recognizes. Opt-in; disabled by default because tenants should
+  only run it against their own endpoints.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - redteam
+  - security
+  - guardrails
+  - fabric
+home: https://github.com/singleaxis/singleaxis-fabric
+sources:
+  - https://github.com/singleaxis/singleaxis-fabric
+maintainers:
+  - name: SingleAxis
+    url: https://singleaxis.com
+icon: ""
+annotations:
+  category: Security
+  licenses: Apache-2.0

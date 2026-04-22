@@ -11,7 +11,6 @@ import yaml
 
 from fabric_langfuse_bootstrap.main import bootstrap
 
-
 HOST = "http://langfuse.test"
 
 

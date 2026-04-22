@@ -4,7 +4,7 @@ header:
     copyright-owner: "AI5 Labs, Inc."
     copyright-year: "2026"
     content: |
-      Copyright (c) [year] [owner]
+      Copyright [year] [owner]
       SPDX-License-Identifier: Apache-2.0
   paths:
     - "**/*.py"

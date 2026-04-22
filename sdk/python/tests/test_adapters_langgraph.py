@@ -1,3 +1,5 @@
+# Copyright 2026 AI5 Labs, Inc.
+# SPDX-License-Identifier: Apache-2.0
 """LangGraph adapter — escalation bridges to langgraph.types.interrupt."""
 
 from __future__ import annotations
@@ -88,7 +90,11 @@ def test_escalate_without_langgraph_raises_runtime_error(
     monkeypatch.setitem(sys.modules, "langgraph.types", None)
 
     client = _client()
-    with client.decision(session_id="s", request_id="r") as dec, pytest.raises(
-        RuntimeError, match="langgraph",
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(
+            RuntimeError,
+            match="langgraph",
+        ),
     ):
         escalate(dec, EscalationSummary(reason="x"))
