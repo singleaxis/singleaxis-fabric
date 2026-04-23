@@ -9,9 +9,14 @@ on:
     # Weekly scan to catch newly disclosed issues in pinned deps.
     - cron: "0 6 * * 1"
 
+# Top-level permissions must stay read-only so ossf/scorecard-action can
+# publish its signed result to the public Scorecard webapp. When
+# `security-events: write` is set at the workflow level, scorecard's
+# sigstore/Fulcio verification rejects the upload with a 400 (see
+# https://github.com/ossf/scorecard-action#workflow-restrictions).
+# Write scopes are granted per-job only.
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   gitleaks:
@@ -35,6 +40,10 @@ jobs:
   trivy-fs:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed to upload trivy-fs.sarif to the Code Scanning API.
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       # Pin is `v`-prefixed — upstream dropped unprefixed release tags.
@@ -63,6 +72,10 @@ jobs:
     runs-on: ubuntu-latest
     container: semgrep/semgrep
     if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    permissions:
+      contents: read
+      # Needed to upload semgrep.sarif to the Code Scanning API.
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - name: Run Semgrep
