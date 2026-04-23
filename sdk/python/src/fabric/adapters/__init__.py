@@ -7,8 +7,8 @@ Each submodule wires Fabric's primitives (``Decision``,
 interrupt and state-pausing conventions. The modules are optional —
 they are only importable when the matching extras are installed:
 
-  * ``fabric.adapters.langgraph`` — requires ``fabric-sdk[langgraph]``
-    (``pip install "fabric-sdk[langgraph]"``).
+  * ``fabric.adapters.langgraph`` — requires ``singleaxis-fabric[langgraph]``
+    (``pip install "singleaxis-fabric[langgraph]"``).
 
 Core Fabric SDK code MUST NOT import from this package. Adapters
 depend on core; core never depends on adapters.

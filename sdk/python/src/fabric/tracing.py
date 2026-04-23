@@ -22,7 +22,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 
 from ._version import __version__
 
-FABRIC_SDK_NAME = "fabric-sdk-python"
+FABRIC_SDK_NAME = "singleaxis-fabric-python"
 """``service.name`` fallback applied when the host hasn't set one."""
 
 

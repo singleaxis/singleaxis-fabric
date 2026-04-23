@@ -25,7 +25,7 @@ specs will be revised in follow-up PRs to conform with this one.
 ## Goals
 
 1. **Maximize Layer 1 adoption as a services lead funnel.** Every
-   `pip install fabric-sdk` is a potential implementation conversation.
+   `pip install singleaxis-fabric` is a potential implementation conversation.
 2. **Hold Layer 2 internally to encode SingleAxis's accumulated
    learning.** Cross-tenant pattern recognition, advanced Context Graph
    analytics, judge routing, and rubric content are services

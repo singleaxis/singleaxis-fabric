@@ -55,7 +55,7 @@ Typical usage::
 
 Install the adapter via::
 
-    pip install "fabric-sdk[crewai]"
+    pip install "singleaxis-fabric[crewai]"
 
 Core Fabric code does not import from this module; the optional
 ``crewai`` dependency is referenced only through duck typing on the

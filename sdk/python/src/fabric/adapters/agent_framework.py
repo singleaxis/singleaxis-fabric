@@ -45,7 +45,7 @@ Typical usage inside an executor::
 
 Install the adapter via::
 
-    pip install "fabric-sdk[agent-framework]"
+    pip install "singleaxis-fabric[agent-framework]"
 
 Core Fabric code does NOT import from this module; the optional
 ``agent-framework`` dependency is referenced only through duck typing

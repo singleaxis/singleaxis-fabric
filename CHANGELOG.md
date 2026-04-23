@@ -6,6 +6,43 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-rc.3] - 2026-04-24
+
+Re-cut of `0.1.0-rc.2` with the Python distribution renamed and an
+actual PyPI publish step wired in. Up to rc.2 the quickstart told
+prospects to `pip install fabric-sdk` — that name is squatted on
+PyPI by an abandoned unrelated Hyperledger SDK, so anyone following
+the quickstart got the wrong package. No functional changes to
+Fabric itself.
+
+### Changed
+
+- **Python distribution renamed** `fabric-sdk` → `singleaxis-fabric`.
+  Import path is unchanged: `from fabric import ...` still works
+  (the module name stays `fabric`, only the PyPI distribution name
+  changed). Mirrors the standard pattern where distribution name
+  and module name differ (`opencv-python` / `cv2`, `PyYAML` / `yaml`).
+- **OTel instrumentation scope** constant `FABRIC_SDK_NAME` now
+  emits `singleaxis-fabric-python` instead of `fabric-sdk-python`,
+  so dashboards keying off `telemetry.sdk.name` see the new name.
+
+### Added
+
+- **`release.yml` `publish-pypi` job** using PyPA trusted publishing
+  (no PyPI API token needed — keyless OIDC exchange). Builds both
+  sdist and wheel from `sdk/python/` and uploads on every `v*.*.*`
+  tag. `skip-existing: true` so a re-run on the same version is a
+  no-op rather than a hard failure.
+
+### Operator action required
+
+- Before tagging `v0.1.0-rc.3`, configure a **pending publisher**
+  on [pypi.org](https://pypi.org/manage/account/publishing/):
+  project = `singleaxis-fabric`, owner = `ai5labs`, repo =
+  `singleaxis-fabric`, workflow = `release.yml`. Takes ~2 min and
+  is only needed once; after the first successful publish PyPI
+  promotes it to a regular trusted publisher automatically.
+
 ## [0.1.0-rc.2] - 2026-04-23
 
 Re-cut of `0.1.0-rc.1` to exercise the signing path end-to-end. No
@@ -65,7 +102,7 @@ been exercised against a real tag. See Known issues below.
   - `eu-ai-act-high-risk` — fail-closed redact provider, signed updates,
     observability required
     ([009-compliance-mapping.md](specs/009-compliance-mapping.md)).
-- **Python SDK `fabric-sdk`** (`sdk/python`) with inline guardrails,
+- **Python SDK `singleaxis-fabric`** (`sdk/python`) with inline guardrails,
   decision/escalation helpers, Presidio + NeMo clients over UDS,
   HMAC-signed sampler hints, retrieval/memory wrappers, OTel tracing,
   and orchestration adapters for LangGraph, Microsoft Agent Framework,

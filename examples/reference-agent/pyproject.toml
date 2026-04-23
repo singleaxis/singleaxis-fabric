@@ -11,7 +11,7 @@ license = "Apache-2.0"
 requires-python = ">=3.12"
 authors = [{ name = "AI5 Labs, Inc.", email = "fabric@ai5labs.com" }]
 dependencies = [
-  "fabric-sdk",
+  "singleaxis-fabric",
 ]
 
 [project.optional-dependencies]
@@ -27,7 +27,7 @@ fabric-reference-agent = "fabric_reference_agent.__main__:main"
 packages = ["src/fabric_reference_agent"]
 
 [tool.uv.sources]
-fabric-sdk = { path = "../../sdk/python", editable = true }
+singleaxis-fabric = { path = "../../sdk/python", editable = true }
 
 [tool.pytest.ini_options]
 minversion = "8.0"
