@@ -52,7 +52,7 @@ All of it is Apache-2.0.
   VPC.
 - **Specs** — the design of record in [`specs/`](specs/).
 
-`pip install fabric-sdk`, `helm install fabric`, no signup, no
+`pip install singleaxis-fabric`, `helm install fabric`, no signup, no
 phone-home.
 
 ## What's not in this repo

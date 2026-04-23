@@ -11,13 +11,13 @@ license = "Apache-2.0"
 requires-python = ">=3.12"
 authors = [{ name = "AI5 Labs, Inc.", email = "fabric@ai5labs.com" }]
 dependencies = [
-  "fabric-sdk",
+  "singleaxis-fabric",
   "opentelemetry-sdk>=1.28,<2.0",
   "opentelemetry-exporter-otlp-proto-http>=1.28,<2.0",
 ]
 
 [tool.uv.sources]
-fabric-sdk = { path = "../../sdk/python", editable = true }
+singleaxis-fabric = { path = "../../sdk/python", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]

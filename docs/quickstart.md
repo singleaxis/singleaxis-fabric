@@ -13,12 +13,12 @@ guardrail sidecars and real judges are optional layers you add later.
 ## 1. Install the SDK
 
 ```bash
-pip install fabric-sdk
+pip install singleaxis-fabric
 # Extras are opt-in (core stays framework-neutral):
-pip install "fabric-sdk[otlp]"             # OTLP/HTTP exporter
-pip install "fabric-sdk[langgraph]"        # LangGraph adapter
-pip install "fabric-sdk[agent-framework]"  # MS Agent Framework
-pip install "fabric-sdk[crewai]"           # CrewAI adapter
+pip install "singleaxis-fabric[otlp]"             # OTLP/HTTP exporter
+pip install "singleaxis-fabric[langgraph]"        # LangGraph adapter
+pip install "singleaxis-fabric[agent-framework]"  # MS Agent Framework
+pip install "singleaxis-fabric[crewai]"           # CrewAI adapter
 ```
 
 ## 2. Wrap one agent turn

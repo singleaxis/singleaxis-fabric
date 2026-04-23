@@ -1,4 +1,4 @@
-# fabric-sdk-python
+# singleaxis-fabric (Python SDK)
 
 Native Python SDK that tenant agents import in-process. Provides the
 decision-span contract, guardrail/escalation types, OTel plumbing,
@@ -112,11 +112,11 @@ core install does not pull in any orchestration package.
 ## Install
 
 ```bash
-pip install fabric-sdk                         # core
-pip install "fabric-sdk[otlp]"                 # + OTLP/HTTP exporter
-pip install "fabric-sdk[langgraph]"            # + LangGraph adapter
-pip install "fabric-sdk[agent-framework]"      # + MAF adapter
-pip install "fabric-sdk[crewai]"               # + CrewAI adapter
+pip install singleaxis-fabric                         # core
+pip install "singleaxis-fabric[otlp]"                 # + OTLP/HTTP exporter
+pip install "singleaxis-fabric[langgraph]"            # + LangGraph adapter
+pip install "singleaxis-fabric[agent-framework]"      # + MAF adapter
+pip install "singleaxis-fabric[crewai]"               # + CrewAI adapter
 ```
 
 ## Quick start

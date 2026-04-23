@@ -33,7 +33,7 @@ the signed verdict returned by the escalation service.
 
 Install the adapter via::
 
-    pip install "fabric-sdk[langgraph]"
+    pip install "singleaxis-fabric[langgraph]"
 
 Core Fabric code does NOT import from this module; the optional
 ``langgraph`` dependency is loaded lazily inside ``escalate`` so the
@@ -72,7 +72,7 @@ def escalate(decision: Decision, summary: EscalationSummary) -> Any:
     ------
     RuntimeError
         If ``langgraph`` is not installed. Install the optional extra:
-        ``pip install "fabric-sdk[langgraph]"``.
+        ``pip install "singleaxis-fabric[langgraph]"``.
     """
 
     try:
@@ -80,7 +80,7 @@ def escalate(decision: Decision, summary: EscalationSummary) -> Any:
     except ImportError as exc:  # pragma: no cover — exercised via monkey-patched import
         raise RuntimeError(
             "fabric.adapters.langgraph requires the optional 'langgraph' extra: "
-            "pip install 'fabric-sdk[langgraph]'",
+            "pip install 'singleaxis-fabric[langgraph]'",
         ) from exc
 
     decision.request_escalation(summary)

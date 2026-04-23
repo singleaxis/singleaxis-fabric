@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fabric-sdk"
+name = "singleaxis-fabric"
 description = "SingleAxis Fabric SDK for Python — inline guardrails, memory, tracing, escalation helpers."
 readme = "README.md"
 license = "Apache-2.0"

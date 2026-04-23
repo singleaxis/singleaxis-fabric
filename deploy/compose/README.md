@@ -56,7 +56,7 @@ FABRIC_PROFILE=eu-ai-act-high-risk make up-bootstrap
 ### Option 1 — Fabric SDK (Python, recommended)
 
 ```python
-# pip install fabric-sdk
+# pip install singleaxis-fabric
 from fabric import FabricClient, DecisionContext
 
 client = FabricClient(
