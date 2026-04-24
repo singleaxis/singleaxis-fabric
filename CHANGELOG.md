@@ -6,6 +6,53 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-rc.4] - 2026-04-24
+
+Re-cut of `0.1.0-rc.3` (yanked on PyPI) with the Python distribution
+version now derived from the git tag at build time, plus the GitHub
+org rebrand from `ai5labs` to `singleaxis`. No functional changes to
+Fabric itself.
+
+rc.3 was yanked because the SDK hardcoded `_version.py = "0.1.0"`
+while the tag was `v0.1.0-rc.3`. PEP 440 would have normalized the
+tag to `0.1.0rc3`, but the static version meant PyPI received the
+pre-release artifact in the stable `0.1.0` slot — pre-release code
+masquerading as GA. rc.4 moves the version source to the tag (via
+hatch-vcs) so every build wears the version its tag commits to.
+
+### Changed
+
+- **Python version is now derived from the git tag** via `hatch-vcs`
+  (`[tool.hatch.version] source = "vcs"`). The previous static
+  `_version.py` is replaced by an `importlib.metadata` runtime
+  lookup that reads whatever PyPI gave the installed distribution.
+  Dev checkouts without a tag resolve to `0.0.0.dev0`.
+- **GitHub org** `ai5labs/singleaxis-fabric` → `singleaxis/singleaxis-fabric`.
+  GitHub creates redirects for old URLs, but hardcoded refs have been
+  rewritten: 4 collector-processor `go.mod` declarations,
+  `ocb-config.yaml` gomod + replace directives, `sdk/python/pyproject.toml`
+  project URLs, quickstart clone URL, lychee URL exclusions,
+  CHANGELOG link-refs, ISSUE_TEMPLATE contact links, CODEOWNERS
+  comment.
+- **Container image** published to `ghcr.io/singleaxis/fabric-otelcol`
+  (was `ghcr.io/ai5labs/...`). Release workflow uses
+  `${{ github.repository_owner }}` so this change is automatic.
+
+### Fixed
+
+- **OpenSSF Scorecard workflow permissions** — top-level
+  `permissions: security-events: write` was rejecting Sigstore/Fulcio
+  webapp publishing with HTTP 400. Scoped `security-events: write`
+  per-job (`trivy-fs`, `semgrep`); Scorecard's job keeps its own
+  block. Top-level stays read-only so Fulcio accepts the SARIF.
+
+### Operator action required
+
+- If you were tracking a PyPI pending-publisher on `ai5labs/singleaxis-fabric`,
+  update the owner to `singleaxis`. Trusted publishing is bound to
+  the full `owner/repo` path, so the old config stops matching after
+  the transfer. Done before this tag was cut.
+
 ## [0.1.0-rc.3] - 2026-04-24
 
 Re-cut of `0.1.0-rc.2` with the Python distribution renamed and an
@@ -215,5 +262,8 @@ _(nothing yet)_
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.0-rc.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.0-rc.4...HEAD
+[0.1.0-rc.4]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.4
+[0.1.0-rc.3]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.3
+[0.1.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.1
