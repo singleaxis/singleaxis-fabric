@@ -51,7 +51,9 @@ otelCollector:
 #         name: fabric-otel-sampler-key
 
 nemoSidecar:
-  enabled: true       # starter Colang bundle ships with the subchart
+  enabled: false      # image published from v0.2.0; until then, build locally
+                      # from components/nemo-sidecar/Dockerfile and override
+                      # nemo-sidecar.image.repository
 # nemo-sidecar:
 #   rails:
 #     bundlePath: /etc/fabric/rails
