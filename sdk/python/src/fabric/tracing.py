@@ -1,4 +1,4 @@
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """OpenTelemetry plumbing used by the Fabric SDK.
 

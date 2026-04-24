@@ -1,4 +1,4 @@
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """Reference agent that exercises every SDK surface a Phase-1 tenant
 will touch:

@@ -1,4 +1,4 @@
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """SingleAxis Fabric — pre-apply manifest verification for the
 update-agent channel. See ``specs/008-deployment-model.md`` for the

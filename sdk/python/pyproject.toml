@@ -9,7 +9,7 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "AI5 Labs, Inc.", email = "fabric@ai5labs.com" }]
+authors = [{ name = "AI5Labs Research OPC Private Limited", email = "fabric@singleaxis.ai" }]
 keywords = ["singleaxis", "fabric", "llm", "agent", "guardrails", "otel", "compliance"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",

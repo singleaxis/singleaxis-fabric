@@ -114,7 +114,7 @@ security findings.
 
 ## Governance
 
-Fabric is maintained by AI5 Labs, Inc. (SingleAxis) as an open project.
+Fabric is maintained by AI5Labs Research OPC Private Limited (SingleAxis) as an open project.
 See [`GOVERNANCE.md`](GOVERNANCE.md) for decision-making, maintainer
 appointment, and release processes.
 

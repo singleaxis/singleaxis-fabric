@@ -9,7 +9,7 @@ description = "End-to-end smoke test for the SingleAxis Fabric integration harne
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
-authors = [{ name = "AI5 Labs, Inc.", email = "fabric@ai5labs.com" }]
+authors = [{ name = "AI5Labs Research OPC Private Limited", email = "fabric@singleaxis.ai" }]
 dependencies = [
   "singleaxis-fabric",
   "opentelemetry-sdk>=1.28,<2.0",

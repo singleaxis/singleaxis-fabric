@@ -289,7 +289,7 @@ Every source file carries a SPDX header:
 
 ```
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 AI5 Labs, Inc.
+# SPDX-FileCopyrightText: 2026 AI5Labs Research OPC Private Limited
 ```
 
 Enforced by a pre-commit hook.

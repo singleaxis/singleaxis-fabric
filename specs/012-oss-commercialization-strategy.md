@@ -182,7 +182,7 @@ not calendar time or feature completeness.
 - **Public Fabric repo:** Apache-2.0 for everything in-tree. No BSL, no
   AGPL, no dual-license tiers.
 - **Trademark:** "SingleAxis", "SASF", and the "Fabric" word mark are
-  trademarks of AI5 Labs, Inc. Not licensed under Apache-2.0. See
+  trademarks of AI5Labs Research OPC Private Limited Not licensed under Apache-2.0. See
   `GOVERNANCE.md`.
 - **Internal tooling:** private repo, no license granted to third
   parties.

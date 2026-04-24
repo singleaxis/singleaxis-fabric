@@ -1,6 +1,6 @@
 # Governance
 
-SingleAxis Fabric is an open-source project maintained by AI5 Labs, Inc.
+SingleAxis Fabric is an open-source project maintained by AI5Labs Research OPC Private Limited
 (operating as SingleAxis). This document describes how decisions are made,
 how maintainers are appointed, and what the relationship is between the
 SingleAxis commercial services and the open-source project.
@@ -10,10 +10,10 @@ SingleAxis commercial services and the open-source project.
 Fabric is a **"single-vendor-led, community-open"** project in the style of
 HashiCorp Terraform, Grafana, or Sentry (pre-fork).
 
-- AI5 Labs, Inc. is the copyright and trademark holder.
+- AI5Labs Research OPC Private Limited is the copyright and trademark holder.
 - The code is Apache-2.0 licensed (see `LICENSE`).
 - The `SingleAxis`, `SASF`, and Fabric word marks are trademarks of
-  AI5 Labs, Inc. and **not** covered by the Apache licence.
+  AI5Labs Research OPC Private Limited and **not** covered by the Apache licence.
 - Contributions are accepted under the DCO; no CLA is required.
 - The roadmap is set publicly via the `specs/` directory and issues.
 
@@ -107,7 +107,7 @@ approved by any two maintainers.
 
 ## Commercial services
 
-AI5 Labs, Inc. operates commercial offerings around Fabric:
+AI5Labs Research OPC Private Limited operates commercial offerings around Fabric:
 
 - Deployment into tenant VPCs
 - Ongoing maintenance and upgrades
@@ -130,7 +130,7 @@ is fully functional standalone. We commit to:
 ## Trademark policy
 
 The `SingleAxis`, `SASF`, and `Fabric` word marks (and any associated
-logos) are trademarks of AI5 Labs, Inc.
+logos) are trademarks of AI5Labs Research OPC Private Limited
 
 You may:
 
@@ -141,10 +141,10 @@ You may:
 You may not, without written permission:
 
 - Use the marks in a product name or service name
-- Imply endorsement or certification by SingleAxis or AI5 Labs, Inc.
+- Imply endorsement or certification by SingleAxis or AI5Labs Research OPC Private Limited
 - Use the logos in marketing materials for a derivative product
 
-For clarifications, contact `legal@ai5labs.com`.
+For clarifications, contact `legal@singleaxis.ai`.
 
 ## Changes to this document
 

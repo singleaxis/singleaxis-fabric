@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 #
 # Two-stage image: a ``base`` layer installing only the runner itself,
