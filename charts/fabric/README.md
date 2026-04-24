@@ -95,11 +95,14 @@ charts/fabric/
     └── eu-ai-act-high-risk.yaml
 ```
 
-## Release signing (Phase 2)
+## Release signing
 
-Charts are signed with `cosign` and published with a `.prov`
-provenance file. Phase 1 publishes unsigned from-source tarballs;
-the signing pipeline lands with the Update Agent channel.
+From `0.1.0`, the `otel-collector` OCI chart artifact is signed
+keylessly with [cosign](https://www.sigstore.dev/) via Fulcio.
+Umbrella-chart OCI publishing and Helm `.prov` provenance files are
+on the Phase 2 roadmap; until then, build from source for the
+umbrella. Verification instructions ship with each release — see
+[`SECURITY.md`](../../SECURITY.md) §Release signing.
 
 ## Testing
 

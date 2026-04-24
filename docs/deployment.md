@@ -75,11 +75,12 @@ for the layer split.
 | Disaster recovery | Stateless components recoverable from Git; stateful services (Postgres, NATS) follow standard backup practice | [`operations/dr.md`](operations/dr.md) |
 | Upgrade channel | Manual `helm upgrade` in Phase 1a; signed manifest channel + Update Agent in Phase 2 | Chart [`README`](../charts/fabric/README.md) |
 | High availability | `profile.availability: ha` opt-in (3-node NATS, replicated Postgres, ≥2 worker replicas) | [`specs/008-deployment-model.md`](../specs/008-deployment-model.md) |
-| Image signing | Planned for Phase 2 (cosign + `.prov` + SBOM) | Chart [`README`](../charts/fabric/README.md) §Release signing |
+| Image signing | Cosign (keyless via Fulcio), SLSA build provenance, SBOM shipped from `0.1.0`; Helm `.prov` on roadmap | [`SECURITY.md`](../SECURITY.md) §Release signing |
 
 ## Roadmap / not yet shipping
 
-Signed chart releases (`.prov`); SLSA L3 build attestation (0.3.0);
-NIST RMF / ISO 42001 / SR 11-7 / HIPAA profiles; Context Graph and
-Telemetry Bridge subcharts. See the chart README and spec 008 for
-current Phase 2 scope.
+Helm `.prov` provenance files (cosign signing of OCI charts is the
+current path); NIST RMF / ISO 42001 / SR 11-7 / HIPAA profiles;
+Context Graph and Telemetry Bridge subcharts; umbrella-chart OCI
+publishing. See the chart README and spec 008 for current Phase 2
+scope.
