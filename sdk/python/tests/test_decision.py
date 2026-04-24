@@ -1,4 +1,4 @@
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """Decision context manager behaviour — span shape, block recording,
 exception handling."""

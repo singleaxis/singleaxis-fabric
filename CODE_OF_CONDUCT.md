@@ -41,7 +41,7 @@ Examples of unacceptable behaviour:
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may
 be reported confidentially to the maintainers at
-`fabric-conduct@ai5labs.com`. All complaints will be reviewed and
+`fabric-conduct@singleaxis.ai`. All complaints will be reviewed and
 investigated promptly and fairly. Maintainers are obligated to respect the
 privacy and security of the reporter of any incident.
 

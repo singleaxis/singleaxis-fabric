@@ -159,4 +159,4 @@ project.
 ## Questions
 
 For general questions, open a Discussion. For private questions, email
-`fabric-maintainers@ai5labs.com`.
+`fabric-maintainers@singleaxis.ai`.

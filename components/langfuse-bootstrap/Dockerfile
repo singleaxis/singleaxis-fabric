@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 
 FROM python:3.12-slim AS base

@@ -16,7 +16,7 @@ project's technical direction is led by the AI5 Labs technical lead.
 
 | Name  | GitHub     | Email                | Areas |
 |-------|------------|----------------------|-------|
-| Bryan | @jrcks67   | bryan@ai5labs.com    | All   |
+| Bryan | @jrcks67   | bryan@singleaxis.ai    | All   |
 
 ## Core maintainers
 
@@ -26,7 +26,7 @@ primary component ownership.
 
 | Name  | GitHub   | Component | Email             |
 |-------|----------|-----------|-------------------|
-| Bryan | @jrcks67 | All       | bryan@ai5labs.com |
+| Bryan | @jrcks67 | All       | bryan@singleaxis.ai |
 
 ## Component maintainers
 
@@ -72,6 +72,6 @@ addresses below if you are interested.
 
 ## How to reach a maintainer privately
 
-- Security: `security@ai5labs.com` (see [`SECURITY.md`](SECURITY.md))
-- Code of Conduct: `fabric-conduct@ai5labs.com`
-- General: `fabric-maintainers@ai5labs.com`
+- Security: `security@singleaxis.ai` (see [`SECURITY.md`](SECURITY.md))
+- Code of Conduct: `fabric-conduct@singleaxis.ai`
+- General: `fabric-maintainers@singleaxis.ai`

@@ -1,4 +1,4 @@
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """Shared fixtures. Generates an Ed25519 keypair once per session so
 tests can produce real (not mocked) signatures — the signature code

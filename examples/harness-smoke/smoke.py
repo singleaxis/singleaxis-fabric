@@ -1,4 +1,4 @@
-# Copyright 2026 AI5 Labs, Inc.
+# Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """End-to-end smoke test against the local Fabric integration harness.
 
@@ -79,7 +79,7 @@ def _happy_path(fabric: Fabric) -> None:
         request_id="req-" + uuid.uuid4().hex[:8],
         user_id="alice",
     ) as decision:
-        clean_input = decision.guard_input("What's on my account, bryan@ai5labs.com?")
+        clean_input = decision.guard_input("What's on my account, bryan@singleaxis.ai?")
         decision.record_retrieval(
             source=RetrievalSource.RAG,
             query=clean_input,

@@ -28,7 +28,7 @@ Report privately via either channel:
 1. **GitHub Security Advisory** — the preferred path; use the
    "Report a vulnerability" button on the project's Security tab. This
    creates a private, coordinated disclosure thread with the maintainers.
-2. **Email** — `security@ai5labs.com`, PGP-encrypted if the finding
+2. **Email** — `security@singleaxis.ai`, PGP-encrypted if the finding
    includes proof-of-concept or exploitable details. PGP key fingerprint
    and public key will be published at `https://ai5labs.com/.well-known/security.txt`
    once the project is public.
