@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25.0"]
+requires = ["hatchling>=1.25.0", "hatch-vcs>=0.4.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -63,7 +63,20 @@ Documentation = "https://github.com/ai5labs/singleaxis-fabric/blob/main/specs/00
 Issues        = "https://github.com/ai5labs/singleaxis-fabric/issues"
 
 [tool.hatch.version]
-path = "src/fabric/_version.py"
+# Version is derived from the git tag at build time via hatch-vcs so the
+# wheel that lands on PyPI always matches the tag.
+#
+# `raw-options.root = "../.."` points setuptools-scm at the repo root
+# because this pyproject lives in `sdk/python/` rather than the top of
+# the git tree. `fallback_version` protects source installs from
+# tarballs where no `.git` is present.
+#
+# Intentional: no `[tool.hatch.build.hooks.vcs]` block — runtime reads
+# `__version__` from installed package metadata via `importlib.metadata`
+# (see `src/fabric/_version.py`), so there is no generated-file to
+# overwrite on every build.
+source = "vcs"
+raw-options = { root = "../..", fallback_version = "0.0.0.dev0" }
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/tests", "/README.md", "/LICENSE"]
