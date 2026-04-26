@@ -6,6 +6,78 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-rc.5] - 2026-04-27
+
+Hardening pass over the v0.1.0 release surface. Bundles the four PRs
+landed since rc.4 (#20, #21, #22, #23). No functional SDK changes;
+tenant-facing API stable.
+
+### Changed
+
+- **README rewritten** for customer clarity (#22). Adds badges, a
+  "why Fabric" framing, concrete feature list with tech-stack
+  links, copy-paste 60-second example, working Helm-from-source
+  install, ASCII request-path diagram, and a documentation lookup
+  table. Replaces the OSS-vs-services-first intro that buried the
+  install path.
+- **Apache copyright legal entity** corrected to *AI5Labs Research
+  OPC Private Limited* and role emails switched to `singleaxis.ai`
+  (#20).
+- **GitHub Actions bumped to latest majors** (#23): `checkout` v4 →
+  v6, `setup-python` v5 → v6, `setup-go` v5 → v6, `codeql-action` v3
+  → v4, `action-gh-release` v2 → v3. All Node 20 → 24 runtime bumps
+  with no flag-affecting API change.
+- **`cryptography`** upper bound widened to `<47.0` for the
+  update-agent (#23). Patches CVE-2026-39892, CVE-2026-34073,
+  CVE-2026-26007.
+- **OpenTelemetry floor** raised to `>=1.41` across `api`, `sdk`, and
+  `otlp` exporter (#23). Previous floor of 1.27 was three years
+  stale.
+- **`langgraph`** and **`crewai`** upper bounds widened to `<2.0`
+  (#23) so the optional adapter extras pick up langgraph 1.x and
+  crewai 1.x without manual intervention.
+- **`litellm`** force-pinned to `>=1.83.7` (#22) to fix
+  GHSA-xqmj-j6mv-4862 (HIGH, RCE in LiteLLM Proxy `/prompts/test`).
+  Transitive via `crewai`; core install unaffected.
+- **`nemo-sidecar` Dockerfile** rewritten as multi-stage (#21) so
+  the `annoy` C++ extension builds against `build-essential` in a
+  builder stage and the runtime image stays slim.
+- **`charts/fabric` defaults** flipped `nemoSidecar.enabled: false`
+  (#21) so a stock install does not `ImagePullBackOff` against an
+  image that does not yet publish.
+- **Signing posture aligned** across `SECURITY.md`,
+  `docs/deployment.md`, and `charts/fabric/README.md` (#21, #22).
+  Documents now agree: cosign + SLSA + SBOM ship from `0.1.0`; Helm
+  `.prov` provenance is a roadmap item.
+
+### Added
+
+- **Sidecar image build (PR smoke)** matrix CI job (#21) — builds
+  all five sidecar Dockerfiles on every PR so a regression like the
+  rc.4 nemo build break surfaces in review, not at release.
+
+### Fixed
+
+- **DCO check skips merge commits** (#22) via `git rev-list
+  --no-merges`. The synthetic merge commit GitHub creates on
+  "Update branch" has no DCO trailer and was failing the check
+  even when every authored commit was signed off.
+- **`commitlint` subject-case rule disabled** (#23). Was rejecting
+  Dependabot's `Bump X from Y to Z` capitalization and silently
+  blocking every dep update.
+- **CodeQL Go autobuild Go version pin** corrected to 1.25 (#23).
+  Latent issue exposed by `setup-go@v6` enforcing local toolchain;
+  the otel-collector processors require Go 1.25 in their `go.mod`.
+- **Lychee link-check excludes** for `slsa.dev` (#22) and
+  `securityscorecards.dev` (#23). Both flake on connection-reset
+  under CI crawl bursts.
+
+### Operator action required
+
+None for tenants upgrading from rc.4. Bumping `litellm` and OTel
+floors is transparent at install; pinned environments continue to
+resolve.
+
 ## [0.1.0-rc.4] - 2026-04-24
 
 Re-cut of `0.1.0-rc.3` (yanked on PyPI) with the Python distribution
