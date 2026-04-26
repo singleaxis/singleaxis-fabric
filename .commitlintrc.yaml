@@ -9,3 +9,9 @@ rules:
   scope-case: [2, "always", "kebab-case"]
   body-max-line-length: [2, "always", 100]
   footer-max-line-length: [2, "always", 100]
+  # Dependabot writes "Bump X from Y to Z" with capital B. The
+  # @commitlint/config-conventional default rejects that under
+  # subject-case=lower. Disabling lets dependabot PRs pass without
+  # per-PR title rewrites; humans get no functional looseness because
+  # all merge titles are reviewed before squash.
+  subject-case: [0]
