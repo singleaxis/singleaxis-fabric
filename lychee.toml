@@ -58,4 +58,9 @@ exclude = [
   # under CI crawl bursts even with retries. The link is the canonical
   # SLSA spec reference in SECURITY.md and isn't moving.
   "^https://slsa\\.dev/",
+
+  # securityscorecards.dev times out under CI crawl bursts. Used as
+  # the OpenSSF Scorecard badge target in README.md plus a reference
+  # in specs/010-development-standards.md.
+  "^https://securityscorecards\\.dev/",
 ]
