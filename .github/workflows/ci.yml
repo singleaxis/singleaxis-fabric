@@ -323,6 +323,33 @@ jobs:
           docker run --rm --entrypoint=/otelcol-fabric fabric-otelcol:pr --help \
             | head -5
 
+  sidecar-image-build:
+    name: Sidecar image build (PR smoke)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - presidio-sidecar
+          - nemo-sidecar
+          - redteam-runner
+          - update-agent
+          - langfuse-bootstrap
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.component }} (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: components/${{ matrix.component }}
+          file: components/${{ matrix.component }}/Dockerfile
+          push: false
+          load: true
+          tags: fabric-${{ matrix.component }}:pr
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
   trivy-scan:
     name: Trivy container scan (PR)
     runs-on: ubuntu-latest
