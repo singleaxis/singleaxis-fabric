@@ -100,11 +100,16 @@ See [`specs/004-telemetry-bridge.md`](specs/004-telemetry-bridge.md) and
 
 Starting at `0.1.0`:
 
-- Container images signed with [Sigstore cosign](https://www.sigstore.dev/).
-- Helm chart provenance files (`.prov`) published with each release.
-- [SLSA](https://slsa.dev/) level 3 build provenance attestations.
+- Container images signed with [Sigstore cosign](https://www.sigstore.dev/)
+  (keyless via Fulcio).
+- Helm chart artifacts signed with Sigstore cosign.
+- [SLSA](https://slsa.dev/) level 3 build provenance attestations for
+  images and release tarballs.
 - Software Bill of Materials (SBOM) in SPDX and CycloneDX formats, per
   release.
+
+Helm chart `.prov` provenance files are a roadmap item for a future
+minor release — cosign signing of the OCI artifact is the current path.
 
 Verification instructions are published alongside each release.
 

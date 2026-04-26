@@ -123,6 +123,6 @@ appointment, and release processes.
 Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE)
 and [`NOTICE`](NOTICE).
 
-SingleAxis, SASF, and the Fabric word mark are trademarks of AI5 Labs,
-Inc. The trademarks are **not** licensed under Apache-2.0; see
-[`GOVERNANCE.md`](GOVERNANCE.md) for the trademark policy.
+SingleAxis, SASF, and the Fabric word mark are trademarks of AI5Labs
+Research OPC Private Limited. The trademarks are **not** licensed under
+Apache-2.0; see [`GOVERNANCE.md`](GOVERNANCE.md) for the trademark policy.
