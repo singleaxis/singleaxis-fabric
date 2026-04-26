@@ -31,7 +31,7 @@ jobs:
         # CodeQL picks up .go files across the repo by default.
         language: [python, go]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
         if: matrix.language == 'python'

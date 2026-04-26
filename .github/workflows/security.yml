@@ -23,7 +23,7 @@ jobs:
     name: Secret scanning (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       # gitleaks-action@v2 now requires a paid licence for orgs. Run
@@ -45,7 +45,7 @@ jobs:
       # Needed to upload trivy-fs.sarif to the Code Scanning API.
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Pin is `v`-prefixed — upstream dropped unprefixed release tags.
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -77,7 +77,7 @@ jobs:
       # Needed to upload semgrep.sarif to the Code Scanning API.
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run Semgrep
         run: semgrep scan --config auto --sarif --output semgrep.sarif
       - uses: github/codeql-action/upload-sarif@v3
@@ -89,7 +89,7 @@ jobs:
     name: OSV dependency scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: google/osv-scanner-action/osv-scanner-action@v1.9.0
         with:
           scan-args: |-
@@ -107,7 +107,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: ossf/scorecard-action@v2.4.0

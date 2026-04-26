@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: ci-green
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Ensure tag points to a commit on main
@@ -64,7 +64,7 @@ jobs:
     outputs:
       notes: ${{ steps.extract.outputs.notes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: extract
         name: Extract release notes for this version
         run: |
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify-tag
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [verify-tag, sbom]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           name: sbom
@@ -183,7 +183,7 @@ jobs:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository_owner }}/fabric-otelcol
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
@@ -248,7 +248,7 @@ jobs:
       OCI_REF: oci://ghcr.io/${{ github.repository_owner }}/charts
       CHART_DIR: charts/fabric/charts/otel-collector
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: azure/setup-helm@v4
         with:
           version: "v3.15.0"
@@ -310,7 +310,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
