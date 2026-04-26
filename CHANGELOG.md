@@ -315,22 +315,22 @@ been exercised against a real tag. See Known issues below.
 ## [Unreleased]
 
 ### Added
-_(nothing yet)_
+*(nothing yet)*
 
 ### Changed
-_(nothing yet)_
+*(nothing yet)*
 
 ### Deprecated
-_(nothing yet)_
+*(nothing yet)*
 
 ### Removed
-_(nothing yet)_
+*(nothing yet)*
 
 ### Fixed
-_(nothing yet)_
+*(nothing yet)*
 
 ### Security
-_(nothing yet)_
+*(nothing yet)*
 
 ---
 
