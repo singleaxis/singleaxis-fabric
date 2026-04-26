@@ -22,26 +22,26 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-  "opentelemetry-api>=1.27",
-  "opentelemetry-sdk>=1.27",
+  "opentelemetry-api>=1.41",
+  "opentelemetry-sdk>=1.41",
   "pydantic>=2.8,<3.0",
 ]
 
 [project.optional-dependencies]
 otlp = [
-  "opentelemetry-exporter-otlp-proto-http>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.41",
 ]
 # Orchestration-framework adapters. Each extra pulls exactly the
 # upstream package its matching `fabric.adapters.*` module imports —
 # core SDK install stays free of orchestration dependencies.
 langgraph = [
-  "langgraph>=0.2,<1.0",
+  "langgraph>=0.2,<2.0",
 ]
 agent-framework = [
   "agent-framework-core>=0.1,<2.0",
 ]
 crewai = [
-  "crewai>=0.80,<1.0",
+  "crewai>=0.80,<2.0",
   # Force-upgrade litellm (transitive via crewai) past CVE-2026-35030
   # (critical) / CVE-2026-35029 (high) / GHSA-69x8-hrgq-fjj8 (high) /
   # GHSA-xqmj-j6mv-4862 (high — RCE via /prompts/test, fixed in 1.83.7).
@@ -54,7 +54,7 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.6.9",
   "mypy>=1.11.2",
-  "opentelemetry-exporter-otlp-proto-http>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.41",
 ]
 
 [project.urls]
