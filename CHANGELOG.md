@@ -6,6 +6,31 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-04-27
+
+**First publishable GA on PyPI.** Functionally identical to `0.1.0`
+in this repository (same code, same image, same Helm chart, same
+SBOMs); cut as a fresh version solely to clear the PyPI release
+slot.
+
+The PyPI `0.1.0` slot holds a stale pre-cleanup artifact uploaded
+on 2026-04-23 — before the strategic-content scrub that landed in
+PR #26 and the history rewrite that produced the current main.
+That artifact has been yanked and remains yanked; the
+`skip-existing: true` flag on the publish action prevented the
+post-cleanup `0.1.0` build from overwriting it. Cutting `0.1.1`
+sidesteps the slot entirely so the GA artifact reaches PyPI as a
+fresh upload.
+
+`pip install singleaxis-fabric` will resolve to `0.1.1`. Container
+image `ghcr.io/singleaxis/fabric-otelcol:0.1.0` and the OCI Helm
+chart at `0.1.0` remain the canonical names there (unaffected by
+the PyPI slot conflict). Every artifact in the `0.1.1` GitHub
+release matches the `0.1.0` artifact set bit-for-bit except the
+Python wheel and sdist, which carry the new version string.
+
+See `[0.1.0]` below for the complete shipping surface.
+
 ## [0.1.0] - 2026-04-27
 
 **Initial general-availability release** of SingleAxis Fabric — the
@@ -466,7 +491,8 @@ been exercised against a real tag. See Known issues below.
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.1
 [0.1.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0
 [0.1.0-rc.6]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.6
 [0.1.0-rc.5]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.5
