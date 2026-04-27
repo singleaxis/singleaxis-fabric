@@ -6,6 +6,118 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.0] - 2026-04-27
+
+**Initial general-availability release** of SingleAxis Fabric — the
+open-source substrate for audit-ready AI agents.
+
+Functionally identical to `0.1.0-rc.6`; this tag stamps the
+release-candidate verification as the canonical `0.1.0` artifact set.
+
+### What ships in 0.1.0
+
+**Fabric Python SDK** (`pip install singleaxis-fabric`)
+
+- `Fabric` client and `Decision` context manager — one OpenTelemetry
+  span per agent turn, tagged with tenant / agent / session /
+  request / user
+- Inline guardrail chain — Microsoft Presidio (PII redaction) and
+  NVIDIA NeMo Guardrails (Colang policy rails) over Unix domain
+  sockets, fail-loud by design (`GuardrailNotConfiguredError` if a
+  rail is invoked but not wired)
+- Retrieval recording (SHA-256 hashed locally; raw text never leaves
+  the span) and memory-write recording mapping onto the provenance
+  graph
+- Escalation pause primitive returning a framework-agnostic payload
+  for human-in-the-loop review
+- First-class adapters for **LangGraph**, **Microsoft Agent
+  Framework**, and **CrewAI**, each gated behind an install extra so
+  the core install stays framework-neutral
+- OTel helpers: `get_tracer`, `install_default_provider`
+- Tested across Python 3.11, 3.12, 3.13
+
+**Guardrail sidecars**
+
+- Presidio sidecar — UDS PII redaction with default recognizers
+- NeMo Guardrails sidecar — UDS Colang rails, multi-stage Dockerfile
+  builds the `annoy` C++ extension cleanly
+
+**OTel Collector distribution**
+
+- Pre-configured Fabric processor chain: tail sampling, attribute
+  allowlisting, tenant scoping
+- Fans out to Langfuse, Tempo, Jaeger, Honeycomb, Datadog — anything
+  that speaks OTLP
+- Published to `ghcr.io/singleaxis/fabric-otelcol:0.1.0`, signed
+  with cosign (keyless via Fulcio), multi-arch (amd64 + arm64)
+
+**Helm chart**
+
+- Umbrella chart at `charts/fabric/` with two regulatory profiles:
+  `permissive-dev` for evaluation, `eu-ai-act-high-risk` for
+  production under the EU AI Act
+- Subcharts gated behind `*.enabled` toggles so operators can start
+  small (just collector) and layer on guardrails / observability /
+  red-team as needed
+- `otel-collector` subchart published as an OCI artifact at
+  `oci://ghcr.io/singleaxis/charts/otel-collector:0.1.0` (signed)
+
+**Reference agent**
+
+- End-to-end example exercising every SDK surface (decision span,
+  retrieval, guardrails, memory, escalation) — runs offline against
+  a simulated LLM and judge
+
+**Supply-chain integrity**
+
+- All artifacts (Python wheels, container images, OCI chart, source
+  tarball, SBOMs) are signed with [Sigstore cosign](https://sigstore.dev)
+  keyless via Fulcio
+- SBOMs in CycloneDX and SPDX formats accompany every release
+- SLSA build provenance attestations for images and tarballs
+
+**Specs (design of record)**
+
+- 14 specs covering overview, product vision, architecture,
+  context graph, telemetry bridge, inline guardrails, LLM-as-judge,
+  escalation workflow, deployment model, compliance mapping,
+  development standards, and the phased roadmap
+
+### Status
+
+**Pre-alpha** (development status 2 in `pyproject.toml`). The SDK
+public surface above is stable for the duration of `0.1.x`; the
+Python distribution version is derived from the git tag at build
+time so pinning works as expected. Anything labeled "Phase 2",
+"roadmap", or "planned" in any document is exactly that — not
+shipping in `0.1.x`.
+
+### Known boundaries
+
+- The agent request path **never** blocks on a Fabric HTTP call —
+  SDK work is in-process (`<1ms` P99), guardrail sidecars run over
+  UDS (`<100ms` P99), everything else (judges, escalation
+  bookkeeping, provenance writes) is async off the OTel stream
+- Raw agent traces, retrieved context, and user content **never**
+  egress the tenant VPC by default — the Telemetry Bridge that
+  egresses sanitized summaries is opt-in and not part of this
+  release
+- "Audit-ready" means Fabric produces the evidence trail an audit
+  requires, not that Fabric issues certifications — certification
+  remains the tenant's process
+
+### Acknowledgements
+
+Fabric stands on the shoulders of OpenTelemetry, Microsoft
+Presidio, NVIDIA NeMo Guardrails, LangGraph, Microsoft Agent
+Framework, CrewAI, Langfuse, and Sigstore. Thank you to those
+project teams for the foundations.
+
+### Operator action required
+
+None for fresh installs. There is no prior stable release to
+upgrade from.
+
 ## [0.1.0-rc.6] - 2026-04-27
 
 Re-cut of `0.1.0-rc.5` from rewritten history. No functional or
@@ -354,7 +466,10 @@ been exercised against a real tag. See Known issues below.
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.0-rc.4...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0
+[0.1.0-rc.6]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.6
+[0.1.0-rc.5]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.5
 [0.1.0-rc.4]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.4
 [0.1.0-rc.3]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.2
