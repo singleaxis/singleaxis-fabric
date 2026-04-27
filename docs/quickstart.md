@@ -38,7 +38,7 @@ with fabric.decision(
 ) as decision:
     # Your agent logic goes inside the decision context.
     # The SDK records the span; on exit it records success/failure.
-    response = my_llm.complete(prompt="Hello")
+    response = "..."  # call your LLM here, e.g. anthropic.messages.create(...)
     decision.set_attribute("llm.model", "claude-opus-4-7")
 ```
 

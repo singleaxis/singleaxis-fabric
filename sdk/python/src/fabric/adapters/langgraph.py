@@ -76,7 +76,15 @@ def escalate(decision: Decision, summary: EscalationSummary) -> Any:
     """
 
     try:
-        from langgraph.types import interrupt  # type: ignore[import-not-found]  # noqa: PLC0415
+        # Lazy import: pulled only when the adapter is invoked, so the
+        # core SDK install (without the [langgraph] extra) never loads
+        # langgraph. CI runs mypy without the extra, so the
+        # `import-not-found` ignore is needed there. Local dev with
+        # the extra installed would leave that ignore unused, so the
+        # second code `unused-ignore` keeps the comment valid in both
+        # contexts. ruff PLC0415 is suppressed because the lazy import
+        # is intentional.
+        from langgraph.types import interrupt  # type: ignore[import-not-found, unused-ignore]  # noqa: I001, PLC0415
     except ImportError as exc:  # pragma: no cover — exercised via monkey-patched import
         raise RuntimeError(
             "fabric.adapters.langgraph requires the optional 'langgraph' extra: "

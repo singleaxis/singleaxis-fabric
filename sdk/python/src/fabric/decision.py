@@ -8,6 +8,23 @@ it and record whether the decision succeeded, was blocked by a
 guardrail, or raised. The guardrail methods raise
 :class:`~fabric.guardrails.GuardrailNotConfiguredError` if no rails
 are configured — silent pass-through is a compliance footgun.
+
+Concurrency contract
+--------------------
+
+A :class:`Decision` instance represents a single agent turn and is
+**not** safe to share across threads or asyncio tasks. Open one
+``Decision`` per agent turn; do not pass the same instance into
+parallel coroutines or workers.
+
+Mutation methods on a single ``Decision`` (``record_retrieval``,
+``remember``, ``request_escalation``, ``set_attribute``,
+``guard_input``, ``guard_output_chunk``, ``guard_output_final``)
+are **not** internally synchronized. The rolling counter attributes
+(``fabric.retrieval_count``, ``fabric.memory_write_count``) and the
+internal lists they update would race under concurrent access. The
+``Fabric`` client itself is safe to share — only ``Decision``
+instances have this constraint.
 """
 
 from __future__ import annotations

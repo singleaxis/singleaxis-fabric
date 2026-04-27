@@ -119,7 +119,7 @@ overall coverage will be flagged; reductions must be justified.
 Any PR touching the following is automatically labelled `security-review`
 and requires approval from a security maintainer:
 
-- Redaction pipeline (`components/presidio-sidecar`, `_internal/components/telemetry-bridge`)
+- Redaction pipeline (`components/presidio-sidecar`)
 - Guardrail libraries (`sdk/*/guardrails`)
 - Cryptographic boundaries (envelope encryption, mTLS, signing)
 - Dependency updates that cross a major version or touch crypto

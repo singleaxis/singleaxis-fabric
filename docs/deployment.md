@@ -18,11 +18,35 @@ helm install fabric . \
     --values profiles/permissive-dev.yaml
 
 # Regulated workloads (EU AI Act high-risk):
+#   - REPLACE the trustedKey publicKey with the real release Ed25519
+#     public key (base64). The chart fails-closed otherwise.
+#   - DEPLOY the Presidio sidecar separately (the umbrella does not
+#     bundle it yet) and set redact.existingSocketProvider to its
+#     resource name.
 helm install fabric . \
     --namespace fabric-system --create-namespace \
     --values profiles/eu-ai-act-high-risk.yaml \
-    --set tenant.id=<uuid>
+    --set tenant.id=<uuid> \
+    --set update-agent.config.trustedKeys[0].publicKey=<real-base64-Ed25519-key> \
+    --set otel-collector.fabric.redact.existingSocketProvider=<presidio-sidecar-name>
 ```
+
+### Inspecting the rendered manifests (template / lint only)
+
+For pre-install review (`helm template`, `helm lint`, compliance audit
+of the rendered manifests), bypass the install-time checks:
+
+```bash
+helm template fabric . \
+    --values profiles/eu-ai-act-high-risk.yaml \
+    --set update-agent.config.allowPlaceholderKey=true \
+    --set otel-collector.fabric.redact.acceptMissingProvider=true
+```
+
+Both flags **only affect template rendering**. The deployed binaries
+re-validate at startup and refuse to run with a placeholder key or a
+missing redact socket — a real `helm install` cannot bypass either
+check even if the renderer was told to.
 
 Two regulatory profiles ship in Phase 1:
 

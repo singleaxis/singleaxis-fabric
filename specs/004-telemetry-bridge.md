@@ -95,7 +95,8 @@ are dropped, silently. The schema is:
 - Validated in CI against every event producer
 - Enforced at runtime with no escape hatch
 
-An excerpt from the schema (full spec in `_internal/components/telemetry-bridge/schema/`):
+An excerpt from the schema (the authoritative schema is maintained by
+SingleAxis internally as part of the Telemetry Bridge service):
 
 ```python
 # Excerpt — not normative here; the authoritative schema is Pydantic
@@ -371,8 +372,9 @@ No single failure in any one layer results in content leaving.
 - **SingleAxis SaaS endpoint certificate:** SPIFFE-based; pinned in
   Fabric trust bundle.
 
-Key rotation procedures are documented in
-`_internal/components/telemetry-bridge/docs/key-rotation.md` (to be written).
+Key rotation procedures are maintained by SingleAxis internally
+and shared with operators of the Telemetry Bridge under separate
+documentation.
 
 ## Operational considerations
 

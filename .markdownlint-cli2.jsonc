@@ -44,6 +44,8 @@
     "!**/vendor/**",
     "!**/dist/**",
     "!**/build/**",
-    "!**/site-packages/**"
+    "!**/site-packages/**",
+    "!**/temp/**",
+    "!**/tmp/**"
   ]
 }

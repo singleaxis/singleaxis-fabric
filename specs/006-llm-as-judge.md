@@ -156,8 +156,8 @@ the tenant's signing key and live alongside the shipped library.
 
 ## Judge prompts
 
-Judge prompt templates live in `_internal/components/judge-workers/prompts/`
-and are referenced by rubric YAML. They are:
+Judge prompt templates are maintained by SingleAxis internally and are
+referenced by rubric YAML. They are:
 
 - **Pure Jinja** with a restricted variable set (decision summary,
   retrievals, output, rubric metadata)

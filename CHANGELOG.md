@@ -6,6 +6,74 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-04-27
+
+Pre-launch hardening pass following an enterprise-grade audit.
+Functionally identical SDK surface; this release fixes
+documentation, packaging, and supply-chain hygiene that the audit
+flagged.
+
+### Fixed
+
+- **README 60-second example** now compiles end-to-end. Pinned the
+  `[otlp]` extra requirement, switched to explicit
+  `Fabric(FabricConfig(...))` so it runs without environment setup,
+  replaced placeholder names (`session.id`, `req.body`, `my_llm`)
+  with literal strings.
+- **`eu-ai-act-high-risk` Helm profile** now renders under
+  `helm template` with the documented `--set` overrides
+  (`update-agent.config.allowPlaceholderKey=true` and
+  `otel-collector.fabric.redact.acceptMissingProvider=true`).
+  Production install still fail-closes on the placeholder key —
+  the override only affects dry-renders for compliance review.
+  `docs/deployment.md` documents both paths.
+- **OTel Collector binary version stamp** now matches the chart
+  and image tag (was reporting `0.1.0` under the `0.1.1` tag).
+- **Chart versions** bumped across the umbrella, all five
+  subcharts, and the `ocb-config.yaml` to track the release tag.
+- **mypy --strict** passes cleanly — removed an unused
+  `# type: ignore[import-not-found]` in
+  `sdk/python/src/fabric/adapters/langgraph.py`.
+- **Quickstart step 2** no longer references an undefined `my_llm`
+  symbol.
+- **`docs/quickstart.md` and `examples/reference-agent`** now
+  install a real `TracerProvider` so `trace_id` is a real 32-hex
+  value rather than the all-zeros sentinel.
+- **README compliance frameworks** list reconciled with
+  `docs/compliance/mappings/README.md` (initial mappings target
+  EU AI Act, NIST AI RMF, ISO/IEC 42001; SR 11-7, HIPAA, GDPR are
+  roadmap).
+- **LICENSE** trademark clause restored to verbatim Apache-2.0
+  wording so license scanners do not flag the file as modified.
+
+### Changed
+
+- **`sdk/python/pyproject.toml`** classifier from
+  `Development Status :: 2 - Pre-Alpha` to `4 - Beta` — matches
+  the released GA posture.
+- **`Decision` concurrency contract** documented in
+  `sdk/python/src/fabric/decision.py`: one `Decision` per agent
+  turn; do not share across coroutines or threads.
+- **`release.yml`** workflow permissions narrowed — workflow-level
+  default is `contents: read`; each job that needs writes
+  escalates explicitly. Reduces the blast radius of any compromise
+  to one step.
+- **README latency claims** softened to "design budget" framing —
+  the `<1ms` and `<100ms` P99 numbers are budgets enforced by
+  readiness probes, not measured benchmarks (which land in a
+  follow-up release).
+
+### Operator action required
+
+If you are upgrading from `0.1.1` and using `helm template` /
+`helm lint` against the `eu-ai-act-high-risk` profile, add:
+`--set update-agent.config.allowPlaceholderKey=true`
+`--set otel-collector.fabric.redact.acceptMissingProvider=true`.
+A real `helm install` is unaffected.
+
+PyPI `0.1.1` will be yanked after `0.1.2` is verified live;
+`pip install singleaxis-fabric` will resolve to `0.1.2`.
+
 ## [0.1.1] - 2026-04-27
 
 **First publishable GA on PyPI.** Functionally identical to `0.1.0`;
@@ -465,7 +533,8 @@ been exercised against a real tag. See Known issues below.
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.2
 [0.1.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.1
 [0.1.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0
 [0.1.0-rc.6]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0-rc.6

@@ -178,9 +178,15 @@ sdk/python/
 │   ├── presidio.py        # PresidioClient protocol + UDS impl
 │   ├── nemo.py            # NemoClient protocol + UDS impl
 │   ├── retrieval.py       # RetrievalSource + RetrievalRecord
+│   ├── memory.py          # MemoryKind + MemoryRecord
 │   ├── _chain.py          # GuardrailChain (internal)
 │   ├── _uds.py            # HTTP-over-unix-socket transport
+│   ├── _version.py        # version sourced from git tag (hatch-vcs)
 │   ├── tracing.py         # OTel helpers
+│   ├── adapters/          # framework adapters (extras-gated)
+│   │   ├── langgraph.py
+│   │   ├── agent_framework.py
+│   │   └── crewai.py
 │   └── py.typed
 └── tests/
     ├── conftest.py

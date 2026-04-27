@@ -14,9 +14,24 @@ import json
 import sys
 from collections.abc import Sequence
 
-from fabric import Fabric, FabricConfig
+from fabric import Fabric, FabricConfig, install_default_provider
 
 from .agent import ReferenceAgent, SimulatedJudge
+
+
+def _install_local_tracer() -> None:
+    """Install a no-export tracer so ``trace_id`` is a real 32-hex
+    value rather than the all-zeros sentinel returned by the OTel
+    no-op default. Real telemetry export is the host's responsibility;
+    this just gets a real ID into the example's JSON output.
+    """
+    install_default_provider(
+        service_name="fabric-reference-agent",
+        # No exporter — spans go nowhere; we just need real IDs.
+        # For real telemetry pass an OTLPSpanExporter or
+        # ConsoleSpanExporter here.
+        exporter=None,
+    )
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -37,6 +52,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
+    _install_local_tracer()
     fabric = Fabric(FabricConfig(tenant_id=args.tenant_id, agent_id=args.agent_id))
     judge = SimulatedJudge(score=0.2 if args.low_score else 0.95)
     agent = ReferenceAgent(fabric, judge=judge)

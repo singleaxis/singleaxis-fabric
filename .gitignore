@@ -59,6 +59,7 @@ yarn-error.log*
 charts/*/*.tgz
 charts/*/charts/*.tgz
 charts/*/requirements.lock
+charts/*/Chart.lock
 
 # --- Terraform ---
 *.tfstate
@@ -101,6 +102,7 @@ sbom*.xml
 .local/
 tmp/
 tmp_*/
+temp/
 
 # --- Docs build output ---
 docs/_build/

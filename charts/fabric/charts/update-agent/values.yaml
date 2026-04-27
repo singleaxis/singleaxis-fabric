@@ -82,6 +82,12 @@ affinity: {}
 config:
   fabricVersion: ""                # "" → use .Chart.AppVersion
   failClosed: true
+  # Allow ``helm template`` and ``helm lint`` to render the chart with
+  # the placeholder publicKey for review purposes only. Default false
+  # so a real ``helm install`` still fails-loud on the placeholder.
+  # The deployed binary re-validates at startup — this flag only
+  # affects template rendering.
+  allowPlaceholderKey: false
   trustedKeys:
     - id: singleaxis-release
       # Placeholder — replace at install time with the real release

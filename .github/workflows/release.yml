@@ -5,11 +5,12 @@ on:
     tags:
       - "v*.*.*"
 
+# Workflow-level permissions are read-only. Each job that needs
+# write/id-token escalates explicitly in its own permissions: block.
+# This narrows the blast radius of any compromise to the one step
+# that actually needs the privilege.
 permissions:
-  contents: write
-  id-token: write
-  packages: write
-  attestations: write
+  contents: read
 
 jobs:
   ci-green:
@@ -93,6 +94,8 @@ jobs:
     name: Generate SBOM
     runs-on: ubuntu-latest
     needs: verify-tag
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
       - name: Generate SPDX SBOM
@@ -119,6 +122,10 @@ jobs:
     name: Build signed source archive
     runs-on: ubuntu-latest
     needs: [verify-tag, sbom]
+    permissions:
+      contents: read
+      id-token: write       # cosign keyless sign via Fulcio
+      attestations: write   # actions/attest-build-provenance
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
@@ -338,6 +345,8 @@ jobs:
     name: Publish GitHub release
     runs-on: ubuntu-latest
     needs: [changelog, source-archive, publish-image, publish-chart, publish-pypi]
+    permissions:
+      contents: write       # softprops/action-gh-release creates the release
     steps:
       - uses: actions/download-artifact@v4
         with:

@@ -87,14 +87,11 @@ charts/
         ├── hipaa.yaml
         └── permissive-dev.yaml      # not for production
 
-_internal/charts/                    # Layer 2 overlay (SingleAxis-internal)
-    ├── nats/
-    ├── postgres/
-    ├── context-graph/
-    ├── judge-workers/
-    ├── telemetry-bridge/
-    ├── escalation-service/
-    └── fabric-admin-ui/
+                                     # (SingleAxis-internal overlay charts
+                                     # — judges, escalation service,
+                                     # context graph, telemetry bridge —
+                                     # are maintained internally and not
+                                     # part of this distribution.)
 ```
 
 Each subchart is independently versioned but released together under

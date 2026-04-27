@@ -30,8 +30,8 @@ Report privately via either channel:
    creates a private, coordinated disclosure thread with the maintainers.
 2. **Email** — `security@singleaxis.ai`, PGP-encrypted if the finding
    includes proof-of-concept or exploitable details. PGP key fingerprint
-   and public key will be published at `https://singleaxis.ai/.well-known/security.txt`
-   once the project is public.
+   and public key will be published as a `.well-known/security.txt`
+   on `singleaxis.ai` in a future release.
 
 Please include:
 

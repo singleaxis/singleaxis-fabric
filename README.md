@@ -74,12 +74,15 @@ Apache-2.0. Zero-signup. Works offline.
 
 > **The agent request path never blocks on a Fabric HTTP call.**
 
-SDK work is in-process (`<1ms` P99). Guardrail sidecars run over a
-Unix domain socket (`<100ms` P99). Everything else — judges,
-escalation bookkeeping, provenance writes, evidence generation —
-happens asynchronously off the OTel stream. Security tooling that
-blocks request paths gets ripped out; Fabric stays in the path only
-where latency budgets justify it.
+SDK work is in-process (target `<1ms` P99). Guardrail sidecars run
+over a Unix domain socket (target `<100ms` P99 budget per check).
+Everything else — judges, escalation bookkeeping, provenance writes,
+evidence generation — happens asynchronously off the OTel stream.
+Security tooling that blocks request paths gets ripped out; Fabric
+stays in the path only where latency budgets justify it. Numbers
+above are design budgets enforced by component readiness probes;
+benchmark suites against representative workloads land in a
+follow-up release.
 
 ## Install
 
@@ -96,8 +99,10 @@ Python 3.11+ (the rest of the repo targets 3.12).
 ## 60-second example
 
 ```python
+# Requires the [otlp] extra for OTLPSpanExporter:
+#   pip install "singleaxis-fabric[otlp]"
 import os
-from fabric import Fabric, install_default_provider
+from fabric import Fabric, FabricConfig, install_default_provider
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 # One-time: point the SDK at your OTel Collector (or any OTLP sink).
@@ -106,15 +111,17 @@ install_default_provider(
     exporter=OTLPSpanExporter(endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]),
 )
 
-fabric = Fabric.from_env()  # reads FABRIC_TENANT_ID, FABRIC_AGENT_ID, ...
+# Tenant + agent identity are required. Either pass them explicitly:
+fabric = Fabric(FabricConfig(tenant_id="acme-prod", agent_id="support-bot"))
+# ...or set FABRIC_TENANT_ID and FABRIC_AGENT_ID and call Fabric.from_env().
 
 with fabric.decision(
-    session_id=session.id,
-    request_id=req.id,
-    user_id=user.id,
+    session_id="sess-1",
+    request_id="req-1",
+    user_id="user-42",
 ) as decision:
-    safe_input = decision.guard_input(req.body)              # Presidio rail
-    answer = my_llm.complete(prompt=safe_input)
+    safe_input = decision.guard_input("hello")               # Presidio rail
+    answer = "..."                                           # call your LLM
     safe_answer = decision.guard_output_final(answer)        # Presidio + NeMo
     decision.set_attribute("llm.model", "claude-opus-4-7")
 ```
@@ -223,10 +230,12 @@ Fabric is audit-**ready**, not certified. The distinction matters:
   function takes the evidence bundle to an auditor; the auditor
   issues the attestation. Fabric is the substrate, not the auditor.
 
-Fabric is aligned with: EU AI Act, NIST AI RMF, ISO 42001, SR 11-7,
-HIPAA, GDPR. Control mappings land profile-by-profile as rubric
-content is authored — see [`docs/compliance/mappings/`](docs/compliance/mappings/)
-and [`specs/009-compliance-mapping.md`](specs/009-compliance-mapping.md).
+Initial control mappings target the EU AI Act, NIST AI RMF, and
+ISO/IEC 42001 — see [`docs/compliance/mappings/`](docs/compliance/mappings/)
+for the (in-progress) per-regulation files and
+[`specs/009-compliance-mapping.md`](specs/009-compliance-mapping.md)
+for the structure each mapping follows. SR 11-7, HIPAA, and GDPR
+mappings are roadmap.
 
 ## Documentation
 
