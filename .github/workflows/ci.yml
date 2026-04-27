@@ -54,6 +54,13 @@ jobs:
   commit-lint:
     name: Conventional commits
     runs-on: ubuntu-latest
+    # Only lint commits inside an open PR. Squash-merges to main pick
+    # up the PR title verbatim, which may not pass strict conventional
+    # commits (e.g. "v0.1.2 prep — pre-launch audit fixes (#32)"). The
+    # gate already runs on every PR — re-running on push-to-main is
+    # redundant AND breaks tag-cutting if the squash title doesn't
+    # parse as <type>: <subject>.
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
         with:
