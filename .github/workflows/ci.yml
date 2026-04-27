@@ -320,7 +320,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - name: Build (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -351,7 +351,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - name: Build ${{ matrix.component }} (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/${{ matrix.component }}
           file: components/${{ matrix.component }}/Dockerfile
@@ -377,7 +377,7 @@ jobs:
         # Reuses the same Dockerfile as collector-image-build but
         # tags separately (fabric-otelcol:trivy) so the two jobs
         # can run in parallel without racing on the :pr tag.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
