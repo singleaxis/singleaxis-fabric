@@ -7,8 +7,8 @@ description: |
   container as a per-agent-pod sidecar for <100ms P99 UDS latency —
   the injection webhook lands in Phase 2.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.2
+appVersion: "0.1.2"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - guardrails

@@ -8,8 +8,8 @@ description: |
   Disabled by default in dev profiles; required for any production
   installation that consumes the SingleAxis GitOps update channel.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.2
+appVersion: "0.1.2"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - gitops

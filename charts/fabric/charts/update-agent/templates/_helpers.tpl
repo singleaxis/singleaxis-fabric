@@ -129,11 +129,27 @@ Validate trusted keys before rendering into a ConfigMap.
 Fail-closed if any trustedKey entry still carries the placeholder
 literal — shipping ``REPLACE_AT_INSTALL_TIME…`` into a "production"
 install silently disables verification.
+
+Operators reviewing the chart with ``helm template`` or ``helm lint``
+can opt out of the placeholder check by setting:
+
+  --set update-agent.config.allowPlaceholderKey=true
+
+The flag is INSTALL-time only. The deployed update-agent binary
+re-validates the key shape at startup and refuses to run with a
+placeholder, so a real ``helm install`` cannot bypass the check
+even if the renderer was told to.
+
+Empty-string keys still fail unconditionally — there is no
+legitimate dry-run path that ships an empty key.
 */}}
 {{- define "update-agent.validateTrustedKeys" -}}
+{{- $allowPlaceholder := .Values.config.allowPlaceholderKey | default false -}}
 {{- range concat .Values.config.trustedKeys .Values.config.extraTrustedKeys -}}
 {{- if hasPrefix "REPLACE_AT_INSTALL_TIME" (.publicKey | toString) -}}
-{{- fail (printf "update-agent.config.trustedKeys: entry id=%q has placeholder publicKey. Supply a real base64 Ed25519 key at install time." .id) -}}
+{{- if not $allowPlaceholder -}}
+{{- fail (printf "update-agent.config.trustedKeys: entry id=%q has placeholder publicKey. Supply a real base64 Ed25519 key at install time, or pass --set update-agent.config.allowPlaceholderKey=true for dry-renders only." .id) -}}
+{{- end -}}
 {{- end -}}
 {{- if eq (.publicKey | toString) "" -}}
 {{- fail (printf "update-agent.config.trustedKeys: entry id=%q has empty publicKey." .id) -}}
