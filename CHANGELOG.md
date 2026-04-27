@@ -6,6 +6,29 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-rc.6] - 2026-04-27
+
+Re-cut of `0.1.0-rc.5` from rewritten history. No functional or
+SDK changes vs. rc.5 — every commit on this lineage simply has the
+strategic / commercial content removed (specs 012 + 013 deleted
+from every commit, ~60 strategic phrases redacted). PyPI artifacts
+for rc.1 through rc.5 have been yanked. rc.6 is the first release
+candidate cut from a clean tree.
+
+Anyone with a prior clone or fork must re-clone or hard-reset; the
+rewrite changed every commit SHA.
+
+### Changed
+
+- Released artifacts (Python wheels, container images, OCI Helm
+  chart, signed source tarball, SBOMs) now contain only the
+  cleaned tree; no commercial-strategy specs in any release asset.
+
+### Removed
+
+- `specs/012-oss-commercialization-strategy.md` and
+  `specs/013-design-partner-model.md` from every commit in history.
+
 ## [0.1.0-rc.5] - 2026-04-27
 
 Hardening pass over the v0.1.0 release surface. Bundles the four PRs
