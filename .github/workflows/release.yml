@@ -221,14 +221,22 @@ jobs:
       - name: Sign image (keyless via Fulcio)
         env:
           COSIGN_EXPERIMENTAL: "1"
+          # docker/metadata-action emits multiple tags separated by
+          # newlines (e.g. "0.1.0" + "latest" for non-prerelease tags).
+          # Pipe via env var + while-read so bash handles the multiline
+          # input correctly. A direct `for` over the action interpolation
+          # mangles the second line and fails with a syntax error.
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           # Sign every pushed tag by its immutable digest so the
           # signature survives tag re-pointing.
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            ref="${tag}@${{ steps.build.outputs.digest }}"
+          while IFS= read -r tag; do
+            [ -z "${tag}" ] && continue
+            ref="${tag}@${DIGEST}"
             echo "cosign sign ${ref}"
             cosign sign --yes "${ref}"
-          done
+          done <<< "${TAGS}"
       - uses: actions/attest-build-provenance@v1
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
