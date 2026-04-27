@@ -12,16 +12,17 @@ shorter, action-oriented doors in.
   (SDK / sidecars / collector) and the "never block the agent
   request path" principle. Links to the authoritative specs.
 - [**Deployment**](deployment.md) — Helm chart, the
-  `permissive-dev` and `eu-ai-act-high-risk` profiles, and what
-  "audit-ready" means in Phase 1a.
+  `permissive-dev` and `eu-ai-act-high-risk` profiles, and the
+  L1-OSS / L2-control-plane boundary.
 
 ## Reference surfaces
 
 - [**Operations — Disaster recovery**](operations/dr.md) — DR
   posture and pointers to the chart + bootstrap Job.
-- [**Compliance — Control mappings**](compliance/mappings/) — stub.
-  Per-regulation mappings are in progress; see spec 009 for the
-  roadmap.
+
+Compliance control mappings (Fabric artifact → regulatory control)
+are roadmap; the structure is captured in
+[`specs/009-compliance-mapping.md`](../specs/009-compliance-mapping.md).
 
 ## Status
 

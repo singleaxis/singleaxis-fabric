@@ -2,10 +2,14 @@
 
 # SingleAxis Fabric
 
-**The open-source substrate for audit-ready AI agents.**
+**Open-source observability and control plane for AI agents.**
 
-Drop it into your agent. Get standardized decision traces, inline
-guardrails, and a clean human-escalation primitive — from day one.
+Decision-span tracing, fail-loud guardrails, and a human-in-the-loop
+primitive — OpenTelemetry-native, with adapters for LangGraph,
+Microsoft Agent Framework, and CrewAI. Hardened defaults for regulated
+environments: the `eu-ai-act-high-risk` Helm profile ships today;
+full audit-trail evidence generation lands with the SingleAxis control
+plane.
 
 [![PyPI](https://img.shields.io/pypi/v/singleaxis-fabric.svg)](https://pypi.org/project/singleaxis-fabric/)
 [![Python](https://img.shields.io/pypi/pyversions/singleaxis-fabric.svg)](https://pypi.org/project/singleaxis-fabric/)
@@ -63,8 +67,9 @@ Apache-2.0. Zero-signup. Works offline.
   scoping). Fans out to Langfuse, Tempo, Jaeger, Honeycomb, Datadog —
   anything that speaks OTLP.
 - **Helm chart with regulatory profiles** — `permissive-dev` for
-  evaluation, `eu-ai-act-high-risk` for production under the EU AI Act.
-  NIST RMF / ISO 42001 / SR 11-7 / HIPAA profiles land as rubrics do.
+  evaluation and `eu-ai-act-high-risk` for production under the EU AI
+  Act ship today. NIST AI RMF, ISO/IEC 42001, SR 11-7, and HIPAA
+  profiles are roadmap (see [`specs/008-deployment-model.md`](specs/008-deployment-model.md)).
 - **First-class adapters** — [LangGraph](https://langchain-ai.github.io/langgraph/),
   [Microsoft Agent Framework](https://learn.microsoft.com/en-us/agent-framework/),
   and [CrewAI](https://www.crewai.com/). Installed via extras; core
@@ -214,28 +219,37 @@ under-document than overclaim.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's in the current release.
 
-## "Audit-ready" — what it means and doesn't
+## What this OSS distribution covers
 
-Fabric is audit-**ready**, not certified. The distinction matters:
+The open-source Fabric (this repository) is the **collection
+infrastructure** plus the **inline control plane** for an AI agent:
 
-- **Fabric does not issue certifications.** No SOC 2 report, no ISO
-  42001 certificate, no EU AI Act conformity marking comes out of
-  the box.
-- **Fabric produces the evidence trail a certification audit
-  requires.** Decision spans, guardrail outcomes, retrieval
-  provenance, judge scores, escalation records, tenant-scoped
-  retention — the artifacts an external auditor asks for. Fabric's
-  job is to make collecting them automatic.
-- **Certification remains the tenant's process.** Your compliance
-  function takes the evidence bundle to an auditor; the auditor
-  issues the attestation. Fabric is the substrate, not the auditor.
+- **Collection** — decision spans, guardrail events, retrieval
+  hashes, escalation records, judge-score attributes. Standardised
+  OTel shape; hardened defaults; tenant-scoped.
+- **Control** — fail-loud guardrail sidecars, the human-in-the-loop
+  escalation primitive, deny-by-default policy gates, the
+  signed-manifest update channel.
 
-Initial control mappings target the EU AI Act, NIST AI RMF, and
-ISO/IEC 42001 — see [`docs/compliance/mappings/`](docs/compliance/mappings/)
-for the (in-progress) per-regulation files and
-[`specs/009-compliance-mapping.md`](specs/009-compliance-mapping.md)
-for the structure each mapping follows. SR 11-7, HIPAA, and GDPR
-mappings are roadmap.
+It is a substrate, not a compliance product. **Fabric does not issue
+certifications, generate evidence bundles, or produce signed audit
+trails on its own.** The artefacts an external auditor asks for —
+queryable evidence bundles, immutable retention, regulator-shaped
+mappings — are produced by the SingleAxis commercial control plane on
+top of this collection layer (Context Graph, evidence builder,
+escalation service, judge workers).
+
+If your team operates the collection infrastructure yourselves and
+builds your own audit trail on top of it, the OSS distribution is
+sufficient. If you need the audit trail itself as a managed product,
+that's the SingleAxis control plane.
+
+Control mappings (Fabric artifact → regulatory control) are roadmap.
+The structure each mapping will follow is captured in
+[`specs/009-compliance-mapping.md`](specs/009-compliance-mapping.md);
+nothing authoritative ships in this release. Initial targets are the
+EU AI Act, NIST AI RMF, and ISO/IEC 42001; SR 11-7, HIPAA, and GDPR
+follow.
 
 ## Documentation
 

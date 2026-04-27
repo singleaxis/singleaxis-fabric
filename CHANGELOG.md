@@ -88,6 +88,20 @@ architectural lifts are explicitly deferred to v0.2.0.
 
 ### Fixed (docs)
 
+- **Hero repositioning.** README + SDK pyproject description shifted
+  from "audit-ready substrate" to "open-source observability and
+  control plane for AI agents." The old framing implied this OSS
+  distribution generated audit trails on its own; in fact the
+  collection infrastructure ships here and evidence-bundle generation
+  / signed audit trails ship with the SingleAxis commercial control
+  plane. Engineer-vocabulary hero, honest L1/L2 boundary, no
+  compliance-tool buyer mismatch.
+- README NIST AI RMF / ISO/IEC 42001 / SR 11-7 / HIPAA profiles list
+  now explicitly marked as roadmap (only `eu-ai-act-high-risk` and
+  `permissive-dev` ship in `charts/fabric/profiles/`).
+- README + docs/README no longer link to `docs/compliance/mappings/`
+  as if it contained authoritative content; the only thing landing
+  there is an in-progress stub. Pointer is now to spec 009.
 - `docs/architecture.md` latency framing softened to "design budget"
   to match the README v0.1.2 wording. Numbers are unchanged but
   no longer claimed as measured P99s.

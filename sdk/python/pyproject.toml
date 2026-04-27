@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "singleaxis-fabric"
-description = "SingleAxis Fabric SDK for Python — inline guardrails, memory, tracing, escalation helpers."
+description = "Open-source observability and control plane for AI agents — decision-span tracing, fail-loud guardrails, and human-in-the-loop, OpenTelemetry-native."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]

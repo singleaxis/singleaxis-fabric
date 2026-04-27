@@ -1,8 +1,8 @@
 ---
 title: Product Vision & Positioning
 status: draft
-revision: 2
-last_updated: 2026-04-20
+revision: 3
+last_updated: 2026-04-26
 owner: project-lead
 ---
 
@@ -10,17 +10,20 @@ owner: project-lead
 
 ## Summary
 
-**Fabric is the open-source substrate for audit-ready AI agents.** The
-Apache-2.0 SDK, adapters, and guardrail sidecars in this repo
-instrument enterprise agents with standardized decision tracing,
-inline PII redaction, Colang policy rails, and a structured
-escalation primitive.
+**Fabric is the open-source observability and control plane for AI
+agents.** The Apache-2.0 SDK, adapters, and guardrail sidecars in
+this repo instrument enterprise agents with standardised decision
+tracing, fail-loud guardrails (PII redaction, Colang policy rails),
+deny-by-default policy gates, and a structured human-in-the-loop
+escalation primitive — OpenTelemetry-native throughout.
 
-Fabric is maintained by SingleAxis. Components and services
-maintained internally by SingleAxis — implementation help, rubric
-authoring, managed operations, evidence generation — complement the
-OSS for organizations that want the outcome rather than the
-operational burden.
+The OSS layer (this repository) is the **collection infrastructure**
+plus the **inline control plane**. Evidence-bundle generation,
+queryable audit trails, regulator-shaped mappings, and managed
+operations are produced by the SingleAxis commercial control plane
+(Context Graph, evidence builder, escalation service, judge workers)
+layered on top of this collection layer. Both are maintained by
+SingleAxis; the boundary is explicit and stable.
 
 ## Goals
 
@@ -145,9 +148,11 @@ Secondary:
 
 ## The honest one-liner
 
-> *"Fabric is the open-source substrate for audit-ready AI agents.
-> SingleAxis is the team that installs it, tunes it for the regulation
-> that matters to you, and (in time) signs off on what it produces."*
+> *"Fabric is the open-source observability and control plane for AI
+> agents. SingleAxis is the team that installs it, tunes it for the
+> regulation that matters to you, and runs the commercial control
+> plane that turns its collection stream into queryable audit trails
+> and signed evidence bundles."*
 
 ## Open questions
 

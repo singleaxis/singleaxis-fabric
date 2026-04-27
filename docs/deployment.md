@@ -67,28 +67,27 @@ topology for local smoke testing the SDK + sidecars + OTel Collector
 chain without a cluster. It is **not** a supported production
 topology. Use Helm for anything that touches real traffic.
 
-## What "audit-ready" means in Phase 1a
+## What this OSS distribution covers
 
-Fabric is positioned as *audit-ready*, not *certified*. Those are
-different claims and the difference matters to regulators.
+The OSS Fabric provides the **collection infrastructure** and the
+**inline control plane** — decision spans, guardrail events,
+escalation records, retrieval hashes, fail-loud guardrail sidecars,
+the human-in-the-loop primitive. It does not generate evidence
+bundles, signed audit trails, or regulator-shaped mappings; those
+are produced by the SingleAxis commercial control plane (Context
+Graph, evidence builder, escalation service, judge workers) layered
+on top of this collection layer.
 
-- **Fabric does not issue certifications.** No SOC 2 report, no
-  ISO 42001 certificate, no EU AI Act conformity marking comes out
-  of the box.
-- **Fabric produces the evidence trail a certification audit
-  requires.** Signed decision spans, signed guardrail outcomes,
-  judge scores over time, escalation records, tenant-scoped
-  retention — these are the artifacts an external auditor asks
-  for. Fabric's job is to make collecting them automatic.
-- **Certification remains the tenant's process.** The tenant's
-  compliance function takes the evidence bundle to an auditor; the
-  auditor issues the attestation. Fabric is the substrate, not the
-  auditor.
+If your team operates the collection infrastructure yourselves and
+builds your own audit trail on top of it, this distribution is
+sufficient. If you need the audit trail itself as a managed product,
+that's the SingleAxis control plane.
 
-In Phase 1a, the evidence surface is deliberately narrow: decision
-spans, guardrail events, and escalation records. Context Graph
-queries, signed bundle exports, and the SingleAxis attestation
-network are roadmap items maintained by SingleAxis internally.
+Fabric does not issue certifications either way: no SOC 2 report,
+no ISO/IEC 42001 certificate, no EU AI Act conformity marking comes
+out of installing this chart. Certification remains the tenant's
+process; Fabric (with or without the commercial layer on top) is
+what makes the evidence collection automatic.
 
 ## Operational posture
 
