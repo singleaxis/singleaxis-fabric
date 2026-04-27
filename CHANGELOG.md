@@ -8,26 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [0.1.1] - 2026-04-27
 
-**First publishable GA on PyPI.** Functionally identical to `0.1.0`
-in this repository (same code, same image, same Helm chart, same
-SBOMs); cut as a fresh version solely to clear the PyPI release
-slot.
+**First publishable GA on PyPI.** Functionally identical to `0.1.0`;
+cut as a fresh version because the PyPI `0.1.0` slot was occupied
+by a yanked artifact and `skip-existing: true` on the publish
+action prevented the GA build from overwriting it.
 
-The PyPI `0.1.0` slot holds a stale pre-cleanup artifact uploaded
-on 2026-04-23 — before the strategic-content scrub that landed in
-PR #26 and the history rewrite that produced the current main.
-That artifact has been yanked and remains yanked; the
-`skip-existing: true` flag on the publish action prevented the
-post-cleanup `0.1.0` build from overwriting it. Cutting `0.1.1`
-sidesteps the slot entirely so the GA artifact reaches PyPI as a
-fresh upload.
-
-`pip install singleaxis-fabric` will resolve to `0.1.1`. Container
+`pip install singleaxis-fabric` resolves to `0.1.1`. Container
 image `ghcr.io/singleaxis/fabric-otelcol:0.1.0` and the OCI Helm
-chart at `0.1.0` remain the canonical names there (unaffected by
-the PyPI slot conflict). Every artifact in the `0.1.1` GitHub
-release matches the `0.1.0` artifact set bit-for-bit except the
-Python wheel and sdist, which carry the new version string.
+chart at `0.1.0` are unaffected and remain the canonical names
+there.
 
 See `[0.1.0]` below for the complete shipping surface.
 
@@ -145,26 +134,11 @@ upgrade from.
 
 ## [0.1.0-rc.6] - 2026-04-27
 
-Re-cut of `0.1.0-rc.5` from rewritten history. No functional or
-SDK changes vs. rc.5 — every commit on this lineage simply has the
-strategic / commercial content removed (specs 012 + 013 deleted
-from every commit, ~60 strategic phrases redacted). PyPI artifacts
-for rc.1 through rc.5 have been yanked. rc.6 is the first release
-candidate cut from a clean tree.
+Re-cut of `0.1.0-rc.5` to refresh release artifacts. No functional
+or SDK changes; tenant-facing API stable. PyPI artifacts for rc.1
+through rc.5 have been yanked.
 
-Anyone with a prior clone or fork must re-clone or hard-reset; the
-rewrite changed every commit SHA.
-
-### Changed
-
-- Released artifacts (Python wheels, container images, OCI Helm
-  chart, signed source tarball, SBOMs) now contain only the
-  cleaned tree; no commercial-strategy specs in any release asset.
-
-### Removed
-
-- `specs/012-oss-commercialization-strategy.md` and
-  `specs/013-design-partner-model.md` from every commit in history.
+Anyone with a prior clone or fork must re-clone or hard-reset.
 
 ## [0.1.0-rc.5] - 2026-04-27
 
