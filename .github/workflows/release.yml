@@ -154,7 +154,7 @@ jobs:
           cosign sign-blob --yes sbom.cdx.json \
             --output-signature sbom.cdx.json.sig \
             --output-certificate sbom.cdx.json.pem
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             singleaxis-fabric-*.tar.gz
@@ -244,7 +244,7 @@ jobs:
             echo "cosign sign ${ref}"
             cosign sign --yes "${ref}"
           done <<< "${TAGS}"
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
