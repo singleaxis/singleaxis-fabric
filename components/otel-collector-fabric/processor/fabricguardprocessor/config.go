@@ -11,6 +11,14 @@ import (
 // Config controls the Fabric guard processor. It deliberately mirrors
 // the defaults used by the in-process Bridge so an operator can move
 // policy between the two without any behavior shift.
+//
+// Both the log-record signal (used by the L2 Telemetry Bridge wire
+// format) and the trace-span signal (emitted directly by the L1
+// Fabric SDK) are processed. The two signals use different shapes —
+// log records carry an `event_class` attribute that selects a
+// per-class allowlist; spans use a namespace-prefix allowlist
+// (default: `fabric.*`, `gen_ai.*`, `llm.*`, `tool.*`, `service.*`,
+// `telemetry.*`, `otel.*`). See `TraceAttributePrefixes`.
 type Config struct {
 	// EventClassAttribute is the log-record attribute the processor
 	// uses to classify each record. Defaults to "event_class".
@@ -33,6 +41,23 @@ type Config struct {
 	// are the additional attribute names to permit. The built-in
 	// allowlist is always applied; this is strictly additive.
 	ExtraAllowedFields map[string][]string `mapstructure:"extra_allowed_fields"`
+
+	// TraceAttributePrefixes is the set of attribute-key prefixes
+	// permitted on spans this processor sees. Any attribute whose
+	// key does NOT start with one of these prefixes is removed
+	// before the span is forwarded. The default covers the standard
+	// Fabric namespaces and the upstream OTel resource attributes
+	// every backend expects. Operators tighten or extend per
+	// deployment.
+	TraceAttributePrefixes []string `mapstructure:"trace_attribute_prefixes"`
+
+	// TraceProcessingEnabled toggles the trace-pipeline variant. The
+	// log-pipeline variant is always available. Setting this to false
+	// (the default) keeps trace processing inert so existing log-only
+	// deployments are unaffected by the new processor capability.
+	// Set to true when the operator wants the SDK's spans field-
+	// allowlisted before egress.
+	TraceProcessingEnabled bool `mapstructure:"trace_processing_enabled"`
 }
 
 // Validate checks configuration invariants. The factory calls this
@@ -52,10 +77,31 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// DefaultTraceAttributePrefixes lists the attribute-key prefixes
+// permitted by default on spans. Mirrors the "fabric and standard
+// OTel" surface the SDK + auto-instrumentation packages produce.
+// Anything outside these prefixes is treated as a foreign / risky
+// attribute and stripped before egress.
+var DefaultTraceAttributePrefixes = []string{
+	"fabric.",
+	"gen_ai.",
+	"llm.",
+	"tool.",
+	"service.",
+	"telemetry.",
+	"otel.",
+	"http.",
+	"net.",
+	"rpc.",
+	"db.",
+}
+
 func createDefaultConfig() *Config {
 	return &Config{
-		EventClassAttribute: "event_class",
-		DropUnknownClasses:  true,
-		MaxFieldBytes:       8192,
+		EventClassAttribute:    "event_class",
+		DropUnknownClasses:     true,
+		MaxFieldBytes:          8192,
+		TraceAttributePrefixes: append([]string{}, DefaultTraceAttributePrefixes...),
+		TraceProcessingEnabled: false,
 	}
 }

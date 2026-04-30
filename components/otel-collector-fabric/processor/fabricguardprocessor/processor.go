@@ -5,9 +5,11 @@ package fabricguardprocessor
 
 import (
 	"context"
+	"strings"
 
-	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 )
 
@@ -90,6 +92,72 @@ func (g *guard) applyToRecord(lr plog.LogRecord) bool {
 
 	if attrs.Len() == 0 {
 		return true
+	}
+	return false
+}
+
+// processTraces enforces the namespace-prefix allowlist on every Span
+// in the batch. Span attributes whose keys do not start with any of
+// the configured TraceAttributePrefixes are stripped; oversized
+// strings are removed; spans whose attributes become empty are
+// dropped (matching the log path's behavior). Mutates in place.
+func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
+	if !g.cfg.TraceProcessingEnabled {
+		return td, nil
+	}
+	rss := td.ResourceSpans()
+	for ri := 0; ri < rss.Len(); ri++ {
+		sss := rss.At(ri).ScopeSpans()
+		for si := 0; si < sss.Len(); si++ {
+			spans := sss.At(si).Spans()
+			spans.RemoveIf(func(sp ptrace.Span) bool {
+				return g.applyToSpan(sp)
+			})
+		}
+	}
+	return td, nil
+}
+
+// applyToSpan returns true when the span should be removed.
+// Mutation of attributes happens in place via RemoveIf.
+func (g *guard) applyToSpan(sp ptrace.Span) bool {
+	attrs := sp.Attributes()
+	stripped := 0
+	oversized := 0
+	attrs.RemoveIf(func(k string, v pcommon.Value) bool {
+		if !g.spanKeyAllowed(k) {
+			stripped++
+			return true
+		}
+		if g.cfg.MaxFieldBytes > 0 && v.Type() == pcommon.ValueTypeStr {
+			if len(v.Str()) > g.cfg.MaxFieldBytes {
+				oversized++
+				return true
+			}
+		}
+		return false
+	})
+
+	if stripped > 0 || oversized > 0 {
+		g.logger.Debug("trace allowlist applied",
+			zap.String("span_name", sp.Name()),
+			zap.Int("stripped", stripped),
+			zap.Int("oversized", oversized),
+		)
+	}
+
+	// Spans with no surviving attributes are dropped — they carry no
+	// signal worth forwarding once governance metadata is gone.
+	return attrs.Len() == 0
+}
+
+// spanKeyAllowed returns true if the attribute key starts with one
+// of the configured trace allowlist prefixes.
+func (g *guard) spanKeyAllowed(key string) bool {
+	for _, prefix := range g.cfg.TraceAttributePrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
 	}
 	return false
 }
