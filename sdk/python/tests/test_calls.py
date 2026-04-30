@@ -230,6 +230,49 @@ def test_llm_call_double_exit_raises() -> None:
             call.__exit__(None, None, None)
 
 
+def test_llm_call_double_enter_raises() -> None:
+    # Re-entry of an already-entered LLMCall would orphan the first
+    # span on the tracer (memory leak + mis-parented children).
+    # Fail-loud rather than silently corrupting the trace tree.
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        call = dec.llm_call(system="anthropic", model="claude")
+        with call, pytest.raises(RuntimeError, match="already entered"):
+            call.__enter__()
+
+
+def test_llm_call_set_usage_rejects_non_int_input_tokens() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="openai", model="gpt-5") as call,
+        pytest.raises(TypeError, match="must be int"),
+    ):
+        call.set_usage(input_tokens="42")  # type: ignore[arg-type]
+
+
+def test_llm_call_set_usage_rejects_non_int_output_tokens() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="openai", model="gpt-5") as call,
+        pytest.raises(TypeError, match="must be int"),
+    ):
+        call.set_usage(output_tokens=3.14)  # type: ignore[arg-type]
+
+
+def test_llm_call_set_usage_rejects_bool_for_tokens() -> None:
+    # bool is a subclass of int — accepting True/False as token counts
+    # would be a semantic foot-gun. Reject explicitly.
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="openai", model="gpt-5") as call,
+        pytest.raises(TypeError, match="must be int"),
+    ):
+        call.set_usage(input_tokens=True)
+
+
 def test_llm_call_optional_request_attrs_omitted_when_unset(
     span_exporter: InMemorySpanExporter,
 ) -> None:
@@ -302,6 +345,24 @@ def test_tool_call_set_result_count_rejects_negative() -> None:
         pytest.raises(ValueError, match="non-negative"),
     ):
         tool.set_result_count(-1)
+
+
+def test_tool_call_double_enter_raises() -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        tool = dec.tool_call("search")
+        with tool, pytest.raises(RuntimeError, match="already entered"):
+            tool.__enter__()
+
+
+def test_tool_call_set_result_count_rejects_non_int() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(TypeError, match="must be int"),
+    ):
+        tool.set_result_count("7")  # type: ignore[arg-type]
 
 
 def test_tool_call_set_attribute_accepts_scalars() -> None:

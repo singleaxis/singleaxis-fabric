@@ -41,6 +41,42 @@ type spanFixture struct {
 	attrs map[string]any
 }
 
+// makeTracesWithResource builds a ptrace.Traces where the Resource
+// carries the supplied attributes. Used to test resource-level
+// allowlist enforcement separately from span/event attributes.
+func makeTracesWithResource(resAttrs map[string]any, spans ...spanFixture) ptrace.Traces {
+	td := makeTraces(spans...)
+	rs := td.ResourceSpans().At(0)
+	for k, v := range resAttrs {
+		switch val := v.(type) {
+		case string:
+			rs.Resource().Attributes().PutStr(k, val)
+		case int:
+			rs.Resource().Attributes().PutInt(k, int64(val))
+		case bool:
+			rs.Resource().Attributes().PutBool(k, val)
+		}
+	}
+	return td
+}
+
+// addEventToFirstSpan appends an event with the given name + attrs
+// to the first span of the trace. Returns the event index.
+func addEventToFirstSpan(td ptrace.Traces, eventName string, attrs map[string]any) int {
+	sp := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	ev := sp.Events().AppendEmpty()
+	ev.SetName(eventName)
+	for k, v := range attrs {
+		switch val := v.(type) {
+		case string:
+			ev.Attributes().PutStr(k, val)
+		case int:
+			ev.Attributes().PutInt(k, int64(val))
+		}
+	}
+	return sp.Events().Len() - 1
+}
+
 func enabledTraceConfig() *Config {
 	cfg := createDefaultConfig()
 	cfg.TraceProcessingEnabled = true
@@ -265,5 +301,111 @@ func TestProcessTraces_PreservesNonStringTypes(t *testing.T) {
 	}
 	if v.Int() != 12345 {
 		t.Errorf("expected 12345, got %d", v.Int())
+	}
+}
+
+// ---------- resource attributes ----------
+
+func TestProcessTraces_StripsResourceAttributesOutsideAllowlist(t *testing.T) {
+	t.Parallel()
+	g := newTestGuard(t, enabledTraceConfig())
+
+	td := makeTracesWithResource(
+		map[string]any{
+			"service.name":            "support-bot",
+			"telemetry.sdk.language":  "python",
+			"deployment.private_name": "internal-cluster-eu-west-1",
+			"company.account_id":      "acme-secret-id",
+		},
+		spanFixture{name: "fabric.decision", attrs: map[string]any{"fabric.tenant_id": "acme"}},
+	)
+
+	out, _ := g.processTraces(context.Background(), td)
+	resAttrs := out.ResourceSpans().At(0).Resource().Attributes()
+	if _, ok := resAttrs.Get("service.name"); !ok {
+		t.Errorf("expected `service.name` to survive on Resource (in allowlist)")
+	}
+	if _, ok := resAttrs.Get("telemetry.sdk.language"); !ok {
+		t.Errorf("expected `telemetry.sdk.language` to survive on Resource")
+	}
+	if _, ok := resAttrs.Get("deployment.private_name"); ok {
+		t.Errorf("expected `deployment.private_name` to be stripped from Resource")
+	}
+	if _, ok := resAttrs.Get("company.account_id"); ok {
+		t.Errorf("expected `company.account_id` to be stripped from Resource")
+	}
+}
+
+// ---------- span events ----------
+
+func TestProcessTraces_FiltersEventAttributes(t *testing.T) {
+	t.Parallel()
+	g := newTestGuard(t, enabledTraceConfig())
+
+	td := makeTraces(spanFixture{
+		name: "fabric.decision",
+		attrs: map[string]any{
+			"fabric.tenant_id": "acme",
+		},
+	})
+	addEventToFirstSpan(td, "fabric.guardrail", map[string]any{
+		"fabric.guardrail.phase": "input",  // should survive
+		"fabric.guardrail.policies": "presidio:pii", // survive
+		"random.foreign_payload":   "should be stripped",
+		"user.email":               "alice@example.com", // strip
+	})
+
+	out, _ := g.processTraces(context.Background(), td)
+	ev := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Events().At(0)
+	if _, ok := ev.Attributes().Get("fabric.guardrail.phase"); !ok {
+		t.Errorf("expected `fabric.guardrail.phase` to survive on event")
+	}
+	if _, ok := ev.Attributes().Get("random.foreign_payload"); ok {
+		t.Errorf("expected `random.foreign_payload` to be stripped from event")
+	}
+	if _, ok := ev.Attributes().Get("user.email"); ok {
+		t.Errorf("expected `user.email` to be stripped from event")
+	}
+}
+
+func TestProcessTraces_KeepsSpanWithEventsButNoSpanAttrs(t *testing.T) {
+	t.Parallel()
+	g := newTestGuard(t, enabledTraceConfig())
+
+	// Span has no allowlisted span-level attributes, but DOES have
+	// an allowlisted event attribute. Should NOT be dropped.
+	td := makeTraces(spanFixture{
+		name: "fabric.decision",
+		attrs: map[string]any{
+			"random.foreign": "stripped",
+		},
+	})
+	addEventToFirstSpan(td, "fabric.guardrail", map[string]any{
+		"fabric.guardrail.phase": "input",
+	})
+
+	out, _ := g.processTraces(context.Background(), td)
+	spans := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	if got := spans.Len(); got != 1 {
+		t.Fatalf("expected span retained because of allowlisted event attrs, got %d", got)
+	}
+}
+
+func TestProcessTraces_DropsSpanWhenAllAttrsAndEventsStripped(t *testing.T) {
+	t.Parallel()
+	g := newTestGuard(t, enabledTraceConfig())
+
+	td := makeTraces(spanFixture{
+		name:  "third-party.span",
+		attrs: map[string]any{"random.foreign": "v"},
+	})
+	addEventToFirstSpan(td, "third-party.event", map[string]any{
+		"random.payload": "stripped",
+	})
+
+	out, _ := g.processTraces(context.Background(), td)
+	spans := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	if got := spans.Len(); got != 0 {
+		t.Errorf("expected span dropped (no surviving span attrs OR event attrs), got %d", got)
 	}
 }

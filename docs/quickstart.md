@@ -80,13 +80,35 @@ install_default_provider(
 )
 ```
 
-You should see one span per decision, named `fabric.decision`, tagged
-with `fabric.tenant_id`, `fabric.agent_id`, `fabric.session_id`,
+You should see one `fabric.decision` span per decision, tagged with
+`fabric.tenant_id`, `fabric.agent_id`, `fabric.session_id`,
 `fabric.request_id`, plus any `fabric.retrieval` / `fabric.guardrail`
-/ `fabric.escalation` span events the turn recorded. Spans land in
-whatever your Collector fans out to — Langfuse, Tempo, Jaeger,
-Honeycomb. With the chart's curated-Langfuse bootstrap, they appear
-in the Langfuse project created by the init Job. For pure-local
+/ `fabric.escalation` span events the turn recorded.
+
+Per-call detail: wrap the LLM API call in `Decision.llm_call(...)` and
+each tool / function call in `Decision.tool_call(...)` to capture
+child spans with the OpenTelemetry GenAI semantic conventions
+(`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`,
+`gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`) plus
+Fabric `fabric.llm.*` / `fabric.tool.*` mirrors:
+
+```python
+with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+    response = anthropic_client.messages.create(...)
+    call.set_usage(
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        finish_reason=response.stop_reason,
+    )
+```
+
+Phoenix's LLM view, Langfuse cost dashboards, and any backend keyed
+on either namespace render Fabric traces natively from this release
+onward.
+
+Spans land in whatever your Collector fans out to — Langfuse, Tempo,
+Jaeger, Honeycomb. With the chart's curated-Langfuse bootstrap, they
+appear in the Langfuse project created by the init Job. For pure-local
 debugging, swap `OTLPSpanExporter` for `ConsoleSpanExporter`.
 
 ## 5. What's next

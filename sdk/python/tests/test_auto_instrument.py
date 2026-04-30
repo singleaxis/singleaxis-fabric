@@ -153,7 +153,33 @@ def test_instrument_method_failure_logs_warning_and_skips(
     with caplog.at_level("WARNING", logger="fabric.auto_instrument"):
         enabled = enable_auto_instrumentation(only=["openai"])
     assert enabled == ()  # failed instrument() means not enabled
-    assert "instrument() raised" in caplog.text
+    assert "raised on init/instrument" in caplog.text
+
+
+def test_instrumentor_constructor_failure_logs_warning_and_skips(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Some upstream Instrumentors check peer-dep imports in __init__
+    # rather than .instrument(). Make sure we catch __init__ failures
+    # too — silently skipping a broken Instrumentor is the right
+    # posture; crashing agent startup over a third-party bug is not.
+    fake_module = types.ModuleType("opentelemetry.instrumentation.openai_v2")
+
+    class BrokenInit:
+        def __init__(self) -> None:
+            raise ImportError("openai package missing")
+
+        def instrument(self) -> None:  # pragma: no cover — never reached
+            pass
+
+    fake_module.OpenAIInstrumentor = BrokenInit  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "opentelemetry.instrumentation.openai_v2", fake_module)
+
+    with caplog.at_level("WARNING", logger="fabric.auto_instrument"):
+        enabled = enable_auto_instrumentation(only=["openai"])
+    assert enabled == ()
+    assert "raised on init/instrument" in caplog.text
 
 
 def test_module_imports_but_class_missing_logs_warning(

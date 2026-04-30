@@ -82,6 +82,26 @@ func (c *Config) Validate() error {
 // OTel" surface the SDK + auto-instrumentation packages produce.
 // Anything outside these prefixes is treated as a foreign / risky
 // attribute and stripped before egress.
+//
+// All prefixes intentionally end with "." so that prefix matches
+// are namespace-scoped (e.g. `fabric.` matches `fabric.tenant_id`
+// but NOT `fabricx.spoof`). Future additions should preserve this
+// invariant.
+//
+// Notes on individual entries:
+//   - `fabric.` — Fabric SDK's first-class governance namespace
+//     (tenant_id, agent_id, profile, decision attributes)
+//   - `gen_ai.` — OpenTelemetry GenAI semantic conventions
+//   - `llm.` — Fabric's mirror of GenAI; written by Decision.llm_call
+//   - `tool.` — Fabric's mirror of `gen_ai.tool.*`; written by
+//     Decision.tool_call. Operators emitting their own internal
+//     attributes under `tool.` (e.g. `tool.private_key`) would have
+//     them pass through; rename the operator's namespace to avoid
+//     collision, or override TraceAttributePrefixes per deployment.
+//   - `service.`, `telemetry.`, `otel.` — standard OTel resource
+//     and instrumentation-scope attributes
+//   - `http.`, `net.`, `rpc.`, `db.` — standard OTel semantic
+//     conventions for upstream auto-instrumentors
 var DefaultTraceAttributePrefixes = []string{
 	"fabric.",
 	"gen_ai.",

@@ -104,6 +104,13 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._cm: AbstractContextManager[Span] | None = None
 
     def __enter__(self) -> Self:
+        if self._cm is not None:
+            # Re-entry without prior __exit__ would orphan the first
+            # span (leak it on the tracer). Fail loud.
+            raise RuntimeError(
+                "LLMCall is already entered; call __exit__ before re-entering "
+                "(do not nest `with call:` on the same instance)"
+            )
         self._cm = self._tracer.start_as_current_span(
             LLM_CALL_SPAN_NAME,
             kind=SpanKind.CLIENT,
@@ -167,11 +174,18 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         regardless of whether a string or sequence is supplied.
         """
         if input_tokens is not None:
+            # bool is a subclass of int; accept it but reject other
+            # surprises (str etc.) up front rather than at the
+            # comparison operator with an opaque error.
+            if not isinstance(input_tokens, int) or isinstance(input_tokens, bool):
+                raise TypeError(f"input_tokens must be int, got {type(input_tokens).__name__}")
             if input_tokens < 0:
                 raise ValueError("input_tokens must be non-negative")
             self.span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, input_tokens)
             self.span.set_attribute(FABRIC_LLM_USAGE_INPUT_TOKENS, input_tokens)
         if output_tokens is not None:
+            if not isinstance(output_tokens, int) or isinstance(output_tokens, bool):
+                raise TypeError(f"output_tokens must be int, got {type(output_tokens).__name__}")
             if output_tokens < 0:
                 raise ValueError("output_tokens must be non-negative")
             self.span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, output_tokens)
@@ -231,6 +245,11 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         self._cm: AbstractContextManager[Span] | None = None
 
     def __enter__(self) -> Self:
+        if self._cm is not None:
+            raise RuntimeError(
+                "ToolCall is already entered; call __exit__ before re-entering "
+                "(do not nest `with tool:` on the same instance)"
+            )
         self._cm = self._tracer.start_as_current_span(
             TOOL_CALL_SPAN_NAME,
             kind=SpanKind.INTERNAL,
@@ -266,6 +285,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
 
     def set_result_count(self, count: int) -> None:
         """Record how many results / items the tool returned."""
+        if not isinstance(count, int) or isinstance(count, bool):
+            raise TypeError(f"count must be int, got {type(count).__name__}")
         if count < 0:
             raise ValueError("result count must be non-negative")
         self.span.set_attribute(FABRIC_TOOL_RESULT_COUNT, count)

@@ -97,16 +97,24 @@ func (g *guard) applyToRecord(lr plog.LogRecord) bool {
 }
 
 // processTraces enforces the namespace-prefix allowlist on every Span
-// in the batch. Span attributes whose keys do not start with any of
-// the configured TraceAttributePrefixes are stripped; oversized
-// strings are removed; spans whose attributes become empty are
-// dropped (matching the log path's behavior). Mutates in place.
+// in the batch. Span attributes, span event attributes, and Resource-
+// level attributes whose keys do not start with any of the configured
+// TraceAttributePrefixes are stripped; oversized strings are removed;
+// spans whose attributes AND events both become empty are dropped.
+// Mutates in place.
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
 	if !g.cfg.TraceProcessingEnabled {
 		return td, nil
 	}
 	rss := td.ResourceSpans()
 	for ri := 0; ri < rss.Len(); ri++ {
+		// Filter Resource attributes too — service.*, telemetry.*,
+		// host.*, etc. live here. A misbehaving SDK that puts
+		// sensitive metadata on the Resource (deployment names,
+		// internal hostnames) would otherwise bypass the span-level
+		// filter entirely.
+		g.filterAttributes(rss.At(ri).Resource().Attributes(), "resource")
+
 		sss := rss.At(ri).ScopeSpans()
 		for si := 0; si < sss.Len(); si++ {
 			spans := sss.At(si).Spans()
@@ -119,9 +127,38 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 }
 
 // applyToSpan returns true when the span should be removed.
-// Mutation of attributes happens in place via RemoveIf.
+// Filters attributes on the span itself AND on each of its events.
+// A span is dropped only when both its attributes and all event
+// attribute sets are empty after stripping — preserving spans that
+// still have a meaningful event trail even if every span-level
+// attribute was foreign.
 func (g *guard) applyToSpan(sp ptrace.Span) bool {
-	attrs := sp.Attributes()
+	g.filterAttributes(sp.Attributes(), "span:"+sp.Name())
+
+	// Filter each event's attributes. Events carry their own
+	// attribute maps; SDK-emitted events (fabric.guardrail,
+	// fabric.escalation, fabric.retrieval, fabric.memory) all use
+	// fabric.* keys so survive the allowlist; foreign events get
+	// scrubbed.
+	events := sp.Events()
+	totalEventAttrs := 0
+	for ei := 0; ei < events.Len(); ei++ {
+		ev := events.At(ei)
+		g.filterAttributes(ev.Attributes(), "event:"+ev.Name())
+		totalEventAttrs += ev.Attributes().Len()
+	}
+
+	// Drop the span only if EVERY remaining signal is gone: no
+	// surviving span attributes AND no surviving event attributes.
+	// (We don't check events.Len() alone because an event with all
+	// attributes stripped still occupies a slot but carries nothing.)
+	return sp.Attributes().Len() == 0 && totalEventAttrs == 0
+}
+
+// filterAttributes applies the namespace-prefix allowlist + max-bytes
+// truncation to a single attribute map. Mutates in place via RemoveIf.
+// `context` is a free-form label used in debug logs.
+func (g *guard) filterAttributes(attrs pcommon.Map, context string) {
 	stripped := 0
 	oversized := 0
 	attrs.RemoveIf(func(k string, v pcommon.Value) bool {
@@ -137,18 +174,13 @@ func (g *guard) applyToSpan(sp ptrace.Span) bool {
 		}
 		return false
 	})
-
 	if stripped > 0 || oversized > 0 {
 		g.logger.Debug("trace allowlist applied",
-			zap.String("span_name", sp.Name()),
+			zap.String("context", context),
 			zap.Int("stripped", stripped),
 			zap.Int("oversized", oversized),
 		)
 	}
-
-	// Spans with no surviving attributes are dropped — they carry no
-	// signal worth forwarding once governance metadata is gone.
-	return attrs.Len() == 0
 }
 
 // spanKeyAllowed returns true if the attribute key starts with one

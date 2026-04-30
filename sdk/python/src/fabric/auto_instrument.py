@@ -186,13 +186,17 @@ def _try_enable(spec: _InstrumentorSpec) -> bool:
         )
         return False
     try:
+        # Wrap both the constructor AND the .instrument() call —
+        # third-party Instrumentor.__init__ can raise on missing peer
+        # deps (e.g., openai-instrumentation requires `openai` itself
+        # to be importable; older versions check that in __init__).
         instrumentor_cls().instrument()
     except Exception:
-        # Catching broad on purpose — Instrumentor.instrument() is
-        # third-party and can raise anything. Better to log and skip
-        # than to take down agent startup.
+        # Catching broad on purpose — Instrumentor's constructor and
+        # .instrument() are third-party and can raise anything.
+        # Better to log and skip than to take down agent startup.
         logger.warning(
-            "fabric.auto_instrument: %s.instrument() raised; skipping",
+            "fabric.auto_instrument: %s instrumentor raised on init/instrument; skipping",
             spec.name,
             exc_info=True,
         )

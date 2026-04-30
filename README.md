@@ -126,9 +126,16 @@ with fabric.decision(
     user_id="user-42",
 ) as decision:
     safe_input = decision.guard_input("hello")               # Presidio rail
-    answer = "..."                                           # call your LLM
+
+    # Wrap the LLM call in a child span so the trace tree captures
+    # gen_ai.* semantic conventions (model, token counts, finish
+    # reason) — Phoenix's LLM view, Langfuse cost dashboards, and
+    # any backend keyed on either namespace render natively.
+    with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+        answer = "..."  # call your LLM
+        call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
+
     safe_answer = decision.guard_output_final(answer)        # Presidio + NeMo
-    decision.set_attribute("llm.model", "claude-opus-4-7")
 ```
 
 That's the full wrapping. One span lands in your collector per agent
