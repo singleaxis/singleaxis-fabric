@@ -139,11 +139,34 @@ fabric:
       escalation: 1.0
       red_team_result: 1.0
 
-# OTLP/HTTP egress target. For the in-Collector topology this is the
-# Fabric ingest endpoint; the Bridge handles signing/encryption when
-# present.
+# OTLP/HTTP egress target.
+#
+# IMPORTANT: there is no default that works in an L1-only OSS deploy.
+# The historical default `http://fabric-ingest:8080` resolved to the
+# SingleAxis commercial Telemetry Bridge service, which is NOT shipped
+# in this OSS distribution. Leaving the field unset (empty string) is
+# treated as a render-time error so an installer cannot accidentally
+# ship a deployment that drops every span on the floor.
+#
+# Set this to whichever OTLP/HTTP backend the operator wants to fan
+# out to:
+#
+#   --set otel-collector.exporter.endpoint=http://langfuse:3000
+#       (the bundled Langfuse subchart in this umbrella, default port)
+#
+#   --set otel-collector.exporter.endpoint=https://otlp.<datadog>.com:443
+#       (Datadog OTLP intake)
+#
+#   --set otel-collector.exporter.endpoint=http://api.honeycomb.io:443
+#       (Honeycomb)
+#
+#   --set otel-collector.exporter.endpoint=http://your-collector:4318
+#       (your own collector chain)
+#
+# For partner deployments running the SingleAxis commercial Telemetry
+# Bridge, use the Bridge's ingress endpoint here.
 exporter:
-  endpoint: http://fabric-ingest:8080
+  endpoint: ""
   insecure: true
 
 # Also write to the debug exporter? Useful in dev, noisy in prod.

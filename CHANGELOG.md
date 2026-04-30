@@ -85,6 +85,22 @@ architectural lifts are explicitly deferred to v0.2.0.
 - `otel-collector` and `nemo-sidecar` readiness probe initial
   delays bumped (from 5s/3s to 15s/20s) so rolling deploys on slow
   networks don't mark pods Unready repeatedly during cold-start.
+- **`otel-collector.exporter.endpoint`** default flipped from the
+  phantom `http://fabric-ingest:8080` (which resolved to a non-existent
+  service in any L1-only deploy) to the empty string, paired with a
+  render-time validator that fails the chart install if the field is
+  unset. Previously: spans dropped silently because the configured
+  exporter target had no service behind it. Now: operator must point
+  at a real backend (bundled Langfuse, Datadog, Honeycomb, your own
+  collector chain, or — for partner deployments — the SingleAxis
+  commercial Telemetry Bridge). CI smoke renders set
+  `otel-collector.exporter.acceptUnsetEndpoint=true` to bypass.
+- `eu-ai-act-high-risk` profile now sets explicit `ingressFrom` /
+  `egressTo` defaults on otel-collector and nemo-sidecar
+  NetworkPolicies — ingress restricted to `fabric-system` namespace
+  rather than the previous `namespaceSelector: {}` (which permitted
+  any namespace under denyDefault). Operators bridging from agent
+  pods in other namespaces extend `ingressFrom` to permit them.
 
 ### Fixed (docs)
 
