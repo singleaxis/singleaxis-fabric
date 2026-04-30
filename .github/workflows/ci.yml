@@ -60,7 +60,18 @@ jobs:
     # gate already runs on every PR — re-running on push-to-main is
     # redundant AND breaks tag-cutting if the squash title doesn't
     # parse as <type>: <subject>.
-    if: github.event_name == 'pull_request'
+    #
+    # Skip for dependabot PRs: dependabot's auto-generated titles
+    # ("Bump the go_modules group across 3 directories with 1
+    # update", 73 chars) and changelog-excerpt bodies (long
+    # markdown links) routinely violate header-max-length and
+    # body-max-line-length. The squash-merge title is set by the
+    # human maintainer at merge-time and still has to pass
+    # commitlint when applied — that's where the rule actually
+    # matters.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v6
         with:
