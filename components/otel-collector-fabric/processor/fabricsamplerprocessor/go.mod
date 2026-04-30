@@ -18,9 +18,9 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	go.opentelemetry.io/collector/config/configtelemetry v0.115.0 // indirect
 	go.opentelemetry.io/collector/pipeline v0.115.0 // indirect
-	go.opentelemetry.io/otel v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.39.0 // indirect
-	go.opentelemetry.io/otel/trace v1.39.0 // indirect
+	go.opentelemetry.io/otel v1.41.0 // indirect
+	go.opentelemetry.io/otel/metric v1.41.0 // indirect
+	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
