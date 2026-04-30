@@ -6,6 +6,121 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Headed for v0.2.0 — Fabric earns the "open-source observability +
+control plane for AI agents" framing by capturing LLM operations
+natively. Three substantive additions: per-LLM-call child spans
+with `gen_ai.*` semantic conventions, auto-instrument extras for
+the popular LLM SDKs, and a trace pipeline on the OTel collector's
+custom guard processor so the chart's privacy promise actually
+applies to the SDK's spans (not just future L2 bridge log records).
+
+### Added (SDK)
+
+- `Decision.llm_call(system=..., model=...)` opens a `fabric.llm_call`
+  child span (kind=CLIENT) under the active decision span. Writes
+  the OpenTelemetry GenAI semantic conventions
+  (`gen_ai.system`, `gen_ai.request.model`,
+  `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`,
+  `gen_ai.response.finish_reasons`) plus matching `fabric.llm.*`
+  mirrors. The returned context manager exposes
+  `.set_usage(input_tokens, output_tokens, finish_reason)`,
+  `.set_response_model(model)`, and `.set_attribute(key, value)` for
+  attaching response data on exit. Phoenix LLM views, Langfuse cost
+  dashboards, and any backend keying off either namespace render
+  Fabric traces natively from this release onward.
+- `Decision.tool_call(name, call_id=None)` follows the same pattern
+  for tool/function invocations. Writes `gen_ai.tool.name`,
+  `gen_ai.tool.call.id`, plus `fabric.tool.*` mirrors. Setter
+  `.set_result_count(count)` records how many results the tool
+  returned.
+- `LLMCall` and `ToolCall` exposed at the package level for callers
+  building custom instrumentation patterns.
+- Auto-instrumentation extras — one `pip install` covers governance
+  + LLM-call observability for the popular SDK families:
+  - `singleaxis-fabric[openai]` →
+    `opentelemetry-instrumentation-openai-v2`
+  - `singleaxis-fabric[anthropic]` →
+    `opentelemetry-instrumentation-anthropic`
+  - `singleaxis-fabric[bedrock]` →
+    `opentelemetry-instrumentation-bedrock`
+  - `singleaxis-fabric[otel-langchain]` →
+    `opentelemetry-instrumentation-langchain`
+  - `singleaxis-fabric[cohere]` →
+    `opentelemetry-instrumentation-cohere`
+- `Fabric.enable_auto_instrumentation(only=..., capture_content=...)`
+  lazy-detects which extras are installed and invokes each
+  Instrumentor's `.instrument()`. Content capture (raw prompts /
+  completions on spans) is **off by default** per Fabric's
+  compliance posture; override with `capture_content=True` or
+  `FABRIC_CAPTURE_LLM_CONTENT=true` env. Silently skips uninstalled
+  extras; warns and continues when an upstream Instrumentor raises
+  rather than crashing agent startup.
+- Reference agent (`examples/reference-agent/`) now wraps its
+  simulated LLM call in `decision.llm_call` so users see the
+  canonical pattern in the runnable example.
+
+### Added (OTel collector)
+
+- `fabricguardprocessor` registers a Traces pipeline variant
+  alongside the existing Logs variant. Spans are filtered by an
+  attribute-key namespace allowlist (default:
+  `fabric.`, `gen_ai.`, `llm.`, `tool.`, `service.`, `telemetry.`,
+  `otel.`, `http.`, `net.`, `rpc.`, `db.`). Anything outside these
+  prefixes is stripped before egress; spans whose attributes become
+  empty are dropped. Operators tighten / extend via
+  `trace_attribute_prefixes`; trace processing is OFF by default
+  (`trace_processing_enabled: false`) so existing operator config
+  files work unchanged. Closes the gap where the chart's privacy/
+  policy enforcement only applied to L2-bridge-shaped log records,
+  while the SDK's spans bypassed the processor entirely.
+
+### Changed (docs / scope)
+
+- L1/L2 boundary now load-bearing across all narrative docs.
+  README hero is "open-source observability and control plane for
+  AI agents"; specs 003 (Context Graph), 004 (Telemetry Bridge),
+  006 (LLM-as-Judge), 007 (Escalation Workflow) gain explicit "L2
+  commercial control plane / not in this OSS distribution"
+  disclaimers — the implementation lives in a separate private
+  repository, the spec is retained for partner/auditor
+  transparency.
+- Spec 002 §L2 wording corrected from "OpenTelemetry +
+  OpenLLMetry" to "OpenTelemetry + GenAI semantic conventions" —
+  the conventions are joint OTel/Traceloop work; "OpenLLMetry" is
+  a project name, not a spec name. Fabric does not depend on
+  `traceloop-sdk`.
+- Spec 011 (roadmap) recast as "L2 + L4 + L5 + L1 adapters" of
+  the 8-layer agent stack: that's the OSS scope. v0.2.x = capture-
+  everything SDK; v0.3.x+ = additional language SDKs + broader
+  rails catalog + conformance test suite.
+- Spec 009 (compliance mapping) rewritten to make explicit that
+  per-regulation mappings ship with the L2 commercial control
+  plane; the L1 OSS chart provides regulatory profiles as
+  hardened presets only.
+- New `docs/exporting-to-your-observability-backend.md` — concrete
+  Helm wire-ups for Langfuse, Phoenix, Datadog, Honeycomb, Grafana
+  Cloud, custom collectors. Replaces the implicit
+  "fabric-ingest:8080" assumption.
+- New `docs/how-fabric-fits-in-your-agent-stack.md` — 8-layer
+  picture with where Fabric ships code (★) vs adapter/integration
+  vs out-of-scope (◆), plus end-to-end ASCII diagram showing the
+  L1 OSS / L2 commercial boundary.
+- New `sdk/python/SCOPE.md` — what the SDK does and explicitly
+  does NOT do.
+
+### Fixed (CI)
+
+- Pre-existing CI red on the audit-followup branch resolved
+  (5 of 5 red checks): SDK ruff RUF100 unused `# noqa: SLF001`
+  directives in `test_tracing.py`, SIM117 nested `with` in
+  `test_retrieval.py`, three nemo-sidecar CLI tests
+  (`test_cli_invokes_uvicorn_on_uds/tcp`,
+  `test_cli_unlinks_stale_socket`) updated to pass
+  `--allow-passthrough` after the round-1 security tightening
+  made `--rails-config` mandatory by default.
+
 ## [0.1.3] - 2026-04-27
 
 Round-2 audit follow-up. 5 parallel deep-audit agents flagged ~80
