@@ -108,16 +108,18 @@ def test_record_retrieval_emits_span_event(span_exporter: InMemorySpanExporter) 
 
 def test_record_retrieval_rejects_mismatched_hash_count() -> None:
     client = _client()
-    with client.decision(session_id="s", request_id="r") as dec:
-        with pytest.raises(ValueError, match="result_hashes length"):
-            dec.record_retrieval(
-                RetrievalSource.RAG,
-                query="q",
-                result_count=4,
-                # 4 declared, only 2 hashes — silent mismatch would
-                # corrupt the Context Graph projection downstream.
-                result_hashes=["a" * 64, "b" * 64],
-            )
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(ValueError, match="result_hashes length"),
+    ):
+        dec.record_retrieval(
+            RetrievalSource.RAG,
+            query="q",
+            result_count=4,
+            # 4 declared, only 2 hashes — silent mismatch would
+            # corrupt the Context Graph projection downstream.
+            result_hashes=["a" * 64, "b" * 64],
+        )
 
 
 def test_record_retrieval_omits_optional_attrs_when_unset(

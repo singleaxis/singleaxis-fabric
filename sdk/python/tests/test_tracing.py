@@ -25,18 +25,18 @@ def _reset_tracer_provider() -> Iterator[None]:
     """
     from opentelemetry.util._once import Once  # noqa: PLC0415
 
-    saved_provider = trace._TRACER_PROVIDER  # noqa: SLF001
-    saved_once = trace._TRACER_PROVIDER_SET_ONCE  # noqa: SLF001
-    trace._TRACER_PROVIDER = None  # noqa: SLF001
-    trace._TRACER_PROVIDER_SET_ONCE = Once()  # noqa: SLF001
+    saved_provider = trace._TRACER_PROVIDER
+    saved_once = trace._TRACER_PROVIDER_SET_ONCE
+    trace._TRACER_PROVIDER = None
+    trace._TRACER_PROVIDER_SET_ONCE = Once()
     # Also reset the SDK's noop-warning latch so the fresh install
     # isn't suppressed by a stale flag.
     import fabric.tracing as ft  # noqa: PLC0415
 
-    ft._NOOP_PROVIDER_WARNED = False  # noqa: SLF001
+    ft._NOOP_PROVIDER_WARNED = False
     yield
-    trace._TRACER_PROVIDER = saved_provider  # noqa: SLF001
-    trace._TRACER_PROVIDER_SET_ONCE = saved_once  # noqa: SLF001
+    trace._TRACER_PROVIDER = saved_provider
+    trace._TRACER_PROVIDER_SET_ONCE = saved_once
 
 
 def test_get_tracer_uses_sdk_identity() -> None:

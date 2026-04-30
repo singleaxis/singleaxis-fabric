@@ -82,9 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         limit_concurrency = int(raw_conc)
     except ValueError:
-        parser.error(
-            f"FABRIC_LIMIT_CONCURRENCY={raw_conc!r} is not a valid integer"
-        )
+        parser.error(f"FABRIC_LIMIT_CONCURRENCY={raw_conc!r} is not a valid integer")
         return 2  # pragma: no cover (parser.error raises)
 
     app = build_app(engine=engine)

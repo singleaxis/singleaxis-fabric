@@ -31,7 +31,9 @@ def test_cli_invokes_uvicorn_on_uds(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(UVICORN_RUN, fake_run)
     sock = tmp_path / "sidecar.sock"
-    assert cli_module.main(["--uds", str(sock)]) == 0
+    # `--allow-passthrough` is required because no `--rails-config` is
+    # provided; the security hardening in 3a9245d makes that explicit.
+    assert cli_module.main(["--uds", str(sock), "--allow-passthrough"]) == 0
     assert captured["uds"] == str(sock)
     assert "app" in captured
 
@@ -39,7 +41,7 @@ def test_cli_invokes_uvicorn_on_uds(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_cli_invokes_uvicorn_on_tcp(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(UVICORN_RUN, lambda **kw: captured.update(kw))
-    assert cli_module.main(["--port", "8081", "--host", "127.0.0.1"]) == 0
+    assert cli_module.main(["--port", "8081", "--host", "127.0.0.1", "--allow-passthrough"]) == 0
     assert captured["port"] == 8081
     assert captured["host"] == "127.0.0.1"
 
@@ -48,7 +50,7 @@ def test_cli_unlinks_stale_socket(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     sock = tmp_path / "stale.sock"
     sock.write_bytes(b"")
     monkeypatch.setattr(UVICORN_RUN, lambda **kw: None)
-    cli_module.main(["--uds", str(sock)])
+    cli_module.main(["--uds", str(sock), "--allow-passthrough"])
     assert not sock.exists()
 
 
