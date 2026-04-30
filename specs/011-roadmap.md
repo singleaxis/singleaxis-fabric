@@ -127,7 +127,7 @@ deployment puts spans into a real backend.
 - **Bundled-Langfuse default exporter** — when `langfuse.enabled:
   true` (chart default), the otel-collector's exporter wires to the
   bundled Langfuse service automatically. The "spans go somewhere
-  real out of the box" experience the v0.1.3 fail-loud guard sets up.
+  real out of the box" experience the v0.2.0 fail-loud guard sets up.
 - **Additional SDK languages:** Go, TypeScript (same sidecar model;
   gRPC or UDS bridge)
 - **Rails library:** broader NeMo Colang rail catalog organized by

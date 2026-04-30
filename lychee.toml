@@ -80,4 +80,22 @@ exclude = [
   # from .github/PULL_REQUEST_TEMPLATE.md as the canonical reference
   # for the project's commit-message format. The URL is stable.
   "^https://www\\.conventionalcommits\\.org/",
+
+  # opentelemetry.io Connection Reset under CI bursts. The GenAI
+  # semconv URL (specs/002-architecture.md, CHANGELOG.md) returns 200
+  # from a browser; lychee fails it sporadically. The URL is canonical.
+  "^https://opentelemetry\\.io/",
+
+  # kubernetes.io Connection Reset under CI bursts. Cited from chart
+  # READMEs and update-agent docs (admission-controller spec is the
+  # canonical reference for what fail-closed means). Stable URL.
+  "^https://kubernetes\\.io/",
+
+  # v0.2.0 release tag URL is referenced in the CHANGELOG link footer
+  # but the tag doesn't exist until release.yml runs. Same pattern as
+  # v0.1.0/0.1.2/0.1.3 above; the exclude is removed by an automated
+  # post-release sweep when the tag lands.
+  "^https://github\\.com/singleaxis/singleaxis-fabric/releases/tag/v0\\.2\\.0",
+  "^https://github\\.com/singleaxis/singleaxis-fabric/releases/download/v0\\.2\\.0",
+  "^https://github\\.com/singleaxis/singleaxis-fabric/compare/v0\\.2\\.0",
 ]

@@ -8,13 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Headed for v0.2.0 — Fabric earns the "open-source observability +
-control plane for AI agents" framing by capturing LLM operations
-natively. Three substantive additions: per-LLM-call child spans
-with `gen_ai.*` semantic conventions, auto-instrument extras for
-the popular LLM SDKs, and a trace pipeline on the OTel collector's
-custom guard processor so the chart's privacy promise actually
-applies to the SDK's spans (not just future L2 bridge log records).
+*(nothing yet)*
+
+## [0.2.0] - 2026-05-01
+
+Fabric earns the "open-source observability + control plane for
+AI agents" framing by capturing LLM operations natively. Three
+substantive additions over the v0.1.x line: per-LLM-call child
+spans with `gen_ai.*` semantic conventions, auto-instrument extras
+for the popular LLM SDKs, and a trace pipeline on the OTel
+collector's custom guard processor so the chart's privacy promise
+actually applies to the SDK's spans (not just future L2 bridge
+log records).
+
+This release subsumes the **never-tagged 0.1.3 audit follow-up**
+work (round-2 audit fixes across SDK, components, charts, docs,
+and specs). 0.1.3 was prepped on the `chore/v0-1-3-audit-followup`
+branch and merged to main, but the new public API additions in
+that branch (`Decision.llm_call`, `Decision.tool_call`, the
+`[openai]/[anthropic]/...` extras, `fabricguardprocessor` trace
+processing) are semver-minor work, not patch — so we skip the
+0.1.3 tag and ship everything as 0.2.0. The audit-follow-up
+section below preserves the full per-component fix list.
 
 ### Added (SDK)
 
@@ -121,13 +136,16 @@ applies to the SDK's spans (not just future L2 bridge log records).
   `--allow-passthrough` after the round-1 security tightening
   made `--rails-config` mandatory by default.
 
-## [0.1.3] - 2026-04-27
+### Audit follow-up (folded from never-tagged 0.1.3)
 
-Round-2 audit follow-up. 5 parallel deep-audit agents flagged ~80
+Round-2 audit fixes. 5 parallel deep-audit agents flagged ~80
 issues across SDK code-correctness, components, charts, specs, and
-production-readiness. This release fixes the customer-visible
-launch-blockers and the no-regret hygiene items; larger
-architectural lifts are explicitly deferred to v0.2.0.
+production-readiness. The following per-component fix list was
+prepped under the `chore/v0-1-3-audit-followup` branch and merged
+to main as PR #44, but the surrounding work added new public API
+(`Decision.llm_call`, `Decision.tool_call`, auto-instrument extras,
+collector trace processing) so we skip the 0.1.3 tag and roll
+everything into 0.2.0.
 
 ### Fixed (SDK)
 
@@ -765,8 +783,8 @@ been exercised against a real tag. See Known issues below.
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.3...HEAD
-[0.1.3]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.3
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.2.0
 [0.1.2]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.2
 [0.1.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.1
 [0.1.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0
