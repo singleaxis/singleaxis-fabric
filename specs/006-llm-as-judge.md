@@ -8,6 +8,16 @@ owner: project-lead
 
 # 006 — LLM-as-Judge
 
+> **Scope note (2026-04-27).** This spec is the **design of record**
+> for the judge worker pool and rubric library — Layer 6 of the
+> 8-layer model and part of the SingleAxis commercial control plane.
+> The implementation lives in a separate private repository, not in
+> this OSS distribution. The spec is retained here so partners and
+> auditors can review the rubric contract, scoring semantics, and
+> async evaluation pipeline. L1 OSS deployments emit decision spans;
+> the commercial control plane consumes them and materializes scored
+> evaluations.
+
 ## Summary
 
 Layer 6 scores agent decisions asynchronously against a signed,

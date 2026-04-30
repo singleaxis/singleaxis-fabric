@@ -8,6 +8,15 @@ owner: project-lead
 
 # 003 — Context Graph
 
+> **Scope note (2026-04-27).** This spec is the **design of record**
+> for the Context Graph, which is part of the SingleAxis commercial
+> control plane (Layer 2). The implementation lives in a separate
+> private repository, not in this OSS distribution. The spec is kept
+> here for partner/auditor transparency: it defines the wire contract
+> and provenance semantics that the L1 SDK targets when emitting
+> spans, retrieval records, and memory writes. L1 OSS deployments
+> emit the inputs; the Layer 2 control plane materializes the graph.
+
 ## Summary
 
 The **Context Graph** is Fabric's load-bearing contribution. It is a

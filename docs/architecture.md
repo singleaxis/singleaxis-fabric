@@ -5,6 +5,15 @@ A short mental model. The authoritative spec is
 exists so you can orient yourself in two pages instead of
 thirty.
 
+> **Scope.** This page describes the **L1 OSS** distribution that
+> ships from this repository: the Fabric SDK, guardrail sidecars,
+> OTel collector, red-team runner, and Helm chart. The L2 commercial
+> control plane (judge workers, context graph, telemetry bridge,
+> escalation service, evidence bundles) is referenced where it sits
+> in the picture, but its implementation lives in a separate private
+> repository — see [`specs/001-product-vision.md`](../specs/001-product-vision.md)
+> for the L1/L2 split.
+
 ## Three layers you touch
 
 Fabric has many components; developers working with it day-to-day

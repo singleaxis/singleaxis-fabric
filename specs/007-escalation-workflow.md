@@ -8,15 +8,35 @@ owner: project-lead
 
 # 007 — Escalation Workflow
 
+> **Scope split (2026-04-27).** This spec covers two layers that ship
+> in different tiers:
+>
+> - **L1 OSS — Escalation primitive (this repo).** The SDK exception
+>   (`EscalationRequested`), the typed payload (`EscalationSummary`),
+>   `Decision.request_escalation`, and the orchestration adapters
+>   (LangGraph `interrupt()`, MAF `request_info`, CrewAI
+>   `human_feedback`) all ship in `sdk/python/`. Operators get a
+>   clean way to pause the agent and emit an escalation event on the
+>   decision span; what consumes that event is up to them.
+>
+> - **L2 commercial — SASF Review service + signed verdict + resume
+>   protocol.** The reviewer dashboard, signed decision webhook, and
+>   durable checkpoint store live in the SingleAxis commercial control
+>   plane (separate private repository). Sections "SASF Review",
+>   "Signed decision webhook", and "Resume protocol" below describe
+>   that L2 pipeline as design of record; they are not implemented in
+>   the OSS distribution.
+
 ## Summary
 
 When a judge (L6) flags a decision as high-risk or a guardrail (L5)
 escalates a borderline case, Fabric can **pause the agent mid-
 execution**, hand the decision to a SASF human reviewer, and
 **resume** (or reject) based on the reviewer's signed decision. This
-spec defines the mechanics: how the agent pauses, what sanitized
-packet reaches the reviewer, how the decision is signed and returned,
-and how the agent resumes without losing state.
+spec defines the mechanics: how the agent pauses (L1 OSS), what
+sanitized packet reaches the reviewer (L2), how the decision is
+signed and returned (L2), and how the agent resumes without losing
+state (L1 SDK + L2 backend).
 
 Content stays in the tenant VPC. Only the decision — approve, reject,
 modify — crosses the boundary to and from SASF.

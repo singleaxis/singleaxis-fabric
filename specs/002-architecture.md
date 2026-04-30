@@ -44,7 +44,7 @@ async, and how they compose into a deployable unit.
 | # | Layer | Tenant chooses? | Default tooling | Latency tier |
 |---|-------|-----------------|-----------------|--------------|
 | L1 | Orchestration & Runtime | ✅ | LangGraph / CrewAI / Agent Framework / custom | Inline (tenant's agent) |
-| L2 | Agent Tracing (OTel) | ⛔ standard | OpenTelemetry + OpenLLMetry | Inline (emit), async (export) |
+| L2 | Agent Tracing (OTel) | ⛔ standard | OpenTelemetry + GenAI semantic conventions | Inline (emit), async (export) |
 | L3 | Observability & Eval Platform | ✅ (from menu) | Langfuse (also: Arize Phoenix, MLflow) | Async |
 | L4 | Red-Teaming & Testing | ✅ (from menu) | Garak + PyRIT + Promptfoo | Offline (not in request path) |
 | L5 | Guardrails & Policy | Opinionated default | Presidio + NeMo Guardrails | **Inline, in-process** |
@@ -67,11 +67,25 @@ less-common frameworks or homegrown orchestrators can conform.
 
 ### L2 — Agent Tracing (OTel)
 
-Standard. OpenTelemetry with the OpenLLMetry semantic conventions
-for LLM operations. Emitted by the tenant's agent via the Fabric
-SDK with no network hop; a local OTel Collector sidecar receives
-spans and fans out. Span emission is fire-and-forget; agent never
-waits.
+Standard. OpenTelemetry, with the OpenTelemetry GenAI semantic
+conventions (the `gen_ai.*` namespace, jointly stewarded by the
+OTel community) used for LLM-call attributes alongside Fabric's
+own `fabric.*` namespace for agent-decision-level governance
+metadata. The conventions are still maturing; the SDK writes both
+namespaces from v0.2.0 onward so dashboards keyed off either
+namespace render correctly. The SDK emits from the tenant's agent
+with no network hop; a local OTel Collector sidecar receives spans
+and fans out to whatever observability backend the operator chose
+(Langfuse, Phoenix, Datadog, Honeycomb, your own collector, or —
+for partner deployments — the SingleAxis commercial Telemetry
+Bridge). Span emission is fire-and-forget; agent never waits.
+
+Earlier revisions of this spec named the conventions "OpenLLMetry"
+(Traceloop's project name); the conventions are now joint
+OTel/Traceloop work and the OTel naming is preferred. Fabric does
+not depend on `traceloop-sdk`; auto-instrumentation packages
+(`opentelemetry-instrumentation-openai`, etc.) are pulled as opt-in
+extras only.
 
 ### L3 — Observability & Eval Platform
 
