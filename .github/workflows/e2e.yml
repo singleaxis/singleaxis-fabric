@@ -51,7 +51,7 @@ jobs:
       - name: Build collector image (no push, load locally)
         # Built locally so we can kind-load it. Do NOT push to GHCR
         # from this workflow — that's the release workflow's job.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
