@@ -6,8 +6,8 @@ description: |
   how they are configured. See specs/008-deployment-model.md for the
   authoritative shape.
 type: application
-version: 0.1.3
-appVersion: "0.1.3"
+version: 0.2.0
+appVersion: "0.2.0"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - ai-governance
@@ -35,35 +35,35 @@ annotations:
 # internally and are not part of this distribution.
 dependencies:
   - name: otel-collector
-    version: 0.1.3
+    version: 0.2.0
     condition: otelCollector.enabled
     repository: ""
     tags:
       - telemetry
 
   - name: nemo-sidecar
-    version: 0.1.3
+    version: 0.2.0
     condition: nemoSidecar.enabled
     repository: ""
     tags:
       - guardrails
 
   - name: langfuse
-    version: 0.1.3
+    version: 0.2.0
     condition: langfuse.enabled
     repository: ""
     tags:
       - observability
 
   - name: redteam-runner
-    version: 0.1.3
+    version: 0.2.0
     condition: redteamRunner.enabled
     repository: ""
     tags:
       - security
 
   - name: update-agent
-    version: 0.1.3
+    version: 0.2.0
     condition: updateAgent.enabled
     repository: ""
     tags:

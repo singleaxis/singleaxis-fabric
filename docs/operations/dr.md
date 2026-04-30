@@ -58,7 +58,7 @@ indicator the cluster will not recover cleanly.
 ```bash
 # Pick a recovery region/cluster. Pin the chart version that was
 # running pre-incident — record this in your incident channel.
-export FABRIC_VERSION=0.1.3
+export FABRIC_VERSION=0.2.0
 export RECOVERY_NAMESPACE=fabric-system
 
 # Provision the cluster (cloud-specific; not Fabric-specific).
@@ -124,11 +124,11 @@ ready to receive traffic once the cluster is up.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `helm install` fails: `tenant.id is required` | Missing `--set tenant.id` | Add it; chart fail-renders by design (see CHANGELOG 0.1.3) |
+| `helm install` fails: `tenant.id is required` | Missing `--set tenant.id` | Add it; chart fail-renders by design (see CHANGELOG 0.2.0) |
 | Webhook fails: `placeholder publicKey` | Forgot to pass real Ed25519 key | `--set update-agent.config.trustedKeys[0].publicKey=<base64>` |
 | Pods CrashLoopBackOff with "Postgres unreachable" | DSN points at the wrong host or backup hasn't promoted | Verify DSN; verify pg_isready against the new host |
 | Agent code's spans show up in old Langfuse, not new | Agent's `OTEL_EXPORTER_OTLP_ENDPOINT` still points at the dead cluster | Update the agent-side env var to point at the recovery collector |
-| `cosign verify` fails on the published image | You're trying to install an unsigned tag (e.g. `latest` after a roll) | Pin to a specific signed version: `--version 0.1.3` |
+| `cosign verify` fails on the published image | You're trying to install an unsigned tag (e.g. `latest` after a roll) | Pin to a specific signed version: `--version 0.2.0` |
 
 ## Backup schedule recommendations
 
