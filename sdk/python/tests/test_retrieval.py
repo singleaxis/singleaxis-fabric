@@ -84,8 +84,12 @@ def test_record_retrieval_emits_span_event(span_exporter: InMemorySpanExporter) 
         dec.record_retrieval(
             RetrievalSource.RAG,
             query="What is the PTO policy?",
-            result_count=4,
+            result_count=2,
+            # 1:1 parity with result_count enforced for hashes since
+            # one hash represents one retrieved chunk.
             result_hashes=["a" * 64, "b" * 64],
+            # source_document_ids may legitimately differ — multiple
+            # chunks can come from one source doc.
             source_document_ids=["doc-1", "doc-2"],
             latency_ms=87,
         )
@@ -96,10 +100,26 @@ def test_record_retrieval_emits_span_event(span_exporter: InMemorySpanExporter) 
     attrs = dict(events[0].attributes or {})
     assert attrs["fabric.retrieval.source"] == "rag"
     assert attrs["fabric.retrieval.query_hash"] == _sha("What is the PTO policy?")
-    assert attrs["fabric.retrieval.result_count"] == 4
+    assert attrs["fabric.retrieval.result_count"] == 2
     assert attrs["fabric.retrieval.result_hashes"] == ("a" * 64, "b" * 64)
     assert attrs["fabric.retrieval.source_document_ids"] == ("doc-1", "doc-2")
     assert attrs["fabric.retrieval.latency_ms"] == 87
+
+
+def test_record_retrieval_rejects_mismatched_hash_count() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(ValueError, match="result_hashes length"),
+    ):
+        dec.record_retrieval(
+            RetrievalSource.RAG,
+            query="q",
+            result_count=4,
+            # 4 declared, only 2 hashes — silent mismatch would
+            # corrupt the Context Graph projection downstream.
+            result_hashes=["a" * 64, "b" * 64],
+        )
 
 
 def test_record_retrieval_omits_optional_attrs_when_unset(

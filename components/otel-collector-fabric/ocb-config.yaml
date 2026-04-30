@@ -13,7 +13,7 @@ dist:
   name: otelcol-fabric
   description: SingleAxis Fabric OpenTelemetry Collector distribution
   output_path: ./dist
-  version: 0.1.2
+  version: 0.1.3
 
 extensions:
   - gomod: go.opentelemetry.io/collector/extension/zpagesextension v0.150.0

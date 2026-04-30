@@ -82,11 +82,26 @@ class RetrievalRecord(BaseModel):
 
         if not query:
             raise ValueError("query must be non-empty")
+        if result_count < 0:
+            raise ValueError("result_count must be non-negative")
+        hashes = tuple(result_hashes or ())
+        ids = tuple(source_document_ids or ())
+        # If the caller supplied per-result hashes, require 1:1 parity
+        # with result_count. Partial supply (e.g. 5 results, 2 hashes)
+        # corrupts the downstream Context Graph projection silently —
+        # better to fail loudly at record construction. source_document_ids
+        # is intentionally unconstrained: N results may share M < N
+        # documents (e.g. multiple chunks from the same source).
+        if hashes and len(hashes) != result_count:
+            raise ValueError(
+                f"result_hashes length ({len(hashes)}) must equal "
+                f"result_count ({result_count}) when supplied"
+            )
         return cls(
             source=RetrievalSource(source),
             query_hash=_sha256_hex(query),
             result_count=result_count,
-            result_hashes=tuple(result_hashes or ()),
-            source_document_ids=tuple(source_document_ids or ()),
+            result_hashes=hashes,
+            source_document_ids=ids,
             latency_ms=latency_ms,
         )

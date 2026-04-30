@@ -170,3 +170,21 @@ argocd:
       automated:
         prune: true
         selfHeal: true
+
+# PodDisruptionBudget. Default enabled because the webhook is on
+# the admission path with failurePolicy=Fail; losing both replicas
+# during a node drain blocks ConfigMap/Secret CREATE/UPDATE
+# cluster-wide. Honored only when replicaCount > 1.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# NetworkPolicy. Default off — see otel-collector/values.yaml for
+# rationale. Webhook ingress can't reliably restrict the kube-apiserver
+# source IP across CNIs, so the policy leaves the source open by
+# default and relies on TLS + signature verification. Operators on
+# enforcing CNIs can narrow `ingressFrom`. Egress is DNS-only because
+# the verifier does no outbound calls.
+networkPolicy:
+  enabled: false
+  ingressFrom: []

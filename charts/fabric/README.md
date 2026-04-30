@@ -68,10 +68,12 @@ agent's request path is *never* synchronous on a Fabric HTTP call:
 | L7 escalation | publish to bus | <5ms |
 | L7 escalation | SDK resume poll | <5ms |
 
-Published budgets are enforced in each subchart's readiness probe
-and documented in the component README. A subchart that can't meet
-its budget must flip its readiness probe to `NotReady` so HPAs /
-service meshes drain it before it hurts the tenant.
+The numbers above are design budgets per spec 005, not measured P99s
+on the current release. Today's readiness probes are simple HTTP
+`/healthz` checks (process up). A latency-aware readiness gate that
+flips `NotReady` on budget breach is roadmap; the benchmark suite
+that would inform it lands as a follow-up release. Documented in
+each component README.
 
 ## Chart structure
 

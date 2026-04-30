@@ -8,6 +8,27 @@ owner: compliance-lead
 
 # 009 — Compliance Mapping
 
+> **Scope note (2026-04-27).** Two distinct artifacts described here
+> ship at different tiers:
+>
+> - **L1 OSS — Regulatory profiles.** The Helm chart's
+>   `eu-ai-act-high-risk` profile (and any future `nist-ai-rmf`,
+>   `iso-42001`, `sr-11-7`, `hipaa` profiles, all roadmap) lock the
+>   subset of configuration that maps to the regulation's
+>   technical-control surface. Today only `eu-ai-act-high-risk` and
+>   `permissive-dev` ship in `charts/fabric/profiles/`.
+>
+> - **L2 commercial — Evidence Bundle export + per-regulation
+>   mappings.** The signed Evidence Bundle, the `/evidence/bundle`
+>   endpoint, the queryable Context Graph, the per-regulation control
+>   mapping documents, and the retention enforcement all live in the
+>   SingleAxis commercial control plane (separate private repo). They
+>   are described in this spec for design-of-record transparency.
+>   `docs/compliance/mappings/` ships empty in this OSS distribution
+>   by design — concrete mapping files (`eu-ai-act.md` etc.) land
+>   alongside the L2 control plane that actually produces the
+>   evidence those mappings reference.
+
 ## Summary
 
 This spec maps specific regulatory requirements — EU AI Act, NIST AI
@@ -16,9 +37,11 @@ and artifacts that produce evidence for each control. It also
 specifies the **Evidence Bundle** format — what Fabric exports when a
 tenant needs to answer an auditor.
 
-This is the load-bearing document for Fabric's commercial value:
-without a credible regulation-to-artifact mapping, the stack is just
-OSS integration; with it, the stack is defensible compliance.
+The mapping is the design contract Fabric's L1 collection
+infrastructure targets so that the L2 commercial control plane can
+materialize defensible evidence bundles. L1 alone produces the
+collection substrate; producing audit-grade bundles requires the L2
+pipeline.
 
 ## Goals
 

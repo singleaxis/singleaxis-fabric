@@ -67,8 +67,12 @@ class GuardrailChain:
             # NeMo may rewrite the content (e.g. refusal redirect).
             content = nemo_result.modified_value
             if nemo_result.action != "allow":
+                # Record only the rail in policies_fired. EntitySummary
+                # represents PII *entity classes* (e.g. EMAIL, PERSON);
+                # mixing rail names ("jailbreak_defence") into the same
+                # list confuses downstream consumers that aggregate by
+                # entity category.
                 policies.append(f"nemo:{nemo_result.rail}")
-                entities.append(EntitySummary(category=nemo_result.rail, count=1))
             if nemo_result.action == "block":
                 blocked = True
                 block_response = nemo_result.block_response

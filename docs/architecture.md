@@ -5,6 +5,15 @@ A short mental model. The authoritative spec is
 exists so you can orient yourself in two pages instead of
 thirty.
 
+> **Scope.** This page describes the **L1 OSS** distribution that
+> ships from this repository: the Fabric SDK, guardrail sidecars,
+> OTel collector, red-team runner, and Helm chart. The L2 commercial
+> control plane (judge workers, context graph, telemetry bridge,
+> escalation service, evidence bundles) is referenced where it sits
+> in the picture, but its implementation lives in a separate private
+> repository — see [`specs/001-product-vision.md`](../specs/001-product-vision.md)
+> for the L1/L2 split.
+
 ## Three layers you touch
 
 Fabric has many components; developers working with it day-to-day
@@ -13,7 +22,7 @@ only interact with three layers.
 | Layer | What it is | Where it runs | When the agent talks to it |
 |-------|------------|---------------|----------------------------|
 | **SDK** | The Python library your agent imports (`fabric`). Opens `Decision` spans, routes through guardrail chains, emits OTel telemetry. | In-process, same trust domain as the agent. | Synchronously, on every decision — this is the one call path that must be fast. |
-| **Sidecars** | Presidio (PII redaction) and NeMo Guardrails (Colang rails), exposed over Unix domain sockets. Shipped as container images; deployed alongside the agent pod. | Same pod or same node as the agent. | Synchronously on `guard_input` / `guard_output_*`, but over a UDS — no TCP, no DNS, sub-millisecond. |
+| **Sidecars** | Presidio (PII redaction) and NeMo Guardrails (Colang rails), exposed over Unix domain sockets. Shipped as container images; deployed alongside the agent pod. | Same pod or same node as the agent. | Synchronously on `guard_input` / `guard_output_*`, but over a UDS — no TCP, no DNS, design-budget sub-millisecond transport (benchmark suite is a follow-up release). |
 | **Collector** | An OpenTelemetry Collector distribution pre-configured with the Fabric processor chain (tail sampling, attribute allowlisting, tenant scoping). | One or more per-cluster deployments. | Asynchronously — the SDK exports batched spans over OTLP; the agent request path never waits for this. |
 
 Everything else in the repo (judge workers, escalation service,
@@ -27,9 +36,13 @@ agent's request path never blocks on any of them.
 
 The SDK keeps the hot path to:
 
-1. In-process span work (`<1 ms` P99).
-2. UDS calls to guardrail sidecars (`<100 ms` P99 budget per sidecar).
+1. In-process span work (target `<1 ms` P99 — design budget).
+2. UDS calls to guardrail sidecars (target `<100 ms` P99 budget per sidecar — design budget).
 3. OTLP export over a buffered, non-blocking exporter.
+
+The numeric budgets above are design contracts, not measured
+benchmarks. A first-party benchmark suite that gates merges on P99
+regressions lands as a follow-up release.
 
 Everything else — judges, escalations, context-graph writes,
 compliance evidence generation — happens off the critical path.

@@ -6,7 +6,7 @@ description: |
   light production; tenants running at scale should swap in the
   upstream Langfuse chart and keep this one disabled.
 type: application
-version: 0.1.2
+version: 0.1.3
 appVersion: "2.93.0"
 kubeVersion: ">=1.29.0-0"
 keywords:

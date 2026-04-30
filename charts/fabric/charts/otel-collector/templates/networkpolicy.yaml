@@ -1,0 +1,52 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "otel-collector.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "otel-collector.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow OTLP/gRPC + OTLP/HTTP from agent pods inside the cluster.
+    # Operators typically narrow this to specific tenant namespaces
+    # by adding a namespaceSelector or podSelector here.
+    - from:
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- else }}
+        - namespaceSelector: {}  # any namespace in the cluster
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.otlpGrpc }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.otlpHttp }}
+    # Health check probe traffic from kubelet (no source restriction).
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.health }}
+  egress:
+    # DNS to kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Egress to the configured exporter endpoint and any extra
+    # destinations the operator declares.
+    {{- with .Values.networkPolicy.egressTo }}
+    - to:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+{{- end }}

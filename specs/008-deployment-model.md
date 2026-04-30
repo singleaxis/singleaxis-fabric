@@ -79,13 +79,13 @@ charts/
     │   ├── redteam-runner/          # Fabric-authored
     │   └── update-agent/            # ArgoCD bundle
     └── profiles/
-        ├── eu-ai-act-high-risk.yaml
-        ├── eu-ai-act-limited-risk.yaml
-        ├── nist-ai-rmf.yaml
-        ├── iso-42001.yaml
-        ├── sr-11-7.yaml
-        ├── hipaa.yaml
-        └── permissive-dev.yaml      # not for production
+        ├── eu-ai-act-high-risk.yaml      # SHIPPED in 0.1.x
+        ├── permissive-dev.yaml           # SHIPPED in 0.1.x; not for production
+        ├── eu-ai-act-limited-risk.yaml   # PHASE 2 — not yet shipped
+        ├── nist-ai-rmf.yaml              # PHASE 2
+        ├── iso-42001.yaml                # PHASE 2
+        ├── sr-11-7.yaml                  # PHASE 2
+        └── hipaa.yaml                    # PHASE 2
 
                                      # (SingleAxis-internal overlay charts
                                      # — judges, escalation service,

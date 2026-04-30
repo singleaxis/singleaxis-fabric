@@ -1,0 +1,16 @@
+{{- if and (gt (int .Values.replicaCount) 1) .Values.podDisruptionBudget.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "otel-collector.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+spec:
+  # Keep at least one collector pod available so the audit-trail
+  # span stream isn't dropped during node drains.
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "otel-collector.selectorLabels" . | nindent 6 }}
+{{- end }}

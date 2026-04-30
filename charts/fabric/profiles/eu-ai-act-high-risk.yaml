@@ -24,6 +24,12 @@ namespace:
   create: true
   name: fabric-system
 
+# NetworkPolicy: deny-default at the namespace, paired with explicit
+# allow rules rendered by each subchart (otel-collector, nemo-sidecar,
+# update-agent). DNS to kube-system is permitted in every subchart's
+# rule. Operators who run a CNI without NetworkPolicy enforcement can
+# flip denyDefault back to false; the per-subchart allows then become
+# inert.
 networkPolicy:
   denyDefault: true
 
@@ -31,6 +37,26 @@ otelCollector:
   enabled: true
 otel-collector:
   replicaCount: 2
+  networkPolicy:
+    enabled: true
+    # Tighten ingress: only pods within fabric-system may post OTLP.
+    # Operators bridging from tenant agents in another namespace must
+    # extend this list (e.g. add a namespaceSelector for the agent
+    # namespace or a podSelector keyed on a known label).
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: fabric-system
+    # Default egress: allow the collector to reach the bundled Langfuse
+    # and any other in-namespace destinations. External destinations
+    # (Datadog, Honeycomb, your own collector chain) require an
+    # operator override extending this list. Without an entry covering
+    # the collector's configured `exporter.endpoint`, denyDefault=true
+    # will silently drop telemetry — see the chart README.
+    egressTo:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: fabric-system
   fabric:
     guard:
       enabled: true
@@ -68,6 +94,16 @@ nemoSidecar:
   enabled: true
 nemo-sidecar:
   replicaCount: 2
+  networkPolicy:
+    enabled: true
+    # Restrict ingress to fabric-system pods (the SDK guard chain in the
+    # tenant's agent reaches NeMo via a UDS socket, not over the network,
+    # so the only legitimate TCP callers are otel-collector, redteam-runner,
+    # and other intra-namespace components).
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: fabric-system
   rails:
     bundlePath: /etc/fabric/rails
 
@@ -107,6 +143,8 @@ redteam-runner:
 updateAgent:
   enabled: true
 update-agent:
+  networkPolicy:
+    enabled: true
   config:
     failClosed: true
   webhook:

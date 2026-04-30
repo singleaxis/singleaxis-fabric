@@ -94,3 +94,27 @@ Fail-closed unless the operator has explicitly acknowledged one of:
 {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Validate the OTLP exporter endpoint.
+
+The exporter endpoint must be set to a real OTLP/HTTP-speaking backend
+(bundled Langfuse, Datadog, Honeycomb, your own collector, or — for
+SingleAxis commercial deployments — the Telemetry Bridge ingest URL).
+A render-time fail here prevents the most common silent-broken state:
+operator installs the chart, the Collector boots happily, every span
+is dropped on egress because the configured endpoint resolves to no
+service in the cluster (the historical default `fabric-ingest:8080`
+was such a phantom — see CHANGELOG 0.1.3).
+
+Escape hatch: ``exporter.acceptUnsetEndpoint: true`` lets CI smoke
+renders proceed without a real endpoint. Never set this in a production
+values file; the Collector will boot but every export will fail.
+*/}}
+{{- define "otel-collector.validateExporter" -}}
+{{- $endpoint := .Values.exporter.endpoint | default "" -}}
+{{- $accept := .Values.exporter.acceptUnsetEndpoint | default false -}}
+{{- if and (eq $endpoint "") (not $accept) -}}
+{{- fail "otel-collector.exporter.endpoint is empty. Set it to the OTLP/HTTP backend you want spans to land in (bundled Langfuse: http://langfuse:3000; Datadog/Honeycomb/etc.: their OTLP intake; commercial Telemetry Bridge: the bridge ingress URL). For CI smoke renders only, pass --set otel-collector.exporter.acceptUnsetEndpoint=true. See charts/fabric/charts/otel-collector/values.yaml for example endpoints." -}}
+{{- end -}}
+{{- end -}}

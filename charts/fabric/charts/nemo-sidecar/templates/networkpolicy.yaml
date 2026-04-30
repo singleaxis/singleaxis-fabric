@@ -1,0 +1,45 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nemo-sidecar.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nemo-sidecar.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nemo-sidecar.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # NeMo sidecar is typically reached via UDS in same-pod topology;
+    # this policy covers the alternate sidecar-as-Service deployment.
+    - from:
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- else }}
+        - namespaceSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+  egress:
+    # DNS to kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Egress to LLM provider (when NeMo's content-safety rail calls
+    # out for refusal generation, etc). Operator-defined.
+    {{- with .Values.networkPolicy.egressTo }}
+    - to:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+{{- end }}

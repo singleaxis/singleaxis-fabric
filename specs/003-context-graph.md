@@ -8,6 +8,15 @@ owner: project-lead
 
 # 003 — Context Graph
 
+> **Scope note (2026-04-27).** This spec is the **design of record**
+> for the Context Graph, which is part of the SingleAxis commercial
+> control plane (Layer 2). The implementation lives in a separate
+> private repository, not in this OSS distribution. The spec is kept
+> here for partner/auditor transparency: it defines the wire contract
+> and provenance semantics that the L1 SDK targets when emitting
+> spans, retrieval records, and memory writes. L1 OSS deployments
+> emit the inputs; the Layer 2 control plane materializes the graph.
+
 ## Summary
 
 The **Context Graph** is Fabric's load-bearing contribution. It is a
@@ -311,15 +320,33 @@ with exactly the auditors we're trying to win.
 
 ### Content hashing
 
-Hashes are **HMAC-SHA-256** with a tenant-held key, not plain SHA-256.
+The Context Graph stores hashes, not plaintext content. Two layers:
+
+- **L1 (public OSS SDK)** — `RetrievalRecord.from_query` and
+  `MemoryRecord.from_content` apply **plain SHA-256** locally before
+  emitting span events. Raw content never leaves the agent process.
+- **L2 (Context Graph builder, SingleAxis-internal)** — re-keys
+  incoming SHA-256 fingerprints under an **HMAC-SHA-256** key the
+  tenant supplies via the Telemetry Bridge config, before persisting
+  graph nodes. The tenant controls the key; SingleAxis cannot
+  correlate across tenants.
+
+This split is deliberate: the L1 SDK has no tenant key to draw from
+(the SDK is process-local; the tenant key would have to ride into
+the agent process, which expands the trust boundary). The L2
+builder runs in the operator's egress hop and holds the key once.
+
 Reasons:
 
 - Prevents rainbow-table attacks on short or known contents (e.g.
-  common greetings, boolean responses).
+  common greetings, boolean responses) — guaranteed at the L2 graph,
+  not at the L1 SDK fingerprint. Hosts that pre-process inputs
+  before calling `record_retrieval` can salt their input to
+  strengthen the L1 fingerprint if needed.
 - Allows cross-decision correlation (same-content detection) without
-  exposing content.
-- The tenant controls the key; SingleAxis cannot correlate across
-  tenants.
+  exposing content. The L2 HMAC re-keying preserves equality.
+- The tenant controls the L2 key; SingleAxis cannot correlate
+  across tenants.
 
 ### PII in the graph
 
@@ -362,7 +389,12 @@ that a review took place) is preserved; personal content is not.
 
 ## Open questions
 
-- **Q1.** Default hash algorithm: HMAC-SHA-256 is the recommendation;
+- **Q1.** Resolved (0.1.x): L1 SDK uses plain SHA-256 locally;
+  L2 graph builder re-keys to HMAC-SHA-256 with the tenant-held key
+  before persisting. BLAKE3 considered for performance; deferred —
+  SHA-256 has hardware acceleration on every modern CPU.
+
+- **Q1-deferred.** BLAKE3 performance evaluation:
   is there a case for BLAKE3 for performance? *Resolver: graph
   maintainer. Deadline: before 0.1.0.*
 - **Q2.** GraphQL vs OpenAPI/REST for the read API — GraphQL fits the

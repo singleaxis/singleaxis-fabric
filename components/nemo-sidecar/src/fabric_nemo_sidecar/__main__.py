@@ -31,9 +31,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument(
         "--rails-config",
-        help="Directory containing the Colang rails config. If unset, "
-        "the sidecar serves a passthrough engine (fail-open) — set "
-        "this in production.",
+        help="Directory containing the Colang rails config. Required "
+        "for production. Pass --allow-passthrough to opt into the "
+        "fail-open passthrough engine for local smoke tests only.",
+    )
+    parser.add_argument(
+        "--allow-passthrough",
+        action="store_true",
+        help="Permit running without --rails-config. The sidecar will "
+        "use the passthrough engine which allows everything — only for "
+        "local development. Refused without this flag in 0.1.3+.",
     )
     args = parser.parse_args(argv)
 
@@ -42,18 +49,48 @@ def main(argv: list[str] | None = None) -> int:
     if not args.uds and not args.port:
         parser.error("one of --uds or --port is required")
 
+    if not args.rails_config and not args.allow_passthrough:
+        parser.error(
+            "--rails-config is required. Without it the sidecar would "
+            "fall back to a passthrough engine that allows everything, "
+            "silently disabling jailbreak/policy defence. Pass "
+            "--allow-passthrough explicitly for local smoke tests."
+        )
+
     engine = None
     if args.rails_config:
         from fabric_nemo_sidecar.nemo_adapter import build_default_engine  # noqa: PLC0415
 
         engine = build_default_engine(args.rails_config)
+    else:
+        # --allow-passthrough was set; emit a startup-time warning so
+        # the operator can see this in pod logs. The rail name on
+        # every /check response stamps PASSTHROUGH_FAIL_OPEN so any
+        # downstream dashboard surfaces the misconfiguration.
+        import logging  # noqa: PLC0415
+
+        logging.getLogger("fabric_nemo_sidecar").warning(
+            "NeMo sidecar starting in PASSTHROUGH mode "
+            "(--allow-passthrough): jailbreak/policy defence is "
+            "disabled. DO NOT use in production."
+        )
+
+    # Concurrency env-var: parse robustly. A non-int value should
+    # surface a clear error rather than crashing the whole sidecar
+    # start with "ValueError: invalid literal for int()".
+    raw_conc = os.getenv("FABRIC_LIMIT_CONCURRENCY", "16")
+    try:
+        limit_concurrency = int(raw_conc)
+    except ValueError:
+        parser.error(f"FABRIC_LIMIT_CONCURRENCY={raw_conc!r} is not a valid integer")
+        return 2  # pragma: no cover (parser.error raises)
 
     app = build_app(engine=engine)
 
     kwargs: dict[str, object] = {
         "app": app,
         "log_config": None,
-        "limit_concurrency": int(os.getenv("FABRIC_LIMIT_CONCURRENCY", "16")),
+        "limit_concurrency": limit_concurrency,
         "timeout_keep_alive": 5,
     }
     if args.uds:

@@ -1,0 +1,19 @@
+{{- if and (gt (int .Values.replicaCount) 1) .Values.podDisruptionBudget.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "update-agent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "update-agent.labels" . | nindent 4 }}
+spec:
+  # Always keep at least one webhook pod available. With
+  # failurePolicy=Fail on the ValidatingWebhookConfiguration,
+  # losing both replicas blocks every CREATE/UPDATE of
+  # ConfigMap/Secret in the watched namespaces — a cluster
+  # outage during routine node drains.
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "update-agent.selectorLabels" . | nindent 6 }}
+{{- end }}

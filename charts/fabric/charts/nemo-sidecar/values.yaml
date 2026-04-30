@@ -53,19 +53,24 @@ resources:
     cpu: 100m
     memory: 256Mi
 
+# NeMo cold-start loads the Colang bundle + spaCy models, which can
+# take 10-20s on a fresh pod. Bumped readiness initialDelaySeconds
+# from 3 to 20 to avoid Unready flapping during rolling deploys.
 livenessProbe:
   httpGet:
     path: /healthz
     port: http
-  initialDelaySeconds: 10
+  initialDelaySeconds: 30
   periodSeconds: 10
+  failureThreshold: 3
 
 readinessProbe:
   httpGet:
     path: /healthz
     port: http
-  initialDelaySeconds: 3
+  initialDelaySeconds: 20
   periodSeconds: 5
+  failureThreshold: 3
 
 nodeSelector: {}
 tolerations: []
@@ -89,3 +94,21 @@ railsConfigMap:
 
 starterRails:
   enabled: true
+
+# PodDisruptionBudget. Honored only when replicaCount > 1 (i.e. the
+# sidecar-as-Service HA topology). Same-pod UDS deployments don't
+# need it because lifecycle is tied to the parent agent pod.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# NetworkPolicy. Default off — see otel-collector/values.yaml. The
+# typical NeMo deployment is same-pod via UDS, in which case this
+# policy is a no-op. The sidecar-as-Service deployment (smoke/dev)
+# is what `ingressFrom` covers. `egressTo` is for NeMo's
+# content-safety rail when it calls out to an LLM provider for
+# refusal generation; DNS to kube-system is always allowed.
+networkPolicy:
+  enabled: false
+  ingressFrom: []
+  egressTo: []

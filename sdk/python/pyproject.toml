@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "singleaxis-fabric"
-description = "SingleAxis Fabric SDK for Python — inline guardrails, memory, tracing, escalation helpers."
+description = "Open-source observability and control plane for AI agents — decision-span tracing, fail-loud guardrails, and human-in-the-loop, OpenTelemetry-native."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -48,6 +48,35 @@ crewai = [
   # crewai>=0.80 permits litellm>=1.83.7 on resolve; pin explicitly so
   # Trivy doesn't keep flagging the lockfile.
   "litellm>=1.83.7",
+]
+# Auto-instrumentation extras for popular LLM SDK families. Each
+# pulls the upstream `opentelemetry-instrumentation-<lib>` package
+# (Traceloop-authored, jointly maintained with the OTel GenAI WG)
+# alongside Fabric's content-redaction default. The user pip-installs
+# the LLM SDK itself separately; the Instrumentor hooks whatever
+# version is present at runtime.
+#
+# Enable via `Fabric.enable_auto_instrumentation()` or
+# `Fabric.from_env(enable_auto_instrumentation=True)`.
+#
+# Content capture is disabled by default (raw prompts/completions do
+# not land on spans) per Fabric's compliance posture. Override with
+# `FABRIC_CAPTURE_LLM_CONTENT=true` or
+# `enable_auto_instrumentation(capture_content=True)`.
+openai = [
+  "opentelemetry-instrumentation-openai-v2>=0.30b0",
+]
+anthropic = [
+  "opentelemetry-instrumentation-anthropic>=0.30b0",
+]
+bedrock = [
+  "opentelemetry-instrumentation-bedrock>=0.30b0",
+]
+otel-langchain = [
+  "opentelemetry-instrumentation-langchain>=0.30b0",
+]
+cohere = [
+  "opentelemetry-instrumentation-cohere>=0.30b0",
 ]
 dev = [
   "pytest>=8.3",

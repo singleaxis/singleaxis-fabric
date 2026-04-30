@@ -1,0 +1,14 @@
+{{- if and (gt (int .Values.replicaCount) 1) .Values.podDisruptionBudget.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nemo-sidecar.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nemo-sidecar.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "nemo-sidecar.selectorLabels" . | nindent 6 }}
+{{- end }}

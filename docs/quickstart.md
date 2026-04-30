@@ -97,8 +97,10 @@ debugging, swap `OTLPSpanExporter` for `ConsoleSpanExporter`.
   [SDK README](../sdk/python/README.md) for environment variables.
 - Deploy the control-plane components via Helm: see
   [`deployment.md`](deployment.md).
-- Map decisions to regulations: see
-  [`compliance/mappings/`](compliance/mappings/).
+- Compliance mapping is roadmap. The design lives in
+  [`specs/009-compliance-mapping.md`](../specs/009-compliance-mapping.md);
+  per-regulation mapping documents (EU AI Act, NIST AI RMF, ISO/IEC 42001,
+  SR 11-7, HIPAA) ship alongside the SingleAxis commercial control plane.
 
 ## Troubleshooting
 

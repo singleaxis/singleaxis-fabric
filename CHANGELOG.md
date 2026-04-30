@@ -6,6 +6,257 @@ The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Headed for v0.2.0 — Fabric earns the "open-source observability +
+control plane for AI agents" framing by capturing LLM operations
+natively. Three substantive additions: per-LLM-call child spans
+with `gen_ai.*` semantic conventions, auto-instrument extras for
+the popular LLM SDKs, and a trace pipeline on the OTel collector's
+custom guard processor so the chart's privacy promise actually
+applies to the SDK's spans (not just future L2 bridge log records).
+
+### Added (SDK)
+
+- `Decision.llm_call(system=..., model=...)` opens a `fabric.llm_call`
+  child span (kind=CLIENT) under the active decision span. Writes
+  the OpenTelemetry GenAI semantic conventions
+  (`gen_ai.system`, `gen_ai.request.model`,
+  `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`,
+  `gen_ai.response.finish_reasons`) plus matching `fabric.llm.*`
+  mirrors. The returned context manager exposes
+  `.set_usage(input_tokens, output_tokens, finish_reason)`,
+  `.set_response_model(model)`, and `.set_attribute(key, value)` for
+  attaching response data on exit. Phoenix LLM views, Langfuse cost
+  dashboards, and any backend keying off either namespace render
+  Fabric traces natively from this release onward.
+- `Decision.tool_call(name, call_id=None)` follows the same pattern
+  for tool/function invocations. Writes `gen_ai.tool.name`,
+  `gen_ai.tool.call.id`, plus `fabric.tool.*` mirrors. Setter
+  `.set_result_count(count)` records how many results the tool
+  returned.
+- `LLMCall` and `ToolCall` exposed at the package level for callers
+  building custom instrumentation patterns.
+- Auto-instrumentation extras — one `pip install` covers governance
+  and LLM-call observability for the popular SDK families:
+  - `singleaxis-fabric[openai]` →
+    `opentelemetry-instrumentation-openai-v2`
+  - `singleaxis-fabric[anthropic]` →
+    `opentelemetry-instrumentation-anthropic`
+  - `singleaxis-fabric[bedrock]` →
+    `opentelemetry-instrumentation-bedrock`
+  - `singleaxis-fabric[otel-langchain]` →
+    `opentelemetry-instrumentation-langchain`
+  - `singleaxis-fabric[cohere]` →
+    `opentelemetry-instrumentation-cohere`
+- `Fabric.enable_auto_instrumentation(only=..., capture_content=...)`
+  lazy-detects which extras are installed and invokes each
+  Instrumentor's `.instrument()`. Content capture (raw prompts /
+  completions on spans) is **off by default** per Fabric's
+  compliance posture; override with `capture_content=True` or
+  `FABRIC_CAPTURE_LLM_CONTENT=true` env. Silently skips uninstalled
+  extras; warns and continues when an upstream Instrumentor raises
+  rather than crashing agent startup.
+- Reference agent (`examples/reference-agent/`) now wraps its
+  simulated LLM call in `decision.llm_call` so users see the
+  canonical pattern in the runnable example.
+
+### Added (OTel collector)
+
+- `fabricguardprocessor` registers a Traces pipeline variant
+  alongside the existing Logs variant. Spans are filtered by an
+  attribute-key namespace allowlist (default:
+  `fabric.`, `gen_ai.`, `llm.`, `tool.`, `service.`, `telemetry.`,
+  `otel.`, `http.`, `net.`, `rpc.`, `db.`). Anything outside these
+  prefixes is stripped before egress; spans whose attributes become
+  empty are dropped. Operators tighten / extend via
+  `trace_attribute_prefixes`; trace processing is OFF by default
+  (`trace_processing_enabled: false`) so existing operator config
+  files work unchanged. Closes the gap where the chart's privacy/
+  policy enforcement only applied to L2-bridge-shaped log records,
+  while the SDK's spans bypassed the processor entirely.
+
+### Changed (docs / scope)
+
+- L1/L2 boundary now load-bearing across all narrative docs.
+  README hero is "open-source observability and control plane for
+  AI agents"; specs 003 (Context Graph), 004 (Telemetry Bridge),
+  006 (LLM-as-Judge), 007 (Escalation Workflow) gain explicit "L2
+  commercial control plane / not in this OSS distribution"
+  disclaimers — the implementation lives in a separate private
+  repository, the spec is retained for partner/auditor
+  transparency.
+- Spec 002 §L2 wording corrected from "OpenTelemetry +
+  OpenLLMetry" to "OpenTelemetry + GenAI semantic conventions" —
+  the conventions are joint OTel/Traceloop work; "OpenLLMetry" is
+  a project name, not a spec name. Fabric does not depend on
+  `traceloop-sdk`.
+- Spec 011 (roadmap) recast as "L2 + L4 + L5 + L1 adapters" of
+  the 8-layer agent stack: that's the OSS scope. v0.2.x = capture-
+  everything SDK; v0.3.x+ = additional language SDKs + broader
+  rails catalog + conformance test suite.
+- Spec 009 (compliance mapping) rewritten to make explicit that
+  per-regulation mappings ship with the L2 commercial control
+  plane; the L1 OSS chart provides regulatory profiles as
+  hardened presets only.
+- New `docs/exporting-to-your-observability-backend.md` — concrete
+  Helm wire-ups for Langfuse, Phoenix, Datadog, Honeycomb, Grafana
+  Cloud, custom collectors. Replaces the implicit
+  "fabric-ingest:8080" assumption.
+- New `docs/how-fabric-fits-in-your-agent-stack.md` — 8-layer
+  picture with where Fabric ships code (★) vs adapter/integration
+  vs out-of-scope (◆), plus end-to-end ASCII diagram showing the
+  L1 OSS / L2 commercial boundary.
+- New `sdk/python/SCOPE.md` — what the SDK does and explicitly
+  does NOT do.
+
+### Fixed (CI)
+
+- Pre-existing CI red on the audit-followup branch resolved
+  (5 of 5 red checks): SDK ruff RUF100 unused `# noqa: SLF001`
+  directives in `test_tracing.py`, SIM117 nested `with` in
+  `test_retrieval.py`, three nemo-sidecar CLI tests
+  (`test_cli_invokes_uvicorn_on_uds/tcp`,
+  `test_cli_unlinks_stale_socket`) updated to pass
+  `--allow-passthrough` after the round-1 security tightening
+  made `--rails-config` mandatory by default.
+
+## [0.1.3] - 2026-04-27
+
+Round-2 audit follow-up. 5 parallel deep-audit agents flagged ~80
+issues across SDK code-correctness, components, charts, specs, and
+production-readiness. This release fixes the customer-visible
+launch-blockers and the no-regret hygiene items; larger
+architectural lifts are explicitly deferred to v0.2.0.
+
+### Fixed (SDK)
+
+- `FabricConfig` and `Fabric.from_env` now strip whitespace from
+  `tenant_id`, `agent_id`, `profile` and reject empty-after-strip.
+  Trailing newlines in `.env` files / Helm values no longer ship as
+  span attributes.
+- `Decision.__exit__` now records `blocked_and_escalated` status
+  when both fire on the same Decision, instead of silently
+  collapsing the escalation behind the block status.
+- `Decision.record_block` and `Decision.request_escalation` are now
+  first-wins; the second call raises `RuntimeError` rather than
+  silently overwriting.
+- `Decision.set_attribute` validates value type and raises
+  `TypeError` on dict/list/None, matching OTel's actual contract
+  rather than relying on OTel to silently drop unsupported values.
+- `RetrievalRecord.from_query` now enforces 1:1 parity between
+  `result_hashes` and `result_count` when supplied. Mismatched
+  partial supply was silently corrupting downstream Context Graph
+  projections. `source_document_ids` remains free-form (N chunks
+  may share M < N source documents).
+- `_chain.GuardrailChain` no longer pushes NeMo rail names into
+  `entities_detected` (`EntitySummary` represents PII entity
+  classes, not rail names). NeMo rails appear only in
+  `policies_fired`.
+- `install_default_provider` refuses to silently re-install when an
+  existing real `TracerProvider` is configured. Returns the existing
+  provider with a warning; OTel's own API documents that
+  re-installation is not allowed.
+- New: `fabric.tracing` emits a one-shot warning at first
+  `get_tracer()` if the global TracerProvider is the OTel no-op
+  default. Without this, hosts who skip `install_default_provider`
+  ship instrumented agents that emit zero-trace_id spans silently.
+
+### Fixed (components)
+
+- NeMo sidecar refuses to start without `--rails-config` unless the
+  operator explicitly passes `--allow-passthrough`. Previously a
+  missing volumeMount silently produced an "allow-everything" engine
+  that disabled jailbreak/policy defence with only a docstring
+  warning.
+- NeMo sidecar `FABRIC_LIMIT_CONCURRENCY` parsing emits a clear
+  parser error on non-int input rather than crashing the whole
+  process at uvicorn boot.
+- Update-agent webhook refuses to fall back to plaintext on the
+  admission path when only one of `--tls-cert` / `--tls-key` is
+  present. Plaintext on a webhook causes either every-admission-
+  failure (failurePolicy=Fail) or every-admission-bypass
+  (failurePolicy=Ignore); both are customer outages. Fully-
+  plaintext mode is opt-in via `FABRIC_UPDATE_AGENT_ALLOW_PLAINTEXT=1`
+  for local smoke tests only.
+
+### Fixed (charts)
+
+- Umbrella chart now fail-renders on empty `tenant.id` for any
+  profile other than `permissive-dev`. Empty tenant ID stamps every
+  emitted span with no attribution and was the most common
+  silent-misconfiguration footgun.
+- Per-subchart `NetworkPolicy` allow templates now ship for
+  `otel-collector`, `nemo-sidecar`, and `update-agent`. Each opens
+  the minimum surface (collector OTLP receivers, sidecar service
+  port, webhook ingress) plus DNS to `kube-system`. Default off so
+  CNIs without enforcement aren't penalised; the
+  `eu-ai-act-high-risk` profile re-enables `networkPolicy.denyDefault:
+  true` paired with these allow rules.
+- `PodDisruptionBudget` templates added to all three subcharts,
+  honoured only when `replicaCount > 1`. `update-agent` is the
+  load-bearing one — losing both webhook replicas during a node
+  drain blocks ConfigMap/Secret CREATE/UPDATE cluster-wide.
+- `otel-collector` and `nemo-sidecar` readiness probe initial
+  delays bumped (from 5s/3s to 15s/20s) so rolling deploys on slow
+  networks don't mark pods Unready repeatedly during cold-start.
+- **`otel-collector.exporter.endpoint`** default flipped from the
+  phantom `http://fabric-ingest:8080` (which resolved to a non-existent
+  service in any L1-only deploy) to the empty string, paired with a
+  render-time validator that fails the chart install if the field is
+  unset. Previously: spans dropped silently because the configured
+  exporter target had no service behind it. Now: operator must point
+  at a real backend (bundled Langfuse, Datadog, Honeycomb, your own
+  collector chain, or — for partner deployments — the SingleAxis
+  commercial Telemetry Bridge). CI smoke renders set
+  `otel-collector.exporter.acceptUnsetEndpoint=true` to bypass.
+- `eu-ai-act-high-risk` profile now sets explicit `ingressFrom` /
+  `egressTo` defaults on otel-collector and nemo-sidecar
+  NetworkPolicies — ingress restricted to `fabric-system` namespace
+  rather than the previous `namespaceSelector: {}` (which permitted
+  any namespace under denyDefault). Operators bridging from agent
+  pods in other namespaces extend `ingressFrom` to permit them.
+
+### Fixed (docs)
+
+- **Hero repositioning.** README + SDK pyproject description shifted
+  from "audit-ready substrate" to "open-source observability and
+  control plane for AI agents." The old framing implied this OSS
+  distribution generated audit trails on its own; in fact the
+  collection infrastructure ships here and evidence-bundle generation
+  / signed audit trails ship with the SingleAxis commercial control
+  plane. Engineer-vocabulary hero, honest L1/L2 boundary, no
+  compliance-tool buyer mismatch.
+- README NIST AI RMF / ISO/IEC 42001 / SR 11-7 / HIPAA profiles list
+  now explicitly marked as roadmap (only `eu-ai-act-high-risk` and
+  `permissive-dev` ship in `charts/fabric/profiles/`).
+- README + docs/README no longer link to `docs/compliance/mappings/`
+  as if it contained authoritative content; the only thing landing
+  there is an in-progress stub. Pointer is now to spec 009.
+- `docs/architecture.md` latency framing softened to "design budget"
+  to match the README v0.1.2 wording. Numbers are unchanged but
+  no longer claimed as measured P99s.
+- `charts/fabric/README.md` no longer claims readiness probes
+  enforce latency budgets (today's probes are simple HTTP
+  `/healthz` checks; latency-aware readiness gate is roadmap).
+- `Pre-alpha` → `Beta` framing reconciled across the README and the
+  SDK README to match the `pyproject.toml` classifier
+  (`Development Status :: 4 - Beta`) introduced in 0.1.2.
+
+### Operator action required
+
+If you run `helm install fabric` with a non-`permissive-dev` profile,
+you must now pass `--set tenant.id=<uuid>` (previously this was
+documented as required but only warned in NOTES.txt).
+
+If you want fail-closed network posture, NetworkPolicy
+`denyDefault: true` is no longer enabled by the EU profile — flip it
+in your tenant values once you have allow-rules for your cluster.
+
+If you used `--allow-passthrough` semantics by relying on a missing
+`--rails-config` to NeMo sidecar (probably nobody — but flagging it
+as a behaviour change), pass `--allow-passthrough` explicitly.
+
 ## [0.1.2] - 2026-04-27
 
 Pre-launch hardening pass following an enterprise-grade audit.
@@ -511,29 +762,11 @@ been exercised against a real tag. See Known issues below.
   inline guardrails + collector + opt-in red-team, not the full
   async judge loop.
 
-## [Unreleased]
-
-### Added
-*(nothing yet)*
-
-### Changed
-*(nothing yet)*
-
-### Deprecated
-*(nothing yet)*
-
-### Removed
-*(nothing yet)*
-
-### Fixed
-*(nothing yet)*
-
-### Security
-*(nothing yet)*
 
 ---
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.3
 [0.1.2]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.2
 [0.1.1]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.1
 [0.1.0]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/v0.1.0

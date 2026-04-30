@@ -8,6 +8,16 @@ owner: project-lead
 
 # 004 — Telemetry Bridge
 
+> **Scope note (2026-04-27).** This spec is the **design of record**
+> for the Telemetry Bridge, the egress component of the SingleAxis
+> commercial control plane (Layer 2). The implementation lives in a
+> separate private repository, not in this OSS distribution. The spec
+> is retained here so partners and auditors can review the wire
+> contract, redaction guarantees, envelope encryption, and signed
+> manifest format that govern the egress path. L1 OSS deployments
+> never run the Bridge; they emit OTLP to whatever observability
+> backend the operator configures (Langfuse, Phoenix, Datadog, etc.).
+
 ## Summary
 
 The **Telemetry Bridge** is the **only component in Fabric with egress

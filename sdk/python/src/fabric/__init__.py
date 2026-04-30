@@ -6,6 +6,7 @@ Phase 1 public surface — agents import from here. Anything not
 re-exported is internal.
 """
 
+from ._calls import LLMCall, ToolCall
 from ._version import __version__
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
 from .decision import Decision
@@ -40,6 +41,7 @@ __all__ = [
     "GuardrailNotConfiguredError",
     "GuardrailPhase",
     "GuardrailResult",
+    "LLMCall",
     "MemoryKind",
     "MemoryRecord",
     "NemoAction",
@@ -51,6 +53,7 @@ __all__ = [
     "RedactionResult",
     "RetrievalRecord",
     "RetrievalSource",
+    "ToolCall",
     "UDSNemoClient",
     "UDSPresidioClient",
     "__version__",

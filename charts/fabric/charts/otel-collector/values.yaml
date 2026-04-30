@@ -55,19 +55,25 @@ resources:
     cpu: 100m
     memory: 256Mi
 
+# Liveness/readiness budgets sized for cold pulls of the multi-arch
+# OTel Collector image (~40 MB) plus pipeline initialisation. The
+# previous 5s readiness initial delay marked pods Unready repeatedly
+# during rolling deploys on slow networks.
 livenessProbe:
   httpGet:
     path: /
     port: health
-  initialDelaySeconds: 10
+  initialDelaySeconds: 30
   periodSeconds: 10
+  failureThreshold: 3
 
 readinessProbe:
   httpGet:
     path: /
     port: health
-  initialDelaySeconds: 5
+  initialDelaySeconds: 15
   periodSeconds: 5
+  failureThreshold: 3
 
 nodeSelector: {}
 tolerations: []
@@ -133,11 +139,34 @@ fabric:
       escalation: 1.0
       red_team_result: 1.0
 
-# OTLP/HTTP egress target. For the in-Collector topology this is the
-# Fabric ingest endpoint; the Bridge handles signing/encryption when
-# present.
+# OTLP/HTTP egress target.
+#
+# IMPORTANT: there is no default that works in an L1-only OSS deploy.
+# The historical default `http://fabric-ingest:8080` resolved to the
+# SingleAxis commercial Telemetry Bridge service, which is NOT shipped
+# in this OSS distribution. Leaving the field unset (empty string) is
+# treated as a render-time error so an installer cannot accidentally
+# ship a deployment that drops every span on the floor.
+#
+# Set this to whichever OTLP/HTTP backend the operator wants to fan
+# out to:
+#
+#   --set otel-collector.exporter.endpoint=http://langfuse:3000
+#       (the bundled Langfuse subchart in this umbrella, default port)
+#
+#   --set otel-collector.exporter.endpoint=https://otlp.<datadog>.com:443
+#       (Datadog OTLP intake)
+#
+#   --set otel-collector.exporter.endpoint=http://api.honeycomb.io:443
+#       (Honeycomb)
+#
+#   --set otel-collector.exporter.endpoint=http://your-collector:4318
+#       (your own collector chain)
+#
+# For partner deployments running the SingleAxis commercial Telemetry
+# Bridge, use the Bridge's ingress endpoint here.
 exporter:
-  endpoint: http://fabric-ingest:8080
+  endpoint: ""
   insecure: true
 
 # Also write to the debug exporter? Useful in dev, noisy in prod.
@@ -152,3 +181,32 @@ memoryLimiter:
 batch:
   timeoutSeconds: 5
   sendBatchSize: 512
+
+# PodDisruptionBudget. Default enabled so the audit-trail span
+# stream isn't dropped during node drains. Honored only when
+# replicaCount > 1.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# NetworkPolicy. Default off because not every CNI enforces them and
+# misconfigured policies will silently break the OTLP path. Turn on
+# in regulated profiles (eu-ai-act-high-risk sets denyDefault
+# alongside this).
+#
+# `ingressFrom` is appended verbatim to the OTLP ingress rule. Empty
+# means "any namespace in the cluster"; tenants typically narrow to
+# specific agent namespaces:
+#
+#   ingressFrom:
+#     - namespaceSelector:
+#         matchLabels:
+#           fabric.singleaxis.ai/agent: "true"
+#
+# `egressTo` is for the configured exporter endpoint plus any extra
+# destinations the operator declares (e.g. an external OTLP gateway,
+# Tempo, Honeycomb). DNS to kube-system is always allowed.
+networkPolicy:
+  enabled: false
+  ingressFrom: []
+  egressTo: []

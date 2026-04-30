@@ -5,8 +5,8 @@ description: |
   fabricguard, fabricpolicy, fabricredact, and fabricsampler processors
   plus the standard OTLP receivers and exporters.
 type: application
-version: 0.1.2
-appVersion: "0.1.2"
+version: 0.1.3
+appVersion: "0.1.3"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - opentelemetry

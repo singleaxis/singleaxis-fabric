@@ -126,7 +126,21 @@ class ReferenceAgent:
                 latency_ms=12,
             )
 
-            raw_response = self._llm_call(safe_input)
+            # Wrap the LLM call in a child span so the trace tree shows
+            # the actual model invocation — gen_ai.* attributes light
+            # up Phoenix's LLM view, Langfuse cost dashboards, etc.
+            # Synthetic numbers here; in production the caller passes
+            # real token counts from the LLM response.
+            with decision.llm_call(
+                system="simulated",
+                model="reference-agent-stub-v1",
+            ) as call:
+                raw_response = self._llm_call(safe_input)
+                call.set_usage(
+                    input_tokens=len(safe_input.split()),
+                    output_tokens=len(raw_response.split()),
+                    finish_reason="stop",
+                )
 
             safe_response = _guard_optional(
                 lambda: decision.guard_output_final(raw_response),

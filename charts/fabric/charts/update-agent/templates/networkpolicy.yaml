@@ -1,0 +1,42 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "update-agent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "update-agent.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "update-agent.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Admission webhook is called by kube-apiserver. We can't reliably
+    # match the apiserver via NetworkPolicy (its source IP varies);
+    # most CNIs treat AdmissionWebhook traffic as cluster-scoped, so
+    # leave the source open and rely on TLS + signature verification
+    # for authn. Operator can tighten via networkPolicy.ingressFrom.
+    - from:
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- else }}
+        - namespaceSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+  egress:
+    # DNS only — webhook does no outbound traffic.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

@@ -1,5 +1,6 @@
 {{- include "otel-collector.validateSampler" . -}}
 {{- include "otel-collector.validateRedact" . -}}
+{{- include "otel-collector.validateExporter" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

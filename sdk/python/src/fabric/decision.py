@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Self
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+from ._calls import LLMCall, ToolCall
 from .escalation import EscalationRequested, EscalationSummary
 from .guardrails import (
     GuardrailBlocked,
@@ -135,14 +136,22 @@ class Decision(AbstractContextManager["Decision"]):
     ) -> bool | None:
         if self._span is None or self._cm is None:  # pragma: no cover
             return None
-        if self._blocked is not None:
+        # Status precedence: blocked + escalated should not silently
+        # collapse to one signal. Tag attributes from each outcome
+        # independently, then pick a status description that names
+        # both when both are present so the audit trail can't lose
+        # the escalation behind a block status.
+        is_blocked = self._blocked is not None
+        is_escalation = isinstance(exc, EscalationRequested) or self._escalation is not None
+        if is_blocked:
             self._span.set_attribute(ATTR_BLOCKED, True)
-            if self._blocked.policies_fired:
+            if self._blocked is not None and self._blocked.policies_fired:
                 self._span.set_attribute(ATTR_BLOCK_POLICIES, tuple(self._blocked.policies_fired))
+        if is_blocked and is_escalation:
+            self._span.set_status(Status(StatusCode.ERROR, description="blocked_and_escalated"))
+        elif is_blocked:
             self._span.set_status(Status(StatusCode.ERROR, description="guardrail_blocked"))
-        elif isinstance(exc, EscalationRequested):
-            # Escalation is flow control, not a crash. Tag the span
-            # clearly but don't dump a stack into span events.
+        elif is_escalation:
             self._span.set_status(Status(StatusCode.ERROR, description="escalation_requested"))
         elif exc is not None:
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
@@ -243,12 +252,25 @@ class Decision(AbstractContextManager["Decision"]):
     def record_block(self, result: GuardrailResult) -> None:
         """Record a blocking guardrail outcome on the span.
 
+        First-wins: the first block recorded becomes ``self.blocked``.
+        Subsequent calls raise :class:`RuntimeError` rather than
+        silently overwriting; downstream consumers (graphs, audits)
+        rely on a single canonical block per Decision. Host code that
+        wants to record multiple guardrail outcomes should use the
+        chain's own per-rail span events (already emitted) and call
+        ``record_block`` only for the final, canonical block.
+
         Hosts that prefer an exception-driven flow can call
         ``raise_for_block`` after this to abort the decision with the
         canned block response attached.
         """
         if not result.blocked:
             raise ValueError("record_block called with a non-blocking GuardrailResult")
+        if self._blocked is not None:
+            raise RuntimeError(
+                "Decision is already blocked; record_block is first-wins. "
+                "Call only once per Decision."
+            )
         self._blocked = result
 
     def raise_for_block(self) -> None:
@@ -266,9 +288,22 @@ class Decision(AbstractContextManager["Decision"]):
         pick it up. Does **not** raise on its own — the SDK leaves
         flow control to the host, which typically pairs this with
         :meth:`raise_for_escalation` and its framework's interrupt.
+
+        First-wins: the first escalation recorded becomes
+        ``self.escalation``. Subsequent calls raise :class:`RuntimeError`
+        rather than silently overwriting attributes and emitting a
+        second event. Aggregation of multiple escalation reasons should
+        be done in the caller's :class:`EscalationSummary` (e.g. comma-
+        joined ``reason``) before the single ``request_escalation``
+        call.
         """
 
         span = self.span
+        if self._escalation is not None:
+            raise RuntimeError(
+                "Decision already has an escalation requested; request_escalation "
+                "is first-wins. Call only once per Decision."
+            )
         self._escalation = summary
         span.set_attribute(ATTR_ESCALATED, True)
         span.set_attribute(ATTR_ESC_REASON, summary.reason)
@@ -400,8 +435,90 @@ class Decision(AbstractContextManager["Decision"]):
         span.add_event("fabric.memory", attributes=event_attrs)
         return record
 
+    # -- child spans (LLM call / tool call) ------------------------------
+
+    def llm_call(
+        self,
+        *,
+        system: str,
+        model: str,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
+    ) -> LLMCall:
+        """Open a child span for one LLM API call.
+
+        Returns an :class:`~fabric._calls.LLMCall` context manager that
+        opens ``fabric.llm_call`` (kind=CLIENT) under the current
+        decision span. The child span is populated with the
+        OpenTelemetry GenAI semantic conventions (``gen_ai.system``,
+        ``gen_ai.request.model``, etc.) and the matching ``fabric.llm.*``
+        mirrors so dashboards keyed on either namespace render
+        natively.
+
+        Usage::
+
+            with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+                response = anthropic_client.messages.create(...)
+                call.set_usage(
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    finish_reason=response.stop_reason,
+                )
+
+        Concurrency: do not nest ``llm_call`` invocations inside one
+        another (the OTel current-span context will mis-parent the
+        inner one).
+        """
+        # Ensure the decision is open so the child span parents
+        # correctly.
+        _ = self.span
+        return LLMCall(
+            tracer=self._client.tracer,
+            system=system,
+            model=model,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+        )
+
+    def tool_call(self, name: str, *, call_id: str | None = None) -> ToolCall:
+        """Open a child span for one tool / function call.
+
+        Returns a :class:`~fabric._calls.ToolCall` context manager that
+        opens ``fabric.tool_call`` (kind=INTERNAL) under the current
+        decision span. The child span is populated with
+        ``gen_ai.tool.name`` and ``fabric.tool.name`` (plus optional
+        ``call.id`` if supplied).
+
+        Usage::
+
+            with decision.tool_call("vector_search") as tool:
+                results = my_vector_db.query(...)
+                tool.set_result_count(len(results))
+        """
+        _ = self.span
+        return ToolCall(
+            tracer=self._client.tracer,
+            name=name,
+            call_id=call_id,
+        )
+
     # -- OTel passthrough -------------------------------------------------
 
     def set_attribute(self, key: str, value: str | int | float | bool) -> None:
-        """Set a custom attribute on the active decision span."""
+        """Set a custom attribute on the active decision span.
+
+        Validates that ``value`` is one of the OTel-supported scalar
+        types (``str``, ``int``, ``float``, ``bool``). Passing a dict,
+        list, or ``None`` raises :class:`TypeError` with the offending
+        key — OTel itself silently drops unsupported types or warns
+        depending on SDK configuration; the SDK fails loud instead.
+        """
+        # bool first because isinstance(True, int) is True
+        if not isinstance(value, (bool, str, int, float)):
+            raise TypeError(
+                f"set_attribute({key!r}, ...): value must be str/int/float/bool, "
+                f"got {type(value).__name__}"
+            )
         self.span.set_attribute(key, value)
