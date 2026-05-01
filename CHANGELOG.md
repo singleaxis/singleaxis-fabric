@@ -8,41 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed (SDK)
-
-- `LLMCall` and `ToolCall` context managers now reject re-entry
-  without prior exit. Previously, calling `__enter__` twice on the
-  same instance silently overwrote the underlying tracer span,
-  orphaning the first span (memory leak + mis-parented children).
-  Fail-loud `RuntimeError` now.
-- `LLMCall.set_usage(input_tokens=..., output_tokens=...)` now
-  rejects non-int values up front with a `TypeError`. Previously a
-  string token count would raise an opaque `<` comparison error;
-  the type-check happens before the negative-check now.
-- `ToolCall.set_result_count(count)` same fix — explicit
-  `isinstance(int)` validation.
-- `bool` is rejected as a token-count value (it's a subclass of
-  `int` but accepting `True`/`False` for "how many tokens" is a
-  semantic foot-gun).
-- `auto_instrument._try_enable` now wraps both the Instrumentor's
-  constructor AND `.instrument()` call in the same try/except.
-  Some upstream Instrumentors check peer-dep imports in `__init__`
-  rather than `instrument()`; previously a constructor exception
-  would crash agent startup. Now logs a warning and skips.
-
-### Fixed (collector)
-
-- `fabricguardprocessor` trace path now filters span event
-  attributes and Resource-level attributes (not just span-level
-  attributes). Previously a misbehaving SDK that put sensitive
-  metadata on `ResourceSpans.Resource()` (deployment names,
-  internal hostnames) or in span events would bypass the
-  namespace allowlist.
-- Drop-on-empty refined: a span is dropped only when both its own
-  attributes AND every event's attributes have been fully stripped.
-  Previously a span with foreign span-level attrs but a valid
-  event trail would have been dropped, losing signal.
-
 ## [0.2.0] - 2026-05-01
 
 Fabric earns the "open-source observability + control plane for
@@ -168,6 +133,48 @@ section below preserves the full per-component fix list.
   `test_cli_unlinks_stale_socket`) updated to pass
   `--allow-passthrough` after the round-1 security tightening
   made `--rails-config` mandatory by default.
+
+### Round-3 audit follow-up (PR #49)
+
+Re-audit of the v0.2.0 surface flagged a handful of correctness
+gaps; all CRITICAL/HIGH/MEDIUM findings are fixed in this release.
+
+**SDK:**
+
+- `LLMCall` and `ToolCall` context managers now reject re-entry
+  without prior exit. Previously, calling `__enter__` twice on the
+  same instance silently overwrote the underlying tracer span,
+  orphaning the first span (memory leak + mis-parented children).
+  Fail-loud `RuntimeError` now.
+- `LLMCall.set_usage(input_tokens=..., output_tokens=...)` now
+  rejects non-int values up front with a `TypeError`. Previously a
+  string token count would raise an opaque `<` comparison error;
+  the type-check happens before the negative-check now.
+- `ToolCall.set_result_count(count)` same fix — explicit
+  `isinstance(int)` validation.
+- `bool` is rejected as a token-count value (it's a subclass of
+  `int` but accepting `True`/`False` for "how many tokens" is a
+  semantic foot-gun).
+- `auto_instrument._try_enable` now wraps both the Instrumentor's
+  constructor AND `.instrument()` call in the same try/except.
+  Some upstream Instrumentors check peer-dep imports in `__init__`
+  rather than `instrument()`; previously a constructor exception
+  would crash agent startup. Now logs a warning and skips.
+
+**Collector (`fabricguardprocessor`):**
+
+- Trace path now filters span event attributes and Resource-level
+  attributes (not just span-level attributes). Previously a
+  misbehaving SDK that put sensitive metadata on
+  `ResourceSpans.Resource()` (deployment names, internal hostnames)
+  or in span events would bypass the namespace allowlist.
+- Drop-on-empty refined: a span is dropped only when both its own
+  attributes AND every event's attributes have been fully stripped.
+  Previously a span with foreign span-level attrs but a valid
+  event trail would have been dropped, losing signal.
+- `tool.` prefix ownership documented in
+  `DefaultTraceAttributePrefixes` so operators don't collide with
+  Fabric's `tool.*` namespace.
 
 ### Audit follow-up (folded from never-tagged 0.1.3)
 
