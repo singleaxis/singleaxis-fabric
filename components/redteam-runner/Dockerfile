@@ -49,15 +49,24 @@ RUN python -m venv /opt/venv/runner && \
     /opt/venv/runner/bin/pip install .
 
 # ---- garak venv -----------------------------------------------------------
-# Isolated so its `mistralai` pin doesn't fight pyrit's.
+# Isolated so its `mistralai` pin doesn't fight pyrit's. Pull torch
+# from PyTorch's CPU-only wheel index first so pip doesn't grab the
+# default 2+GB CUDA bundle the runner can't use in a CPU-only sidecar
+# pod (and that would blow past Docker Desktop's VM disk on builds).
 RUN python -m venv /opt/venv/garak && \
     /opt/venv/garak/bin/pip install --upgrade pip && \
-    /opt/venv/garak/bin/pip install 'garak==0.9.0.15.*'
+    /opt/venv/garak/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch && \
+    /opt/venv/garak/bin/pip install \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        'garak==0.9.0.15.*'
 
 # ---- pyrit venv -----------------------------------------------------------
 RUN python -m venv /opt/venv/pyrit && \
     /opt/venv/pyrit/bin/pip install --upgrade pip && \
-    /opt/venv/pyrit/bin/pip install 'pyrit==0.5.0.*'
+    /opt/venv/pyrit/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch && \
+    /opt/venv/pyrit/bin/pip install \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        'pyrit==0.5.0.*'
 
 # ---- build-time smoke -----------------------------------------------------
 # Catches a broken image at build time rather than at first probe run.
