@@ -225,12 +225,23 @@ def test_pyrit_venv_harness_handles_subprocess_failure(tmp_path: Path) -> None:
 
 def test_cli_exposes_venv_options() -> None:
     """Smoke check that --garak-venv / --pyrit-venv are wired into the
-    Typer app. Doesn't run the command — just inspects --help."""
+    Typer app. Introspects the underlying click command's params
+    instead of grepping `--help` output — rich-formatted help can
+    wrap option names across lines and break a naïve substring match."""
 
-    result = CliRunner().invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "--garak-venv" in result.output
-    assert "--pyrit-venv" in result.output
+    # Sanity that the app loads at all.
+    assert CliRunner().invoke(app, ["--help"]).exit_code == 0
+
+    # The Typer app wraps a click command; pull its params via
+    # ``get_command`` (the public typer hook) and inspect the option
+    # names directly. This is decoupled from any help-rendering
+    # backend (rich, plain, etc.).
+    import typer  # noqa: PLC0415
+
+    command = typer.main.get_command(app)
+    option_names = {opt for param in command.params for opt in param.opts}
+    assert "--garak-venv" in option_names
+    assert "--pyrit-venv" in option_names
 
 
 @pytest.mark.parametrize("suite_name", ["garak", "pyrit"])
