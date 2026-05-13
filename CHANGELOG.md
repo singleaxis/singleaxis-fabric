@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **otel-collector chart**: render an OTLP `traces:` pipeline alongside
+  the existing `logs:` pipeline, gated on
+  `fabric.guard.traceProcessingEnabled` (default `true`). The SDK has
+  shipped trace spans since v0.2.0, but the chart only wired a `logs:`
+  pipeline so spans were silently dropped at the collector. Set
+  `fabric.guard.traceProcessingEnabled=false` to opt out. See
+  spec 016 §4.1.
+
 ### Changed (presidio-sidecar)
 
 - The Presidio sidecar entry point now wires the real
