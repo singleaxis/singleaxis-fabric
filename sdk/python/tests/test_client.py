@@ -4,9 +4,12 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from fabric import DEFAULT_PROFILE, Fabric, FabricConfig
+from fabric.presidio import RedactionResult
 
 
 def test_from_env_with_all_fields() -> None:
@@ -51,3 +54,84 @@ def test_config_validates_fields() -> None:
 def test_tracer_property_is_reused() -> None:
     client = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
     assert client.tracer is client.tracer
+
+
+# -- Spec 016 §4.2: constructor env-var detection ---------------------
+
+
+class _StubPresidio:
+    def redact(self, path: str, value: str) -> RedactionResult:
+        return RedactionResult(value=value, hashed=False, pii_category="")
+
+    def close(self) -> None:
+        pass
+
+
+def test_constructor_auto_wires_presidio_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`Fabric(FabricConfig(...))` honors FABRIC_PRESIDIO_UNIX_SOCKET when no client passed."""
+    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
+    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")  # silence warning for this assertion
+    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
+    assert fabric.guardrail_chain.has_rails is True
+
+
+def test_constructor_auto_wires_nemo_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FABRIC_NEMO_UNIX_SOCKET", "/tmp/nemo.sock")
+    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")
+    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
+    assert fabric.guardrail_chain.has_rails is True
+
+
+def test_explicit_presidio_kwarg_wins_over_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit `presidio=` must override FABRIC_PRESIDIO_UNIX_SOCKET."""
+    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
+    stub = _StubPresidio()
+    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"), presidio=stub)
+    # The chain's presidio reference is the explicit stub, not a UDS client built from env.
+    assert fabric.guardrail_chain._presidio is stub  # noqa: SLF001
+
+
+def test_constructor_warns_when_env_set_and_no_client_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Env vars set + constructor path + non-empty chain → one-shot warning."""
+    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
+    monkeypatch.delenv("FABRIC_QUIET_ENV_WARN", raising=False)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Fabric(FabricConfig(tenant_id="t", agent_id="a"))
+    messages = [str(w.message) for w in caught]
+    assert any("FABRIC_PRESIDIO_UNIX_SOCKET" in m for m in messages), messages
+
+
+def test_no_warning_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pure-observability mode (no env vars, no clients) → empty chain, no warning."""
+    monkeypatch.delenv("FABRIC_PRESIDIO_UNIX_SOCKET", raising=False)
+    monkeypatch.delenv("FABRIC_NEMO_UNIX_SOCKET", raising=False)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
+    assert fabric.guardrail_chain.has_rails is False
+    env_warnings = [w for w in caught if "FABRIC_PRESIDIO_UNIX_SOCKET" in str(w.message)]
+    assert env_warnings == []
+
+
+def test_no_warning_when_explicit_client_passed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit kwarg path is intentional — no warning even if env is set."""
+    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
+    monkeypatch.delenv("FABRIC_QUIET_ENV_WARN", raising=False)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Fabric(FabricConfig(tenant_id="t", agent_id="a"), presidio=_StubPresidio())
+    env_warnings = [w for w in caught if "FABRIC_PRESIDIO_UNIX_SOCKET" in str(w.message)]
+    assert env_warnings == []
+
+
+def test_warning_suppressed_by_quiet_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
+    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        Fabric(FabricConfig(tenant_id="t", agent_id="a"))
+    env_warnings = [w for w in caught if "FABRIC_PRESIDIO_UNIX_SOCKET" in str(w.message)]
+    assert env_warnings == []
