@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `fabric.guard.traceProcessingEnabled=false` to opt out. See
   spec 016 §4.1.
 
+### Fixed (redteam-runner)
+
+- Dockerfile now installs `garak==0.9.0.15.*` and `pyrit==0.5.0.*` into
+  separate virtualenvs (`/opt/venv/garak`, `/opt/venv/pyrit`) inside a
+  single image, so the two libraries' conflicting `mistralai` pins no
+  longer collapse the build. The runner CLI gains `--garak-venv` and
+  `--pyrit-venv` (env: `FABRIC_REDTEAM_GARAK_VENV`,
+  `FABRIC_REDTEAM_PYRIT_VENV`) which default to those paths in the
+  published image; the drivers shell out to the matching venv's Python.
+  SPEC 014 §4.1 row #1.
+
 ### Changed (presidio-sidecar)
 
 - The Presidio sidecar entry point now wires the real
