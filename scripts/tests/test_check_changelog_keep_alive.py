@@ -41,7 +41,9 @@ def test_keep_alive_complete_passes(tmp_path: Path) -> None:
     assert checker.main([str(path)]) == 0
 
 
-def test_missing_heading_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_missing_heading_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = _write(
         tmp_path,
         "# Changelog\n\n"
@@ -54,7 +56,9 @@ def test_missing_heading_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str
     assert "## [Unreleased]` heading" in captured.err
 
 
-def test_missing_link_ref_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_missing_link_ref_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = _write(
         tmp_path,
         "# Changelog\n\n"

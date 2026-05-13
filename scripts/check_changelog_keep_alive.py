@@ -42,10 +42,10 @@ def main(argv: list[str] | None = None) -> int:
             "::error::CHANGELOG.md is missing: "
             + ", ".join(missing)
             + ". After cutting a release, restore the `## [Unreleased]` heading "
-              "AND the matching `[Unreleased]: "
-              "https://github.com/<org>/<repo>/compare/v<previous>...HEAD` link "
-              "reference so the next PR does not fail markdownlint MD053. "
-              "See CONTRIBUTING.md `## Releasing (maintainers)`.\n"
+            "AND the matching `[Unreleased]: "
+            "https://github.com/<org>/<repo>/compare/v<previous>...HEAD` link "
+            "reference so the next PR does not fail markdownlint MD053. "
+            "See CONTRIBUTING.md `## Releasing (maintainers)`.\n"
         )
         return 1
     return 0
