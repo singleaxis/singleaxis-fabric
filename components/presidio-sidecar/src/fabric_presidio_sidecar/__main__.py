@@ -59,11 +59,17 @@ def main(argv: list[str] | None = None) -> int:
             "'change-me'; supply a real key via --tenant-key-file"
         )
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
     analyzer = None
     try:
-        from fabric_presidio_sidecar.presidio_analyzer import build_default_analyzer
+        from fabric_presidio_sidecar.presidio_analyzer import (  # noqa: PLC0415
+            build_default_analyzer,
+        )
+
         analyzer = build_default_analyzer()
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
         logger.info("wired real PresidioAnalyzer (presidio-analyzer + spaCy)")
     except ImportError as exc:
         if not args.allow_passthrough:
@@ -73,8 +79,9 @@ def main(argv: list[str] | None = None) -> int:
                 "Install the [presidio] extra, or pass --allow-passthrough "
                 "for explicit no-op mode (dev / smoke only)."
             )
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-        logger.warning("starting with PassthroughAnalyzer (no PII redaction); --allow-passthrough set")
+        logger.warning(
+            "starting with PassthroughAnalyzer (no PII redaction); --allow-passthrough set"
+        )
 
     app = build_app(analyzer=analyzer, tenant_key=tenant_key)
 

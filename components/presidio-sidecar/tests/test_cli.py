@@ -223,9 +223,7 @@ def test_cli_wires_real_analyzer_and_info_logs(
     # ``main`` succeeds without the real [presidio] extra installed.
     fake_module = types.ModuleType("fabric_presidio_sidecar.presidio_analyzer")
     fake_module.build_default_analyzer = _fake_build  # type: ignore[attr-defined]
-    monkeypatch.setitem(
-        sys.modules, "fabric_presidio_sidecar.presidio_analyzer", fake_module
-    )
+    monkeypatch.setitem(sys.modules, "fabric_presidio_sidecar.presidio_analyzer", fake_module)
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(UVICORN_RUN, lambda **kw: captured.update(kw))
