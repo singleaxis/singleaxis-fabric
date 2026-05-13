@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from fabric.presidio import RedactionError, RedactionResult, UDSPresidioClient
+from fabric.presidio import (
+    DEFAULT_TIMEOUT_SECONDS,
+    RedactionError,
+    RedactionResult,
+    UDSPresidioClient,
+)
 
 from ._fake_sidecar import fake_sidecar as _sidecar
 
@@ -26,6 +31,13 @@ def test_validation_rejects_empty_socket() -> None:
 def test_validation_rejects_non_positive_timeout() -> None:
     with pytest.raises(ValueError, match="timeout"):
         UDSPresidioClient("/tmp/does-not-matter", timeout=0)
+
+
+def test_default_timeout_accommodates_first_call_load() -> None:
+    """SPEC 016 §4.4: default must be >=3s to cover Presidio cold start."""
+    assert DEFAULT_TIMEOUT_SECONDS >= 3.0
+    client = UDSPresidioClient("/tmp/does-not-matter")
+    assert client._timeout == DEFAULT_TIMEOUT_SECONDS
 
 
 def test_happy_path_returns_redaction_result() -> None:
