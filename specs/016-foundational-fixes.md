@@ -8,48 +8,47 @@ owner: project-lead
 
 # 016 — Foundational SDK + Chart Fixes
 
-## 1. Problem
+## 1. Scope
 
-The 2026-05-12 end-to-end validation session surfaced six load-bearing
-defects in the published v0.2.0 SDK and chart. Each of them is small
-individually; collectively they mean the OSS as published cannot be
-installed cleanly. This spec collects them as a single body of work so
-the v0.3.0 release notes have one coherent story.
+End-to-end validation on 2026-05-12 identified six discrete items where
+the v0.2.0 SDK or chart needs follow-up work before the next minor
+release. Each is small individually; this spec collects them as a single
+body of work so v0.3.0 has one coherent fix-up story.
 
-The defects:
+The items:
 
-1. **OTel collector chart renders only a `logs:` pipeline.** The SDK
-   emits spans (traces). The chart never emits a `traces:` pipeline in
-   the rendered collector config. Result: HTTP 404 on `/v1/traces`. The
-   chart as published cannot accept SDK spans.
+1. **Collector chart's trace pipeline.** The chart template currently
+   renders a `logs:` pipeline. The SDK emits trace spans. v0.3 adds the
+   `traces:` pipeline template, guarded by the existing
+   `fabric.guard.traceProcessingEnabled` value (defaulted to `true` so
+   trace export works out of the box).
 
-2. **`Fabric(FabricConfig(...))` constructor silently ignores env vars.**
-   Only `Fabric.from_env()` reads `FABRIC_PRESIDIO_UNIX_SOCKET` /
-   `FABRIC_NEMO_UNIX_SOCKET`. A customer who instantiates via the
-   common pattern with `FabricConfig(...)` gets a Fabric with no
-   guardrail rails wired, despite the env vars being set.
-   The failure mode is silent.
+2. **`Fabric()` constructor env-var detection.** The env-driven path
+   `Fabric.from_env()` reads `FABRIC_PRESIDIO_UNIX_SOCKET` /
+   `FABRIC_NEMO_UNIX_SOCKET`; the explicit constructor
+   `Fabric(FabricConfig(...))` does not. v0.3 unifies the behavior so
+   both honor env vars, with explicit kwargs winning when supplied.
 
-3. **`fabricsampler.hmacKey` must be hex-encoded but the chart accepts
-   any string.** A customer setting `hmacKey: "demo-key-please-rotate"`
-   triggers the sampler to crash at pod startup with
-   `hex-decode hmac key: encoding/hex: invalid byte`. The validator
-   should run at chart render time with a clear error pointing at the
-   encoding requirement.
+3. **`fabricsampler.hmacKey` chart-time validation.** The hmacKey value
+   is required to be hex-encoded by the sampler; the chart accepts any
+   string and lets the pod fail at startup. v0.3 moves the validation
+   to chart-render time with a clear error message.
 
-4. **SDK Presidio default timeout (0.5s) shorter than Presidio cold-start
-   (~6s).** First call after pod start always fails with
-   `RedactionError: sidecar transport error: timed out`. Bumped to 3s
-   in SPEC 012 but documented here as the SDK-level fix.
+4. **SDK Presidio client timeout.** The default 500 ms is tighter than
+   Presidio's first-call recognizer load (~6 s). v0.3 raises the default
+   to 3 s; cold-start latency is also addressed structurally by SPEC 012
+   §4.5's warmup endpoint.
 
-5. **`agent_id` / `user_id` accept any string with no PII warnings.**
-   A customer writing `user_id="bryan@example.com"` puts an email into
-   every emitted span. The SDK should at least warn on values matching
-   email / phone regex.
+5. **PII warnings on identifier fields.** `agent_id`, `user_id`, and
+   similar identifier fields accept arbitrary strings — including values
+   that look like emails or phone numbers, which would then appear in
+   every emitted span. v0.3 adds a one-shot startup warning when these
+   fields match an email or phone-shaped regex.
 
-6. **Empty `[Unreleased]` link reference in CHANGELOG.md after each
-   release** causes `markdownlint MD053` failures repeatedly. Procedural,
-   but adds noise to every release-prep PR.
+6. **CHANGELOG `[Unreleased]` link reference.** The release process
+   leaves an empty link reference that fails `markdownlint MD053` on
+   subsequent PRs. v0.3 codifies the keep-alive in the release workflow
+   so it stops surfacing as noise.
 
 ## 2. Goals
 

@@ -9,34 +9,37 @@ supersedes: portion of 005-guardrails-inline §"NeMo"
 
 # 013 — Guardrails Completion
 
-## 1. Problem
+## 1. Scope
 
-As of v0.2.0, Fabric's guardrails surface has three structural gaps:
+v0.2.0 introduced the inline guardrail surface (Presidio + NeMo via
+`GuardrailChain`); v0.3 / v0.4 complete it. Three areas need work:
 
-1. **NeMo Guardrails sidecar image is not published.** The `nemo-sidecar`
-   Helm chart exists in the repo, but the image it expects on GHCR
-   doesn't. Customers cannot `helm install` it from a registry.
-2. **NeMo chart deploys as a shared TCP Service, but the SDK only speaks
-   UDS.** The chart's own NOTES.txt acknowledges this — "Phase 1 ships
-   this as a shared TCP Deployment; production deployments should inject
-   this container as a per-agent-pod sidecar over a Unix domain socket —
-   the injection webhook lands in Phase 2." Phase 2 has not landed.
-   So today, the chart's deployment topology is unusable from the SDK.
-3. **No tiered guardrail architecture.** All inline guards (Presidio,
-   NeMo) run sequentially every turn, with no fast-path regex, no
-   sampling, no asynchronous LLM judge. P99 latency on a warm pod is
-   workable but not competitive for high-throughput agents.
+1. **Deployment artifact.** The `nemo-sidecar` chart exists; the matching
+   image needs to be published to GHCR so customers can install it from
+   a registry.
+2. **Deployment topology.** The chart's current mode (`shared-service`,
+   TCP) was a Phase-1 design noted in its own NOTES.txt. The intended
+   production topology is `per-pod-sidecar` over UDS — that's what the
+   SDK is built for. v0.3 ships the per-pod-sidecar mode as an explicit
+   chart option and documents it as the production default.
+3. **Tiered architecture.** Currently all configured guards run
+   sequentially; v0.3 introduces a tier-aware chain where fast,
+   in-process checks (regex) run first, sidecar calls (Presidio / NeMo /
+   jailbreak classifiers) come next, and any LLM-based evaluation runs
+   asynchronously off the user's blocking path.
 
-Additional issues:
+Secondary items rolled into this spec:
 
-- No first-class integration with **Lakera Guard** or **Llama Prompt Guard**
-  despite both being mentioned as recommended jailbreak engines in
-  internal strategy. The `NemoClient` Protocol is open for substitution,
-  but no shipped adapters exist.
-- No support for **tool-call authorization** — the `decision.tool_call`
-  primitive opens a span but has no policy hook to evaluate "is this
-  agent allowed to call this tool with these params for this user."
-- No async / sampled guard pattern. Every inline guard blocks the turn.
+- First-class integrations for **Lakera Guard** (managed jailbreak
+  detection) and **Llama Prompt Guard** (Meta's open-weight classifier)
+  alongside NeMo, all behind a single `GuardrailClient` protocol so
+  customers can mix and match.
+- A **tool-call authorization** hook on `decision.tool_call()` for
+  per-invocation policy evaluation (a callable or, in v0.4, an OPA
+  endpoint).
+- An **async judge** primitive (`decision.queue_judge(...)`) that emits
+  a queued-event without blocking the turn; consumed by SPEC 015's
+  judge workers.
 
 ## 2. Goals
 
@@ -149,6 +152,20 @@ Presidio/NeMo. Ships as a chart + image.
 
 For environments without GPU, fall back to CPU inference (slower but
 works). Default: GPU if `nvidia.com/gpu` requests are honored, else CPU.
+
+**HuggingFace authentication.** Meta's Llama Prompt Guard requires
+HuggingFace authentication and Meta license acceptance to download the
+weights. The sidecar image cannot bake the weights at build time (it
+would violate the license redistribution terms). Two operator paths:
+
+- **At first run**, the sidecar reads `HF_TOKEN` from env and downloads
+  the weights to a persistent volume. Subsequent restarts use the cache.
+- **Pre-cached PV pattern**, where the operator runs a one-time Job that
+  downloads weights to a PV, then mounts the PV read-only into the
+  sidecar. Recommended for air-gapped or production clusters.
+
+Chart's `values.yaml` documents both patterns. Default in dev is the
+first-run download; production examples in docs/ use the pre-cached PV.
 
 ### 4.5 Generic classifier-over-HTTP adapter
 

@@ -9,33 +9,42 @@ supersedes: portion of 005-guardrails-inline §"Presidio"
 
 # 012 — PII Redaction Completion
 
-## 1. Problem
+## 1. Scope
 
-As of v0.2.0, Fabric's PII redaction surface has three load-bearing
-defects identified in the 2026-05-12 end-to-end validation:
+v0.2.0 ships the Presidio sidecar in initial form. End-to-end validation
+on 2026-05-12 identified three areas where the integration needs to be
+completed before the sidecar is ready for production use:
 
-1. **The published `fabric-presidio-sidecar:0.2.0` image performs no
-   redaction.** `__main__.py` never wires a real `PresidioAnalyzer`,
-   defaulting to `PassthroughAnalyzer` which returns input unchanged.
-   Every customer running the OSS image today is redacting nothing.
-2. **`guard_input()` HMAC-hashes the entire input on any PII detection.**
-   The whole-string hash design is correct for telemetry-attribute
-   redaction but unusable for prompt redaction — downstream LLMs get a
-   64-char opaque hash with no context. The README's documented use
-   pattern is incompatible with the implementation.
-3. **No Helm chart exists** for the Presidio sidecar. The other four
-   sidecars have charts under `charts/fabric/charts/*`; presidio-sidecar
-   does not. Customers cannot deploy it via the published umbrella.
+1. **Analyzer wiring.** The sidecar entry point (`__main__.py`) is
+   currently configured to fall back to `PassthroughAnalyzer` (a
+   non-redacting stub intended for unit tests and CI smoke). Production
+   deployments should default to the real Presidio engine when the
+   `[presidio]` extra is installed, with explicit opt-in (rather than
+   silent fallback) when it is not.
+2. **`guard_input()` return shape.** The current implementation returns
+   a whole-string HMAC fingerprint when any PII is detected. This is
+   correct for telemetry-attribute redaction (where the goal is a stable
+   token that doesn't reveal the original value) but unsuitable when
+   the redacted text is forwarded to an LLM (where downstream consumers
+   need preserved context with PII spans replaced inline). v0.3 should
+   support both modes explicitly, defaulting to the context-preserving
+   tag mode.
+3. **Helm packaging.** The other four sidecars in
+   `charts/fabric/charts/*` have published charts; the Presidio sidecar
+   does not yet. v0.3 adds it.
 
-Additional issues:
+Secondary items rolled into this spec:
 
-- SDK's default Presidio client timeout (500 ms) is shorter than the
-  sidecar's recognizer cold-start (~6 s).
-- Default Presidio recognizer score threshold (0.6) misses phone numbers,
-  credit cards, and SSNs that score below threshold in conversational
-  context.
-- No regex tier — every call pays the spaCy cost even for obvious
-  pattern-based PII (email, SSN, credit card, phone).
+- SDK's default Presidio client timeout (500 ms) is tighter than the
+  sidecar's first-call recognizer load (~6 s). v0.3 raises the default
+  and adds a warmup endpoint so first-call latency stabilizes.
+- The default Presidio recognizer score threshold (0.6) is conservative
+  for conversational input; phone numbers and credit cards often score
+  below it in free-text context. v0.3 tunes the default and exposes the
+  threshold as configuration.
+- A regex pre-filter at the SDK level catches common patterns (email,
+  SSN, credit card) at sub-millisecond cost, deferring the spaCy /
+  Presidio cost to cases where it adds recall.
 
 ## 2. Goals
 

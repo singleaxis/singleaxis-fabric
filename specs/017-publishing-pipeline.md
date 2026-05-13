@@ -8,38 +8,39 @@ owner: project-lead
 
 # 017 — Publishing Pipeline & Integration CI
 
-## 1. Problem
+## 1. Scope
 
-Of the seven artifacts the OSS umbrella chart references, **only two
-are actually published to GHCR** as of v0.2.0:
+v0.2.0 publishes the SDK (PyPI), the collector image, and the
+`otel-collector` subchart. v0.3 completes the artifact set by publishing
+the remaining sidecar images and the umbrella chart, and adds an
+end-to-end CI workflow that exercises the data path (agent → collector
+→ backend), not just `helm test --healthz`.
 
-| Artifact | Published? |
-|---|---|
-| `fabric-otelcol` (collector image) | ✅ |
-| `charts/otel-collector` (subchart) | ✅ |
-| `fabric-presidio-sidecar` (image) | ❌ |
-| `fabric-nemo-sidecar` (image) | ❌ |
-| `fabric-redteam-runner` (image) | ❌ |
-| `fabric-update-agent` (image) | ❌ |
-| `fabric-langfuse-bootstrap` (image) | ❌ |
-| `charts/fabric` (umbrella chart) | ❌ |
-| `charts/presidio-sidecar` (subchart — doesn't exist) | n/a (see SPEC 012) |
+Artifact status entering v0.3:
 
-So a customer who runs `helm install fabric oci://ghcr.io/singleaxis/charts/fabric`
-gets `not found`. They can install only the `otel-collector` subchart in
-isolation, which doesn't deliver any of Fabric's differentiating value.
+| Artifact | v0.2 status | v0.3 target |
+|---|---|---|
+| `singleaxis-fabric` (SDK on PyPI) | published | continues |
+| `fabric-otelcol` (collector image) | published | continues |
+| `charts/otel-collector` (subchart) | published | continues |
+| `fabric-presidio-sidecar` (image) | pending (built locally for testing) | publish |
+| `fabric-nemo-sidecar` (image) | pending | publish |
+| `fabric-redteam-runner` (image) | pending (SPEC 014 fixes build) | publish |
+| `fabric-update-agent` (image) | pending | publish |
+| `fabric-langfuse-bootstrap` (image) | pending | publish |
+| `charts/fabric` (umbrella) | pending | publish |
+| `charts/presidio-sidecar` (subchart) | does not exist | author (SPEC 012) + publish |
 
-Separately, the existing CI integration coverage is weak:
+CI integration scope today: `helm test` against `/healthz`. v0.3 adds
+a kind-based E2E job that:
 
-- The "kind cluster install + smoke" job in `.github/workflows/ci.yml`
-  installs the chart and runs `helm test` against it. But `helm test`
-  only checks the collector pod's `/healthz` endpoint. It does NOT:
-  - Run a real agent
-  - Exercise the SDK end-to-end
-  - Verify that spans actually traverse the collector → backend pipeline
-- The chart-rendering bug (SPEC 016 §4.1) and the silent
-  PassthroughAnalyzer bug (SPEC 012 §1) BOTH slipped through CI because
-  no test exercised the actual data path.
+- Stands up the full umbrella stack
+- Runs a reference agent against a real LLM
+- Asserts spans arrive at a real trace backend with the expected
+  attribution and content shape (e.g., guard events present, PII
+  redaction visible)
+
+This is what the 2026-05-12 validation did by hand; v0.3 makes it CI.
 
 ## 2. Goals
 

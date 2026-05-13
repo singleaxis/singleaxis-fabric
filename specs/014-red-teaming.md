@@ -8,25 +8,26 @@ owner: project-lead
 
 # 014 — Red-Teaming Completion
 
-## 1. Problem
+## 1. Scope
 
-The red-team runner is the most "in the repo but not shippable"
-component in v0.2.0:
+v0.2.0 ships the red-team runner as source. v0.3 turns it into a fully
+shippable component: working build, published image, deployable chart,
+and integrated telemetry. Four areas:
 
-1. **The Dockerfile won't build.** `garak` (Nvidia) and `pyrit` (Microsoft)
-   both pin different exact versions of `mistralai`, so the unified
-   `pip install '.[suites]'` step inside the Dockerfile triggers
-   `ResolutionImpossible`. Image build CI has been red since 2026-04.
-2. **No image published to GHCR.** Even if the build were fixed, no
-   release artifact exists.
-3. **No CI integration recipes.** The strategy says red-team should run
-   in CI on every release tag and on a schedule against staging. Neither
-   workflow is documented or shipped.
-4. **No first-class linkage to traces or audit bundles.** Red-team
-   findings produce JSON, but those findings are not emitted as OTel
-   spans with `event_class=red_team_result` — meaning they don't flow
-   through the fabricguard / fabricsampler / fabricpolicy processors
-   the rest of the pipeline runs.
+1. **Build.** The current Dockerfile installs garak and pyrit into a
+   single Python environment; both libraries pin different exact
+   versions of `mistralai`, producing a resolver conflict. v0.3 fixes
+   this by installing each tool in its own virtualenv inside the image.
+2. **Publishing.** Image needs to land on GHCR alongside the other
+   four sidecars — covered by SPEC 017's matrix publish.
+3. **CI integration recipes.** The strategy calls for red-team to run
+   as a pre-release CI gate and as a scheduled probe against staging.
+   v0.3 ships reference GitHub Actions workflow templates customers
+   can copy.
+4. **Telemetry integration.** Red-team findings currently emit JSON
+   only; v0.3 adds OTel span emission with `event_class=red_team_result`
+   so findings flow through the existing fabricguard / fabricsampler /
+   fabricpolicy processors and land in the customer's trace backend.
 
 ## 2. Goals
 
@@ -81,16 +82,23 @@ FROM python:3.12-slim AS base
 RUN python -m venv /opt/venv-runner
 RUN /opt/venv-runner/bin/pip install fabric-redteam-runner
 
-# Garak in its own venv
+# Garak in its own venv — pin a known-tested minor version
 RUN python -m venv /opt/venv-garak
-RUN /opt/venv-garak/bin/pip install 'garak>=0.9.0.15'
+RUN /opt/venv-garak/bin/pip install 'garak==0.9.0.15.*'
 
-# Pyrit in its own venv
+# Pyrit in its own venv — pin a known-tested minor version
 RUN python -m venv /opt/venv-pyrit
-RUN /opt/venv-pyrit/bin/pip install 'pyrit>=0.5.0'
+RUN /opt/venv-pyrit/bin/pip install 'pyrit==0.5.0.*'
 
 ENTRYPOINT ["/opt/venv-runner/bin/fabric-redteam-runner"]
 ```
+
+**Version pinning is load-bearing.** garak and pyrit have aggressive
+upstream release cycles (~weekly), and CLI behavior has changed in
+recent minor versions of both. Pinning a known-tested minor version
+in the published image prevents customer surprise. The pin should be
+bumped in a controlled way — bump-and-test as a separate PR per
+upstream release, not via Dependabot auto-merge.
 
 The runner's CLI gains `--garak-bin /opt/venv-garak/bin/garak` and
 `--pyrit-bin /opt/venv-pyrit/bin/pyrit` flags, defaulted to those paths

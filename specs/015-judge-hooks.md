@@ -186,20 +186,34 @@ This is OSS-only-utility. L2 Commercial customers will replace
 
 ### 4.5 Trace context propagation for out-of-process workers
 
-A worker needs to know which decision to attach its verdict to. Two
-mechanisms:
+A worker needs to know which decision to attach its verdict to, and
+needs the ability to write a span event onto that already-finished
+decision's trace. Two practical mechanisms — both honest about the
+constraint that **OTel spans are immutable after `end()`**:
 
-- **OTel TraceContext propagation** in the queued event's
-  `span.context.trace_id` + `span.context.span_id`. Workers reading from
-  the backend (Phoenix, Langfuse) get this for free.
-- **Optional Pub/Sub fan-out**: if the customer wires a Pub/Sub /
-  Kafka / SQS topic in the collector pipeline, queued events get
-  republished there as enriched payloads. L2 Commercial provides this
-  fan-out integration. For L1-only customers, polling the trace backend
-  works.
+- **In-flight workers** (worker runs while the decision span is still
+  open, e.g., async inside the same Python process or short-lived
+  workers that subscribe to a queue and complete in seconds): the
+  worker holds a reference to the still-open span and writes a verdict
+  event directly. Standard OTel API.
 
-The L1 OSS ships only the queued-event schema and the readback API.
-The fan-out infrastructure is Commercial.
+- **Post-hoc workers** (worker runs after the original decision span
+  has closed, e.g., a separate process picks up queued events from
+  the trace backend's API): the worker emits a **new span** that
+  carries the same trace_id (via `SpanContext` with `is_remote=True`)
+  AND a `fabric.judge.target_decision_id` attribute pointing at the
+  original decision's span_id. The two spans share a trace_id so any
+  backend's trace view groups them; the explicit link attribute lets
+  customers query "find verdicts for this decision."
+
+The L1 OSS provides `fabric.judge.attach_to_trace(trace_id, span_id)`
+helper that yields a properly-configured `Decision`-like context for
+out-of-process workers. Implementation uses OTel's
+`NonRecordingSpan` + a real child span pattern.
+
+Optional Pub/Sub fan-out (the collector republishing queued events to
+Kafka / SQS / Pub/Sub) is **L2 Commercial** infrastructure; the L1 OSS
+ships only the event schema and the helper.
 
 ### 4.6 Sampling integration
 
