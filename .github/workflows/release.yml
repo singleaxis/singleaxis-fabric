@@ -66,6 +66,13 @@ jobs:
       notes: ${{ steps.extract.outputs.notes }}
     steps:
       - uses: actions/checkout@v6
+      - name: Validate CHANGELOG `[Unreleased]` keep-alive
+        # SPEC 016 §4.6: every release must leave a live `[Unreleased]`
+        # section AND a matching `[Unreleased]: ...HEAD` link reference
+        # in CHANGELOG.md so subsequent PRs do not fail markdownlint
+        # MD053. The check is its own unit-tested script so the regex
+        # cannot drift between release-time and pytest.
+        run: python scripts/check_changelog_keep_alive.py CHANGELOG.md
       - id: extract
         name: Extract release notes for this version
         run: |

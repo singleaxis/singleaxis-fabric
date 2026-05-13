@@ -184,6 +184,12 @@ jobs:
           else
             echo "No Python projects yet; skipping ruff format."
           fi
+      - name: Repo-level scripts/ tests
+        # Stdlib-only tests covering helpers in scripts/. Currently:
+        # SPEC 016 §4.6 changelog [Unreleased] keep-alive validator.
+        run: |
+          pip install pytest
+          pytest scripts/tests/ -q
 
   python-mypy:
     name: Python mypy (per-package)
