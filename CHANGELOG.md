@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (presidio-sidecar)
+
+- The Presidio sidecar entry point now wires the real
+  `PresidioAnalyzer` by default when the `[presidio]` extra is
+  installed, and **fails fast** on startup when it is not. This
+  closes a v0.2.0 gap where a misconfigured image could silently
+  start in `PassthroughAnalyzer` mode and redact nothing. The new
+  `--allow-passthrough` flag is the explicit opt-in for dev / CI
+  smoke clusters that intentionally run without the extra; it
+  emits a startup warning so operators see the no-op mode in
+  logs. When the real analyzer is wired, an INFO log records the
+  wire-up. (SPEC 012 §4.2)
+
 ## [0.2.0] - 2026-05-01
 
 Fabric earns the "open-source observability + control plane for
