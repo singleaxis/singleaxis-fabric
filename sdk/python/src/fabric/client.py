@@ -112,15 +112,18 @@ class Fabric:
 
         self._chain = GuardrailChain(presidio=presidio, nemo=nemo)
 
-        if wired_from_env and self._chain.has_rails:
-            if source.get(ENV_QUIET_ENV_WARN, "").strip() not in ("1", "true", "True"):
-                warnings.warn(
-                    "Fabric() constructor auto-wired guardrail client(s) from "
-                    f"{ENV_PRESIDIO_SOCKET}/{ENV_NEMO_SOCKET}. Prefer Fabric.from_env() "
-                    "or pass explicit presidio=/nemo= kwargs. "
-                    f"Suppress with {ENV_QUIET_ENV_WARN}=1.",
-                    stacklevel=2,
-                )
+        if (
+            wired_from_env
+            and self._chain.has_rails
+            and source.get(ENV_QUIET_ENV_WARN, "").strip() not in ("1", "true", "True")
+        ):
+            warnings.warn(
+                "Fabric() constructor auto-wired guardrail client(s) from "
+                f"{ENV_PRESIDIO_SOCKET}/{ENV_NEMO_SOCKET}. Prefer Fabric.from_env() "
+                "or pass explicit presidio=/nemo= kwargs. "
+                f"Suppress with {ENV_QUIET_ENV_WARN}=1.",
+                stacklevel=2,
+            )
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Fabric:

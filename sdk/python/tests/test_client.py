@@ -88,7 +88,7 @@ def test_explicit_presidio_kwarg_wins_over_env(monkeypatch: pytest.MonkeyPatch) 
     stub = _StubPresidio()
     fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"), presidio=stub)
     # The chain's presidio reference is the explicit stub, not a UDS client built from env.
-    assert fabric.guardrail_chain._presidio is stub  # noqa: SLF001
+    assert fabric.guardrail_chain._presidio is stub
 
 
 def test_constructor_warns_when_env_set_and_no_client_passed(
