@@ -48,3 +48,10 @@ Every spec declares a `Status` in its header:
 | [009](009-compliance-mapping.md) | Regulation-to-layer mapping | draft |
 | [010](010-development-standards.md) | Development, testing, and release standards | draft |
 | [011](011-roadmap.md) | Phased execution roadmap | draft |
+| [012](012-pii-redaction.md) | PII redaction — completion spec (analyzer wire, tag mode, regex pre-filter, chart) | draft |
+| [013](013-guardrails.md) | Guardrails — completion spec (tiered chain, per-pod sidecar, Lakera + Prompt Guard adapters, tool authorization) | draft |
+| [014](014-red-teaming.md) | Red-teaming — completion spec (Dockerfile fix, OTel span emission, CronJob, CI recipes) | draft |
+| [015](015-judge-hooks.md) | Judge hooks — L1 OSS primitives (queue_judge, record_eval, SimpleJudge reference) | draft |
+| [016](016-foundational-fixes.md) | Foundational SDK + chart fixes from 2026-05-12 validation | draft |
+| [017](017-publishing-pipeline.md) | Publishing pipeline & integration CI (publish all artifacts, kind+Phoenix E2E) | draft |
+| [018](018-modern-agent-primitives.md) | Modern agent primitives (MCP, rich tools, async tasks, memory reads, delegation) | draft |
