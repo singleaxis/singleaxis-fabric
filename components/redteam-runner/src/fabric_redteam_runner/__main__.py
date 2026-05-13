@@ -48,6 +48,28 @@ def run(
         "fabric-redteam-runner",
         envvar="OTEL_SERVICE_NAME",
     ),
+    garak_venv: Path | None = typer.Option(
+        None,
+        "--garak-venv",
+        envvar="FABRIC_REDTEAM_GARAK_VENV",
+        help=(
+            "Path to the virtualenv that holds garak (e.g. /opt/venv/garak "
+            "in the published image). When set, the runner shells out to "
+            "that venv's python for garak probes. Defaults to in-process "
+            "import for dev runs."
+        ),
+    ),
+    pyrit_venv: Path | None = typer.Option(
+        None,
+        "--pyrit-venv",
+        envvar="FABRIC_REDTEAM_PYRIT_VENV",
+        help=(
+            "Path to the virtualenv that holds pyrit (e.g. /opt/venv/pyrit "
+            "in the published image). When set, the runner shells out to "
+            "that venv's python for pyrit scenarios. Defaults to in-process "
+            "import for dev runs."
+        ),
+    ),
     fail_on_findings: bool = typer.Option(
         True,
         help="Exit nonzero when at least one probe failed (useful for CronJob retries).",
@@ -63,7 +85,10 @@ def run(
     config = load_run_config(config_path)
     _install_otel_provider(service_name=service_name, endpoint=otlp_endpoint)
 
-    suites = [load_suite(s.name) for s in config.suites if _suite_known(s.name)]
+    venv_for: dict[str, Path | None] = {"garak": garak_venv, "pyrit": pyrit_venv}
+    suites = [
+        load_suite(s.name, venv=venv_for.get(s.name)) for s in config.suites if _suite_known(s.name)
+    ]
     result = Runner(suites).run(config)
 
     emitter = OTelEmitter()
