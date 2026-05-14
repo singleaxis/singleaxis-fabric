@@ -2,14 +2,14 @@
 
 # SingleAxis Fabric
 
-**Open-source observability and control plane for AI agents.**
+**Open-source operational telemetry and control substrate for autonomous systems.**
 
-Decision-span tracing, fail-loud guardrails, and a human-in-the-loop
-primitive — OpenTelemetry-native, with adapters for LangGraph,
-Microsoft Agent Framework, and CrewAI. Hardened defaults for regulated
-environments: the `eu-ai-act-high-risk` Helm profile ships today;
-full audit-trail evidence generation lands with the SingleAxis control
-plane.
+Decision-span tracing, causal execution telemetry, fail-loud guardrails,
+and human-in-the-loop primitives — OpenTelemetry-native, with adapters
+for LangGraph, Microsoft Agent Framework, and CrewAI. Hardened defaults
+for regulated environments: the `eu-ai-act-high-risk` Helm profile ships
+today; Decision Graph, replay orchestration, and full audit-trail
+evidence generation land with the SingleAxis commercial control plane.
 
 [![PyPI](https://img.shields.io/pypi/v/singleaxis-fabric.svg)](https://pypi.org/project/singleaxis-fabric/)
 [![Python](https://img.shields.io/pypi/pyversions/singleaxis-fabric.svg)](https://pypi.org/project/singleaxis-fabric/)
@@ -243,7 +243,7 @@ certifications, generate evidence bundles, or produce signed audit
 trails on its own.** The artefacts an external auditor asks for —
 queryable evidence bundles, immutable retention, regulator-shaped
 mappings — are produced by the SingleAxis commercial control plane on
-top of this collection layer (Context Graph, evidence builder,
+top of this collection layer (Decision Graph, evidence builder,
 escalation service, judge workers).
 
 If your team operates the collection infrastructure yourselves and

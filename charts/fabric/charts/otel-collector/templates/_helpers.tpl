@@ -50,7 +50,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 Validate fabric.sampler config: when enabled, exactly one of
-hmacKey / hmacKeySecret.name must be set.
+hmacKey / hmacKeySecret.name must be set. When hmacKey is set
+inline, it must be a 64-char hex string (the sampler validates
+this at runtime; we fail-early here so the pod never starts
+with a bad key).
 */}}
 {{- define "otel-collector.validateSampler" -}}
 {{- if .Values.fabric.sampler.enabled -}}
@@ -61,6 +64,11 @@ hmacKey / hmacKeySecret.name must be set.
 {{- end -}}
 {{- if and $inline $secret -}}
 {{- fail "fabric.sampler: set only one of hmacKey / hmacKeySecret" -}}
+{{- end -}}
+{{- if $inline -}}
+{{- if not (regexMatch "^[0-9a-f]{64}$" $inline) -}}
+{{- fail "fabric.sampler.hmacKey must be a 64-char lowercase hex string (32 bytes). Generate one with: openssl rand -hex 32. For production, prefer fabric.sampler.hmacKeySecret referencing a Kubernetes Secret." -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

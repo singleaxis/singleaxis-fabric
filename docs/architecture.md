@@ -8,7 +8,7 @@ thirty.
 > **Scope.** This page describes the **L1 OSS** distribution that
 > ships from this repository: the Fabric SDK, guardrail sidecars,
 > OTel collector, red-team runner, and Helm chart. The L2 commercial
-> control plane (judge workers, context graph, telemetry bridge,
+> control plane (judge workers, decision graph, telemetry bridge,
 > escalation service, evidence bundles) is referenced where it sits
 > in the picture, but its implementation lives in a separate private
 > repository — see [`specs/001-product-vision.md`](../specs/001-product-vision.md)
@@ -26,7 +26,7 @@ only interact with three layers.
 | **Collector** | An OpenTelemetry Collector distribution pre-configured with the Fabric processor chain (tail sampling, attribute allowlisting, tenant scoping). | One or more per-cluster deployments. | Asynchronously — the SDK exports batched spans over OTLP; the agent request path never waits for this. |
 
 Everything else in the repo (judge workers, escalation service,
-context graph, telemetry bridge, update agent, admin UI) runs
+decision graph, telemetry bridge, update agent, admin UI) runs
 asynchronously off the OTel stream or over a message broker. The
 agent's request path never blocks on any of them.
 
@@ -44,7 +44,7 @@ The numeric budgets above are design contracts, not measured
 benchmarks. A first-party benchmark suite that gates merges on P99
 regressions lands as a follow-up release.
 
-Everything else — judges, escalations, context-graph writes,
+Everything else — judges, escalations, decision-graph writes,
 compliance evidence generation — happens off the critical path.
 Spec [`004-telemetry-bridge.md`](../specs/004-telemetry-bridge.md)
 and [`008-deployment-model.md`](../specs/008-deployment-model.md)
@@ -69,18 +69,18 @@ agent pod:
   Langfuse      judge-workers (NATS)   telemetry-bridge (NATS)
                                                 |
                                                 v
-                                context-graph / escalation-service
+                                decision-graph / escalation-service
 ```
 
 Everything below the OTLP hop happens after the agent returns. If
-the context graph is down, judges are behind, or the escalation
+the decision graph is down, judges are behind, or the escalation
 service is restarting, the agent still serves requests — the
 telemetry queue drains when those services recover.
 
 ## Where each piece is documented
 
 - Overall component shape — [spec 002](../specs/002-architecture.md)
-- Context Graph (provenance) — [spec 003](../specs/003-context-graph.md)
+- Decision Graph (provenance) — [spec 003](../specs/003-decision-graph.md)
 - Telemetry wire contract — [spec 004](../specs/004-telemetry-bridge.md)
 - Inline guardrails — [spec 005](../specs/005-guardrails-inline.md)
 - LLM-as-judge (async) — [spec 006](../specs/006-llm-as-judge.md)
@@ -92,6 +92,6 @@ telemetry queue drains when those services recover.
 
 This repository ships the developer-facing adoption surface — SDK,
 adapters, sidecars, OTel collector, Helm chart. Components and
-services maintained internally by SingleAxis (Context Graph
+services maintained internally by SingleAxis (Decision Graph
 analytics, evidence-bundle generation, reviewer workflows, rubric
 authoring) are not part of this distribution.

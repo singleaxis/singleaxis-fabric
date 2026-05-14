@@ -27,7 +27,7 @@ for non-Python agents.
 4. Provide a fallback for agents that cannot import Python libraries
    in-process (Go, Node, compiled languages).
 5. Emit every guardrail action as a structured event consumed by
-   the Context Graph.
+   the Decision Graph.
 
 ## Non-goals
 
@@ -192,7 +192,7 @@ The `guard_*` methods **emit a `fabric.guardrail` span event
 automatically** with phase, latency, blocked flag, and the
 allowlisted policy / entity attributes. Agents do not separately
 log guardrail actions. Downstream, the Telemetry Bridge folds those
-span events into the Context Graph.
+span events into the Decision Graph.
 
 ## Streaming output filter
 
@@ -274,7 +274,7 @@ Events flow to:
 - **OTel** — as a `fabric.guardrail` span event on the decision
   span, alongside `fabric.blocked` / `fabric.blocked.policies`
   attributes when a block was recorded.
-- **Telemetry Bridge + Context Graph** — the bridge folds the
+- **Telemetry Bridge + Decision Graph** — the bridge folds the
   decision span's guardrail events into the `DecisionSummary` wire
   event; the graph builder materializes the guardrail provenance
   from there.
@@ -325,14 +325,14 @@ Events never contain raw content.
   stand with an inline warning? *Resolver: SDK maintainer + UX
   review. Deadline: before 0.2.0.*
 - **Q3.** Should Llama Guard (second-pass) results be allowed to
-  rewrite the Context Graph verdict after the fact, or only append
+  rewrite the Decision Graph verdict after the fact, or only append
   a flag? Integrity concerns on retroactive modification.
   *Resolver: graph maintainer. Deadline: before 0.2.0.*
 
 ## References
 
 - Spec 002 — Architecture
-- Spec 003 — Context Graph (consumer of guardrail events)
+- Spec 003 — Decision Graph (consumer of guardrail events)
 - Spec 009 — Compliance mapping (profile definitions)
 - [Microsoft Presidio](https://microsoft.github.io/presidio/)
 - [NVIDIA NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
