@@ -322,9 +322,18 @@ jobs:
               | head -1
             echo "::endgroup::"
           done
-      - name: hmacKey render-time validation tests
-        # SPEC 016 §4.3: bad hmacKey must fail render before pod creation.
-        run: ./charts/fabric/charts/otel-collector/tests/test-hmackey-validation.sh
+      - name: Chart render assertions
+        # Per-chart shell tests that assert specific render-time behaviour
+        # (e.g. spec 016 §4.1: traces: pipeline gating, §4.3: hmacKey
+        # render-time validation). Each script is self-contained and
+        # exits non-zero on failure.
+        run: |
+          shopt -s nullglob
+          for script in charts/fabric/charts/*/tests/*.sh; do
+            echo "::group::${script}"
+            bash "${script}"
+            echo "::endgroup::"
+          done
 
   collector-image-build:
     name: Collector image build (PR smoke)
@@ -334,7 +343,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - name: Build (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -365,7 +374,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - name: Build ${{ matrix.component }} (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/${{ matrix.component }}
           file: components/${{ matrix.component }}/Dockerfile
@@ -391,7 +400,7 @@ jobs:
         # Reuses the same Dockerfile as collector-image-build but
         # tags separately (fabric-otelcol:trivy) so the two jobs
         # can run in parallel without racing on the :pr tag.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -430,7 +439,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: apache/skywalking-eyes/header@v0.6.0
+      - uses: apache/skywalking-eyes/header@v0.8.0
         with:
           config: .licenserc.yaml
 
