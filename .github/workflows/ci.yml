@@ -439,7 +439,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: apache/skywalking-eyes/header@v0.6.0
+      - uses: apache/skywalking-eyes/header@v0.8.0
         with:
           config: .licenserc.yaml
 
