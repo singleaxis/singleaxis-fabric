@@ -18,13 +18,14 @@ A :class:`Decision` instance represents a single agent turn and is
 parallel coroutines or workers.
 
 Mutation methods on a single ``Decision`` (``record_retrieval``,
-``remember``, ``request_escalation``, ``set_attribute``,
-``guard_input``, ``guard_output_chunk``, ``guard_output_final``)
-are **not** internally synchronized. The rolling counter attributes
-(``fabric.retrieval_count``, ``fabric.memory_write_count``) and the
+``remember``, ``record_side_effect``, ``request_escalation``,
+``set_attribute``, ``guard_input``, ``guard_output_chunk``,
+``guard_output_final``) are **not** internally synchronized. The
+rolling counter attributes (``fabric.retrieval_count``,
+``fabric.memory_write_count``, ``fabric.side_effect_count``) and the
 internal lists they update would race under concurrent access. The
-``Fabric`` client itself is safe to share — only ``Decision``
-instances have this constraint.
+``Fabric`` client itself is safe to share — only ``Decision`` instances
+have this constraint.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from .guardrails import (
 )
 from .memory import MemoryKind, MemoryRecord
 from .retrieval import RetrievalRecord, RetrievalSource
+from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -72,6 +74,9 @@ ATTR_RETRIEVAL_COUNT = "fabric.retrieval_count"
 ATTR_RETRIEVAL_SOURCES = "fabric.retrieval_sources"
 ATTR_MEMORY_WRITE_COUNT = "fabric.memory_write_count"
 ATTR_MEMORY_KINDS = "fabric.memory_kinds"
+ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count"
+ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types"
+ATTR_SIDE_EFFECT_SYSTEMS = "fabric.side_effect_systems"
 
 
 class Decision(AbstractContextManager["Decision"]):
@@ -101,6 +106,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._escalation: EscalationSummary | None = None
         self._retrievals: list[RetrievalRecord] = []
         self._memory_writes: list[MemoryRecord] = []
+        self._side_effects: list[SideEffectRecord] = []
 
     # -- context manager --------------------------------------------------
 
@@ -203,6 +209,11 @@ class Decision(AbstractContextManager["Decision"]):
     def memory_writes(self) -> tuple[MemoryRecord, ...]:
         """All memory writes recorded on this decision, in emission order."""
         return tuple(self._memory_writes)
+
+    @property
+    def side_effects(self) -> tuple[SideEffectRecord, ...]:
+        """All external mutations recorded on this decision, in emission order."""
+        return tuple(self._side_effects)
 
     # -- guardrail entry points ------------------------------------------
     #
@@ -433,6 +444,93 @@ class Decision(AbstractContextManager["Decision"]):
         if record.ttl_seconds is not None:
             event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
         span.add_event("fabric.memory", attributes=event_attrs)
+        return record
+
+    # -- side effects ----------------------------------------------------
+
+    def record_side_effect(
+        self,
+        effect_type: SideEffectType | str,
+        *,
+        target_system: str,
+        operation: str,
+        request_payload: str | None = None,
+        result_payload: str | None = None,
+        request_hash: str | None = None,
+        result_hash: str | None = None,
+        idempotency_key: str | None = None,
+        approval_required: bool = False,
+        committed: bool = True,
+        rollback_supported: bool = False,
+        replay_behavior: ReplayBehavior | str = ReplayBehavior.SUPPRESS,
+    ) -> SideEffectRecord:
+        """Record an external mutation caused by this decision.
+
+        Use this for tool calls that mutate state outside the agent
+        process: CRM writes, ticket creation, email sends, database
+        writes, payments, file writes, and similar operations.
+
+        Raw request/result payloads are hashed locally. If the host has
+        already produced hashes, pass ``request_hash`` / ``result_hash``
+        instead. Supplying both raw payload and precomputed hash for the
+        same field is rejected to avoid ambiguous evidence.
+        """
+
+        if request_payload is not None and request_hash is not None:
+            raise ValueError("pass either request_payload or request_hash, not both")
+        if result_payload is not None and result_hash is not None:
+            raise ValueError("pass either result_payload or result_hash, not both")
+        if request_payload is not None or result_payload is not None:
+            record = SideEffectRecord.from_payloads(
+                effect_type=effect_type,
+                target_system=target_system,
+                operation=operation,
+                request_payload=request_payload,
+                result_payload=result_payload,
+                idempotency_key=idempotency_key,
+                approval_required=approval_required,
+                committed=committed,
+                rollback_supported=rollback_supported,
+                replay_behavior=replay_behavior,
+            )
+        else:
+            record = SideEffectRecord(
+                effect_type=SideEffectType(effect_type),
+                target_system=target_system,
+                operation=operation,
+                request_hash=request_hash,
+                result_hash=result_hash,
+                idempotency_key=idempotency_key,
+                approval_required=approval_required,
+                committed=committed,
+                rollback_supported=rollback_supported,
+                replay_behavior=ReplayBehavior(replay_behavior),
+            )
+
+        span = self.span
+        self._side_effects.append(record)
+        span.set_attribute(ATTR_SIDE_EFFECT_COUNT, len(self._side_effects))
+        unique_types = sorted({r.effect_type.value for r in self._side_effects})
+        unique_systems = sorted({r.target_system for r in self._side_effects})
+        span.set_attribute(ATTR_SIDE_EFFECT_TYPES, tuple(unique_types))
+        span.set_attribute(ATTR_SIDE_EFFECT_SYSTEMS, tuple(unique_systems))
+
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.side_effect.type": record.effect_type.value,
+            "fabric.side_effect.target_system": record.target_system,
+            "fabric.side_effect.operation": record.operation,
+            "fabric.side_effect.approval_required": record.approval_required,
+            "fabric.side_effect.committed": record.committed,
+            "fabric.side_effect.rollback_supported": record.rollback_supported,
+            "fabric.side_effect.replay_behavior": record.replay_behavior.value,
+        }
+        if record.request_hash is not None:
+            event_attrs["fabric.side_effect.request_hash"] = record.request_hash
+        if record.result_hash is not None:
+            event_attrs["fabric.side_effect.result_hash"] = record.result_hash
+        if record.idempotency_key is not None:
+            event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
+        span.add_event("fabric.side_effect", attributes=event_attrs)
         return record
 
     # -- child spans (LLM call / tool call) ------------------------------

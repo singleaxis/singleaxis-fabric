@@ -10,7 +10,7 @@ locally and emits the digest along with caller-supplied opaque
 identifiers (``key``, ``tags``).
 
 Downstream, the Telemetry Bridge folds these events into the wire
-protocol and the Context Graph materializes a ``Retrieval`` node
+protocol and the Decision Graph materializes a ``Retrieval`` node
 with ``source=memory`` tied to the owning ``Decision`` — the same
 shape a read would produce, so the provenance chain is symmetric on
 both sides.
@@ -29,7 +29,7 @@ class MemoryKind(StrEnum):
     """What kind of memory the agent wrote.
 
     The SDK does not enforce storage semantics — these are labels the
-    Context Graph uses when projecting the write into a Retrieval
+    Decision Graph uses when projecting the write into a Retrieval
     node and when analysts slice provenance.
     """
 

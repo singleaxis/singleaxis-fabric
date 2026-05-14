@@ -32,7 +32,7 @@ uv run fabric-reference-agent --prompt "Hello" --low-score    # triggers escalat
 - Call a real LLM
 - Connect to real Presidio / NeMo sidecars (guardrails no-op)
 - Publish to NATS / the telemetry bridge
-- Persist to the Context Graph
+- Persist to the Decision Graph
 
 Point the SDK at real sidecars via `FABRIC_PRESIDIO_UNIX_SOCKET` /
 `FABRIC_NEMO_UNIX_SOCKET`, export OTel traces with
