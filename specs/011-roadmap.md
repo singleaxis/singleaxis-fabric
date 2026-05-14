@@ -62,7 +62,7 @@ commercial control plane (L6).
   - `Fabric` client, `Decision` context manager
   - Inline guardrail chain (Presidio + NeMo rails)
   - Retrieval recording (records local hashes; the L2 commercial
-    Context Graph materializes the provenance — spec 003)
+    Decision Graph materializes the provenance — spec 003)
   - Escalation pause primitive (the SDK exception + adapters; SASF
     review service is L2 — spec 007)
   - Adapters: LangGraph, Microsoft Agent Framework, CrewAI
@@ -81,7 +81,7 @@ plane (separate private repository), not here:
 
 - **L6 LLM-as-Judge:** judge worker pool, signed rubric library
 - **Telemetry Bridge:** sanitized egress to SingleAxis SaaS
-- **Context Graph:** materialized provenance store (Postgres+pgvector
+- **Decision Graph:** materialized provenance store (Postgres+pgvector
   / Neo4j)
 - **Escalation service:** SASF reviewer dashboard, signed verdict
   webhook, durable checkpoint resume

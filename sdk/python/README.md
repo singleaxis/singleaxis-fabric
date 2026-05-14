@@ -9,7 +9,7 @@ CrewAI (installed via extras — the core SDK stays framework-neutral).
 
 - [`../../specs/002-architecture.md`](../../specs/002-architecture.md)
 - [`../../specs/005-guardrails-inline.md`](../../specs/005-guardrails-inline.md)
-- [`../../specs/003-context-graph.md`](../../specs/003-context-graph.md) (retrieval audit)
+- [`../../specs/003-decision-graph.md`](../../specs/003-decision-graph.md) (retrieval audit)
 - [`../../specs/007-escalation-workflow.md`](../../specs/007-escalation-workflow.md) (pause primitive)
 
 ## Status
@@ -59,7 +59,7 @@ Beta — **Phase 1a shipping.**
   attributes, and maintains rolling `fabric.retrieval_count` and
   `fabric.retrieval_sources` on the decision span so the Telemetry
   Bridge can fold them into the `DecisionSummary` wire event. Maps
-  onto the Context Graph's `Retrieval` node (spec 003).
+  onto the Decision Graph's `Retrieval` node (spec 003).
 - Escalation pause primitive: `EscalationSummary`, `EscalationRequested`,
   `Decision.request_escalation`, `Decision.raise_for_escalation`.
   Records `fabric.escalated`, `fabric.escalation.reason/rubric_id/
@@ -78,7 +78,7 @@ Beta — **Phase 1a shipping.**
   the allowlisted metadata, plus rolling `fabric.memory_write_count`
   and `fabric.memory_kinds` attributes the Telemetry Bridge folds
   into the `DecisionSummary` wire event. Symmetric to
-  `record_retrieval` — the Context Graph materializes the write as
+  `record_retrieval` — the Decision Graph materializes the write as
   a `Retrieval` node with `source=memory` tied to the owning
   `Decision`.
 
@@ -93,6 +93,30 @@ Beta — **Phase 1a shipping.**
           key="last_answer",
           content=answer,
           tags=("turn", "assistant"),
+      )
+  ```
+
+- Side-effect recording: `SideEffectType`, `ReplayBehavior`,
+  `SideEffectRecord`, `Decision.record_side_effect(...)`. Use this for
+  tool calls that mutate external state, such as CRM updates, ticket
+  creation, email sends, file writes, database writes, or payments. The
+  SDK hashes raw request/result payloads locally, emits a
+  `fabric.side_effect` span event, and keeps rolling
+  `fabric.side_effect_count`, `fabric.side_effect_types`, and
+  `fabric.side_effect_systems` attributes for Decision Graph projection
+  and replay suppression.
+
+  ```python
+  with fabric.decision(session_id=sess, request_id=req) as decision:
+      ticket = zendesk.create_ticket(summary=final)
+      decision.record_side_effect(
+          "ticket_create",
+          target_system="zendesk",
+          operation="ticket.create",
+          request_payload=final,
+          result_payload=ticket.id,
+          idempotency_key=f"ticket:{req}",
+          replay_behavior="suppress",
       )
   ```
 

@@ -326,7 +326,7 @@ not carry the same attestation weight as a human review.
 ## References
 
 - Spec 002 — Architecture
-- Spec 003 — Context Graph
+- Spec 003 — Decision Graph
 - Spec 004 — Telemetry Bridge
 - Spec 006 — LLM-as-Judge
 - [LangGraph human-in-the-loop](https://langchain-ai.github.io/langgraph/how-tos/human_in_the_loop/)

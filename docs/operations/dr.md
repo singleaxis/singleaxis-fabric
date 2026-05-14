@@ -147,7 +147,7 @@ Tenants own backup; Fabric makes recommendations:
 - **Automated backup validation tooling** — Phase 2.
 - **Per-profile runbooks** for non-shipped profiles (NIST RMF, ISO
   42001, SR 11-7, HIPAA) — Phase 2.
-- **Context Graph and escalation-service recovery** — those run as
+- **Decision Graph and escalation-service recovery** — those run as
   SingleAxis-internal services, not in this distribution.
 
 ## Pointers

@@ -38,6 +38,13 @@ paths = [
   # `hmac key >= 16 bytes` check. Same risk profile as the Go test: it
   # is a synthetic value used only in CI and kind clusters.
   '''\.github/workflows/e2e\.yml''',
+
+  # SPEC 016 §4.3 chart-render-time validator test for
+  # `fabric.sampler.hmacKey`. The literal hex values here are inputs
+  # to the validator regex (uppercase rejection, length rejection,
+  # etc.), not credentials. Path-level allowlist also covers any
+  # earlier orphaned commits on this branch.
+  '''charts/fabric/charts/otel-collector/tests/test-hmackey-validation\.sh''',
 ]
 
 # Literal regexes that are safe anywhere in the tree. Keep this list

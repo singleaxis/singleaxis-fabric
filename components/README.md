@@ -37,7 +37,7 @@ The following live in a separate SingleAxis-internal repo and are not
 part of the public release:
 
 - `telemetry-bridge/` — sanitized egress bridge + reference ingest
-- `context-graph/` — Graph Builder worker + read API
+- `decision-graph/` — Graph Builder worker + read API
 - `judge-workers/` — Judge runtime + routing + rubric execution
 - `escalation-service/` — HITL review + signed verdict workflow
 - `fabric-admin-ui/` — Operator and reviewer UI

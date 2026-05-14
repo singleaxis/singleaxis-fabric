@@ -90,7 +90,7 @@ Issues that undermine any of these will be treated as critical:
 4. **Least-privileged identity** — agent identity, tool permissions, and
    Fabric component identity are distinct and enforced.
 5. **Auditable decisions** — every decision that materially affects an
-   agent's behaviour is recorded as a Context Graph node with tamper-
+   agent's behaviour is recorded as a Decision Graph node with tamper-
    evident lineage.
 
 See [`specs/004-telemetry-bridge.md`](specs/004-telemetry-bridge.md) and

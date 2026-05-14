@@ -21,7 +21,7 @@ The OSS layer (this repository) is the **collection infrastructure**
 plus the **inline control plane**. Evidence-bundle generation,
 queryable audit trails, regulator-shaped mappings, and managed
 operations are produced by the SingleAxis commercial control plane
-(Context Graph, evidence builder, escalation service, judge workers)
+(Decision Graph, evidence builder, escalation service, judge workers)
 layered on top of this collection layer. Both are maintained by
 SingleAxis; the boundary is explicit and stable.
 
@@ -112,7 +112,7 @@ Fabric is presented to the market as two complementary offerings:
 
 The OSS exists because engineers and CISOs trust what they can read
 and audit. Components and tooling not in this repository — judges,
-escalation service, context graph, telemetry bridge ingest — are
+escalation service, decision graph, telemetry bridge ingest — are
 maintained by SingleAxis internally and operated as services.
 
 ## Differentiation

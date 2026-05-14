@@ -77,7 +77,7 @@ affinity: {}
 
 # Postgres DSN. Either supply an inline string (`database.url`) — only
 # appropriate for dev — or reference an existing Secret via
-# `database.dsnSecret.{name,key}`. Pointing this at the context-graph
+# `database.dsnSecret.{name,key}`. Pointing this at the decision-graph
 # Postgres is supported; Langfuse creates its own prisma-managed tables
 # in the same database.
 database:

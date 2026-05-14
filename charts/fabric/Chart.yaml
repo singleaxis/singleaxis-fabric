@@ -31,7 +31,7 @@ annotations:
 # sidecars and local observability as the deployment matures.
 #
 # Components not in this repository (judge-workers, escalation-service,
-# context-graph, telemetry-bridge, nats) are maintained by SingleAxis
+# decision-graph, telemetry-bridge, nats) are maintained by SingleAxis
 # internally and are not part of this distribution.
 dependencies:
   - name: otel-collector
