@@ -24,6 +24,7 @@ from .memory import MemoryKind, MemoryRecord
 from .nemo import NemoAction, NemoClient, NemoError, NemoResult, UDSNemoClient
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
 from .retrieval import RetrievalRecord, RetrievalSource
+from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
 from .tracing import get_tracer, install_default_provider
 
 __all__ = [
@@ -51,8 +52,11 @@ __all__ = [
     "PresidioClient",
     "RedactionError",
     "RedactionResult",
+    "ReplayBehavior",
     "RetrievalRecord",
     "RetrievalSource",
+    "SideEffectRecord",
+    "SideEffectType",
     "ToolCall",
     "UDSNemoClient",
     "UDSPresidioClient",

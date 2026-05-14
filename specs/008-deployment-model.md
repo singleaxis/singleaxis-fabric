@@ -55,7 +55,7 @@ maintained by SingleAxis internally:
 - **This repository (public umbrella, Apache-2.0):** OTel Collector
   distribution, guardrail sidecars, local observability.
 - **Maintained internally by SingleAxis (overlay chart):** judges, escalation
-  service, Context Graph, Telemetry Bridge, and the infrastructure
+  service, Decision Graph, Telemetry Bridge, and the infrastructure
   (NATS, Postgres) they require. Installed on top of the Layer 1
   umbrella during a services engagement.
 
@@ -89,7 +89,7 @@ charts/
 
                                      # (SingleAxis-internal overlay charts
                                      # — judges, escalation service,
-                                     # context graph, telemetry bridge —
+                                     # decision graph, telemetry bridge —
                                      # are maintained internally and not
                                      # part of this distribution.)
 ```
@@ -175,7 +175,7 @@ fabric:
     locked_fields:
       - telemetryBridge.redaction.presidio.enabled
       - telemetryBridge.manifest.signed
-      - contextGraph.retention.minDays
+      - decisionGraph.retention.minDays
       - guardrails.piiRedaction.enforced
       - escalation.fallback
 
@@ -211,7 +211,7 @@ judges:
       sampleRate: 0.1
       model: tenant.default_large_model
 
-contextGraph:
+decisionGraph:
   contentStorage: redacted
   retention:
     minDays: 365

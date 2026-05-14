@@ -27,7 +27,7 @@ licence.
 Every commit must be signed off:
 
 ```bash
-git commit -s -m "feat(context-graph): add temporal edge type"
+git commit -s -m "feat(decision-graph): add temporal edge type"
 ```
 
 This appends a `Signed-off-by:` trailer using your configured Git identity.
@@ -54,7 +54,7 @@ Accepted types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`,
 `ci`, `chore`, `revert`. Breaking changes must include `!` after the type
 and a `BREAKING CHANGE:` footer.
 
-Scope should identify the component (`context-graph`, `telemetry-bridge`,
+Scope should identify the component (`decision-graph`, `telemetry-bridge`,
 `judge-worker`, `charts`, `sdk-python`, etc.).
 
 ## Branching and merge strategy

@@ -311,7 +311,7 @@ jobs:
           for chart in charts/fabric/charts/*/Chart.yaml; do
             dir="$(dirname "$chart")"
             echo "::group::helm lint ${dir}"
-            helm lint "${dir}" --set fabric.sampler.hmacKey=cafebabe
+            helm lint "${dir}" --set fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
             echo "::endgroup::"
             found=1
           done
@@ -324,10 +324,13 @@ jobs:
           for chart in charts/fabric/charts/*/Chart.yaml; do
             dir="$(dirname "$chart")"
             echo "::group::helm template ${dir}"
-            helm template ci "${dir}" --set fabric.sampler.hmacKey=cafebabe \
+            helm template ci "${dir}" --set fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
               | head -1
             echo "::endgroup::"
           done
+      - name: hmacKey render-time validation tests
+        # SPEC 016 §4.3: bad hmacKey must fail render before pod creation.
+        run: ./charts/fabric/charts/otel-collector/tests/test-hmackey-validation.sh
 
   collector-image-build:
     name: Collector image build (PR smoke)

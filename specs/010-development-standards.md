@@ -322,7 +322,7 @@ Post-1.0.0:
   a major version.
 - Breaking changes require a major bump and a 6-month deprecation
   window for the old behaviour.
-- Context Graph schema is versioned independently; within a major,
+- Decision Graph schema is versioned independently; within a major,
   readers tolerate a window of consumer-visible changes.
 
 ## Observability of Fabric itself

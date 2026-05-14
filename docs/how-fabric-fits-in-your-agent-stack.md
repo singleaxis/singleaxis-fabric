@@ -71,7 +71,7 @@ plugs in, and where it gets out of the way. This page is the picture.
 | L2 commercial | Telemetry Bridge (spec 004) | Sanitized egress from tenant VPC to SingleAxis SaaS |
 | L6 | Judge worker pool + signed rubric library (spec 006) | Async scoring against versioned rubrics |
 | L7 commercial | SASF Reviewer service (spec 007 §SASF) | Human-in-the-loop reviewer dashboard + signed verdict webhook |
-| audit | Context Graph (spec 003) | Materialized provenance — every decision queryable across sessions |
+| audit | Decision Graph (spec 003) | Materialized provenance — every decision queryable across sessions |
 | audit | Evidence Bundle exporter (spec 009) | Signed compliance bundles per regulatory regime |
 
 These are described in this repo's `specs/` directory **as design of
@@ -115,7 +115,7 @@ this OSS distribution.
                           │                                         │
                           │   ◆ Telemetry Bridge → SaaS             │
                           │   ◆ Judge workers (L6) score decisions  │
-                          │   ◆ Context Graph materializes traces   │
+                          │   ◆ Decision Graph materializes traces   │
                           │   ◆ SASF reviewer signs verdicts        │
                           │   ◆ Evidence Bundle exporter            │
                           └─────────────────────────────────────────┘

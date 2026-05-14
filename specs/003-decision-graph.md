@@ -1,15 +1,15 @@
 ---
-title: Context Graph — Unified Provenance Artifact
+title: Decision Graph — Unified Provenance Artifact
 status: draft
 revision: 1
 last_updated: 2026-04-18
 owner: project-lead
 ---
 
-# 003 — Context Graph
+# 003 — Decision Graph
 
 > **Scope note (2026-04-27).** This spec is the **design of record**
-> for the Context Graph, which is part of the SingleAxis commercial
+> for the Decision Graph, which is part of the SingleAxis commercial
 > control plane (Layer 2). The implementation lives in a separate
 > private repository, not in this OSS distribution. The spec is kept
 > here for partner/auditor transparency: it defines the wire contract
@@ -19,7 +19,7 @@ owner: project-lead
 
 ## Summary
 
-The **Context Graph** is Fabric's load-bearing contribution. It is a
+The **Decision Graph** is Fabric's load-bearing contribution. It is a
 unified, queryable artifact that captures **what the agent knew, what it
 decided, and why**, for every decision the agent makes. It composes the
 outputs of the other seven layers into a single graph per decision
@@ -30,7 +30,7 @@ For auditors and regulators, it is the evidence. For engineers, it is
 the debugging and replay substrate. For L6 judges, it is the input.
 For SASF reviewers, it is the review surface.
 
-Context Graph is versioned, signed, and exportable. It is the first
+Decision Graph is versioned, signed, and exportable. It is the first
 thing Fabric produces that is net-new IP rather than integration
 glue — and it is the artifact that makes the rest of Fabric
 defensible under EU AI Act Article 13, NIST AI RMF "Measure" and
@@ -63,7 +63,7 @@ defensible under EU AI Act Article 13, NIST AI RMF "Measure" and
 
 ## The shape
 
-At the core, a Context Graph records a **Decision** node. A decision
+At the core, a Decision Graph records a **Decision** node. A decision
 is one agent turn that produces an observable output. Each decision
 connects to:
 
@@ -270,25 +270,36 @@ Postgres. Both stores are kept consistent; Postgres is authoritative.
 Neo4j is not the default because it adds ops burden and is not
 needed for typical compliance queries.
 
-## Separate OSS repository
+## OSS / commercial split
 
-Context Graph will be released as a **separate OSS repository** under
-the SingleAxis GitHub organization (`singleaxis/context-graph`),
-licensed Apache-2.0, consumed by Fabric as a dependency.
+The **Decision Graph schema, event contracts, and conformance fixtures**
+are public. The **production Decision Graph engine** is commercial.
 
-Reasons:
+The public repo owns:
 
-- Context Graph is independently useful; teams not using the full
-  Fabric stack may adopt it for agent explainability alone.
-- A narrower OSS surface attracts contributions and third-party
-  tooling (visualizers, exporters).
-- Keeps Fabric's dependency footprint explicit.
+- node and edge vocabulary
+- event-to-graph projection contract
+- required IDs, hashes, timestamps, and version fields
+- conformance fixtures for SDKs and collectors
+- development-only examples for local reconstruction
 
-The two repos share maintainers initially.
+The commercial repo owns:
+
+- production graph builder
+- durable stores and migrations
+- cross-decision query APIs
+- replay indexes
+- retention and right-to-erasure workflows
+- graph intelligence, risk trends, and evidence exports
+
+This split is intentional. Enterprises need to inspect the operational
+contract before trusting Fabric, while SingleAxis monetizes the reliable
+production service that materializes, retains, queries, and exports the
+graph.
 
 ## Compliance mapping
 
-Context Graph directly satisfies the following regulatory
+Decision Graph directly satisfies the following regulatory
 requirements. Full mapping in spec 009.
 
 | Regulation | Article / Section | How the Graph satisfies it |
@@ -320,12 +331,12 @@ with exactly the auditors we're trying to win.
 
 ### Content hashing
 
-The Context Graph stores hashes, not plaintext content. Two layers:
+The Decision Graph stores hashes, not plaintext content. Two layers:
 
 - **L1 (public OSS SDK)** — `RetrievalRecord.from_query` and
   `MemoryRecord.from_content` apply **plain SHA-256** locally before
   emitting span events. Raw content never leaves the agent process.
-- **L2 (Context Graph builder, SingleAxis-internal)** — re-keys
+- **L2 (Decision Graph builder, SingleAxis-internal)** — re-keys
   incoming SHA-256 fingerprints under an **HMAC-SHA-256** key the
   tenant supplies via the Telemetry Bridge config, before persisting
   graph nodes. The tenant controls the key; SingleAxis cannot

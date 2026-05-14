@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 class RetrievalSource(StrEnum):
     """Where the context came from.
 
-    Mirrors the Context Graph's ``Retrieval.source`` enum (spec 003)
+    Mirrors the Decision Graph's ``Retrieval.source`` enum (spec 003)
     and the Telemetry Bridge's allowlist.
     """
 
@@ -88,7 +88,7 @@ class RetrievalRecord(BaseModel):
         ids = tuple(source_document_ids or ())
         # If the caller supplied per-result hashes, require 1:1 parity
         # with result_count. Partial supply (e.g. 5 results, 2 hashes)
-        # corrupts the downstream Context Graph projection silently —
+        # corrupts the downstream Decision Graph projection silently —
         # better to fail loudly at record construction. source_document_ids
         # is intentionally unconstrained: N results may share M < N
         # documents (e.g. multiple chunks from the same source).

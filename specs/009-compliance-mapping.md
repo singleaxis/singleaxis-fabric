@@ -20,7 +20,7 @@ owner: compliance-lead
 >
 > - **L2 commercial — Evidence Bundle export + per-regulation
 >   mappings.** The signed Evidence Bundle, the `/evidence/bundle`
->   endpoint, the queryable Context Graph, the per-regulation control
+>   endpoint, the queryable Decision Graph, the per-regulation control
 >   mapping documents, and the retention enforcement all live in the
 >   SingleAxis commercial control plane (separate private repo). They
 >   are described in this spec for design-of-record transparency.
@@ -103,8 +103,8 @@ underlying evidence pipeline stabilizes.
 |--------------|------------------------|------------------|---------------|------|
 | Art. 9 — Risk management | Establish, document, maintain risk management system | Rubric library + red-team suite + profile | Red-team report + rubric manifest; profile declaration | Does not cover the tenant's organizational risk management process |
 | Art. 10 — Data & data governance | Training/validation data quality controls | N/A directly (Fabric does not train) | Bridges to tenant's data lineage if configured | Fabric does not assess training data; tenant must |
-| Art. 12 — Record-keeping | Automatic recording of events over lifecycle | Context Graph (Decision / Step / Retrieval / Guardrail / Judge / Review nodes) | Signed Context Graph export | Complete within Fabric's scope |
-| Art. 13 — Transparency | Clear information about system operation | Context Graph decision-scoped read + profile documentation | GraphQL queries; human-readable summaries in Evidence Bundle | Does not generate user-facing documentation; tenant must |
+| Art. 12 — Record-keeping | Automatic recording of events over lifecycle | Decision Graph (Decision / Step / Retrieval / Guardrail / Judge / Review nodes) | Signed Decision Graph export | Complete within Fabric's scope |
+| Art. 13 — Transparency | Clear information about system operation | Decision Graph decision-scoped read + profile documentation | GraphQL queries; human-readable summaries in Evidence Bundle | Does not generate user-facing documentation; tenant must |
 | Art. 14 — Human oversight | Enable effective human oversight | Escalation workflow + SASF review + guardrails | Escalation / Review nodes; SASF attestations | Requires tenant to define which decisions require oversight (profile-configured but tenant-owned) |
 | Art. 15 — Accuracy, robustness, cybersecurity | Appropriate level across the lifecycle | Judges + red-team + security controls | Judge scores over time; red-team reports; security posture declarations | Does not assess model robustness directly; provides the measurement substrate |
 | Art. 17 — Quality management system | Written QMS | Spec library + release artifacts + signed manifests | Spec repository; release history | QMS process is organizational |
@@ -119,7 +119,7 @@ underlying evidence pipeline stabilizes.
 | MEASURE | 2.1 | Appropriate methods used to evaluate system | Rubric library + red-team + SASF |
 | MEASURE | 2.3 | AI system operates as expected (accuracy, reliability) | Judge scores (factuality, faithfulness) + red-team |
 | MEASURE | 2.7 | AI risks from privacy are examined and documented | Presidio detections + profile PII policy |
-| MEASURE | 2.8 | AI system's behaviour is monitored | Context Graph + Langfuse dashboards |
+| MEASURE | 2.8 | AI system's behaviour is monitored | Decision Graph + Langfuse dashboards |
 | MEASURE | 4.1 | Deployment decisions are informed by risks | Pre-deploy red-team + judge baseline + SASF gate |
 | MANAGE | 1.3 | Responses to AI risks are documented | Escalation + Review nodes + incident bundle |
 | MANAGE | 4.1 | Ongoing monitoring and re-evaluation | Continuous judges + rubric versioning |
@@ -132,7 +132,7 @@ underlying evidence pipeline stabilizes.
 | 7.5.3 | Documented information: control | Spec repository with signed commits |
 | 8.2 | AI system impact assessment | Red-team reports + judge baselines |
 | 8.3 | AI system requirements and data quality | Guardrail policy + retrieval audit |
-| 9.1 | Monitoring, measurement, analysis, evaluation | Context Graph + judges + Langfuse |
+| 9.1 | Monitoring, measurement, analysis, evaluation | Decision Graph + judges + Langfuse |
 | 10.2 | Continual improvement | Rubric evolution + profile updates via signed manifests |
 
 ## The Evidence Bundle
@@ -150,7 +150,7 @@ evidence-bundle-<bundle_id>.tar.gz
 ├── scope.json                       ← what this bundle covers
 ├── profile.yaml                     ← active profile at the time
 ├── fabric-version.json              ← Fabric + component versions, SBOM digest
-├── decisions/                       ← Context Graph export
+├── decisions/                       ← Decision Graph export
 │   └── <decision_id>.json
 ├── rubrics/
 │   └── <rubric_id>-<version>.yaml   ← signed rubrics in use
@@ -234,7 +234,7 @@ are looking for. It is the bundle's index.
 | When | What happens |
 |------|--------------|
 | On install | Baseline bundle produced with empty history, profile declaration, fabric-version record |
-| Continuously | Context Graph, attestations, red-team reports, escalations accumulate |
+| Continuously | Decision Graph, attestations, red-team reports, escalations accumulate |
 | On request | `POST /evidence/bundle` with scope + time range → bundle produced |
 | On schedule | Profiles may configure monthly / quarterly automatic bundles archived to tenant storage |
 | On incident | A bundle for the incident's scope is produced with elevated retention |
@@ -249,7 +249,7 @@ Bundle retention is profile-defined and **tenant-controlled**:
 - SR 11-7: minimum 7 years
 - Default (no profile): 1 year
 
-Retention applies to bundles. The underlying Context Graph may be
+Retention applies to bundles. The underlying Decision Graph may be
 shorter (e.g. 90 days) with bundles as the long-term record.
 
 ## Coverage claims — honest scope
@@ -286,7 +286,7 @@ the top.
 - **Replay.** Bundles declare their `scope.time_range`; auditors
   consuming bundles should verify time ranges align with their
   inquiry.
-- **Retroactive changes.** Context Graph content is append-only;
+- **Retroactive changes.** Decision Graph content is append-only;
   edits produce new nodes, not modifications. Bundles produced at
   different times may differ; that is expected and preserved.
 
@@ -307,7 +307,7 @@ the top.
 ## References
 
 - Spec 001 — Product vision (commercial framing)
-- Spec 003 — Context Graph (bundle contents)
+- Spec 003 — Decision Graph (bundle contents)
 - Spec 006 — LLM-as-Judge (rubric library)
 - Spec 007 — Escalation (review attestations)
 - [EU AI Act, full text](https://eur-lex.europa.eu/eli/reg/2024/1689/oj)
