@@ -52,7 +52,7 @@ async, and how they compose into a deployable unit.
 | L7 | Security & Access Control | ✅ (tenant infra) | Integrates with tenant Vault / KMS / IAM | Inline (cached auth) |
 | L8 | Context Sources | ✅ | pgvector / Qdrant / Neo4j / Mem0 — pluggable | Inline (read, cached), async (write) |
 
-All eight converge into the **Context Graph** (see spec 003), which is
+All eight converge into the **Decision Graph** (see spec 003), which is
 the unified per-decision artifact Fabric produces.
 
 ### L1 — Orchestration & Runtime
@@ -98,7 +98,7 @@ evaluation. **Runs entirely in-VPC.**
 
 Offline jobs, not in the request path. A `CronJob` runs Garak and
 PyRIT suites on a schedule against the agent's endpoint. Results are
-recorded in the Context Graph and exported via the Telemetry Bridge.
+recorded in the Decision Graph and exported via the Telemetry Bridge.
 
 ### L5 — Guardrails & Policy
 
@@ -113,8 +113,8 @@ Guardrails are the most latency-sensitive component. See spec 005.
 ### L6 — LLM-as-a-Judge
 
 Async consumers. Judges subscribe to the event bus, pull the decision
-node from the Context Graph, and score against a rubric. Scores are
-written back to the Context Graph and, for flagged outputs, trigger
+node from the Decision Graph, and score against a rubric. Scores are
+written back to the Decision Graph and, for flagged outputs, trigger
 the escalation workflow (spec 007).
 
 Judges run on the **tenant's own LLM endpoint** so that raw content
@@ -148,7 +148,7 @@ Not "memory + RAG" — more general. Includes:
 Fabric's contribution at L8 is not picking a vector DB. Its
 contribution is the **governance layer**: per-user scoping,
 right-to-be-forgotten cascade, PII-on-write detection, retrieval
-audit into the Context Graph.
+audit into the Decision Graph.
 
 ## Latency tiering
 
@@ -158,7 +158,7 @@ measurable latency to the agent's critical path.**
 | Tier | What runs here | Budget |
 |------|----------------|--------|
 | **Inline** | L5 guardrails (in-process), L7 auth (cached), L8 context read (cached embeddings), L2 span emit (fire-and-forget) | Total overhead < 200ms p99 |
-| **Async** | L2 export, L3 ingest, L6 judges, L8 writes, Context Graph builder, Telemetry Bridge | No budget on agent path; workers catch up |
+| **Async** | L2 export, L3 ingest, L6 judges, L8 writes, Decision Graph builder, Telemetry Bridge | No budget on agent path; workers catch up |
 | **Offline** | L4 red-team, scheduled evals, report generation | Runs on CronJobs |
 
 See spec 005 for the guardrails latency budget in detail.
@@ -177,7 +177,7 @@ flowchart TB
             mq[NATS JetStream<br/>message bus]
             lf[Langfuse<br/>L3 observability]
             jw[Judge workers<br/>L6]
-            cg[Context Graph<br/>builder + store]
+            cg[Decision Graph<br/>builder + store]
             tb[Telemetry Bridge<br/>egress only]
             es[Escalation service]
             rt[Red-team runner<br/>CronJobs]
@@ -245,7 +245,7 @@ User turn arrives at agent
 
   (in parallel, on the event bus:)
   L3 Langfuse ingests span → dashboards update
-  Context Graph builder materializes node
+  Decision Graph builder materializes node
   L6 Judge worker pulls decision → scores → writes back
   Telemetry Bridge enqueues sanitized summary → egress
 ```
@@ -336,7 +336,7 @@ spec 004.
 
 ## References
 
-- Spec 003 — Context Graph
+- Spec 003 — Decision Graph
 - Spec 004 — Telemetry Bridge
 - Spec 005 — Inline guardrails
 - Spec 006 — LLM-as-Judge

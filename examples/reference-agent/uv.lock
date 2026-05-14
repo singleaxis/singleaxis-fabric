@@ -280,13 +280,18 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.41" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'dev'", specifier = ">=1.41" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otlp'", specifier = ">=1.41" },
+    { name = "opentelemetry-instrumentation-anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30b0" },
+    { name = "opentelemetry-instrumentation-bedrock", marker = "extra == 'bedrock'", specifier = ">=0.30b0" },
+    { name = "opentelemetry-instrumentation-cohere", marker = "extra == 'cohere'", specifier = ">=0.30b0" },
+    { name = "opentelemetry-instrumentation-langchain", marker = "extra == 'otel-langchain'", specifier = ">=0.30b0" },
+    { name = "opentelemetry-instrumentation-openai-v2", marker = "extra == 'openai'", specifier = ">=0.30b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.41" },
     { name = "pydantic", specifier = ">=2.8,<3.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.9" },
 ]
-provides-extras = ["agent-framework", "crewai", "dev", "langgraph", "otlp"]
+provides-extras = ["agent-framework", "anthropic", "bedrock", "cohere", "crewai", "dev", "langgraph", "openai", "otel-langchain", "otlp"]
 
 [[package]]
 name = "typing-extensions"

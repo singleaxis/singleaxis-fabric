@@ -39,7 +39,7 @@ Every spec declares a `Status` in its header:
 | [000](000-overview.md) | Overview & conventions | accepted |
 | [001](001-product-vision.md) | Product vision & positioning | draft |
 | [002](002-architecture.md) | Eight-layer architecture & Fabric Control Plane | draft |
-| [003](003-context-graph.md) | Context Graph — unified provenance artifact | draft |
+| [003](003-decision-graph.md) | Decision Graph — unified provenance artifact | draft |
 | [004](004-telemetry-bridge.md) | Telemetry Bridge & sanitized egress | draft |
 | [005](005-guardrails-inline.md) | Inline guardrails & latency budget | draft |
 | [006](006-llm-as-judge.md) | LLM-as-Judge architecture | draft |
@@ -48,3 +48,4 @@ Every spec declares a `Status` in its header:
 | [009](009-compliance-mapping.md) | Regulation-to-layer mapping | draft |
 | [010](010-development-standards.md) | Development, testing, and release standards | draft |
 | [011](011-roadmap.md) | Phased execution roadmap | draft |
+| [012](012-oss-commercialization-strategy.md) | Operational infrastructure PRD & OSS commercialization strategy | draft |
