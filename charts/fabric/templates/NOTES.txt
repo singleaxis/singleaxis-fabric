@@ -39,7 +39,7 @@ What to do next:
 
 3. This chart ships the public substrate: OTel Collector
    distribution, guardrail sidecars, and local observability. For
-   managed operation — judges, escalation service, Context Graph,
+   managed operation — judges, escalation service, Decision Graph,
    Telemetry Bridge — reach out to SingleAxis at
    https://singleaxis.ai.
 

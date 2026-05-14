@@ -117,7 +117,7 @@ def test_record_retrieval_rejects_mismatched_hash_count() -> None:
             query="q",
             result_count=4,
             # 4 declared, only 2 hashes — silent mismatch would
-            # corrupt the Context Graph projection downstream.
+            # corrupt the Decision Graph projection downstream.
             result_hashes=["a" * 64, "b" * 64],
         )
 

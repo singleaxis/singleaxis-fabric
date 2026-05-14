@@ -31,7 +31,7 @@ block agent responses, except through the explicit escalation path
 ## Goals
 
 1. Define the judge execution model — async workers consuming from
-   the event bus, reading from the Context Graph, scoring against
+   the event bus, reading from the Decision Graph, scoring against
    rubrics.
 2. Define the **rubric library** — how rubrics are authored,
    signed, versioned, distributed, and selected.
@@ -63,7 +63,7 @@ flowchart LR
     Router --> DeepQ[Deep-judge queue]
     FastQ --> FastW[Fast judge workers<br/>small model, summary prompts]
     DeepQ --> DeepW[Deep judge workers<br/>larger model, full trace]
-    FastW --> CG[(Context Graph)]
+    FastW --> CG[(Decision Graph)]
     DeepW --> CG
     FastW -->|flag| Esc[Escalation service]
     DeepW -->|flag| Esc
@@ -200,7 +200,7 @@ that the router checks.
 
 ## Context-window management
 
-Judges receive a decision subgraph via the Context Graph API. Some
+Judges receive a decision subgraph via the Decision Graph API. Some
 subgraphs are large — long agent traces with many retrievals can
 exceed a judge's context window.
 
@@ -212,7 +212,7 @@ Three strategies, applied in order:
 2. **Summarization preprocessor.** A cheap summarizer condenses
    long retrievals and tool outputs into bullet summaries with
    source references, shown to the judge. The summary itself is
-   cached in the Context Graph and reused across rubrics.
+   cached in the Decision Graph and reused across rubrics.
 3. **Chunked evaluation.** For genuinely long traces, the judge
    runs per-chunk and scores are aggregated (mean or min depending
    on rubric).
@@ -222,7 +222,7 @@ rubric's `preprocessing:` field.
 
 ## Score storage
 
-Scores write back to the Context Graph as `Judge` nodes connected to
+Scores write back to the Decision Graph as `Judge` nodes connected to
 the scored `Decision`:
 
 ```
@@ -330,7 +330,7 @@ is re-sent through a separate review workflow (spec 007).
 ## References
 
 - Spec 002 — Architecture
-- Spec 003 — Context Graph (judges read and write the graph)
+- Spec 003 — Decision Graph (judges read and write the graph)
 - Spec 007 — Escalation workflow
 - Spec 009 — Compliance mapping
 - [Ragas](https://github.com/explodinggradients/ragas)

@@ -126,6 +126,17 @@ fabric:
   # Deterministic HMAC sampler. Either `hmacKey` (inline, not
   # recommended outside dev) or `hmacKeySecret` (Secret name + key)
   # must be set when `.enabled: true`.
+  #
+  # `hmacKey` must be a 64-character lowercase hex string (32 bytes).
+  # Generate one with:
+  #
+  #     openssl rand -hex 32
+  #
+  # The chart fails at render time if the value is not 64-char hex,
+  # so a bad key cannot ship as a running pod. For production, prefer
+  # `hmacKeySecret` referencing a Kubernetes Secret rather than the
+  # inline value (avoids the key landing in rendered manifests, Helm
+  # release storage, and GitOps history).
   sampler:
     enabled: true
     hmacKey: ""

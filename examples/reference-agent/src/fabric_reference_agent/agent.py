@@ -7,6 +7,7 @@ will touch:
 - Decision-scoped span lifecycle
 - Optional guardrails (skipped cleanly if no rails are wired)
 - Retrieval + memory recording
+- Side-effect recording
 - Judge-score-driven escalation
 
 No real LLM is called — ``simulated_llm_call`` returns a canned
@@ -153,6 +154,16 @@ class ReferenceAgent:
                 key=f"session:{session_id}:last_response",
                 tags=("reference-agent",),
                 ttl_seconds=3600,
+            )
+
+            decision.record_side_effect(
+                "notification",
+                target_system="reference-agent",
+                operation="response.ready",
+                request_payload=safe_response,
+                committed=True,
+                rollback_supported=False,
+                replay_behavior="suppress",
             )
 
             score = self._judge.score_instruction_following(safe_input, safe_response)

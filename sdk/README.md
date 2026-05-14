@@ -11,24 +11,26 @@ checkpoints).
 
 - [`../specs/002-architecture.md`](../specs/002-architecture.md) — overall
 - [`../specs/005-guardrails-inline.md`](../specs/005-guardrails-inline.md) — inline guardrails
-- [`../specs/003-context-graph.md`](../specs/003-context-graph.md) — memory / retrieval audit
+- [`../specs/003-decision-graph.md`](../specs/003-decision-graph.md) — memory / retrieval audit
 
 ## Status
 
-Pre-alpha — scaffold only.
+Beta — Python SDK shipping. TypeScript is now a v1 target under spec 012;
+Go and Java follow once the canonical autonomous-system schemas settle.
 
 ## Target languages
 
 | Language | Priority | Status | Mechanism |
 |----------|----------|--------|-----------|
-| [`python`](python/) | Phase 1 (0.1.0) | Planned | Native in-process |
-| `go` | Phase 3 (0.3.0) | Planned | Local gRPC sidecar |
-| `typescript` | Phase 3 (0.3.0) | Planned | Local gRPC sidecar |
+| [`python`](python/) | v1 | Shipping | Native in-process |
+| `typescript` | v1 | Planned | Native SDK + optional local sidecar |
+| `go` | v2 | Planned | Native SDK + optional local sidecar |
+| `java` | v2 | Planned | Native SDK + optional local sidecar |
 
-Python is the agent ecosystem's home language; it gets a native
-in-process implementation. Go and TypeScript get sidecar-based
-SDKs because running Presidio / NeMo in-process in those runtimes
-is not practical.
+Python is the agent ecosystem's home language; it gets the first native
+implementation. Non-Python SDKs emit the same canonical telemetry and
+call guardrail sidecars over local transports when Python-only engines
+such as Presidio or NeMo are needed.
 
 ## API surface (preview)
 
@@ -76,6 +78,17 @@ with fabric.decision(
         content=final,
     )
 
+    # Side effect. Any external mutation should be explicit so the
+    # Decision Graph can suppress, mock, or manually review it during
+    # replay.
+    decision.record_side_effect(
+        "ticket_create",
+        target_system="zendesk",
+        operation="ticket.create",
+        request_payload=final,
+        replay_behavior="suppress",
+    )
+
     # Escalation: pair Decision.request_escalation / raise_for_escalation
     # with whatever pause primitive the host's orchestrator exposes
     # (LangGraph interrupt, MAF request_info, CrewAI HITL, ...).
@@ -83,5 +96,5 @@ with fabric.decision(
 
 Every SDK method emits OTel spans / span events with allowlisted
 attributes; the Telemetry Bridge folds those into the wire protocol
-and the Context Graph materializes the provenance nodes. Agents do
+and the Decision Graph materializes the provenance nodes. Agents do
 not separately call logging or metrics APIs.
