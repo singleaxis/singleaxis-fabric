@@ -65,6 +65,13 @@ exclude = [
   # SLSA spec reference in SECURITY.md and isn't moving.
   "^https://slsa\\.dev/",
 
+  # sigstore.dev / www.sigstore.dev consistently time out under CI
+  # crawl bursts. Linked from charts/fabric/README.md, SECURITY.md,
+  # specs/010-development-standards.md, and CHANGELOG.md as the
+  # canonical Sigstore project URL. The URL resolves cleanly in a
+  # browser; same flake pattern as slsa.dev above.
+  "^https://(www\\.)?sigstore\\.dev/",
+
   # securityscorecards.dev times out under CI crawl bursts. Used as
   # the OpenSSF Scorecard badge target in README.md plus a reference
   # in specs/010-development-standards.md.
