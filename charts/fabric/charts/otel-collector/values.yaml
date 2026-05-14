@@ -91,6 +91,12 @@ fabric:
     dropUnknownClasses: true
     maxFieldBytes: 8192
     extraAllowedFields: {}
+    # Render the OTLP `traces` pipeline alongside `logs`. The SDK ships
+    # trace spans; without this the chart silently drops them on the
+    # collector floor. Default true so trace export works out of the
+    # box; set false to opt out (e.g. logs-only deployments).
+    # See spec 016 §4.1.
+    traceProcessingEnabled: true
 
   # OPA policy gate. Bundle is optional — without it the processor is
   # wired but passes everything through, which lets an operator stage

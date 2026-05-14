@@ -161,7 +161,7 @@ jobs:
           cosign sign-blob --yes sbom.cdx.json \
             --output-signature sbom.cdx.json.sig \
             --output-certificate sbom.cdx.json.pem
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             singleaxis-fabric-*.tar.gz
@@ -198,7 +198,7 @@ jobs:
       IMAGE_NAME: ${{ github.repository_owner }}/fabric-otelcol
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -211,7 +211,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -219,7 +219,7 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - name: Build and push (multi-arch)
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -251,7 +251,7 @@ jobs:
             echo "cosign sign ${ref}"
             cosign sign --yes "${ref}"
           done <<< "${TAGS}"
-      - uses: actions/attest-build-provenance@v1
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
