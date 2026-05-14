@@ -322,9 +322,18 @@ jobs:
               | head -1
             echo "::endgroup::"
           done
-      - name: hmacKey render-time validation tests
-        # SPEC 016 §4.3: bad hmacKey must fail render before pod creation.
-        run: ./charts/fabric/charts/otel-collector/tests/test-hmackey-validation.sh
+      - name: Chart render assertions
+        # Per-chart shell tests that assert specific render-time behaviour
+        # (e.g. spec 016 §4.1: traces: pipeline gating, §4.3: hmacKey
+        # render-time validation). Each script is self-contained and
+        # exits non-zero on failure.
+        run: |
+          shopt -s nullglob
+          for script in charts/fabric/charts/*/tests/*.sh; do
+            echo "::group::${script}"
+            bash "${script}"
+            echo "::endgroup::"
+          done
 
   collector-image-build:
     name: Collector image build (PR smoke)
