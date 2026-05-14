@@ -102,6 +102,6 @@ what makes the evidence collection automatic.
 
 Helm `.prov` provenance files (cosign signing of OCI charts is the
 current path); NIST RMF / ISO 42001 / SR 11-7 / HIPAA profiles;
-Context Graph and Telemetry Bridge subcharts; umbrella-chart OCI
+Decision Graph and Telemetry Bridge subcharts; umbrella-chart OCI
 publishing. See the chart README and spec 008 for current Phase 2
 scope.

@@ -33,7 +33,7 @@ langfuse:
 ```
 
 Postgres must be reachable from the cluster. Pointing Langfuse at the
-same Postgres instance used by `context-graph` is supported; Langfuse
+same Postgres instance used by `decision-graph` is supported; Langfuse
 creates its own `public.*` tables via Prisma migration.
 
 ## Auth secrets
