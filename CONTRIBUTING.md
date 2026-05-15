@@ -27,7 +27,7 @@ licence.
 Every commit must be signed off:
 
 ```bash
-git commit -s -m "feat(context-graph): add temporal edge type"
+git commit -s -m "feat(decision-graph): add temporal edge type"
 ```
 
 This appends a `Signed-off-by:` trailer using your configured Git identity.
@@ -54,7 +54,7 @@ Accepted types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`,
 `ci`, `chore`, `revert`. Breaking changes must include `!` after the type
 and a `BREAKING CHANGE:` footer.
 
-Scope should identify the component (`context-graph`, `telemetry-bridge`,
+Scope should identify the component (`decision-graph`, `telemetry-bridge`,
 `judge-worker`, `charts`, `sdk-python`, etc.).
 
 ## Branching and merge strategy
@@ -140,6 +140,23 @@ Before requesting review:
 - [ ] No new warnings from `ruff` / `golangci-lint` / `mypy`
 - [ ] Public API changes include docstrings
 - [ ] SBOM-relevant changes (new deps) noted in PR description
+
+## Releasing (maintainers)
+
+When cutting a release tag `vX.Y.Z`, leave the `CHANGELOG.md` in a
+state that does NOT regress markdownlint MD053 on the next PR:
+
+1. Rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`.
+2. Add a fresh `## [Unreleased]` heading **above** it (body may be
+   empty or carry a `### Unreleased` placeholder).
+3. At the bottom of the file, replace the old
+   `[Unreleased]: ...vX.Y-1...HEAD` with two link references:
+   - `[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/vX.Y.Z...HEAD`
+   - `[X.Y.Z]: https://github.com/singleaxis/singleaxis-fabric/releases/tag/vX.Y.Z`
+
+The release workflow (`.github/workflows/release.yml`) hard-fails if
+either the `## [Unreleased]` heading or the `[Unreleased]: ...HEAD`
+link reference is missing, so the keep-alive cannot regress silently.
 
 ## Review expectations
 

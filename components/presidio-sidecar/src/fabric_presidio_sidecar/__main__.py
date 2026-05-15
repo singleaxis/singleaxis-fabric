@@ -8,12 +8,15 @@ Serves on a Unix domain socket by default, HTTP on TCP for local dev.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 
 import uvicorn
 
 from fabric_presidio_sidecar.app import build_app
+
+logger = logging.getLogger("fabric_presidio_sidecar")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,6 +31,17 @@ def main(argv: list[str] | None = None) -> int:
             "Path to the file containing the tenant HMAC key (bytes). "
             "Required: the sidecar refuses to start without a real tenant "
             "key so that HMACs are not reversible across deployments."
+        ),
+    )
+    parser.add_argument(
+        "--allow-passthrough",
+        action="store_true",
+        help=(
+            "Allow the sidecar to start with the PassthroughAnalyzer "
+            "(redacts nothing) when the [presidio] extra is not "
+            "installed. Without this flag the sidecar fails fast so a "
+            "misconfigured production deployment cannot silently ship "
+            "a no-op redactor."
         ),
     )
     args = parser.parse_args(argv)
@@ -45,7 +59,31 @@ def main(argv: list[str] | None = None) -> int:
             "'change-me'; supply a real key via --tenant-key-file"
         )
 
-    app = build_app(tenant_key=tenant_key)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
+    analyzer = None
+    try:
+        from fabric_presidio_sidecar.presidio_analyzer import (  # noqa: PLC0415
+            build_default_analyzer,
+        )
+
+        analyzer = build_default_analyzer()
+        logger.info("wired real PresidioAnalyzer (presidio-analyzer + spaCy)")
+    except ImportError as exc:
+        if not args.allow_passthrough:
+            parser.error(
+                f"presidio extras not installed ({exc}); refusing to start "
+                "with PassthroughAnalyzer (would silently redact nothing). "
+                "Install the [presidio] extra, or pass --allow-passthrough "
+                "for explicit no-op mode (dev / smoke only)."
+            )
+        logger.warning(
+            "starting with PassthroughAnalyzer (no PII redaction); --allow-passthrough set"
+        )
+
+    app = build_app(analyzer=analyzer, tenant_key=tenant_key)
 
     kwargs: dict[str, object] = {
         "app": app,

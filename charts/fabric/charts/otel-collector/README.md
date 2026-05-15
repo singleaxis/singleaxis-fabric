@@ -37,6 +37,12 @@ The chart refuses to render if `fabric.sampler.enabled=true` but
 neither `hmacKey` nor `hmacKeySecret.name` is set — see
 `_helpers.tpl`'s `otel-collector.validateSampler`.
 
+When the inline `hmacKey` is used, it must be a 64-char lowercase hex
+string (32 bytes). Anything else fails render-time with the generation
+hint `openssl rand -hex 32`. For production, prefer `hmacKeySecret`
+referencing a Kubernetes Secret so the key never lands in rendered
+manifests or Helm release storage.
+
 ## Posture
 
 - Distroless `nonroot` runtime (UID 65532).

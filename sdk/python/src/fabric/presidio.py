@@ -21,7 +21,12 @@ from typing import Protocol, runtime_checkable
 
 from ._uds import UDSHTTPConnection
 
-DEFAULT_TIMEOUT_SECONDS = 0.5
+# SPEC 016 §4.4: 3.0s default accommodates Presidio's first-call
+# recognizer load (~6s cold; ~1.5s warm). Production sidecars warm
+# their analyzers at startup (SPEC 012 §4.5) so steady-state remains
+# <5ms p99. If your sidecar regularly exceeds 3s, configure a longer
+# timeout via explicit client construction or file a bug.
+DEFAULT_TIMEOUT_SECONDS = 3.0
 _HTTP_OK = 200
 
 

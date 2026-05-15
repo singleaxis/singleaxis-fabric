@@ -22,7 +22,7 @@ Authoritative shape: [`specs/008-deployment-model.md`](../../specs/008-deploymen
 - [ ] Layer 2 subcharts (`judge-workers/`, `escalation-service/`) live
       in a separate SingleAxis-internal repo during Phase 1; not part
       of the public OSS distribution.
-- [ ] Context Graph subchart (Phase 2 — awaiting Postgres migration story)
+- [ ] Decision Graph subchart (Phase 2 — awaiting Postgres migration story)
 - [ ] Telemetry Bridge subchart (Phase 2)
 - [ ] Signed manifest channel + Update Agent (Phase 2)
 - [ ] `values.schema.json` (Phase 2 — after subchart shape stabilizes)

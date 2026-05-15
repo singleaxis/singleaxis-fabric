@@ -20,10 +20,6 @@ name: E2E kind smoke
 
 on:
   pull_request:
-    paths:
-      - "charts/**"
-      - "components/**"
-      - ".github/workflows/e2e.yml"
   workflow_dispatch:
 
 concurrency:
@@ -34,8 +30,33 @@ permissions:
   contents: read
 
 jobs:
+  # Branch protection lists "kind cluster install + smoke" as a required
+  # check. If the workflow itself is `paths:`-filtered, GitHub never
+  # reports a status under that name on doc-only PRs and the PR stays
+  # BLOCKED forever even when everything else is green. Instead, the
+  # workflow always triggers, a tiny `detect` job decides whether the
+  # diff touches anything the smoke covers, and `kind-smoke` either
+  # runs the real kind cluster or short-circuits to a no-op SUCCESS
+  # under the same name so the required check is satisfied.
+  detect:
+    name: detect relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - 'charts/**'
+              - 'components/**'
+              - '.github/workflows/e2e.yml'
+
   kind-smoke:
     name: kind cluster install + smoke
+    needs: detect
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -43,15 +64,25 @@ jobs:
       NAMESPACE: fabric-system
       COLLECTOR_IMAGE: fabric-otelcol:e2e
     steps:
+      - name: Short-circuit if no relevant changes
+        if: needs.detect.outputs.relevant != 'true'
+        run: |
+          echo "No charts/, components/, or e2e workflow changes. Skipping kind smoke."
+          echo "This satisfies the required 'kind cluster install + smoke' check"
+          echo "without spending the ~15min on doc-only PRs."
+
       - uses: actions/checkout@v6
+        if: needs.detect.outputs.relevant == 'true'
 
       - name: Set up Docker Buildx
+        if: needs.detect.outputs.relevant == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build collector image (no push, load locally)
+        if: needs.detect.outputs.relevant == 'true'
         # Built locally so we can kind-load it. Do NOT push to GHCR
         # from this workflow — that's the release workflow's job.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -62,6 +93,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Create kind cluster
+        if: needs.detect.outputs.relevant == 'true'
         # helm/kind-action pins kind v0.23.0 by default; we pin the
         # node image explicitly so cluster behaviour is stable across
         # upstream kind releases.
@@ -73,15 +105,18 @@ jobs:
           wait: 120s
 
       - name: Load collector image into kind
+        if: needs.detect.outputs.relevant == 'true'
         run: |
           kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
 
       - name: Set up Helm
+        if: needs.detect.outputs.relevant == 'true'
         uses: azure/setup-helm@v4
         with:
           version: v3.15.0
 
       - name: Install umbrella chart (permissive-dev, collector-only)
+        if: needs.detect.outputs.relevant == 'true'
         # permissive-dev enables collector+nemo by default; we force
         # every subchart except otel-collector off because their
         # images have not been published yet. hmacKey is inline for
@@ -111,16 +146,19 @@ jobs:
             --timeout 5m
 
       - name: Wait for pods Ready
+        if: needs.detect.outputs.relevant == 'true'
         run: |
           kubectl wait --for=condition=ready pods --all \
             --namespace "${NAMESPACE}" \
             --timeout=300s
 
       - name: List installed resources
+        if: needs.detect.outputs.relevant == 'true'
         run: |
           kubectl get all --namespace "${NAMESPACE}"
 
       - name: Assert collector healthcheckextension responds
+        if: needs.detect.outputs.relevant == 'true'
         # Exec curl from inside the collector pod (distroless has no
         # shell/curl, so we use kubectl port-forward from the runner
         # instead — simpler and doesn't require an exec-capable image).
@@ -148,6 +186,7 @@ jobs:
           exit 1
 
       - name: helm test (chart-provided test-connection Pod)
+        if: needs.detect.outputs.relevant == 'true'
         run: |
           helm test ci --namespace "${NAMESPACE}" --timeout 2m
 
@@ -156,21 +195,21 @@ jobs:
       # broken PR without needing to reproduce locally.
 
       - name: Describe pods (on failure)
-        if: failure()
+        if: failure() && needs.detect.outputs.relevant == 'true'
         run: kubectl describe pods --namespace "${NAMESPACE}" || true
 
       - name: Collector logs (on failure)
-        if: failure()
+        if: failure() && needs.detect.outputs.relevant == 'true'
         run: |
           kubectl logs --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector \
             --tail=200 --all-containers=true || true
 
       - name: Events (on failure)
-        if: failure()
+        if: failure() && needs.detect.outputs.relevant == 'true'
         run: kubectl get events --namespace "${NAMESPACE}" \
           --sort-by=.lastTimestamp || true
 
       - name: Helm status (on failure)
-        if: failure()
+        if: failure() && needs.detect.outputs.relevant == 'true'
         run: helm status ci --namespace "${NAMESPACE}" --show-desc || true

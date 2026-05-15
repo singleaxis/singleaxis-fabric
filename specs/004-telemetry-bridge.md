@@ -415,7 +415,7 @@ documentation.
 ## References
 
 - Spec 002 — Architecture
-- Spec 003 — Context Graph (the source of Bridge events)
+- Spec 003 — Decision Graph (the source of Bridge events)
 - Spec 007 — Escalation workflow (the other user of Bridge egress)
 - [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 - [SPIFFE / SPIRE](https://spiffe.io/) for workload identity

@@ -14,6 +14,13 @@ shorter, action-oriented doors in.
 - [**Deployment**](deployment.md) — Helm chart, the
   `permissive-dev` and `eu-ai-act-high-risk` profiles, and the
   L1-OSS / L2-control-plane boundary.
+- [**Building Fabric**](building-fabric.md) — engineering rules for
+  rebuilding Fabric as operational infrastructure for autonomous
+  systems.
+- [**Decision Graph**](decision-graph.md) — the causal graph primitive
+  that powers replay, audit, governance, and evaluation.
+- [**OSS / Commercial Boundary**](oss-commercial-boundary.md) — what
+  stays open, what moves to the commercial repo, and why.
 
 ## Reference surfaces
 

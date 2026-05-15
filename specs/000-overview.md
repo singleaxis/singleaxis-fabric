@@ -102,7 +102,7 @@ Shared vocabulary used across specs:
 | **Tenant** | An organization running Fabric in their own infrastructure |
 | **Audit Bridge** / **Telemetry Bridge** | The single egress component that sends sanitized data to SingleAxis SaaS |
 | **SASF** | SingleAxis Assessment Framework — the human-in-the-loop evaluation service |
-| **Context Graph** | The unified per-decision provenance artifact |
+| **Decision Graph** | The unified per-decision provenance artifact |
 | **Decision** | A single agent turn that produces an observable output |
 | **Rubric** | A versioned, signed judgement specification used by L6 |
 | **Regulatory Profile** | A named `values.yaml` preset that configures Fabric for a specific regulation |

@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **otel-collector chart**: render an OTLP `traces:` pipeline alongside
+  the existing `logs:` pipeline, gated on
+  `fabric.guard.traceProcessingEnabled` (default `true`). The SDK has
+  shipped trace spans since v0.2.0, but the chart only wired a `logs:`
+  pipeline so spans were silently dropped at the collector. Set
+  `fabric.guard.traceProcessingEnabled=false` to opt out. See
+  spec 016 §4.1.
+
+### Changed (presidio-sidecar)
+
+- The Presidio sidecar entry point now wires the real
+  `PresidioAnalyzer` by default when the `[presidio]` extra is
+  installed, and **fails fast** on startup when it is not. This
+  closes a v0.2.0 gap where a misconfigured image could silently
+  start in `PassthroughAnalyzer` mode and redact nothing. The new
+  `--allow-passthrough` flag is the explicit opt-in for dev / CI
+  smoke clusters that intentionally run without the extra; it
+  emits a startup warning so operators see the no-op mode in
+  logs. When the real analyzer is wired, an INFO log records the
+  wire-up. (SPEC 012 §4.2)
+
 ## [0.2.0] - 2026-05-01
 
 Fabric earns the "open-source observability + control plane for
@@ -93,7 +116,7 @@ section below preserves the full per-component fix list.
 
 - L1/L2 boundary now load-bearing across all narrative docs.
   README hero is "open-source observability and control plane for
-  AI agents"; specs 003 (Context Graph), 004 (Telemetry Bridge),
+  AI agents"; specs 003 (Decision Graph), 004 (Telemetry Bridge),
   006 (LLM-as-Judge), 007 (Escalation Workflow) gain explicit "L2
   commercial control plane / not in this OSS distribution"
   disclaimers — the implementation lives in a separate private
@@ -204,7 +227,7 @@ everything into 0.2.0.
   rather than relying on OTel to silently drop unsupported values.
 - `RetrievalRecord.from_query` now enforces 1:1 parity between
   `result_hashes` and `result_count` when supplied. Mismatched
-  partial supply was silently corrupting downstream Context Graph
+  partial supply was silently corrupting downstream Decision Graph
   projections. `source_document_ids` remains free-form (N chunks
   may share M < N source documents).
 - `_chain.GuardrailChain` no longer pushes NeMo rail names into
@@ -470,7 +493,7 @@ release-candidate verification as the canonical `0.1.0` artifact set.
 **Specs (design of record)**
 
 - 14 specs covering overview, product vision, architecture,
-  context graph, telemetry bridge, inline guardrails, LLM-as-judge,
+  decision graph, telemetry bridge, inline guardrails, LLM-as-judge,
   escalation workflow, deployment model, compliance mapping,
   development standards, and the phased roadmap
 
@@ -752,7 +775,7 @@ been exercised against a real tag. See Known issues below.
   OCI, SLSA build-provenance attestations, and a draft GitHub Release.
 - **Design-of-record specs** (`specs/000-overview.md` through
   `specs/011-roadmap.md`) covering product vision, architecture,
-  Context Graph, Telemetry Bridge, guardrails, judges, escalation,
+  Decision Graph, Telemetry Bridge, guardrails, judges, escalation,
   deployment, compliance mapping, development standards, and
   roadmap.
 
@@ -815,7 +838,7 @@ been exercised against a real tag. See Known issues below.
   reference agent and asserts end-to-end guardrail + telemetry flow.
   That lands before `v0.1.0` final.
 - **Phase-1a scope.** Judge-workers, escalation-service,
-  context-graph, telemetry-bridge, and NATS broker are not part of
+  decision-graph, telemetry-bridge, and NATS broker are not part of
   this distribution; operators deploying the OSS umbrella get
   inline guardrails + collector + opt-in red-team, not the full
   async judge loop.
