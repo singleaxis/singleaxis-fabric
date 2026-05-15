@@ -11,6 +11,7 @@ tracer reference so the decision context can emit consistent spans.
 from __future__ import annotations
 
 import os
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -34,6 +35,7 @@ ENV_PRESIDIO_SOCKET = "FABRIC_PRESIDIO_UNIX_SOCKET"
 ENV_PRESIDIO_TIMEOUT = "FABRIC_PRESIDIO_TIMEOUT_SECONDS"
 ENV_NEMO_SOCKET = "FABRIC_NEMO_UNIX_SOCKET"
 ENV_NEMO_TIMEOUT = "FABRIC_NEMO_TIMEOUT_SECONDS"
+ENV_QUIET_ENV_WARN = "FABRIC_QUIET_ENV_WARN"
 
 DEFAULT_PROFILE = "permissive-dev"
 """The only profile Phase 1 ships. See specs/009-compliance-mapping.md."""
@@ -93,7 +95,41 @@ class Fabric:
     ) -> None:
         self._config = config
         self._tracer = tracer or get_tracer()
+
+        # Spec 016 §4.2: unify constructor with from_env() — when an
+        # explicit client is not passed but the corresponding socket
+        # env var is set, auto-wire the client. Explicit kwargs always
+        # win over env. A one-shot warning fires when the env vars
+        # silently wired a client behind the caller's back (env set,
+        # explicit kwarg None) so callers either reach for from_env()
+        # or pass explicit clients. Suppressed by FABRIC_QUIET_ENV_WARN=1
+        # and skipped entirely if the resulting chain is empty (pure
+        # observability mode — user clearly opted out of guardrails).
+        source = dict(os.environ)
+        env_presidio_set = bool(source.get(ENV_PRESIDIO_SOCKET))
+        env_nemo_set = bool(source.get(ENV_NEMO_SOCKET))
+        wired_from_env = False
+        if presidio is None and env_presidio_set:
+            presidio = _presidio_from_env(source)
+            wired_from_env = True
+        if nemo is None and env_nemo_set:
+            nemo = _nemo_from_env(source)
+            wired_from_env = True
+
         self._chain = GuardrailChain(presidio=presidio, nemo=nemo)
+
+        if (
+            wired_from_env
+            and self._chain.has_rails
+            and source.get(ENV_QUIET_ENV_WARN, "").strip() not in ("1", "true", "True")
+        ):
+            warnings.warn(
+                "Fabric() constructor auto-wired guardrail client(s) from "
+                f"{ENV_PRESIDIO_SOCKET}/{ENV_NEMO_SOCKET}. Prefer Fabric.from_env() "
+                "or pass explicit presidio=/nemo= kwargs. "
+                f"Suppress with {ENV_QUIET_ENV_WARN}=1.",
+                stacklevel=2,
+            )
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Fabric:
