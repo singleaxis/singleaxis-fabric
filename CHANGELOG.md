@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   pipeline so spans were silently dropped at the collector. Set
   `fabric.guard.traceProcessingEnabled=false` to opt out. See
   spec 016 §4.1.
+- **SDK:** One-shot stderr warning (`PIIShapedIdentifierWarning`,
+  subclass of `UserWarning`) when `tenant_id`, `agent_id`, `user_id`,
+  `session_id`, or `request_id` is constructed with a value that looks
+  like an email address or phone number. These identifier values
+  attach to every emitted decision span, so an email or phone there
+  is a silent PII leak to the trace backend. The warning fires once
+  per call site per process via the default `warnings` filter; set
+  `FABRIC_QUIET_PII_WARN=1` to suppress. `*_name` fields are
+  deliberately not checked — they are explicitly human-readable. See
+  specs/016-foundational-fixes.md §4.5. (#TBD)
 
 ### Changed (presidio-sidecar)
 
