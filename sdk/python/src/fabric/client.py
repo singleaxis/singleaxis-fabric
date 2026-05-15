@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ._chain import GuardrailChain
+from ._id_validators import warn_if_pii_shaped
 from .auto_instrument import enable_auto_instrumentation as _enable_auto_instrumentation
 from .tracing import get_tracer
 
@@ -68,6 +69,11 @@ class FabricConfig:
             raise ValueError("agent_id is required (empty or whitespace only)")
         if not self.profile:
             raise ValueError("profile is required (empty or whitespace only)")
+        # PII shape warnings — only after the strip+empty checks above
+        # so we don't warn on values we're about to reject anyway. See
+        # specs/016-foundational-fixes.md §4.5.
+        warn_if_pii_shaped("tenant_id", self.tenant_id)
+        warn_if_pii_shaped("agent_id", self.agent_id)
 
 
 class Fabric:
