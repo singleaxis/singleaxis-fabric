@@ -22,6 +22,14 @@ from .guardrails import (
 )
 from .memory import MemoryKind, MemoryRecord
 from .nemo import NemoAction, NemoClient, NemoError, NemoResult, UDSNemoClient
+from .policy import (
+    EngineVerdict,
+    PolicyAdapterError,
+    PolicyDecision,
+    PolicyEngine,
+    PolicyEvaluation,
+)
+from .policy_adapters import HTTPPolicyAdapter
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
@@ -30,6 +38,7 @@ from .tracing import get_tracer, install_default_provider
 __all__ = [
     "DEFAULT_PROFILE",
     "Decision",
+    "EngineVerdict",
     "EntitySummary",
     "EscalationMode",
     "EscalationRequested",
@@ -42,6 +51,7 @@ __all__ = [
     "GuardrailNotConfiguredError",
     "GuardrailPhase",
     "GuardrailResult",
+    "HTTPPolicyAdapter",
     "LLMCall",
     "MemoryKind",
     "MemoryRecord",
@@ -49,6 +59,10 @@ __all__ = [
     "NemoClient",
     "NemoError",
     "NemoResult",
+    "PolicyAdapterError",
+    "PolicyDecision",
+    "PolicyEngine",
+    "PolicyEvaluation",
     "PresidioClient",
     "RedactionError",
     "RedactionResult",
