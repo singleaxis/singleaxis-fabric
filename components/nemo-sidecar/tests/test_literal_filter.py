@@ -21,7 +21,6 @@ from fabric_nemo_sidecar.literal_filter import (
     load_patterns_file,
 )
 
-
 # ---------- core matching ----------
 
 
@@ -145,6 +144,11 @@ def test_load_patterns_file_rejects_empty(tmp_path: Path) -> None:
 
 
 def test_filter_match_is_frozen() -> None:
+    """``FilterMatch`` is a ``frozen=True, slots=True`` dataclass.
+    Setting an attribute raises ``FrozenInstanceError``, a subclass of
+    ``AttributeError``. We assert the broader ``AttributeError`` so
+    the test does not couple to dataclasses' internal hierarchy.
+    """
     m = FilterMatch(pattern="x")
-    with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
+    with pytest.raises(AttributeError):
         m.pattern = "y"  # type: ignore[misc]

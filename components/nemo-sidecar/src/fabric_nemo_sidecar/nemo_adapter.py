@@ -121,7 +121,7 @@ class NemoRailsEngine:
     preserves the prior behavior of forwarding every request to NeMo.
     """
 
-    __slots__ = ("_rails", "_literal_filter")
+    __slots__ = ("_literal_filter", "_rails")
 
     def __init__(
         self,

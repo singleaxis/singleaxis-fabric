@@ -91,7 +91,7 @@ class LiteralJailbreakFilter:
     beyond the lowercased copy.
     """
 
-    __slots__ = ("_patterns", "_rail_name", "_block_response")
+    __slots__ = ("_block_response", "_patterns", "_rail_name")
 
     def __init__(
         self,
