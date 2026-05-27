@@ -13,7 +13,8 @@ end-to-end. Operators can use these directly or write their own.
 Optional adapters under separate extras land alongside this module:
 
 - DeepEvalJudge ([deepeval] extra): maps JudgeContext to deepeval's
-  LLMTestCase. Subagent A3's responsibility, not in this PR.
+  LLMTestCase shape and runs a per-metric evaluator. Only importable
+  when the optional dependency is installed.
 """
 
 from fabric.judge_adapters.simple import (
@@ -22,3 +23,12 @@ from fabric.judge_adapters.simple import (
 )
 
 __all__ = ["ScoreParseError", "SimpleLLMJudge"]
+
+# DeepEvalJudge requires the optional [deepeval] extra.
+try:
+    from fabric.judge_adapters.deepeval import DeepEvalJudge  # noqa: F401
+
+    __all__.append("DeepEvalJudge")
+except ImportError:
+    # deepeval not installed; that's fine.
+    pass
