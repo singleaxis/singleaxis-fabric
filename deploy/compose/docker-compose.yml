@@ -35,7 +35,13 @@ services:
       dockerfile: Dockerfile
     image: fabric/presidio-sidecar:harness
     user: "1000:1000"
-    command: ["--uds", "/run/fabric/presidio.sock"]
+    command:
+      [
+        "--uds",
+        "/run/fabric/presidio.sock",
+        "--tenant-key-file",
+        "/run/fabric/presidio.key",
+      ]
     volumes:
       - ./run:/run/fabric
     healthcheck:
@@ -51,7 +57,7 @@ services:
       dockerfile: Dockerfile
     image: fabric/nemo-sidecar:harness
     user: "1000:1000"
-    command: ["--uds", "/run/fabric/nemo.sock", "--rails", "/etc/fabric/rails"]
+    command: ["--uds", "/run/fabric/nemo.sock", "--rails-config", "/etc/fabric/rails"]
     volumes:
       - ./run:/run/fabric
       - ../../components/nemo-sidecar/rails/starter:/etc/fabric/rails:ro
