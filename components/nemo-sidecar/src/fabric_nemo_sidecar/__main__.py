@@ -18,10 +18,74 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from typing import TYPE_CHECKING
 
 import uvicorn
 
 from fabric_nemo_sidecar.app import build_app
+
+if TYPE_CHECKING:
+    from fabric_nemo_sidecar.literal_filter import LiteralJailbreakFilter
+    from fabric_nemo_sidecar.rails import RailsEngine
+
+
+def _build_literal_filter(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+) -> LiteralJailbreakFilter | None:
+    """Construct an optional :class:`LiteralJailbreakFilter` from CLI
+    args. ``None`` if neither filter flag was supplied. Errors out via
+    ``parser.error`` (which raises ``SystemExit``) if the two filter
+    flags are passed together.
+    """
+
+    if args.literal_jailbreak_patterns and args.enable_default_literal_filter:
+        parser.error(
+            "--literal-jailbreak-patterns and "
+            "--enable-default-literal-filter are mutually exclusive"
+        )
+
+    if not (args.literal_jailbreak_patterns or args.enable_default_literal_filter):
+        return None
+
+    from fabric_nemo_sidecar.literal_filter import (  # noqa: PLC0415
+        LiteralJailbreakFilter,
+        load_patterns_file,
+    )
+
+    if args.literal_jailbreak_patterns:
+        patterns = load_patterns_file(args.literal_jailbreak_patterns)
+        return LiteralJailbreakFilter(patterns=patterns)
+    return LiteralJailbreakFilter()
+
+
+def _build_engine(
+    args: argparse.Namespace,
+    literal_filter: LiteralJailbreakFilter | None,
+) -> RailsEngine | None:
+    """Construct the rails engine from CLI args. Returns ``None`` when
+    ``--allow-passthrough`` is set and no ``--rails-config`` is given;
+    the caller logs a warning so the misconfiguration is visible in
+    pod logs.
+    """
+
+    if args.rails_config:
+        from fabric_nemo_sidecar.nemo_adapter import build_default_engine  # noqa: PLC0415
+
+        return build_default_engine(args.rails_config, literal_filter=literal_filter)
+
+    # --allow-passthrough was set; emit a startup-time warning so the
+    # operator can see this in pod logs. The rail name on every /check
+    # response stamps PASSTHROUGH_FAIL_OPEN so any downstream
+    # dashboard surfaces the misconfiguration.
+    import logging  # noqa: PLC0415
+
+    logging.getLogger("fabric_nemo_sidecar").warning(
+        "NeMo sidecar starting in PASSTHROUGH mode "
+        "(--allow-passthrough): jailbreak/policy defence is "
+        "disabled. DO NOT use in production."
+    )
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,6 +106,24 @@ def main(argv: list[str] | None = None) -> int:
         "use the passthrough engine which allows everything — only for "
         "local development. Refused without this flag in 0.1.3+.",
     )
+    parser.add_argument(
+        "--literal-jailbreak-patterns",
+        metavar="PATH",
+        help="Optional path to a one-pattern-per-line file. When set, "
+        "the sidecar runs a deterministic case-insensitive substring "
+        "filter against every input value before invoking NeMo. A "
+        "match returns action='block' immediately without an "
+        "LLMRails.generate() call. Use to harden the starter rails "
+        "against NeMo's embedding-based canonical-form matching, "
+        "which is too loose under FastEmbed for short-phrase patterns.",
+    )
+    parser.add_argument(
+        "--enable-default-literal-filter",
+        action="store_true",
+        help="Enable the built-in literal jailbreak-pattern filter "
+        "(see fabric_nemo_sidecar.literal_filter.DEFAULT_JAILBREAK_PATTERNS). "
+        "Mutually exclusive with --literal-jailbreak-patterns.",
+    )
     args = parser.parse_args(argv)
 
     if args.uds and args.port:
@@ -57,23 +139,8 @@ def main(argv: list[str] | None = None) -> int:
             "--allow-passthrough explicitly for local smoke tests."
         )
 
-    engine = None
-    if args.rails_config:
-        from fabric_nemo_sidecar.nemo_adapter import build_default_engine  # noqa: PLC0415
-
-        engine = build_default_engine(args.rails_config)
-    else:
-        # --allow-passthrough was set; emit a startup-time warning so
-        # the operator can see this in pod logs. The rail name on
-        # every /check response stamps PASSTHROUGH_FAIL_OPEN so any
-        # downstream dashboard surfaces the misconfiguration.
-        import logging  # noqa: PLC0415
-
-        logging.getLogger("fabric_nemo_sidecar").warning(
-            "NeMo sidecar starting in PASSTHROUGH mode "
-            "(--allow-passthrough): jailbreak/policy defence is "
-            "disabled. DO NOT use in production."
-        )
+    literal_filter = _build_literal_filter(parser, args)
+    engine = _build_engine(args, literal_filter)
 
     # Concurrency env-var: parse robustly. A non-int value should
     # surface a clear error rather than crashing the whole sidecar

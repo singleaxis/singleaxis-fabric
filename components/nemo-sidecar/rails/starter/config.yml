@@ -1,24 +1,39 @@
 # SingleAxis Fabric — starter Colang rails bundle.
 #
-# A minimal, deterministic config the nemo-sidecar can load out of the
-# box. No `models:` are declared: the flows shipped in rails.co match
-# on user utterance patterns directly, so the bundle is safe to run
-# in CI and dev clusters without an LLM credential.
+# A minimal config the nemo-sidecar can load out of the box. No
+# `models:` are declared and no Colang flows are active. Jailbreak
+# detection is delegated to the sidecar's deterministic literal
+# pre-filter (see `fabric_nemo_sidecar.literal_filter`), which is
+# enabled via the `--enable-default-literal-filter` CLI flag or the
+# `literal_filter=` constructor kwarg on `NemoRailsEngine`.
 #
-# Production deployments should extend this bundle by:
-#   1. Adding a `models:` entry (self-hosted LLM, Azure, OpenAI, etc.)
-#   2. Layering self-check rails and domain-specific flows on top
-#   3. Overriding the `railsConfigMap.name` value in the Helm chart
+# Why no Colang flow for jailbreak detection?
+# Earlier versions of this bundle declared a `user ask jailbreak`
+# canonical form. In `nemoguardrails` ≥ 0.10, input rails run the
+# matched flow unconditionally — the similarity threshold under
+# `rails.dialog.user_messages.embeddings_only_similarity_threshold`
+# only gates the *dialog-side* intent resolution, which input rails
+# do not consult. With the starter pattern set under the FastEmbed
+# default provider, this caused every input — benign or otherwise —
+# to fire the rail. The literal filter is unconditional and deterministic
+# and avoids this entire class of failure.
+#
+# Production deployments that want LLM-graded jailbreak detection
+# should:
+#   1. Add a `models:` entry (self-hosted LLM, Azure, OpenAI, etc.)
+#   2. Layer a `self check input` rail on top
+#   3. Keep the literal pre-filter enabled as a defense-in-depth
+#      first line
 #
 # Flow names tagged on span events (via the sidecar's EngineResult.rail
 # field) are stable contract — do NOT rename without also updating
-# downstream dashboards and judge-worker rubrics.
+# downstream dashboards and judge-worker rubrics. The synthetic
+# `literal_jailbreak` rail name surfaces from the pre-filter.
 
 models: []
 
 rails:
   input:
-    flows:
-      - jailbreak defence
+    flows: []
   output:
     flows: []

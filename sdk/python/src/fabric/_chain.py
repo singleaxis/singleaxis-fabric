@@ -64,8 +64,15 @@ class GuardrailChain:
 
         if self._nemo is not None:
             nemo_result = self._nemo.check(phase, path, content)
-            # NeMo may rewrite the content (e.g. refusal redirect).
-            content = nemo_result.modified_value
+            # NeMo may rewrite the content (e.g. refusal redirect). Only
+            # adopt the rewrite if it is non-empty: an empty modified
+            # value from NeMo (which happens when the engine stops a rail
+            # without supplying canned content) would otherwise silently
+            # destroy Presidio's redacted output. For an explicit block,
+            # we still surface block_response below, so callers see the
+            # canned refusal rather than an empty string.
+            if nemo_result.modified_value:
+                content = nemo_result.modified_value
             if nemo_result.action != "allow":
                 # Record only the rail in policies_fired. EntitySummary
                 # represents PII *entity classes* (e.g. EMAIL, PERSON);
