@@ -269,3 +269,73 @@ def test_close_delegates_to_both_rails() -> None:
     fabric.close()
     assert presidio_calls["closed"] == 1
     assert nemo.closed == 1
+
+
+def test_empty_nemo_modified_value_does_not_destroy_presidio_redaction(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """A NeMo rail that stops without canned content emits
+    ``modified_value=""``. Before the fix, the chain blindly assigned
+    that empty string to ``content`` and callers observed
+    ``redacted_content==""`` with no signal that PII had been seen.
+
+    After the fix: the chain treats an empty NeMo rewrite as "no
+    rewrite" and keeps Presidio's redacted content intact. The block
+    is still surfaced via ``blocked=True`` and ``policies_fired``.
+    """
+
+    presidio = _FakePresidio(
+        RedactionResult(value="[REDACTED:EMAIL]", hashed=True, pii_category="EMAIL")
+    )
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=False,
+            action="block",
+            rail="jailbreak defence",
+            block_response=None,
+            modified_value="",
+        )
+    )
+    fabric = _client(presidio=presidio, nemo=nemo)
+    try:
+        result = fabric.guardrail_chain.check(
+            phase="input", path="input", value="contact me at bryan@example.com"
+        )
+    finally:
+        fabric.close()
+    assert result.blocked is True
+    # Presidio's redacted content survives — chain did NOT silently
+    # overwrite it with NeMo's empty modified_value.
+    assert result.redacted_content == "[REDACTED:EMAIL]"
+    assert "nemo:jailbreak defence" in result.policies_fired
+    assert "presidio:EMAIL" in result.policies_fired
+
+
+def test_non_block_nemo_with_empty_modified_value_keeps_presidio_redaction(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Same defensive rule for non-block actions: a NeMo ``warn`` that
+    emits ``modified_value=""`` must not erase Presidio's output."""
+
+    presidio = _FakePresidio(
+        RedactionResult(value="[REDACTED:PHONE]", hashed=True, pii_category="PHONE")
+    )
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=True,
+            action="warn",
+            rail="topic",
+            block_response=None,
+            modified_value="",
+        )
+    )
+    fabric = _client(presidio=presidio, nemo=nemo)
+    try:
+        result = fabric.guardrail_chain.check(
+            phase="input", path="input", value="call me on +1-415-555-0199"
+        )
+    finally:
+        fabric.close()
+    assert result.blocked is False
+    assert result.redacted_content == "[REDACTED:PHONE]"
+    assert "nemo:topic" in result.policies_fired
