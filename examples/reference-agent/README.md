@@ -27,6 +27,55 @@ uv run fabric-reference-agent --prompt "Hello"
 uv run fabric-reference-agent --prompt "Hello" --low-score    # triggers escalation
 ```
 
+## v0.4 primitives
+
+Pass `--enable-v04-primitives` to exercise every v0.4 SDK primitive
+in one decision: `recall`, `checkpoint`, `record_eval`, `queue_judge`
++ `JudgeContext`, `evaluate_policy`, and `SimpleLLMJudge` draining
+the queued judge request after the decision exits.
+
+```bash
+uv run fabric-reference-agent --prompt Hello --enable-v04-primitives
+```
+
+Sample output:
+
+```
+guardrail: input checked → 5 chars
+retrieval: 2 docs from RAG
+checkpoint: after-retrieval
+memory recall: episodic last_query
+policy: custom:demo_allow → allow
+llm_call: model=reference-agent-stub-v1 → 32 chars
+memory write: episodic turn
+side_effect: notification committed
+guardrail: output checked
+eval (sync): reference-v1 → 0.85
+judge queued: request_id=<uuid>
+checkpoint: after-output
+judge: simple_llm_judge → 0.87 (overall)
+{
+  "response": "Simulated response to: Hello",
+  "trace_id": "...",
+  "judge_scores": [0.87],
+  "event_counts": {
+    "retrieval": 1,
+    "memory_write": 1,
+    "memory_read": 1,
+    "side_effect": 1,
+    "checkpoint": 2,
+    "eval": 1,
+    "judge_queued": 1,
+    "policy_evaluation": 1
+  }
+}
+```
+
+The demo wires in-process stand-ins for everything external: a
+pass-through Presidio stub so the guardrail chain emits events, an
+always-allow `PolicyEngine`, a `LocalQueueTransport` for the judge
+queue, and a stub chat-completion client for `SimpleLLMJudge`.
+
 ## What this example deliberately does not do
 
 - Call a real LLM
