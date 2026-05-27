@@ -124,6 +124,61 @@ debugging, swap `OTLPSpanExporter` for `ConsoleSpanExporter`.
   per-regulation mapping documents (EU AI Act, NIST AI RMF, ISO/IEC 42001,
   SR 11-7, HIPAA) ship alongside the SingleAxis commercial control plane.
 
+## v0.4 primitives at a glance
+
+```python
+from fabric import (
+    Fabric, FabricConfig, JudgeContext, LocalQueueTransport, MemoryKind,
+    SimpleLLMJudge,
+)
+from fabric.policy_adapters import HTTPPolicyAdapter
+
+fabric = Fabric(FabricConfig(
+    tenant_id="acme",
+    agent_id="my-agent",
+    workflow_id="complaint-resolution-v2",  # new in v0.4
+    execution_id="run-001",                  # new in v0.4
+))
+
+transport = LocalQueueTransport()
+policy = HTTPPolicyAdapter(endpoint="https://policies.internal/eval")
+
+with fabric.decision(session_id="s", request_id="r") as d:
+    safe_input = d.guard_input(user_message)
+
+    # Memory: read + write (read is new in v0.4)
+    d.recall(kind=MemoryKind.EPISODIC, key="last_turn", content="prior content")
+    d.remember(kind=MemoryKind.EPISODIC, key="this_turn", content=user_message)
+
+    # Save point for replay (new in v0.4)
+    d.checkpoint("after-input")
+
+    # Policy enforcement (new in v0.4)
+    verdict = d.evaluate_policy(policy, policy_id="region.eu", input={...})
+
+    response = my_llm.complete(safe_input)
+    safe_response = d.guard_output_final(response)
+
+    # Sync eval (new in v0.4)
+    d.record_eval(rubric_id="tone-v1", score=0.9, dimension="tone",
+                  evaluator_name="rule_based")
+
+    # Async judge with full context (new in v0.4)
+    ctx = d.snapshot_context()
+    ctx = JudgeContext(**{**ctx.__dict__, "user_input": user_message,
+                          "agent_response": safe_response})
+    d.queue_judge(rubric_id="faithfulness-v1", dimensions=("faithfulness",),
+                  context=ctx, transport=transport)
+```
+
+The full reference agent at `examples/reference-agent` demonstrates
+every v0.4 primitive end-to-end including the in-process judge
+worker. Run it with:
+
+```bash
+uv run fabric-reference-agent --prompt Hello --enable-v04-primitives
+```
+
 ## Troubleshooting
 
 - `GuardrailNotConfiguredError` on `guard_input` / `guard_output_*`
