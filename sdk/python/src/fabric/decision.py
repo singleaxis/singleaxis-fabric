@@ -30,6 +30,9 @@ have this constraint.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import time
 from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
@@ -54,6 +57,7 @@ from .judge import (
     QueueTransport,
 )
 from .memory import MemoryKind, MemoryRecord
+from .policy import EngineVerdict, PolicyEngine, PolicyEvaluation
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
 
@@ -94,6 +98,8 @@ ATTR_EVAL_COUNT = "fabric.eval_count"
 ATTR_EVAL_RUBRICS = "fabric.eval_rubrics"
 ATTR_JUDGE_QUEUED_COUNT = "fabric.judge_queued_count"
 ATTR_JUDGE_RUBRICS = "fabric.judge_rubrics"
+ATTR_POLICY_EVAL_COUNT = "fabric.policy_evaluation_count"
+ATTR_POLICY_ENGINES = "fabric.policy_engines"
 
 
 class Decision(AbstractContextManager["Decision"]):
@@ -133,6 +139,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._checkpoints: list[CheckpointEvent] = []
         self._evals: list[EvalRecord] = []
         self._judge_requests: list[JudgeRequest] = []
+        self._policy_evaluations: list[PolicyEvaluation] = []
 
     # -- context manager --------------------------------------------------
 
@@ -244,6 +251,11 @@ class Decision(AbstractContextManager["Decision"]):
     def side_effects(self) -> tuple[SideEffectRecord, ...]:
         """All external mutations recorded on this decision, in emission order."""
         return tuple(self._side_effects)
+
+    @property
+    def policy_evaluations(self) -> tuple[PolicyEvaluation, ...]:
+        """All policy evaluations recorded on this decision, in emission order."""
+        return tuple(self._policy_evaluations)
 
     # -- guardrail entry points ------------------------------------------
     #
@@ -827,6 +839,114 @@ class Decision(AbstractContextManager["Decision"]):
             retrieval_docs=tuple(retrieval_docs),
             memory_reads=memory_reads,
         )
+
+    # -- policy evaluation -----------------------------------------------
+
+    def evaluate_policy(
+        self,
+        engine: PolicyEngine,
+        *,
+        policy_id: str,
+        input: dict[str, object],
+        timeout_seconds: float = 1.0,
+    ) -> PolicyEvaluation:
+        """Forward to the engine, normalize the verdict, emit a span event.
+
+        The SDK does not embed a policy engine. It normalizes verdicts
+        across engines and emits ``fabric.policy.evaluation`` events with
+        engine, policy_id, version, decision, reason, evidence_ref.
+
+        Args:
+            engine: a PolicyEngine adapter instance (OPAAdapter,
+                HTTPPolicyAdapter, CedarAdapter, or custom).
+            policy_id: opaque to SDK; tenant-defined.
+            input: JSON-serializable input the engine evaluates against.
+                Hashed locally; the raw payload never lands on the trace.
+            timeout_seconds: engine-side timeout. Default 1.0s.
+
+        Returns:
+            PolicyEvaluation with normalized decision. Caller decides
+            what to do with the verdict (block, redact, escalate,
+            continue) — the SDK only emits the event.
+
+        On adapter failure (PolicyAdapterError or any exception): the
+        SDK records a fail-closed PolicyEvaluation with
+        ``decision="deny"``, ``reason="adapter raised: <type>"``.
+        """
+        span = self.span
+        input_hash = hashlib.sha256(
+            json.dumps(input, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+
+        started = time.monotonic()
+        try:
+            verdict = engine.evaluate(
+                policy_id=policy_id,
+                input=input,
+                timeout_seconds=timeout_seconds,
+            )
+            latency_ms = (time.monotonic() - started) * 1000.0
+            try:
+                evaluation = PolicyEvaluation.from_verdict(
+                    verdict=verdict,
+                    engine=engine.engine_name,
+                    policy_id=policy_id,
+                    decision_id=self.request_id,
+                    input_hash=input_hash,
+                    latency_ms=latency_ms,
+                )
+            except ValueError as exc:
+                # Missing reason on non-allow → fail closed
+                evaluation = PolicyEvaluation.from_verdict(
+                    verdict=EngineVerdict(
+                        decision="deny",
+                        reason=f"adapter returned malformed verdict: {exc}",
+                    ),
+                    engine=engine.engine_name,
+                    policy_id=policy_id,
+                    decision_id=self.request_id,
+                    input_hash=input_hash,
+                    latency_ms=latency_ms,
+                )
+        except Exception as exc:  # adapter contract is broad; fail closed
+            latency_ms = (time.monotonic() - started) * 1000.0
+            evaluation = PolicyEvaluation.from_verdict(
+                verdict=EngineVerdict(
+                    decision="deny",
+                    reason=f"adapter raised: {type(exc).__name__}: {exc}",
+                ),
+                engine=engine.engine_name,
+                policy_id=policy_id,
+                decision_id=self.request_id,
+                input_hash=input_hash,
+                latency_ms=latency_ms,
+            )
+            span.record_exception(exc)
+
+        self._policy_evaluations.append(evaluation)
+        span.set_attribute(ATTR_POLICY_EVAL_COUNT, len(self._policy_evaluations))
+        unique_engines = sorted({e.engine for e in self._policy_evaluations})
+        span.set_attribute(ATTR_POLICY_ENGINES, tuple(unique_engines))
+
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.policy.evaluation_id": str(evaluation.evaluation_id),
+            "fabric.policy.engine": evaluation.engine,
+            "fabric.policy.policy_id": evaluation.policy_id,
+            "fabric.policy.decision": evaluation.decision,
+            "fabric.policy.input_hash": evaluation.input_hash,
+            "fabric.policy.latency_ms": evaluation.latency_ms,
+        }
+        if evaluation.policy_version is not None:
+            event_attrs["fabric.policy.policy_version"] = evaluation.policy_version
+        if evaluation.reason is not None:
+            event_attrs["fabric.policy.reason"] = evaluation.reason
+        if evaluation.evidence_ref is not None:
+            event_attrs["fabric.policy.evidence_ref"] = evaluation.evidence_ref
+        if evaluation.bundle_signature is not None:
+            event_attrs["fabric.policy.bundle_signature"] = evaluation.bundle_signature
+
+        span.add_event("fabric.policy.evaluation", attributes=event_attrs)
+        return evaluation
 
     # -- child spans (LLM call / tool call) ------------------------------
 
