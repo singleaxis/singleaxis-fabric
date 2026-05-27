@@ -20,9 +20,19 @@ from .guardrails import (
     GuardrailPhase,
     GuardrailResult,
 )
+from .judge import (
+    GuardrailSnapshot,
+    JudgeContext,
+    JudgeRequest,
+    JudgeWorker,
+    PolicyDecisionSnapshot,
+    QueueTransport,
+    ToolCallSnapshot,
+)
 from .memory import MemoryKind, MemoryRecord
 from .nemo import NemoAction, NemoClient, NemoError, NemoResult, UDSNemoClient
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
+from .queue_transports import LocalQueueTransport
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
 from .tracing import get_tracer, install_default_provider
@@ -42,14 +52,21 @@ __all__ = [
     "GuardrailNotConfiguredError",
     "GuardrailPhase",
     "GuardrailResult",
+    "GuardrailSnapshot",
+    "JudgeContext",
+    "JudgeRequest",
+    "JudgeWorker",
     "LLMCall",
+    "LocalQueueTransport",
     "MemoryKind",
     "MemoryRecord",
     "NemoAction",
     "NemoClient",
     "NemoError",
     "NemoResult",
+    "PolicyDecisionSnapshot",
     "PresidioClient",
+    "QueueTransport",
     "RedactionError",
     "RedactionResult",
     "ReplayBehavior",
@@ -58,6 +75,7 @@ __all__ = [
     "SideEffectRecord",
     "SideEffectType",
     "ToolCall",
+    "ToolCallSnapshot",
     "UDSNemoClient",
     "UDSPresidioClient",
     "__version__",

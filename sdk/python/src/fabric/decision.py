@@ -33,6 +33,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
+from uuid import uuid4
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
@@ -44,6 +45,11 @@ from .guardrails import (
     GuardrailNotConfiguredError,
     GuardrailPhase,
     GuardrailResult,
+)
+from .judge import (
+    JudgeContext,
+    JudgeRequest,
+    QueueTransport,
 )
 from .memory import MemoryKind, MemoryRecord
 from .retrieval import RetrievalRecord, RetrievalSource
@@ -80,6 +86,8 @@ ATTR_MEMORY_KINDS = "fabric.memory_kinds"
 ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count"
 ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types"
 ATTR_SIDE_EFFECT_SYSTEMS = "fabric.side_effect_systems"
+ATTR_JUDGE_QUEUED_COUNT = "fabric.judge_queued_count"
+ATTR_JUDGE_RUBRICS = "fabric.judge_rubrics"
 
 
 class Decision(AbstractContextManager["Decision"]):
@@ -116,6 +124,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._retrievals: list[RetrievalRecord] = []
         self._memory_writes: list[MemoryRecord] = []
         self._side_effects: list[SideEffectRecord] = []
+        self._judge_requests: list[JudgeRequest] = []
 
     # -- context manager --------------------------------------------------
 
@@ -545,6 +554,98 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
         span.add_event("fabric.side_effect", attributes=event_attrs)
         return record
+
+    # -- judge queue -----------------------------------------------------
+
+    def queue_judge(
+        self,
+        *,
+        rubric_id: str,
+        dimensions: tuple[str, ...] | list[str],
+        context: JudgeContext,
+        transport: QueueTransport,
+        payload_ref: str | None = None,
+    ) -> JudgeRequest:
+        """Forward a judge request to the queue transport.
+
+        Emits a ``fabric.judge.queued`` span event with rubric_id,
+        dimensions, and optional payload_ref. **No content** lands on
+        the trace stream — the JudgeContext travels exclusively via the
+        transport.
+
+        Args:
+            rubric_id: opaque identifier of the rubric to score against.
+            dimensions: which rubric dimensions to score.
+            context: the bundle the judge will evaluate.
+            transport: queue transport. Use LocalQueueTransport for
+                tests/dev; tenant-supplied adapter for production.
+            payload_ref: optional tenant-side URI for the full request
+                payload (when context lives in a tenant store).
+
+        Raises:
+            ValueError: if rubric_id is empty or dimensions is empty.
+
+        Returns:
+            The JudgeRequest that was enqueued.
+        """
+        if not rubric_id or not rubric_id.strip():
+            raise ValueError("rubric_id must be non-empty")
+        dim_tuple = tuple(dimensions)
+        if not dim_tuple:
+            raise ValueError("at least one dimension required")
+
+        request = JudgeRequest(
+            request_id=uuid4(),
+            decision_id=self._request_id,
+            rubric_id=rubric_id.strip(),
+            dimensions=dim_tuple,
+            context=context,
+            payload_ref=payload_ref,
+        )
+
+        transport.enqueue(request)
+        self._judge_requests.append(request)
+
+        span = self.span
+        span.set_attribute(ATTR_JUDGE_QUEUED_COUNT, len(self._judge_requests))
+        unique_rubrics = sorted({r.rubric_id for r in self._judge_requests})
+        span.set_attribute(ATTR_JUDGE_RUBRICS, tuple(unique_rubrics))
+
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.judge.request_id": str(request.request_id),
+            "fabric.judge.rubric_id": request.rubric_id,
+            "fabric.judge.dimensions": dim_tuple,
+        }
+        if payload_ref is not None:
+            event_attrs["fabric.judge.payload_ref"] = payload_ref
+
+        span.add_event("fabric.judge.queued", attributes=event_attrs)
+        return request
+
+    def snapshot_context(self) -> JudgeContext:
+        """Build a JudgeContext from this decision's accumulated state.
+
+        Pulls in whatever the decision has recorded so far — retrievals
+        (source_document_ids only; queries were hashed), memory writes
+        (keys only). The caller is responsible for attaching
+        ``user_input`` and ``agent_response`` to the returned context;
+        the SDK never sees the raw user message on the request path
+        because Presidio hashes it.
+
+        Returns:
+            A JudgeContext with retrieval_docs and memory_reads
+            populated from the decision's state. All other fields
+            default to None / empty; the caller fills them in.
+        """
+        retrieval_docs: list[str] = []
+        for r in self._retrievals:
+            if r.source_document_ids:
+                retrieval_docs.extend(r.source_document_ids)
+
+        return JudgeContext(
+            retrieval_docs=tuple(retrieval_docs),
+            memory_reads=(),
+        )
 
     # -- child spans (LLM call / tool call) ------------------------------
 
