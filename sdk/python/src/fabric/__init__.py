@@ -6,6 +6,8 @@ Phase 1 public surface — agents import from here. Anything not
 re-exported is internal.
 """
 
+import contextlib
+
 from ._calls import LLMCall, ToolCall
 from ._version import __version__
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
@@ -31,6 +33,12 @@ from .judge import (
     ToolCallSnapshot,
 )
 from .judge_adapters import ScoreParseError, SimpleLLMJudge
+
+# DeepEvalJudge is exposed only when the optional [deepeval] extra is
+# installed. Operators using the extra can also import directly via
+# ``from fabric.judge_adapters import DeepEvalJudge``.
+with contextlib.suppress(ImportError):
+    from .judge_adapters import DeepEvalJudge  # noqa: F401
 from .memory import MemoryKind, MemoryRecord
 from .nemo import NemoAction, NemoClient, NemoError, NemoResult, UDSNemoClient
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
