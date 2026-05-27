@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
+
+## [0.4.0] - 2026-05-28
+
+### Added
+
 - **otel-collector chart**: render an OTLP `traces:` pipeline alongside
   the existing `logs:` pipeline, gated on
   `fabric.guard.traceProcessingEnabled` (default `true`). The SDK has
