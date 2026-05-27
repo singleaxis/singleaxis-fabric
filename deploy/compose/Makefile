@@ -9,6 +9,9 @@ PROJECT ?= fabric-harness
 
 up: ## Start core harness (sidecars + collector + Langfuse).
 	mkdir -p run
+	@if [ ! -s run/presidio.key ]; then \
+		openssl rand -base64 32 > run/presidio.key; \
+	fi
 	$(COMPOSE) up -d --build
 	@echo ""
 	@echo "Langfuse UI:  http://localhost:3000"

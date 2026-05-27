@@ -30,8 +30,10 @@ cp .env.example .env            # (optional) override defaults
 make up                         # builds + starts everything
 ```
 
-First start builds the three Fabric images locally (~2–4 min). Later
-`make up` reuses the built images unless code changes.
+First start builds the three Fabric images locally (~2–4 min). `make
+up` also creates `run/presidio.key` if it is missing, so the Presidio
+sidecar can start with a real local HMAC key. Later `make up` reuses
+the built images unless code changes.
 
 Wait ~30s for Langfuse to finish its Prisma migrations, then open the
 UI and the project `fabric-harness` will be pre-created with the
@@ -57,22 +59,18 @@ FABRIC_PROFILE=eu-ai-act-high-risk make up-bootstrap
 
 ```python
 # pip install singleaxis-fabric
-from fabric import FabricClient, DecisionContext
+from fabric import Fabric, FabricConfig, UDSNemoClient, UDSPresidioClient
 
-client = FabricClient(
-    tenant_id="harness",
-    agent_id="my-product",
-    otlp_endpoint="http://localhost:4318",  # OTLP/HTTP exporter
-    presidio_socket="./run/presidio.sock",
-    nemo_socket="./run/nemo.sock",
+fabric = Fabric(
+    FabricConfig(tenant_id="harness", agent_id="my-product"),
+    presidio=UDSPresidioClient("./run/presidio.sock"),
+    nemo=UDSNemoClient("./run/nemo.sock"),
 )
 
-with client.decision("answer_user_question") as d:
-    d.record_input(user_msg)
-    d.check_input_guardrails()      # → nemo-sidecar over UDS
-    response = llm.complete(user_msg)
-    d.record_output(response)
-    d.check_output_guardrails()     # → nemo-sidecar over UDS
+with fabric.decision(session_id="sess-1", request_id="req-1") as decision:
+    safe_input = decision.guard_input(user_msg)
+    response = llm.complete(safe_input)
+    safe_response = decision.guard_output_final(response)
 ```
 
 Adjust paths if you aren't running the agent from `deploy/compose/`.
