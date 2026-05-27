@@ -49,3 +49,4 @@ Every spec declares a `Status` in its header:
 | [010](010-development-standards.md) | Development, testing, and release standards | draft |
 | [011](011-roadmap.md) | Phased execution roadmap | draft |
 | [012](012-oss-commercialization-strategy.md) | Operational infrastructure PRD & OSS commercialization strategy | draft |
+| [019](019-policy-engine.md) | Policy Engine — decision-level policy evaluation primitive | draft |
