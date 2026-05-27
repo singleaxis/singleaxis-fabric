@@ -1,8 +1,8 @@
 ---
 title: LLM-as-Judge Architecture
 status: draft
-revision: 1
-last_updated: 2026-04-18
+revision: 2
+last_updated: 2026-05-27
 owner: project-lead
 ---
 
@@ -17,6 +17,47 @@ owner: project-lead
 > async evaluation pipeline. L1 OSS deployments emit decision spans;
 > the commercial control plane consumes them and materializes scored
 > evaluations.
+
+## L1 OSS scope (v0.4)
+
+Where v0.2 emitted decision spans for downstream judges to consume,
+v0.4 ships first-class public SDK primitives so OSS deployments can
+queue and score evaluations end-to-end without the commercial worker
+pool.
+
+| OSS primitive | Spec section |
+|---|---|
+| `decision.queue_judge(rubric_id, dimensions, context, transport)` | "Async evaluation pipeline" below |
+| `decision.record_eval(rubric_id, score, dimension, evaluator_name)` | "Score schema" below |
+| `JudgeContext` + `JudgeRequest` | "Judge context capture" below |
+| `JudgeWorker` protocol | "Judge worker contract" below |
+| `QueueTransport` protocol + `LocalQueueTransport` | "Queue transport" below |
+| `SimpleLLMJudge` reference worker | "Reference workers" below |
+| `DeepEvalJudge` adapter (`[deepeval]` extra) | "Reference workers" below |
+
+The L1 primitives carry the data; the L2 commercial worker pool
+brings:
+
+- The rubric corpus (calibrated against labeled examples)
+- Rubric versioning + signing
+- Confidence calibration
+- Judge routing + ensembles
+- Drift detection across decisions
+- Signed audit bundles
+
+OSS deployments can run `SimpleLLMJudge` against an in-process
+queue (`LocalQueueTransport`) and get usable scores without any
+commercial dependency. Scores will not be calibrated, signed, or
+benchmarked — that is the upgrade path to commercial
+`judge-workers`.
+
+### Privacy boundary
+
+The judge queue is a separate transport from the OTel trace stream.
+`JudgeContext` carries raw content; the `fabric.judge.queued` span
+event carries only metadata (`rubric_id`, `dimensions`, optional
+`payload_ref`). The SDK enforces this split. See `spec 012
+§Content vs trace pipeline` and `docs/architecture.md`.
 
 ## Summary
 
