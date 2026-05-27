@@ -51,6 +51,8 @@ class FabricConfig:
     tenant_id: str
     agent_id: str
     profile: str = DEFAULT_PROFILE
+    workflow_id: str | None = None
+    execution_id: str | None = None
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

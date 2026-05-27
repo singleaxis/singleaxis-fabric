@@ -61,6 +61,8 @@ SPAN_NAME = "fabric.decision"
 ATTR_TENANT = "fabric.tenant_id"
 ATTR_AGENT = "fabric.agent_id"
 ATTR_PROFILE = "fabric.profile"
+ATTR_WORKFLOW = "fabric.workflow_id"
+ATTR_EXECUTION = "fabric.execution_id"
 ATTR_SESSION = "fabric.session_id"
 ATTR_REQUEST = "fabric.request_id"
 ATTR_USER = "fabric.user_id"
@@ -133,6 +135,10 @@ class Decision(AbstractContextManager["Decision"]):
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
+        if self._client.config.workflow_id is not None:
+            self._span.set_attribute(ATTR_WORKFLOW, self._client.config.workflow_id)
+        if self._client.config.execution_id is not None:
+            self._span.set_attribute(ATTR_EXECUTION, self._client.config.execution_id)
         self._span.set_attribute(ATTR_SESSION, self._session_id)
         self._span.set_attribute(ATTR_REQUEST, self._request_id)
         if self._user_id is not None:
