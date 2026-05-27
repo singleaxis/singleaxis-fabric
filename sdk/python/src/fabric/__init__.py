@@ -11,6 +11,7 @@ from ._version import __version__
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
 from .decision import Decision
 from .escalation import EscalationMode, EscalationRequested, EscalationSummary
+from .eval import EvalRecord
 from .guardrails import (
     EntitySummary,
     GuardrailAction,
@@ -29,6 +30,7 @@ from .judge import (
     QueueTransport,
     ToolCallSnapshot,
 )
+from .judge_adapters import ScoreParseError, SimpleLLMJudge
 from .memory import MemoryKind, MemoryRecord
 from .nemo import NemoAction, NemoClient, NemoError, NemoResult, UDSNemoClient
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
@@ -44,6 +46,7 @@ __all__ = [
     "EscalationMode",
     "EscalationRequested",
     "EscalationSummary",
+    "EvalRecord",
     "Fabric",
     "FabricConfig",
     "GuardrailAction",
@@ -72,8 +75,10 @@ __all__ = [
     "ReplayBehavior",
     "RetrievalRecord",
     "RetrievalSource",
+    "ScoreParseError",
     "SideEffectRecord",
     "SideEffectType",
+    "SimpleLLMJudge",
     "ToolCall",
     "ToolCallSnapshot",
     "UDSNemoClient",
