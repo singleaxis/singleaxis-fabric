@@ -17,6 +17,7 @@ from fabric import (
     GuardrailBlocked,
     GuardrailNotConfiguredError,
     GuardrailResult,
+    MemoryKind,
 )
 from fabric.decision import (
     ATTR_AGENT,
@@ -158,3 +159,48 @@ def test_span_access_before_enter_raises() -> None:
     dec = client.decision(session_id="s", request_id="r")
     with pytest.raises(RuntimeError, match="has not been entered"):
         _ = dec.span
+
+
+def test_recall_emits_memory_event_with_direction_read(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """recall() emits a fabric.memory event with direction=read."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with fabric.decision(session_id="s", request_id="r") as decision:
+        decision.recall(kind=MemoryKind.EPISODIC, key="last_query", content="hello")
+    span = span_exporter.get_finished_spans()[0]
+    events = [e for e in span.events if e.name == "fabric.memory"]
+    assert len(events) == 1
+    attrs = dict(events[0].attributes or {})
+    assert attrs["fabric.memory.direction"] == "read"
+    assert attrs["fabric.memory.key"] == "last_query"
+
+
+def test_remember_and_recall_in_same_decision_aggregate(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """One read + one write produces correct count attributes."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with fabric.decision(session_id="s", request_id="r") as decision:
+        decision.remember(kind=MemoryKind.EPISODIC, key="x", content="written")
+        decision.recall(kind=MemoryKind.EPISODIC, key="y", content="read")
+    span = span_exporter.get_finished_spans()[0]
+    attrs = dict(span.attributes or {})
+    assert attrs["fabric.memory_write_count"] == 1
+    assert attrs["fabric.memory_read_count"] == 1
+
+
+def test_recall_content_hash_matches_remember_hash_for_same_input(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Same content via remember() and recall() produces identical content_hash."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    content = "the same string"
+    with fabric.decision(session_id="s", request_id="r") as decision:
+        decision.remember(kind=MemoryKind.EPISODIC, key="a", content=content)
+        decision.recall(kind=MemoryKind.EPISODIC, key="b", content=content)
+    span = span_exporter.get_finished_spans()[0]
+    events = [e for e in span.events if e.name == "fabric.memory"]
+    h0 = dict(events[0].attributes or {})["fabric.memory.content_hash"]
+    h1 = dict(events[1].attributes or {})["fabric.memory.content_hash"]
+    assert h0 == h1
