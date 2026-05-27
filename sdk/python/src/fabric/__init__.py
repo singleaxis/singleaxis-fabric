@@ -11,6 +11,7 @@ from ._version import __version__
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
 from .decision import Decision
 from .escalation import EscalationMode, EscalationRequested, EscalationSummary
+from .eval import EvalRecord
 from .guardrails import (
     EntitySummary,
     GuardrailAction,
@@ -34,6 +35,7 @@ __all__ = [
     "EscalationMode",
     "EscalationRequested",
     "EscalationSummary",
+    "EvalRecord",
     "Fabric",
     "FabricConfig",
     "GuardrailAction",

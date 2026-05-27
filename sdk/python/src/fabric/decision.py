@@ -39,6 +39,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from ._calls import LLMCall, ToolCall
 from ._id_validators import warn_if_pii_shaped
 from .escalation import EscalationRequested, EscalationSummary
+from .eval import EvalRecord
 from .guardrails import (
     GuardrailBlocked,
     GuardrailNotConfiguredError,
@@ -80,6 +81,8 @@ ATTR_MEMORY_KINDS = "fabric.memory_kinds"
 ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count"
 ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types"
 ATTR_SIDE_EFFECT_SYSTEMS = "fabric.side_effect_systems"
+ATTR_EVAL_COUNT = "fabric.eval_count"
+ATTR_EVAL_RUBRICS = "fabric.eval_rubrics"
 
 
 class Decision(AbstractContextManager["Decision"]):
@@ -116,6 +119,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._retrievals: list[RetrievalRecord] = []
         self._memory_writes: list[MemoryRecord] = []
         self._side_effects: list[SideEffectRecord] = []
+        self._evals: list[EvalRecord] = []
 
     # -- context manager --------------------------------------------------
 
@@ -544,6 +548,76 @@ class Decision(AbstractContextManager["Decision"]):
         if record.idempotency_key is not None:
             event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
         span.add_event("fabric.side_effect", attributes=event_attrs)
+        return record
+
+    # -- evals ----------------------------------------------------------
+
+    def record_eval(
+        self,
+        *,
+        rubric_id: str,
+        score: float,
+        dimension: str,
+        evaluator_name: str,
+        evaluator_version: str | None = None,
+        confidence: float | None = None,
+        payload_ref: str | None = None,
+    ) -> EvalRecord:
+        """Attach a synchronous score to this decision span.
+
+        Use for inline graders that produce a score on the request path.
+        For async grading, use ``queue_judge()`` instead — it forwards a
+        JudgeRequest to a queue and grades happen out-of-band.
+
+        The score is recorded as a ``fabric.eval`` span event. The
+        parent span tracks ``fabric.eval_count`` and distinct rubric
+        IDs in ``fabric.eval_rubrics``.
+
+        Args:
+            rubric_id: opaque to SDK; tenant-defined.
+            score: 0.0-1.0 inclusive.
+            dimension: what is being scored (e.g. "faithfulness", "tone").
+            evaluator_name: identifier of the scorer
+                (e.g. "DeepEvalJudge:FaithfulnessMetric").
+            evaluator_version: optional version of the evaluator.
+            confidence: optional confidence in the score (0.0-1.0).
+            payload_ref: optional tenant-side URI for inputs the
+                evaluator used (kept off the trace stream).
+
+        Returns:
+            The recorded EvalRecord.
+        """
+        record = EvalRecord.create(
+            rubric_id=rubric_id,
+            score=score,
+            dimension=dimension,
+            evaluator_name=evaluator_name,
+            evaluator_version=evaluator_version,
+            confidence=confidence,
+            payload_ref=payload_ref,
+        )
+        self._evals.append(record)
+
+        span = self.span
+        span.set_attribute(ATTR_EVAL_COUNT, len(self._evals))
+        unique_rubrics = sorted({e.rubric_id for e in self._evals})
+        span.set_attribute(ATTR_EVAL_RUBRICS, tuple(unique_rubrics))
+
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.eval.eval_id": str(record.eval_id),
+            "fabric.eval.rubric_id": record.rubric_id,
+            "fabric.eval.score": record.score,
+            "fabric.eval.dimension": record.dimension,
+            "fabric.eval.evaluator_name": record.evaluator_name,
+        }
+        if record.evaluator_version is not None:
+            event_attrs["fabric.eval.evaluator_version"] = record.evaluator_version
+        if record.confidence is not None:
+            event_attrs["fabric.eval.confidence"] = record.confidence
+        if record.payload_ref is not None:
+            event_attrs["fabric.eval.payload_ref"] = record.payload_ref
+
+        span.add_event("fabric.eval", attributes=event_attrs)
         return record
 
     # -- child spans (LLM call / tool call) ------------------------------
