@@ -76,6 +76,7 @@ ATTR_ESC_SCORE = "fabric.escalation.triggering_score"
 ATTR_RETRIEVAL_COUNT = "fabric.retrieval_count"
 ATTR_RETRIEVAL_SOURCES = "fabric.retrieval_sources"
 ATTR_MEMORY_WRITE_COUNT = "fabric.memory_write_count"
+ATTR_MEMORY_READ_COUNT = "fabric.memory_read_count"
 ATTR_MEMORY_KINDS = "fabric.memory_kinds"
 ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count"
 ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types"
@@ -442,11 +443,15 @@ class Decision(AbstractContextManager["Decision"]):
         )
         span = self.span
         self._memory_writes.append(record)
-        span.set_attribute(ATTR_MEMORY_WRITE_COUNT, len(self._memory_writes))
+        write_count = sum(1 for r in self._memory_writes if r.direction == "write")
+        read_count = sum(1 for r in self._memory_writes if r.direction == "read")
+        span.set_attribute(ATTR_MEMORY_WRITE_COUNT, write_count)
+        span.set_attribute(ATTR_MEMORY_READ_COUNT, read_count)
         unique_kinds = sorted({r.kind.value for r in self._memory_writes})
         span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.memory.direction": record.direction,
             "fabric.memory.kind": record.kind.value,
             "fabric.memory.content_hash": record.content_hash,
         }
@@ -456,6 +461,56 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs["fabric.memory.tags"] = record.tags
         if record.ttl_seconds is not None:
             event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
+        span.add_event("fabric.memory", attributes=event_attrs)
+        return record
+
+    def recall(
+        self,
+        *,
+        kind: MemoryKind | str,
+        key: str,
+        content: str,
+        source: str | None = None,
+    ) -> MemoryRecord:
+        """Record a memory READ. Symmetric to :meth:`remember`.
+
+        Emits a ``fabric.memory`` span event with
+        ``fabric.memory.direction='read'``. The ``content_hash`` uses
+        the same SHA-256 strategy as :meth:`remember`, so matching
+        reads and writes can be correlated downstream by hash.
+
+        Rolling ``fabric.memory_read_count`` is updated on the
+        decision span (separate from ``fabric.memory_write_count``)
+        so the Telemetry Bridge can fold reads and writes into the
+        ``DecisionSummary`` wire event independently.
+
+        Raw content is hashed locally and is never placed on the
+        span.
+        """
+
+        record = MemoryRecord.from_recall(
+            kind=kind,
+            key=key,
+            content=content,
+            source=source,
+        )
+        span = self.span
+        self._memory_writes.append(record)
+        write_count = sum(1 for r in self._memory_writes if r.direction == "write")
+        read_count = sum(1 for r in self._memory_writes if r.direction == "read")
+        span.set_attribute(ATTR_MEMORY_WRITE_COUNT, write_count)
+        span.set_attribute(ATTR_MEMORY_READ_COUNT, read_count)
+        unique_kinds = sorted({r.kind.value for r in self._memory_writes})
+        span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
+
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.memory.direction": record.direction,
+            "fabric.memory.kind": record.kind.value,
+            "fabric.memory.content_hash": record.content_hash,
+            "fabric.memory.key": record.key if record.key is not None else key,
+        }
+        if record.source is not None:
+            event_attrs["fabric.memory.source"] = record.source
         span.add_event("fabric.memory", attributes=event_attrs)
         return record
 
