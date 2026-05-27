@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 
@@ -38,16 +39,24 @@ class MemoryKind(StrEnum):
     SCRATCH = "scratch"
 
 
+MemoryDirection = Literal["read", "write"]
+
+
 def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class MemoryRecord(BaseModel):
-    """One memory-write event captured on a decision span.
+    """One memory event captured on a decision span.
 
-    Construct via :meth:`from_content` rather than directly — the
-    ``content_hash`` field is a SHA-256 hex digest and the helper
-    enforces that contract.
+    Construct via :meth:`from_content` (write side) or
+    :meth:`from_recall` (read side) rather than directly — the
+    ``content_hash`` field is a SHA-256 hex digest and the helpers
+    enforce that contract.
+
+    ``direction`` defaults to ``"write"`` so existing call sites that
+    constructed ``MemoryRecord`` for the :meth:`Decision.remember`
+    path continue to round-trip unchanged.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -57,6 +66,8 @@ class MemoryRecord(BaseModel):
     key: str | None = None
     tags: tuple[str, ...] = ()
     ttl_seconds: NonNegativeInt | None = None
+    direction: MemoryDirection = "write"
+    source: str | None = None
 
     @classmethod
     def from_content(
@@ -68,11 +79,36 @@ class MemoryRecord(BaseModel):
         tags: Sequence[str] | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecord:
-        """Build a record from raw content. The content is hashed locally."""
+        """Build a write-direction record from raw content. The content is hashed locally."""
         return cls(
             kind=MemoryKind(kind) if isinstance(kind, str) else kind,
             content_hash=_sha256_hex(content),
             key=key,
             tags=tuple(tags) if tags else (),
             ttl_seconds=ttl_seconds,
+            direction="write",
+        )
+
+    @classmethod
+    def from_recall(
+        cls,
+        *,
+        kind: MemoryKind | str,
+        key: str,
+        content: str,
+        source: str | None = None,
+    ) -> MemoryRecord:
+        """Build a read-direction record. ``content`` is hashed locally.
+
+        Uses the same SHA-256 strategy as :meth:`from_content`, so a
+        ``recall`` for the exact bytes a prior ``remember`` wrote will
+        produce an identical ``content_hash`` — the downstream graph
+        can correlate the two by hash.
+        """
+        return cls(
+            kind=MemoryKind(kind) if isinstance(kind, str) else kind,
+            content_hash=_sha256_hex(content),
+            key=key,
+            direction="read",
+            source=source,
         )
