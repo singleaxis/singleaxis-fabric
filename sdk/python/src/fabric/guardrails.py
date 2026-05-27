@@ -18,7 +18,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 GuardrailPhase = Literal["input", "output_stream", "output_final"]
-GuardrailAction = Literal["redact", "block", "warn"]
+# v0.4: added 'allow' (passed through cleanly) and 'escalate' (deferred to
+# human reviewer). See spec 016 §guardrail-action-vocabulary.
+GuardrailAction = Literal["allow", "redact", "warn", "block", "escalate"]
 
 
 class EntitySummary(BaseModel):

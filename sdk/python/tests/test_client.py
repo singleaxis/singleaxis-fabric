@@ -7,6 +7,7 @@ from __future__ import annotations
 import warnings
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import DEFAULT_PROFILE, Fabric, FabricConfig
 from fabric.presidio import RedactionResult
@@ -135,3 +136,24 @@ def test_warning_suppressed_by_quiet_env_var(monkeypatch: pytest.MonkeyPatch) ->
         Fabric(FabricConfig(tenant_id="t", agent_id="a"))
     env_warnings = [w for w in caught if "FABRIC_PRESIDIO_UNIX_SOCKET" in str(w.message)]
     assert env_warnings == []
+
+
+# -- v0.4: workflow_id / execution_id propagation ---------------------
+
+
+def test_workflow_and_execution_propagate_to_span(span_exporter: InMemorySpanExporter) -> None:
+    """workflow_id and execution_id from FabricConfig appear on the decision span."""
+    fabric = Fabric(
+        FabricConfig(
+            tenant_id="acme",
+            agent_id="bot",
+            workflow_id="complaint-resolution-v2",
+            execution_id="run-2026-05-27-001",
+        )
+    )
+    with fabric.decision(session_id="s", request_id="r"):
+        pass
+    span = span_exporter.get_finished_spans()[0]
+    attrs = dict(span.attributes or {})
+    assert attrs["fabric.workflow_id"] == "complaint-resolution-v2"
+    assert attrs["fabric.execution_id"] == "run-2026-05-27-001"
