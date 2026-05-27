@@ -42,6 +42,24 @@ def main(argv: list[str] | None = None) -> int:
         "use the passthrough engine which allows everything — only for "
         "local development. Refused without this flag in 0.1.3+.",
     )
+    parser.add_argument(
+        "--literal-jailbreak-patterns",
+        metavar="PATH",
+        help="Optional path to a one-pattern-per-line file. When set, "
+        "the sidecar runs a deterministic case-insensitive substring "
+        "filter against every input value before invoking NeMo. A "
+        "match returns action='block' immediately without an "
+        "LLMRails.generate() call. Use to harden the starter rails "
+        "against NeMo's embedding-based canonical-form matching, "
+        "which is too loose under FastEmbed for short-phrase patterns.",
+    )
+    parser.add_argument(
+        "--enable-default-literal-filter",
+        action="store_true",
+        help="Enable the built-in literal jailbreak-pattern filter "
+        "(see fabric_nemo_sidecar.literal_filter.DEFAULT_JAILBREAK_PATTERNS). "
+        "Mutually exclusive with --literal-jailbreak-patterns.",
+    )
     args = parser.parse_args(argv)
 
     if args.uds and args.port:
@@ -57,11 +75,30 @@ def main(argv: list[str] | None = None) -> int:
             "--allow-passthrough explicitly for local smoke tests."
         )
 
+    if args.literal_jailbreak_patterns and args.enable_default_literal_filter:
+        parser.error(
+            "--literal-jailbreak-patterns and "
+            "--enable-default-literal-filter are mutually exclusive"
+        )
+
+    literal_filter = None
+    if args.literal_jailbreak_patterns or args.enable_default_literal_filter:
+        from fabric_nemo_sidecar.literal_filter import (  # noqa: PLC0415
+            LiteralJailbreakFilter,
+            load_patterns_file,
+        )
+
+        if args.literal_jailbreak_patterns:
+            patterns = load_patterns_file(args.literal_jailbreak_patterns)
+            literal_filter = LiteralJailbreakFilter(patterns=patterns)
+        else:
+            literal_filter = LiteralJailbreakFilter()
+
     engine = None
     if args.rails_config:
         from fabric_nemo_sidecar.nemo_adapter import build_default_engine  # noqa: PLC0415
 
-        engine = build_default_engine(args.rails_config)
+        engine = build_default_engine(args.rails_config, literal_filter=literal_filter)
     else:
         # --allow-passthrough was set; emit a startup-time warning so
         # the operator can see this in pod logs. The rail name on

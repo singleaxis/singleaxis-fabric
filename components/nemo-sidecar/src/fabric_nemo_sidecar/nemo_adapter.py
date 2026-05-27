@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from fabric_nemo_sidecar.literal_filter import LiteralJailbreakFilter
 from fabric_nemo_sidecar.rails import CheckAction, EngineResult
 
 if TYPE_CHECKING:
@@ -109,14 +110,48 @@ class NemoRailsEngine:
     returned text as the ``modified_value`` and derive the action +
     rail from ``response.log.activated_rails`` when present, falling
     back to a legacy ``rails_info`` dict for older stubs.
+
+    An optional :class:`LiteralJailbreakFilter` runs before
+    ``LLMRails.generate()``. When the filter matches, the engine
+    returns an ``action="block"`` result immediately without invoking
+    NeMo at all — this gives a deterministic, embedding-free
+    jailbreak-prefilter that does not depend on NeMo's canonical-form
+    matching (which over-fires under FastEmbed with the starter
+    pattern set). The filter is opt-in; ``literal_filter=None``
+    preserves the prior behavior of forwarding every request to NeMo.
     """
 
-    __slots__ = ("_rails",)
+    __slots__ = ("_rails", "_literal_filter")
 
-    def __init__(self, rails: LLMRails) -> None:
+    def __init__(
+        self,
+        rails: LLMRails,
+        *,
+        literal_filter: LiteralJailbreakFilter | None = None,
+    ) -> None:
         self._rails = rails
+        self._literal_filter = literal_filter
+
+    @property
+    def literal_filter(self) -> LiteralJailbreakFilter | None:
+        return self._literal_filter
 
     def check(self, phase: str, path: str, value: str) -> EngineResult:
+        # Pre-filter: deterministic literal substring check. If it
+        # fires, we never touch NeMo — the synthetic block result
+        # carries the filter's rail name so downstream consumers can
+        # distinguish literal hits from Colang flow hits.
+        if self._literal_filter is not None and phase == "input":
+            match = self._literal_filter.check(value)
+            if match is not None:
+                return EngineResult(
+                    allowed=False,
+                    action="block",
+                    rail=match.rail,
+                    block_response=match.block_response,
+                    modified_value=value,
+                )
+
         messages: list[dict[str, Any]] = [{"role": "user", "content": value}]
         try:
             response: Any = self._rails.generate(
@@ -216,13 +251,21 @@ def _parse_response(input_value: str, response: Any) -> EngineResult:
     )
 
 
-def build_default_engine(config_path: str) -> NemoRailsEngine:
+def build_default_engine(
+    config_path: str,
+    *,
+    literal_filter: LiteralJailbreakFilter | None = None,
+) -> NemoRailsEngine:
     """Construct a :class:`NemoRailsEngine` from a Colang config dir.
 
     Raises :class:`ImportError` if ``nemoguardrails`` is not installed.
+
+    ``literal_filter`` is forwarded to the engine. When supplied, the
+    engine runs the filter against every input-phase value before
+    invoking ``LLMRails.generate()``.
     """
 
     from nemoguardrails import LLMRails, RailsConfig  # noqa: PLC0415
 
     config = RailsConfig.from_path(config_path)
-    return NemoRailsEngine(LLMRails(config))
+    return NemoRailsEngine(LLMRails(config), literal_filter=literal_filter)
