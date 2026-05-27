@@ -33,11 +33,13 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
+from uuid import UUID
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from ._calls import LLMCall, ToolCall
 from ._id_validators import warn_if_pii_shaped
+from .checkpoint import CheckpointEvent
 from .escalation import EscalationRequested, EscalationSummary
 from .guardrails import (
     GuardrailBlocked,
@@ -81,6 +83,7 @@ ATTR_MEMORY_KINDS = "fabric.memory_kinds"
 ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count"
 ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types"
 ATTR_SIDE_EFFECT_SYSTEMS = "fabric.side_effect_systems"
+ATTR_CHECKPOINT_COUNT = "fabric.checkpoint_count"
 
 
 class Decision(AbstractContextManager["Decision"]):
@@ -117,6 +120,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._retrievals: list[RetrievalRecord] = []
         self._memory_writes: list[MemoryRecord] = []
         self._side_effects: list[SideEffectRecord] = []
+        self._checkpoints: list[CheckpointEvent] = []
 
     # -- context manager --------------------------------------------------
 
@@ -600,6 +604,52 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
         span.add_event("fabric.side_effect", attributes=event_attrs)
         return record
+
+    # -- checkpoints -----------------------------------------------------
+
+    def checkpoint(
+        self,
+        step_name: str,
+        *,
+        state_hash: str | None = None,
+        checkpoint_id: UUID | None = None,
+    ) -> CheckpointEvent:
+        """Mark a save point on the decision timeline.
+
+        The SDK emits a ``fabric.checkpoint`` span event. The replay
+        engine (commercial) consumes the events to rewind cleanly when
+        a downstream step fails.
+
+        Multiple checkpoints per decision are allowed and ordered by
+        creation time.
+
+        Args:
+            step_name: human-readable label, e.g. "after-retrieval".
+            state_hash: optional state fingerprint.
+            checkpoint_id: optional pre-supplied UUID; uuid4 otherwise.
+
+        Returns:
+            The recorded CheckpointEvent.
+        """
+        event = CheckpointEvent.create(
+            step_name=step_name,
+            state_hash=state_hash,
+            checkpoint_id=checkpoint_id,
+        )
+        self._checkpoints.append(event)
+
+        span = self.span
+        span.set_attribute(ATTR_CHECKPOINT_COUNT, len(self._checkpoints))
+
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.checkpoint.checkpoint_id": str(event.checkpoint_id),
+            "fabric.checkpoint.step_name": event.step_name,
+        }
+        if event.state_hash is not None:
+            event_attrs["fabric.checkpoint.state_hash"] = event.state_hash
+
+        span.add_event("fabric.checkpoint", attributes=event_attrs)
+        return event
 
     # -- child spans (LLM call / tool call) ------------------------------
 
