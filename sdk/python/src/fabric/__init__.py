@@ -34,6 +34,14 @@ from .judge import (
 from .judge_adapters import ScoreParseError, SimpleLLMJudge
 from .memory import MemoryKind, MemoryRecord
 from .nemo import NemoAction, NemoClient, NemoError, NemoResult, UDSNemoClient
+from .policy import (
+    EngineVerdict,
+    PolicyAdapterError,
+    PolicyDecision,
+    PolicyEngine,
+    PolicyEvaluation,
+)
+from .policy_adapters import HTTPPolicyAdapter
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
 from .queue_transports import LocalQueueTransport
 from .retrieval import RetrievalRecord, RetrievalSource
@@ -44,6 +52,7 @@ __all__ = [
     "DEFAULT_PROFILE",
     "CheckpointEvent",
     "Decision",
+    "EngineVerdict",
     "EntitySummary",
     "EscalationMode",
     "EscalationRequested",
@@ -58,6 +67,7 @@ __all__ = [
     "GuardrailPhase",
     "GuardrailResult",
     "GuardrailSnapshot",
+    "HTTPPolicyAdapter",
     "JudgeContext",
     "JudgeRequest",
     "JudgeWorker",
@@ -69,7 +79,11 @@ __all__ = [
     "NemoClient",
     "NemoError",
     "NemoResult",
+    "PolicyAdapterError",
+    "PolicyDecision",
     "PolicyDecisionSnapshot",
+    "PolicyEngine",
+    "PolicyEvaluation",
     "PresidioClient",
     "QueueTransport",
     "RedactionError",
