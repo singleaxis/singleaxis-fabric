@@ -95,3 +95,33 @@ adapters, sidecars, OTel collector, Helm chart. Components and
 services maintained internally by SingleAxis (Decision Graph
 analytics, evidence-bundle generation, reviewer workflows, rubric
 authoring) are not part of this distribution.
+
+## Dual-pipeline architecture (trace vs judge queue)
+
+Fabric uses two independent transports:
+
+**Trace stream** (OpenTelemetry): carries `fabric.*` and `gen_ai.*`
+span attributes and events. Hash-only by default; PII redacted
+upstream by Presidio. Exports to Langfuse, Phoenix, Datadog,
+Honeycomb, Tempo, Jaeger — whatever the operator wires up.
+
+**Judge queue** (tenant-internal transport): carries `JudgeRequest`
+payloads including raw `JudgeContext`. Stays inside the tenant
+boundary. Never touches the OTel collector. Transport choice is
+tenant-configured (NATS, Kafka, SQS, Pub/Sub, in-process).
+
+The SDK enforces the split. `decision.queue_judge()` MUST emit the
+`fabric.judge.queued` event with content-free attributes; it MUST
+NOT inline the context into the span. The judge queue transport
+MUST be a separate process / network path from the OTel collector.
+
+Why two transports?
+
+- Single-pipeline content capture (opt-in via env var) is
+  regulatorily fragile: one mis-set flag and prompts ship to a
+  third-party SaaS.
+- LLM-as-judge requires raw content. Refusing to carry it makes
+  judges useless. Dual-pipeline lets judges work on content without
+  that content ever touching the telemetry stream.
+
+See [`spec 012 §Content vs trace pipeline`](../specs/012-oss-commercialization-strategy.md) for the full rule.

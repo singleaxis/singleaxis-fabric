@@ -50,8 +50,8 @@ plugs in, and where it gets out of the way. This page is the picture.
 
 | Layer | Fabric artifact | What it gives you |
 |---|---|---|
-| L1 | `fabric.adapters.langgraph` / `agent_framework` / `crewai` | Clean escalation primitive bound to your orchestrator's pause/resume mechanism |
-| L2 | `fabric` Python SDK + custom OTel collector distribution | Standardized decision span per turn, with identity tags + governance metadata |
+| L1 | `fabric.adapters.langgraph` / `agent_framework` / `crewai` | Clean escalation primitive bound to your orchestrator's pause/resume mechanism. v0.4 adds `workflow_id` / `execution_id` lineage tags and `decision.checkpoint(...)` breadcrumbs for the replay engine. |
+| L2 | `fabric` Python SDK + custom OTel collector distribution | Standardized decision span per turn, with identity tags + governance metadata. v0.4 adds the full primitive set: `recall` / `record_eval` / `queue_judge` (dual-pipeline judge transport), `evaluate_policy` (HTTP / OPA adapters), and the extended 5-value `GuardrailAction` (`allow` / `redact` / `warn` / `block` / `escalate`). |
 | L4 | `redteam-runner` Helm subchart | Daily Garak/PyRIT runs, fail-on-findings semantics |
 | L5 | `presidio-sidecar` + `nemo-sidecar` Helm subcharts | Inline PII redaction + Colang policy enforcement, fail-loud if not wired |
 

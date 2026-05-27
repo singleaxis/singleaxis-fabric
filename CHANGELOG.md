@@ -41,6 +41,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   logs. When the real analyzer is wired, an INFO log records the
   wire-up. (SPEC 012 §4.2)
 
+### Added (SDK)
+
+- `GuardrailAction` extended from 3 to 5 values: `allow`, `redact`,
+  `warn`, `block`, `escalate`. The new `allow` value lets a
+  guardrail explicitly say "I let this through"; `escalate` defers
+  to a human reviewer. (PR #78)
+- `FabricConfig` accepts optional `workflow_id` and `execution_id`
+  fields. When set, they appear on every decision span as
+  `fabric.workflow_id` / `fabric.execution_id`, enabling
+  cross-decision lineage queries on the Decision Graph. (PR #78)
+- `decision.recall(kind, key, content)` — symmetric to
+  `decision.remember()`. Emits a `fabric.memory` event with
+  `direction="read"`. Lets the Decision Graph answer "which
+  memories influenced this decision?". (PR #79)
+- `decision.checkpoint(step_name, state_hash=...)` — emits a
+  `fabric.checkpoint` event for the replay engine (commercial) to
+  consume. The SDK leaves breadcrumbs; the replay engine restores
+  state. (PR #80)
+- `decision.record_eval(rubric_id, score, dimension, evaluator_name)`
+  — attach a synchronous score to the decision span. Validates score
+  in `[0, 1]`. (PR #81)
+- `decision.queue_judge(rubric_id, dimensions, context, transport)`
+  + `JudgeContext` + `JudgeRequest` + `QueueTransport` protocol +
+  `LocalQueueTransport` reference. Captures judge context at
+  decision time and ships it via a separate transport from the OTel
+  trace stream. Privacy contract: raw content never lands on the
+  trace; only `fabric.judge.queued` metadata does. (PR #82)
+- `SimpleLLMJudge` reference judge worker. Zero-dependency
+  LLM-as-judge with operator-supplied prompt template; demonstrates
+  the `JudgeWorker` protocol without pulling DeepEval or Ragas. (PR #83)
+- `decision.evaluate_policy(engine, policy_id, input)` + `PolicyEngine`
+  protocol + `HTTPPolicyAdapter` + `OPAAdapter` (behind `[opa]`
+  extra). Normalized 5-value `PolicyDecision` vocabulary across
+  engines. Fail-closed on adapter exceptions. Audit posture: silent
+  denies not permitted (non-allow decisions require a `reason`). (PR #84)
+- `DeepEvalJudge` adapter behind `[deepeval]` pyproject extra. Maps
+  `JudgeContext` to deepeval's `LLMTestCase` and emits an
+  `EvalRecord` with the metric class name. (PR #85)
+- `examples/reference-agent --enable-v04-primitives` flag
+  demonstrates every v0.4 primitive in one decision, including the
+  in-process judge worker that drains the LocalQueueTransport. (PR #86)
+
+### Changed (privacy posture)
+
+- The judge queue is now an architectural separation from the OTel
+  trace stream. The SDK never emits raw `JudgeContext` content as
+  span attributes; content flows exclusively via `QueueTransport`.
+  This makes the "raw content off by default" claim enforceable by
+  architecture rather than configuration. See `docs/architecture.md`
+  for the dual-pipeline rule.
+
 ## [0.2.0] - 2026-05-01
 
 Fabric earns the "open-source observability + control plane for
