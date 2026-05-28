@@ -33,6 +33,11 @@ from .guardrails import (
     GuardrailPhase,
     GuardrailResult,
 )
+from .integrations.mcp import (
+    InstrumentedMCPSession,
+    MCPSessionLike,
+    traced_call_tool,
+)
 from .judge import (
     DrainableTransport,
     GuardrailSnapshot,
@@ -119,6 +124,7 @@ __all__ = [
     "GuardrailSnapshot",
     "HTTPGuardrailChecker",
     "HTTPPolicyAdapter",
+    "InstrumentedMCPSession",
     "JudgeContext",
     "JudgeRequest",
     "JudgeRunner",
@@ -127,6 +133,7 @@ __all__ = [
     "LakeraGuardChecker",
     "LocalFilesystemContentStore",
     "LocalQueueTransport",
+    "MCPSessionLike",
     "MemoryKind",
     "MemoryRecord",
     "NATSQueueTransport",
@@ -164,4 +171,5 @@ __all__ = [
     "__version__",
     "get_tracer",
     "install_default_provider",
+    "traced_call_tool",
 ]
