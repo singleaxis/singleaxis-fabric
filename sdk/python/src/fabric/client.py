@@ -23,6 +23,7 @@ from .tracing import get_tracer
 if TYPE_CHECKING:
     from opentelemetry.trace import Tracer
 
+    from .content_store import ContentStore
     from .decision import Decision
     from .guardrails import GuardrailChecker
     from .nemo import NemoClient
@@ -106,9 +107,16 @@ class Fabric:
         presidio: PresidioClient | None = None,
         nemo: NemoClient | None = None,
         guardrail_checkers: list[GuardrailChecker] | None = None,
+        content_store: ContentStore | None = None,
     ) -> None:
         self._config = config
         self._tracer = tracer or get_tracer()
+        # Dual-pipeline content store (spec 012 §Content vs trace pipeline).
+        # Optional and not auto-wired onto events yet — a follow-up (Wave 3)
+        # stamps content_ref URIs onto events using this. Exposed here so the
+        # follow-up has a place to reach it. Default None keeps pure
+        # observability mode unchanged.
+        self._content_store = content_store
 
         # Spec 016 §4.2: unify constructor with from_env() — when an
         # explicit client is not passed but the corresponding socket
@@ -229,6 +237,17 @@ class Fabric:
         """The guardrail chain :class:`Decision` delegates to. Not part
         of the public API — exposed to Decision only."""
         return self._chain
+
+    @property
+    def content_store(self) -> ContentStore | None:
+        """The optional dual-pipeline content store, or ``None``.
+
+        Tenants stand up a :class:`~fabric.content_store.ContentStore`
+        to hold raw content referenced by ``content_ref`` URIs on the
+        trace stream. The SDK does not yet auto-stamp refs onto events;
+        this exposes the store for the follow-up that will.
+        """
+        return self._content_store
 
     def close(self) -> None:
         """Release any resources held by guardrail clients. Hosts
