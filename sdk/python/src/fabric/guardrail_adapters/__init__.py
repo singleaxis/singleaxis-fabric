@@ -7,6 +7,7 @@ protocol and is wired into a Fabric client via
 ``Fabric(..., guardrail_checkers=[...])``.
 """
 
+from fabric.guardrail_adapters.http import HTTPGuardrailChecker
 from fabric.guardrail_adapters.lakera import LakeraGuardChecker
 
-__all__ = ["LakeraGuardChecker"]
+__all__ = ["HTTPGuardrailChecker", "LakeraGuardChecker"]
