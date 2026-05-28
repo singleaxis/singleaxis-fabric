@@ -58,6 +58,15 @@ nemoSidecar:
 #   rails:
 #     bundlePath: /etc/fabric/rails
 
+presidioSidecar:
+  enabled: false      # opt-in: requires a real tenant HMAC key at install.
+                      # Create the Secret, then set
+                      # presidio-sidecar.tenantKey.existingSecret
+# presidio-sidecar:
+#   tenantKey:
+#     existingSecret: fabric-presidio-tenant-key
+#   redactionMode: hmac
+
 langfuse:
   enabled: false      # default L3 sink; opt-in because it needs Postgres
 # langfuse:

@@ -48,6 +48,13 @@ dependencies:
     tags:
       - guardrails
 
+  - name: presidio-sidecar
+    version: 0.2.0
+    condition: presidioSidecar.enabled
+    repository: ""
+    tags:
+      - guardrails
+
   - name: langfuse
     version: 0.2.0
     condition: langfuse.enabled

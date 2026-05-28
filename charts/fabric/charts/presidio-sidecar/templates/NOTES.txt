@@ -1,0 +1,25 @@
+Presidio PII redaction sidecar is installed as a shared Deployment.
+
+Service: {{ include "presidio-sidecar.fullname" . }}:{{ .Values.service.port }}
+Routes:
+  GET  /healthz
+  POST /v1/redact      — redact PII from a payload (mode: {{ .Values.redactionMode }})
+
+Tenant key: mounted from Secret "{{ .Values.tenantKey.existingSecret }}" at
+/etc/fabric/tenant/{{ .Values.tenantKey.secretKey }} and passed via --tenant-key-file.
+
+{{- if .Values.allowPassthrough }}
+
+WARNING: allowPassthrough is true. If the [presidio] extra is not
+installed in the image, the sidecar starts with the PassthroughAnalyzer
+and redacts NOTHING. This is dev/smoke only — never set in production.
+{{- end }}
+
+NOTE: Phase 1 ships this as a shared TCP Deployment for smoke tests
+and dev clusters. Production deployments should inject this container
+as a per-agent-pod sidecar over a Unix domain socket for <5ms
+redaction — the injection webhook lands in Phase 2.
+
+Smoke test:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "presidio-sidecar.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl -s http://127.0.0.1:{{ .Values.service.port }}/healthz
