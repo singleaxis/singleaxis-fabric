@@ -201,6 +201,7 @@ jobs:
           # Layer 1 (public)
           - components/presidio-sidecar
           - components/nemo-sidecar
+          - components/prompt-guard-sidecar
           - components/langfuse-bootstrap
           - components/redteam-runner
           - components/update-agent
@@ -235,6 +236,7 @@ jobs:
           # Layer 1 (public)
           - components/presidio-sidecar
           - components/nemo-sidecar
+          - components/prompt-guard-sidecar
           - components/langfuse-bootstrap
           - components/redteam-runner
           - components/update-agent
@@ -247,6 +249,8 @@ jobs:
           - package: components/presidio-sidecar
             python-version: "3.11"
           - package: components/nemo-sidecar
+            python-version: "3.11"
+          - package: components/prompt-guard-sidecar
             python-version: "3.11"
           - package: components/langfuse-bootstrap
             python-version: "3.11"
@@ -264,6 +268,8 @@ jobs:
           - package: components/presidio-sidecar
             threshold: 80
           - package: components/nemo-sidecar
+            threshold: 80
+          - package: components/prompt-guard-sidecar
             threshold: 80
           - package: components/langfuse-bootstrap
             threshold: 80
@@ -373,6 +379,7 @@ jobs:
         component:
           - presidio-sidecar
           - nemo-sidecar
+          - prompt-guard-sidecar
           - redteam-runner
           - update-agent
           - langfuse-bootstrap

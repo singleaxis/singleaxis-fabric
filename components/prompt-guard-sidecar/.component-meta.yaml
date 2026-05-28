@@ -1,0 +1,9 @@
+name: prompt-guard-sidecar
+language: python
+owner: fabric-guardrails
+primary_spec: specs/005-guardrails-inline.md
+exports:
+  - package: fabric_prompt_guard_sidecar
+    kind: python
+    path: components/prompt-guard-sidecar/src/fabric_prompt_guard_sidecar
+stability: pre-alpha
