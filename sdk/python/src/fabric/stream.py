@@ -43,10 +43,24 @@ NEVER sliced by a raw offset — doing so would corrupt redactions.
 from __future__ import annotations
 
 from types import TracebackType
-from typing import TYPE_CHECKING
+from typing import Protocol
 
-if TYPE_CHECKING:
-    from .decision import Decision
+from .guardrails import GuardrailPhase
+
+
+class _GuardrailRunner(Protocol):
+    """The slice of :class:`~fabric.decision.Decision` that a
+    ``StreamRedactor`` depends on: run the configured guardrail chain
+    for one phase and return the redacted text.
+
+    Typed as a Protocol (rather than importing ``Decision``) so this
+    low-level module carries no import edge back to ``decision`` —
+    ``Decision`` satisfies it structurally.
+    """
+
+    def _run_chain(self, *, phase: GuardrailPhase, path: str, value: str) -> str:
+        """Run the guardrail chain and return the redacted text."""
+
 
 # Default tail window in characters. Sized to comfortably exceed the
 # longest single PII entity Presidio/NeMo are expected to emit (long
@@ -67,7 +81,9 @@ class StreamRedactor:
     single-turn, single-task contract as its parent ``Decision``.
     """
 
-    def __init__(self, decision: Decision, *, tail_window: int = DEFAULT_TAIL_WINDOW) -> None:
+    def __init__(
+        self, decision: _GuardrailRunner, *, tail_window: int = DEFAULT_TAIL_WINDOW
+    ) -> None:
         if tail_window <= 0:
             raise ValueError(f"tail_window must be > 0, got {tail_window}")
         self._decision = decision
