@@ -103,6 +103,13 @@ ragas = [
 cedar = [
   "cedarpy>=0.4",
 ]
+# Optional MCP (Model Context Protocol) tool-call instrumentation. The
+# `fabric.integrations.mcp` module duck-types the client session via a
+# local Protocol, so it imports without this extra; the extra only
+# pulls the real `mcp` package in for users wiring it to a live server.
+mcp = [
+  "mcp>=1.0",
+]
 nats = [
   "nats-py>=2.6",
 ]
