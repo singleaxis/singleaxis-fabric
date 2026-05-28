@@ -12,6 +12,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import StatusCode
 
 from fabric import (
+    SCHEMA_VERSION,
     Fabric,
     FabricConfig,
     GuardrailBlocked,
@@ -25,6 +26,7 @@ from fabric.decision import (
     ATTR_BLOCKED,
     ATTR_PROFILE,
     ATTR_REQUEST,
+    ATTR_SCHEMA_VERSION,
     ATTR_SESSION,
     ATTR_TENANT,
     ATTR_USER,
@@ -159,6 +161,35 @@ def test_span_access_before_enter_raises() -> None:
     dec = client.decision(session_id="s", request_id="r")
     with pytest.raises(RuntimeError, match="has not been entered"):
         _ = dec.span
+
+
+def test_schema_version_stamped_on_decision_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Every decision span carries fabric.schema_version."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with fabric.decision(session_id="s", request_id="r"):
+        pass
+    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    assert attrs[ATTR_SCHEMA_VERSION] == SCHEMA_VERSION
+
+
+def test_schema_version_stamped_on_event_types(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """At least two distinct event types carry fabric.schema_version."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with fabric.decision(session_id="s", request_id="r") as dec:
+        dec.remember(kind=MemoryKind.EPISODIC, key="k", content="v")
+        dec.record_side_effect("api_mutation", target_system="salesforce", operation="case.update")
+        dec.checkpoint("after-retrieval")
+    span = span_exporter.get_finished_spans()[0]
+    stamped = {
+        ev.name
+        for ev in span.events
+        if dict(ev.attributes or {}).get("fabric.schema_version") == SCHEMA_VERSION
+    }
+    assert {"fabric.memory", "fabric.side_effect", "fabric.checkpoint"} <= stamped
 
 
 def test_recall_emits_memory_event_with_direction_read(

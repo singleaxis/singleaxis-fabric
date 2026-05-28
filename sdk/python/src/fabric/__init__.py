@@ -12,7 +12,7 @@ from ._calls import LLMCall, ToolCall
 from ._version import __version__
 from .checkpoint import CheckpointEvent
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
-from .decision import Decision
+from .decision import SCHEMA_VERSION, Decision
 from .escalation import EscalationMode, EscalationRequested, EscalationSummary
 from .eval import EvalRecord
 from .guardrails import (
@@ -58,6 +58,7 @@ from .tracing import get_tracer, install_default_provider
 
 __all__ = [
     "DEFAULT_PROFILE",
+    "SCHEMA_VERSION",
     "CheckpointEvent",
     "Decision",
     "EngineVerdict",
