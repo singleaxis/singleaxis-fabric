@@ -4,16 +4,25 @@ name: E2E kind smoke
 # chart under the permissive-dev profile, and assert the subset of the
 # stack whose images can actually be built from this repo runs Ready.
 #
-# Scope for Phase 1a:
-#   - Only the otel-collector path is exercised end-to-end. Its image
-#     is built here from components/otel-collector-fabric and loaded
-#     into the kind cluster, since the first release (v0.1.0-rc.1)
-#     has not yet published images to ghcr.io.
-#   - nemo-sidecar, presidio-sidecar, update-agent, redteam-runner,
-#     langfuse are deliberately disabled via --set *.enabled=false.
-#     Their images do not yet exist at ghcr.io; once they ship in
-#     v0.1.0-rc.1+, expand this workflow to build + kind-load those
-#     too and add per-component readiness + /healthz checks.
+# Scope:
+#   - The otel-collector path plus both guardrail sidecars (nemo-sidecar
+#     and presidio-sidecar) are exercised end-to-end. All three images
+#     are built here from components/* and kind-loaded into the cluster.
+#     We do NOT pull from ghcr.io — sidecar images publish there only on
+#     a release tag, so building locally keeps E2E independent of
+#     releases (the standard kind pattern, mirroring the collector).
+#   - The presidio sidecar runs with --allow-passthrough (set via
+#     presidio-sidecar.allowPassthrough=true) so it starts without the
+#     heavy [presidio] spaCy model. This smoke only asserts the sidecar
+#     starts and serves /healthz; redaction correctness is covered by
+#     the unit tests, not E2E.
+#   - The presidio chart refuses to render without a tenant HMAC key, so
+#     we pre-create the fabric-presidio-tenant-key Secret before install.
+#   - update-agent, redteam-runner, langfuse stay disabled — they need
+#     real signing keys / Postgres / a live target and are out of scope
+#     for a smoke run.
+#   - Each guardrail sidecar is asserted on /healthz over a port-forward,
+#     mirroring the collector's healthcheck assertion.
 #
 # Runtime budget: ~10-15 min. This is why it lives outside ci.yml and
 # only runs on chart/component changes — doc-only PRs skip it.
@@ -63,6 +72,8 @@ jobs:
       KIND_CLUSTER: fabric-e2e
       NAMESPACE: fabric-system
       COLLECTOR_IMAGE: fabric-otelcol:e2e
+      PRESIDIO_IMAGE: fabric-presidio-sidecar:e2e
+      NEMO_IMAGE: fabric-nemo-sidecar:e2e
     steps:
       - name: Short-circuit if no relevant changes
         if: needs.detect.outputs.relevant != 'true'
@@ -92,6 +103,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build presidio-sidecar image (no push, load locally)
+        if: needs.detect.outputs.relevant == 'true'
+        # Same pattern as the collector: build locally + kind-load so
+        # E2E never depends on a ghcr.io release. The [presidio] spaCy
+        # model is baked into the image, but the sidecar runs with
+        # --allow-passthrough in this smoke (see helm install below).
+        uses: docker/build-push-action@v7
+        with:
+          context: components/presidio-sidecar
+          file: components/presidio-sidecar/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.PRESIDIO_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build nemo-sidecar image (no push, load locally)
+        if: needs.detect.outputs.relevant == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: components/nemo-sidecar
+          file: components/nemo-sidecar/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.NEMO_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Create kind cluster
         if: needs.detect.outputs.relevant == 'true'
         # helm/kind-action pins kind v0.23.0 by default; we pin the
@@ -109,32 +148,64 @@ jobs:
         run: |
           kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
 
+      - name: Load sidecar images into kind
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          kind load docker-image "${PRESIDIO_IMAGE}" --name "${KIND_CLUSTER}"
+          kind load docker-image "${NEMO_IMAGE}" --name "${KIND_CLUSTER}"
+
       - name: Set up Helm
         if: needs.detect.outputs.relevant == 'true'
         uses: azure/setup-helm@v4
         with:
           version: v3.15.0
 
-      - name: Install umbrella chart (permissive-dev, collector-only)
+      - name: Pre-create namespace + presidio tenant-key secret
         if: needs.detect.outputs.relevant == 'true'
-        # permissive-dev enables collector+nemo by default; we force
-        # every subchart except otel-collector off because their
-        # images have not been published yet. hmacKey is inline for
+        # The presidio chart refuses to render without a tenant HMAC
+        # key (tenantKey.existingSecret), so the Secret must exist
+        # before `helm install`. We create the namespace here too (so
+        # the Secret has somewhere to live) and therefore drop helm's
+        # `--create-namespace` flag below — the `--dry-run|apply` form
+        # is idempotent, and `--set namespace.create=false` keeps the
+        # chart from also emitting its own Namespace manifest.
+        run: |
+          kubectl create namespace "${NAMESPACE}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic fabric-presidio-tenant-key \
+            --namespace "${NAMESPACE}" \
+            --from-literal=tenant.key="$(openssl rand -base64 32)"
+
+      - name: Install umbrella chart (permissive-dev, collector + sidecars)
+        if: needs.detect.outputs.relevant == 'true'
+        # permissive-dev enables collector + nemo by default; we also
+        # enable presidio and point all three images at the locally-built
+        # :e2e tags (kind-loaded above). Subchart value overrides are
+        # keyed by the dependency name from Chart.yaml — `nemo-sidecar`,
+        # `presidio-sidecar`, `otel-collector` — NOT the camelCase
+        # `*.enabled` condition keys. Using the wrong key silently
+        # no-ops (the tenantKey override in particular fails the render
+        # guard), so these MUST stay dependency-name-keyed.
+        #
+        # presidio-sidecar.allowPassthrough=true runs the sidecar with
+        # --allow-passthrough so it starts without the heavy [presidio]
+        # spaCy model — this smoke only asserts startup + /healthz.
+        #
+        # langfuse/redteam/updateAgent stay off. hmacKey is inline for
         # this throwaway test cluster — never do this in prod.
         #
         # `--set namespace.create=false`: permissive-dev.yaml flips
-        # chart-owned namespace creation on (so operators can label the
-        # ns via the chart). For e2e we let helm's `--create-namespace`
-        # flag handle it instead — otherwise helm creates fabric-system
-        # pre-install to store the release secret, and then the chart's
-        # own Namespace manifest collides with "already exists".
+        # chart-owned namespace creation on. We pre-create the namespace
+        # in the previous step (needed for the tenant-key Secret), so we
+        # drop helm's `--create-namespace` and keep namespace.create=false
+        # to avoid the chart's own Namespace manifest colliding.
         run: |
           helm install ci charts/fabric \
-            --create-namespace \
             --namespace "${NAMESPACE}" \
             --values charts/fabric/profiles/permissive-dev.yaml \
             --set namespace.create=false \
-            --set nemoSidecar.enabled=false \
+            --set nemoSidecar.enabled=true \
+            --set presidioSidecar.enabled=true \
             --set langfuse.enabled=false \
             --set redteamRunner.enabled=false \
             --set updateAgent.enabled=false \
@@ -142,6 +213,14 @@ jobs:
             --set otel-collector.image.tag=e2e \
             --set otel-collector.image.pullPolicy=IfNotPresent \
             --set otel-collector.fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
+            --set nemo-sidecar.image.repository=fabric-nemo-sidecar \
+            --set nemo-sidecar.image.tag=e2e \
+            --set nemo-sidecar.image.pullPolicy=IfNotPresent \
+            --set presidio-sidecar.image.repository=fabric-presidio-sidecar \
+            --set presidio-sidecar.image.tag=e2e \
+            --set presidio-sidecar.image.pullPolicy=IfNotPresent \
+            --set presidio-sidecar.tenantKey.existingSecret=fabric-presidio-tenant-key \
+            --set presidio-sidecar.allowPassthrough=true \
             --wait \
             --timeout 5m
 
@@ -185,6 +264,58 @@ jobs:
           echo "collector healthcheck did not respond on :13133" >&2
           exit 1
 
+      - name: Assert presidio-sidecar /healthz responds
+        if: needs.detect.outputs.relevant == 'true'
+        # Same port-forward pattern as the collector: find the pod by
+        # its chart label, forward the service port (8080), and poll
+        # /healthz. Running with --allow-passthrough, so a 200 just
+        # confirms the sidecar process started and serves the endpoint.
+        run: |
+          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=presidio-sidecar \
+            -o jsonpath='{.items[0].metadata.name}')
+          echo "Presidio pod: ${POD}"
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            "pod/${POD}" 18080:8080 &
+          PF_PID=$!
+          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
+          attempts=0
+          while [ "${attempts}" -lt 10 ]; do
+            if curl --silent --show-error --fail --max-time 2 \
+                http://127.0.0.1:18080/healthz; then
+              echo "presidio /healthz OK"
+              exit 0
+            fi
+            attempts=$((attempts + 1))
+            sleep 1
+          done
+          echo "presidio /healthz did not respond on :8080" >&2
+          exit 1
+
+      - name: Assert nemo-sidecar /healthz responds
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=nemo-sidecar \
+            -o jsonpath='{.items[0].metadata.name}')
+          echo "NeMo pod: ${POD}"
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            "pod/${POD}" 18081:8080 &
+          PF_PID=$!
+          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
+          attempts=0
+          while [ "${attempts}" -lt 10 ]; do
+            if curl --silent --show-error --fail --max-time 2 \
+                http://127.0.0.1:18081/healthz; then
+              echo "nemo /healthz OK"
+              exit 0
+            fi
+            attempts=$((attempts + 1))
+            sleep 1
+          done
+          echo "nemo /healthz did not respond on :8080" >&2
+          exit 1
+
       - name: helm test (chart-provided test-connection Pod)
         if: needs.detect.outputs.relevant == 'true'
         run: |
@@ -203,6 +334,20 @@ jobs:
         run: |
           kubectl logs --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector \
+            --tail=200 --all-containers=true || true
+
+      - name: Presidio sidecar logs (on failure)
+        if: failure() && needs.detect.outputs.relevant == 'true'
+        run: |
+          kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=presidio-sidecar \
+            --tail=200 --all-containers=true || true
+
+      - name: NeMo sidecar logs (on failure)
+        if: failure() && needs.detect.outputs.relevant == 'true'
+        run: |
+          kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=nemo-sidecar \
             --tail=200 --all-containers=true || true
 
       - name: Events (on failure)
