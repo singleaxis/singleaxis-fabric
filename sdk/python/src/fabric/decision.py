@@ -70,6 +70,14 @@ if TYPE_CHECKING:
 
 SPAN_NAME = "fabric.decision"
 
+# Schema version stamped on the decision span and every emitted span
+# event. Downstream consumers (Telemetry Bridge, replay engine, audit
+# exporters) read this to negotiate the event-attribute contract across
+# SDK releases. Bump on any breaking change to the emitted attribute
+# shape; additive changes keep the same major.minor.
+SCHEMA_VERSION = "1.0"
+ATTR_SCHEMA_VERSION = "fabric.schema_version"
+
 ATTR_TENANT = "fabric.tenant_id"
 ATTR_AGENT = "fabric.agent_id"
 ATTR_PROFILE = "fabric.profile"
@@ -156,6 +164,7 @@ class Decision(AbstractContextManager["Decision"]):
             set_status_on_exception=False,
         )
         self._span = self._cm.__enter__()
+        self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
@@ -288,6 +297,7 @@ class Decision(AbstractContextManager["Decision"]):
         """Emit the guardrail event as a span event per spec 005."""
         span = self.span
         attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.guardrail.phase": phase,
             "fabric.guardrail.latency_ms": result.latency_ms,
             "fabric.guardrail.blocked": result.blocked,
@@ -367,6 +377,7 @@ class Decision(AbstractContextManager["Decision"]):
             span.set_attribute(ATTR_ESC_SCORE, summary.triggering_score)
 
         event_attrs: dict[str, str | int | float | bool] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.escalation.reason": summary.reason,
             "fabric.escalation.mode": summary.mode,
         }
@@ -423,6 +434,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_RETRIEVAL_SOURCES, tuple(unique_sources))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.retrieval.source": record.source.value,
             "fabric.retrieval.query_hash": record.query_hash,
             "fabric.retrieval.result_count": record.result_count,
@@ -479,6 +491,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.memory.direction": record.direction,
             "fabric.memory.kind": record.kind.value,
             "fabric.memory.content_hash": record.content_hash,
@@ -532,6 +545,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.memory.direction": record.direction,
             "fabric.memory.kind": record.kind.value,
             "fabric.memory.content_hash": record.content_hash,
@@ -559,6 +573,7 @@ class Decision(AbstractContextManager["Decision"]):
         committed: bool = True,
         rollback_supported: bool = False,
         replay_behavior: ReplayBehavior | str = ReplayBehavior.SUPPRESS,
+        parent_tool_call_id: str | None = None,
     ) -> SideEffectRecord:
         """Record an external mutation caused by this decision.
 
@@ -588,6 +603,7 @@ class Decision(AbstractContextManager["Decision"]):
                 committed=committed,
                 rollback_supported=rollback_supported,
                 replay_behavior=replay_behavior,
+                parent_tool_call_id=parent_tool_call_id,
             )
         else:
             record = SideEffectRecord(
@@ -601,6 +617,7 @@ class Decision(AbstractContextManager["Decision"]):
                 committed=committed,
                 rollback_supported=rollback_supported,
                 replay_behavior=ReplayBehavior(replay_behavior),
+                parent_tool_call_id=parent_tool_call_id,
             )
 
         span = self.span
@@ -612,6 +629,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_SIDE_EFFECT_SYSTEMS, tuple(unique_systems))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.side_effect.type": record.effect_type.value,
             "fabric.side_effect.target_system": record.target_system,
             "fabric.side_effect.operation": record.operation,
@@ -626,6 +644,8 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs["fabric.side_effect.result_hash"] = record.result_hash
         if record.idempotency_key is not None:
             event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
+        if record.parent_tool_call_id is not None:
+            event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
         span.add_event("fabric.side_effect", attributes=event_attrs)
         return record
 
@@ -666,6 +686,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_CHECKPOINT_COUNT, len(self._checkpoints))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.checkpoint.checkpoint_id": str(event.checkpoint_id),
             "fabric.checkpoint.step_name": event.step_name,
         }
@@ -729,6 +750,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_EVAL_RUBRICS, tuple(unique_rubrics))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.eval.eval_id": str(record.eval_id),
             "fabric.eval.rubric_id": record.rubric_id,
             "fabric.eval.score": record.score,
@@ -802,6 +824,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_JUDGE_RUBRICS, tuple(unique_rubrics))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.judge.request_id": str(request.request_id),
             "fabric.judge.rubric_id": request.rubric_id,
             "fabric.judge.dimensions": dim_tuple,
@@ -833,7 +856,9 @@ class Decision(AbstractContextManager["Decision"]):
                 retrieval_docs.extend(r.source_document_ids)
 
         memory_reads = tuple(
-            m.key for m in self._memory_writes if getattr(m, "direction", "write") == "read"
+            m.key
+            for m in self._memory_writes
+            if getattr(m, "direction", "write") == "read" and m.key is not None
         )
         return JudgeContext(
             retrieval_docs=tuple(retrieval_docs),
@@ -929,6 +954,7 @@ class Decision(AbstractContextManager["Decision"]):
         span.set_attribute(ATTR_POLICY_ENGINES, tuple(unique_engines))
 
         event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
             "fabric.policy.evaluation_id": str(evaluation.evaluation_id),
             "fabric.policy.engine": evaluation.engine,
             "fabric.policy.policy_id": evaluation.policy_id,

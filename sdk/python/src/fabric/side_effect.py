@@ -78,6 +78,13 @@ class SideEffectRecord(BaseModel):
     committed: bool = True
     rollback_supported: bool = False
     replay_behavior: ReplayBehavior = ReplayBehavior.SUPPRESS
+    parent_tool_call_id: str | None = Field(default=None, max_length=256)
+    """Optional id of the tool call that produced this side effect.
+
+    Lets downstream consumers attribute a mutation to the specific
+    ``fabric.tool_call`` span that triggered it. Default ``None``
+    preserves the prior wire shape for callers that don't track it.
+    """
 
     @classmethod
     def from_payloads(
@@ -93,6 +100,7 @@ class SideEffectRecord(BaseModel):
         committed: bool = True,
         rollback_supported: bool = False,
         replay_behavior: ReplayBehavior | str = ReplayBehavior.SUPPRESS,
+        parent_tool_call_id: str | None = None,
     ) -> SideEffectRecord:
         """Build a record while hashing raw payloads locally."""
 
@@ -107,4 +115,5 @@ class SideEffectRecord(BaseModel):
             committed=committed,
             rollback_supported=rollback_supported,
             replay_behavior=ReplayBehavior(replay_behavior),
+            parent_tool_call_id=parent_tool_call_id,
         )

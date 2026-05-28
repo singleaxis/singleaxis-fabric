@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from ._uds import UDSHTTPConnection
 
@@ -70,13 +70,25 @@ class UDSPresidioClient:
     that agent startup is not blocked on the sidecar being up yet.
     """
 
-    def __init__(self, socket_path: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        socket_path: str,
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        redaction_mode: Literal["hmac", "tag"] = "hmac",
+    ) -> None:
         if not socket_path:
             raise ValueError("socket_path must not be empty")
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self._socket_path = socket_path
         self._timeout = timeout
+        # Informational only. The sidecar's redaction mode is a
+        # SERVER-side startup flag (--redaction-mode, PR #90), not a
+        # per-request option — so we do NOT send it in the request
+        # body. We store it so hosts can introspect the mode the client
+        # expects; it must match the sidecar's configured flag.
+        self.redaction_mode = redaction_mode
 
     def redact(self, path: str, value: str) -> RedactionResult:
         payload = json.dumps({"path": path, "value": value}).encode("utf-8")

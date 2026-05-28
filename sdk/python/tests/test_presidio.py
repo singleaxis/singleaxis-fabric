@@ -104,3 +104,27 @@ def test_close_is_a_noop_and_safe() -> None:
     client = UDSPresidioClient("/tmp/anything")
     client.close()
     client.close()  # idempotent
+
+
+def test_redaction_mode_defaults_to_hmac() -> None:
+    client = UDSPresidioClient("/tmp/anything")
+    assert client.redaction_mode == "hmac"
+
+
+def test_redaction_mode_is_stored_but_not_sent_in_request_body() -> None:
+    """The sidecar's redaction mode is a server-side startup flag, so the
+    client must NOT send it per request — it is informational only."""
+
+    seen: dict[str, object] = {}
+
+    def handler(payload: dict[str, str]) -> tuple[int, dict[str, object]]:
+        seen.update(payload)
+        return 200, {"value": "x", "hashed": False, "pii_category": ""}
+
+    with _sidecar(handler) as sock:
+        client = UDSPresidioClient(sock, redaction_mode="tag")
+        client.redact("input", "x")
+
+    assert client.redaction_mode == "tag"
+    assert "redaction_mode" not in seen
+    assert set(seen) == {"path", "value"}

@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from ._chain import GuardrailChain
 from ._id_validators import warn_if_pii_shaped
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from opentelemetry.trace import Tracer
 
     from .decision import Decision
+    from .guardrails import GuardrailChecker
     from .nemo import NemoClient
     from .presidio import PresidioClient
 
@@ -53,6 +54,16 @@ class FabricConfig:
     profile: str = DEFAULT_PROFILE
     workflow_id: str | None = None
     execution_id: str | None = None
+    redaction_mode: Literal["hmac", "tag"] = "hmac"
+    """The Presidio redaction mode this client expects.
+
+    The Presidio sidecar selects its mode via the server-side
+    ``--redaction-mode {hmac,tag}`` startup flag (PR #90); it is *not*
+    negotiated per request. This config value is informational — it
+    must match the sidecar's flag — and is threaded onto the
+    :class:`~fabric.presidio.UDSPresidioClient` so hosts can introspect
+    the expected mode.
+    """
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -94,6 +105,7 @@ class Fabric:
         tracer: Tracer | None = None,
         presidio: PresidioClient | None = None,
         nemo: NemoClient | None = None,
+        guardrail_checkers: list[GuardrailChecker] | None = None,
     ) -> None:
         self._config = config
         self._tracer = tracer or get_tracer()
@@ -112,13 +124,17 @@ class Fabric:
         env_nemo_set = bool(source.get(ENV_NEMO_SOCKET))
         wired_from_env = False
         if presidio is None and env_presidio_set:
-            presidio = _presidio_from_env(source)
+            presidio = _presidio_from_env(source, redaction_mode=config.redaction_mode)
             wired_from_env = True
         if nemo is None and env_nemo_set:
             nemo = _nemo_from_env(source)
             wired_from_env = True
 
-        self._chain = GuardrailChain(presidio=presidio, nemo=nemo)
+        self._chain = GuardrailChain(
+            presidio=presidio,
+            nemo=nemo,
+            extra_checkers=guardrail_checkers,
+        )
 
         if (
             wired_from_env
@@ -157,13 +173,10 @@ class Fabric:
         except KeyError as err:
             raise ValueError(f"{ENV_AGENT} is not set") from err
         profile = source.get(ENV_PROFILE, DEFAULT_PROFILE)
-        presidio = _presidio_from_env(source)
+        config = FabricConfig(tenant_id=tenant, agent_id=agent, profile=profile)
+        presidio = _presidio_from_env(source, redaction_mode=config.redaction_mode)
         nemo = _nemo_from_env(source)
-        return cls(
-            FabricConfig(tenant_id=tenant, agent_id=agent, profile=profile),
-            presidio=presidio,
-            nemo=nemo,
-        )
+        return cls(config, presidio=presidio, nemo=nemo)
 
     @property
     def config(self) -> FabricConfig:
@@ -250,12 +263,18 @@ class Fabric:
         return _enable_auto_instrumentation(only=only, capture_content=capture_content)
 
 
-def _presidio_from_env(source: dict[str, str]) -> PresidioClient | None:
+def _presidio_from_env(
+    source: dict[str, str],
+    *,
+    redaction_mode: Literal["hmac", "tag"] = "hmac",
+) -> PresidioClient | None:
     """Construct a :class:`PresidioClient` from environment vars, or
     ``None`` if the Presidio rail is not configured.
 
     Enabled by ``FABRIC_PRESIDIO_UNIX_SOCKET``. Optional timeout via
-    ``FABRIC_PRESIDIO_TIMEOUT_SECONDS`` (default 0.5 s).
+    ``FABRIC_PRESIDIO_TIMEOUT_SECONDS`` (default 0.5 s). ``redaction_mode``
+    is threaded onto the client for introspection; it must match the
+    sidecar's server-side ``--redaction-mode`` flag.
     """
     socket_path = source.get(ENV_PRESIDIO_SOCKET)
     if not socket_path:
@@ -268,8 +287,8 @@ def _presidio_from_env(source: dict[str, str]) -> PresidioClient | None:
             timeout = float(timeout_raw)
         except ValueError as err:
             raise ValueError(f"{ENV_PRESIDIO_TIMEOUT} must be a float: {timeout_raw!r}") from err
-        return UDSPresidioClient(socket_path, timeout=timeout)
-    return UDSPresidioClient(socket_path)
+        return UDSPresidioClient(socket_path, timeout=timeout, redaction_mode=redaction_mode)
+    return UDSPresidioClient(socket_path, redaction_mode=redaction_mode)
 
 
 def _nemo_from_env(source: dict[str, str]) -> NemoClient | None:

@@ -12,7 +12,8 @@ would be a compliance footgun.
 
 from __future__ import annotations
 
-from typing import Literal
+from dataclasses import dataclass
+from typing import Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -80,3 +81,30 @@ class GuardrailNotConfiguredError(GuardrailError):
     The SDK fails loud rather than silently passing input through, so
     an agent misconfiguration cannot leak raw PII to the LLM.
     """
+
+
+@runtime_checkable
+class GuardrailChecker(Protocol):
+    """A pluggable guardrail tier. Runs after Presidio + NeMo in the
+    chain. Implementations: Lakera, generic HTTP, custom classifiers.
+
+    Returns a CheckerVerdict; the chain normalizes it into the
+    GuardrailResult. Raise to fail-closed (the chain converts an
+    exception to a block).
+    """
+
+    name: str
+
+    def check(self, phase: str, path: str, value: str) -> CheckerVerdict: ...
+
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class CheckerVerdict:
+    """Engine-native verdict from a GuardrailChecker, normalized by the chain."""
+
+    action: GuardrailAction  # allow/redact/warn/block/escalate
+    modified_value: str | None = None
+    reason: str | None = None
+    rail: str | None = None

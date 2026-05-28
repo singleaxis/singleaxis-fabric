@@ -180,6 +180,54 @@ def test_record_side_effect_returns_and_stores_record() -> None:
         assert r2.target_system == "stripe"
 
 
+def test_parent_tool_call_id_flows_onto_event_when_set(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        record = dec.record_side_effect(
+            "api_mutation",
+            target_system="salesforce",
+            operation="case.update",
+            parent_tool_call_id="call-abc-123",
+        )
+    assert record.parent_tool_call_id == "call-abc-123"
+    event = next(
+        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.side_effect"
+    )
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.side_effect.parent_tool_call_id"] == "call-abc-123"
+
+
+def test_parent_tool_call_id_absent_from_event_when_not_set(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        record = dec.record_side_effect(
+            "api_mutation",
+            target_system="salesforce",
+            operation="case.update",
+        )
+    assert record.parent_tool_call_id is None
+    event = next(
+        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.side_effect"
+    )
+    attrs = dict(event.attributes or {})
+    assert "fabric.side_effect.parent_tool_call_id" not in attrs
+
+
+def test_parent_tool_call_id_flows_through_payload_path() -> None:
+    record = SideEffectRecord.from_payloads(
+        effect_type="api_mutation",
+        target_system="salesforce",
+        operation="case.update",
+        request_payload='{"status":"closed"}',
+        parent_tool_call_id="call-xyz",
+    )
+    assert record.parent_tool_call_id == "call-xyz"
+
+
 def test_record_side_effect_never_exposes_raw_payload_on_span(
     span_exporter: InMemorySpanExporter,
 ) -> None:
