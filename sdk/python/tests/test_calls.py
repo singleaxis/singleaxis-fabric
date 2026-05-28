@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
@@ -17,9 +19,14 @@ from fabric._calls import (
     FABRIC_LLM_SYSTEM,
     FABRIC_LLM_USAGE_INPUT_TOKENS,
     FABRIC_LLM_USAGE_OUTPUT_TOKENS,
+    FABRIC_TOOL_ARGS_HASH,
     FABRIC_TOOL_CALL_ID,
+    FABRIC_TOOL_ERROR,
+    FABRIC_TOOL_ERROR_CATEGORY,
+    FABRIC_TOOL_KIND,
     FABRIC_TOOL_NAME,
     FABRIC_TOOL_RESULT_COUNT,
+    FABRIC_TOOL_RESULT_HASH,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_REQUEST_TEMPERATURE,
     GEN_AI_RESPONSE_FINISH_REASONS,
@@ -416,6 +423,128 @@ def test_tool_call_double_exit_raises() -> None:
             pass
         with pytest.raises(RuntimeError, match="before __enter__"):
             tool.__exit__(None, None, None)
+
+
+def test_tool_call_set_arguments_hashes_payload(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    raw = '{"city": "VERY_SECRET_VALUE_42"}'
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("get_weather") as tool,
+    ):
+        tool.set_arguments(raw)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    expected = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    assert attrs[FABRIC_TOOL_ARGS_HASH] == expected
+    # the raw payload never appears on the span
+    serialized = repr(span.attributes) + repr([e.attributes for e in span.events])
+    assert "VERY_SECRET_VALUE_42" not in serialized
+
+
+def test_tool_call_set_result_hashes_payload(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    raw = "RESULT_SECRET_99"
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("get_weather") as tool,
+    ):
+        tool.set_result(raw)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    expected = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    assert attrs[FABRIC_TOOL_RESULT_HASH] == expected
+    serialized = repr(span.attributes) + repr([e.attributes for e in span.events])
+    assert "RESULT_SECRET_99" not in serialized
+
+
+def test_tool_call_set_kind_stamps_attribute(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+    ):
+        tool.set_kind("retrieval")
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_TOOL_KIND] == "retrieval"
+
+
+def test_tool_call_record_error_stamps_attributes(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("charge_card") as tool,
+    ):
+        tool.record_error("payment_declined")
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_TOOL_ERROR] is True
+    assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "payment_declined"
+
+
+def test_tool_call_set_arguments_rejects_non_str() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(TypeError, match="payload must be str"),
+    ):
+        tool.set_arguments({"k": "v"})  # type: ignore[arg-type]
+
+
+def test_tool_call_set_result_rejects_non_str() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(TypeError, match="payload must be str"),
+    ):
+        tool.set_result(123)  # type: ignore[arg-type]
+
+
+def test_tool_call_set_kind_rejects_non_str() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(TypeError, match="kind must be str"),
+    ):
+        tool.set_kind(7)  # type: ignore[arg-type]
+
+
+def test_tool_call_set_kind_rejects_empty() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(ValueError, match="must be non-empty"),
+    ):
+        tool.set_kind("")
+
+
+def test_tool_call_record_error_rejects_non_str() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(TypeError, match="category must be str"),
+    ):
+        tool.record_error(0)  # type: ignore[arg-type]
+
+
+def test_tool_call_record_error_rejects_empty() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(ValueError, match="must be non-empty"),
+    ):
+        tool.record_error("")
 
 
 def test_llm_call_and_tool_call_are_exported_at_top_level() -> None:

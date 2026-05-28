@@ -83,6 +83,12 @@ from .queue_transports import (
 )
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
+from .tool_auth import (
+    ToolAuthorization,
+    ToolAuthorizer,
+    ToolAuthorizerError,
+    ToolCallDenied,
+)
 from .tracing import get_tracer, install_default_provider
 
 __all__ = [
@@ -147,7 +153,11 @@ __all__ = [
     "SideEffectRecord",
     "SideEffectType",
     "SimpleLLMJudge",
+    "ToolAuthorization",
+    "ToolAuthorizer",
+    "ToolAuthorizerError",
     "ToolCall",
+    "ToolCallDenied",
     "ToolCallSnapshot",
     "UDSNemoClient",
     "UDSPresidioClient",
