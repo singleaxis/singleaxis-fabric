@@ -257,6 +257,82 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+  publish-sidecar-images:
+    name: Build and publish sidecar images
+    runs-on: ubuntu-latest
+    needs: verify-tag
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - presidio-sidecar
+          - nemo-sidecar
+          - redteam-runner
+          - update-agent
+          - langfuse-bootstrap
+    env:
+      REGISTRY: ghcr.io
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Derive version
+        id: vars
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/fabric-${{ matrix.component }}
+          tags: |
+            type=raw,value=${{ steps.vars.outputs.version }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+      - name: Build and push (multi-arch)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: components/${{ matrix.component }}
+          file: components/${{ matrix.component }}/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign image (keyless via Fulcio)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          # Sign every pushed tag by its immutable digest so the
+          # signature survives tag re-pointing.
+          while IFS= read -r tag; do
+            [ -z "${tag}" ] && continue
+            ref="${tag}@${DIGEST}"
+            echo "cosign sign ${ref}"
+            cosign sign --yes "${ref}"
+          done <<< "${TAGS}"
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/fabric-${{ matrix.component }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
   publish-chart:
     name: Package and publish Helm chart
     runs-on: ubuntu-latest
@@ -351,7 +427,15 @@ jobs:
   github-release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
-    needs: [changelog, source-archive, publish-image, publish-chart, publish-pypi]
+    needs:
+      [
+        changelog,
+        source-archive,
+        publish-image,
+        publish-sidecar-images,
+        publish-chart,
+        publish-pypi,
+      ]
     permissions:
       contents: write       # softprops/action-gh-release creates the release
     steps:
