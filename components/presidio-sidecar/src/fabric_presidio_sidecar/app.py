@@ -10,6 +10,7 @@ from fabric_presidio_sidecar._version import __version__
 from fabric_presidio_sidecar.redactor import (
     PassthroughAnalyzer,
     PIIAnalyzer,
+    RedactionMode,
     RedactionRequest,
     RedactionResponse,
     Redactor,
@@ -19,6 +20,7 @@ from fabric_presidio_sidecar.redactor import (
 def build_app(
     analyzer: PIIAnalyzer | None = None,
     tenant_key: bytes | None = None,
+    mode: RedactionMode = "hmac",
 ) -> FastAPI:
     """Construct the FastAPI app with the given analyzer.
 
@@ -28,6 +30,13 @@ def build_app(
     string (the ``PassthroughAnalyzer`` never invokes the HMAC path).
     Passing ``None`` or the default sentinel is rejected so no caller
     can accidentally ship deterministic, cross-deployment HMACs.
+
+    ``mode`` selects the redaction strategy. ``hmac`` (default)
+    preserves backward compatibility by returning a tenant-scoped
+    HMAC-SHA256 of the whole value. ``tag`` replaces each detected
+    PII span in-place with a category-typed placeholder like
+    ``<EMAIL_1>``, which is the recommended setting when the
+    redacted text is fed back to an LLM.
     """
 
     if tenant_key is None or not tenant_key or tenant_key == b"change-me":
@@ -36,7 +45,7 @@ def build_app(
             "to build an app with a default key so HMACs are not reversible "
             "across deployments"
         )
-    redactor = Redactor(analyzer or PassthroughAnalyzer(), tenant_key)
+    redactor = Redactor(analyzer or PassthroughAnalyzer(), tenant_key, mode=mode)
     app = FastAPI(
         title="fabric-presidio-sidecar", version=__version__, docs_url=None, redoc_url=None
     )

@@ -5,16 +5,24 @@
 from fabric_presidio_sidecar._version import __version__
 from fabric_presidio_sidecar.app import build_app
 from fabric_presidio_sidecar.redactor import (
+    AnalysisResult,
+    EntityAnalyzer,
+    EntitySpan,
     PassthroughAnalyzer,
     PIIAnalyzer,
+    RedactionMode,
     RedactionRequest,
     RedactionResponse,
     Redactor,
 )
 
 __all__ = [
+    "AnalysisResult",
+    "EntityAnalyzer",
+    "EntitySpan",
     "PIIAnalyzer",
     "PassthroughAnalyzer",
+    "RedactionMode",
     "RedactionRequest",
     "RedactionResponse",
     "Redactor",

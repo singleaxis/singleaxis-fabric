@@ -202,6 +202,80 @@ def test_cli_passthrough_logs_warning_when_extra_missing(
     assert "no pii redaction" in joined
 
 
+def test_cli_accepts_redaction_mode_tag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--redaction-mode tag is accepted at startup and forwarded to build_app."""
+
+    captured_build: dict[str, Any] = {}
+
+    real_build_app = cli_module.build_app
+
+    def _capturing_build_app(**kwargs: Any) -> Any:
+        captured_build.update(kwargs)
+        return real_build_app(**kwargs)
+
+    monkeypatch.setattr(cli_module, "build_app", _capturing_build_app)
+    monkeypatch.setattr(UVICORN_RUN, lambda **_kw: None)
+    key_file = _write_key(tmp_path)
+    rc = cli_module.main(
+        [
+            "--port",
+            "8086",
+            "--tenant-key-file",
+            str(key_file),
+            "--allow-passthrough",
+            "--redaction-mode",
+            "tag",
+        ]
+    )
+    assert rc == 0
+    assert captured_build["mode"] == "tag"
+
+
+def test_cli_redaction_mode_defaults_to_hmac(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default --redaction-mode is hmac for backward compatibility."""
+
+    captured_build: dict[str, Any] = {}
+    real_build_app = cli_module.build_app
+
+    def _capturing_build_app(**kwargs: Any) -> Any:
+        captured_build.update(kwargs)
+        return real_build_app(**kwargs)
+
+    monkeypatch.setattr(cli_module, "build_app", _capturing_build_app)
+    monkeypatch.setattr(UVICORN_RUN, lambda **_kw: None)
+    key_file = _write_key(tmp_path)
+    rc = cli_module.main(
+        [
+            "--port",
+            "8087",
+            "--tenant-key-file",
+            str(key_file),
+            "--allow-passthrough",
+        ]
+    )
+    assert rc == 0
+    assert captured_build["mode"] == "hmac"
+
+
+def test_cli_rejects_invalid_redaction_mode(tmp_path: Path) -> None:
+    """argparse rejects unknown redaction modes."""
+    key_file = _write_key(tmp_path)
+    with pytest.raises(SystemExit):
+        cli_module.main(
+            [
+                "--port",
+                "8088",
+                "--tenant-key-file",
+                str(key_file),
+                "--allow-passthrough",
+                "--redaction-mode",
+                "bogus",
+            ]
+        )
+
+
 def test_cli_wires_real_analyzer_and_info_logs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

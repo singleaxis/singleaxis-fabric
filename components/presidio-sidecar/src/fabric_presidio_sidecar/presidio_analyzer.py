@@ -11,14 +11,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fabric_presidio_sidecar.redactor import AnalysisResult
+from fabric_presidio_sidecar.redactor import AnalysisResult, EntitySpan
 
 if TYPE_CHECKING:
     from presidio_analyzer import AnalyzerEngine  # type: ignore[import-not-found]
 
 
 class PresidioAnalyzer:
-    """Wrap an `AnalyzerEngine` instance as a `PIIAnalyzer`."""
+    """Wrap an `AnalyzerEngine` instance as a `PIIAnalyzer`.
+
+    Implements both the basic ``analyze`` (whole-value classification
+    for hmac mode) and ``analyze_entities`` (per-span listing for
+    tag mode).
+    """
 
     __slots__ = ("_engine", "_language", "_score_threshold")
 
@@ -44,6 +49,27 @@ class PresidioAnalyzer:
             return AnalysisResult(has_pii=False)
         top = max(results, key=lambda r: r.score)
         return AnalysisResult(has_pii=True, category=str(top.entity_type))
+
+    def analyze_entities(self, text: str) -> list[EntitySpan]:
+        """Return per-entity spans for in-place tag substitution.
+
+        Each ``RecognizerResult`` from Presidio is mapped to an
+        ``EntitySpan`` with its (start, end) offsets and entity type.
+        An empty text short-circuits to an empty list to mirror
+        ``analyze``'s behaviour.
+        """
+
+        if not text:
+            return []
+        results = self._engine.analyze(
+            text=text,
+            language=self._language,
+            score_threshold=self._score_threshold,
+        )
+        return [
+            EntitySpan(category=str(r.entity_type), start=int(r.start), end=int(r.end))
+            for r in results
+        ]
 
 
 def build_default_analyzer() -> PresidioAnalyzer:
