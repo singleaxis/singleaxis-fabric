@@ -67,7 +67,12 @@ from .policy_adapters import HTTPPolicyAdapter
 with contextlib.suppress(ImportError):
     from .policy_adapters import CedarAdapter
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
-from .queue_transports import LocalQueueTransport
+from .queue_transports import (
+    LocalQueueTransport,
+    NATSQueueTransport,
+    RedisStreamTransport,
+    SQSQueueTransport,
+)
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
 from .tracing import get_tracer, install_default_provider
@@ -105,6 +110,7 @@ __all__ = [
     "LocalQueueTransport",
     "MemoryKind",
     "MemoryRecord",
+    "NATSQueueTransport",
     "NemoAction",
     "NemoClient",
     "NemoError",
@@ -118,9 +124,11 @@ __all__ = [
     "QueueTransport",
     "RedactionError",
     "RedactionResult",
+    "RedisStreamTransport",
     "ReplayBehavior",
     "RetrievalRecord",
     "RetrievalSource",
+    "SQSQueueTransport",
     "ScoreParseError",
     "SideEffectRecord",
     "SideEffectType",
