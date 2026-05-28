@@ -16,6 +16,11 @@ import uvicorn
 
 from fabric_presidio_sidecar.app import build_app
 
+# Re-exported so tests (and any tooling) can monkeypatch the symbol the
+# CLI actually calls; the explicit __all__ keeps mypy's no-implicit-reexport
+# happy when build_app is accessed via this module.
+__all__ = ["build_app", "main"]
+
 logger = logging.getLogger("fabric_presidio_sidecar")
 
 

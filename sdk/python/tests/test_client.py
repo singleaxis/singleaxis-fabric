@@ -10,7 +10,7 @@ import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import DEFAULT_PROFILE, Fabric, FabricConfig
-from fabric.presidio import RedactionResult
+from fabric.presidio import RedactionResult, UDSPresidioClient
 
 
 def test_from_env_with_all_fields() -> None:
@@ -59,8 +59,8 @@ def test_redaction_mode_threads_onto_presidio_client(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")
     fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a", redaction_mode="tag"))
     presidio = fabric.guardrail_chain._presidio
-    assert presidio is not None
-    assert presidio.redaction_mode == "tag"  # type: ignore[union-attr]
+    assert isinstance(presidio, UDSPresidioClient)
+    assert presidio.redaction_mode == "tag"
 
 
 def test_config_validates_fields() -> None:
