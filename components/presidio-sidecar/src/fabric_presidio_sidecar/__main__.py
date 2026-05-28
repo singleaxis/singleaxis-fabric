@@ -44,6 +44,19 @@ def main(argv: list[str] | None = None) -> int:
             "a no-op redactor."
         ),
     )
+    parser.add_argument(
+        "--redaction-mode",
+        choices=["hmac", "tag"],
+        default="hmac",
+        help=(
+            "Redaction strategy when PII is detected. 'hmac' (default) "
+            "returns a tenant-scoped HMAC-SHA256 of the full value. 'tag' "
+            "replaces each detected entity in-place with a category-typed "
+            "placeholder like <EMAIL_1>. Default stays 'hmac' for backward "
+            "compatibility; tag mode is recommended for any agent that "
+            "feeds the redacted value back to an LLM (multi-turn)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.uds and args.port:
@@ -83,7 +96,8 @@ def main(argv: list[str] | None = None) -> int:
             "starting with PassthroughAnalyzer (no PII redaction); --allow-passthrough set"
         )
 
-    app = build_app(analyzer=analyzer, tenant_key=tenant_key)
+    app = build_app(analyzer=analyzer, tenant_key=tenant_key, mode=args.redaction_mode)
+    logger.info("redaction mode: %s", args.redaction_mode)
 
     kwargs: dict[str, object] = {
         "app": app,

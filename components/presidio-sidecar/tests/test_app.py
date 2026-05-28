@@ -37,7 +37,12 @@ def test_redact_passthrough() -> None:
         resp = c.post("/v1/redact", json={"path": "p", "value": "alice@example.com"})
         assert resp.status_code == 200
         body = resp.json()
-        assert body == {"value": "alice@example.com", "hashed": False, "pii_category": ""}
+        assert body == {
+            "value": "alice@example.com",
+            "hashed": False,
+            "pii_category": "",
+            "mode": "hmac",
+        }
 
 
 def test_redact_hashes_with_regex_analyzer() -> None:
