@@ -22,6 +22,7 @@ once the call returns. Setters write to both namespaces.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from types import TracebackType
@@ -31,6 +32,10 @@ from opentelemetry.trace import SpanKind
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span, Tracer
+
+
+def _sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 # OpenTelemetry GenAI semantic conventions (still in development status
@@ -62,6 +67,11 @@ FABRIC_LLM_USAGE_OUTPUT_TOKENS = "fabric.llm.usage.output_tokens"
 FABRIC_TOOL_NAME = "fabric.tool.name"
 FABRIC_TOOL_CALL_ID = "fabric.tool.call.id"
 FABRIC_TOOL_RESULT_COUNT = "fabric.tool.result_count"
+FABRIC_TOOL_ARGS_HASH = "fabric.tool.arguments_hash"
+FABRIC_TOOL_RESULT_HASH = "fabric.tool.result_hash"
+FABRIC_TOOL_KIND = "fabric.tool.kind"
+FABRIC_TOOL_ERROR = "fabric.tool.error"
+FABRIC_TOOL_ERROR_CATEGORY = "fabric.tool.error_category"
 
 LLM_CALL_SPAN_NAME = "fabric.llm_call"
 TOOL_CALL_SPAN_NAME = "fabric.tool_call"
@@ -290,6 +300,56 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         if count < 0:
             raise ValueError("result count must be non-negative")
         self.span.set_attribute(FABRIC_TOOL_RESULT_COUNT, count)
+
+    def set_arguments(self, payload: str) -> None:
+        """Record a SHA-256 hash of the tool call's arguments.
+
+        The tenant serializes their arguments (e.g. a dict) to a string
+        and passes it here. The raw payload is hashed locally; only
+        ``fabric.tool.arguments_hash`` lands on the span — raw args
+        never touch the trace stream.
+        """
+        if not isinstance(payload, str):
+            raise TypeError(f"payload must be str, got {type(payload).__name__}")
+        self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
+
+    def set_result(self, payload: str) -> None:
+        """Record a SHA-256 hash of the tool call's result.
+
+        Same privacy contract as :meth:`set_arguments` — the tenant
+        serializes the result to a string; only the hash
+        (``fabric.tool.result_hash``) lands on the span.
+        """
+        if not isinstance(payload, str):
+            raise TypeError(f"payload must be str, got {type(payload).__name__}")
+        self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
+
+    def set_kind(self, kind: str) -> None:
+        """Record the tool's kind (``fabric.tool.kind``).
+
+        Free-form: ``"function"``, ``"retrieval"``, ``"mcp"``,
+        ``"http"``, etc.
+        """
+        if not isinstance(kind, str):
+            raise TypeError(f"kind must be str, got {type(kind).__name__}")
+        if not kind:
+            raise ValueError("kind must be non-empty")
+        self.span.set_attribute(FABRIC_TOOL_KIND, kind)
+
+    def record_error(self, category: str) -> None:
+        """Mark the tool call as errored without an exception being raised.
+
+        The span auto-records raised exceptions via the context manager;
+        this is for tools that *return* an error result without raising.
+        Stamps ``fabric.tool.error=True`` and
+        ``fabric.tool.error_category``.
+        """
+        if not isinstance(category, str):
+            raise TypeError(f"category must be str, got {type(category).__name__}")
+        if not category:
+            raise ValueError("error category must be non-empty")
+        self.span.set_attribute(FABRIC_TOOL_ERROR, True)
+        self.span.set_attribute(FABRIC_TOOL_ERROR_CATEGORY, category)
 
     def set_attribute(self, key: str, value: str | int | float | bool) -> None:
         """Set a custom attribute on the tool call span.

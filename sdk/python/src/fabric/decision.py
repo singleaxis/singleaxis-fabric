@@ -60,6 +60,7 @@ from .memory import MemoryKind, MemoryRecord
 from .policy import EngineVerdict, PolicyEngine, PolicyEvaluation
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
+from .tool_auth import ToolAuthorization, ToolAuthorizer
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -108,6 +109,7 @@ ATTR_JUDGE_QUEUED_COUNT = "fabric.judge_queued_count"
 ATTR_JUDGE_RUBRICS = "fabric.judge_rubrics"
 ATTR_POLICY_EVAL_COUNT = "fabric.policy_evaluation_count"
 ATTR_POLICY_ENGINES = "fabric.policy_engines"
+ATTR_TOOL_AUTH_COUNT = "fabric.tool_authorization_count"
 
 
 class Decision(AbstractContextManager["Decision"]):
@@ -148,6 +150,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._evals: list[EvalRecord] = []
         self._judge_requests: list[JudgeRequest] = []
         self._policy_evaluations: list[PolicyEvaluation] = []
+        self._tool_authorizations: list[ToolAuthorization] = []
 
     # -- context manager --------------------------------------------------
 
@@ -973,6 +976,75 @@ class Decision(AbstractContextManager["Decision"]):
 
         span.add_event("fabric.policy.evaluation", attributes=event_attrs)
         return evaluation
+
+    # -- tool authorization ----------------------------------------------
+
+    def authorize_tool_call(
+        self,
+        authorizer: ToolAuthorizer,
+        *,
+        tool_name: str,
+        arguments: str | None = None,
+    ) -> ToolAuthorization:
+        """Consult a pre-execution tool authorizer; emit a span event.
+
+        A policy enforcement point for agent tool use: the host calls
+        this *before* invoking a tool (separately from
+        :meth:`tool_call`, exactly as :meth:`evaluate_policy` is a
+        separate explicit call). The SDK does not embed an authorizer;
+        it normalizes the verdict and emits a
+        ``fabric.tool.authorization`` event.
+
+        Args:
+            authorizer: a :class:`~fabric.tool_auth.ToolAuthorizer`
+                instance (allow-list, deny-list, OPA, custom).
+            tool_name: the tool about to be called.
+            arguments: optional serialized arguments string. Hashed
+                locally; only the hash is passed to the authorizer and
+                stamped on the event — raw arguments never land on the
+                trace.
+
+        Returns:
+            A :class:`~fabric.tool_auth.ToolAuthorization`. The caller
+            decides whether to enforce; call
+            :meth:`~fabric.tool_auth.ToolAuthorization.raise_for_denied`
+            to abort with :class:`~fabric.tool_auth.ToolCallDenied`.
+
+        On authorizer failure (ToolAuthorizerError or any exception):
+        fails CLOSED to ``decision="deny"`` with a synthetic reason.
+        """
+        span = self.span
+        arguments_hash = (
+            hashlib.sha256(arguments.encode("utf-8")).hexdigest() if arguments is not None else None
+        )
+
+        try:
+            authorization = authorizer.authorize(
+                tool_name=tool_name,
+                arguments_hash=arguments_hash,
+            )
+        except Exception as exc:  # authorizer contract is broad; fail closed
+            authorization = ToolAuthorization(
+                decision="deny",
+                reason=f"authorizer raised: {type(exc).__name__}: {exc}",
+            )
+            span.record_exception(exc)
+
+        self._tool_authorizations.append(authorization)
+        span.set_attribute(ATTR_TOOL_AUTH_COUNT, len(self._tool_authorizations))
+
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
+            "fabric.tool.name": tool_name,
+            "fabric.tool.authorization.decision": authorization.decision,
+        }
+        if authorization.reason is not None:
+            event_attrs["fabric.tool.authorization.reason"] = authorization.reason
+        if arguments_hash is not None:
+            event_attrs["fabric.tool.arguments_hash"] = arguments_hash
+
+        span.add_event("fabric.tool.authorization", attributes=event_attrs)
+        return authorization
 
     # -- child spans (LLM call / tool call) ------------------------------
 
