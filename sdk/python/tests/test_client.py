@@ -43,6 +43,26 @@ def test_from_env_missing_required_var_raises(env: dict[str, str], missing: str)
         Fabric.from_env(env=env)
 
 
+def test_config_redaction_mode_defaults_to_hmac() -> None:
+    config = FabricConfig(tenant_id="t", agent_id="a")
+    assert config.redaction_mode == "hmac"
+
+
+def test_config_redaction_mode_round_trips() -> None:
+    config = FabricConfig(tenant_id="t", agent_id="a", redaction_mode="tag")
+    assert config.redaction_mode == "tag"
+
+
+def test_redaction_mode_threads_onto_presidio_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FabricConfig.redaction_mode flows onto the env-wired UDS client."""
+    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
+    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")
+    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a", redaction_mode="tag"))
+    presidio = fabric.guardrail_chain._presidio
+    assert presidio is not None
+    assert presidio.redaction_mode == "tag"  # type: ignore[union-attr]
+
+
 def test_config_validates_fields() -> None:
     with pytest.raises(ValueError, match="tenant_id"):
         FabricConfig(tenant_id="", agent_id="a")

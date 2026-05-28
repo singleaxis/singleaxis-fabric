@@ -7,7 +7,14 @@ from __future__ import annotations
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from fabric import Fabric, FabricConfig, GuardrailBlocked
+from fabric import (
+    CheckerVerdict,
+    Fabric,
+    FabricConfig,
+    GuardrailBlocked,
+    GuardrailChecker,
+)
+from fabric.guardrails import GuardrailAction
 from fabric.nemo import NemoClient, NemoResult
 from fabric.presidio import PresidioClient, RedactionResult
 
@@ -339,3 +346,166 @@ def test_non_block_nemo_with_empty_modified_value_keeps_presidio_redaction(
     assert result.blocked is False
     assert result.redacted_content == "[REDACTED:PHONE]"
     assert "nemo:topic" in result.policies_fired
+
+
+# -- pluggable GuardrailChecker tier ----------------------------------
+
+
+class _FakeChecker:
+    """Minimal :class:`GuardrailChecker` stand-in for SDK-side tests."""
+
+    def __init__(
+        self,
+        name: str,
+        verdict: CheckerVerdict | None = None,
+        *,
+        raises: Exception | None = None,
+    ) -> None:
+        self.name = name
+        self._verdict = verdict or CheckerVerdict(action="allow")
+        self._raises = raises
+        self.calls: list[tuple[str, str, str]] = []
+        self.closed = 0
+
+    def check(self, phase: str, path: str, value: str) -> CheckerVerdict:
+        self.calls.append((phase, path, value))
+        if self._raises is not None:
+            raise self._raises
+        return self._verdict
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+def test_extra_checker_runs_after_presidio_and_nemo() -> None:
+    presidio = _FakePresidio(RedactionResult(value="[REDACTED]", hashed=True, pii_category="EMAIL"))
+    nemo = _FakeNemo(
+        NemoResult(
+            allowed=True,
+            action="allow",
+            rail="ok",
+            block_response=None,
+            modified_value="[REDACTED]",
+        )
+    )
+    checker = _FakeChecker("lakera", CheckerVerdict(action="allow"))
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        presidio=presidio,
+        nemo=nemo,
+        guardrail_checkers=[checker],
+    )
+    try:
+        fabric.guardrail_chain.check(phase="input", path="input", value="email a@b.com")
+    finally:
+        fabric.close()
+    # Checker saw the Presidio+NeMo-processed content, not the raw value.
+    assert checker.calls == [("input", "input", "[REDACTED]")]
+
+
+def test_extra_checker_block_short_circuits_remaining_checkers() -> None:
+    first = _FakeChecker(
+        "blocker",
+        CheckerVerdict(action="block", reason="policy violation", rail="toxicity"),
+    )
+    second = _FakeChecker("never", CheckerVerdict(action="allow"))
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[first, second],
+    )
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="x")
+    finally:
+        fabric.close()
+    assert result.blocked is True
+    assert result.block_response == "policy violation"
+    assert "blocker:toxicity" in result.policies_fired
+    # Second checker must not run after the first one blocks.
+    assert second.calls == []
+
+
+def test_extra_checker_exception_fails_closed() -> None:
+    boom = _FakeChecker("flaky", raises=RuntimeError("upstream down"))
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[boom],
+    )
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="x")
+    finally:
+        fabric.close()
+    assert result.blocked is True
+    assert result.block_response is not None
+    assert "flaky raised" in result.block_response
+    assert "upstream down" in result.block_response
+
+
+def test_extra_checker_applies_modified_value_and_warn_policy() -> None:
+    checker = _FakeChecker(
+        "rewriter",
+        CheckerVerdict(action="warn", modified_value="cleaned", rail="pii_followup"),
+    )
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[checker],
+    )
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="dirty")
+    finally:
+        fabric.close()
+    assert result.blocked is False
+    assert result.redacted_content == "cleaned"
+    assert "rewriter:pii_followup" in result.policies_fired
+
+
+def test_extra_checker_escalate_records_policy_without_blocking() -> None:
+    checker = _FakeChecker(
+        "escalator",
+        CheckerVerdict(action="escalate", rail="needs_review"),
+    )
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[checker],
+    )
+    try:
+        result = fabric.guardrail_chain.check(phase="input", path="input", value="x")
+    finally:
+        fabric.close()
+    assert result.blocked is False
+    assert "escalator:needs_review" in result.policies_fired
+
+
+def test_has_rails_true_when_only_extra_checker_wired() -> None:
+    checker = _FakeChecker("solo")
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[checker],
+    )
+    assert fabric.guardrail_chain.has_rails is True
+
+
+def test_close_delegates_to_extra_checkers() -> None:
+    checker = _FakeChecker("closeme")
+    fabric = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        guardrail_checkers=[checker],
+    )
+    fabric.close()
+    assert checker.closed == 1
+
+
+def test_fake_checker_satisfies_runtime_checkable_protocol() -> None:
+    assert isinstance(_FakeChecker("p"), GuardrailChecker)
+
+
+def test_checker_verdict_default_action_field() -> None:
+    verdict = CheckerVerdict(action=cast_action("allow"))
+    assert verdict.modified_value is None
+    assert verdict.reason is None
+    assert verdict.rail is None
+
+
+def cast_action(value: str) -> GuardrailAction:
+    """Narrow a str literal to GuardrailAction for the typed test above."""
+    assert value in ("allow", "redact", "warn", "block", "escalate")
+    return value  # type: ignore[return-value]

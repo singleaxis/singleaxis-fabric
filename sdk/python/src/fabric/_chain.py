@@ -7,6 +7,9 @@ Current rails (in pipeline order):
 
 1. **Presidio** — redacts PII. Never blocks.
 2. **NeMo Colang** — dialog / jailbreak / refusal rails. May block.
+3. **Extra checkers** — pluggable :class:`GuardrailChecker` tiers
+   (Lakera, generic HTTP, custom classifiers), run in order after
+   NeMo. Each may rewrite content, fire a policy, block, or escalate.
 
 Presidio runs first so NeMo's (potentially LLM-backed) check never
 sees raw PII. Each rail is optional — the chain works with any
@@ -27,6 +30,7 @@ from uuid import uuid4
 from .guardrails import EntitySummary, GuardrailPhase, GuardrailResult
 
 if TYPE_CHECKING:
+    from .guardrails import GuardrailChecker
     from .nemo import NemoClient
     from .presidio import PresidioClient
 
@@ -39,13 +43,15 @@ class GuardrailChain:
         *,
         presidio: PresidioClient | None = None,
         nemo: NemoClient | None = None,
+        extra_checkers: list[GuardrailChecker] | None = None,
     ) -> None:
         self._presidio = presidio
         self._nemo = nemo
+        self._extra_checkers: list[GuardrailChecker] = list(extra_checkers or [])
 
     @property
     def has_rails(self) -> bool:
-        return self._presidio is not None or self._nemo is not None
+        return self._presidio is not None or self._nemo is not None or bool(self._extra_checkers)
 
     def check(self, *, phase: GuardrailPhase, path: str, value: str) -> GuardrailResult:
         start = time.monotonic()
@@ -84,6 +90,32 @@ class GuardrailChain:
                 blocked = True
                 block_response = nemo_result.block_response
 
+        # Pluggable checker tiers run in order after NeMo. Each may
+        # rewrite content, fire a policy, block, or escalate. A raised
+        # exception fails closed (the checker is converted to a block).
+        # The loop short-circuits on the first block so a downstream
+        # checker can't un-block an upstream one.
+        if not blocked:
+            for checker in self._extra_checkers:
+                try:
+                    verdict = checker.check(phase, path, content)
+                except Exception as exc:  # fail-closed: any error becomes a block
+                    blocked = True
+                    block_response = f"{checker.name} raised: {exc}"
+                    policies.append(f"{checker.name}:{checker.name}")
+                    break
+
+                if verdict.modified_value:
+                    content = verdict.modified_value
+                if verdict.action != "allow":
+                    policies.append(f"{checker.name}:{verdict.rail or checker.name}")
+                if verdict.action == "block":
+                    blocked = True
+                    block_response = verdict.reason
+                    break
+                # ``escalate`` is surfaced via policies_fired (recorded
+                # above); the host decides what to do. It does not block.
+
         latency_ms = (time.monotonic() - start) * 1000.0
         return GuardrailResult(
             event_id=uuid4(),
@@ -100,3 +132,5 @@ class GuardrailChain:
             self._presidio.close()
         if self._nemo is not None:
             self._nemo.close()
+        for checker in self._extra_checkers:
+            checker.close()
