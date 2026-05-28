@@ -123,4 +123,5 @@ class DrainableTransport(Protocol):
     queue is currently empty.
     """
 
-    def dequeue(self) -> JudgeRequest | None: ...
+    def dequeue(self) -> JudgeRequest | None:
+        """Return the oldest pending request, or ``None`` if empty."""
