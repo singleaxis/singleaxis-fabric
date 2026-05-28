@@ -59,6 +59,13 @@ from .policy import (
     PolicyEvaluation,
 )
 from .policy_adapters import HTTPPolicyAdapter
+
+# CedarAdapter is exposed when the [cedar] extra's cedarpy is present.
+# The module imports cleanly (cedarpy is loaded lazily at construction),
+# so this normally succeeds; the guard mirrors the optional-extra
+# precedent. Operators can also import from fabric.policy_adapters.
+with contextlib.suppress(ImportError):
+    from .policy_adapters import CedarAdapter
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
 from .queue_transports import LocalQueueTransport
 from .retrieval import RetrievalRecord, RetrievalSource
@@ -68,6 +75,7 @@ from .tracing import get_tracer, install_default_provider
 __all__ = [
     "DEFAULT_PROFILE",
     "SCHEMA_VERSION",
+    "CedarAdapter",
     "CheckerVerdict",
     "CheckpointEvent",
     "Decision",
