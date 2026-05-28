@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from contextlib import AbstractContextManager
 from types import TracebackType
@@ -68,6 +69,9 @@ if TYPE_CHECKING:
     from opentelemetry.trace import Span
 
     from .client import Fabric
+    from .content_store import ContentRef
+
+logger = logging.getLogger("fabric.decision")
 
 SPAN_NAME = "fabric.decision"
 
@@ -110,6 +114,14 @@ ATTR_JUDGE_RUBRICS = "fabric.judge_rubrics"
 ATTR_POLICY_EVAL_COUNT = "fabric.policy_evaluation_count"
 ATTR_POLICY_ENGINES = "fabric.policy_engines"
 ATTR_TOOL_AUTH_COUNT = "fabric.tool_authorization_count"
+
+# Dual-pipeline content references (spec 012 §Content vs trace pipeline).
+# When a tenant configures a ContentStore, the SDK writes the raw,
+# audit-relevant content to it and stamps the returned ``uri`` onto the
+# relevant event. The trace stream still carries only hashes + these
+# locator URIs — never raw content.
+ATTR_GUARDRAIL_CONTENT_REF = "fabric.guardrail.content_ref"
+ATTR_POLICY_INPUT_CONTENT_REF = "fabric.policy.input_content_ref"
 
 
 class Decision(AbstractContextManager["Decision"]):
@@ -293,10 +305,43 @@ class Decision(AbstractContextManager["Decision"]):
         if not chain.has_rails:
             raise GuardrailNotConfiguredError(f"no guardrail rails configured for phase={phase!r}")
         result = chain.check(phase=phase, path=path, value=value)
-        self._record_guardrail_event(phase=phase, result=result)
+        # Thread the *raw* pre-redaction ``value`` (the audit-relevant
+        # content) through to the event recorder so it can store it in the
+        # dual-pipeline ContentStore and stamp the returned ref URI.
+        self._record_guardrail_event(phase=phase, path=path, raw_value=value, result=result)
         return result.redacted_content
 
-    def _record_guardrail_event(self, *, phase: GuardrailPhase, result: GuardrailResult) -> None:
+    def _store_content_ref(self, content: str, *, key_hint: str | None = None) -> ContentRef | None:
+        """Write ``content`` to the configured ContentStore, return its ref.
+
+        Returns ``None`` when no store is configured (pure observability
+        mode — the trace stays byte-for-byte unchanged) or when the store
+        raises. Audit-storage hiccups must never break a guardrail check
+        or a policy eval, so a failing ``put`` is caught, logged at
+        WARNING, and degraded to ``None`` (no ``content_ref`` stamped).
+        """
+        store = self._client.content_store
+        if store is None:
+            return None
+        try:
+            return store.put(content, key_hint=key_hint)
+        except Exception:
+            logger.warning(
+                "ContentStore.put failed (key_hint=%r); continuing without a "
+                "content_ref. The decision/guardrail flow is unaffected.",
+                key_hint,
+                exc_info=True,
+            )
+            return None
+
+    def _record_guardrail_event(
+        self,
+        *,
+        phase: GuardrailPhase,
+        path: str,
+        raw_value: str,
+        result: GuardrailResult,
+    ) -> None:
         """Emit the guardrail event as a span event per spec 005."""
         span = self.span
         attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
@@ -311,6 +356,12 @@ class Decision(AbstractContextManager["Decision"]):
             )
         if result.policies_fired:
             attrs["fabric.guardrail.policies"] = tuple(result.policies_fired)
+        # Dual-pipeline: stash the raw input in the ContentStore and stamp
+        # the locator URI so an auditor can resolve it later. The hash-only
+        # trace contract is preserved — raw content never lands here.
+        content_ref = self._store_content_ref(raw_value, key_hint=f"guardrail/{phase}/{path}")
+        if content_ref is not None:
+            attrs[ATTR_GUARDRAIL_CONTENT_REF] = content_ref.uri
         span.add_event("fabric.guardrail", attributes=attrs)
 
     # -- block handling ---------------------------------------------------
@@ -902,9 +953,8 @@ class Decision(AbstractContextManager["Decision"]):
         ``decision="deny"``, ``reason="adapter raised: <type>"``.
         """
         span = self.span
-        input_hash = hashlib.sha256(
-            json.dumps(input, sort_keys=True, default=str).encode("utf-8")
-        ).hexdigest()
+        serialized_input = json.dumps(input, sort_keys=True, default=str)
+        input_hash = hashlib.sha256(serialized_input.encode("utf-8")).hexdigest()
 
         started = time.monotonic()
         try:
@@ -973,6 +1023,14 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs["fabric.policy.evidence_ref"] = evaluation.evidence_ref
         if evaluation.bundle_signature is not None:
             event_attrs["fabric.policy.bundle_signature"] = evaluation.bundle_signature
+        # Dual-pipeline: additively stash the raw serialized input (the
+        # same string hashed into input_hash above) and stamp its locator
+        # URI. input_hash behaviour is untouched — content_ref is additive.
+        content_ref = self._store_content_ref(
+            serialized_input, key_hint=f"policy/{evaluation.engine}/{evaluation.policy_id}"
+        )
+        if content_ref is not None:
+            event_attrs[ATTR_POLICY_INPUT_CONTENT_REF] = content_ref.uri
 
         span.add_event("fabric.policy.evaluation", attributes=event_attrs)
         return evaluation
