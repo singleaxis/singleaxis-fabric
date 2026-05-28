@@ -12,6 +12,12 @@ from ._calls import LLMCall, ToolCall
 from ._version import __version__
 from .checkpoint import CheckpointEvent
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
+from .content_store import (
+    ContentRef,
+    ContentStore,
+    LocalFilesystemContentStore,
+    S3ContentStore,
+)
 from .decision import SCHEMA_VERSION, Decision
 from .escalation import EscalationMode, EscalationRequested, EscalationSummary
 from .eval import EvalRecord
@@ -83,6 +89,8 @@ __all__ = [
     "CedarAdapter",
     "CheckerVerdict",
     "CheckpointEvent",
+    "ContentRef",
+    "ContentStore",
     "Decision",
     "EngineVerdict",
     "EntitySummary",
@@ -107,6 +115,7 @@ __all__ = [
     "JudgeWorker",
     "LLMCall",
     "LakeraGuardChecker",
+    "LocalFilesystemContentStore",
     "LocalQueueTransport",
     "MemoryKind",
     "MemoryRecord",
@@ -128,6 +137,7 @@ __all__ = [
     "ReplayBehavior",
     "RetrievalRecord",
     "RetrievalSource",
+    "S3ContentStore",
     "SQSQueueTransport",
     "ScoreParseError",
     "SideEffectRecord",
