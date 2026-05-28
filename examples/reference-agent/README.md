@@ -31,7 +31,7 @@ uv run fabric-reference-agent --prompt "Hello" --low-score    # triggers escalat
 
 Pass `--enable-v04-primitives` to exercise every v0.4 SDK primitive
 in one decision: `recall`, `checkpoint`, `record_eval`, `queue_judge`
-+ `JudgeContext`, `evaluate_policy`, and `SimpleLLMJudge` draining
+- `JudgeContext`, `evaluate_policy`, and `SimpleLLMJudge` draining
 the queued judge request after the decision exits.
 
 ```bash

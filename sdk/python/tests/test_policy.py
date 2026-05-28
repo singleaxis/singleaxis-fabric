@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -16,6 +17,7 @@ from fabric import (
     PolicyAdapterError,
     PolicyEvaluation,
 )
+from fabric.policy import PolicyDecision
 
 
 @dataclass(slots=True)
@@ -78,7 +80,9 @@ def test_deny_with_reason_emits_event(span_exporter: InMemorySpanExporter) -> No
 @pytest.mark.parametrize("decision", ["warn", "escalate", "redact"])
 def test_non_allow_outcomes_require_reason(decision: str) -> None:
     """Non-allow without reason must fail closed to deny with a synthetic reason."""
-    engine = _StubEngine(verdict=EngineVerdict(decision=decision))  # missing reason!
+    engine = _StubEngine(
+        verdict=EngineVerdict(decision=cast(PolicyDecision, decision))
+    )  # missing reason!
     fabric = _client()
     with fabric.decision(session_id="s", request_id="r") as d:
         evaluation = d.evaluate_policy(engine, policy_id="p", input={})
@@ -124,4 +128,6 @@ def test_input_is_hashed_not_in_attributes(span_exporter: InMemorySpanExporter) 
     event = next(e for e in span.events if e.name == "fabric.policy.evaluation")
     attrs = dict(event.attributes or {})
     assert "fabric.policy.input_hash" in attrs
-    assert len(attrs["fabric.policy.input_hash"]) == 64  # SHA-256 hex
+    input_hash = attrs["fabric.policy.input_hash"]
+    assert isinstance(input_hash, str)
+    assert len(input_hash) == 64  # SHA-256 hex

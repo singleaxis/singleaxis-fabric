@@ -156,4 +156,4 @@ def test_satisfies_guardrail_checker_protocol() -> None:
 
 def test_close_is_noop() -> None:
     checker = HTTPGuardrailChecker(endpoint="http://127.0.0.1:1/check")
-    assert checker.close() is None
+    checker.close()  # must not raise

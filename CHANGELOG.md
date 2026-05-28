@@ -68,8 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `decision.record_eval(rubric_id, score, dimension, evaluator_name)`
   — attach a synchronous score to the decision span. Validates score
   in `[0, 1]`. (PR #81)
-- `decision.queue_judge(rubric_id, dimensions, context, transport)`
-  + `JudgeContext` + `JudgeRequest` + `QueueTransport` protocol +
+- `decision.queue_judge(rubric_id, dimensions, context, transport)` +
+  `JudgeContext` + `JudgeRequest` + `QueueTransport` protocol +
   `LocalQueueTransport` reference. Captures judge context at
   decision time and ships it via a separate transport from the OTel
   trace stream. Privacy contract: raw content never lands on the
@@ -621,8 +621,8 @@ tenant-facing API stable.
   install, ASCII request-path diagram, and a documentation lookup
   table. Replaces the OSS-vs-services-first intro that buried the
   install path.
-- **Apache copyright legal entity** corrected to *AI5Labs Research
-  OPC Private Limited* and role emails switched to `singleaxis.ai`
+- **Apache copyright legal entity** corrected to _AI5Labs Research
+  OPC Private Limited_ and role emails switched to `singleaxis.ai`
   (#20).
 - **GitHub Actions bumped to latest majors** (#23): `checkout` v4 →
   v6, `setup-python` v5 → v6, `setup-go` v5 → v6, `codeql-action` v3
