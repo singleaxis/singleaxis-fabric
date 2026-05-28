@@ -1,0 +1,46 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "presidio-sidecar.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "presidio-sidecar.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "presidio-sidecar.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Presidio sidecar is typically reached via UDS in same-pod
+    # topology; this policy covers the alternate sidecar-as-Service
+    # deployment, allowing ingress on the sidecar port from agent pods.
+    - from:
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- else }}
+        - namespaceSelector: {}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+  egress:
+    # DNS to kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Optional operator-defined egress (Presidio runs fully local and
+    # needs none by default).
+    {{- with .Values.networkPolicy.egressTo }}
+    - to:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+{{- end }}

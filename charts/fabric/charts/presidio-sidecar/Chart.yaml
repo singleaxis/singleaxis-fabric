@@ -1,0 +1,25 @@
+apiVersion: v2
+name: presidio-sidecar
+description: |
+  SingleAxis Fabric Presidio PII redaction sidecar (spec 005). Phase 1
+  ships a TCP Deployment + Service; production injects this container
+  as a per-agent-pod sidecar for <5ms UDS redaction — the injection
+  webhook lands in Phase 2. Tenant HMAC key required at startup.
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - pii
+  - presidio
+  - redaction
+  - fabric
+home: https://github.com/singleaxis/singleaxis-fabric
+sources:
+  - https://github.com/singleaxis/singleaxis-fabric/tree/main/components/presidio-sidecar
+maintainers:
+  - name: SingleAxis
+    url: https://singleaxis.com
+annotations:
+  category: Privacy
+  licenses: Apache-2.0

@@ -1,0 +1,118 @@
+# Default values for the presidio-sidecar subchart.
+#
+# Latency posture (P99, per redaction, inside the sidecar process):
+#   /v1/redact  <5ms   Presidio analyze + HMAC/tag redaction
+# When the container is colocated with the agent (sidecar pattern)
+# calls ride UDS and skip the TCP stack; the shared-Deployment mode
+# shipped here is for smoke-tests and dev clusters only.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/singleaxis/fabric-presidio-sidecar
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: "1000m"
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# Presidio cold-start loads the spaCy NER model, which can take
+# several seconds on a fresh pod. Readiness initialDelaySeconds is
+# bumped to 20 to avoid Unready flapping during rolling deploys.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 5
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+# Tenant HMAC key.
+#
+# The sidecar refuses to start without a real tenant key so that
+# HMACs are not reversible across deployments. This chart fails to
+# render when `existingSecret` is empty.
+tenantKey:
+  # Name of an existing Secret holding the tenant HMAC key. If empty,
+  # the chart fails to render (the sidecar cannot start without a real
+  # key). Create with:
+  #   kubectl create secret generic fabric-presidio-tenant-key \
+  #     --from-literal=tenant.key="$(openssl rand -base64 32)"
+  existingSecret: ""
+  secretKey: "tenant.key"
+
+# Redaction mode. "hmac" replaces each PII span with a stable,
+# tenant-keyed HMAC token (correlatable across requests). "tag"
+# replaces spans with a generic entity tag (e.g. <PERSON>).
+redactionMode: "hmac"
+
+# Dev-only escape hatch. When true, passes --allow-passthrough so the
+# sidecar starts with the PassthroughAnalyzer (redacts nothing) when
+# the [presidio] extra is not installed. Never set in production.
+allowPassthrough: false
+
+# PodDisruptionBudget. Honored only when replicaCount > 1 (i.e. the
+# sidecar-as-Service HA topology). Same-pod UDS deployments don't
+# need it because lifecycle is tied to the parent agent pod.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# NetworkPolicy. Default off — see otel-collector/values.yaml. The
+# typical Presidio deployment is same-pod via UDS, in which case this
+# policy is a no-op. The sidecar-as-Service deployment (smoke/dev) is
+# what `ingressFrom` covers; DNS to kube-system is always allowed.
+networkPolicy:
+  enabled: false
+  ingressFrom: []
+  egressTo: []
