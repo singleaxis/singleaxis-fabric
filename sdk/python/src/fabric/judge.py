@@ -104,3 +104,24 @@ class QueueTransport(Protocol):
 
     def enqueue(self, request: JudgeRequest) -> None: ...
     def close(self) -> None: ...
+
+
+@runtime_checkable
+class DrainableTransport(Protocol):
+    """Consumer side of the judge queue: pull requests off to score.
+
+    The producer Protocol (``QueueTransport``) only declares
+    ``enqueue`` / ``close``; many real transports are fire-and-forget
+    on the producer (NATS publish, SQS send, Redis XADD) and expose a
+    separate subscription mechanism for consumers. ``JudgeRunner``
+    drains via this Protocol instead, so an in-process
+    ``LocalQueueTransport`` (which already has ``dequeue``) satisfies it
+    structurally, while production transports supply their own
+    drainable adapter.
+
+    ``dequeue`` returns the oldest pending request, or ``None`` when the
+    queue is currently empty.
+    """
+
+    def dequeue(self) -> JudgeRequest | None:
+        """Return the oldest pending request, or ``None`` if empty."""

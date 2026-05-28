@@ -34,6 +34,7 @@ from .guardrails import (
     GuardrailResult,
 )
 from .judge import (
+    DrainableTransport,
     GuardrailSnapshot,
     JudgeContext,
     JudgeRequest,
@@ -43,6 +44,7 @@ from .judge import (
     ToolCallSnapshot,
 )
 from .judge_adapters import ScoreParseError, SimpleLLMJudge
+from .judge_runner import JudgeRunner
 
 # DeepEvalJudge is exposed only when the optional [deepeval] extra is
 # installed. Operators using the extra can also import directly via
@@ -92,6 +94,7 @@ __all__ = [
     "ContentRef",
     "ContentStore",
     "Decision",
+    "DrainableTransport",
     "EngineVerdict",
     "EntitySummary",
     "EscalationMode",
@@ -112,6 +115,7 @@ __all__ = [
     "HTTPPolicyAdapter",
     "JudgeContext",
     "JudgeRequest",
+    "JudgeRunner",
     "JudgeWorker",
     "LLMCall",
     "LakeraGuardChecker",
