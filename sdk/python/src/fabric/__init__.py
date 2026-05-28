@@ -43,6 +43,12 @@ from .judge_adapters import ScoreParseError, SimpleLLMJudge
 # ``from fabric.judge_adapters import DeepEvalJudge``.
 with contextlib.suppress(ImportError):
     from .judge_adapters import DeepEvalJudge  # noqa: F401
+
+# RagasJudge is exposed only when the optional [ragas] extra is
+# installed. Operators using the extra can also import directly via
+# ``from fabric.judge_adapters import RagasJudge``.
+with contextlib.suppress(ImportError):
+    from .judge_adapters import RagasJudge  # noqa: F401
 from .memory import MemoryKind, MemoryRecord
 from .nemo import NemoAction, NemoClient, NemoError, NemoResult, UDSNemoClient
 from .policy import (
