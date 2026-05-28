@@ -15,6 +15,7 @@ from .client import DEFAULT_PROFILE, Fabric, FabricConfig
 from .decision import SCHEMA_VERSION, Decision
 from .escalation import EscalationMode, EscalationRequested, EscalationSummary
 from .eval import EvalRecord
+from .guardrail_adapters import LakeraGuardChecker
 from .guardrails import (
     CheckerVerdict,
     EntitySummary,
@@ -85,6 +86,7 @@ __all__ = [
     "JudgeRequest",
     "JudgeWorker",
     "LLMCall",
+    "LakeraGuardChecker",
     "LocalQueueTransport",
     "MemoryKind",
     "MemoryRecord",

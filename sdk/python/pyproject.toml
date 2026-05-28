@@ -118,6 +118,9 @@ dev = [
   "ruff>=0.6.9",
   "mypy>=1.11.2",
   "opentelemetry-exporter-otlp-proto-http>=1.41",
+  # httpx powers the HTTP-backed adapters (lakera, opa); pulled into
+  # [dev] so their adapter tests can construct and exercise the client.
+  "httpx>=0.27",
 ]
 
 [project.urls]

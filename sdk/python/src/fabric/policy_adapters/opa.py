@@ -42,7 +42,7 @@ class OPAAdapter:
 
     def __post_init__(self) -> None:
         try:
-            import httpx  # type: ignore[import-not-found]  # noqa: F401, PLC0415
+            import httpx  # type: ignore[import-not-found, unused-ignore]  # noqa: F401, PLC0415
         except ImportError as exc:  # pragma: no cover — covered by extras
             raise ImportError(
                 "OPAAdapter requires httpx; install with `pip install singleaxis-fabric[opa]`"
