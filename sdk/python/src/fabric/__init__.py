@@ -88,6 +88,7 @@ from .queue_transports import (
 )
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
+from .stream import StreamRedactor
 from .tool_auth import (
     ToolAuthorization,
     ToolAuthorizer,
@@ -160,6 +161,7 @@ __all__ = [
     "SideEffectRecord",
     "SideEffectType",
     "SimpleLLMJudge",
+    "StreamRedactor",
     "ToolAuthorization",
     "ToolAuthorizer",
     "ToolAuthorizerError",

@@ -61,6 +61,7 @@ from .memory import MemoryKind, MemoryRecord
 from .policy import EngineVerdict, PolicyEngine, PolicyEvaluation
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
+from .stream import StreamRedactor
 from .tool_auth import ToolAuthorization, ToolAuthorizer
 
 if TYPE_CHECKING:
@@ -299,6 +300,31 @@ class Decision(AbstractContextManager["Decision"]):
     def guard_output_final(self, final_output: str) -> str:
         """Run the post-stream full-text guardrail pass."""
         return self._run_chain(phase="output_final", path="output_final", value=final_output)
+
+    def output_stream(self, *, tail_window: int = 256) -> StreamRedactor:
+        """Open a stateful streaming redactor bound to this decision.
+
+        Unlike :meth:`guard_output_chunk` (which runs the chain on each
+        chunk independently and so leaks PII that straddles a chunk
+        boundary), the returned :class:`~fabric.stream.StreamRedactor`
+        buffers a tail window so a boundary-spanning entity is only
+        released once it is fully present and has been redacted as a
+        whole. It emits guardrail span events on this decision's span
+        through the same chain machinery as the stateless methods.
+
+        Args:
+            tail_window: hold-back window in characters; must be > 0.
+                Size it at least as long as the longest plausible PII
+                entity so no entity can straddle the settled/tail split.
+
+        Returns:
+            A :class:`~fabric.stream.StreamRedactor`. Call ``feed`` per
+            chunk and ``flush`` (or use it as a context manager) to
+            release the held tail.
+        """
+        if tail_window <= 0:
+            raise ValueError(f"tail_window must be > 0, got {tail_window}")
+        return StreamRedactor(self, tail_window=tail_window)
 
     def _run_chain(self, *, phase: GuardrailPhase, path: str, value: str) -> str:
         chain = self._client.guardrail_chain
