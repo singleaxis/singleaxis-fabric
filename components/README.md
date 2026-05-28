@@ -23,6 +23,7 @@ pointers to the relevant specs. Code lands in Phase 1 onward (see
 |-----------|------|--------------|
 | [`nemo-sidecar/`](nemo-sidecar/) | NeMo Colang guardrails sidecar for the SDK | [005](../specs/005-guardrails-inline.md) |
 | [`presidio-sidecar/`](presidio-sidecar/) | Presidio PII redaction sidecar | [005](../specs/005-guardrails-inline.md) |
+| [`prompt-guard-sidecar/`](prompt-guard-sidecar/) | Llama Prompt Guard jailbreak guardrail sidecar | [005](../specs/005-guardrails-inline.md) |
 | [`otel-collector-fabric/`](otel-collector-fabric/) | Fabric-standard OTel Collector distribution | [002](../specs/002-architecture.md) |
 | [`redteam-runner/`](redteam-runner/) | Scheduled Garak / PyRIT jobs | [002](../specs/002-architecture.md) |
 | [`update-agent/`](update-agent/) | GitOps pull of signed manifests | [008](../specs/008-deployment-model.md) |

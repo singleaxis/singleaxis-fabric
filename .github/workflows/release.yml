@@ -272,6 +272,7 @@ jobs:
         component:
           - presidio-sidecar
           - nemo-sidecar
+          - prompt-guard-sidecar
           - redteam-runner
           - update-agent
           - langfuse-bootstrap
