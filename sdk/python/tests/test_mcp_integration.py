@@ -258,7 +258,8 @@ def test_instrumented_session_passthrough() -> None:
     with client.decision(session_id="s", request_id="r") as dec:
         wrapped = InstrumentedMCPSession(session, dec)
         assert wrapped.server_version == "1.2.3"
-        assert wrapped.close() == "closed"
+        close_result = wrapped.close()
+        assert close_result == "closed"
 
 
 def test_instrumented_session_deny_blocks() -> None:
