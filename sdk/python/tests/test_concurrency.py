@@ -154,7 +154,7 @@ def test_overlapping_threads_raise(span_exporter: InMemorySpanExporter) -> None:
         def run_a() -> None:
             try:
                 a_result.append(d.guard_input("payload"))
-            except BaseException as exc:
+            except Exception as exc:
                 errors.append(exc)
 
         thread_a = threading.Thread(target=run_a)
@@ -265,7 +265,7 @@ def test_two_decisions_concurrently_work(span_exporter: InMemorySpanExporter) ->
         def run_d1() -> None:
             try:
                 results["d1"] = d1.guard_input("one")
-            except BaseException as exc:
+            except Exception as exc:
                 results["d1"] = exc
 
         thread = threading.Thread(target=run_d1)

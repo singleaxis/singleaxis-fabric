@@ -199,7 +199,7 @@ def run_soak(config: SoakConfig) -> SoakReport:
     for i in range(config.sequential_decisions):
         try:
             _drive_one(fabric, "soak-seq", f"seq-{i}")
-        except BaseException as exc:  # aggregate every failure into the report
+        except Exception as exc:  # aggregate every failure into the report
             errors.append(f"sequential[{i}]: {type(exc).__name__}: {exc}")
         if config.drain_every > 0 and (i + 1) % config.drain_every == 0:
             drain()
@@ -212,7 +212,7 @@ def run_soak(config: SoakConfig) -> SoakReport:
         for j in range(config.per_thread_decisions):
             try:
                 _drive_one(fabric, f"soak-w{worker_id}", f"w{worker_id}-{j}")
-            except BaseException as exc:  # aggregate every failure into the report
+            except Exception as exc:  # aggregate every failure into the report
                 errors.append(f"worker[{worker_id}][{j}]: {type(exc).__name__}: {exc}")
             if config.drain_every > 0 and (j + 1) % config.drain_every == 0:
                 drain()
