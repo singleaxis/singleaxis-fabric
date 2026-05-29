@@ -80,6 +80,7 @@ from .policy_adapters import HTTPPolicyAdapter
 with contextlib.suppress(ImportError):
     from .policy_adapters import CedarAdapter
 from .presidio import PresidioClient, RedactionError, RedactionResult, UDSPresidioClient
+from .propagation import FabricContext, extract, inject, inject_decision
 from .queue_transports import (
     LocalQueueTransport,
     NATSQueueTransport,
@@ -115,6 +116,7 @@ __all__ = [
     "EvalRecord",
     "Fabric",
     "FabricConfig",
+    "FabricContext",
     "GuardrailAction",
     "GuardrailBlocked",
     "GuardrailChecker",
@@ -171,7 +173,10 @@ __all__ = [
     "UDSNemoClient",
     "UDSPresidioClient",
     "__version__",
+    "extract",
     "get_tracer",
+    "inject",
+    "inject_decision",
     "install_default_provider",
     "traced_call_tool",
 ]

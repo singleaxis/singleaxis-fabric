@@ -253,6 +253,14 @@ class Decision(AbstractContextManager["Decision"]):
         return self._session_id
 
     @property
+    def tenant_id(self) -> str:
+        return self._client.tenant_id
+
+    @property
+    def agent_id(self) -> str:
+        return self._client.agent_id
+
+    @property
     def blocked(self) -> GuardrailResult | None:
         """The blocking guardrail result, or ``None`` if none fired."""
         return self._blocked
