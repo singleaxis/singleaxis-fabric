@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from fabric import FabricContext, extract, inject, inject_decision
+from fabric import Fabric, FabricConfig, FabricContext, extract, inject, inject_decision
 from fabric.propagation import FABRIC_KEY, MAX_MEMBERS, TRACESTATE_HEADER
 
 
@@ -176,4 +176,19 @@ def test_inject_decision_round_trip() -> None:
         agent_id="agent-x",
         session_id="sess-x",
         request_id="req-x",
+    )
+
+
+def test_inject_decision_accepts_a_real_decision() -> None:
+    """A real Decision satisfies DecisionLike structurally."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    carrier: dict[str, str] = {}
+    with fabric.decision(session_id="s1", request_id="r1") as decision:
+        inject_decision(carrier, decision)
+    recovered = extract(carrier)
+    assert recovered == FabricContext(
+        tenant_id="acme",
+        agent_id="bot",
+        session_id="s1",
+        request_id="r1",
     )
