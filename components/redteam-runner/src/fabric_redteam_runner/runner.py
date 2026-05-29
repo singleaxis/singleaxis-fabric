@@ -9,11 +9,11 @@ getting maximum coverage, not bisecting a bug."""
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import uuid
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .config import RunConfig, SuiteConfig, TargetConfig
@@ -106,26 +106,31 @@ class Runner:
         return out
 
 
-def load_suite(name: str) -> Suite:
+def load_suite(name: str, *, venv: Path | None = None) -> Suite:
     """Import and instantiate the built-in driver for ``name``.
 
+    ``venv``, when set, points at the virtualenv directory holding
+    the upstream library (``garak`` or ``pyrit``); the driver will
+    invoke that venv's Python via subprocess instead of importing the
+    library in-process. This is how the published image keeps the
+    conflicting garak / pyrit dep sets in separate environments
+    (SPEC 014 §4.1).
+
     Falls back to a stub that errors with a clear message if the
-    upstream library isn't installed."""
+    upstream library isn't installed either in-process or in the
+    requested venv."""
 
     if name == "garak":
         from .garak import GarakSuite  # noqa: PLC0415
 
-        return GarakSuite()
+        return GarakSuite(venv=venv)
     if name == "pyrit":
         from .pyrit import PyritSuite  # noqa: PLC0415
 
-        return PyritSuite()
+        return PyritSuite(venv=venv)
     raise ValueError(f"unknown suite: {name!r}")
 
 
-def hash_text(text: str) -> str:
-    """Deterministic short hash for prompt/response bodies. We never
-    ship raw probe bodies into telemetry — the hash is enough to
-    dedupe and correlate across runs."""
-
-    return hashlib.blake2b(text.encode("utf-8"), digest_size=16).hexdigest()
+# ``hash_text`` / ``resolve_venv_python`` live in the ``_util`` leaf
+# module so the suite drivers can import them without an import cycle
+# through ``runner``. Import them from ``fabric_redteam_runner._util``.
