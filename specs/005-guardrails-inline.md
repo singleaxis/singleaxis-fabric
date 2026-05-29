@@ -265,7 +265,7 @@ The span event attributes are:
 |---|---|---|
 | `fabric.guardrail.phase` | `input` \| `output_stream` \| `output_final` | |
 | `fabric.guardrail.latency_ms` | float | End-to-end chain latency. |
-| `fabric.guardrail.blocked` | bool | Only the NeMo rail may block; Presidio only redacts. |
+| `fabric.guardrail.blocked` | bool | Presidio only redacts; the NeMo rail and any pluggable `GuardrailChecker` tier (`extra_checkers`) may block. |
 | `fabric.guardrail.policies` | tuple[str, ...] | e.g. `("presidio:EMAIL", "nemo:jailbreak_defence")`. Omitted if no policy fired. |
 | `fabric.guardrail.entities` | tuple[str, ...] | `category:count` pairs. Omitted if none. |
 
