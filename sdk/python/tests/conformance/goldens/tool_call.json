@@ -1,0 +1,39 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  },
+  {
+    "attributes": {
+      "fabric.tool.arguments_hash": "4f18a4cd0475a4be6c3c41e5954b1b4dfd730788198402bd10bb352ebff5d0a1",
+      "fabric.tool.call.id": "call-1",
+      "fabric.tool.kind": "retrieval",
+      "fabric.tool.name": "vector_search",
+      "fabric.tool.result_count": 3,
+      "fabric.tool.result_hash": "5429ed31f7eec9dbc86e358b3bacc5eb07eba26715ab1e05c802841f2d3fbd57",
+      "gen_ai.tool.call.id": "call-1",
+      "gen_ai.tool.name": "vector_search"
+    },
+    "events": [],
+    "kind": "INTERNAL",
+    "name": "fabric.tool_call",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

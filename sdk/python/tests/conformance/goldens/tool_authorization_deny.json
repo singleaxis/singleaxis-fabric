@@ -1,0 +1,32 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.tool_authorization_count": 1,
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.schema_version": "1.0",
+          "fabric.tool.arguments_hash": "88740ad3f868bf62e628821a4c3f2fbcf870799e21a6c2ebaa4bd01eed0863c3",
+          "fabric.tool.authorization.decision": "deny",
+          "fabric.tool.authorization.reason": "tool not on allow-list",
+          "fabric.tool.name": "wire_transfer"
+        },
+        "name": "fabric.tool.authorization"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

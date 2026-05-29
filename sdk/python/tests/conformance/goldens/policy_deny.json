@@ -1,0 +1,40 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.policy_engines": [
+        "stub-policy"
+      ],
+      "fabric.policy_evaluation_count": 1,
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.policy.decision": "deny",
+          "fabric.policy.engine": "stub-policy",
+          "fabric.policy.evaluation_id": "<normalized>",
+          "fabric.policy.evidence_ref": "tenant://evidence/deny-1",
+          "fabric.policy.input_hash": "40d73b5da3b2c0c2a3a53117df9ce7a4dc137bffcceeb71afc7d23acf9307914",
+          "fabric.policy.latency_ms": "<normalized>",
+          "fabric.policy.policy_id": "finance.refund.cap",
+          "fabric.policy.policy_version": "v3",
+          "fabric.policy.reason": "amount exceeds cap",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.policy.evaluation"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

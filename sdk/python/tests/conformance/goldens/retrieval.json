@@ -1,0 +1,43 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.retrieval_count": 1,
+      "fabric.retrieval_sources": [
+        "rag"
+      ],
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.retrieval.latency_ms": "<normalized>",
+          "fabric.retrieval.query_hash": "7e35db82f48f984a765228355735c61b3e8979f1e6120729b5b47f30df9fd3e8",
+          "fabric.retrieval.result_count": 2,
+          "fabric.retrieval.result_hashes": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "fabric.retrieval.source": "rag",
+          "fabric.retrieval.source_document_ids": [
+            "doc-1",
+            "doc-2"
+          ],
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.retrieval"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]
