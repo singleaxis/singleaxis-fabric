@@ -152,7 +152,8 @@ class DrainableTransportContract:
 
     def test_dequeue_empty_returns_none(self) -> None:
         transport = self.make_drainable()
-        assert transport.dequeue() is None
+        item = transport.dequeue()
+        assert item is None
 
     def test_round_trip_is_fifo(self) -> None:
         transport = self.make_drainable()
@@ -177,7 +178,8 @@ class DrainableTransportContract:
         enqueue(make_judge_request())
         first = transport.dequeue()
         assert first is not None
-        assert transport.dequeue() is None
+        second = transport.dequeue()
+        assert second is None
 
 
 class PolicyEngineContract:
