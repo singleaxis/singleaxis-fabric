@@ -1,0 +1,34 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.guardrail.blocked": false,
+          "fabric.guardrail.content_ref": "mem://0090f1bed28268c64e6121a2025e720a5f14e6075e2ff7f6c1d74433bfe8e4e7",
+          "fabric.guardrail.latency_ms": "<normalized>",
+          "fabric.guardrail.phase": "input",
+          "fabric.guardrail.policies": [
+            "stub-redactor:pii"
+          ],
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.guardrail"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

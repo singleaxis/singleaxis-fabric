@@ -1,0 +1,31 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.checkpoint_count": 1,
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.checkpoint.checkpoint_id": "<normalized>",
+          "fabric.checkpoint.state_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "fabric.checkpoint.step_name": "after-retrieval",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.checkpoint"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

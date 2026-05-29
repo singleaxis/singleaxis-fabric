@@ -1,0 +1,31 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.tool_authorization_count": 1,
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.schema_version": "1.0",
+          "fabric.tool.arguments_hash": "ac86000e4b24f46755d9f366ffdcb875d03de2908a7cd245d00094dddae38e19",
+          "fabric.tool.authorization.decision": "allow",
+          "fabric.tool.name": "search_orders"
+        },
+        "name": "fabric.tool.authorization"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

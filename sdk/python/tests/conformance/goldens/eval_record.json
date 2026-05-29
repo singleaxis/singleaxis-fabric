@@ -1,0 +1,39 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.eval_count": 1,
+      "fabric.eval_rubrics": [
+        "faithfulness-v1"
+      ],
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.eval.confidence": 0.8,
+          "fabric.eval.dimension": "faithfulness",
+          "fabric.eval.eval_id": "<normalized>",
+          "fabric.eval.evaluator_name": "StubJudge:Faithfulness",
+          "fabric.eval.evaluator_version": "1.2.0",
+          "fabric.eval.payload_ref": "tenant://payloads/req-0001",
+          "fabric.eval.rubric_id": "faithfulness-v1",
+          "fabric.eval.score": 0.91,
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.eval"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

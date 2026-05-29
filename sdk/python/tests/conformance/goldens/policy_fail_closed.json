@@ -1,0 +1,38 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.policy_engines": [
+        "stub-policy-raising"
+      ],
+      "fabric.policy_evaluation_count": 1,
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.policy.decision": "deny",
+          "fabric.policy.engine": "stub-policy-raising",
+          "fabric.policy.evaluation_id": "<normalized>",
+          "fabric.policy.input_hash": "76486eecb93e90859a9039a37489b959954ee722a13497353787f5d7f50309d6",
+          "fabric.policy.latency_ms": "<normalized>",
+          "fabric.policy.policy_id": "finance.refund.cap",
+          "fabric.policy.reason": "adapter raised: RuntimeError: engine unreachable",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.policy.evaluation"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

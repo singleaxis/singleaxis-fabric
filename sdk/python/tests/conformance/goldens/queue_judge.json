@@ -1,0 +1,38 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.judge_queued_count": 1,
+      "fabric.judge_rubrics": [
+        "helpfulness-v1"
+      ],
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.judge.dimensions": [
+            "helpfulness",
+            "tone"
+          ],
+          "fabric.judge.payload_ref": "tenant://payloads/judge-0001",
+          "fabric.judge.request_id": "<normalized>",
+          "fabric.judge.rubric_id": "helpfulness-v1",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.judge.queued"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]
