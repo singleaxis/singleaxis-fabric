@@ -370,7 +370,8 @@ def test_aqueue_judge_enqueues_off_loop(span_exporter: InMemorySpanExporter) -> 
             )
 
     asyncio.run(drive())
-    assert transport.dequeue() is not None
+    queued = transport.dequeue()
+    assert queued is not None
     span = span_exporter.get_finished_spans()[0]
     events = [e for e in span.events if e.name == "fabric.judge.queued"]
     assert len(events) == 1
