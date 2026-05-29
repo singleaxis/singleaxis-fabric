@@ -239,7 +239,7 @@ def test_aguard_input_runs_off_the_event_loop(span_exporter: InMemorySpanExporte
             # Now release the worker thread and collect the guard result.
             barrier.set()
             redacted = await guard_task
-            await sibling_task
+            await asyncio.wait_for(sibling_task, timeout=5.0)
         return counter, redacted
 
     counter, redacted = asyncio.run(drive())
