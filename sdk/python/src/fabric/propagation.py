@@ -142,6 +142,7 @@ def _decode(encoded: str) -> FabricContext | None:
         raw = base64.urlsafe_b64decode(padded.encode("ascii"))
         payload = json.loads(raw.decode("utf-8"))
     except (ValueError, TypeError):
+        _LOG.debug("tracestate: undecodable singleaxis member, ignoring")
         return None
     if not isinstance(payload, dict):
         return None
