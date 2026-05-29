@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
+
+## [0.4.1] - 2026-05-30
+
+### Added
+
 - **CI:** live OTLP span-landing assertion in the kind E2E smoke. The
   `kind cluster install + smoke` job now runs a real SDK `Decision`
   flow (`examples/e2e-smoke/flow.py`) on the runner, exports it over
@@ -64,8 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `FABRIC_REDTEAM_PYRIT_VENV`) which default to those paths in the
   published image; the drivers shell out to the matching venv's Python.
   SPEC 014 §4.1 row #1.
-
-- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
 
 ## [0.4.0] - 2026-05-28
 
