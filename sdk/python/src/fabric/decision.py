@@ -70,8 +70,9 @@ import asyncio
 import hashlib
 import json
 import logging
+import threading
 import time
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
 from uuid import UUID, uuid4
@@ -102,7 +103,7 @@ from .stream import StreamRedactor
 from .tool_auth import ToolAuthorization, ToolAuthorizer
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from opentelemetry.trace import Span
 
@@ -162,6 +163,24 @@ ATTR_GUARDRAIL_CONTENT_REF = "fabric.guardrail.content_ref"
 ATTR_POLICY_INPUT_CONTENT_REF = "fabric.policy.input_content_ref"
 
 
+class ConcurrentDecisionUseError(RuntimeError):
+    """Raised when one :class:`Decision` is mutated concurrently.
+
+    A :class:`Decision` represents a single agent turn and is not safe
+    to share across threads or asyncio tasks (see the module docstring's
+    concurrency contract). The SDK detects *genuinely overlapping*
+    mutating calls on the same instance via a non-blocking sentinel lock
+    and raises this rather than letting the internal record lists and
+    rolling span-counter attributes race silently.
+
+    Note the async ``a*`` methods are NOT a false trigger: each offloads
+    its sync sibling to a worker thread and is awaited to completion
+    before the next call begins, so sequential ``await`` calls never
+    overlap. Firing two such coroutines concurrently on ONE decision
+    (e.g. via ``asyncio.gather``) is the real footgun this catches.
+    """
+
+
 class Decision(AbstractContextManager["Decision"]):
     """Per-agent-call context. Enter once, exit once."""
 
@@ -201,10 +220,53 @@ class Decision(AbstractContextManager["Decision"]):
         self._judge_requests: list[JudgeRequest] = []
         self._policy_evaluations: list[PolicyEvaluation] = []
         self._tool_authorizations: list[ToolAuthorization] = []
+        # Concurrency overlap sentinel. A non-blocking lock that is held
+        # only for the duration of a single mutating call. Two operations
+        # that genuinely overlap in time on the same instance contend for
+        # it and the loser raises ConcurrentDecisionUseError. Sequential
+        # calls — including the async to_thread offload, where each await
+        # completes before the next starts — never contend. See
+        # ``_exclusive`` and the module concurrency contract.
+        self._busy = threading.Lock()
+        # Lifecycle flag: "new" before enter, "open" between enter/exit,
+        # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
+        # rejection; shared by the sync and async context-manager paths.
+        self._state = "new"
+
+    # -- concurrency overlap guard ---------------------------------------
+
+    @contextmanager
+    def _exclusive(self) -> Iterator[None]:
+        """Hold the overlap sentinel for one mutating call, else raise.
+
+        Non-blocking ``acquire`` so a second *concurrent* mutating call
+        fails fast with :class:`ConcurrentDecisionUseError` instead of
+        silently racing the record lists / span counters. The acquire is
+        a couple of microseconds, so the hot path is not meaningfully
+        regressed. Do NOT call a guarded method from inside another
+        guarded method on the same instance — that would self-deadlock
+        on this non-reentrant lock (none of the public methods do).
+        """
+        if not self._busy.acquire(blocking=False):
+            raise ConcurrentDecisionUseError(
+                "Decision used concurrently from multiple threads/tasks; "
+                "open one Decision per agent turn — see the concurrency "
+                "contract in the module docstring"
+            )
+        try:
+            yield
+        finally:
+            self._busy.release()
 
     # -- context manager --------------------------------------------------
 
     def __enter__(self) -> Self:
+        if self._state != "new":
+            raise RuntimeError(
+                f"Decision already {self._state}; open one Decision per agent "
+                "turn (do not re-enter or reuse the same instance)"
+            )
+        self._state = "open"
         tracer = self._client.tracer
         # We own status + exception recording (guardrail blocks,
         # escalations, and raw exceptions each get distinct treatment),
@@ -264,6 +326,7 @@ class Decision(AbstractContextManager["Decision"]):
         result = self._cm.__exit__(exc_type, exc, tb)
         self._span = None
         self._cm = None
+        self._state = "closed"
         return result
 
     # -- async context manager -------------------------------------------
@@ -358,15 +421,18 @@ class Decision(AbstractContextManager["Decision"]):
 
     def guard_input(self, raw_input: str) -> str:
         """Check and redact user input before it reaches the LLM."""
-        return self._run_chain(phase="input", path="input", value=raw_input)
+        with self._exclusive():
+            return self._run_chain(phase="input", path="input", value=raw_input)
 
     def guard_output_chunk(self, chunk: str) -> str:
         """Redact a streaming output chunk."""
-        return self._run_chain(phase="output_stream", path="output_chunk", value=chunk)
+        with self._exclusive():
+            return self._run_chain(phase="output_stream", path="output_chunk", value=chunk)
 
     def guard_output_final(self, final_output: str) -> str:
         """Run the post-stream full-text guardrail pass."""
-        return self._run_chain(phase="output_final", path="output_final", value=final_output)
+        with self._exclusive():
+            return self._run_chain(phase="output_final", path="output_final", value=final_output)
 
     # -- async guardrail entry points ------------------------------------
     #
@@ -494,14 +560,15 @@ class Decision(AbstractContextManager["Decision"]):
         ``raise_for_block`` after this to abort the decision with the
         canned block response attached.
         """
-        if not result.blocked:
-            raise ValueError("record_block called with a non-blocking GuardrailResult")
-        if self._blocked is not None:
-            raise RuntimeError(
-                "Decision is already blocked; record_block is first-wins. "
-                "Call only once per Decision."
-            )
-        self._blocked = result
+        with self._exclusive():
+            if not result.blocked:
+                raise ValueError("record_block called with a non-blocking GuardrailResult")
+            if self._blocked is not None:
+                raise RuntimeError(
+                    "Decision is already blocked; record_block is first-wins. "
+                    "Call only once per Decision."
+                )
+            self._blocked = result
 
     def raise_for_block(self) -> None:
         """Raise :class:`GuardrailBlocked` if a block is recorded."""
@@ -528,31 +595,32 @@ class Decision(AbstractContextManager["Decision"]):
         call.
         """
 
-        span = self.span
-        if self._escalation is not None:
-            raise RuntimeError(
-                "Decision already has an escalation requested; request_escalation "
-                "is first-wins. Call only once per Decision."
-            )
-        self._escalation = summary
-        span.set_attribute(ATTR_ESCALATED, True)
-        span.set_attribute(ATTR_ESC_REASON, summary.reason)
-        span.set_attribute(ATTR_ESC_MODE, summary.mode)
-        if summary.rubric_id is not None:
-            span.set_attribute(ATTR_ESC_RUBRIC, summary.rubric_id)
-        if summary.triggering_score is not None:
-            span.set_attribute(ATTR_ESC_SCORE, summary.triggering_score)
+        with self._exclusive():
+            span = self.span
+            if self._escalation is not None:
+                raise RuntimeError(
+                    "Decision already has an escalation requested; request_escalation "
+                    "is first-wins. Call only once per Decision."
+                )
+            self._escalation = summary
+            span.set_attribute(ATTR_ESCALATED, True)
+            span.set_attribute(ATTR_ESC_REASON, summary.reason)
+            span.set_attribute(ATTR_ESC_MODE, summary.mode)
+            if summary.rubric_id is not None:
+                span.set_attribute(ATTR_ESC_RUBRIC, summary.rubric_id)
+            if summary.triggering_score is not None:
+                span.set_attribute(ATTR_ESC_SCORE, summary.triggering_score)
 
-        event_attrs: dict[str, str | int | float | bool] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.escalation.reason": summary.reason,
-            "fabric.escalation.mode": summary.mode,
-        }
-        if summary.rubric_id is not None:
-            event_attrs["fabric.escalation.rubric_id"] = summary.rubric_id
-        if summary.triggering_score is not None:
-            event_attrs["fabric.escalation.triggering_score"] = summary.triggering_score
-        span.add_event("fabric.escalation", attributes=event_attrs)
+            event_attrs: dict[str, str | int | float | bool] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.escalation.reason": summary.reason,
+                "fabric.escalation.mode": summary.mode,
+            }
+            if summary.rubric_id is not None:
+                event_attrs["fabric.escalation.rubric_id"] = summary.rubric_id
+            if summary.triggering_score is not None:
+                event_attrs["fabric.escalation.triggering_score"] = summary.triggering_score
+            span.add_event("fabric.escalation", attributes=event_attrs)
 
     def raise_for_escalation(self) -> None:
         """Raise :class:`EscalationRequested` if an escalation is recorded."""
@@ -586,34 +654,35 @@ class Decision(AbstractContextManager["Decision"]):
         span.
         """
 
-        record = RetrievalRecord.from_query(
-            source=source,
-            query=query,
-            result_count=result_count,
-            result_hashes=result_hashes,
-            source_document_ids=source_document_ids,
-            latency_ms=latency_ms,
-        )
-        span = self.span
-        self._retrievals.append(record)
-        span.set_attribute(ATTR_RETRIEVAL_COUNT, len(self._retrievals))
-        unique_sources = sorted({r.source.value for r in self._retrievals})
-        span.set_attribute(ATTR_RETRIEVAL_SOURCES, tuple(unique_sources))
+        with self._exclusive():
+            record = RetrievalRecord.from_query(
+                source=source,
+                query=query,
+                result_count=result_count,
+                result_hashes=result_hashes,
+                source_document_ids=source_document_ids,
+                latency_ms=latency_ms,
+            )
+            span = self.span
+            self._retrievals.append(record)
+            span.set_attribute(ATTR_RETRIEVAL_COUNT, len(self._retrievals))
+            unique_sources = sorted({r.source.value for r in self._retrievals})
+            span.set_attribute(ATTR_RETRIEVAL_SOURCES, tuple(unique_sources))
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.retrieval.source": record.source.value,
-            "fabric.retrieval.query_hash": record.query_hash,
-            "fabric.retrieval.result_count": record.result_count,
-        }
-        if record.result_hashes:
-            event_attrs["fabric.retrieval.result_hashes"] = record.result_hashes
-        if record.source_document_ids:
-            event_attrs["fabric.retrieval.source_document_ids"] = record.source_document_ids
-        if record.latency_ms is not None:
-            event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
-        span.add_event("fabric.retrieval", attributes=event_attrs)
-        return record
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.retrieval.source": record.source.value,
+                "fabric.retrieval.query_hash": record.query_hash,
+                "fabric.retrieval.result_count": record.result_count,
+            }
+            if record.result_hashes:
+                event_attrs["fabric.retrieval.result_hashes"] = record.result_hashes
+            if record.source_document_ids:
+                event_attrs["fabric.retrieval.source_document_ids"] = record.source_document_ids
+            if record.latency_ms is not None:
+                event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
+            span.add_event("fabric.retrieval", attributes=event_attrs)
+            return record
 
     # -- memory ----------------------------------------------------------
 
@@ -641,36 +710,37 @@ class Decision(AbstractContextManager["Decision"]):
         span.
         """
 
-        record = MemoryRecord.from_content(
-            kind=kind,
-            content=content,
-            key=key,
-            tags=tags,
-            ttl_seconds=ttl_seconds,
-        )
-        span = self.span
-        self._memory_writes.append(record)
-        write_count = sum(1 for r in self._memory_writes if r.direction == "write")
-        read_count = sum(1 for r in self._memory_writes if r.direction == "read")
-        span.set_attribute(ATTR_MEMORY_WRITE_COUNT, write_count)
-        span.set_attribute(ATTR_MEMORY_READ_COUNT, read_count)
-        unique_kinds = sorted({r.kind.value for r in self._memory_writes})
-        span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
+        with self._exclusive():
+            record = MemoryRecord.from_content(
+                kind=kind,
+                content=content,
+                key=key,
+                tags=tags,
+                ttl_seconds=ttl_seconds,
+            )
+            span = self.span
+            self._memory_writes.append(record)
+            write_count = sum(1 for r in self._memory_writes if r.direction == "write")
+            read_count = sum(1 for r in self._memory_writes if r.direction == "read")
+            span.set_attribute(ATTR_MEMORY_WRITE_COUNT, write_count)
+            span.set_attribute(ATTR_MEMORY_READ_COUNT, read_count)
+            unique_kinds = sorted({r.kind.value for r in self._memory_writes})
+            span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.memory.direction": record.direction,
-            "fabric.memory.kind": record.kind.value,
-            "fabric.memory.content_hash": record.content_hash,
-        }
-        if record.key is not None:
-            event_attrs["fabric.memory.key"] = record.key
-        if record.tags:
-            event_attrs["fabric.memory.tags"] = record.tags
-        if record.ttl_seconds is not None:
-            event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
-        span.add_event("fabric.memory", attributes=event_attrs)
-        return record
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.memory.direction": record.direction,
+                "fabric.memory.kind": record.kind.value,
+                "fabric.memory.content_hash": record.content_hash,
+            }
+            if record.key is not None:
+                event_attrs["fabric.memory.key"] = record.key
+            if record.tags:
+                event_attrs["fabric.memory.tags"] = record.tags
+            if record.ttl_seconds is not None:
+                event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
+            span.add_event("fabric.memory", attributes=event_attrs)
+            return record
 
     def recall(
         self,
@@ -696,32 +766,33 @@ class Decision(AbstractContextManager["Decision"]):
         span.
         """
 
-        record = MemoryRecord.from_recall(
-            kind=kind,
-            key=key,
-            content=content,
-            source=source,
-        )
-        span = self.span
-        self._memory_writes.append(record)
-        write_count = sum(1 for r in self._memory_writes if r.direction == "write")
-        read_count = sum(1 for r in self._memory_writes if r.direction == "read")
-        span.set_attribute(ATTR_MEMORY_WRITE_COUNT, write_count)
-        span.set_attribute(ATTR_MEMORY_READ_COUNT, read_count)
-        unique_kinds = sorted({r.kind.value for r in self._memory_writes})
-        span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
+        with self._exclusive():
+            record = MemoryRecord.from_recall(
+                kind=kind,
+                key=key,
+                content=content,
+                source=source,
+            )
+            span = self.span
+            self._memory_writes.append(record)
+            write_count = sum(1 for r in self._memory_writes if r.direction == "write")
+            read_count = sum(1 for r in self._memory_writes if r.direction == "read")
+            span.set_attribute(ATTR_MEMORY_WRITE_COUNT, write_count)
+            span.set_attribute(ATTR_MEMORY_READ_COUNT, read_count)
+            unique_kinds = sorted({r.kind.value for r in self._memory_writes})
+            span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.memory.direction": record.direction,
-            "fabric.memory.kind": record.kind.value,
-            "fabric.memory.content_hash": record.content_hash,
-            "fabric.memory.key": record.key if record.key is not None else key,
-        }
-        if record.source is not None:
-            event_attrs["fabric.memory.source"] = record.source
-        span.add_event("fabric.memory", attributes=event_attrs)
-        return record
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.memory.direction": record.direction,
+                "fabric.memory.kind": record.kind.value,
+                "fabric.memory.content_hash": record.content_hash,
+                "fabric.memory.key": record.key if record.key is not None else key,
+            }
+            if record.source is not None:
+                event_attrs["fabric.memory.source"] = record.source
+            span.add_event("fabric.memory", attributes=event_attrs)
+            return record
 
     # -- side effects ----------------------------------------------------
 
@@ -754,67 +825,68 @@ class Decision(AbstractContextManager["Decision"]):
         same field is rejected to avoid ambiguous evidence.
         """
 
-        if request_payload is not None and request_hash is not None:
-            raise ValueError("pass either request_payload or request_hash, not both")
-        if result_payload is not None and result_hash is not None:
-            raise ValueError("pass either result_payload or result_hash, not both")
-        if request_payload is not None or result_payload is not None:
-            record = SideEffectRecord.from_payloads(
-                effect_type=effect_type,
-                target_system=target_system,
-                operation=operation,
-                request_payload=request_payload,
-                result_payload=result_payload,
-                idempotency_key=idempotency_key,
-                approval_required=approval_required,
-                committed=committed,
-                rollback_supported=rollback_supported,
-                replay_behavior=replay_behavior,
-                parent_tool_call_id=parent_tool_call_id,
-            )
-        else:
-            record = SideEffectRecord(
-                effect_type=SideEffectType(effect_type),
-                target_system=target_system,
-                operation=operation,
-                request_hash=request_hash,
-                result_hash=result_hash,
-                idempotency_key=idempotency_key,
-                approval_required=approval_required,
-                committed=committed,
-                rollback_supported=rollback_supported,
-                replay_behavior=ReplayBehavior(replay_behavior),
-                parent_tool_call_id=parent_tool_call_id,
-            )
+        with self._exclusive():
+            if request_payload is not None and request_hash is not None:
+                raise ValueError("pass either request_payload or request_hash, not both")
+            if result_payload is not None and result_hash is not None:
+                raise ValueError("pass either result_payload or result_hash, not both")
+            if request_payload is not None or result_payload is not None:
+                record = SideEffectRecord.from_payloads(
+                    effect_type=effect_type,
+                    target_system=target_system,
+                    operation=operation,
+                    request_payload=request_payload,
+                    result_payload=result_payload,
+                    idempotency_key=idempotency_key,
+                    approval_required=approval_required,
+                    committed=committed,
+                    rollback_supported=rollback_supported,
+                    replay_behavior=replay_behavior,
+                    parent_tool_call_id=parent_tool_call_id,
+                )
+            else:
+                record = SideEffectRecord(
+                    effect_type=SideEffectType(effect_type),
+                    target_system=target_system,
+                    operation=operation,
+                    request_hash=request_hash,
+                    result_hash=result_hash,
+                    idempotency_key=idempotency_key,
+                    approval_required=approval_required,
+                    committed=committed,
+                    rollback_supported=rollback_supported,
+                    replay_behavior=ReplayBehavior(replay_behavior),
+                    parent_tool_call_id=parent_tool_call_id,
+                )
 
-        span = self.span
-        self._side_effects.append(record)
-        span.set_attribute(ATTR_SIDE_EFFECT_COUNT, len(self._side_effects))
-        unique_types = sorted({r.effect_type.value for r in self._side_effects})
-        unique_systems = sorted({r.target_system for r in self._side_effects})
-        span.set_attribute(ATTR_SIDE_EFFECT_TYPES, tuple(unique_types))
-        span.set_attribute(ATTR_SIDE_EFFECT_SYSTEMS, tuple(unique_systems))
+            span = self.span
+            self._side_effects.append(record)
+            span.set_attribute(ATTR_SIDE_EFFECT_COUNT, len(self._side_effects))
+            unique_types = sorted({r.effect_type.value for r in self._side_effects})
+            unique_systems = sorted({r.target_system for r in self._side_effects})
+            span.set_attribute(ATTR_SIDE_EFFECT_TYPES, tuple(unique_types))
+            span.set_attribute(ATTR_SIDE_EFFECT_SYSTEMS, tuple(unique_systems))
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.side_effect.type": record.effect_type.value,
-            "fabric.side_effect.target_system": record.target_system,
-            "fabric.side_effect.operation": record.operation,
-            "fabric.side_effect.approval_required": record.approval_required,
-            "fabric.side_effect.committed": record.committed,
-            "fabric.side_effect.rollback_supported": record.rollback_supported,
-            "fabric.side_effect.replay_behavior": record.replay_behavior.value,
-        }
-        if record.request_hash is not None:
-            event_attrs["fabric.side_effect.request_hash"] = record.request_hash
-        if record.result_hash is not None:
-            event_attrs["fabric.side_effect.result_hash"] = record.result_hash
-        if record.idempotency_key is not None:
-            event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
-        if record.parent_tool_call_id is not None:
-            event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
-        span.add_event("fabric.side_effect", attributes=event_attrs)
-        return record
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.side_effect.type": record.effect_type.value,
+                "fabric.side_effect.target_system": record.target_system,
+                "fabric.side_effect.operation": record.operation,
+                "fabric.side_effect.approval_required": record.approval_required,
+                "fabric.side_effect.committed": record.committed,
+                "fabric.side_effect.rollback_supported": record.rollback_supported,
+                "fabric.side_effect.replay_behavior": record.replay_behavior.value,
+            }
+            if record.request_hash is not None:
+                event_attrs["fabric.side_effect.request_hash"] = record.request_hash
+            if record.result_hash is not None:
+                event_attrs["fabric.side_effect.result_hash"] = record.result_hash
+            if record.idempotency_key is not None:
+                event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
+            if record.parent_tool_call_id is not None:
+                event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
+            span.add_event("fabric.side_effect", attributes=event_attrs)
+            return record
 
     # -- checkpoints -----------------------------------------------------
 
@@ -842,26 +914,27 @@ class Decision(AbstractContextManager["Decision"]):
         Returns:
             The recorded CheckpointEvent.
         """
-        event = CheckpointEvent.create(
-            step_name=step_name,
-            state_hash=state_hash,
-            checkpoint_id=checkpoint_id,
-        )
-        self._checkpoints.append(event)
+        with self._exclusive():
+            event = CheckpointEvent.create(
+                step_name=step_name,
+                state_hash=state_hash,
+                checkpoint_id=checkpoint_id,
+            )
+            self._checkpoints.append(event)
 
-        span = self.span
-        span.set_attribute(ATTR_CHECKPOINT_COUNT, len(self._checkpoints))
+            span = self.span
+            span.set_attribute(ATTR_CHECKPOINT_COUNT, len(self._checkpoints))
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.checkpoint.checkpoint_id": str(event.checkpoint_id),
-            "fabric.checkpoint.step_name": event.step_name,
-        }
-        if event.state_hash is not None:
-            event_attrs["fabric.checkpoint.state_hash"] = event.state_hash
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.checkpoint.checkpoint_id": str(event.checkpoint_id),
+                "fabric.checkpoint.step_name": event.step_name,
+            }
+            if event.state_hash is not None:
+                event_attrs["fabric.checkpoint.state_hash"] = event.state_hash
 
-        span.add_event("fabric.checkpoint", attributes=event_attrs)
-        return event
+            span.add_event("fabric.checkpoint", attributes=event_attrs)
+            return event
 
     # -- evals ----------------------------------------------------------
 
@@ -900,39 +973,40 @@ class Decision(AbstractContextManager["Decision"]):
         Returns:
             The recorded EvalRecord.
         """
-        record = EvalRecord.create(
-            rubric_id=rubric_id,
-            score=score,
-            dimension=dimension,
-            evaluator_name=evaluator_name,
-            evaluator_version=evaluator_version,
-            confidence=confidence,
-            payload_ref=payload_ref,
-        )
-        self._evals.append(record)
+        with self._exclusive():
+            record = EvalRecord.create(
+                rubric_id=rubric_id,
+                score=score,
+                dimension=dimension,
+                evaluator_name=evaluator_name,
+                evaluator_version=evaluator_version,
+                confidence=confidence,
+                payload_ref=payload_ref,
+            )
+            self._evals.append(record)
 
-        span = self.span
-        span.set_attribute(ATTR_EVAL_COUNT, len(self._evals))
-        unique_rubrics = sorted({e.rubric_id for e in self._evals})
-        span.set_attribute(ATTR_EVAL_RUBRICS, tuple(unique_rubrics))
+            span = self.span
+            span.set_attribute(ATTR_EVAL_COUNT, len(self._evals))
+            unique_rubrics = sorted({e.rubric_id for e in self._evals})
+            span.set_attribute(ATTR_EVAL_RUBRICS, tuple(unique_rubrics))
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.eval.eval_id": str(record.eval_id),
-            "fabric.eval.rubric_id": record.rubric_id,
-            "fabric.eval.score": record.score,
-            "fabric.eval.dimension": record.dimension,
-            "fabric.eval.evaluator_name": record.evaluator_name,
-        }
-        if record.evaluator_version is not None:
-            event_attrs["fabric.eval.evaluator_version"] = record.evaluator_version
-        if record.confidence is not None:
-            event_attrs["fabric.eval.confidence"] = record.confidence
-        if record.payload_ref is not None:
-            event_attrs["fabric.eval.payload_ref"] = record.payload_ref
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.eval.eval_id": str(record.eval_id),
+                "fabric.eval.rubric_id": record.rubric_id,
+                "fabric.eval.score": record.score,
+                "fabric.eval.dimension": record.dimension,
+                "fabric.eval.evaluator_name": record.evaluator_name,
+            }
+            if record.evaluator_version is not None:
+                event_attrs["fabric.eval.evaluator_version"] = record.evaluator_version
+            if record.confidence is not None:
+                event_attrs["fabric.eval.confidence"] = record.confidence
+            if record.payload_ref is not None:
+                event_attrs["fabric.eval.payload_ref"] = record.payload_ref
 
-        span.add_event("fabric.eval", attributes=event_attrs)
-        return record
+            span.add_event("fabric.eval", attributes=event_attrs)
+            return record
 
     # -- judge queue -----------------------------------------------------
 
@@ -967,40 +1041,41 @@ class Decision(AbstractContextManager["Decision"]):
         Returns:
             The JudgeRequest that was enqueued.
         """
-        if not rubric_id or not rubric_id.strip():
-            raise ValueError("rubric_id must be non-empty")
-        dim_tuple = tuple(dimensions)
-        if not dim_tuple:
-            raise ValueError("at least one dimension required")
+        with self._exclusive():
+            if not rubric_id or not rubric_id.strip():
+                raise ValueError("rubric_id must be non-empty")
+            dim_tuple = tuple(dimensions)
+            if not dim_tuple:
+                raise ValueError("at least one dimension required")
 
-        request = JudgeRequest(
-            request_id=uuid4(),
-            decision_id=self._request_id,
-            rubric_id=rubric_id.strip(),
-            dimensions=dim_tuple,
-            context=context,
-            payload_ref=payload_ref,
-        )
+            request = JudgeRequest(
+                request_id=uuid4(),
+                decision_id=self._request_id,
+                rubric_id=rubric_id.strip(),
+                dimensions=dim_tuple,
+                context=context,
+                payload_ref=payload_ref,
+            )
 
-        transport.enqueue(request)
-        self._judge_requests.append(request)
+            transport.enqueue(request)
+            self._judge_requests.append(request)
 
-        span = self.span
-        span.set_attribute(ATTR_JUDGE_QUEUED_COUNT, len(self._judge_requests))
-        unique_rubrics = sorted({r.rubric_id for r in self._judge_requests})
-        span.set_attribute(ATTR_JUDGE_RUBRICS, tuple(unique_rubrics))
+            span = self.span
+            span.set_attribute(ATTR_JUDGE_QUEUED_COUNT, len(self._judge_requests))
+            unique_rubrics = sorted({r.rubric_id for r in self._judge_requests})
+            span.set_attribute(ATTR_JUDGE_RUBRICS, tuple(unique_rubrics))
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.judge.request_id": str(request.request_id),
-            "fabric.judge.rubric_id": request.rubric_id,
-            "fabric.judge.dimensions": dim_tuple,
-        }
-        if payload_ref is not None:
-            event_attrs["fabric.judge.payload_ref"] = payload_ref
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.judge.request_id": str(request.request_id),
+                "fabric.judge.rubric_id": request.rubric_id,
+                "fabric.judge.dimensions": dim_tuple,
+            }
+            if payload_ref is not None:
+                event_attrs["fabric.judge.payload_ref"] = payload_ref
 
-        span.add_event("fabric.judge.queued", attributes=event_attrs)
-        return request
+            span.add_event("fabric.judge.queued", attributes=event_attrs)
+            return request
 
     async def aqueue_judge(
         self,
@@ -1092,33 +1167,47 @@ class Decision(AbstractContextManager["Decision"]):
         SDK records a fail-closed PolicyEvaluation with
         ``decision="deny"``, ``reason="adapter raised: <type>"``.
         """
-        span = self.span
-        serialized_input = json.dumps(input, sort_keys=True, default=str)
-        input_hash = hashlib.sha256(serialized_input.encode("utf-8")).hexdigest()
+        with self._exclusive():
+            span = self.span
+            serialized_input = json.dumps(input, sort_keys=True, default=str)
+            input_hash = hashlib.sha256(serialized_input.encode("utf-8")).hexdigest()
 
-        started = time.monotonic()
-        try:
-            verdict = engine.evaluate(
-                policy_id=policy_id,
-                input=input,
-                timeout_seconds=timeout_seconds,
-            )
-            latency_ms = (time.monotonic() - started) * 1000.0
+            started = time.monotonic()
             try:
-                evaluation = PolicyEvaluation.from_verdict(
-                    verdict=verdict,
-                    engine=engine.engine_name,
+                verdict = engine.evaluate(
                     policy_id=policy_id,
-                    decision_id=self.request_id,
-                    input_hash=input_hash,
-                    latency_ms=latency_ms,
+                    input=input,
+                    timeout_seconds=timeout_seconds,
                 )
-            except ValueError as exc:
-                # Missing reason on non-allow → fail closed
+                latency_ms = (time.monotonic() - started) * 1000.0
+                try:
+                    evaluation = PolicyEvaluation.from_verdict(
+                        verdict=verdict,
+                        engine=engine.engine_name,
+                        policy_id=policy_id,
+                        decision_id=self.request_id,
+                        input_hash=input_hash,
+                        latency_ms=latency_ms,
+                    )
+                except ValueError as exc:
+                    # Missing reason on non-allow → fail closed
+                    evaluation = PolicyEvaluation.from_verdict(
+                        verdict=EngineVerdict(
+                            decision="deny",
+                            reason=f"adapter returned malformed verdict: {exc}",
+                        ),
+                        engine=engine.engine_name,
+                        policy_id=policy_id,
+                        decision_id=self.request_id,
+                        input_hash=input_hash,
+                        latency_ms=latency_ms,
+                    )
+            except Exception as exc:  # adapter contract is broad; fail closed
+                latency_ms = (time.monotonic() - started) * 1000.0
                 evaluation = PolicyEvaluation.from_verdict(
                     verdict=EngineVerdict(
                         decision="deny",
-                        reason=f"adapter returned malformed verdict: {exc}",
+                        reason=f"adapter raised: {type(exc).__name__}: {exc}",
                     ),
                     engine=engine.engine_name,
                     policy_id=policy_id,
@@ -1126,54 +1215,41 @@ class Decision(AbstractContextManager["Decision"]):
                     input_hash=input_hash,
                     latency_ms=latency_ms,
                 )
-        except Exception as exc:  # adapter contract is broad; fail closed
-            latency_ms = (time.monotonic() - started) * 1000.0
-            evaluation = PolicyEvaluation.from_verdict(
-                verdict=EngineVerdict(
-                    decision="deny",
-                    reason=f"adapter raised: {type(exc).__name__}: {exc}",
-                ),
-                engine=engine.engine_name,
-                policy_id=policy_id,
-                decision_id=self.request_id,
-                input_hash=input_hash,
-                latency_ms=latency_ms,
+                span.record_exception(exc)
+
+            self._policy_evaluations.append(evaluation)
+            span.set_attribute(ATTR_POLICY_EVAL_COUNT, len(self._policy_evaluations))
+            unique_engines = sorted({e.engine for e in self._policy_evaluations})
+            span.set_attribute(ATTR_POLICY_ENGINES, tuple(unique_engines))
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.policy.evaluation_id": str(evaluation.evaluation_id),
+                "fabric.policy.engine": evaluation.engine,
+                "fabric.policy.policy_id": evaluation.policy_id,
+                "fabric.policy.decision": evaluation.decision,
+                "fabric.policy.input_hash": evaluation.input_hash,
+                "fabric.policy.latency_ms": evaluation.latency_ms,
+            }
+            if evaluation.policy_version is not None:
+                event_attrs["fabric.policy.policy_version"] = evaluation.policy_version
+            if evaluation.reason is not None:
+                event_attrs["fabric.policy.reason"] = evaluation.reason
+            if evaluation.evidence_ref is not None:
+                event_attrs["fabric.policy.evidence_ref"] = evaluation.evidence_ref
+            if evaluation.bundle_signature is not None:
+                event_attrs["fabric.policy.bundle_signature"] = evaluation.bundle_signature
+            # Dual-pipeline: additively stash the raw serialized input (the
+            # same string hashed into input_hash above) and stamp its locator
+            # URI. input_hash behaviour is untouched — content_ref is additive.
+            content_ref = self._store_content_ref(
+                serialized_input, key_hint=f"policy/{evaluation.engine}/{evaluation.policy_id}"
             )
-            span.record_exception(exc)
+            if content_ref is not None:
+                event_attrs[ATTR_POLICY_INPUT_CONTENT_REF] = content_ref.uri
 
-        self._policy_evaluations.append(evaluation)
-        span.set_attribute(ATTR_POLICY_EVAL_COUNT, len(self._policy_evaluations))
-        unique_engines = sorted({e.engine for e in self._policy_evaluations})
-        span.set_attribute(ATTR_POLICY_ENGINES, tuple(unique_engines))
-
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.policy.evaluation_id": str(evaluation.evaluation_id),
-            "fabric.policy.engine": evaluation.engine,
-            "fabric.policy.policy_id": evaluation.policy_id,
-            "fabric.policy.decision": evaluation.decision,
-            "fabric.policy.input_hash": evaluation.input_hash,
-            "fabric.policy.latency_ms": evaluation.latency_ms,
-        }
-        if evaluation.policy_version is not None:
-            event_attrs["fabric.policy.policy_version"] = evaluation.policy_version
-        if evaluation.reason is not None:
-            event_attrs["fabric.policy.reason"] = evaluation.reason
-        if evaluation.evidence_ref is not None:
-            event_attrs["fabric.policy.evidence_ref"] = evaluation.evidence_ref
-        if evaluation.bundle_signature is not None:
-            event_attrs["fabric.policy.bundle_signature"] = evaluation.bundle_signature
-        # Dual-pipeline: additively stash the raw serialized input (the
-        # same string hashed into input_hash above) and stamp its locator
-        # URI. input_hash behaviour is untouched — content_ref is additive.
-        content_ref = self._store_content_ref(
-            serialized_input, key_hint=f"policy/{evaluation.engine}/{evaluation.policy_id}"
-        )
-        if content_ref is not None:
-            event_attrs[ATTR_POLICY_INPUT_CONTENT_REF] = content_ref.uri
-
-        span.add_event("fabric.policy.evaluation", attributes=event_attrs)
-        return evaluation
+            span.add_event("fabric.policy.evaluation", attributes=event_attrs)
+            return evaluation
 
     async def aevaluate_policy(
         self,
@@ -1236,38 +1312,41 @@ class Decision(AbstractContextManager["Decision"]):
         On authorizer failure (ToolAuthorizerError or any exception):
         fails CLOSED to ``decision="deny"`` with a synthetic reason.
         """
-        span = self.span
-        arguments_hash = (
-            hashlib.sha256(arguments.encode("utf-8")).hexdigest() if arguments is not None else None
-        )
-
-        try:
-            authorization = authorizer.authorize(
-                tool_name=tool_name,
-                arguments_hash=arguments_hash,
+        with self._exclusive():
+            span = self.span
+            arguments_hash = (
+                hashlib.sha256(arguments.encode("utf-8")).hexdigest()
+                if arguments is not None
+                else None
             )
-        except Exception as exc:  # authorizer contract is broad; fail closed
-            authorization = ToolAuthorization(
-                decision="deny",
-                reason=f"authorizer raised: {type(exc).__name__}: {exc}",
-            )
-            span.record_exception(exc)
 
-        self._tool_authorizations.append(authorization)
-        span.set_attribute(ATTR_TOOL_AUTH_COUNT, len(self._tool_authorizations))
+            try:
+                authorization = authorizer.authorize(
+                    tool_name=tool_name,
+                    arguments_hash=arguments_hash,
+                )
+            except Exception as exc:  # authorizer contract is broad; fail closed
+                authorization = ToolAuthorization(
+                    decision="deny",
+                    reason=f"authorizer raised: {type(exc).__name__}: {exc}",
+                )
+                span.record_exception(exc)
 
-        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-            "fabric.schema_version": SCHEMA_VERSION,
-            "fabric.tool.name": tool_name,
-            "fabric.tool.authorization.decision": authorization.decision,
-        }
-        if authorization.reason is not None:
-            event_attrs["fabric.tool.authorization.reason"] = authorization.reason
-        if arguments_hash is not None:
-            event_attrs["fabric.tool.arguments_hash"] = arguments_hash
+            self._tool_authorizations.append(authorization)
+            span.set_attribute(ATTR_TOOL_AUTH_COUNT, len(self._tool_authorizations))
 
-        span.add_event("fabric.tool.authorization", attributes=event_attrs)
-        return authorization
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.tool.name": tool_name,
+                "fabric.tool.authorization.decision": authorization.decision,
+            }
+            if authorization.reason is not None:
+                event_attrs["fabric.tool.authorization.reason"] = authorization.reason
+            if arguments_hash is not None:
+                event_attrs["fabric.tool.arguments_hash"] = arguments_hash
+
+            span.add_event("fabric.tool.authorization", attributes=event_attrs)
+            return authorization
 
     async def aauthorize_tool_call(
         self,
@@ -1372,10 +1451,11 @@ class Decision(AbstractContextManager["Decision"]):
         key — OTel itself silently drops unsupported types or warns
         depending on SDK configuration; the SDK fails loud instead.
         """
-        # bool first because isinstance(True, int) is True
-        if not isinstance(value, (bool, str, int, float)):
-            raise TypeError(
-                f"set_attribute({key!r}, ...): value must be str/int/float/bool, "
-                f"got {type(value).__name__}"
-            )
-        self.span.set_attribute(key, value)
+        with self._exclusive():
+            # bool first because isinstance(True, int) is True
+            if not isinstance(value, (bool, str, int, float)):
+                raise TypeError(
+                    f"set_attribute({key!r}, ...): value must be str/int/float/bool, "
+                    f"got {type(value).__name__}"
+                )
+            self.span.set_attribute(key, value)
