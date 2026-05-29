@@ -27,6 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   fails loud. Open one `Decision` per agent turn — the `Fabric` client
   itself remains safe to share. See the concurrency contract in
   `fabric.decision`.
+- **SDK:** async API. `Decision`, `LLMCall`, and `ToolCall` are now
+  usable as `async with` (alongside the existing sync `with`), and the
+  sidecar-I/O methods have non-blocking variants — `aguard_input`,
+  `aguard_output_chunk`, `aguard_output_final`, `aevaluate_policy`,
+  `aauthorize_tool_call`, `aqueue_judge` — which run the blocking call
+  off the event loop via `asyncio.to_thread`. Pure-CPU recording methods
+  (`record_retrieval`, `remember`, `record_side_effect`, `record_eval`,
+  `checkpoint`, …) stay synchronous and are safe to call from async
+  code. The emitted spans are byte-identical whether the sync or async
+  call style is used.
+- **adapters:** the CrewAI `step` / `task` callbacks are now fail-safe —
+  a failure reading a malformed or adversarial CrewAI event object is
+  logged and swallowed instead of propagating into the host crew's
+  `kickoff()`. Observability never breaks the run.
 - _(keep-alive — no entries yet for the next release; will be populated as work lands)_
 
 ## [0.4.0] - 2026-05-28
