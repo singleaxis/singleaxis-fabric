@@ -221,6 +221,7 @@ jobs:
             --set presidio-sidecar.image.pullPolicy=IfNotPresent \
             --set presidio-sidecar.tenantKey.existingSecret=fabric-presidio-tenant-key \
             --set presidio-sidecar.allowPassthrough=true \
+            --set otel-collector.debugExporter.verbosity=detailed \
             --wait \
             --timeout 5m
 
@@ -320,6 +321,89 @@ jobs:
         if: needs.detect.outputs.relevant == 'true'
         run: |
           helm test ci --namespace "${NAMESPACE}" --timeout 2m
+
+      # --- Live span-landing assertion ---------------------------------
+      # Everything above only proves the collector + sidecars start and
+      # serve /healthz. The steps below close the gap the unit suite
+      # can't: run a REAL SDK Decision on the runner, export it over OTLP
+      # to the in-cluster collector, and assert the fabric.decision span
+      # (plus a child span and a key fabric.* attribute) actually lands.
+      #
+      # The collector runs the `debug` exporter (verbosity: detailed) on
+      # the traces pipeline in this install (permissive-dev sets
+      # debugExporter.enabled=true; we bump verbosity above), so landed
+      # spans print to the collector pod's stdout where `kubectl logs`
+      # can scrape them. No new required job — this lives in the existing
+      # `kind cluster install + smoke` job so the required check covers it.
+
+      - name: Set up Python for the SDK flow
+        if: needs.detect.outputs.relevant == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the Fabric SDK (otlp extra) on the runner
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "sdk/python[otlp]"
+
+      - name: Run the SDK Decision flow + assert the span lands
+        if: needs.detect.outputs.relevant == 'true'
+        # Mirror the collector /healthz step's port-forward pattern:
+        # find the collector pod by its chart label, forward the OTLP
+        # HTTP receiver port (4318) to a local port, then run the flow
+        # script pointed at the forward. Afterwards poll the collector
+        # pod's stdout (debug exporter) for the landed span markers.
+        run: |
+          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector \
+            -o jsonpath='{.items[0].metadata.name}')
+          echo "Collector pod: ${POD}"
+
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            "pod/${POD}" 14318:4318 &
+          PF_PID=$!
+          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
+
+          # Wait for the OTLP/HTTP forward to bind before exporting.
+          attempts=0
+          until curl --silent --output /dev/null --max-time 2 \
+              http://127.0.0.1:14318/ || [ "${attempts}" -ge 10 ]; do
+            attempts=$((attempts + 1))
+            sleep 1
+          done
+
+          FABRIC_OTLP_ENDPOINT=http://127.0.0.1:14318 \
+            python examples/e2e-smoke/flow.py
+
+          # Poll the collector's stdout for the landed span. The debug
+          # exporter + batch flush has latency, so retry with a timeout.
+          # We require the parent span name, a key fabric.* attribute, and
+          # the LLM child span — all three prove the span arrived intact.
+          echo "Scraping collector logs for the landed fabric.decision span..."
+          attempts=0
+          while [ "${attempts}" -lt 30 ]; do
+            LOGS=$(kubectl logs --namespace "${NAMESPACE}" "pod/${POD}" \
+              --tail=2000 2>/dev/null || true)
+            if echo "${LOGS}" | grep -q "fabric.decision" \
+               && echo "${LOGS}" | grep -q "fabric.tenant_id" \
+               && echo "${LOGS}" | grep -q "fabric.llm_call"; then
+              echo "span-landing assertion PASSED: fabric.decision +" \
+                "fabric.tenant_id + fabric.llm_call all present in" \
+                "collector stdout"
+              exit 0
+            fi
+            attempts=$((attempts + 1))
+            sleep 2
+          done
+
+          echo "::error::fabric.decision span (or fabric.tenant_id /" \
+            "fabric.llm_call) never appeared in the collector stdout" \
+            "after ~60s. Dumping collector logs:" >&2
+          kubectl logs --namespace "${NAMESPACE}" "pod/${POD}" \
+            --tail=2000 || true
+          exit 1
 
       # --- Failure diagnostics -----------------------------------------
       # Only run on failure; dump everything useful for debugging a

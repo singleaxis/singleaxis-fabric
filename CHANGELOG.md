@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **CI:** live OTLP span-landing assertion in the kind E2E smoke. The
+  `kind cluster install + smoke` job now runs a real SDK `Decision`
+  flow (`examples/e2e-smoke/flow.py`) on the runner, exports it over
+  OTLP/HTTP to the in-cluster collector, and asserts the
+  `fabric.decision` span — plus a `fabric.llm_call` child span and the
+  `fabric.tenant_id` attribute — lands in the collector (scraped from
+  the `debug` exporter's stdout). This is the first end-to-end proof
+  that an SDK span flows SDK → OTLP → collector intact; the prior
+  suite only used the in-memory exporter. The collector's `debug`
+  exporter is added to the traces pipeline whenever
+  `debugExporter.enabled` is set (already on under `permissive-dev`);
+  production installs are unchanged.
 - **SDK:** `Decision` now enforces its single-use / no-concurrent-use
   contract at runtime. Every mutating method (`guard_input`,
   `guard_output_chunk`, `guard_output_final`, `record_block`,
