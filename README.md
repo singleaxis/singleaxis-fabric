@@ -74,6 +74,10 @@ Apache-2.0. Zero-signup. Works offline.
   [Microsoft Agent Framework](https://learn.microsoft.com/en-us/agent-framework/),
   and [CrewAI](https://www.crewai.com/). Installed via extras; core
   stays framework-neutral.
+- **Sync and async** — `Decision`, `LLMCall`, and `ToolCall` work as
+  both `with` and `async with`; blocking guardrail / policy / judge I/O
+  has non-blocking `a`-prefixed variants that offload off the event
+  loop. The emitted span is identical either way.
 
 ### One principle makes all of this practical
 
@@ -85,9 +89,10 @@ Everything else — judges, escalation bookkeeping, provenance writes,
 evidence generation — happens asynchronously off the OTel stream.
 Security tooling that blocks request paths gets ripped out; Fabric
 stays in the path only where latency budgets justify it. Numbers
-above are design budgets enforced by component readiness probes;
-benchmark suites against representative workloads land in a
-follow-up release.
+above are design budgets enforced by component readiness probes, not
+measured P99 guarantees. An opt-in micro-benchmark suite
+(`sdk/python/benchmarks/`) reports the SDK's per-decision overhead;
+its numbers are informational and machine-dependent.
 
 ## Install
 
@@ -225,6 +230,24 @@ marked "Phase 2" or "roadmap" is explicitly called out. We'd rather
 under-document than overclaim.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's in the current release.
+
+## Quality and testing
+
+The SDK is tested across Python 3.11–3.13 with an 85% coverage floor,
+plus:
+
+- a **schema conformance suite** with golden fixtures and a JSON Schema
+  that freeze the emitted `fabric.*` / `gen_ai.*` span contract, so wire
+  drift fails CI;
+- a **reusable adapter-conformance kit** for verifying third-party
+  guardrail / policy / transport / authorizer adapters against the
+  Protocol contracts;
+- an opt-in **micro-benchmark suite** and **soak harness** (informational
+  and machine-dependent — no timing pass/fail threshold);
+- a **live end-to-end gate** in CI: a real SDK `Decision` is exported
+  over OTLP to an in-cluster collector and the `fabric.decision` span
+  (plus a `fabric.llm_call` child and the `fabric.tenant_id` attribute)
+  is asserted to land intact.
 
 ## What this OSS distribution covers
 

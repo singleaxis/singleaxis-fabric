@@ -124,6 +124,58 @@ When no rails are configured, `guard_input` / `guard_output_*` raise
 `GuardrailNotConfiguredError`. This is a deliberate fail-loud
 posture — a silently passing guardrail is a compliance footgun.
 
+### Async API
+
+`Decision`, `LLMCall`, and `ToolCall` work as `async with` as well as
+the sync `with` — a single instance is usable as one **or** the other,
+not both at once. Opening and closing a span is pure-CPU, so the async
+entry/exit reuse the sync logic; the emitted span is byte-identical
+whichever call style you use.
+
+The methods that perform blocking sidecar / adapter I/O have
+non-blocking `a`-prefixed variants that offload the blocking call to a
+worker thread via `asyncio.to_thread`, so the event loop is never
+blocked:
+
+- `aguard_input`, `aguard_output_chunk`, `aguard_output_final` —
+  guardrail-chain sidecar I/O.
+- `aevaluate_policy` — pluggable `PolicyEngine` (OPA / HTTP adapters do
+  network I/O).
+- `aauthorize_tool_call` — pluggable `ToolAuthorizer`.
+- `aqueue_judge` — pluggable `QueueTransport` (SQS / NATS / Redis
+  transports do network I/O).
+
+The pure-CPU recording methods (`record_retrieval`, `remember`,
+`recall`, `record_side_effect`, `record_eval`, `checkpoint`,
+`snapshot_context`, `set_attribute`) are microsecond-fast and have **no**
+async variant — call them directly inside an `async with` block. The
+LangGraph and Agent Framework adapters use this async surface.
+
+```python
+async with fabric.decision(session_id=sess, request_id=req) as decision:
+    safe_input = await decision.aguard_input(req.body)
+
+    async with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+        output = await my_async_llm.complete(safe_input)
+        call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
+
+    decision.record_retrieval("rag", query="q", result_count=3)  # sync, pure-CPU
+    safe_output = await decision.aguard_output_final(output)
+```
+
+### Concurrency contract
+
+A `Decision` represents a single agent turn and is **not** safe to share
+across threads or asyncio tasks — open one `Decision` per turn. The
+`Fabric` client itself is shareable. Genuinely overlapping mutating
+calls on the same `Decision` (for example two coroutines fired with
+`asyncio.gather` on one instance) raise `ConcurrentDecisionUseError`
+rather than silently racing the internal record lists and rolling
+span-counter attributes. Sequential calls — including each awaited
+`a`-variant, which completes before the next begins — never trip it.
+Re-entering an already-entered or already-closed `Decision` raises
+`RuntimeError`.
+
 ### Framework adapters (optional)
 
 The core SDK is framework-neutral. Adapters live under
@@ -247,9 +299,22 @@ pip install -e '.[dev]'
 pytest
 ```
 
-Coverage threshold is 85% at the pyproject level. Current baseline is
-~98% because the Phase 1a surface is narrow; as guardrails and memory
-land, keep the 85% floor honest rather than moving it.
+Coverage threshold is 85% at the pyproject level (`--cov-fail-under=85`).
+
+Beyond unit tests, the SDK ships:
+
+- a **schema conformance suite** (`tests/conformance/`) that freezes the
+  emitted `fabric.*` / `gen_ai.*` span and span-event contract against
+  golden fixtures and a JSON Schema at `SCHEMA_VERSION` 1.0, so silent
+  wire-shape drift fails CI;
+- a **reusable adapter-conformance kit** (`tests/conformance/adapters/`)
+  that any implementer of a Fabric extension Protocol (`GuardrailChecker`,
+  `PolicyEngine`, `QueueTransport`, `ToolAuthorizer`, …) can subclass to
+  prove their adapter satisfies the behavioral contract;
+- an opt-in **micro-benchmark suite** (`benchmarks/`) and **soak harness**
+  (`soak/`), both outside `tests/` so they never gate or flake CI. They
+  are informational and machine-dependent — no pass/fail timing
+  threshold.
 
 ## Versioning
 
