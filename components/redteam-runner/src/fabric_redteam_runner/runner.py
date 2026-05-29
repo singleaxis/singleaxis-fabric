@@ -9,7 +9,6 @@ getting maximum coverage, not bisecting a bug."""
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import uuid
 from collections.abc import Iterable, Sequence
@@ -132,20 +131,6 @@ def load_suite(name: str, *, venv: Path | None = None) -> Suite:
     raise ValueError(f"unknown suite: {name!r}")
 
 
-def resolve_venv_python(venv: Path | None) -> Path | None:
-    """Return the python binary inside ``venv``, or ``None`` if no
-    venv was requested. Does not validate that the binary exists —
-    callers should treat a missing binary as a missing-library case
-    so error-handling stays consistent with the in-process path."""
-
-    if venv is None:
-        return None
-    return Path(venv) / "bin" / "python"
-
-
-def hash_text(text: str) -> str:
-    """Deterministic short hash for prompt/response bodies. We never
-    ship raw probe bodies into telemetry — the hash is enough to
-    dedupe and correlate across runs."""
-
-    return hashlib.blake2b(text.encode("utf-8"), digest_size=16).hexdigest()
+# ``hash_text`` / ``resolve_venv_python`` live in the ``_util`` leaf
+# module so the suite drivers can import them without an import cycle
+# through ``runner``. Import them from ``fabric_redteam_runner._util``.

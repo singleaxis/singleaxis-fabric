@@ -16,9 +16,9 @@ import time
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from ._util import hash_text, resolve_venv_python
 from .config import SuiteConfig, TargetConfig
 from .results import Finding, ProbeResult, Severity, Verdict
-from .runner import hash_text, resolve_venv_python
 
 # Timeout for the venv smoke-import probe. Probe execution itself uses
 # ``target.timeout_seconds`` per attempt.

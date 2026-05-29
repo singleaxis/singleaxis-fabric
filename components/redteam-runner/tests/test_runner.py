@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from fabric_redteam_runner._util import hash_text
 from fabric_redteam_runner.config import RunConfig
 from fabric_redteam_runner.results import Verdict
-from fabric_redteam_runner.runner import Runner, hash_text, load_suite
+from fabric_redteam_runner.runner import Runner, load_suite
 
 from .conftest import FakeSuite
 

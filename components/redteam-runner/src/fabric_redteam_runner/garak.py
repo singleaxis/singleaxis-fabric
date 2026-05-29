@@ -18,9 +18,9 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
+from ._util import hash_text, resolve_venv_python
 from .config import SuiteConfig, TargetConfig
 from .results import Finding, ProbeResult, Severity, Verdict
-from .runner import hash_text, resolve_venv_python
 
 # Timeout for the build-time smoke probe of the garak venv. The
 # runner itself sets its own per-probe timeout via ``target.timeout_seconds``

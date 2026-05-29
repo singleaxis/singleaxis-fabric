@@ -22,9 +22,10 @@ from typer.testing import CliRunner
 from fabric_redteam_runner import garak as garak_mod
 from fabric_redteam_runner import pyrit as pyrit_mod
 from fabric_redteam_runner.__main__ import app
+from fabric_redteam_runner._util import resolve_venv_python
 from fabric_redteam_runner.config import SuiteConfig, TargetConfig
 from fabric_redteam_runner.results import Verdict
-from fabric_redteam_runner.runner import load_suite, resolve_venv_python
+from fabric_redteam_runner.runner import load_suite
 
 TARGET = TargetConfig(url="https://t", timeout_seconds=1.0)
 
