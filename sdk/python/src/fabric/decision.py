@@ -383,6 +383,14 @@ class Decision(AbstractContextManager["Decision"]):
         return self._client.agent_id
 
     @property
+    def workflow_id(self) -> str | None:
+        return self._client.config.workflow_id
+
+    @property
+    def execution_id(self) -> str | None:
+        return self._client.config.execution_id
+
+    @property
     def blocked(self) -> GuardrailResult | None:
         """The blocking guardrail result, or ``None`` if none fired."""
         return self._blocked
