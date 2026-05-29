@@ -65,6 +65,7 @@ stays thin.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -74,6 +75,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ..escalation import EscalationSummary
+
+logger = logging.getLogger("fabric.adapters.crewai")
 
 
 @dataclass(frozen=True)
@@ -102,33 +105,43 @@ def attach_callbacks(decision: Decision) -> CrewCallbacks:
     """
 
     def _on_step(event: Any) -> None:
-        attrs: dict[str, str | int | float | bool] = {
-            "fabric.crewai.event_type": type(event).__name__,
-        }
-        tool = getattr(event, "tool", None)
-        if isinstance(tool, str) and tool:
-            attrs["fabric.crewai.tool"] = tool
-        log = getattr(event, "log", None)
-        if isinstance(log, str) and log:
-            # Truncate to keep span attribute size bounded; full
-            # transcripts belong in Langfuse, not on the decision span.
-            attrs["fabric.crewai.log_preview"] = log[:200]
-        decision.span.add_event("fabric.crewai.step", attributes=attrs)
+        # CrewAI invokes this on the host's critical path. Observability
+        # must never break the crew: any failure reading a hostile event
+        # object (a property that raises, an un-truncatable log) is
+        # logged and swallowed rather than propagated into kickoff().
+        try:
+            attrs: dict[str, str | int | float | bool] = {
+                "fabric.crewai.event_type": type(event).__name__,
+            }
+            tool = getattr(event, "tool", None)
+            if isinstance(tool, str) and tool:
+                attrs["fabric.crewai.tool"] = tool
+            log = getattr(event, "log", None)
+            if isinstance(log, str) and log:
+                # Truncate to keep span attribute size bounded; full
+                # transcripts belong in Langfuse, not on the decision span.
+                attrs["fabric.crewai.log_preview"] = log[:200]
+            decision.span.add_event("fabric.crewai.step", attributes=attrs)
+        except Exception:
+            logger.warning("crewai step callback failed; skipping event", exc_info=True)
 
     def _on_task(output: Any) -> None:
-        attrs: dict[str, str | int | float | bool] = {
-            "fabric.crewai.event_type": type(output).__name__,
-        }
-        description = getattr(output, "description", None)
-        if isinstance(description, str) and description:
-            attrs["fabric.crewai.task_description"] = description[:200]
-        agent = getattr(output, "agent", None)
-        if isinstance(agent, str) and agent:
-            attrs["fabric.crewai.agent"] = agent
-        raw = getattr(output, "raw", None)
-        if isinstance(raw, str):
-            attrs["fabric.crewai.output_chars"] = len(raw)
-        decision.span.add_event("fabric.crewai.task", attributes=attrs)
+        try:
+            attrs: dict[str, str | int | float | bool] = {
+                "fabric.crewai.event_type": type(output).__name__,
+            }
+            description = getattr(output, "description", None)
+            if isinstance(description, str) and description:
+                attrs["fabric.crewai.task_description"] = description[:200]
+            agent = getattr(output, "agent", None)
+            if isinstance(agent, str) and agent:
+                attrs["fabric.crewai.agent"] = agent
+            raw = getattr(output, "raw", None)
+            if isinstance(raw, str):
+                attrs["fabric.crewai.output_chars"] = len(raw)
+            decision.span.add_event("fabric.crewai.task", attributes=attrs)
+        except Exception:
+            logger.warning("crewai task callback failed; skipping event", exc_info=True)
 
     return CrewCallbacks(step=_on_step, task=_on_task)
 

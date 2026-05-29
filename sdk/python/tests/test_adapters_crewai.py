@@ -119,6 +119,44 @@ def test_task_callback_handles_missing_fields(
     assert "fabric.crewai.output_chars" not in ev
 
 
+class _HostileEvent:
+    """An event whose attribute access raises — simulates a broken or
+    adversarial CrewAI object. The callback must not let this propagate
+    into the host's kickoff()."""
+
+    @property
+    def tool(self) -> str:
+        raise RuntimeError("boom: hostile attribute access")
+
+
+def test_step_callback_never_raises_into_host(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """A callback failure must be swallowed (logged), never propagated —
+    observability cannot break the host crew run."""
+
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        hooks = attach_callbacks(dec)
+        # Must not raise even though reading `.tool` blows up.
+        hooks.step(_HostileEvent())
+
+
+def test_task_callback_never_raises_into_host(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+
+    class _HostileOutput:
+        @property
+        def description(self) -> str:
+            raise RuntimeError("boom")
+
+    with client.decision(session_id="s", request_id="r") as dec:
+        hooks = attach_callbacks(dec)
+        hooks.task(_HostileOutput())
+
+
 def test_request_escalation_records_span_and_returns_payload(
     span_exporter: InMemorySpanExporter,
 ) -> None:
