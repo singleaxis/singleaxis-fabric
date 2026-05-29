@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **SDK:** `Decision` now enforces its single-use / no-concurrent-use
+  contract at runtime. Every mutating method (`guard_input`,
+  `guard_output_chunk`, `guard_output_final`, `record_block`,
+  `request_escalation`, `record_retrieval`, `remember`, `recall`,
+  `record_side_effect`, `checkpoint`, `record_eval`, `queue_judge`,
+  `evaluate_policy`, `authorize_tool_call`, `set_attribute`) is wrapped
+  in a non-blocking overlap sentinel: two operations that _genuinely
+  overlap in time_ on the same instance now raise the new
+  `ConcurrentDecisionUseError` instead of silently racing the internal
+  record lists and rolling span-counter attributes. Sequential calls —
+  including the async `a*` offload path, where each `await` completes
+  before the next begins — are unaffected. Re-entering an already-entered
+  or already-exited `Decision` (sync or async) raises `RuntimeError`.
+  This is a behavior change: previously-silent concurrent misuse now
+  fails loud. Open one `Decision` per agent turn — the `Fabric` client
+  itself remains safe to share. See the concurrency contract in
+  `fabric.decision`.
 - _(keep-alive — no entries yet for the next release; will be populated as work lands)_
 
 ## [0.4.0] - 2026-05-28

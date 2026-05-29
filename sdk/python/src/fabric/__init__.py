@@ -18,7 +18,7 @@ from .content_store import (
     LocalFilesystemContentStore,
     S3ContentStore,
 )
-from .decision import SCHEMA_VERSION, Decision
+from .decision import SCHEMA_VERSION, ConcurrentDecisionUseError, Decision
 from .escalation import EscalationMode, EscalationRequested, EscalationSummary
 from .eval import EvalRecord
 from .guardrail_adapters import HTTPGuardrailChecker, LakeraGuardChecker
@@ -104,6 +104,7 @@ __all__ = [
     "CedarAdapter",
     "CheckerVerdict",
     "CheckpointEvent",
+    "ConcurrentDecisionUseError",
     "ContentRef",
     "ContentStore",
     "Decision",
