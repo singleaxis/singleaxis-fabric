@@ -158,6 +158,26 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._cm = None
         return result
 
+    # -- async context manager -------------------------------------------
+    #
+    # Opening/closing a child span is pure-CPU, so the async entry/exit
+    # reuse the sync logic with no thread offload. This lets callers use
+    # ``async with decision.llm_call(...)`` and keeps the emitted span
+    # byte-identical to the sync ``with`` form.
+
+    async def __aenter__(self) -> Self:
+        """Async-context entry. Reuses the sync span-start logic."""
+        return self.__enter__()
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        """Async-context exit. Reuses the sync span-finalize logic."""
+        return self.__exit__(exc_type, exc, tb)
+
     # -- properties -------------------------------------------------------
 
     @property
@@ -286,6 +306,25 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         self._span = None
         self._cm = None
         return result
+
+    # -- async context manager -------------------------------------------
+    #
+    # Span open/close is pure-CPU; the async entry/exit reuse the sync
+    # logic with no thread offload so ``async with decision.tool_call(...)``
+    # works and the emitted span stays byte-identical to the sync form.
+
+    async def __aenter__(self) -> Self:
+        """Async-context entry. Reuses the sync span-start logic."""
+        return self.__enter__()
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        """Async-context exit. Reuses the sync span-finalize logic."""
+        return self.__exit__(exc_type, exc, tb)
 
     @property
     def span(self) -> Span:

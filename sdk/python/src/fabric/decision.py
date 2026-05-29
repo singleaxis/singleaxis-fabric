@@ -26,10 +26,47 @@ rolling counter attributes (``fabric.retrieval_count``,
 internal lists they update would race under concurrent access. The
 ``Fabric`` client itself is safe to share — only ``Decision`` instances
 have this constraint.
+
+Async usage
+-----------
+
+A single :class:`Decision` instance works as **either** a synchronous
+context manager (``with fabric.decision(...) as d:``) **or** an async
+one (``async with fabric.decision(...) as d:``) — never both at once.
+The async path is a different *call style*, not a different wire
+output: the span/event bytes emitted are identical regardless of which
+style is used. ``__aenter__`` / ``__aexit__`` reuse the same span
+start/finalize logic as the sync path (that work is pure-CPU, so no
+thread offload is needed).
+
+Only the methods that perform blocking sidecar / adapter I/O have
+async variants (prefixed ``a``); each runs its sync sibling on a worker
+thread via :func:`asyncio.to_thread` so the event loop is never
+blocked:
+
+* :meth:`aguard_input`, :meth:`aguard_output_chunk`,
+  :meth:`aguard_output_final` — guardrail-chain sidecar I/O.
+* :meth:`aevaluate_policy` — pluggable :class:`~fabric.policy.PolicyEngine`
+  (e.g. OPA / HTTP adapters do network I/O).
+* :meth:`aauthorize_tool_call` — pluggable
+  :class:`~fabric.tool_auth.ToolAuthorizer` (e.g. OPA / HTTP authorizers
+  do network I/O).
+* :meth:`aqueue_judge` — pluggable
+  :class:`~fabric.judge.QueueTransport` (e.g. SQS / NATS / Redis
+  transports do network I/O).
+
+The recording methods (``record_retrieval``, ``remember``, ``recall``,
+``record_side_effect``, ``record_eval``, ``checkpoint``,
+``snapshot_context``, ``set_attribute``) are microsecond-fast,
+pure-CPU (hashing + span attribute writes) and have **no** async
+variant — they are safe to call directly inside an ``async with``
+block. The child-span helpers :meth:`llm_call` / :meth:`tool_call`
+return objects usable as ``async with`` too.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -229,6 +266,28 @@ class Decision(AbstractContextManager["Decision"]):
         self._cm = None
         return result
 
+    # -- async context manager -------------------------------------------
+    #
+    # A Decision is usable as EITHER a sync (`with`) OR an async
+    # (`async with`) context manager — never both at once. Opening and
+    # closing the span is pure-CPU (start_as_current_span + attribute
+    # writes), so the async entry/exit just reuse the sync logic; there
+    # is no blocking I/O to offload here. This keeps the emitted span
+    # byte-identical across call styles.
+
+    async def __aenter__(self) -> Self:
+        """Async-context entry. Reuses the sync span-start logic."""
+        return self.__enter__()
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        """Async-context exit. Reuses the sync span-finalize logic."""
+        return self.__exit__(exc_type, exc, tb)
+
     # -- introspection ----------------------------------------------------
 
     @property
@@ -308,6 +367,26 @@ class Decision(AbstractContextManager["Decision"]):
     def guard_output_final(self, final_output: str) -> str:
         """Run the post-stream full-text guardrail pass."""
         return self._run_chain(phase="output_final", path="output_final", value=final_output)
+
+    # -- async guardrail entry points ------------------------------------
+    #
+    # The guardrail chain talks to sidecars over a Unix-domain socket
+    # with blocking stdlib ``http.client`` I/O. To keep the event loop
+    # responsive these async variants run the *unchanged* sync method on
+    # a worker thread via ``asyncio.to_thread``. The span events emitted
+    # are byte-identical to the sync path — only the call style differs.
+
+    async def aguard_input(self, raw_input: str) -> str:
+        """Async :meth:`guard_input`; runs the chain off the event loop."""
+        return await asyncio.to_thread(self.guard_input, raw_input)
+
+    async def aguard_output_chunk(self, chunk: str) -> str:
+        """Async :meth:`guard_output_chunk`; runs the chain off the loop."""
+        return await asyncio.to_thread(self.guard_output_chunk, chunk)
+
+    async def aguard_output_final(self, final_output: str) -> str:
+        """Async :meth:`guard_output_final`; runs the chain off the loop."""
+        return await asyncio.to_thread(self.guard_output_final, final_output)
 
     def output_stream(self, *, tail_window: int = 256) -> StreamRedactor:
         """Open a stateful streaming redactor bound to this decision.
@@ -923,6 +1002,33 @@ class Decision(AbstractContextManager["Decision"]):
         span.add_event("fabric.judge.queued", attributes=event_attrs)
         return request
 
+    async def aqueue_judge(
+        self,
+        *,
+        rubric_id: str,
+        dimensions: tuple[str, ...] | list[str],
+        context: JudgeContext,
+        transport: QueueTransport,
+        payload_ref: str | None = None,
+    ) -> JudgeRequest:
+        """Async :meth:`queue_judge`; enqueues off the event loop.
+
+        :class:`~fabric.judge.QueueTransport` adapters (SQS, NATS, Redis
+        Streams) do blocking network I/O in ``enqueue``, so the sync
+        ``queue_judge`` is offloaded to a worker thread via
+        :func:`asyncio.to_thread`. The emitted ``fabric.judge.queued``
+        event is byte-identical to the sync path.
+        """
+        return await asyncio.to_thread(
+            lambda: self.queue_judge(
+                rubric_id=rubric_id,
+                dimensions=dimensions,
+                context=context,
+                transport=transport,
+                payload_ref=payload_ref,
+            )
+        )
+
     def snapshot_context(self) -> JudgeContext:
         """Build a JudgeContext from this decision's accumulated state.
 
@@ -1069,6 +1175,31 @@ class Decision(AbstractContextManager["Decision"]):
         span.add_event("fabric.policy.evaluation", attributes=event_attrs)
         return evaluation
 
+    async def aevaluate_policy(
+        self,
+        engine: PolicyEngine,
+        *,
+        policy_id: str,
+        input: dict[str, object],
+        timeout_seconds: float = 1.0,
+    ) -> PolicyEvaluation:
+        """Async :meth:`evaluate_policy`; runs the engine off the loop.
+
+        :class:`~fabric.policy.PolicyEngine` adapters (OPA sidecar,
+        ``HTTPPolicyAdapter``) do blocking network I/O, so the sync
+        ``evaluate_policy`` is offloaded to a worker thread via
+        :func:`asyncio.to_thread`. The emitted ``fabric.policy.evaluation``
+        event is byte-identical to the sync path.
+        """
+        return await asyncio.to_thread(
+            lambda: self.evaluate_policy(
+                engine,
+                policy_id=policy_id,
+                input=input,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+
     # -- tool authorization ----------------------------------------------
 
     def authorize_tool_call(
@@ -1137,6 +1268,29 @@ class Decision(AbstractContextManager["Decision"]):
 
         span.add_event("fabric.tool.authorization", attributes=event_attrs)
         return authorization
+
+    async def aauthorize_tool_call(
+        self,
+        authorizer: ToolAuthorizer,
+        *,
+        tool_name: str,
+        arguments: str | None = None,
+    ) -> ToolAuthorization:
+        """Async :meth:`authorize_tool_call`; runs the authorizer off the loop.
+
+        :class:`~fabric.tool_auth.ToolAuthorizer` adapters may be
+        OPA / HTTP-backed and do blocking network I/O, so the sync
+        ``authorize_tool_call`` is offloaded to a worker thread via
+        :func:`asyncio.to_thread`. The emitted ``fabric.tool.authorization``
+        event is byte-identical to the sync path.
+        """
+        return await asyncio.to_thread(
+            lambda: self.authorize_tool_call(
+                authorizer,
+                tool_name=tool_name,
+                arguments=arguments,
+            )
+        )
 
     # -- child spans (LLM call / tool call) ------------------------------
 
