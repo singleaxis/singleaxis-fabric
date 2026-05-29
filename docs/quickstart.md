@@ -48,6 +48,30 @@ That's the minimum. `decision` also exposes `guard_input`,
 [reference agent](../examples/reference-agent/) for each surface in
 one place.
 
+Open one `Decision` per agent turn: it is single-use and not safe to
+share across threads or asyncio tasks (the `Fabric` client is
+shareable). Genuinely concurrent use of one instance raises
+`ConcurrentDecisionUseError`.
+
+### Async
+
+`Decision`, `llm_call`, and `tool_call` also work as `async with`, and
+the blocking guardrail / policy / judge methods have non-blocking
+`a`-prefixed variants (`aguard_input`, `aguard_output_final`,
+`aevaluate_policy`, `aauthorize_tool_call`, `aqueue_judge`) that offload
+the blocking call off the event loop. Pure-CPU recording methods
+(`record_retrieval`, `remember`, `checkpoint`, …) stay sync. The emitted
+span is identical to the sync path.
+
+```python
+async with fabric.decision(session_id="sess-1", request_id="req-1") as decision:
+    safe_input = await decision.aguard_input(user_message)
+    async with decision.llm_call(system="anthropic", model="claude-opus-4-7") as call:
+        answer = await my_async_llm.complete(safe_input)
+        call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
+    safe_answer = await decision.aguard_output_final(answer)
+```
+
 ## 3. Run the reference agent
 
 The canonical runnable example. Calls every SDK surface in one turn
