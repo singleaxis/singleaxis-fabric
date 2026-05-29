@@ -26,6 +26,7 @@ It prints the hex trace id it emitted on stdout.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 
@@ -86,10 +87,11 @@ def _run_decision(fabric: Fabric) -> str:
         # Guardrails are optional in this smoke — the assertion is about
         # observability, not the sidecar. Run guard_input only if a chain
         # is configured; otherwise the SDK fails loud, which we swallow.
-        try:
+        # No guardrail chain is wired in this smoke; the subject under
+        # test is observability (span landing), so a missing chain is
+        # expected and benign.
+        with contextlib.suppress(GuardrailNotConfiguredError):
             decision.guard_input("hello from the e2e smoke")
-        except GuardrailNotConfiguredError:
-            pass
 
         # Child LLM span with fixed (fake) usage — no network LLM call.
         with decision.llm_call(
