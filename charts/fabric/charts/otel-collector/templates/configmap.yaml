@@ -115,5 +115,9 @@ data:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, fabricguard, batch]
-          exporters: [otlphttp/fabric]
+          exporters:
+            - otlphttp/fabric
+            {{- if .Values.debugExporter.enabled }}
+            - debug
+            {{- end }}
         {{- end }}
