@@ -20,6 +20,7 @@ evidence generation land with the SingleAxis commercial control plane.
 [Quickstart](docs/quickstart.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
+[API stability](docs/api-stability.md) ·
 [Reference agent](examples/reference-agent/) ·
 [Specs](specs/)
 

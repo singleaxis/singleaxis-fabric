@@ -77,13 +77,18 @@ network); Fabric must not add to it.
 
 ### Enforcement
 
-- Every Fabric SDK release ships with a benchmark suite that
-  exercises the inline path on representative inputs.
-- CI runs the benchmark on each PR; PRs that regress any phase's
-  p99 by > 10% are blocked unless the maintainer explicitly signs
-  off with a rationale.
-- The Fabric Admin UI plots the inline phase latencies per-tenant so
-  regressions in production are visible.
+- The SDK ships an opt-in micro-benchmark suite
+  (`sdk/python/benchmarks/`) that exercises the inline path on
+  representative inputs. It is run on demand
+  (`cd sdk/python && python -m benchmarks.run`), not as a blocking CI
+  gate: per-PR p99 thresholds on shared CI runners are too noisy to
+  gate merges reliably. The numbers are a reproducible local baseline
+  for catching gross regressions, not a per-PR pass/fail.
+- The latency budget above is a **design target**, not a
+  CI-enforced SLO. A future enhancement may add a non-blocking,
+  informational benchmark job that comments deltas on PRs.
+- The Fabric Admin UI (commercial) plots the inline phase latencies
+  per-tenant so production regressions are visible.
 
 ## The default stack
 
