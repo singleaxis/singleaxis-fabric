@@ -11,7 +11,11 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from pydantic import ValidationError
 
 from fabric import Fabric, FabricConfig, MemoryKind, MemoryRecord
-from fabric.decision import ATTR_MEMORY_KINDS, ATTR_MEMORY_WRITE_COUNT
+from fabric.decision import (
+    ATTR_MEMORY_ERASE_COUNT,
+    ATTR_MEMORY_KINDS,
+    ATTR_MEMORY_WRITE_COUNT,
+)
 
 
 def _client() -> Fabric:
@@ -142,3 +146,118 @@ def test_remember_never_exposes_raw_content_on_span(
         all_values.extend((ev.attributes or {}).values())
     for v in all_values:
         assert raw not in str(v), f"raw content leaked into span value: {v!r}"
+
+
+# -- invalidation (memory lineage) ---------------------------------------------
+
+
+def test_from_content_carries_invalidates() -> None:
+    record = MemoryRecord.from_content(
+        kind=MemoryKind.SEMANTIC,
+        content="updated",
+        key="prefs/ui",
+        invalidates="prefs/ui@v1",
+    )
+    assert record.invalidates == "prefs/ui@v1"
+    assert record.direction == "write"
+
+
+def test_remember_emits_invalidates_attr(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.remember(
+            kind="semantic",
+            content="new value",
+            key="prefs/ui",
+            invalidates="old-key",
+        )
+
+    event = next(
+        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+    )
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.memory.invalidates"] == "old-key"
+
+
+def test_remember_omits_invalidates_when_unset(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.remember(kind="semantic", content="v")
+
+    event = next(
+        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+    )
+    assert "fabric.memory.invalidates" not in dict(event.attributes or {})
+
+
+# -- erasure markers (right-to-erasure) ----------------------------------------
+
+
+def test_from_erase_has_no_content_hash() -> None:
+    record = MemoryRecord.from_erase(kind=MemoryKind.EPISODIC, key="prefs/ui")
+    assert record.direction == "erase"
+    assert record.content_hash is None
+    assert record.key == "prefs/ui"
+    assert record.tenant_scope is False
+
+
+def test_forget_emits_erase_event(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.forget(MemoryKind.EPISODIC, "prefs/ui")
+
+    event = next(
+        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+    )
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.memory.direction"] == "erase"
+    assert attrs["fabric.memory.key"] == "prefs/ui"
+    assert attrs["fabric.memory.kind"] == "episodic"
+    assert "fabric.memory.tenant_scope" not in attrs
+    assert "fabric.memory.content_hash" not in attrs
+
+
+def test_forget_tenant_scope_marker(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.forget("semantic", "tenant:acme", tenant_scope=True)
+
+    event = next(
+        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.memory"
+    )
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.memory.direction"] == "erase"
+    assert attrs["fabric.memory.tenant_scope"] is True
+    assert attrs["fabric.memory.key"] == "tenant:acme"
+
+
+def test_forget_updates_erase_count(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.remember(kind="episodic", content="a")
+        dec.forget("episodic", "k1")
+        dec.forget("semantic", "k2", tenant_scope=True)
+
+    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    assert attrs[ATTR_MEMORY_WRITE_COUNT] == 1
+    assert attrs[ATTR_MEMORY_ERASE_COUNT] == 2
+    assert attrs[ATTR_MEMORY_KINDS] == ("episodic", "semantic")
+
+
+def test_forget_never_exposes_raw_content_on_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    raw_key = "prefs/ui-to-erase"
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.forget("episodic", raw_key)
+
+    span = span_exporter.get_finished_spans()[0]
+    # The key is a caller-supplied identifier and is carried verbatim;
+    # assert no content_hash / hashed-content attribute leaked.
+    event = next(ev for ev in span.events if ev.name == "fabric.memory")
+    attrs = dict(event.attributes or {})
+    assert "fabric.memory.content_hash" not in attrs
+    assert attrs["fabric.memory.key"] == raw_key

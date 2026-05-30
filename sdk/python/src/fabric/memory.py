@@ -39,7 +39,7 @@ class MemoryKind(StrEnum):
     SCRATCH = "scratch"
 
 
-MemoryDirection = Literal["read", "write"]
+MemoryDirection = Literal["read", "write", "erase"]
 
 
 def _sha256_hex(value: str) -> str:
@@ -49,25 +49,34 @@ def _sha256_hex(value: str) -> str:
 class MemoryRecord(BaseModel):
     """One memory event captured on a decision span.
 
-    Construct via :meth:`from_content` (write side) or
-    :meth:`from_recall` (read side) rather than directly — the
-    ``content_hash`` field is a SHA-256 hex digest and the helpers
-    enforce that contract.
+    Construct via :meth:`from_content` (write side),
+    :meth:`from_recall` (read side), or :meth:`from_erase` (erasure
+    marker) rather than directly — the ``content_hash`` field is a
+    SHA-256 hex digest and the helpers enforce that contract.
 
     ``direction`` defaults to ``"write"`` so existing call sites that
     constructed ``MemoryRecord`` for the :meth:`Decision.remember`
     path continue to round-trip unchanged.
+
+    ``content_hash`` is optional only for ``"erase"`` records: an
+    erasure marker references a caller-supplied ``key``, not content,
+    so there is no content to hash. For ``"read"`` and ``"write"``
+    records the helpers always populate it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: MemoryKind
-    content_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    content_hash: str | None = Field(
+        default=None, min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
     key: str | None = None
     tags: tuple[str, ...] = ()
     ttl_seconds: NonNegativeInt | None = None
     direction: MemoryDirection = "write"
     source: str | None = None
+    invalidates: str | None = None
+    tenant_scope: bool = False
 
     @classmethod
     def from_content(
@@ -78,8 +87,15 @@ class MemoryRecord(BaseModel):
         key: str | None = None,
         tags: Sequence[str] | None = None,
         ttl_seconds: int | None = None,
+        invalidates: str | None = None,
     ) -> MemoryRecord:
-        """Build a write-direction record from raw content. The content is hashed locally."""
+        """Build a write-direction record from raw content. The content is hashed locally.
+
+        When ``invalidates`` is set it names a prior memory key that
+        this write supersedes — a lineage edge for the downstream
+        Decision Graph. It is an opaque caller-supplied identifier,
+        not content, so it is carried verbatim.
+        """
         return cls(
             kind=MemoryKind(kind) if isinstance(kind, str) else kind,
             content_hash=_sha256_hex(content),
@@ -87,6 +103,7 @@ class MemoryRecord(BaseModel):
             tags=tuple(tags) if tags else (),
             ttl_seconds=ttl_seconds,
             direction="write",
+            invalidates=invalidates,
         )
 
     @classmethod
@@ -111,4 +128,30 @@ class MemoryRecord(BaseModel):
             key=key,
             direction="read",
             source=source,
+        )
+
+    @classmethod
+    def from_erase(
+        cls,
+        *,
+        kind: MemoryKind | str,
+        key: str,
+        tenant_scope: bool = False,
+    ) -> MemoryRecord:
+        """Build an erase-direction record — a right-to-erasure marker.
+
+        An erase marker references a caller-supplied ``key`` (or, when
+        ``tenant_scope`` is set, marks a tenant-wide erasure). There is
+        no content to hash, so ``content_hash`` is left ``None``.
+
+        The OSS SDK only *emits* this marker; it deletes nothing. The
+        commercial Decision Graph is responsible for acting on the
+        marker and purging the referenced memory.
+        """
+        return cls(
+            kind=MemoryKind(kind) if isinstance(kind, str) else kind,
+            content_hash=None,
+            key=key,
+            direction="erase",
+            tenant_scope=tenant_scope,
         )
