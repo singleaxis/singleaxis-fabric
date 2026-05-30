@@ -32,6 +32,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   passes the verdict to the matching `record*` method. The emitted telemetry
   is identical either way.
 
+### Fixed
+
+- **Helm release now publishes the `fabric` umbrella chart.** The
+  `publish-chart` release job previously packaged and pushed the
+  `otel-collector` _subchart_ (`oci://ghcr.io/singleaxis/charts/otel-collector`),
+  not the umbrella users actually install — so the documented one-command
+  install referenced a chart that was never published. It now packages and
+  publishes the `charts/fabric` umbrella as `oci://ghcr.io/singleaxis/charts/fabric`.
+- **Chart versions track the release.** The umbrella chart `version` /
+  `appVersion` and the Fabric-owned subcharts' `appVersion` (which drives
+  their image tag) were pinned at `0.2.0`, so a fresh install pulled stale
+  `0.2.0` images. They are now stamped from the release tag at publish time
+  (and bumped to `0.5.1` in-repo). The third-party `langfuse` subchart is
+  excluded — its `appVersion` is the upstream Langfuse version.
+
 ## [0.5.1] - 2026-05-30
 
 ### Added

@@ -7,7 +7,7 @@ description: |
   webhook lands in Phase 2. Tenant HMAC key required at startup.
 type: application
 version: 0.2.0
-appVersion: "0.2.0"
+appVersion: "0.5.1"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - pii
