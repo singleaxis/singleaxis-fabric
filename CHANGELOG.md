@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **SDK (audit):** tag-mode PII redaction is now recorded on the
+  `fabric.guardrail` span event. The guardrail chain previously gated the
+  entity/policy record on the Presidio result's `hashed` flag, which is
+  only set in HMAC mode — so tag-mode redactions (the value rewritten to
+  `<EMAIL_1>`-style placeholders, `hashed=False`) silently produced no
+  `fabric.guardrail.entities` / `policies` attributes, leaving the
+  redaction invisible to the audit trail. The chain now records whenever a
+  `pii_category` is returned, regardless of mode.
 - **TypeScript SDK:** the callback forms (`decision`, `llmCall`, `toolCall`)
   no longer end their span synchronously when handed an `async` callback.
   Previously the span closed before the awaited body resolved, so setters

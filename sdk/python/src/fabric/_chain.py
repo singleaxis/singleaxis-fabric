@@ -64,7 +64,12 @@ class GuardrailChain:
         if self._presidio is not None:
             presidio_result = self._presidio.redact(path, value)
             content = presidio_result.value
-            if presidio_result.hashed:
+            # Record the detected entity whenever PII was redacted — in
+            # HMAC mode that is signalled by ``hashed``; in tag mode the
+            # value is rewritten in place (``hashed=False``) but a
+            # ``pii_category`` is still returned. Gating only on ``hashed``
+            # made tag-mode redactions invisible in the audit trail.
+            if presidio_result.hashed or presidio_result.pii_category:
                 entities.append(EntitySummary(category=presidio_result.pii_category, count=1))
                 policies.append(f"presidio:{presidio_result.pii_category}")
 

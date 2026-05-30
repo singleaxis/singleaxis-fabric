@@ -81,6 +81,29 @@ def test_guard_input_returns_redacted_value_and_records_event(
     assert attrs["fabric.guardrail.blocked"] is False
 
 
+def test_tag_mode_redaction_records_entity_on_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Tag-mode redaction (``hashed=False`` with a rewritten value) must
+    still record the detected entity/policy on the guardrail event — the
+    audit trail has to show that PII was redacted regardless of mode."""
+
+    fake = _FakePresidio(
+        RedactionResult(value="email me at <EMAIL_1>", hashed=False, pii_category="EMAIL")
+    )
+    fabric = _client(fake)
+    with fabric.decision(session_id="s", request_id="r") as dec:
+        out = dec.guard_input("email me at a@b.com")
+    assert out == "email me at <EMAIL_1>"
+
+    span = span_exporter.get_finished_spans()[0]
+    events = [ev for ev in span.events if ev.name == "fabric.guardrail"]
+    assert len(events) == 1
+    attrs = dict(events[0].attributes or {})
+    assert attrs["fabric.guardrail.policies"] == ("presidio:EMAIL",)
+    assert attrs["fabric.guardrail.entities"] == ("EMAIL:1",)
+
+
 def test_guard_input_passthrough_when_sidecar_says_no_pii(
     span_exporter: InMemorySpanExporter,
 ) -> None:
