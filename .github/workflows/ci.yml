@@ -293,6 +293,50 @@ jobs:
         working-directory: ${{ matrix.package }}
         run: pytest --cov --cov-report=term-missing --cov-fail-under=${{ matrix.threshold }}
 
+  typescript-sdk:
+    name: TypeScript SDK lint + build + test
+    runs-on: ubuntu-latest
+    # Advisory job for the first-party TypeScript SDK. Path-filtered to
+    # sdk/typescript/** (and this workflow) so it short-circuits to a
+    # no-op SUCCESS on pure-Python / docs / chart PRs and doesn't spend
+    # Node setup time. Not in the required-ruleset — informational only.
+    steps:
+      - uses: actions/checkout@v6
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ts:
+              - 'sdk/typescript/**'
+              - '.github/workflows/ci.yml'
+      - name: Short-circuit if no TypeScript SDK changes
+        if: steps.filter.outputs.ts != 'true'
+        run: echo "No sdk/typescript changes; skipping Node lint/build/test."
+      - uses: actions/setup-node@v4
+        if: steps.filter.outputs.ts == 'true'
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install dependencies
+        if: steps.filter.outputs.ts == 'true'
+        working-directory: sdk/typescript
+        run: npm ci
+      - name: Lint
+        if: steps.filter.outputs.ts == 'true'
+        working-directory: sdk/typescript
+        run: npm run lint
+      - name: Typecheck + build
+        if: steps.filter.outputs.ts == 'true'
+        working-directory: sdk/typescript
+        run: |
+          npm run typecheck
+          npm run build
+      - name: Test (conformance vs shared goldens + hash parity)
+        if: steps.filter.outputs.ts == 'true'
+        working-directory: sdk/typescript
+        run: npm test
+
   helm-lint:
     name: Helm / Kubernetes lint
     runs-on: ubuntu-latest

@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **TypeScript SDK:** first-party `@singleaxis/fabric` npm package under
+  `sdk/typescript/` — the core capture substrate (`fabric.decision` plus
+  `fabric.llm_call` / `fabric.tool_call` child spans) emitting the same
+  `fabric.*` / `gen_ai.*` wire contract as the Python SDK. Proven by a
+  conformance test that deep-equal-asserts normalized TypeScript spans
+  against the _same_ shared golden fixtures the Python conformance suite
+  uses (`bare_decision`, `llm_call`, `tool_call`). Ships CJS + ESM +
+  types, with sha-256 hashing byte-identical to Python's `hashlib`.
+  Adapters, sidecar clients, and the remaining recording primitives are
+  explicit follow-ons. Added an advisory, path-filtered `typescript-sdk`
+  CI job.
 - **docs:** `docs/api-stability.md` — the public-surface / `schema_version`
   wire-contract / deprecation policy enterprise adopters can build against,
   linked from the README.
