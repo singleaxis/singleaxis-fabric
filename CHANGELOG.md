@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **CrewAI adapter:** the step callback now captures the agent's reasoning
+  across CrewAI versions. It previously read only `.log`, a field that
+  exists on legacy (langchain-derived) `AgentAction` objects but was
+  dropped in current crewai (>=1.x), whose parser objects carry the
+  reasoning in `.thought` / `.text` and whose `AgentFinish` uses
+  `.output`. On modern crewai this made `fabric.crewai.log_preview`
+  silently blank. The callback now probes `thought` → `log` → `output` →
+  `text` and records the first non-empty value, restoring the reasoning
+  preview without coupling to a single crewai version. Fail-safe behaviour
+  is unchanged (a missing field records no preview; a hostile attribute is
+  swallowed).
 - **SDK (audit):** tag-mode PII redaction is now recorded on the
   `fabric.guardrail` span event. The guardrail chain previously gated the
   entity/policy record on the Presidio result's `hashed` flag, which is
