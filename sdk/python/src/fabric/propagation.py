@@ -78,12 +78,17 @@ class FabricContext:
     be built from either directly. ``session_id`` and ``request_id`` are
     optional because a caller may propagate only the tenant / agent
     scope (e.g. before a Decision is opened downstream).
+    ``workflow_id`` and ``execution_id`` are likewise optional — they are
+    set only when the caller runs inside a workflow / execution scope
+    (PRD §65: both ride ``tracestate`` across service boundaries).
     """
 
     tenant_id: str
     agent_id: str
     session_id: str | None = None
     request_id: str | None = None
+    workflow_id: str | None = None
+    execution_id: str | None = None
 
 
 @runtime_checkable
@@ -111,6 +116,14 @@ class DecisionLike(Protocol):
     def request_id(self) -> str:
         """Per-request identifier for this decision."""
 
+    @property
+    def workflow_id(self) -> str | None:
+        """Owning workflow identifier, or ``None`` outside a workflow."""
+
+    @property
+    def execution_id(self) -> str | None:
+        """Per-execution identifier, or ``None`` outside an execution."""
+
 
 def _encode(context: FabricContext) -> str:
     """Pack a :class:`FabricContext` into a tracestate-value-safe string.
@@ -125,6 +138,10 @@ def _encode(context: FabricContext) -> str:
         payload["s"] = context.session_id
     if context.request_id is not None:
         payload["r"] = context.request_id
+    if context.workflow_id is not None:
+        payload["w"] = context.workflow_id
+    if context.execution_id is not None:
+        payload["e"] = context.execution_id
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -152,15 +169,22 @@ def _decode(encoded: str) -> FabricContext | None:
         return None
     session = payload.get("s")
     request = payload.get("r")
-    if session is not None and not isinstance(session, str):
-        return None
-    if request is not None and not isinstance(request, str):
+    workflow = payload.get("w")
+    execution = payload.get("e")
+    # Optional fields must be strings when present; a wrong-typed value is
+    # wire corruption and yields None for the whole member.
+    if any(
+        opt is not None and not isinstance(opt, str)
+        for opt in (session, request, workflow, execution)
+    ):
         return None
     return FabricContext(
         tenant_id=tenant,
         agent_id=agent,
         session_id=session,
         request_id=request,
+        workflow_id=workflow,
+        execution_id=execution,
     )
 
 
@@ -235,15 +259,18 @@ def inject_decision(carrier: MutableMapping[str, str], decision: DecisionLike) -
     """Inject the identity of a Decision-like object onto the carrier.
 
     Convenience wrapper: reads ``tenant_id`` / ``agent_id`` /
-    ``session_id`` / ``request_id`` off ``decision`` and delegates to
-    :func:`inject`. ``decision`` is typed via the local
-    :class:`DecisionLike` Protocol so this module never imports
-    :mod:`fabric.decision` (which would form an import cycle).
+    ``session_id`` / ``request_id`` / ``workflow_id`` / ``execution_id``
+    off ``decision`` and delegates to :func:`inject`. ``decision`` is
+    typed via the local :class:`DecisionLike` Protocol so this module
+    never imports :mod:`fabric.decision` (which would form an import
+    cycle).
     """
     context = FabricContext(
         tenant_id=decision.tenant_id,
         agent_id=decision.agent_id,
         session_id=decision.session_id,
         request_id=decision.request_id,
+        workflow_id=decision.workflow_id,
+        execution_id=decision.execution_id,
     )
     inject(carrier, context)

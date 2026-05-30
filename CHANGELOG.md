@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **SDK:** `workflow_id` and `execution_id` now propagate across service
+  boundaries via the W3C `tracestate` `singleaxis` member. `FabricContext`
+  gains optional `workflow_id` / `execution_id` fields (encoded under the
+  short keys `w` / `e`, mirroring the existing `t` / `a` / `s` / `r`), and
+  `Decision` exposes matching read-only properties. `inject_decision` now
+  carries both onto the carrier, closing the gap where they were emitted
+  as decision-span attributes but did _not_ actually cross the wire. Fully
+  backward compatible: `tracestate` members without `w` / `e` decode with
+  those fields as `None`, and the emitted decision-span schema is
+  unchanged.
 - _(keep-alive — no entries yet for the next release; will be populated as work lands)_
 
 ## [0.4.1] - 2026-05-30

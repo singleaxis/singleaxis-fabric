@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import base64
+import json
+
 import pytest
 
 from fabric import Fabric, FabricConfig, FabricContext, extract, inject, inject_decision
@@ -42,6 +45,80 @@ def test_round_trip_optional_fields_none() -> None:
     assert recovered is not None
     assert recovered.session_id is None
     assert recovered.request_id is None
+    assert recovered.workflow_id is None
+    assert recovered.execution_id is None
+
+
+def test_round_trip_with_workflow_and_execution() -> None:
+    carrier: dict[str, str] = {}
+    ctx = FabricContext(
+        tenant_id="tenant-1",
+        agent_id="agent-1",
+        session_id="sess-1",
+        request_id="req-1",
+        workflow_id="wf-1",
+        execution_id="ex-1",
+    )
+    inject(carrier, ctx)
+    recovered = extract(carrier)
+    assert recovered == ctx
+    assert recovered is not None
+    assert recovered.workflow_id == "wf-1"
+    assert recovered.execution_id == "ex-1"
+
+
+def test_round_trip_workflow_execution_none() -> None:
+    # Backward compatible: a context without workflow/execution still
+    # round-trips, and those fields come back None.
+    carrier: dict[str, str] = {}
+    ctx = FabricContext(
+        tenant_id="tenant-1",
+        agent_id="agent-1",
+        session_id="sess-1",
+        request_id="req-1",
+    )
+    inject(carrier, ctx)
+    recovered = extract(carrier)
+    assert recovered == ctx
+    assert recovered is not None
+    assert recovered.workflow_id is None
+    assert recovered.execution_id is None
+
+
+def test_old_format_member_decodes_workflow_execution_as_none() -> None:
+    # Forward/backward compat: an OLD-format member carrying only t/a/s/r
+    # (no w/e keys at all) must still decode, with workflow_id and
+    # execution_id as None. This is a hand-built legacy member: the
+    # base64url-no-padding of {"t":"t","a":"a","s":"s","r":"r"}.
+    raw = json.dumps({"t": "t", "a": "a", "s": "s", "r": "r"}, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    legacy = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    recovered = extract({TRACESTATE_HEADER: f"{FABRIC_KEY}={legacy}"})
+    assert recovered == FabricContext(
+        tenant_id="t",
+        agent_id="a",
+        session_id="s",
+        request_id="r",
+    )
+    assert recovered is not None
+    assert recovered.workflow_id is None
+    assert recovered.execution_id is None
+
+
+def test_workflow_special_chars_survive_round_trip() -> None:
+    ctx = FabricContext(
+        tenant_id="t",
+        agent_id="a",
+        workflow_id="wf with spaces, = and é☃\U0001f680",
+        execution_id="ex,=/x",
+    )
+    carrier: dict[str, str] = {}
+    inject(carrier, ctx)
+    assert extract(carrier) == ctx
+    value = _fabric_value(carrier)
+    assert "," not in value
+    assert "=" not in value
 
 
 def test_existing_tracestate_preserved_and_fabric_is_leftmost() -> None:
@@ -116,6 +193,8 @@ def test_parse_tolerates_whitespace_and_malformed_entries() -> None:
         "eyJhIjogImFnZW50In0",  # {"a": "agent"} — missing required "t"
         "eyJ0IjogInQiLCAiYSI6ICJhIiwgInMiOiA1fQ",  # session is an int
         "eyJ0IjogInQiLCAiYSI6ICJhIiwgInIiOiA1fQ",  # request is an int
+        "eyJ0IjogInQiLCAiYSI6ICJhIiwgInciOiA1fQ",  # workflow is an int
+        "eyJ0IjogInQiLCAiYSI6ICJhIiwgImUiOiA1fQ",  # execution is an int
     ],
 )
 def test_extract_returns_none_on_wrong_shaped_payload(encoded: str) -> None:
@@ -142,13 +221,23 @@ def test_inject_raises_on_oversized_member() -> None:
 
 
 class _FakeDecision:
-    """Decision-like stub exposing the four identity properties."""
+    """Decision-like stub exposing the identity properties."""
 
-    def __init__(self, tenant: str, agent: str, session: str, request: str) -> None:
+    def __init__(
+        self,
+        tenant: str,
+        agent: str,
+        session: str,
+        request: str,
+        workflow: str | None = None,
+        execution: str | None = None,
+    ) -> None:
         self._tenant = tenant
         self._agent = agent
         self._session = session
         self._request = request
+        self._workflow = workflow
+        self._execution = execution
 
     @property
     def tenant_id(self) -> str:
@@ -166,6 +255,14 @@ class _FakeDecision:
     def request_id(self) -> str:
         return self._request
 
+    @property
+    def workflow_id(self) -> str | None:
+        return self._workflow
+
+    @property
+    def execution_id(self) -> str | None:
+        return self._execution
+
 
 def test_inject_decision_round_trip() -> None:
     decision = _FakeDecision("tenant-x", "agent-x", "sess-x", "req-x")
@@ -176,6 +273,22 @@ def test_inject_decision_round_trip() -> None:
         agent_id="agent-x",
         session_id="sess-x",
         request_id="req-x",
+    )
+
+
+def test_inject_decision_carries_workflow_execution() -> None:
+    decision = _FakeDecision(
+        "tenant-x", "agent-x", "sess-x", "req-x", workflow="wf-1", execution="ex-1"
+    )
+    carrier: dict[str, str] = {}
+    inject_decision(carrier, decision)
+    assert extract(carrier) == FabricContext(
+        tenant_id="tenant-x",
+        agent_id="agent-x",
+        session_id="sess-x",
+        request_id="req-x",
+        workflow_id="wf-1",
+        execution_id="ex-1",
     )
 
 
@@ -192,3 +305,39 @@ def test_inject_decision_accepts_a_real_decision() -> None:
         session_id="s1",
         request_id="r1",
     )
+
+
+def test_inject_decision_real_decision_with_workflow_execution() -> None:
+    """A real Decision propagates workflow_id/execution_id (PRD §65)."""
+    fabric = Fabric(
+        FabricConfig(
+            tenant_id="acme",
+            agent_id="bot",
+            workflow_id="wf-1",
+            execution_id="ex-1",
+        )
+    )
+    carrier: dict[str, str] = {}
+    with fabric.decision(session_id="s1", request_id="r1") as decision:
+        inject_decision(carrier, decision)
+    recovered = extract(carrier)
+    assert recovered == FabricContext(
+        tenant_id="acme",
+        agent_id="bot",
+        session_id="s1",
+        request_id="r1",
+        workflow_id="wf-1",
+        execution_id="ex-1",
+    )
+
+
+def test_inject_decision_real_decision_without_workflow_execution() -> None:
+    """A real Decision without workflow/execution recovers them as None."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    carrier: dict[str, str] = {}
+    with fabric.decision(session_id="s1", request_id="r1") as decision:
+        inject_decision(carrier, decision)
+    recovered = extract(carrier)
+    assert recovered is not None
+    assert recovered.workflow_id is None
+    assert recovered.execution_id is None
