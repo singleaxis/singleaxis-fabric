@@ -116,11 +116,20 @@ def attach_callbacks(decision: Decision) -> CrewCallbacks:
             tool = getattr(event, "tool", None)
             if isinstance(tool, str) and tool:
                 attrs["fabric.crewai.tool"] = tool
-            log = getattr(event, "log", None)
-            if isinstance(log, str) and log:
-                # Truncate to keep span attribute size bounded; full
-                # transcripts belong in Langfuse, not on the decision span.
-                attrs["fabric.crewai.log_preview"] = log[:200]
+            # The step object's reasoning text moved across CrewAI
+            # versions: legacy ``AgentAction`` (langchain-derived) exposed
+            # ``.log``; current crewai (>=1.x) replaced it with a parser
+            # object carrying ``.thought`` / ``.text``, and ``AgentFinish``
+            # carries ``.thought`` / ``.output`` / ``.text``. Reading only
+            # ``.log`` silently captured nothing on modern crewai, so probe
+            # the known field names in preference order and record the first
+            # non-empty string. Truncate to keep the span attribute bounded;
+            # full transcripts belong in Langfuse, not on the decision span.
+            for field in ("thought", "log", "output", "text"):
+                preview = getattr(event, field, None)
+                if isinstance(preview, str) and preview:
+                    attrs["fabric.crewai.log_preview"] = preview[:200]
+                    break
             decision.span.add_event("fabric.crewai.step", attributes=attrs)
         except Exception:
             logger.warning("crewai step callback failed; skipping event", exc_info=True)

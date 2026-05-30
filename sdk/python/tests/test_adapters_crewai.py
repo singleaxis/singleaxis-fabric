@@ -42,10 +42,55 @@ def test_step_callback_records_step_event_with_tool_and_log(
     assert "search_web" in str(ev["fabric.crewai.log_preview"])
 
 
+def test_step_callback_captures_modern_crewai_reasoning_fields(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Regression: current crewai (>=1.x) ``AgentAction`` has no ``.log``
+    field — its reasoning lives in ``.thought`` (with ``.text`` / ``.result``
+    alongside). Reading only ``.log`` made the preview silently blank on
+    modern crewai. The adapter must capture ``.thought`` instead."""
+
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        hooks = attach_callbacks(dec)
+        # Shape of a real crewai>=1.x AgentAction: no ``log`` attribute.
+        action = SimpleNamespace(
+            tool="search_web",
+            tool_input='{"query": "..."}',
+            thought="I should search the web for the answer",
+            text="Thought: I should search...\nAction: search_web",
+            result="",
+        )
+        hooks.step(action)
+
+    ev = _event_attrs(span_exporter, "fabric.crewai.step")[0]
+    assert ev["fabric.crewai.tool"] == "search_web"
+    # ``thought`` is preferred over ``text`` and is captured even though
+    # there is no ``.log`` field at all.
+    assert ev["fabric.crewai.log_preview"] == "I should search the web for the answer"
+
+
+def test_step_callback_captures_agentfinish_output_field(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """A real crewai ``AgentFinish`` carries ``.output`` / ``.text`` (no
+    ``.thought`` content, no ``.log``). The adapter falls through to
+    ``output`` so the final answer still lands on the span."""
+
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        hooks = attach_callbacks(dec)
+        finish = SimpleNamespace(output="the final answer", text="Final Answer: the final answer")
+        hooks.step(finish)
+
+    ev = _event_attrs(span_exporter, "fabric.crewai.step")[0]
+    assert ev["fabric.crewai.log_preview"] == "the final answer"
+
+
 def test_step_callback_handles_missing_attributes(
     span_exporter: InMemorySpanExporter,
 ) -> None:
-    """Duck-typed inputs without ``tool`` / ``log`` must not crash."""
+    """Duck-typed inputs without ``tool`` / reasoning fields must not crash."""
 
     client = _client()
     with client.decision(session_id="s", request_id="r") as dec:
