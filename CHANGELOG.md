@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - _(keep-alive — no entries yet for the next release; will be populated as work lands)_
 
+### Fixed
+
+- **TypeScript SDK:** the callback forms (`decision`, `llmCall`, `toolCall`)
+  no longer end their span synchronously when handed an `async` callback.
+  Previously the span closed before the awaited body resolved, so setters
+  like `setUsage` / `setResult` called after an `await` were silently
+  dropped. Span-ending is now async-aware — a sync callback still ends the
+  span synchronously, while an `await`ed callback keeps the span open until
+  the returned promise settles (recording the exception + `ERROR` status on
+  rejection). The decision span stays active across the `await` so child
+  spans opened after it parent correctly.
+
 ## [0.5.0] - 2026-05-30
 
 ### Added
