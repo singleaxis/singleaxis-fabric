@@ -20,6 +20,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   backward compatible: `tracestate` members without `w` / `e` decode with
   those fields as `None`, and the emitted decision-span schema is
   unchanged.
+- **SDK:** memory lineage now supports _invalidation_ and _right-to-erasure_
+  markers. `Decision.remember` gains an optional `invalidates=<prior_key>`
+  argument that, when set, emits `fabric.memory.invalidates` on the
+  `fabric.memory` event — a lineage edge marking the prior key this write
+  supersedes. New `Decision.forget(kind, key, *, tenant_scope=False)` emits a
+  `fabric.memory` event with `direction="erase"` (a new `MemoryDirection`
+  value) and the referenced `key`; `tenant_scope=True` adds
+  `fabric.memory.tenant_scope` for a tenant-wide erasure marker. A rolling
+  `fabric.memory_erase_count` attribute is kept on the decision span,
+  symmetric with the read/write counters. `MemoryRecord` gains
+  `invalidates` / `tenant_scope` fields and a `from_erase` constructor; an
+  erase record references a key (no content), so its `content_hash` is
+  `None`. The OSS SDK only _emits_ these markers — acting on an erasure
+  marker (the actual purge) is the commercial Decision Graph's job. Fully
+  backward compatible: the new attributes are emitted only when the new
+  features are used, so existing memory events are byte-identical.
 - _(keep-alive — no entries yet for the next release; will be populated as work lands)_
 
 ## [0.4.1] - 2026-05-30

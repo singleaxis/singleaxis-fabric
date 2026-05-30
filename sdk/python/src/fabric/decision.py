@@ -141,6 +141,7 @@ ATTR_RETRIEVAL_COUNT = "fabric.retrieval_count"
 ATTR_RETRIEVAL_SOURCES = "fabric.retrieval_sources"
 ATTR_MEMORY_WRITE_COUNT = "fabric.memory_write_count"
 ATTR_MEMORY_READ_COUNT = "fabric.memory_read_count"
+ATTR_MEMORY_ERASE_COUNT = "fabric.memory_erase_count"
 ATTR_MEMORY_KINDS = "fabric.memory_kinds"
 ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count"
 ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types"
@@ -702,6 +703,7 @@ class Decision(AbstractContextManager["Decision"]):
         key: str | None = None,
         tags: Sequence[str] | None = None,
         ttl_seconds: int | None = None,
+        invalidates: str | None = None,
     ) -> MemoryRecord:
         """Record that this decision wrote to long-term memory.
 
@@ -714,6 +716,13 @@ class Decision(AbstractContextManager["Decision"]):
         Bridge can fold them into the ``DecisionSummary`` wire event
         without replaying every event.
 
+        When ``invalidates`` is set, it names a prior memory key this
+        write supersedes; the event then carries
+        ``fabric.memory.invalidates=<prior_key>`` as a lineage edge for
+        the downstream Decision Graph. The attribute is emitted only
+        when ``invalidates`` is provided, so writes that do not use it
+        produce byte-identical events.
+
         Raw content is hashed locally and is never placed on the
         span.
         """
@@ -725,6 +734,7 @@ class Decision(AbstractContextManager["Decision"]):
                 key=key,
                 tags=tags,
                 ttl_seconds=ttl_seconds,
+                invalidates=invalidates,
             )
             span = self.span
             self._memory_writes.append(record)
@@ -739,14 +749,18 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.memory.direction": record.direction,
                 "fabric.memory.kind": record.kind.value,
-                "fabric.memory.content_hash": record.content_hash,
             }
+            # from_content always populates content_hash (write side).
+            if record.content_hash is not None:
+                event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.key is not None:
                 event_attrs["fabric.memory.key"] = record.key
             if record.tags:
                 event_attrs["fabric.memory.tags"] = record.tags
             if record.ttl_seconds is not None:
                 event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
+            if record.invalidates is not None:
+                event_attrs["fabric.memory.invalidates"] = record.invalidates
             span.add_event("fabric.memory", attributes=event_attrs)
             return record
 
@@ -794,11 +808,68 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.memory.direction": record.direction,
                 "fabric.memory.kind": record.kind.value,
-                "fabric.memory.content_hash": record.content_hash,
                 "fabric.memory.key": record.key if record.key is not None else key,
             }
+            # from_recall always populates content_hash (read side).
+            if record.content_hash is not None:
+                event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.source is not None:
                 event_attrs["fabric.memory.source"] = record.source
+            span.add_event("fabric.memory", attributes=event_attrs)
+            return record
+
+    def forget(
+        self,
+        kind: MemoryKind | str,
+        key: str,
+        *,
+        tenant_scope: bool = False,
+    ) -> MemoryRecord:
+        """Emit a right-to-erasure marker for a memory key.
+
+        This records that the referenced memory should be erased — a
+        GDPR/right-to-erasure signal. It emits a ``fabric.memory``
+        span event with ``fabric.memory.direction='erase'`` and the
+        caller-supplied ``key``. When ``tenant_scope`` is set, the
+        event also carries ``fabric.memory.tenant_scope=True``, marking
+        a tenant-wide erasure (erase everything for a whole tenant).
+
+        The OSS SDK only *emits* this marker; it deletes nothing. The
+        commercial Decision Graph is responsible for acting on the
+        marker and purging the referenced memory — this keeps the
+        emit/act boundary clean. The rolling
+        ``fabric.memory_erase_count`` attribute is updated on the
+        decision span, symmetric with the read/write counters.
+
+        An erase marker references a key, not content, so no content
+        hash is produced and no raw content is ever placed on the span.
+        """
+
+        with self._exclusive():
+            record = MemoryRecord.from_erase(
+                kind=kind,
+                key=key,
+                tenant_scope=tenant_scope,
+            )
+            span = self.span
+            self._memory_writes.append(record)
+            write_count = sum(1 for r in self._memory_writes if r.direction == "write")
+            read_count = sum(1 for r in self._memory_writes if r.direction == "read")
+            erase_count = sum(1 for r in self._memory_writes if r.direction == "erase")
+            span.set_attribute(ATTR_MEMORY_WRITE_COUNT, write_count)
+            span.set_attribute(ATTR_MEMORY_READ_COUNT, read_count)
+            span.set_attribute(ATTR_MEMORY_ERASE_COUNT, erase_count)
+            unique_kinds = sorted({r.kind.value for r in self._memory_writes})
+            span.set_attribute(ATTR_MEMORY_KINDS, tuple(unique_kinds))
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.memory.direction": record.direction,
+                "fabric.memory.kind": record.kind.value,
+                "fabric.memory.key": key,
+            }
+            if record.tenant_scope:
+                event_attrs["fabric.memory.tenant_scope"] = True
             span.add_event("fabric.memory", attributes=event_attrs)
             return record
 
