@@ -62,7 +62,8 @@ class HTTPGuardrailChecker:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:  # noqa: S310
+            # Endpoint is operator-supplied configuration, not attacker-controlled.
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:  # noqa: S310  # nosemgrep
                 payload = json.loads(resp.read())
         except (urllib.error.URLError, TimeoutError) as exc:
             if self.fail_open:
