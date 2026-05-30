@@ -8,30 +8,90 @@ your collector byte-identical to traces from a Python agent.
 
 ## Status
 
-**Core capture MVP — conformance-validated.** This package implements the
-SDK's core capture substrate: the `fabric.decision` span plus the
-`fabric.llm_call` and `fabric.tool_call` child spans, carrying both the
-OpenTelemetry GenAI semantic conventions (`gen_ai.*`) and Fabric's
-`fabric.*` mirrors.
-
-It is proven by the conformance test
+**Full wire-contract parity — conformance-validated.** This package emits
+every `fabric.*` span and event the Python SDK does, byte-for-byte. It is
+proven by the conformance test
 ([`test/conformance.test.ts`](test/conformance.test.ts)), which runs the
 equivalent TypeScript interactions and deep-equal-asserts the normalized
 spans against the **same** golden fixtures the Python conformance suite
 uses (`../python/tests/conformance/goldens/*.json`). The goldens are read
-from that shared location, never copied.
+from that shared location, never copied, and a guard test fails if a new
+Python golden ever lands without matching TypeScript coverage.
 
-Reproduced and passing goldens: `bare_decision`, `llm_call`, `tool_call`.
+Reproduced and passing goldens (all 18): `bare_decision`, `llm_call`,
+`tool_call`, `guardrail_redaction`, `guardrail_block`,
+`content_ref_stamped`, `escalation`, `retrieval`, `memory_read_write`,
+`side_effect`, `checkpoint`, `eval_record`, `queue_judge`, `policy_allow`,
+`policy_deny`, `policy_fail_closed`, `tool_authorization_allow`,
+`tool_authorization_deny`.
 
-Explicit follow-ons (not in this MVP): guardrail / policy / judge / queue
-adapters, sidecar clients, framework adapters (LangGraph, etc.), and the
-remaining recording primitives (retrieval, memory, side-effect,
-checkpoint, escalation, eval). These emit additional `fabric.*` events on
-the decision span in the Python SDK and are deliberately scoped out here.
+### Capture core vs. host integrations
+
+The TypeScript SDK is a **pure capture library**: every primitive takes
+host-computed metadata and emits the wire contract (hashing raw content
+locally — raw payloads never reach the trace). It deliberately does **not**
+ship the Python SDK's host-side _integration_ helpers that perform I/O:
+
+- **Sidecar clients** (Presidio / NeMo over a Unix socket) — in TS the host
+  runs its own guardrail/redaction service and passes the verdict to
+  `recordGuardrail` / `recordBlock`.
+- **Policy / tool-auth engine adapters** (OPA, Cedar, HTTP) — the host
+  evaluates and passes the normalized verdict to `recordPolicyEvaluation` /
+  `recordToolAuthorization`.
+- **Queue transports** (SQS, NATS, Redis) and **framework adapters**
+  (LangGraph, CrewAI) — the host enqueues / bridges; the SDK records.
+
+This keeps the package dependency-light and runtime-agnostic. The emitted
+telemetry is identical either way — the engine that produces a verdict
+lives in the host, not the capture library.
+
+## Recording primitives
+
+Beyond `llmCall` / `toolCall`, the `Decision` records the full Fabric
+event surface. Each hashes raw content locally and folds rolling
+counters / distinct-value sets onto the decision span:
+
+```ts
+fabric.decision({ sessionId: "s", requestId: "r" }, (d) => {
+  // Guardrail outcome (host ran its own redaction/guardrail service)
+  d.recordGuardrail({ phase: "input", blocked: false, latencyMs: 3, policies: ["presidio:EMAIL_ADDRESS"] });
+
+  // Retrieval (RAG/KG/SQL/tool/memory) — query hashed locally
+  d.recordRetrieval({ source: "rag", query: "refund policy", resultCount: 2, sourceDocumentIds: ["doc-1"] });
+
+  // Long-term memory read/write/erase — content hashed locally
+  d.remember({ kind: "semantic", content: "prefers email", key: "pref:contact", ttlSeconds: 86400 });
+  d.recall({ kind: "semantic", key: "pref:contact", content: "prefers email", source: "vector-store" });
+  d.forget("semantic", "pref:contact");
+
+  // Policy + tool authorization (host ran its own engine)
+  d.recordPolicyEvaluation({ engine: "opa", policyId: "finance.refund.cap", decision: "deny",
+    input: { amount: 5000 }, reason: "amount exceeds cap" });
+  d.recordToolAuthorization({ toolName: "wire_transfer", decision: "deny", arguments: '{"amount":9999}',
+    reason: "not on allow-list" });
+
+  // External mutation, save point, inline eval, async judge
+  d.recordSideEffect({ type: "ticket_create", targetSystem: "zendesk", operation: "create_ticket",
+    requestPayload: '{"subject":"refund"}', idempotencyKey: "idem-100", approvalRequired: true });
+  d.checkpoint("after-retrieval", { stateHash: "..." });
+  d.recordEval({ rubricId: "faithfulness-v1", score: 0.91, dimension: "faithfulness", evaluatorName: "Judge" });
+  d.queueJudge({ rubricId: "helpfulness-v1", dimensions: ["helpfulness", "tone"] });
+
+  // Human-in-the-loop escalation (sets the decision-span ERROR status)
+  d.requestEscalation({ reason: "low confidence", mode: "async", triggeringScore: 0.42 });
+});
+```
+
+For a blocking guardrail, pair `recordGuardrail` with `recordBlock(result)`
+to stamp `fabric.blocked` and the `guardrail_blocked` status on the span.
 
 ## Install
 
-Not yet published to npm. From a checkout of this repository:
+```bash
+npm install @singleaxis/fabric
+```
+
+Or from a checkout of this repository:
 
 ```bash
 cd sdk/typescript

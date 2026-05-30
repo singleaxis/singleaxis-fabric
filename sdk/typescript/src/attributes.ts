@@ -87,5 +87,139 @@ export const ATTR_GUARDRAIL_POLICIES = "fabric.guardrail.policies";
 export const ATTR_BLOCKED = "fabric.blocked";
 export const ATTR_BLOCKED_POLICIES = "fabric.blocked.policies";
 
-// Span status description set on a guardrail block (matches Python).
+// Dual-pipeline content-reference locator stamped on the guardrail event
+// when the host resolves the raw content into a ContentStore (spec 012).
+export const ATTR_GUARDRAIL_CONTENT_REF = "fabric.guardrail.content_ref";
+
+// Span status descriptions (match Python decision.py __exit__ precedence).
 export const STATUS_GUARDRAIL_BLOCKED = "guardrail_blocked";
+export const STATUS_ESCALATION_REQUESTED = "escalation_requested";
+export const STATUS_BLOCKED_AND_ESCALATED = "blocked_and_escalated";
+
+// -- Escalation (fabric.escalation span event) --------------------------
+
+export const EVENT_NAME_ESCALATION = "fabric.escalation";
+
+export const ATTR_ESCALATED = "fabric.escalated";
+export const ATTR_ESC_REASON = "fabric.escalation.reason";
+export const ATTR_ESC_RUBRIC = "fabric.escalation.rubric_id";
+export const ATTR_ESC_MODE = "fabric.escalation.mode";
+export const ATTR_ESC_SCORE = "fabric.escalation.triggering_score";
+
+// -- Retrieval (fabric.retrieval span event) ----------------------------
+
+export const EVENT_NAME_RETRIEVAL = "fabric.retrieval";
+
+export const ATTR_RETRIEVAL_COUNT = "fabric.retrieval_count";
+export const ATTR_RETRIEVAL_SOURCES = "fabric.retrieval_sources";
+
+export const ATTR_RETRIEVAL_SOURCE = "fabric.retrieval.source";
+export const ATTR_RETRIEVAL_QUERY_HASH = "fabric.retrieval.query_hash";
+export const ATTR_RETRIEVAL_RESULT_COUNT = "fabric.retrieval.result_count";
+export const ATTR_RETRIEVAL_RESULT_HASHES = "fabric.retrieval.result_hashes";
+export const ATTR_RETRIEVAL_SOURCE_DOC_IDS = "fabric.retrieval.source_document_ids";
+export const ATTR_RETRIEVAL_LATENCY_MS = "fabric.retrieval.latency_ms";
+
+// -- Memory (fabric.memory span event) ----------------------------------
+
+export const EVENT_NAME_MEMORY = "fabric.memory";
+
+export const ATTR_MEMORY_WRITE_COUNT = "fabric.memory_write_count";
+export const ATTR_MEMORY_READ_COUNT = "fabric.memory_read_count";
+export const ATTR_MEMORY_ERASE_COUNT = "fabric.memory_erase_count";
+export const ATTR_MEMORY_KINDS = "fabric.memory_kinds";
+
+export const ATTR_MEMORY_DIRECTION = "fabric.memory.direction";
+export const ATTR_MEMORY_KIND = "fabric.memory.kind";
+export const ATTR_MEMORY_CONTENT_HASH = "fabric.memory.content_hash";
+export const ATTR_MEMORY_KEY = "fabric.memory.key";
+export const ATTR_MEMORY_TAGS = "fabric.memory.tags";
+export const ATTR_MEMORY_TTL_SECONDS = "fabric.memory.ttl_seconds";
+export const ATTR_MEMORY_SOURCE = "fabric.memory.source";
+export const ATTR_MEMORY_INVALIDATES = "fabric.memory.invalidates";
+export const ATTR_MEMORY_TENANT_SCOPE = "fabric.memory.tenant_scope";
+
+// -- Side effect (fabric.side_effect span event) ------------------------
+
+export const EVENT_NAME_SIDE_EFFECT = "fabric.side_effect";
+
+export const ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count";
+export const ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types";
+export const ATTR_SIDE_EFFECT_SYSTEMS = "fabric.side_effect_systems";
+
+export const ATTR_SE_TYPE = "fabric.side_effect.type";
+export const ATTR_SE_TARGET_SYSTEM = "fabric.side_effect.target_system";
+export const ATTR_SE_OPERATION = "fabric.side_effect.operation";
+export const ATTR_SE_APPROVAL_REQUIRED = "fabric.side_effect.approval_required";
+export const ATTR_SE_COMMITTED = "fabric.side_effect.committed";
+export const ATTR_SE_ROLLBACK_SUPPORTED = "fabric.side_effect.rollback_supported";
+export const ATTR_SE_REPLAY_BEHAVIOR = "fabric.side_effect.replay_behavior";
+export const ATTR_SE_REQUEST_HASH = "fabric.side_effect.request_hash";
+export const ATTR_SE_RESULT_HASH = "fabric.side_effect.result_hash";
+export const ATTR_SE_IDEMPOTENCY_KEY = "fabric.side_effect.idempotency_key";
+export const ATTR_SE_PARENT_TOOL_CALL_ID = "fabric.side_effect.parent_tool_call_id";
+
+// -- Checkpoint (fabric.checkpoint span event) --------------------------
+
+export const EVENT_NAME_CHECKPOINT = "fabric.checkpoint";
+
+export const ATTR_CHECKPOINT_COUNT = "fabric.checkpoint_count";
+export const ATTR_CHECKPOINT_ID = "fabric.checkpoint.checkpoint_id";
+export const ATTR_CHECKPOINT_STEP_NAME = "fabric.checkpoint.step_name";
+export const ATTR_CHECKPOINT_STATE_HASH = "fabric.checkpoint.state_hash";
+
+// -- Eval (fabric.eval span event) --------------------------------------
+
+export const EVENT_NAME_EVAL = "fabric.eval";
+
+export const ATTR_EVAL_COUNT = "fabric.eval_count";
+export const ATTR_EVAL_RUBRICS = "fabric.eval_rubrics";
+
+export const ATTR_EVAL_ID = "fabric.eval.eval_id";
+export const ATTR_EVAL_RUBRIC_ID = "fabric.eval.rubric_id";
+export const ATTR_EVAL_SCORE = "fabric.eval.score";
+export const ATTR_EVAL_DIMENSION = "fabric.eval.dimension";
+export const ATTR_EVAL_EVALUATOR_NAME = "fabric.eval.evaluator_name";
+export const ATTR_EVAL_EVALUATOR_VERSION = "fabric.eval.evaluator_version";
+export const ATTR_EVAL_CONFIDENCE = "fabric.eval.confidence";
+export const ATTR_EVAL_PAYLOAD_REF = "fabric.eval.payload_ref";
+
+// -- Judge queue (fabric.judge.queued span event) -----------------------
+
+export const EVENT_NAME_JUDGE_QUEUED = "fabric.judge.queued";
+
+export const ATTR_JUDGE_QUEUED_COUNT = "fabric.judge_queued_count";
+export const ATTR_JUDGE_RUBRICS = "fabric.judge_rubrics";
+
+export const ATTR_JUDGE_REQUEST_ID = "fabric.judge.request_id";
+export const ATTR_JUDGE_RUBRIC_ID = "fabric.judge.rubric_id";
+export const ATTR_JUDGE_DIMENSIONS = "fabric.judge.dimensions";
+export const ATTR_JUDGE_PAYLOAD_REF = "fabric.judge.payload_ref";
+
+// -- Policy evaluation (fabric.policy.evaluation span event) -------------
+
+export const EVENT_NAME_POLICY_EVALUATION = "fabric.policy.evaluation";
+
+export const ATTR_POLICY_EVAL_COUNT = "fabric.policy_evaluation_count";
+export const ATTR_POLICY_ENGINES = "fabric.policy_engines";
+
+export const ATTR_POLICY_EVALUATION_ID = "fabric.policy.evaluation_id";
+export const ATTR_POLICY_ENGINE = "fabric.policy.engine";
+export const ATTR_POLICY_POLICY_ID = "fabric.policy.policy_id";
+export const ATTR_POLICY_DECISION = "fabric.policy.decision";
+export const ATTR_POLICY_INPUT_HASH = "fabric.policy.input_hash";
+export const ATTR_POLICY_LATENCY_MS = "fabric.policy.latency_ms";
+export const ATTR_POLICY_POLICY_VERSION = "fabric.policy.policy_version";
+export const ATTR_POLICY_REASON = "fabric.policy.reason";
+export const ATTR_POLICY_EVIDENCE_REF = "fabric.policy.evidence_ref";
+export const ATTR_POLICY_BUNDLE_SIGNATURE = "fabric.policy.bundle_signature";
+export const ATTR_POLICY_INPUT_CONTENT_REF = "fabric.policy.input_content_ref";
+
+// -- Tool authorization (fabric.tool.authorization span event) ----------
+
+export const EVENT_NAME_TOOL_AUTHORIZATION = "fabric.tool.authorization";
+
+export const ATTR_TOOL_AUTH_COUNT = "fabric.tool_authorization_count";
+
+export const ATTR_TOOL_AUTH_DECISION = "fabric.tool.authorization.decision";
+export const ATTR_TOOL_AUTH_REASON = "fabric.tool.authorization.reason";

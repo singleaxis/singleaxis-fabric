@@ -10,11 +10,21 @@
 export { Fabric, TRACER_NAME, type FabricConfig } from "./client.js";
 export {
   Decision,
+  type CheckpointOptions,
   type DecisionClientIdentity,
   type DecisionIds,
+  type EscalationSummary,
+  type EvalOptions,
   type GuardrailEntity,
   type GuardrailPhase,
   type GuardrailResult,
+  type PolicyEvaluationOptions,
+  type QueueJudgeOptions,
+  type RecallOptions,
+  type RememberOptions,
+  type RetrievalOptions,
+  type SideEffectOptions,
+  type ToolAuthorizationOptions,
 } from "./decision.js";
 export {
   LlmCall,

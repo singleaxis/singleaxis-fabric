@@ -10,7 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
+- **TypeScript SDK — full wire-contract parity with the Python SDK.** The TS
+  `Decision` now records the complete Fabric event surface, not just
+  `llm_call` / `tool_call` / guardrail: `recordRetrieval`, `remember` /
+  `recall` / `forget` (memory read/write/erase), `recordSideEffect`,
+  `checkpoint`, `recordEval`, `queueJudge`, `recordPolicyEvaluation`,
+  `recordToolAuthorization`, `requestEscalation`, and a `contentRef` field on
+  the guardrail result. Each hashes raw content locally (so raw payloads
+  never reach the trace) and folds the same rolling counters / distinct-value
+  set attributes onto the decision span as Python. Policy input is hashed
+  with a Python-compatible canonical JSON serializer so `input_hash` matches
+  byte-for-byte. The TS conformance suite now reproduces **all 18** shared
+  goldens (up from 3) and includes a guard test that fails if a new Python
+  golden lands without matching TS coverage. The package versions
+  independently of the Python SDK and is published from its own `ts-vX.Y.Z`
+  tag via a new `publish-npm` workflow (npm provenance / OIDC).
+- The TypeScript SDK is a pure capture library by design: host-side
+  integration helpers that perform I/O (Presidio/NeMo sidecar clients,
+  OPA/Cedar/HTTP policy engines, SQS/NATS/Redis queue transports, LangGraph/
+  CrewAI adapters) remain Python-only — in TS the host runs the engine and
+  passes the verdict to the matching `record*` method. The emitted telemetry
+  is identical either way.
 
 ## [0.5.1] - 2026-05-30
 
