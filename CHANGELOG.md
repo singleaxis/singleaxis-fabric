@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **docs:** `docs/api-stability.md` — the public-surface / `schema_version`
+  wire-contract / deprecation policy enterprise adopters can build against,
+  linked from the README.
+
+### Changed
+
+- **spec 005:** corrected the §Enforcement wording — the benchmark suite is
+  opt-in and informational (`python -m benchmarks.run`), not a per-PR CI gate;
+  the latency budget is a design target, not a CI-enforced SLO.
+
+### Added (SDK)
+
 - **SDK:** `workflow_id` and `execution_id` now propagate across service
   boundaries via the W3C `tracestate` `singleaxis` member. `FabricContext`
   gains optional `workflow_id` / `execution_id` fields (encoded under the
