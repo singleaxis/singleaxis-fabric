@@ -50,6 +50,15 @@ the sidecar via `--tenant-key-file`.
 - `tag` — each span is replaced with a generic entity tag (e.g.
   `<PERSON>`), discarding correlatability.
 
+Audit granularity differs between the two. `hmac` collapses the whole
+value to a single digest, so the `fabric.guardrail.entities` audit
+attribute records one category per redaction pass (the first-matched
+class). `tag` rewrites each detected span in place, so the audit
+attribute enumerates _every_ entity class found (e.g.
+`PERSON:1, EMAIL_ADDRESS:1, CREDIT_CARD:1`). Choose `tag` if your
+compliance posture needs per-entity audit counts; choose `hmac` (the
+default) if you need cross-request correlatability of redacted values.
+
 ## Key values
 
 | Key | Default | Purpose |

@@ -66,3 +66,26 @@ export const FABRIC_TOOL_RESULT_HASH = "fabric.tool.result_hash";
 export const FABRIC_TOOL_KIND = "fabric.tool.kind";
 export const FABRIC_TOOL_ERROR = "fabric.tool.error";
 export const FABRIC_TOOL_ERROR_CATEGORY = "fabric.tool.error_category";
+
+// -- Guardrail (fabric.guardrail span event, per spec 005) --------------
+//
+// These mirror `sdk/python/src/fabric/decision.py` (`_record_guardrail_event`
+// and the block bookkeeping in `Decision.__exit__`). The keys land verbatim
+// on the emitted span/event, so they MUST stay byte-identical to the Python
+// constants or the shared `guardrail_*` conformance goldens will not match.
+
+export const EVENT_NAME_GUARDRAIL = "fabric.guardrail";
+
+export const ATTR_GUARDRAIL_PHASE = "fabric.guardrail.phase";
+export const ATTR_GUARDRAIL_LATENCY_MS = "fabric.guardrail.latency_ms";
+export const ATTR_GUARDRAIL_BLOCKED = "fabric.guardrail.blocked";
+export const ATTR_GUARDRAIL_ENTITIES = "fabric.guardrail.entities";
+export const ATTR_GUARDRAIL_POLICIES = "fabric.guardrail.policies";
+
+// Block bookkeeping stamped on the decision span itself when a guardrail
+// blocks (mirrors Python's ATTR_BLOCKED / ATTR_BLOCK_POLICIES).
+export const ATTR_BLOCKED = "fabric.blocked";
+export const ATTR_BLOCKED_POLICIES = "fabric.blocked.policies";
+
+// Span status description set on a guardrail block (matches Python).
+export const STATUS_GUARDRAIL_BLOCKED = "guardrail_blocked";
