@@ -59,8 +59,7 @@ class HTTPPolicyAdapter:
             self.endpoint, data=body, headers=request_headers, method="POST"
         )
         try:
-            # Endpoint is operator-supplied configuration, not attacker-controlled.
-            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:  # noqa: S310  # nosemgrep
+            with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:  # noqa: S310
                 payload = json.loads(resp.read())
         except urllib.error.URLError as exc:
             raise PolicyAdapterError(f"HTTP transport failed: {exc}") from exc

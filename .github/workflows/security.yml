@@ -79,7 +79,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run Semgrep
-        run: semgrep scan --config auto --sarif --output semgrep.sarif
+        # dynamic-urllib-use-detected is excluded: the only matches are the
+        # generic HTTP guardrail/policy adapters, which POST to an
+        # operator-supplied endpoint (tenant config, not attacker-controlled;
+        # already flagged with `# noqa: S310`). Excluding the rule keeps it out
+        # of the SARIF entirely rather than uploading suppressed findings.
+        run: >-
+          semgrep scan --config auto --sarif --output semgrep.sarif
+          --exclude-rule python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
       - uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
