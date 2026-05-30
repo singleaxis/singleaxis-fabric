@@ -1,0 +1,88 @@
+# Publish the first-party TypeScript SDK (@singleaxis/fabric) to npm.
+#
+# The TS package versions INDEPENDENTLY of the Python SDK / repo `v*` tags
+# (it is a separate distribution with its own cadence), so it has its own
+# tag namespace: push `ts-vX.Y.Z` to publish. The tag version must match
+# `sdk/typescript/package.json`. `workflow_dispatch` is also supported for
+# a manual re-run.
+#
+# Pre-req (one-time, maintainer): add an `NPM_TOKEN` repository secret — an
+# npm automation/granular token with publish rights to the `@singleaxis`
+# scope. Publishing uses `--provenance` (OIDC), so `id-token: write` is set;
+# the package's `repository` field must point at this repo (it does).
+name: Publish npm package
+
+on:
+  push:
+    tags:
+      - "ts-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + pack only; do not publish"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-npm:
+    name: Publish @singleaxis/fabric to npm
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # npm provenance (OIDC)
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+
+      - name: Read package version
+        id: pkg
+        working-directory: sdk/typescript
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches package.json version
+        if: github.event_name == 'push'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#ts-v}"
+          if [ "$TAG_VERSION" != "${{ steps.pkg.outputs.version }}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (=> ${TAG_VERSION}) does not match package.json version ${{ steps.pkg.outputs.version }}"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+
+      - name: Gate — lint, typecheck, build, conformance + unit tests
+        working-directory: sdk/typescript
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run build
+          npm test
+
+      - name: Skip if this version is already on npm
+        id: published
+        working-directory: sdk/typescript
+        run: |
+          if npm view "@singleaxis/fabric@${{ steps.pkg.outputs.version }}" version >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "@singleaxis/fabric@${{ steps.pkg.outputs.version }} already published; skipping."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm (provenance)
+        if: steps.published.outputs.already == 'false' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+        working-directory: sdk/typescript
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

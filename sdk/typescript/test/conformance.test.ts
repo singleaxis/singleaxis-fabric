@@ -13,7 +13,7 @@
  * `scenarios.py` so the emitted spans land verbatim against the goldens.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -26,7 +26,7 @@ import {
 } from "@opentelemetry/sdk-trace-node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { Fabric } from "../src/index.js";
+import { Fabric, sha256Hex } from "../src/index.js";
 import { normalizeSpans } from "./normalize.js";
 
 // Fixed per-turn identifiers — mirror sdk/python/tests/conformance/scenarios.py.
@@ -43,6 +43,31 @@ const GOLDENS_DIR = resolve(HERE, "..", "..", "python", "tests", "conformance", 
 function loadGolden(name: string): unknown {
   return JSON.parse(readFileSync(resolve(GOLDENS_DIR, `${name}.json`), "utf-8"));
 }
+
+// Every shared golden the TS SDK is expected to reproduce. The
+// "covers every shared golden" test below asserts this set equals the
+// goldens directory exactly, so a new Python golden can't silently land
+// without matching TS coverage.
+const COVERED_GOLDENS = [
+  "bare_decision",
+  "llm_call",
+  "tool_call",
+  "guardrail_redaction",
+  "guardrail_block",
+  "content_ref_stamped",
+  "escalation",
+  "retrieval",
+  "memory_read_write",
+  "side_effect",
+  "checkpoint",
+  "eval_record",
+  "queue_judge",
+  "policy_allow",
+  "policy_deny",
+  "policy_fail_closed",
+  "tool_authorization_allow",
+  "tool_authorization_deny",
+];
 
 const exporter = new InMemorySpanExporter();
 let provider: BasicTracerProvider;
@@ -76,6 +101,14 @@ function captured(): ReadableSpan[] {
 }
 
 describe("conformance against shared Python goldens", () => {
+  it("covers every shared golden (no Python golden left unreproduced)", () => {
+    const onDisk = readdirSync(GOLDENS_DIR)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => f.replace(/\.json$/, ""))
+      .sort();
+    expect(onDisk).toEqual([...COVERED_GOLDENS].sort());
+  });
+
   it("bare_decision", () => {
     const f = fabric();
     decision(f, () => {
@@ -148,5 +181,212 @@ describe("conformance against shared Python goldens", () => {
     });
     const got = normalizeSpans(captured());
     expect(got).toEqual(loadGolden("guardrail_block"));
+  });
+
+  it("content_ref_stamped", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      // Mirrors the Python DeterministicContentStore: mem://<sha256(content)>.
+      d.recordGuardrail({
+        phase: "input",
+        blocked: false,
+        latencyMs: 4,
+        policies: ["stub-redactor:pii"],
+        contentRef: `mem://${sha256Hex("my email is alice@example.com")}`,
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("content_ref_stamped"));
+  });
+
+  it("escalation", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.requestEscalation({
+        reason: "low confidence on refund eligibility",
+        rubricId: "refund-eligibility-v1",
+        triggeringScore: 0.42,
+        mode: "async",
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("escalation"));
+  });
+
+  it("retrieval", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordRetrieval({
+        source: "rag",
+        query: "refund policy for late deliveries",
+        resultCount: 2,
+        resultHashes: ["a".repeat(64), "b".repeat(64)],
+        sourceDocumentIds: ["doc-1", "doc-2"],
+        latencyMs: 12,
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("retrieval"));
+  });
+
+  it("memory_read_write", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.remember({
+        kind: "semantic",
+        content: "customer prefers email contact",
+        key: "pref:contact",
+        tags: ["preference", "contact"],
+        ttlSeconds: 86400,
+      });
+      d.recall({
+        kind: "semantic",
+        key: "pref:contact",
+        content: "customer prefers email contact",
+        source: "vector-store",
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("memory_read_write"));
+  });
+
+  it("side_effect", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordSideEffect({
+        type: "ticket_create",
+        targetSystem: "zendesk",
+        operation: "create_ticket",
+        requestPayload: '{"subject":"refund"}',
+        resultPayload: '{"id":"T-100"}',
+        idempotencyKey: "idem-100",
+        approvalRequired: true,
+        committed: true,
+        rollbackSupported: false,
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("side_effect"));
+  });
+
+  it("checkpoint", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.checkpoint("after-retrieval", {
+        stateHash: "c".repeat(64),
+        checkpointId: "11111111-1111-1111-1111-111111111111",
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("checkpoint"));
+  });
+
+  it("eval_record", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordEval({
+        rubricId: "faithfulness-v1",
+        score: 0.91,
+        dimension: "faithfulness",
+        evaluatorName: "StubJudge:Faithfulness",
+        evaluatorVersion: "1.2.0",
+        confidence: 0.8,
+        payloadRef: "tenant://payloads/req-0001",
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("eval_record"));
+  });
+
+  it("queue_judge", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.queueJudge({
+        rubricId: "helpfulness-v1",
+        dimensions: ["helpfulness", "tone"],
+        payloadRef: "tenant://payloads/judge-0001",
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("queue_judge"));
+  });
+
+  it("policy_allow", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordPolicyEvaluation({
+        engine: "stub-policy",
+        policyId: "finance.refund.cap",
+        decision: "allow",
+        input: { amount: 50 },
+        policyVersion: "v3",
+        latencyMs: 1,
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("policy_allow"));
+  });
+
+  it("policy_deny", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordPolicyEvaluation({
+        engine: "stub-policy",
+        policyId: "finance.refund.cap",
+        decision: "deny",
+        input: { amount: 5000 },
+        policyVersion: "v3",
+        reason: "amount exceeds cap",
+        evidenceRef: "tenant://evidence/deny-1",
+        latencyMs: 1,
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("policy_deny"));
+  });
+
+  it("policy_fail_closed", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      // Mirrors the SDK fail-closed path: a raising engine becomes a deny
+      // with a synthetic reason. No policy_version (the engine never returned).
+      d.recordPolicyEvaluation({
+        engine: "stub-policy-raising",
+        policyId: "finance.refund.cap",
+        decision: "deny",
+        input: { amount: 50 },
+        reason: "adapter raised: RuntimeError: engine unreachable",
+        latencyMs: 1,
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("policy_fail_closed"));
+  });
+
+  it("tool_authorization_allow", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordToolAuthorization({
+        toolName: "search_orders",
+        decision: "allow",
+        arguments: '{"order_id":"O-1"}',
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("tool_authorization_allow"));
+  });
+
+  it("tool_authorization_deny", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordToolAuthorization({
+        toolName: "wire_transfer",
+        decision: "deny",
+        arguments: '{"amount":9999}',
+        reason: "tool not on allow-list",
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("tool_authorization_deny"));
   });
 });
