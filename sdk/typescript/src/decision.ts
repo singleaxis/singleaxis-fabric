@@ -133,21 +133,59 @@ export class Decision {
 }
 
 /**
- * Run `fn`, ending `span` afterwards. On a thrown error, record the
- * exception + ERROR status (matching the OTel default) before re-throwing.
+ * Run `fn`, ending `span` afterwards. Async-aware: if `fn` returns a
+ * thenable (a Promise), the span is NOT ended until that promise settles,
+ * so setters called inside an awaited callback body land BEFORE the span
+ * closes. For a synchronous `fn`, the span ends synchronously in a
+ * `try/finally` exactly as before. On a thrown error (or rejection), the
+ * exception + ERROR status is recorded (matching the OTel default) before
+ * the error propagates.
  */
 function runAndEnd<T>(span: Span, fn: () => T): T {
+  let result: T;
   try {
-    return fn();
+    result = fn();
   } catch (err) {
-    span.setStatus({ code: SpanStatusCode.ERROR, message: errorName(err) });
-    if (err instanceof Error) {
-      span.recordException(err);
-    }
-    throw err;
-  } finally {
+    recordError(span, err);
     span.end();
+    throw err;
   }
+  if (isThenable(result)) {
+    return result.then(
+      (value) => {
+        span.end();
+        return value;
+      },
+      (err: unknown) => {
+        recordError(span, err);
+        span.end();
+        throw err;
+      },
+    ) as T;
+  }
+  span.end();
+  return result;
+}
+
+/** Record an exception + ERROR status on `span` (does not end it). */
+function recordError(span: Span, err: unknown): void {
+  span.setStatus({ code: SpanStatusCode.ERROR, message: errorName(err) });
+  if (err instanceof Error) {
+    span.recordException(err);
+  }
+}
+
+/**
+ * Robust thenable check — true for any value exposing a `.then` method
+ * (native Promises and Promise-likes), used to defer span-ending until an
+ * async callback settles.
+ */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    value != null &&
+    (typeof value === "object" || typeof value === "function") &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
 }
 
 function errorName(err: unknown): string {
@@ -160,6 +198,15 @@ function errorName(err: unknown): string {
 /**
  * Start a decision span and run `fn` with it active, then end it.
  * Internal — the public entry point is `Fabric.decision`.
+ *
+ * The span is installed as the active context via `context.with(...)` (the
+ * same mechanism `llmCall`/`toolCall` use) rather than
+ * `startActiveSpan`'s callback scope, so the decision span stays active for
+ * the synchronous portion of an async body — long enough for child
+ * `llmCall`/`toolCall` spans opened before the first `await` to parent
+ * under it. Span-ending is async-aware via {@link runAndEnd}: a sync `fn`
+ * ends synchronously, while an async `fn`'s span is ended only once the
+ * returned promise settles.
  */
 export function runDecision<T>(
   tracer: Tracer,
@@ -168,19 +215,11 @@ export function runDecision<T>(
   fn: (d: Decision) => T,
 ): T {
   validateIds(ids);
-  return tracer.startActiveSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL }, (span) => {
+  const span = tracer.startSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
+  const ctx = trace.setSpan(otelContext.active(), span);
+  return otelContext.with(ctx, () => {
     const decision = new Decision(tracer, span, identity, ids);
-    try {
-      return fn(decision);
-    } catch (err) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: errorName(err) });
-      if (err instanceof Error) {
-        span.recordException(err);
-      }
-      throw err;
-    } finally {
-      span.end();
-    }
+    return runAndEnd(span, () => fn(decision));
   });
 }
 

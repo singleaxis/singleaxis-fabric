@@ -88,6 +88,11 @@ fabric.decision({ sessionId: "sess-1", requestId: "req-1", userId: "user-42" }, 
 One `fabric.decision` span lands per agent turn, with `fabric.llm_call`
 and `fabric.tool_call` children nested under it.
 
+For async work, `await` the callback (`await decision.llmCall(opts, async
+(call) => { ... })`) — the span now stays open until the awaited body
+settles, so setters called after an `await` (e.g. `setUsage` once the LLM
+response returns) reliably land on the span.
+
 ### Explicit start/end form
 
 For callers that cannot nest a callback, `startDecision` returns a
