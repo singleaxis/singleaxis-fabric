@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
+
+## [0.5.1] - 2026-05-30
+
+### Added
+
 - **TypeScript SDK — first-class guardrail API.** `Decision` now exposes
   `recordGuardrail(result)` and `recordBlock(result)` (plus a `blocked`
   accessor), mirroring the Python SDK's guardrail event + block bookkeeping.
