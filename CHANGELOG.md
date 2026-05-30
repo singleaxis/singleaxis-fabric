@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
+
+## [0.5.0] - 2026-05-30
+
+### Added
+
 - **TypeScript SDK:** first-party `@singleaxis/fabric` npm package under
   `sdk/typescript/` — the core capture substrate (`fabric.decision` plus
   `fabric.llm_call` / `fabric.tool_call` child spans) emitting the same
@@ -59,7 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   marker (the actual purge) is the commercial Decision Graph's job. Fully
   backward compatible: the new attributes are emitted only when the new
   features are used, so existing memory events are byte-identical.
-- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
 
 ## [0.4.1] - 2026-05-30
 
