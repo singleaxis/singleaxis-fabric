@@ -119,4 +119,34 @@ describe("conformance against shared Python goldens", () => {
     const got = normalizeSpans(captured());
     expect(got).toEqual(loadGolden("tool_call"));
   });
+
+  it("guardrail_redaction", () => {
+    const f = fabric();
+    decision(f, (d) => {
+      d.recordGuardrail({
+        phase: "input",
+        blocked: false,
+        latencyMs: 4,
+        policies: ["stub-redactor:pii"],
+      });
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("guardrail_redaction"));
+  });
+
+  it("guardrail_block", () => {
+    const f = fabric();
+    const result = {
+      phase: "input" as const,
+      blocked: true,
+      latencyMs: 2,
+      policies: ["stub-blocker:jailbreak"],
+    };
+    decision(f, (d) => {
+      d.recordGuardrail(result);
+      d.recordBlock(result);
+    });
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("guardrail_block"));
+  });
 });

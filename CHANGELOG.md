@@ -10,7 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- _(keep-alive — no entries yet for the next release; will be populated as work lands)_
+- **TypeScript SDK — first-class guardrail API.** `Decision` now exposes
+  `recordGuardrail(result)` and `recordBlock(result)` (plus a `blocked`
+  accessor), mirroring the Python SDK's guardrail event + block bookkeeping.
+  Previously a TS integrator had to hand-roll `getSpan().addEvent(
+  "fabric.guardrail", {...})` with raw attribute keys, with no guarantee the
+  keys/shape stayed in lockstep with the shared wire contract. The new
+  helpers own the `fabric.guardrail.*` / `fabric.blocked` / status formatting
+  and are verified against the SAME shared `guardrail_redaction` /
+  `guardrail_block` conformance goldens the Python SDK uses. `entities` are
+  emitted as `category:count` strings exactly as Python does.
 
 ### Fixed
 

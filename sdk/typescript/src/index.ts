@@ -8,7 +8,14 @@
  */
 
 export { Fabric, TRACER_NAME, type FabricConfig } from "./client.js";
-export { Decision, type DecisionClientIdentity, type DecisionIds } from "./decision.js";
+export {
+  Decision,
+  type DecisionClientIdentity,
+  type DecisionIds,
+  type GuardrailEntity,
+  type GuardrailPhase,
+  type GuardrailResult,
+} from "./decision.js";
 export {
   LlmCall,
   ToolCall,

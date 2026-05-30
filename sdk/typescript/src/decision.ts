@@ -25,7 +25,14 @@ import {
 
 import {
   ATTR_AGENT,
+  ATTR_BLOCKED,
+  ATTR_BLOCKED_POLICIES,
   ATTR_EXECUTION,
+  ATTR_GUARDRAIL_BLOCKED,
+  ATTR_GUARDRAIL_ENTITIES,
+  ATTR_GUARDRAIL_LATENCY_MS,
+  ATTR_GUARDRAIL_PHASE,
+  ATTR_GUARDRAIL_POLICIES,
   ATTR_PROFILE,
   ATTR_REQUEST,
   ATTR_SCHEMA_VERSION,
@@ -33,8 +40,10 @@ import {
   ATTR_TENANT,
   ATTR_USER,
   ATTR_WORKFLOW,
+  EVENT_NAME_GUARDRAIL,
   SCHEMA_VERSION,
   SPAN_NAME_DECISION,
+  STATUS_GUARDRAIL_BLOCKED,
 } from "./attributes.js";
 import {
   LlmCall,
@@ -61,6 +70,35 @@ export interface DecisionIds {
   userId?: string;
 }
 
+/** The phase of the agent turn a guardrail ran in (mirrors Python `GuardrailPhase`). */
+export type GuardrailPhase = "input" | "output_stream" | "output_final";
+
+/** A detected PII/entity class and how many times it occurred. */
+export interface GuardrailEntity {
+  category: string;
+  count: number;
+}
+
+/**
+ * The outcome of one guardrail pass, recorded on the decision via
+ * {@link Decision.recordGuardrail} (and {@link Decision.recordBlock} when it
+ * blocks). Mirrors the Python `GuardrailResult` fields that land on the wire;
+ * the SDK owns the attribute-key formatting so TS guardrail telemetry stays
+ * in lockstep with the shared `fabric.guardrail` contract.
+ */
+export interface GuardrailResult {
+  /** Which phase of the turn this guardrail ran in. */
+  phase: GuardrailPhase;
+  /** Whether the guardrail blocked the content. */
+  blocked: boolean;
+  /** How long the guardrail took, in milliseconds. */
+  latencyMs: number;
+  /** Policy identifiers that fired (e.g. `presidio:EMAIL_ADDRESS`). */
+  policies?: string[];
+  /** Detected entity classes (e.g. `{ category: "EMAIL_ADDRESS", count: 1 }`). */
+  entities?: GuardrailEntity[];
+}
+
 /**
  * One agent turn. Not safe to share across async tasks — open one
  * `Decision` per turn.
@@ -68,6 +106,7 @@ export interface DecisionIds {
 export class Decision {
   private readonly tracer: Tracer;
   private readonly span: Span;
+  private blockedResult: GuardrailResult | null = null;
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
@@ -114,6 +153,66 @@ export class Decision {
       const tool = new ToolCall(span);
       return runAndEnd(span, () => fn(tool));
     });
+  }
+
+  /**
+   * Record a guardrail outcome as a `fabric.guardrail` span event on the
+   * decision span (spec 005). This is the TS counterpart to the Python
+   * SDK's guardrail event — the host runs its own guardrail/redaction
+   * service, then hands the result here so the keys (`fabric.guardrail.*`)
+   * and shape stay byte-identical to the shared wire contract instead of
+   * being hand-rolled via `getSpan().addEvent(...)`.
+   *
+   * This records the event only; it does NOT mark the decision blocked.
+   * For a blocking outcome, also call {@link recordBlock}.
+   */
+  recordGuardrail(result: GuardrailResult): void {
+    const attrs: Record<string, string | number | boolean | string[]> = {
+      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [ATTR_GUARDRAIL_PHASE]: result.phase,
+      [ATTR_GUARDRAIL_LATENCY_MS]: result.latencyMs,
+      [ATTR_GUARDRAIL_BLOCKED]: result.blocked,
+    };
+    if (result.entities && result.entities.length > 0) {
+      attrs[ATTR_GUARDRAIL_ENTITIES] = result.entities.map((e) => `${e.category}:${e.count}`);
+    }
+    if (result.policies && result.policies.length > 0) {
+      attrs[ATTR_GUARDRAIL_POLICIES] = [...result.policies];
+    }
+    this.span.addEvent(EVENT_NAME_GUARDRAIL, attrs);
+  }
+
+  /**
+   * Mark this decision blocked by a guardrail. First-wins: the first block
+   * recorded is canonical; a second call throws rather than silently
+   * overwriting (mirrors Python `Decision.record_block`). Stamps
+   * `fabric.blocked` / `fabric.blocked.policies` on the decision span and
+   * sets an ERROR status with description `guardrail_blocked`.
+   *
+   * Call {@link recordGuardrail} too if you also want the `fabric.guardrail`
+   * event (the audit record of what fired); `recordBlock` only writes the
+   * canonical block bookkeeping.
+   */
+  recordBlock(result: GuardrailResult): void {
+    if (!result.blocked) {
+      throw new Error("recordBlock called with a non-blocking GuardrailResult");
+    }
+    if (this.blockedResult !== null) {
+      throw new Error(
+        "Decision is already blocked; recordBlock is first-wins. Call only once per Decision.",
+      );
+    }
+    this.blockedResult = result;
+    this.span.setAttribute(ATTR_BLOCKED, true);
+    if (result.policies && result.policies.length > 0) {
+      this.span.setAttribute(ATTR_BLOCKED_POLICIES, [...result.policies]);
+    }
+    this.span.setStatus({ code: SpanStatusCode.ERROR, message: STATUS_GUARDRAIL_BLOCKED });
+  }
+
+  /** The blocking guardrail result, or `null` if none fired. */
+  get blocked(): GuardrailResult | null {
+    return this.blockedResult;
   }
 
   /** Set a custom scalar attribute on the decision span. */
