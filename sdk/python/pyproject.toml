@@ -124,6 +124,8 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.6.9",
   "mypy>=1.11.2",
+  "jsonschema>=4.23",
+  "types-jsonschema>=4.23",
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   # httpx powers the HTTP-backed adapters (lakera, opa); pulled into
   # [dev] so their adapter tests can construct and exercise the client.
