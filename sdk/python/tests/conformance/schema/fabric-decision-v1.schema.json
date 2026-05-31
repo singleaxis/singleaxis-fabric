@@ -40,6 +40,7 @@
         "fabric.retrieval_sources": { "type": "array", "items": { "type": "string" } },
         "fabric.memory_write_count": { "type": "integer", "minimum": 0 },
         "fabric.memory_read_count": { "type": "integer", "minimum": 0 },
+        "fabric.memory_erase_count": { "type": "integer", "minimum": 0 },
         "fabric.memory_kinds": { "type": "array", "items": { "type": "string" } },
         "fabric.side_effect_count": { "type": "integer", "minimum": 0 },
         "fabric.side_effect_types": { "type": "array", "items": { "type": "string" } },
@@ -123,20 +124,31 @@
           "required": [
             "fabric.schema_version",
             "fabric.memory.direction",
-            "fabric.memory.kind",
-            "fabric.memory.content_hash"
+            "fabric.memory.kind"
           ],
           "additionalProperties": false,
           "properties": {
             "fabric.schema_version": { "const": "1.0" },
-            "fabric.memory.direction": { "enum": ["read", "write"] },
+            "fabric.memory.direction": { "enum": ["read", "write", "erase"] },
             "fabric.memory.kind": { "enum": ["episodic", "semantic", "scratch"] },
             "fabric.memory.content_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "fabric.memory.key": { "type": "string" },
             "fabric.memory.tags": { "type": "array", "items": { "type": "string" } },
             "fabric.memory.ttl_seconds": { "type": "integer", "minimum": 0 },
-            "fabric.memory.source": { "type": "string" }
-          }
+            "fabric.memory.source": { "type": "string" },
+            "fabric.memory.invalidates": { "type": "string" },
+            "fabric.memory.tenant_scope": { "type": "boolean" }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "fabric.memory.direction": { "enum": ["read", "write"] }
+                }
+              },
+              "then": { "required": ["fabric.memory.content_hash"] }
+            }
+          ]
         },
         "fabric.side_effect": {
           "type": "object",
