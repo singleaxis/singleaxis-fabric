@@ -6,8 +6,8 @@ description: |
   how they are configured. See specs/008-deployment-model.md for the
   authoritative shape.
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 0.5.1
+appVersion: "0.5.1"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - ai-governance

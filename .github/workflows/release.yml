@@ -345,7 +345,7 @@ jobs:
     env:
       REGISTRY: ghcr.io
       OCI_REF: oci://ghcr.io/${{ github.repository_owner }}/charts
-      CHART_DIR: charts/fabric/charts/otel-collector
+      CHART_DIR: charts/fabric
     steps:
       - uses: actions/checkout@v6
       - uses: azure/setup-helm@v4
@@ -366,6 +366,19 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | helm registry login "${REGISTRY}" \
                 --username "${{ github.actor }}" --password-stdin
+      - name: Stamp chart version from the release tag
+        # Keep the umbrella chart version + appVersion in lockstep with the
+        # SDK/image release, and bump the Fabric-owned subcharts' appVersion
+        # (which drives their image tag) to the same version so a fresh
+        # install pulls THIS release's images. langfuse is deliberately
+        # excluded — it is a third-party subchart whose appVersion is the
+        # upstream Langfuse version, not Fabric's.
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          sed -i -E "s/^version:.*/version: ${V}/; s/^appVersion:.*/appVersion: \"${V}\"/" charts/fabric/Chart.yaml
+          for c in otel-collector presidio-sidecar nemo-sidecar redteam-runner update-agent; do
+            sed -i -E "s/^appVersion:.*/appVersion: \"${V}\"/" "charts/fabric/charts/${c}/Chart.yaml"
+          done
       - name: Package chart
         id: package
         run: |
@@ -386,7 +399,7 @@ jobs:
       - name: Sign chart artifact
         env:
           COSIGN_EXPERIMENTAL: "1"
-          CHART_NAME: otel-collector
+          CHART_NAME: fabric
         run: |
           ref="ghcr.io/${{ github.repository_owner }}/charts/${CHART_NAME}:${{ steps.package.outputs.chart_version }}@${{ steps.push.outputs.digest }}"
           echo "cosign sign ${ref}"
