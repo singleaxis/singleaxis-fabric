@@ -150,6 +150,9 @@ export const ATTR_SIDE_EFFECT_COUNT = "fabric.side_effect_count";
 export const ATTR_SIDE_EFFECT_TYPES = "fabric.side_effect_types";
 export const ATTR_SIDE_EFFECT_SYSTEMS = "fabric.side_effect_systems";
 
+// Lineage anchor for the side effect: host-supplied verbatim, or a minted
+// uuid4 when absent (mirrors Python `ATTR_SE_ID`).
+export const ATTR_SE_ID = "fabric.side_effect.side_effect_id";
 export const ATTR_SE_TYPE = "fabric.side_effect.type";
 export const ATTR_SE_TARGET_SYSTEM = "fabric.side_effect.target_system";
 export const ATTR_SE_OPERATION = "fabric.side_effect.operation";

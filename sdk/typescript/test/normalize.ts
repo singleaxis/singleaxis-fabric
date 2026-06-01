@@ -27,6 +27,7 @@ const UUID_ATTR_KEYS = new Set<string>([
   "fabric.eval.eval_id",
   "fabric.policy.evaluation_id",
   "fabric.judge.request_id",
+  "fabric.side_effect.side_effect_id",
 ]);
 
 const LATENCY_ATTR_KEYS = new Set<string>([
