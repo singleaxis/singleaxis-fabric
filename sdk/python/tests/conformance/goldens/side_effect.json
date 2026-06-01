@@ -29,6 +29,7 @@
           "fabric.side_effect.request_hash": "3fb2b4907f7a7929b93ad15e23b758971194d699089f8dba1e516acdf76b0217",
           "fabric.side_effect.result_hash": "bfad7535224ef56e015e42ba51c48aa9b75be034f9acde876c00606edb18e276",
           "fabric.side_effect.rollback_supported": false,
+          "fabric.side_effect.side_effect_id": "<normalized>",
           "fabric.side_effect.target_system": "zendesk",
           "fabric.side_effect.type": "ticket_create"
         },

@@ -913,6 +913,7 @@ class Decision(AbstractContextManager["Decision"]):
         rollback_supported: bool = False,
         replay_behavior: ReplayBehavior | str = ReplayBehavior.SUPPRESS,
         parent_tool_call_id: str | None = None,
+        side_effect_id: str | None = None,
     ) -> SideEffectRecord:
         """Record an external mutation caused by this decision.
 
@@ -924,6 +925,12 @@ class Decision(AbstractContextManager["Decision"]):
         already produced hashes, pass ``request_hash`` / ``result_hash``
         instead. Supplying both raw payload and precomputed hash for the
         same field is rejected to avoid ambiguous evidence.
+
+        Every side effect carries a stable ``side_effect_id`` (minted as
+        a uuid4 when not supplied), stamped on the ``fabric.side_effect``
+        event so a mutation can be referenced for replay-suppression /
+        rollback lineage. Pass ``side_effect_id`` explicitly for
+        idempotent re-emission of the same side effect.
         """
 
         with self._exclusive():
@@ -944,8 +951,14 @@ class Decision(AbstractContextManager["Decision"]):
                     rollback_supported=rollback_supported,
                     replay_behavior=replay_behavior,
                     parent_tool_call_id=parent_tool_call_id,
+                    side_effect_id=side_effect_id,
                 )
             else:
+                # Let the model default_factory mint an id unless the
+                # caller supplied one.
+                extra: dict[str, str] = (
+                    {} if side_effect_id is None else {"side_effect_id": side_effect_id}
+                )
                 record = SideEffectRecord(
                     effect_type=SideEffectType(effect_type),
                     target_system=target_system,
@@ -958,6 +971,7 @@ class Decision(AbstractContextManager["Decision"]):
                     rollback_supported=rollback_supported,
                     replay_behavior=ReplayBehavior(replay_behavior),
                     parent_tool_call_id=parent_tool_call_id,
+                    **extra,
                 )
 
             span = self.span
@@ -970,6 +984,7 @@ class Decision(AbstractContextManager["Decision"]):
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
+                "fabric.side_effect.side_effect_id": record.side_effect_id,
                 "fabric.side_effect.type": record.effect_type.value,
                 "fabric.side_effect.target_system": record.target_system,
                 "fabric.side_effect.operation": record.operation,

@@ -187,6 +187,7 @@
             "fabric.side_effect.replay_behavior": {
               "enum": ["replay", "suppress", "mock", "manual"]
             },
+            "fabric.side_effect.side_effect_id": { "type": "string" },
             "fabric.side_effect.request_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "fabric.side_effect.result_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "fabric.side_effect.idempotency_key": { "type": "string" },
