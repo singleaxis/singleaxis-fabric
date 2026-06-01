@@ -66,6 +66,42 @@ export interface DecisionIds {
 /** The phase of the agent turn a guardrail ran in (mirrors Python `GuardrailPhase`). */
 export type GuardrailPhase = "input" | "output_stream" | "output_final";
 
+/**
+ * Normalized policy verdict vocabulary (mirrors Python `PolicyDecision`;
+ * schema `fabric.policy.decision` enum).
+ */
+export type PolicyDecision = "allow" | "deny" | "warn" | "escalate" | "redact";
+
+/**
+ * Tool-authorization verdict vocabulary. The schema restricts
+ * `fabric.tool.authorization.decision` to allow/deny only.
+ */
+export type ToolAuthorizationDecision = "allow" | "deny";
+
+/**
+ * Human-handoff escalation mode (mirrors Python `EscalationMode`; schema
+ * `fabric.escalation.mode` enum).
+ */
+export type EscalationMode = "sync" | "async" | "deferred";
+
+/**
+ * Side-effect replay behavior (mirrors Python `ReplayBehavior`; schema
+ * `fabric.side_effect.replay_behavior` enum).
+ */
+export type ReplayBehavior = "replay" | "suppress" | "mock" | "manual";
+
+const POLICY_DECISIONS: readonly PolicyDecision[] = [
+  "allow",
+  "deny",
+  "warn",
+  "escalate",
+  "redact",
+];
+const TOOL_AUTH_DECISIONS: readonly ToolAuthorizationDecision[] = ["allow", "deny"];
+const ESCALATION_MODES: readonly EscalationMode[] = ["sync", "async", "deferred"];
+const REPLAY_BEHAVIORS: readonly ReplayBehavior[] = ["replay", "suppress", "mock", "manual"];
+const GUARDRAIL_PHASES: readonly GuardrailPhase[] = ["input", "output_stream", "output_final"];
+
 /** A detected PII/entity class and how many times it occurred. */
 export interface GuardrailEntity {
   category: string;
@@ -103,8 +139,8 @@ export interface GuardrailResult {
 export interface EscalationSummary {
   /** Why escalation is needed. */
   reason: string;
-  /** Sync (block for a verdict) or async (fire-and-forget) handoff. */
-  mode: "sync" | "async";
+  /** Sync (block for a verdict), async (fire-and-forget), or deferred handoff. */
+  mode: EscalationMode;
   /** Optional rubric the triggering score came from. */
   rubricId?: string;
   /** Optional score that triggered the escalation. */
@@ -165,8 +201,8 @@ export interface SideEffectOptions {
   approvalRequired?: boolean;
   committed?: boolean;
   rollbackSupported?: boolean;
-  /** Replay behavior: `suppress` (default), `replay`, or `compensate`. */
-  replayBehavior?: string;
+  /** Replay behavior: `suppress` (default), `replay`, `mock`, or `manual`. */
+  replayBehavior?: ReplayBehavior;
   parentToolCallId?: string;
 }
 
@@ -200,7 +236,7 @@ export interface QueueJudgeOptions {
 export interface PolicyEvaluationOptions {
   engine: string;
   policyId: string;
-  decision: "allow" | "deny";
+  decision: PolicyDecision;
   /** Raw input object; hashed Python-compatibly to `input_hash`. Mutually exclusive with `inputHash`. */
   input?: unknown;
   /** Precomputed input hash. Mutually exclusive with `input`. */
@@ -217,7 +253,7 @@ export interface PolicyEvaluationOptions {
 /** Options for {@link Decision.recordToolAuthorization}. */
 export interface ToolAuthorizationOptions {
   toolName: string;
-  decision: "allow" | "deny";
+  decision: ToolAuthorizationDecision;
   /** Raw serialized arguments; hashed locally to `arguments_hash`. Mutually exclusive with `argumentsHash`. */
   arguments?: string;
   /** Precomputed arguments hash. Mutually exclusive with `arguments`. */
@@ -314,6 +350,8 @@ export class Decision {
    * For a blocking outcome, also call {@link recordBlock}.
    */
   recordGuardrail(result: GuardrailResult): void {
+    assertOneOf("recordGuardrail: phase", result.phase, GUARDRAIL_PHASES);
+    assertFiniteNumber("recordGuardrail: latencyMs", result.latencyMs);
     const attrs: Record<string, string | number | boolean | string[]> = {
       [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
       [A.ATTR_GUARDRAIL_PHASE]: result.phase,
@@ -373,6 +411,10 @@ export class Decision {
    * host decides flow control.
    */
   requestEscalation(summary: EscalationSummary): void {
+    assertOneOf("requestEscalation: mode", summary.mode, ESCALATION_MODES);
+    if (summary.triggeringScore !== undefined) {
+      assertFiniteNumber("requestEscalation: triggeringScore", summary.triggeringScore);
+    }
     if (this.escalationResult !== null) {
       throw new Error(
         "Decision already has an escalation requested; requestEscalation is first-wins. " +
@@ -541,6 +583,9 @@ export class Decision {
    * the raw payload OR a precomputed hash per field, not both.
    */
   recordSideEffect(options: SideEffectOptions): void {
+    if (options.replayBehavior !== undefined) {
+      assertOneOf("recordSideEffect: replayBehavior", options.replayBehavior, REPLAY_BEHAVIORS);
+    }
     if (options.requestPayload !== undefined && options.requestHash !== undefined) {
       throw new Error("pass either requestPayload or requestHash, not both");
     }
@@ -609,6 +654,10 @@ export class Decision {
    * `fabric.eval_count` / `fabric.eval_rubrics` are folded onto the span.
    */
   recordEval(options: EvalOptions): void {
+    assertFiniteNumber("recordEval: score", options.score);
+    if (options.confidence !== undefined) {
+      assertFiniteNumber("recordEval: confidence", options.confidence);
+    }
     this.evalCount += 1;
     this.evalRubrics.add(options.rubricId);
     this.span.setAttribute(A.ATTR_EVAL_COUNT, this.evalCount);
@@ -669,6 +718,10 @@ export class Decision {
    * / `fabric.policy_engines` are folded onto the span.
    */
   recordPolicyEvaluation(options: PolicyEvaluationOptions): void {
+    assertOneOf("recordPolicyEvaluation: decision", options.decision, POLICY_DECISIONS);
+    if (options.latencyMs !== undefined) {
+      assertFiniteNumber("recordPolicyEvaluation: latencyMs", options.latencyMs);
+    }
     if (options.input !== undefined && options.inputHash !== undefined) {
       throw new Error("pass either input or inputHash, not both");
     }
@@ -717,6 +770,7 @@ export class Decision {
    * rolling `fabric.tool_authorization_count` is folded onto the span.
    */
   recordToolAuthorization(options: ToolAuthorizationOptions): void {
+    assertOneOf("recordToolAuthorization: decision", options.decision, TOOL_AUTH_DECISIONS);
     if (options.arguments !== undefined && options.argumentsHash !== undefined) {
       throw new Error("pass either arguments or argumentsHash, not both");
     }
@@ -742,6 +796,7 @@ export class Decision {
 
   /** Set a custom scalar attribute on the decision span. */
   setAttribute(key: string, value: string | number | boolean): void {
+    assertScalarAttribute(key, value);
     this.span.setAttribute(key, value);
   }
 
@@ -823,6 +878,59 @@ function errorName(err: unknown): string {
  * `sorted({...})` used for the rolling distinct-value span attributes. */
 function sortedSet(values: Set<string>): string[] {
   return [...values].sort();
+}
+
+/**
+ * Runtime telemetry guards. TS types protect compile-time callers, but
+ * plain-JS callers can pass anything; these helpers fail loud (throw a
+ * specific Error) rather than letting an out-of-contract span be emitted,
+ * matching the Python SDK's posture. They never run for valid inputs, so the
+ * emitted shape — and the conformance goldens — stay byte-identical.
+ */
+
+/** Throw unless `value` is a JSON scalar (string | number | boolean). */
+function assertScalarAttribute(key: string, value: unknown): void {
+  const t = typeof value;
+  if (t === "string" || t === "boolean") {
+    return;
+  }
+  if (t === "number") {
+    assertFiniteNumber(key, value as number);
+    return;
+  }
+  throw new Error(
+    `setAttribute: value for "${key}" must be a string, number, or boolean; got ${describe(value)}`,
+  );
+}
+
+/** Throw if `value` is a non-finite number (NaN / Infinity / -Infinity). */
+function assertFiniteNumber(field: string, value: number): void {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${field} must be a finite number; got ${String(value)}`);
+  }
+}
+
+/** Throw unless `value` is one of `allowed`. */
+function assertOneOf<T extends string>(field: string, value: unknown, allowed: readonly T[]): void {
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    throw new Error(
+      `${field} must be one of {${allowed.join(", ")}}; got ${describe(value)}`,
+    );
+  }
+}
+
+/** Render an offending value for an error message. */
+function describe(value: unknown): string {
+  if (typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "object" || typeof value === "function") {
+    return typeof value;
+  }
+  return String(value);
 }
 
 /**
