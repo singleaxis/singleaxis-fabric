@@ -77,6 +77,13 @@ each component README.
 
 ## Chart structure
 
+`fabric/` is the **only published unit** — the release pipeline packages
+and pushes this umbrella chart as a single OCI artifact. The subcharts
+below are bundled inside it; they are not released or installed on their
+own. First-party (Fabric-authored) subcharts have their `appVersion`
+bumped to the Fabric release version on each release; `langfuse` is a
+third-party dependency pinned independently to its upstream version.
+
 ```
 charts/fabric/
 ├── Chart.yaml
@@ -87,23 +94,33 @@ charts/fabric/
 │   ├── networkpolicy.yaml
 │   └── NOTES.txt
 ├── charts/
-│   ├── otel-collector/      (Layer 1, shipped)
-│   ├── nemo-sidecar/        (Layer 1, shipped)
-│   ├── langfuse/            (Layer 1, shipped)
-│   ├── redteam-runner/      (Layer 1, shipped)
-│   └── update-agent/        (Layer 1, shipped)
+│   ├── otel-collector/      (Layer 1, first-party)
+│   ├── nemo-sidecar/        (Layer 1, first-party)
+│   ├── presidio-sidecar/    (Layer 1, first-party)
+│   ├── langfuse/            (Layer 1, third-party — pinned to upstream Langfuse)
+│   ├── redteam-runner/      (Layer 1, first-party)
+│   └── update-agent/        (Layer 1, first-party)
 └── profiles/
     ├── permissive-dev.yaml
     └── eu-ai-act-high-risk.yaml
 ```
 
+### Langfuse versioning
+
+The `langfuse` subchart's `appVersion` tracks the **upstream Langfuse**
+release and is intentionally NOT bumped with Fabric releases. The one
+piece that does carry the Fabric version is the Fabric-built
+`langfuse-bootstrap` image (curated-bundle seeding tool): the umbrella
+propagates `global.fabric.version` so the bootstrap Job tags that image
+at the Fabric release version the pipeline actually publishes it at,
+while the Langfuse application container keeps its upstream tag.
+
 ## Release signing
 
-From `0.1.0`, the `otel-collector` OCI chart artifact is signed
-keylessly with [cosign](https://www.sigstore.dev/) via Fulcio.
-Umbrella-chart OCI publishing and Helm `.prov` provenance files are
-on the Phase 2 roadmap; until then, build from source for the
-umbrella. Verification instructions ship with each release — see
+The `fabric` umbrella chart is published as a signed OCI artifact —
+signed keylessly with [cosign](https://www.sigstore.dev/) via Fulcio
+(see the `publish-chart` job in `.github/workflows/release.yml`).
+Verification instructions ship with each release — see
 [`SECURITY.md`](../../SECURITY.md) §Release signing.
 
 ## Testing

@@ -23,6 +23,17 @@ tenant:
 # Global image pull secrets applied to every subchart pod.
 imagePullSecrets: []
 
+# Values under `global:` are merged into every subchart's `.Values.global`.
+# `fabric.version` carries the Fabric release version down to subcharts
+# whose own `.Chart.AppVersion` does NOT track Fabric — notably the
+# third-party Langfuse subchart, whose appVersion is the upstream Langfuse
+# version. The Fabric-built langfuse-bootstrap image is published at THIS
+# version by the release workflow, so its image tag defaults to it.
+# Kept in lockstep with the chart appVersion by the release pipeline.
+global:
+  fabric:
+    version: "0.5.1"
+
 # Cross-cutting namespace creation. When running inside an operator
 # that manages the namespace externally, set this to false.
 namespace:

@@ -33,20 +33,25 @@ fails install with a clear message. The escape hatch
 
 ## Bundled Langfuse (recommended starter)
 
-The Helm chart ships a Langfuse subchart. When `langfuse.enabled:
-true` (the chart default), Langfuse + Postgres + the
-`langfuse-bootstrap` Job all run inside `fabric-system`.
+The Helm chart ships a Langfuse subchart. It is **opt-in**: set
+`langfuse.enabled=true` (the default is `false`) to run Langfuse +
+Postgres inside `fabric-system`. To also seed the curated bundle, enable
+the bootstrap Job with `langfuse.bootstrap.enabled=true`.
 
 ```bash
 helm install fabric ./charts/fabric \
   --set otel-collector.exporter.endpoint=http://langfuse:3000 \
-  --set langfuse.enabled=true
+  --set langfuse.enabled=true \
+  --set langfuse.bootstrap.enabled=true
 ```
 
-`langfuse-bootstrap` configures the Langfuse instance with Fabric's
-curated score configs, prompt presets, and saved-view URLs (idempotent
-— rerun safe). Open `http://langfuse:3000` (or your Ingress) and
-your spans appear immediately.
+The `langfuse-bootstrap` Job configures the Langfuse instance with
+Fabric's curated score configs, prompt presets, and saved-view URLs
+(idempotent — rerun safe). It is Fabric-built tooling, so its image is
+published at the **Fabric release version** (not Langfuse's upstream
+appVersion) and the chart tags it accordingly by default. Open
+`http://langfuse:3000` (or your Ingress) and your spans appear
+immediately.
 
 ## Arize Phoenix
 

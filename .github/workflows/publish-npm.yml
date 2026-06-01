@@ -35,6 +35,22 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Refuse to publish a `ts-v*` tag that was pushed from a feature
+      # branch. Mirrors the `verify-tag` job in release.yml: the tagged
+      # commit must be an ancestor of origin/main. Without this, the
+      # tag-name<->package.json match alone would let anyone publish from
+      # an arbitrary branch.
+      - name: Verify tag is on main
+        if: github.event_name == 'push'
+        run: |
+          git fetch origin main --depth=100
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::Tag ${GITHUB_REF} is not on main; refusing to publish."
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:

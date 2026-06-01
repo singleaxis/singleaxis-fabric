@@ -379,6 +379,11 @@ jobs:
           for c in otel-collector presidio-sidecar nemo-sidecar redteam-runner update-agent; do
             sed -i -E "s/^appVersion:.*/appVersion: \"${V}\"/" "charts/fabric/charts/${c}/Chart.yaml"
           done
+          # Stamp global.fabric.version so subcharts whose appVersion is NOT
+          # Fabric's (the third-party langfuse subchart) can still tag their
+          # Fabric-built images at this release. Drives the langfuse-bootstrap
+          # image tag. Indented two spaces under `fabric:` under `global:`.
+          sed -i -E "s/^(    version:).*/\1 \"${V}\"/" charts/fabric/values.yaml
       - name: Package chart
         id: package
         run: |

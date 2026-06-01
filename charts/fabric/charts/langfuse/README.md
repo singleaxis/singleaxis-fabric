@@ -4,6 +4,12 @@ Fabric's default **Layer 3 (observability)** sink. Ships a single-pod
 Langfuse v2 wrapper so a fresh `helm install` gives tenants a working
 trace UI without pulling in a second Helm chart.
 
+> **Versioning:** This is a *third-party* dependency. Its `appVersion`
+> tracks the **upstream Langfuse** release (e.g. `2.93.0`) and is not
+> bumped with Fabric releases. The exception is the Fabric-built
+> `langfuse-bootstrap` image (see below), which carries the **Fabric
+> release version** via `global.fabric.version` from the umbrella chart.
+
 ## When to use this vs. upstream Langfuse
 
 | Scenario | Use this subchart | Use upstream `langfuse/langfuse-k8s` |
