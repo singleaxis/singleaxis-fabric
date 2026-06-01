@@ -129,6 +129,12 @@ ATTR_WORKFLOW = "fabric.workflow_id"
 ATTR_EXECUTION = "fabric.execution_id"
 ATTR_SESSION = "fabric.session_id"
 ATTR_REQUEST = "fabric.request_id"
+# Canonical, stable identity of one decision. Distinct from
+# ``request_id`` (a per-turn id): a host may supply ``decision_id``
+# explicitly to correlate a decision across turns/services, or let the
+# SDK mint a uuid4. This is the lineage anchor threaded into policy
+# evaluations, judge requests, and cross-service propagation.
+ATTR_DECISION_ID = "fabric.decision_id"
 ATTR_USER = "fabric.user_id"
 ATTR_BLOCKED = "fabric.blocked"
 ATTR_BLOCK_POLICIES = "fabric.blocked.policies"
@@ -193,6 +199,7 @@ class Decision(AbstractContextManager["Decision"]):
         request_id: str,
         user_id: str | None,
         attributes: dict[str, str],
+        decision_id: str | None = None,
     ) -> None:
         if not session_id:
             raise ValueError("session_id is required")
@@ -207,6 +214,9 @@ class Decision(AbstractContextManager["Decision"]):
         self._client = client
         self._session_id = session_id
         self._request_id = request_id
+        # Canonical decision identity: host-supplied verbatim, else a
+        # freshly minted uuid4. Independent of ``request_id``.
+        self._decision_id = decision_id or str(uuid4())
         self._user_id = user_id
         self._extra_attrs = dict(attributes)
         self._span: Span | None = None
@@ -281,6 +291,7 @@ class Decision(AbstractContextManager["Decision"]):
         )
         self._span = self._cm.__enter__()
         self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
+        self._span.set_attribute(ATTR_DECISION_ID, self._decision_id)
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
@@ -370,6 +381,17 @@ class Decision(AbstractContextManager["Decision"]):
     @property
     def request_id(self) -> str:
         return self._request_id
+
+    @property
+    def decision_id(self) -> str:
+        """Canonical, stable identity of this decision.
+
+        Host-supplied verbatim or a minted uuid4. Distinct from
+        :attr:`request_id` (a separate per-turn id); this is the value
+        threaded into policy evaluations, judge requests, and
+        cross-service propagation as the lineage anchor.
+        """
+        return self._decision_id
 
     @property
     def session_id(self) -> str:
@@ -1129,7 +1151,7 @@ class Decision(AbstractContextManager["Decision"]):
 
             request = JudgeRequest(
                 request_id=uuid4(),
-                decision_id=self._request_id,
+                decision_id=self._decision_id,
                 rubric_id=rubric_id.strip(),
                 dimensions=dim_tuple,
                 context=context,
@@ -1264,7 +1286,7 @@ class Decision(AbstractContextManager["Decision"]):
                         verdict=verdict,
                         engine=engine.engine_name,
                         policy_id=policy_id,
-                        decision_id=self.request_id,
+                        decision_id=self.decision_id,
                         input_hash=input_hash,
                         latency_ms=latency_ms,
                     )
@@ -1277,7 +1299,7 @@ class Decision(AbstractContextManager["Decision"]):
                         ),
                         engine=engine.engine_name,
                         policy_id=policy_id,
-                        decision_id=self.request_id,
+                        decision_id=self.decision_id,
                         input_hash=input_hash,
                         latency_ms=latency_ms,
                     )
@@ -1290,7 +1312,7 @@ class Decision(AbstractContextManager["Decision"]):
                     ),
                     engine=engine.engine_name,
                     policy_id=policy_id,
-                    decision_id=self.request_id,
+                    decision_id=self.decision_id,
                     input_hash=input_hash,
                     latency_ms=latency_ms,
                 )

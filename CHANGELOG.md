@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Canonical `fabric.decision_id` protocol primitive (Python SDK).** A
+  `Decision` now carries an explicit, stable decision identity, distinct from
+  `request_id` (which is unchanged — still a separate per-turn id). Supply it
+  via `fabric.decision(..., decision_id=...)` to correlate one decision across
+  turns or services, or omit it to have the SDK mint a uuid4. It is stamped on
+  the decision span as `fabric.decision_id`, threaded into policy evaluation
+  records (`PolicyEvaluation.decision_id`) and judge requests
+  (`JudgeRequest.decision_id`) — which previously doubled the `request_id` for
+  this purpose — and rides W3C `tracestate` cross-service propagation under a
+  new short member key (`FabricContext.decision_id`). Compatibility: additive
+  and backward compatible — `request_id` behaviour is untouched, `decision_id`
+  defaults to a minted uuid when not supplied, and existing traces simply gain
+  one additive `fabric.decision_id` attribute on the decision span (all 18
+  conformance goldens change by exactly that one normalized key).
 - **TypeScript SDK — full wire-contract parity with the Python SDK.** The TS
   `Decision` now records the complete Fabric event surface, not just
   `llm_call` / `tool_call` / guardrail: `recordRetrieval`, `remember` /

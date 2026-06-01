@@ -231,6 +231,7 @@ class _FakeDecision:
         request: str,
         workflow: str | None = None,
         execution: str | None = None,
+        decision: str | None = None,
     ) -> None:
         self._tenant = tenant
         self._agent = agent
@@ -238,6 +239,7 @@ class _FakeDecision:
         self._request = request
         self._workflow = workflow
         self._execution = execution
+        self._decision = decision
 
     @property
     def tenant_id(self) -> str:
@@ -256,6 +258,12 @@ class _FakeDecision:
         return self._request
 
     @property
+    def decision_id(self) -> str:
+        # A real Decision always has one; the stub mirrors that, defaulting
+        # to the request id when the test does not pin a distinct value.
+        return self._decision if self._decision is not None else self._request
+
+    @property
     def workflow_id(self) -> str | None:
         return self._workflow
 
@@ -265,7 +273,7 @@ class _FakeDecision:
 
 
 def test_inject_decision_round_trip() -> None:
-    decision = _FakeDecision("tenant-x", "agent-x", "sess-x", "req-x")
+    decision = _FakeDecision("tenant-x", "agent-x", "sess-x", "req-x", decision="dec-x")
     carrier: dict[str, str] = {}
     inject_decision(carrier, decision)
     assert extract(carrier) == FabricContext(
@@ -273,12 +281,19 @@ def test_inject_decision_round_trip() -> None:
         agent_id="agent-x",
         session_id="sess-x",
         request_id="req-x",
+        decision_id="dec-x",
     )
 
 
 def test_inject_decision_carries_workflow_execution() -> None:
     decision = _FakeDecision(
-        "tenant-x", "agent-x", "sess-x", "req-x", workflow="wf-1", execution="ex-1"
+        "tenant-x",
+        "agent-x",
+        "sess-x",
+        "req-x",
+        workflow="wf-1",
+        execution="ex-1",
+        decision="dec-x",
     )
     carrier: dict[str, str] = {}
     inject_decision(carrier, decision)
@@ -287,16 +302,51 @@ def test_inject_decision_carries_workflow_execution() -> None:
         agent_id="agent-x",
         session_id="sess-x",
         request_id="req-x",
+        decision_id="dec-x",
         workflow_id="wf-1",
         execution_id="ex-1",
     )
+
+
+def test_round_trip_with_decision_id() -> None:
+    # decision_id rides the new "d" member key and round-trips alongside
+    # the existing identity fields.
+    carrier: dict[str, str] = {}
+    ctx = FabricContext(
+        tenant_id="tenant-1",
+        agent_id="agent-1",
+        session_id="sess-1",
+        request_id="req-1",
+        decision_id="dec-1",
+        workflow_id="wf-1",
+        execution_id="ex-1",
+    )
+    inject(carrier, ctx)
+    recovered = extract(carrier)
+    assert recovered == ctx
+    assert recovered is not None
+    assert recovered.decision_id == "dec-1"
+    # decision_id is independent of request_id on the wire.
+    assert recovered.decision_id != recovered.request_id
+
+
+def test_round_trip_decision_id_none() -> None:
+    # Backward compatible: a context without decision_id round-trips and
+    # the field comes back None (member key "d" is simply absent).
+    carrier: dict[str, str] = {}
+    ctx = FabricContext(tenant_id="t", agent_id="a", request_id="r")
+    inject(carrier, ctx)
+    recovered = extract(carrier)
+    assert recovered == ctx
+    assert recovered is not None
+    assert recovered.decision_id is None
 
 
 def test_inject_decision_accepts_a_real_decision() -> None:
     """A real Decision satisfies DecisionLike structurally."""
     fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
     carrier: dict[str, str] = {}
-    with fabric.decision(session_id="s1", request_id="r1") as decision:
+    with fabric.decision(session_id="s1", request_id="r1", decision_id="d1") as decision:
         inject_decision(carrier, decision)
     recovered = extract(carrier)
     assert recovered == FabricContext(
@@ -304,6 +354,7 @@ def test_inject_decision_accepts_a_real_decision() -> None:
         agent_id="bot",
         session_id="s1",
         request_id="r1",
+        decision_id="d1",
     )
 
 
@@ -318,7 +369,7 @@ def test_inject_decision_real_decision_with_workflow_execution() -> None:
         )
     )
     carrier: dict[str, str] = {}
-    with fabric.decision(session_id="s1", request_id="r1") as decision:
+    with fabric.decision(session_id="s1", request_id="r1", decision_id="d1") as decision:
         inject_decision(carrier, decision)
     recovered = extract(carrier)
     assert recovered == FabricContext(
@@ -326,6 +377,7 @@ def test_inject_decision_real_decision_with_workflow_execution() -> None:
         agent_id="bot",
         session_id="s1",
         request_id="r1",
+        decision_id="d1",
         workflow_id="wf-1",
         execution_id="ex-1",
     )
@@ -341,3 +393,5 @@ def test_inject_decision_real_decision_without_workflow_execution() -> None:
     assert recovered is not None
     assert recovered.workflow_id is None
     assert recovered.execution_id is None
+    # A minted decision_id is carried even when no explicit one was given.
+    assert recovered.decision_id == decision.decision_id

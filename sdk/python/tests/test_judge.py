@@ -43,6 +43,22 @@ def test_queue_judge_emits_fabric_judge_queued_event(
     assert attrs["fabric.judge.dimensions"] == ("faithfulness",)
 
 
+def test_queue_judge_request_uses_decision_id_not_request_id() -> None:
+    fabric = _client()
+    transport = LocalQueueTransport()
+    with fabric.decision(session_id="s", request_id="req-1", decision_id="dec-1") as d:
+        req = d.queue_judge(
+            rubric_id="finance-v1",
+            dimensions=("faithfulness",),
+            context=JudgeContext(),
+            transport=transport,
+        )
+    # The judge request's decision_id is the canonical decision identity,
+    # not the per-turn request_id.
+    assert req.decision_id == d.decision_id == "dec-1"
+    assert req.decision_id != d.request_id
+
+
 def test_queue_judge_never_puts_content_on_span(
     span_exporter: InMemorySpanExporter,
 ) -> None:

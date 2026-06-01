@@ -2,6 +2,7 @@
   {
     "attributes": {
       "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
       "fabric.escalated": true,
       "fabric.escalation.mode": "async",
       "fabric.escalation.reason": "low confidence on refund eligibility",

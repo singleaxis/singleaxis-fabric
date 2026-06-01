@@ -64,6 +64,17 @@ def test_allow_emits_evaluation_event(span_exporter: InMemorySpanExporter) -> No
     assert attrs["fabric.policy.decision"] == "allow"
 
 
+def test_evaluation_record_uses_decision_id_not_request_id() -> None:
+    engine = _StubEngine(verdict=EngineVerdict(decision="allow"))
+    fabric = _client()
+    with fabric.decision(session_id="s", request_id="req-1", decision_id="dec-1") as d:
+        evaluation = d.evaluate_policy(engine, policy_id="p", input={})
+    # The record's decision_id is the canonical decision identity, not the
+    # per-turn request_id.
+    assert evaluation.decision_id == d.decision_id == "dec-1"
+    assert evaluation.decision_id != d.request_id
+
+
 def test_deny_with_reason_emits_event(span_exporter: InMemorySpanExporter) -> None:
     engine = _StubEngine(verdict=EngineVerdict(decision="deny", reason="amount exceeds cap"))
     fabric = _client()

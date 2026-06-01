@@ -21,6 +21,7 @@
       "additionalProperties": true,
       "properties": {
         "fabric.schema_version": { "const": "1.0" },
+        "fabric.decision_id": { "type": "string" },
         "fabric.tenant_id": { "type": "string" },
         "fabric.agent_id": { "type": "string" },
         "fabric.profile": { "type": "string" },

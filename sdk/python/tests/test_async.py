@@ -119,16 +119,20 @@ def _normalize(span: ReadableSpan) -> dict[str, object]:
 def test_async_with_emits_same_span_as_sync_with(span_exporter: InMemorySpanExporter) -> None:
     """`async with` and `with` produce byte-identical decision spans.
 
-    A fixed ``checkpoint_id`` is supplied so the otherwise-random uuid4
-    on the checkpoint event does not introduce run-to-run noise — the
-    point is to prove the async call style emits the same bytes as the
-    sync one, not to test uuid generation.
+    A fixed ``checkpoint_id`` and ``decision_id`` are supplied so the
+    otherwise-random uuid4 on the checkpoint event and the minted decision
+    identity do not introduce run-to-run noise — the point is to prove the
+    async call style emits the same bytes as the sync one, not to test uuid
+    generation.
     """
     fixed_ckpt = UUID("00000000-0000-4000-8000-000000000001")
+    fixed_decision = "decision-fixed-0001"
 
     def drive_sync() -> None:
         client = _client()
-        with client.decision(session_id="s", request_id="r", user_id="u") as dec:
+        with client.decision(
+            session_id="s", request_id="r", user_id="u", decision_id=fixed_decision
+        ) as dec:
             dec.set_attribute("agent.custom", "ok")
             dec.remember(kind=MemoryKind.EPISODIC, key="k", content="v")
             dec.record_retrieval("rag", query="q", result_count=2)
@@ -136,7 +140,9 @@ def test_async_with_emits_same_span_as_sync_with(span_exporter: InMemorySpanExpo
 
     async def drive_async() -> None:
         client = _client()
-        async with client.decision(session_id="s", request_id="r", user_id="u") as dec:
+        async with client.decision(
+            session_id="s", request_id="r", user_id="u", decision_id=fixed_decision
+        ) as dec:
             dec.set_attribute("agent.custom", "ok")
             dec.remember(kind=MemoryKind.EPISODIC, key="k", content="v")
             dec.record_retrieval("rag", query="q", result_count=2)
