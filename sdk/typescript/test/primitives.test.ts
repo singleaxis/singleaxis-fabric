@@ -196,3 +196,26 @@ describe("validation guards", () => {
     );
   });
 });
+
+describe("fabric.decision_id", () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  it("mints a uuid-shaped decision_id distinct from request_id when none is supplied", () => {
+    fabric().decision({ sessionId: "s", requestId: "r" }, () => {});
+    const span = decisionSpan();
+    const decisionId = String(span.attributes["fabric.decision_id"]);
+    expect(decisionId).toMatch(UUID_RE);
+    expect(span.attributes["fabric.request_id"]).toBe("r");
+    expect(decisionId).not.toBe("r");
+  });
+
+  it("emits a host-supplied decision_id verbatim, leaving request_id untouched", () => {
+    fabric().decision(
+      { sessionId: "s", requestId: "r", decisionId: "decision-supplied-0001" },
+      () => {},
+    );
+    const span = decisionSpan();
+    expect(span.attributes["fabric.decision_id"]).toBe("decision-supplied-0001");
+    expect(span.attributes["fabric.request_id"]).toBe("r");
+  });
+});

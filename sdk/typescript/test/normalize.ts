@@ -22,6 +22,7 @@ import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 const PLACEHOLDER = "<normalized>";
 
 const UUID_ATTR_KEYS = new Set<string>([
+  "fabric.decision_id",
   "fabric.checkpoint.checkpoint_id",
   "fabric.eval.eval_id",
   "fabric.policy.evaluation_id",
