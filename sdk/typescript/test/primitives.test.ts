@@ -219,3 +219,39 @@ describe("fabric.decision_id", () => {
     expect(span.attributes["fabric.request_id"]).toBe("r");
   });
 });
+
+describe("fabric.side_effect.side_effect_id", () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  it("mints a uuid-shaped side_effect_id when none is supplied", () => {
+    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+      d.recordSideEffect({ type: "ticket_create", targetSystem: "zendesk", operation: "o" });
+    });
+    const ev = eventsNamed(decisionSpan(), "fabric.side_effect")[0]!;
+    expect(String(ev["fabric.side_effect.side_effect_id"])).toMatch(UUID_RE);
+  });
+
+  it("mints a distinct side_effect_id per side effect", () => {
+    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+      d.recordSideEffect({ type: "ticket_create", targetSystem: "zendesk", operation: "o" });
+      d.recordSideEffect({ type: "email_send", targetSystem: "ses", operation: "o" });
+    });
+    const events = eventsNamed(decisionSpan(), "fabric.side_effect");
+    const first = String(events[0]!["fabric.side_effect.side_effect_id"]);
+    const second = String(events[1]!["fabric.side_effect.side_effect_id"]);
+    expect(first).not.toBe(second);
+  });
+
+  it("emits a host-supplied side_effect_id verbatim", () => {
+    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+      d.recordSideEffect({
+        sideEffectId: "se-supplied-0001",
+        type: "ticket_create",
+        targetSystem: "zendesk",
+        operation: "o",
+      });
+    });
+    const ev = eventsNamed(decisionSpan(), "fabric.side_effect")[0]!;
+    expect(ev["fabric.side_effect.side_effect_id"]).toBe("se-supplied-0001");
+  });
+});

@@ -193,6 +193,11 @@ export interface RecallOptions {
 
 /** Options for {@link Decision.recordSideEffect}. */
 export interface SideEffectOptions {
+  /**
+   * Lineage anchor for this side effect. Host-supplied verbatim; when absent
+   * the SDK mints a uuid4 (mirrors Python's `side_effect_id` defaulting).
+   */
+  sideEffectId?: string;
   type: string;
   targetSystem: string;
   operation: string;
@@ -616,6 +621,7 @@ export class Decision {
 
     const attrs: Record<string, string | number | boolean> = {
       [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+      [A.ATTR_SE_ID]: options.sideEffectId ?? randomUuid(),
       [A.ATTR_SE_TYPE]: options.type,
       [A.ATTR_SE_TARGET_SYSTEM]: options.targetSystem,
       [A.ATTR_SE_OPERATION]: options.operation,
