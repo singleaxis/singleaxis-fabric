@@ -3,6 +3,10 @@
 {{- if and (not $keys.existingSecret) (not (and $keys.publicKey $keys.secretKey)) -}}
   {{- fail "langfuse.bootstrap: set bootstrap.keys.existingSecret OR both bootstrap.keys.publicKey+secretKey" -}}
 {{- end -}}
+{{- $bootstrapTag := .Values.bootstrap.image.tag | default ((.Values.global).fabric).version -}}
+{{- if not $bootstrapTag -}}
+  {{- fail "langfuse.bootstrap: no image tag resolved. Install via the fabric umbrella chart (which sets global.fabric.version) or set langfuse.bootstrap.image.tag explicitly." -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -40,7 +44,15 @@ spec:
           type: RuntimeDefault
       containers:
         - name: bootstrap
-          image: "{{ .Values.bootstrap.image.repository }}:{{ .Values.bootstrap.image.tag | default .Chart.AppVersion }}"
+          # The bootstrap image is Fabric-built tooling (it wraps the
+          # upstream Langfuse API), so it is published at the FABRIC
+          # release version, not Langfuse's upstream appVersion. Default
+          # the tag to the umbrella chart's version (propagated as
+          # `global.fabric.version` by the umbrella) rather than this
+          # subchart's `.Chart.AppVersion`, which intentionally tracks
+          # the upstream Langfuse release (e.g. 2.93.0) and would point
+          # at an image tag that the release workflow never publishes.
+          image: "{{ .Values.bootstrap.image.repository }}:{{ $bootstrapTag }}"
           imagePullPolicy: {{ .Values.bootstrap.image.pullPolicy }}
           args: ["run"]
           env:

@@ -7,9 +7,17 @@
 
 replicaCount: 1
 
+# Populated by the umbrella chart (charts/fabric/values.yaml `global:`).
+# The fallback here lets the subchart render/lint standalone; under the
+# umbrella, global.fabric.version is the actual Fabric release version and
+# drives the langfuse-bootstrap image tag (see `bootstrap.image.tag`).
+global:
+  fabric:
+    version: ""
+
 image:
   repository: langfuse/langfuse
-  tag: ""              # defaults to .Chart.AppVersion (currently 2.x)
+  tag: ""              # defaults to .Chart.AppVersion (upstream Langfuse, currently 2.x)
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -119,7 +127,12 @@ bootstrap:
   enabled: false
   image:
     repository: ghcr.io/singleaxis/fabric-langfuse-bootstrap
-    tag: ""             # defaults to .Chart.AppVersion
+    # Empty => defaults to the Fabric release version (global.fabric.version
+    # set by the umbrella chart), NOT this subchart's appVersion. The
+    # bootstrap image is Fabric tooling around upstream Langfuse, so the
+    # release workflow publishes it at the Fabric version; the Langfuse
+    # app container (image.tag above) keeps its upstream appVersion.
+    tag: ""
     pullPolicy: IfNotPresent
   # Which profile overlay to apply. Must match one of the files in
   # the image (or in the overriding curatedConfigMap).
