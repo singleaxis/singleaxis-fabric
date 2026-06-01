@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -226,6 +227,130 @@ def test_parent_tool_call_id_flows_through_payload_path() -> None:
         parent_tool_call_id="call-xyz",
     )
     assert record.parent_tool_call_id == "call-xyz"
+
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def _side_effect_event_attrs(span_exporter: InMemorySpanExporter) -> dict[str, object]:
+    event = next(
+        ev for ev in span_exporter.get_finished_spans()[0].events if ev.name == "fabric.side_effect"
+    )
+    return dict(event.attributes or {})
+
+
+def test_side_effect_id_minted_and_uuid_shaped(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        record = dec.record_side_effect(
+            "api_mutation", target_system="salesforce", operation="case.update"
+        )
+    attrs = _side_effect_event_attrs(span_exporter)
+    assert _UUID_RE.match(record.side_effect_id)
+    assert attrs["fabric.side_effect.side_effect_id"] == record.side_effect_id
+
+
+def test_side_effect_id_caller_supplied_is_honoured(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        record = dec.record_side_effect(
+            "api_mutation",
+            target_system="salesforce",
+            operation="case.update",
+            side_effect_id="se-fixed-001",
+        )
+    attrs = _side_effect_event_attrs(span_exporter)
+    assert record.side_effect_id == "se-fixed-001"
+    assert attrs["fabric.side_effect.side_effect_id"] == "se-fixed-001"
+
+
+def test_from_payloads_mints_and_honours_side_effect_id() -> None:
+    minted = SideEffectRecord.from_payloads(
+        effect_type="api_mutation",
+        target_system="salesforce",
+        operation="case.update",
+        request_payload='{"status":"closed"}',
+    )
+    assert _UUID_RE.match(minted.side_effect_id)
+
+    supplied = SideEffectRecord.from_payloads(
+        effect_type="api_mutation",
+        target_system="salesforce",
+        operation="case.update",
+        request_payload='{"status":"closed"}',
+        side_effect_id="se-fixed-002",
+    )
+    assert supplied.side_effect_id == "se-fixed-002"
+
+
+def test_side_effect_state_committed(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.record_side_effect("api_mutation", target_system="salesforce", operation="case.update")
+    attrs = _side_effect_event_attrs(span_exporter)
+    assert attrs["fabric.side_effect.committed"] is True
+    assert _UUID_RE.match(str(attrs["fabric.side_effect.side_effect_id"]))
+
+
+def test_side_effect_state_failed(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.record_side_effect(
+            "api_mutation",
+            target_system="salesforce",
+            operation="case.update",
+            committed=False,
+        )
+    attrs = _side_effect_event_attrs(span_exporter)
+    assert attrs["fabric.side_effect.committed"] is False
+    assert _UUID_RE.match(str(attrs["fabric.side_effect.side_effect_id"]))
+
+
+def test_side_effect_state_rolled_back(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.record_side_effect(
+            "api_mutation",
+            target_system="salesforce",
+            operation="case.update",
+            committed=False,
+            rollback_supported=True,
+        )
+    attrs = _side_effect_event_attrs(span_exporter)
+    assert attrs["fabric.side_effect.rollback_supported"] is True
+    assert attrs["fabric.side_effect.committed"] is False
+    assert _UUID_RE.match(str(attrs["fabric.side_effect.side_effect_id"]))
+
+
+def test_side_effect_state_replay_suppressed(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        dec.record_side_effect(
+            "api_mutation",
+            target_system="salesforce",
+            operation="case.update",
+            replay_behavior=ReplayBehavior.SUPPRESS,
+        )
+    attrs = _side_effect_event_attrs(span_exporter)
+    assert attrs["fabric.side_effect.replay_behavior"] == "suppress"
+    assert _UUID_RE.match(str(attrs["fabric.side_effect.side_effect_id"]))
+
+
+def test_two_side_effects_get_distinct_ids(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        r1 = dec.record_side_effect(
+            "api_mutation", target_system="salesforce", operation="case.update"
+        )
+        r2 = dec.record_side_effect("email_send", target_system="gmail", operation="messages.send")
+    assert r1.side_effect_id != r2.side_effect_id
+
+    span = span_exporter.get_finished_spans()[0]
+    events = [ev for ev in span.events if ev.name == "fabric.side_effect"]
+    ids = [dict(ev.attributes or {})["fabric.side_effect.side_effect_id"] for ev in events]
+    assert len(set(ids)) == 2
+    # the rolling side_effect_count still increments
+    assert dict(span.attributes or {})[ATTR_SIDE_EFFECT_COUNT] == 2
 
 
 def test_record_side_effect_never_exposes_raw_payload_on_span(

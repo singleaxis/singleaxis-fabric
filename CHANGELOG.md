@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Stable `side_effect_id` on every side effect (Python SDK).** Each
+  `SideEffectRecord` now carries a `side_effect_id` — minted as a uuid4 by
+  default (covering both `SideEffectRecord.from_payloads` and direct
+  construction), or supplied explicitly for idempotent re-emission. It is
+  stamped on the `fabric.side_effect` span event as
+  `fabric.side_effect.side_effect_id`, giving downstream consumers a stable
+  anchor to reference a specific mutation for replay-suppression / rollback
+  lineage. All existing side-effect fields (`parent_tool_call_id`,
+  `idempotency_key`, `replay_behavior`, `request_hash`, `result_hash`,
+  `approval_required`, `committed`, `rollback_supported`) are unchanged.
+  Compatibility: additive and emit-only — the conformance schema keeps the
+  attribute optional for older consumers, and the only golden that changes is
+  `side_effect.json`, which gains exactly one normalized key.
 - **Canonical `fabric.decision_id` protocol primitive (Python SDK).** A
   `Decision` now carries an explicit, stable decision identity, distinct from
   `request_id` (which is unchanged — still a separate per-turn id). Supply it

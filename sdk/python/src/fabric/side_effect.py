@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 from enum import StrEnum
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -57,6 +58,17 @@ class SideEffectRecord(BaseModel):
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    side_effect_id: str = Field(default_factory=lambda: str(uuid4()))
+    """Stable, unique id for this side effect.
+
+    Minted as a uuid4 by default (covering both ``from_payloads`` and
+    direct construction). A caller may supply one explicitly for
+    idempotent re-emission. Downstream consumers reference this id to
+    anchor replay-suppression / rollback lineage to a specific
+    mutation. Stamped on the ``fabric.side_effect`` event as
+    ``fabric.side_effect.side_effect_id``.
+    """
 
     effect_type: SideEffectType
     target_system: str = Field(min_length=1, max_length=128)
@@ -101,19 +113,29 @@ class SideEffectRecord(BaseModel):
         rollback_supported: bool = False,
         replay_behavior: ReplayBehavior | str = ReplayBehavior.SUPPRESS,
         parent_tool_call_id: str | None = None,
+        side_effect_id: str | None = None,
     ) -> SideEffectRecord:
-        """Build a record while hashing raw payloads locally."""
+        """Build a record while hashing raw payloads locally.
 
-        return cls(
-            effect_type=SideEffectType(effect_type),
-            target_system=target_system,
-            operation=operation,
-            request_hash=_sha256_hex(request_payload) if request_payload is not None else None,
-            result_hash=_sha256_hex(result_payload) if result_payload is not None else None,
-            idempotency_key=idempotency_key,
-            approval_required=approval_required,
-            committed=committed,
-            rollback_supported=rollback_supported,
-            replay_behavior=ReplayBehavior(replay_behavior),
-            parent_tool_call_id=parent_tool_call_id,
-        )
+        ``side_effect_id`` is minted (uuid4) when not supplied; pass one
+        explicitly for idempotent re-emission of the same side effect.
+        """
+
+        fields: dict[str, object] = {
+            "effect_type": SideEffectType(effect_type),
+            "target_system": target_system,
+            "operation": operation,
+            "request_hash": _sha256_hex(request_payload) if request_payload is not None else None,
+            "result_hash": _sha256_hex(result_payload) if result_payload is not None else None,
+            "idempotency_key": idempotency_key,
+            "approval_required": approval_required,
+            "committed": committed,
+            "rollback_supported": rollback_supported,
+            "replay_behavior": ReplayBehavior(replay_behavior),
+            "parent_tool_call_id": parent_tool_call_id,
+        }
+        # Only pass side_effect_id when supplied so the model's
+        # default_factory mints one otherwise.
+        if side_effect_id is not None:
+            fields["side_effect_id"] = side_effect_id
+        return cls(**fields)
