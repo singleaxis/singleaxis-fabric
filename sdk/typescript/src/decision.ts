@@ -26,6 +26,7 @@ import {
 import * as A from "./attributes.js";
 import {
   ATTR_AGENT,
+  ATTR_DECISION_ID,
   ATTR_EXECUTION,
   ATTR_PROFILE,
   ATTR_REQUEST,
@@ -60,6 +61,12 @@ export interface DecisionClientIdentity {
 export interface DecisionIds {
   sessionId: string;
   requestId: string;
+  /**
+   * Lineage anchor for the decision. Host-supplied verbatim; when absent the
+   * SDK mints a uuid4. Independent of `requestId` (mirrors Python's
+   * `decision_id` defaulting).
+   */
+  decisionId?: string;
   userId?: string;
 }
 
@@ -306,6 +313,7 @@ export class Decision {
     }
     span.setAttribute(ATTR_SESSION, ids.sessionId);
     span.setAttribute(ATTR_REQUEST, ids.requestId);
+    span.setAttribute(ATTR_DECISION_ID, ids.decisionId ?? randomUuid());
     if (ids.userId !== undefined) {
       span.setAttribute(ATTR_USER, ids.userId);
     }

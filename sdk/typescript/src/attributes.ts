@@ -23,6 +23,9 @@ export const ATTR_WORKFLOW = "fabric.workflow_id";
 export const ATTR_EXECUTION = "fabric.execution_id";
 export const ATTR_SESSION = "fabric.session_id";
 export const ATTR_REQUEST = "fabric.request_id";
+// Lineage anchor for the decision: host-supplied verbatim, or a minted uuid4
+// when absent. Independent of `request_id` (mirrors Python `ATTR_DECISION_ID`).
+export const ATTR_DECISION_ID = "fabric.decision_id";
 export const ATTR_USER = "fabric.user_id";
 
 // -- LLM call span (fabric.llm_call) ------------------------------------
