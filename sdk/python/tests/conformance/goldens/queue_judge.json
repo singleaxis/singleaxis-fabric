@@ -2,6 +2,7 @@
   {
     "attributes": {
       "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
       "fabric.judge_queued_count": 1,
       "fabric.judge_rubrics": [
         "helpfulness-v1"

@@ -2,6 +2,7 @@
   {
     "attributes": {
       "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
       "fabric.policy_engines": [
         "stub-policy-raising"
       ],

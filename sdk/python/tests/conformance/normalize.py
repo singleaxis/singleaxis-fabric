@@ -30,6 +30,7 @@ PLACEHOLDER = "<normalized>"
 # contract by key, volatile by value — replace with the placeholder.
 _UUID_ATTR_KEYS = frozenset(
     {
+        "fabric.decision_id",
         "fabric.checkpoint.checkpoint_id",
         "fabric.eval.eval_id",
         "fabric.policy.evaluation_id",

@@ -2,6 +2,7 @@
   {
     "attributes": {
       "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
       "fabric.eval_count": 1,
       "fabric.eval_rubrics": [
         "faithfulness-v1"

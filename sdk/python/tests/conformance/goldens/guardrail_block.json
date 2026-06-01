@@ -6,6 +6,7 @@
       "fabric.blocked.policies": [
         "stub-blocker:jailbreak"
       ],
+      "fabric.decision_id": "<normalized>",
       "fabric.profile": "permissive-dev",
       "fabric.request_id": "request-0001",
       "fabric.schema_version": "1.0",

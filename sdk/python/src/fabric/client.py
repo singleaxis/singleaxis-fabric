@@ -209,12 +209,18 @@ class Fabric:
         request_id: str,
         user_id: str | None = None,
         attributes: dict[str, str] | None = None,
+        decision_id: str | None = None,
     ) -> Decision:
         """Open a new :class:`~fabric.decision.Decision` context.
 
         See :class:`fabric.decision.Decision` for usage. A new
         ``Decision`` is created per agent call — it carries the OTel
         span and, in later ticks, the per-call guardrail/memory state.
+
+        ``decision_id`` is the canonical, stable identity of this
+        decision. Supply it to correlate one decision across turns or
+        services; omit it to have the SDK mint a uuid4. It is distinct
+        from ``request_id`` (a separate per-turn identifier).
         """
         from .decision import Decision  # noqa: PLC0415  (break import cycle)
 
@@ -224,6 +230,7 @@ class Fabric:
             request_id=request_id,
             user_id=user_id,
             attributes=attributes or {},
+            decision_id=decision_id,
         )
 
     @property

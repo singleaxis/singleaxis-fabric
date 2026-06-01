@@ -77,7 +77,9 @@ class FabricContext:
     :class:`~fabric.decision.Decision` expose so a ``FabricContext`` can
     be built from either directly. ``session_id`` and ``request_id`` are
     optional because a caller may propagate only the tenant / agent
-    scope (e.g. before a Decision is opened downstream).
+    scope (e.g. before a Decision is opened downstream). ``decision_id``
+    is the canonical, stable decision identity (distinct from
+    ``request_id``) and rides the same member when set.
     ``workflow_id`` and ``execution_id`` are likewise optional — they are
     set only when the caller runs inside a workflow / execution scope
     (PRD §65: both ride ``tracestate`` across service boundaries).
@@ -87,6 +89,7 @@ class FabricContext:
     agent_id: str
     session_id: str | None = None
     request_id: str | None = None
+    decision_id: str | None = None
     workflow_id: str | None = None
     execution_id: str | None = None
 
@@ -117,6 +120,10 @@ class DecisionLike(Protocol):
         """Per-request identifier for this decision."""
 
     @property
+    def decision_id(self) -> str:
+        """Canonical, stable identity of this decision."""
+
+    @property
     def workflow_id(self) -> str | None:
         """Owning workflow identifier, or ``None`` outside a workflow."""
 
@@ -138,6 +145,8 @@ def _encode(context: FabricContext) -> str:
         payload["s"] = context.session_id
     if context.request_id is not None:
         payload["r"] = context.request_id
+    if context.decision_id is not None:
+        payload["d"] = context.decision_id
     if context.workflow_id is not None:
         payload["w"] = context.workflow_id
     if context.execution_id is not None:
@@ -169,13 +178,14 @@ def _decode(encoded: str) -> FabricContext | None:
         return None
     session = payload.get("s")
     request = payload.get("r")
+    decision = payload.get("d")
     workflow = payload.get("w")
     execution = payload.get("e")
     # Optional fields must be strings when present; a wrong-typed value is
     # wire corruption and yields None for the whole member.
     if any(
         opt is not None and not isinstance(opt, str)
-        for opt in (session, request, workflow, execution)
+        for opt in (session, request, decision, workflow, execution)
     ):
         return None
     return FabricContext(
@@ -183,6 +193,7 @@ def _decode(encoded: str) -> FabricContext | None:
         agent_id=agent,
         session_id=session,
         request_id=request,
+        decision_id=decision,
         workflow_id=workflow,
         execution_id=execution,
     )
@@ -259,8 +270,9 @@ def inject_decision(carrier: MutableMapping[str, str], decision: DecisionLike) -
     """Inject the identity of a Decision-like object onto the carrier.
 
     Convenience wrapper: reads ``tenant_id`` / ``agent_id`` /
-    ``session_id`` / ``request_id`` / ``workflow_id`` / ``execution_id``
-    off ``decision`` and delegates to :func:`inject`. ``decision`` is
+    ``session_id`` / ``request_id`` / ``decision_id`` / ``workflow_id`` /
+    ``execution_id`` off ``decision`` and delegates to :func:`inject`.
+    ``decision`` is
     typed via the local :class:`DecisionLike` Protocol so this module
     never imports :mod:`fabric.decision` (which would form an import
     cycle).
@@ -270,6 +282,7 @@ def inject_decision(carrier: MutableMapping[str, str], decision: DecisionLike) -
         agent_id=decision.agent_id,
         session_id=decision.session_id,
         request_id=decision.request_id,
+        decision_id=decision.decision_id,
         workflow_id=decision.workflow_id,
         execution_id=decision.execution_id,
     )

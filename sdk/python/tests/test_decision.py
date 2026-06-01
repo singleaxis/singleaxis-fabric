@@ -5,7 +5,7 @@ exception handling."""
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -24,6 +24,7 @@ from fabric.decision import (
     ATTR_AGENT,
     ATTR_BLOCK_POLICIES,
     ATTR_BLOCKED,
+    ATTR_DECISION_ID,
     ATTR_PROFILE,
     ATTR_REQUEST,
     ATTR_SCHEMA_VERSION,
@@ -69,6 +70,31 @@ def test_happy_path_emits_single_span(span_exporter: InMemorySpanExporter) -> No
     assert attrs[ATTR_REQUEST] == "req-1"
     assert attrs[ATTR_USER] == "u-1"
     assert attrs["agent.custom"] == "ok"
+
+
+def test_decision_id_minted_when_not_supplied(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        minted = dec.decision_id
+    # uuid4-shaped: parseable as a UUID with version 4.
+    assert UUID(minted).version == 4
+    # Stamped on the span as fabric.decision_id.
+    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    assert attrs[ATTR_DECISION_ID] == minted
+
+
+def test_decision_id_supplied_verbatim_and_independent_of_request(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="req-1", decision_id="dec-99") as dec:
+        # Used verbatim, and a separate id from request_id.
+        assert dec.decision_id == "dec-99"
+        assert dec.request_id == "req-1"
+        assert dec.decision_id != dec.request_id
+    attrs = dict(span_exporter.get_finished_spans()[0].attributes or {})
+    assert attrs[ATTR_DECISION_ID] == "dec-99"
+    assert attrs[ATTR_REQUEST] == "req-1"
 
 
 def test_span_omits_user_when_not_provided(span_exporter: InMemorySpanExporter) -> None:
