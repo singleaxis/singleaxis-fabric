@@ -28,6 +28,10 @@ import {
   ATTR_AGENT,
   ATTR_DECISION_ID,
   ATTR_EXECUTION,
+  ATTR_EXECUTION_ATTEMPT,
+  ATTR_EXECUTION_ATTEMPT_ID,
+  ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
+  ATTR_EXECUTION_RETRY_REASON,
   ATTR_PROFILE,
   ATTR_REQUEST,
   ATTR_SCHEMA_VERSION,
@@ -38,6 +42,7 @@ import {
   SCHEMA_VERSION,
   SPAN_NAME_DECISION,
 } from "./attributes.js";
+import { activeExecution } from "./execution.js";
 import { policyInputHash, randomUuid, sha256Hex } from "./hash.js";
 import {
   LlmCall,
@@ -55,6 +60,10 @@ export interface DecisionClientIdentity {
   profile: string;
   workflowId?: string;
   executionId?: string;
+  executionAttemptId?: string;
+  executionAttempt?: number;
+  executionRetryReason?: string;
+  executionRetryPreviousAttemptId?: string;
 }
 
 /** Per-turn identifiers for one {@link Decision}. */
@@ -68,6 +77,18 @@ export interface DecisionIds {
    */
   decisionId?: string;
   userId?: string;
+  /**
+   * Explicit execution-correlation id for this decision. Highest precedence:
+   * `explicit DecisionIds value > active execution (ALS) > FabricConfig`. When
+   * unset, the decision inherits the active {@link Execution}'s id (if any) and
+   * otherwise the {@link FabricConfig} value.
+   */
+  executionId?: string;
+  /**
+   * Explicit owning workflow id for this decision. Same precedence as
+   * {@link DecisionIds.executionId}.
+   */
+  workflowId?: string;
 }
 
 /** The phase of the agent turn a guardrail ran in (mirrors Python `GuardrailPhase`). */
@@ -310,11 +331,40 @@ export class Decision {
     span.setAttribute(ATTR_TENANT, identity.tenantId);
     span.setAttribute(ATTR_AGENT, identity.agentId);
     span.setAttribute(ATTR_PROFILE, identity.profile);
-    if (identity.workflowId !== undefined) {
-      span.setAttribute(ATTR_WORKFLOW, identity.workflowId);
+    // Resolve the execution-correlation metadata with precedence:
+    //   explicit DecisionIds value > active execution (ALS) > FabricConfig.
+    // A decision opened outside any execution falls back to the config exactly
+    // as before (`active` is undefined), so its emitted bytes are unchanged.
+    const active = activeExecution();
+    const workflowId = ids.workflowId ?? active?.workflowId ?? identity.workflowId;
+    const executionId = ids.executionId ?? active?.executionId ?? identity.executionId;
+    // The attempt/retry metadata has no per-decision kwarg, so it is inherited
+    // from the active execution when present and otherwise the config value.
+    const executionAttemptId = active?.executionAttemptId ?? identity.executionAttemptId;
+    const executionAttempt = active?.executionAttempt ?? identity.executionAttempt;
+    const executionRetryReason = active?.executionRetryReason ?? identity.executionRetryReason;
+    const executionRetryPreviousAttemptId =
+      active?.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId;
+    if (workflowId !== undefined) {
+      span.setAttribute(ATTR_WORKFLOW, workflowId);
     }
-    if (identity.executionId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION, identity.executionId);
+    if (executionId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION, executionId);
+    }
+    if (executionAttemptId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, executionAttemptId);
+    }
+    if (executionAttempt !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_ATTEMPT, executionAttempt);
+    }
+    if (executionRetryReason !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_RETRY_REASON, executionRetryReason);
+    }
+    if (executionRetryPreviousAttemptId !== undefined) {
+      span.setAttribute(
+        ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
+        executionRetryPreviousAttemptId,
+      );
     }
     span.setAttribute(ATTR_SESSION, ids.sessionId);
     span.setAttribute(ATTR_REQUEST, ids.requestId);

@@ -1,0 +1,45 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.execution.attempt": 1,
+      "fabric.execution.attempt_id": "attempt-0001",
+      "fabric.execution_id": "execution-0001",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001",
+      "fabric.workflow_id": "workflow-0001"
+    },
+    "events": [],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  },
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.execution.attempt": 1,
+      "fabric.execution.attempt_id": "attempt-0001",
+      "fabric.execution.status": "completed",
+      "fabric.execution_id": "execution-0001",
+      "fabric.profile": "permissive-dev",
+      "fabric.schema_version": "1.0",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.workflow_id": "workflow-0001"
+    },
+    "events": [],
+    "kind": "INTERNAL",
+    "name": "fabric.execution",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

@@ -59,6 +59,16 @@ USER_ID = "user-0001"
 _CHECKPOINT_UUID = UUID("11111111-1111-1111-1111-111111111111")
 _BLOCK_EVENT_UUID = UUID("33333333-3333-3333-3333-333333333333")
 
+# Fixed execution-correlation ids + attempt/retry metadata. Unlike the
+# minted uuids above, these are supplied verbatim and are NOT normalized
+# away (they are not in the normalizer's UUID-attr set), so the golden
+# asserts the literal value stamped on the execution span and inherited by
+# the inner decision.
+EXECUTION_ID = "execution-0001"
+WORKFLOW_ID = "workflow-0001"
+EXECUTION_ATTEMPT_ID = "attempt-0001"
+EXECUTION_ATTEMPT = 1
+
 
 def _client(**kwargs: object) -> Fabric:
     """Build a Fabric client with the fixed conformance identity."""
@@ -85,6 +95,20 @@ def _decision(client: Fabric) -> Decision:
 def _bare_decision() -> None:
     client = _client()
     with _decision(client):
+        pass
+
+
+def _execution() -> None:
+    client = _client()
+    with (
+        client.execution(
+            execution_id=EXECUTION_ID,
+            workflow_id=WORKFLOW_ID,
+            execution_attempt_id=EXECUTION_ATTEMPT_ID,
+            execution_attempt=EXECUTION_ATTEMPT,
+        ),
+        _decision(client),
+    ):
         pass
 
 
@@ -336,6 +360,7 @@ def _content_ref_stamped() -> None:
 # golden filename stem (``goldens/<name>.json``).
 SCENARIOS: dict[str, Callable[[], None]] = {
     "bare_decision": _bare_decision,
+    "execution": _execution,
     "guardrail_redaction": _guardrail_redaction,
     "guardrail_block": _guardrail_block,
     "escalation": _escalation,

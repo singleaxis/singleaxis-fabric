@@ -7,6 +7,31 @@
   "required": ["decision_span", "events", "child_spans"],
   "additionalProperties": false,
   "properties": {
+    "execution_span": {
+      "type": "object",
+      "description": "Attributes on the OPTIONAL fabric.execution span (kind=INTERNAL). An execution is an outer correlation + lifecycle span; emit-only, not required. Scenarios without an execution omit this key entirely.",
+      "required": [
+        "fabric.schema_version",
+        "fabric.tenant_id",
+        "fabric.agent_id",
+        "fabric.profile",
+        "fabric.execution_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fabric.schema_version": { "const": "1.0" },
+        "fabric.tenant_id": { "type": "string" },
+        "fabric.agent_id": { "type": "string" },
+        "fabric.profile": { "type": "string" },
+        "fabric.execution_id": { "type": "string" },
+        "fabric.workflow_id": { "type": "string" },
+        "fabric.execution.status": { "enum": ["completed", "failed"] },
+        "fabric.execution.attempt_id": { "type": "string" },
+        "fabric.execution.attempt": { "type": "integer", "minimum": 1 },
+        "fabric.execution.retry.reason": { "type": "string" },
+        "fabric.execution.retry.previous_attempt_id": { "type": "string" }
+      }
+    },
     "decision_span": {
       "type": "object",
       "description": "Attributes on the fabric.decision span (kind=INTERNAL).",
@@ -27,6 +52,10 @@
         "fabric.profile": { "type": "string" },
         "fabric.workflow_id": { "type": "string" },
         "fabric.execution_id": { "type": "string" },
+        "fabric.execution.attempt_id": { "type": "string" },
+        "fabric.execution.attempt": { "type": "integer", "minimum": 1 },
+        "fabric.execution.retry.reason": { "type": "string" },
+        "fabric.execution.retry.previous_attempt_id": { "type": "string" },
         "fabric.session_id": { "type": "string" },
         "fabric.request_id": { "type": "string" },
         "fabric.user_id": { "type": "string" },

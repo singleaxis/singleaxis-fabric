@@ -49,6 +49,11 @@ function decisionSpan(): ReadableSpan {
   return spans.find((s) => s.name === "fabric.decision")!;
 }
 
+function executionSpan(): ReadableSpan {
+  const spans = exporter.getFinishedSpans();
+  return spans.find((s) => s.name === "fabric.execution")!;
+}
+
 function eventsNamed(span: ReadableSpan, name: string): Attributes[] {
   return span.events.filter((e) => e.name === name).map((e) => e.attributes ?? {});
 }
@@ -217,6 +222,139 @@ describe("fabric.decision_id", () => {
     const span = decisionSpan();
     expect(span.attributes["fabric.decision_id"]).toBe("decision-supplied-0001");
     expect(span.attributes["fabric.request_id"]).toBe("r");
+  });
+});
+
+describe("execution retry metadata", () => {
+  it("emits execution attempt metadata on the decision span", () => {
+    const client = new Fabric({
+      tenantId: "t",
+      agentId: "a",
+      profile: "p",
+      workflowId: "refunds",
+      executionId: "refund-task-123",
+      executionAttemptId: "attempt-002",
+      executionAttempt: 2,
+      executionRetryReason: "tool_timeout",
+      executionRetryPreviousAttemptId: "attempt-001",
+    });
+    client.decision({ sessionId: "s", requestId: "r" }, () => {});
+    const span = decisionSpan();
+    expect(span.attributes["fabric.workflow_id"]).toBe("refunds");
+    expect(span.attributes["fabric.execution_id"]).toBe("refund-task-123");
+    expect(span.attributes["fabric.execution.attempt_id"]).toBe("attempt-002");
+    expect(span.attributes["fabric.execution.attempt"]).toBe(2);
+    expect(span.attributes["fabric.execution.retry.reason"]).toBe("tool_timeout");
+    expect(span.attributes["fabric.execution.retry.previous_attempt_id"]).toBe("attempt-001");
+  });
+
+  it("rejects invalid execution attempt metadata", () => {
+    expect(() => new Fabric({ tenantId: "t", agentId: "a", executionAttempt: 0 })).toThrow(
+      /executionAttempt/,
+    );
+    expect(
+      () => new Fabric({ tenantId: "t", agentId: "a", executionAttemptId: " " }),
+    ).toThrow(/executionAttemptId/);
+  });
+});
+
+describe("execution span + inheritance (ALS)", () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  it("a decision inside an execution inherits execution_id + attempt metadata", () => {
+    const f = fabric();
+    f.execution(
+      {
+        executionId: "exec-1",
+        workflowId: "wf-1",
+        executionAttemptId: "attempt-7",
+        executionAttempt: 7,
+        executionRetryReason: "tool_timeout",
+        executionRetryPreviousAttemptId: "attempt-6",
+      },
+      () => {
+        f.decision({ sessionId: "s", requestId: "r" }, () => {});
+      },
+    );
+    const d = decisionSpan();
+    expect(d.attributes["fabric.execution_id"]).toBe("exec-1");
+    expect(d.attributes["fabric.workflow_id"]).toBe("wf-1");
+    expect(d.attributes["fabric.execution.attempt_id"]).toBe("attempt-7");
+    expect(d.attributes["fabric.execution.attempt"]).toBe(7);
+    expect(d.attributes["fabric.execution.retry.reason"]).toBe("tool_timeout");
+    expect(d.attributes["fabric.execution.retry.previous_attempt_id"]).toBe("attempt-6");
+
+    const e = executionSpan();
+    expect(e.attributes["fabric.execution_id"]).toBe("exec-1");
+    expect(e.attributes["fabric.execution.status"]).toBe("completed");
+  });
+
+  it("mints a uuid execution_id when none is supplied", () => {
+    const f = fabric();
+    f.execution({}, () => {});
+    expect(String(executionSpan().attributes["fabric.execution_id"])).toMatch(UUID_RE);
+  });
+
+  it("explicit DecisionIds value wins over the active execution", () => {
+    const f = fabric();
+    f.execution({ executionId: "exec-1", workflowId: "wf-1" }, () => {
+      f.decision(
+        { sessionId: "s", requestId: "r", executionId: "exec-explicit", workflowId: "wf-explicit" },
+        () => {},
+      );
+    });
+    const d = decisionSpan();
+    expect(d.attributes["fabric.execution_id"]).toBe("exec-explicit");
+    expect(d.attributes["fabric.workflow_id"]).toBe("wf-explicit");
+  });
+
+  it("a decision OUTSIDE any execution falls back to FabricConfig", () => {
+    const client = new Fabric({
+      tenantId: "t",
+      agentId: "a",
+      profile: "p",
+      executionId: "cfg-exec",
+      workflowId: "cfg-wf",
+      executionAttempt: 3,
+    });
+    client.decision({ sessionId: "s", requestId: "r" }, () => {});
+    const d = decisionSpan();
+    expect(d.attributes["fabric.execution_id"]).toBe("cfg-exec");
+    expect(d.attributes["fabric.workflow_id"]).toBe("cfg-wf");
+    expect(d.attributes["fabric.execution.attempt"]).toBe(3);
+  });
+
+  it("active execution inheritance overrides FabricConfig for an inner decision", () => {
+    const client = new Fabric({
+      tenantId: "t",
+      agentId: "a",
+      profile: "p",
+      executionId: "cfg-exec",
+    });
+    client.execution({ executionId: "active-exec" }, () => {
+      client.decision({ sessionId: "s", requestId: "r" }, () => {});
+    });
+    expect(decisionSpan().attributes["fabric.execution_id"]).toBe("active-exec");
+  });
+
+  it("stamps failed status + rethrows when fn throws", () => {
+    const f = fabric();
+    expect(() =>
+      f.execution({ executionId: "exec-fail" }, () => {
+        throw new Error("boom");
+      }),
+    ).toThrow(/boom/);
+    const e = executionSpan();
+    expect(e.attributes["fabric.execution.status"]).toBe("failed");
+    expect(e.status.code).toBe(SpanStatusCode.ERROR);
+  });
+
+  it("async fn stamps completed status after the promise settles", async () => {
+    const f = fabric();
+    await f.execution({ executionId: "exec-async" }, async () => {
+      await Promise.resolve();
+    });
+    expect(executionSpan().attributes["fabric.execution.status"]).toBe("completed");
   });
 });
 

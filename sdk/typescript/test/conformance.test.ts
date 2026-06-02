@@ -37,6 +37,14 @@ const SESSION_ID = "session-0001";
 const REQUEST_ID = "request-0001";
 const USER_ID = "user-0001";
 
+// Fixed execution-correlation ids + attempt metadata — mirror scenarios.py.
+// Supplied verbatim and NOT normalized away, so the golden asserts the literal
+// value stamped on the execution span and inherited by the inner decision.
+const EXECUTION_ID = "execution-0001";
+const WORKFLOW_ID = "workflow-0001";
+const EXECUTION_ATTEMPT_ID = "attempt-0001";
+const EXECUTION_ATTEMPT = 1;
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDENS_DIR = resolve(HERE, "..", "..", "python", "tests", "conformance", "goldens");
 
@@ -50,6 +58,7 @@ function loadGolden(name: string): unknown {
 // without matching TS coverage.
 const COVERED_GOLDENS = [
   "bare_decision",
+  "execution",
   "llm_call",
   "tool_call",
   "guardrail_redaction",
@@ -116,6 +125,27 @@ describe("conformance against shared Python goldens", () => {
     });
     const got = normalizeSpans(captured());
     expect(got).toEqual(loadGolden("bare_decision"));
+  });
+
+  it("execution", () => {
+    const f = fabric();
+    f.execution(
+      {
+        executionId: EXECUTION_ID,
+        workflowId: WORKFLOW_ID,
+        executionAttemptId: EXECUTION_ATTEMPT_ID,
+        executionAttempt: EXECUTION_ATTEMPT,
+      },
+      () => {
+        // A bare decision inside the execution: it inherits execution_id +
+        // workflow_id + attempt metadata from the active execution (ALS).
+        decision(f, () => {
+          // empty body — the inherited decision span
+        });
+      },
+    );
+    const got = normalizeSpans(captured());
+    expect(got).toEqual(loadGolden("execution"));
   });
 
   it("llm_call", () => {

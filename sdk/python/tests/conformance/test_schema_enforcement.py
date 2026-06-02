@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 SCHEMA_PATH = Path(__file__).parent / "schema" / "fabric-decision-v1.schema.json"
 
 DECISION_SPAN_NAME = "fabric.decision"
+EXECUTION_SPAN_NAME = "fabric.execution"
 CHILD_SPAN_NAMES = ("fabric.llm_call", "fabric.tool_call")
 
 
@@ -101,6 +102,12 @@ def _validate_decision_span(span: ReadableSpan, schema: dict[str, Any]) -> int:
     return events_validated
 
 
+def _validate_execution_span(span: ReadableSpan, schema: dict[str, Any]) -> None:
+    """Validate one fabric.execution span against ``execution_span``."""
+    execution_validator = Draft202012Validator(schema["properties"]["execution_span"])
+    _validate(execution_validator, _attrs_to_json(span.attributes), EXECUTION_SPAN_NAME)
+
+
 def _validate_child_span(span: ReadableSpan, schema: dict[str, Any]) -> None:
     child_schemas = schema["properties"]["child_spans"]["properties"]
     assert span.name in child_schemas, (
@@ -136,10 +143,12 @@ def test_emitted_spans_validate_against_schema(
     for span in spans:
         if span.name in CHILD_SPAN_NAMES:
             _validate_child_span(span, schema)
+        elif span.name == EXECUTION_SPAN_NAME:
+            _validate_execution_span(span, schema)
         elif span.name != DECISION_SPAN_NAME:
             pytest.fail(
                 f"scenario {scenario_name!r} emitted unexpected span {span.name!r}; "
-                f"not a decision span nor a known child span"
+                f"not a decision/execution span nor a known child span"
             )
 
 

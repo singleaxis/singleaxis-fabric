@@ -30,6 +30,7 @@ export {
   type ToolAuthorizationDecision,
   type ToolAuthorizationOptions,
 } from "./decision.js";
+export { Execution, type ExecutionOptions } from "./execution.js";
 export {
   LlmCall,
   ToolCall,

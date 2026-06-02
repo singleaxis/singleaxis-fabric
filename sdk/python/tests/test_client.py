@@ -70,6 +70,14 @@ def test_config_validates_fields() -> None:
         FabricConfig(tenant_id="t", agent_id="")
     with pytest.raises(ValueError, match="profile"):
         FabricConfig(tenant_id="t", agent_id="a", profile="")
+    with pytest.raises(ValueError, match="execution_attempt"):
+        FabricConfig(tenant_id="t", agent_id="a", execution_attempt=0)
+    with pytest.raises(TypeError, match="execution_attempt"):
+        # bool is a subtype of int at the type level, so no arg-type
+        # ignore is needed; FabricConfig rejects bool at runtime.
+        FabricConfig(tenant_id="t", agent_id="a", execution_attempt=True)
+    with pytest.raises(ValueError, match="execution_attempt_id"):
+        FabricConfig(tenant_id="t", agent_id="a", execution_attempt_id=" ")
 
 
 def test_tracer_property_is_reused() -> None:
@@ -177,3 +185,30 @@ def test_workflow_and_execution_propagate_to_span(span_exporter: InMemorySpanExp
     attrs = dict(span.attributes or {})
     assert attrs["fabric.workflow_id"] == "complaint-resolution-v2"
     assert attrs["fabric.execution_id"] == "run-2026-05-27-001"
+
+
+def test_execution_retry_metadata_propagates_to_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Execution attempt metadata appears on decision spans for task retries."""
+    fabric = Fabric(
+        FabricConfig(
+            tenant_id="acme",
+            agent_id="bot",
+            workflow_id="refunds",
+            execution_id="refund-task-123",
+            execution_attempt_id="attempt-002",
+            execution_attempt=2,
+            execution_retry_reason="tool_timeout",
+            execution_retry_previous_attempt_id="attempt-001",
+        )
+    )
+    with fabric.decision(session_id="s", request_id="r"):
+        pass
+    span = span_exporter.get_finished_spans()[0]
+    attrs = dict(span.attributes or {})
+    assert attrs["fabric.execution_id"] == "refund-task-123"
+    assert attrs["fabric.execution.attempt_id"] == "attempt-002"
+    assert attrs["fabric.execution.attempt"] == 2
+    assert attrs["fabric.execution.retry.reason"] == "tool_timeout"
+    assert attrs["fabric.execution.retry.previous_attempt_id"] == "attempt-001"
