@@ -18,9 +18,23 @@ filing a "but I expected …" issue.
   text never enters the span). Your retrieval/memory store is the
   source of truth; the SDK records the metadata.
 - **Provides an escalation primitive** — `decision.request_escalation`
-  raises `EscalationRequested` with a typed payload your orchestrator
-  catches (LangGraph `interrupt()`, MAF `request_info`, CrewAI
-  `human_feedback`, or your own pause).
+  *records* the escalation (tags the span + emits the `fabric.escalation`
+  event); it does **not** raise. Pair it with `decision.raise_for_escalation()`
+  for an exception-driven flow that raises `EscalationRequested` with a
+  typed payload your orchestrator catches (LangGraph `interrupt()`, MAF
+  `request_info`, CrewAI `human_feedback`, or your own pause). OSS only
+  *emits* the escalation signal — the durable escalation service (SASF
+  reviewer), signed-verdict resume, and pause/resume orchestration are
+  commercial.
+- **Records evals and queues judge requests** — `decision.record_eval`
+  (`EvalRecord`) attaches a synchronous score to the span, and
+  `decision.queue_judge` (`JudgeRequest`/`JudgeContext`) forwards an
+  async judge request through a `QueueTransport`. OSS ships these
+  recording/queueing primitives plus a local/reference judge harness
+  (`JudgeRunner`, `SimpleLLMJudge`, `LocalQueueTransport`). The
+  production judge *worker* implementations, rubric corpus, calibration,
+  and drift/longitudinal analysis are commercial — OSS does not run
+  managed scoring.
 - **Ships orchestrator adapters** under `fabric.adapters.*` — gated
   behind extras so the core install stays framework-neutral.
 - **Emits standardised attributes** — `fabric.tenant_id`,
@@ -49,14 +63,20 @@ filing a "but I expected …" issue.
   private repo). The SDK produces the collection inputs that a
   commercial-tier evidence pipeline can later materialize into
   bundles.
-- **It does not run judge / scoring workers.** Judges (per spec 006)
-  are part of the L2 commercial control plane. The SDK emits the
-  decision spans that judges consume, but the workers themselves
-  don't ship in OSS.
-- **It does not ship a SASF Reviewer service.** The escalation
-  primitive lets you pause + emit a typed payload; what consumes
-  that payload (a reviewer dashboard, a Slack channel, a Linear
-  ticket, the L2 commercial SASF service) is up to the operator.
+- **It does not run managed judge / scoring workers.** OSS ships the
+  eval-recording + judge-request *queueing* primitives (`record_eval`,
+  `queue_judge`, the `QueueTransport` protocol) and a local/reference
+  judge harness (`JudgeRunner`, `SimpleLLMJudge`) for tests and small
+  teams — but the production judge *worker* fleet, rubric corpus,
+  calibration, and drift analysis (per spec 006) are part of the L2
+  commercial control plane and don't ship in OSS.
+- **It does not ship a SASF Reviewer service or signed resume.** The
+  escalation primitive only *emits* the signal — `request_escalation`
+  records it and `raise_for_escalation` raises locally. What consumes
+  the payload (a reviewer dashboard, a Slack channel, a Linear ticket)
+  is up to the operator; the durable escalation service (SASF reviewer),
+  signed-verdict resume, and pause/resume orchestration are the L2
+  commercial control plane.
 - **It does not pick your observability backend.** Spans land
   wherever the chart's `otel-collector.exporter.endpoint` points
   (Langfuse, Phoenix, Datadog, Honeycomb, your own collector chain
