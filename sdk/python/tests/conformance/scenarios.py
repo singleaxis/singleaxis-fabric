@@ -29,6 +29,7 @@ from fabric import (
     JudgeContext,
     LocalQueueTransport,
     MemoryKind,
+    ReplayBehavior,
     RetrievalSource,
     SideEffectType,
     ToolAuthorization,
@@ -58,6 +59,19 @@ USER_ID = "user-0001"
 # raw emitted telemetry stable for local debugging.
 _CHECKPOINT_UUID = UUID("11111111-1111-1111-1111-111111111111")
 _BLOCK_EVENT_UUID = UUID("33333333-3333-3333-3333-333333333333")
+
+# Fixed ids for the replay_metadata scenario. The checkpoint id and
+# side_effect_id are normalized away on their own ``fabric.checkpoint`` /
+# ``fabric.side_effect`` events, but they reappear verbatim inside the
+# ``fabric.replay`` envelope's ``checkpoint_ids`` /
+# ``suppressed_side_effect_ids`` arrays (those keys are NOT in the
+# normalizer's UUID-attr set), so they must be fixed for a stable golden.
+_REPLAY_CHECKPOINT_UUID = UUID("44444444-4444-4444-4444-444444444444")
+_REPLAY_SIDE_EFFECT_ID = "55555555-5555-5555-5555-555555555555"
+# The replay envelope echoes the decision's own decision_id verbatim
+# (``fabric.replay.decision_id`` is not normalized away), so the scenario
+# supplies a fixed one rather than letting the SDK mint a uuid4.
+_REPLAY_DECISION_ID = "66666666-6666-6666-6666-666666666666"
 
 # Fixed execution-correlation ids + attempt/retry metadata. Unlike the
 # minted uuids above, these are supplied verbatim and are NOT normalized
@@ -208,6 +222,33 @@ def _checkpoint() -> None:
             "after-retrieval",
             state_hash="c" * 64,
             checkpoint_id=_CHECKPOINT_UUID,
+        )
+
+
+def _replay_metadata() -> None:
+    client = _client()
+    decision = client.decision(
+        session_id=SESSION_ID,
+        request_id=REQUEST_ID,
+        user_id=USER_ID,
+        decision_id=_REPLAY_DECISION_ID,
+    )
+    with decision as d:
+        d.checkpoint(
+            "after-retrieval",
+            state_hash="c" * 64,
+            checkpoint_id=_REPLAY_CHECKPOINT_UUID,
+        )
+        d.record_side_effect(
+            SideEffectType.TICKET_CREATE,
+            target_system="zendesk",
+            operation="create_ticket",
+            replay_behavior=ReplayBehavior.SUPPRESS,
+            side_effect_id=_REPLAY_SIDE_EFFECT_ID,
+        )
+        d.record_replay_metadata(
+            state_hash="d" * 64,
+            tool_result_hashes=("a" * 64, "b" * 64),
         )
 
 
@@ -385,6 +426,7 @@ SCENARIOS: dict[str, Callable[[], None]] = {
     "memory_read_write": _memory_read_write,
     "side_effect": _side_effect,
     "checkpoint": _checkpoint,
+    "replay_metadata": _replay_metadata,
     "eval_record": _eval_record,
     "queue_judge": _queue_judge,
     "policy_allow": _policy_allow,

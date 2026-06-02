@@ -25,3 +25,7 @@ checklist tracks the outstanding mirror work.
       - Goldens changed: `llm_call.json`, `tool_call.json`
         (+`fabric.step.type`).
       - New golden: `step_retry.json`.
+- [ ] **ReplayMetadata** — `fabric.replay` event via
+      `Decision.record_replay_metadata`; fields
+      `metadata_version`/`execution_id`/`decision_id`/`checkpoint_ids`/`suppressed_side_effect_ids`/`state_hash`/`tool_result_hashes`.
+      New golden: `replay_metadata.json`.
