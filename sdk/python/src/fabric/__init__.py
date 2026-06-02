@@ -8,7 +8,7 @@ re-exported is internal.
 
 import contextlib
 
-from ._calls import LLMCall, ToolCall
+from ._calls import LLMCall, ToolCall, ToolErrorCategory
 from ._version import __version__
 from .checkpoint import CheckpointEvent
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
@@ -173,6 +173,7 @@ __all__ = [
     "ToolCall",
     "ToolCallDenied",
     "ToolCallSnapshot",
+    "ToolErrorCategory",
     "UDSNemoClient",
     "UDSPresidioClient",
     "__version__",
