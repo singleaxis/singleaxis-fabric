@@ -1694,6 +1694,12 @@ class Decision(AbstractContextManager["Decision"]):
         temperature: float | None = None,
         top_p: float | None = None,
         max_tokens: int | None = None,
+        step_id: str | None = None,
+        step_type: str | None = None,
+        step_attempt_id: str | None = None,
+        step_attempt: int | None = None,
+        step_retry_reason: str | None = None,
+        step_retry_previous_attempt_id: str | None = None,
     ) -> LLMCall:
         """Open a child span for one LLM API call.
 
@@ -1718,6 +1724,14 @@ class Decision(AbstractContextManager["Decision"]):
         Concurrency: do not nest ``llm_call`` invocations inside one
         another (the OTel current-span context will mis-parent the
         inner one).
+
+        Step taxonomy: the child span always carries
+        ``fabric.step.type`` (defaulting to ``"llm_call"``, overridable
+        via ``step_type``). A stable logical ``step_id`` and step-level
+        attempt/retry metadata (``step_attempt_id`` / ``step_attempt`` /
+        ``step_retry_reason`` / ``step_retry_previous_attempt_id``,
+        distinct from the enclosing execution's attempt/retry) are
+        opt-in and stamped only when supplied.
         """
         # Ensure the decision is open so the child span parents
         # correctly.
@@ -1729,9 +1743,26 @@ class Decision(AbstractContextManager["Decision"]):
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
+            step_id=step_id,
+            step_type=step_type,
+            step_attempt_id=step_attempt_id,
+            step_attempt=step_attempt,
+            step_retry_reason=step_retry_reason,
+            step_retry_previous_attempt_id=step_retry_previous_attempt_id,
         )
 
-    def tool_call(self, name: str, *, call_id: str | None = None) -> ToolCall:
+    def tool_call(
+        self,
+        name: str,
+        *,
+        call_id: str | None = None,
+        step_id: str | None = None,
+        step_type: str | None = None,
+        step_attempt_id: str | None = None,
+        step_attempt: int | None = None,
+        step_retry_reason: str | None = None,
+        step_retry_previous_attempt_id: str | None = None,
+    ) -> ToolCall:
         """Open a child span for one tool / function call.
 
         Returns a :class:`~fabric._calls.ToolCall` context manager that
@@ -1745,12 +1776,26 @@ class Decision(AbstractContextManager["Decision"]):
             with decision.tool_call("vector_search") as tool:
                 results = my_vector_db.query(...)
                 tool.set_result_count(len(results))
+
+        Step taxonomy: the child span always carries
+        ``fabric.step.type`` (defaulting to ``"tool_call"``, overridable
+        via ``step_type``). A stable logical ``step_id`` and step-level
+        attempt/retry metadata (``step_attempt_id`` / ``step_attempt`` /
+        ``step_retry_reason`` / ``step_retry_previous_attempt_id``,
+        distinct from the enclosing execution's attempt/retry) are
+        opt-in and stamped only when supplied.
         """
         _ = self.span
         return ToolCall(
             tracer=self._client.tracer,
             name=name,
             call_id=call_id,
+            step_id=step_id,
+            step_type=step_type,
+            step_attempt_id=step_attempt_id,
+            step_attempt=step_attempt,
+            step_retry_reason=step_retry_reason,
+            step_retry_previous_attempt_id=step_retry_previous_attempt_id,
         )
 
     # -- OTel passthrough -------------------------------------------------

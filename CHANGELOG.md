@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Step taxonomy on `llm_call` / `tool_call` child spans (Python SDK).**
+  A "step" is one operation inside an execution (an LLM call, a tool
+  call); the taxonomy is emit-only and additive. Every child span now
+  auto-stamps a canonical, deterministic `fabric.step.type` —
+  `"llm_call"` on the LLM-call span, `"tool_call"` on the tool-call span —
+  host-overridable via a new `step_type=` parameter (e.g. `"plan"` /
+  `"act"`). Opt-in, stamped only when supplied: a stable logical
+  `fabric.step.id` (same across retries of the same operation; never
+  auto-minted, so goldens stay byte-identical) and step-level retry
+  metadata mirroring the execution model but per-operation and fully
+  independent of it — `fabric.step.attempt_id`, `fabric.step.attempt`
+  (integer ≥ 1), `fabric.step.retry.reason`, and
+  `fabric.step.retry.previous_attempt_id`. `Decision.llm_call(...)` /
+  `Decision.tool_call(...)` (and the underlying `LLMCall` / `ToolCall`)
+  gain the matching `step_id` / `step_type` / `step_attempt_id` /
+  `step_attempt` / `step_retry_reason` / `step_retry_previous_attempt_id`
+  parameters. The conformance schema gains the `fabric.step.*` fields on
+  both child spans (kept optional in `required` for lenient older
+  consumers); among existing goldens only `llm_call.json` and
+  `tool_call.json` change (each gaining `fabric.step.type`), plus one new
+  `step_retry.json`. `SCHEMA_VERSION` remains `1.0`. See
+  specs/020-execution-step-capture.md.
 - **Optional `fabric.execution(...)` lifecycle span with attempt/retry
   metadata (Python SDK).** A new first-class, emit-only `Execution` primitive
   demarcates and correlates a run of related decisions without scheduling,

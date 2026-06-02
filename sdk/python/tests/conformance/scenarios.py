@@ -343,6 +343,23 @@ def _tool_call() -> None:
         tool.set_result_count(3)
 
 
+def _step_retry() -> None:
+    client = _client()
+    with (
+        _decision(client) as d,
+        d.tool_call(
+            "vector_search",
+            call_id="call-1",
+            step_id="step-0001",
+            step_attempt_id="step-attempt-0002",
+            step_attempt=2,
+            step_retry_reason="tool_timeout",
+            step_retry_previous_attempt_id="step-attempt-0001",
+        ) as tool,
+    ):
+        tool.set_kind("retrieval")
+
+
 def _content_ref_stamped() -> None:
     client = _client(
         guardrail_checkers=[RedactingChecker()],
@@ -377,6 +394,7 @@ SCENARIOS: dict[str, Callable[[], None]] = {
     "tool_authorization_deny": _tool_authorization_deny,
     "llm_call": _llm_call,
     "tool_call": _tool_call,
+    "step_retry": _step_retry,
     "content_ref_stamped": _content_ref_stamped,
 }
 """All frozen conformance scenarios, keyed by name."""

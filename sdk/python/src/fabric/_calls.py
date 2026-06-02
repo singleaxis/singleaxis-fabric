@@ -73,8 +73,98 @@ FABRIC_TOOL_KIND = "fabric.tool.kind"
 FABRIC_TOOL_ERROR = "fabric.tool.error"
 FABRIC_TOOL_ERROR_CATEGORY = "fabric.tool.error_category"
 
+# Step taxonomy — per-operation correlation on the child spans. A
+# "step" is one operation inside an execution (an LLM call, a tool
+# call, ...). It mirrors the Execution attempt/retry model but at the
+# per-operation grain. ``fabric.step.type`` is the canonical step kind,
+# auto-stamped on every child span (``"llm_call"`` / ``"tool_call"``)
+# and host-overridable (e.g. ``"plan"`` / ``"act"``). The remaining
+# fields are opt-in: a stable logical ``fabric.step.id`` (same across
+# retries of the same operation) and step-level attempt/retry metadata
+# distinct from the enclosing execution's attempt/retry. Emit-only —
+# the OSS SDK stamps; the commercial layer interprets.
+FABRIC_STEP_TYPE = "fabric.step.type"
+FABRIC_STEP_ID = "fabric.step.id"
+FABRIC_STEP_ATTEMPT_ID = "fabric.step.attempt_id"
+FABRIC_STEP_ATTEMPT = "fabric.step.attempt"
+FABRIC_STEP_RETRY_REASON = "fabric.step.retry.reason"
+FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID = "fabric.step.retry.previous_attempt_id"
+
 LLM_CALL_SPAN_NAME = "fabric.llm_call"
 TOOL_CALL_SPAN_NAME = "fabric.tool_call"
+
+# Default canonical step type per child-span kind.
+_DEFAULT_LLM_STEP_TYPE = "llm_call"
+_DEFAULT_TOOL_STEP_TYPE = "tool_call"
+
+
+def _validate_step_metadata(
+    *,
+    step_id: str | None,
+    step_type: str | None,
+    step_attempt_id: str | None,
+    step_attempt: int | None,
+    step_retry_reason: str | None,
+    step_retry_previous_attempt_id: str | None,
+) -> None:
+    """Validate the opt-in step taxonomy parameters.
+
+    ``step_type`` defaults per call kind upstream, so only a non-empty
+    string is enforced here when supplied. The remaining fields are
+    opt-in and validated only when provided.
+    """
+    for label, value in (
+        ("step_id", step_id),
+        ("step_type", step_type),
+        ("step_attempt_id", step_attempt_id),
+        ("step_retry_reason", step_retry_reason),
+        ("step_retry_previous_attempt_id", step_retry_previous_attempt_id),
+    ):
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise TypeError(f"{label} must be str, got {type(value).__name__}")
+        if not value:
+            raise ValueError(f"{label} must be non-empty")
+    if step_attempt is not None:
+        # bool is a subclass of int; reject it like the token counters do.
+        if not isinstance(step_attempt, int) or isinstance(step_attempt, bool):
+            raise TypeError(f"step_attempt must be int, got {type(step_attempt).__name__}")
+        if step_attempt < 1:
+            raise ValueError("step_attempt must be >= 1 (one-based)")
+
+
+def _stamp_step_metadata(
+    span: Span,
+    *,
+    default_step_type: str,
+    step_id: str | None,
+    step_type: str | None,
+    step_attempt_id: str | None,
+    step_attempt: int | None,
+    step_retry_reason: str | None,
+    step_retry_previous_attempt_id: str | None,
+) -> None:
+    """Stamp the step taxonomy attributes on a child span.
+
+    ``fabric.step.type`` is ALWAYS stamped (host override or the kind
+    default). Every other field is stamped only when supplied, so calls
+    that opt out stay byte-identical to the pre-taxonomy emission.
+    """
+    span.set_attribute(FABRIC_STEP_TYPE, step_type or default_step_type)
+    if step_id is not None:
+        span.set_attribute(FABRIC_STEP_ID, step_id)
+    if step_attempt_id is not None:
+        span.set_attribute(FABRIC_STEP_ATTEMPT_ID, step_attempt_id)
+    if step_attempt is not None:
+        span.set_attribute(FABRIC_STEP_ATTEMPT, step_attempt)
+    if step_retry_reason is not None:
+        span.set_attribute(FABRIC_STEP_RETRY_REASON, step_retry_reason)
+    if step_retry_previous_attempt_id is not None:
+        span.set_attribute(
+            FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID,
+            step_retry_previous_attempt_id,
+        )
 
 
 class LLMCall(AbstractContextManager["LLMCall"]):
@@ -99,17 +189,37 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         temperature: float | None = None,
         top_p: float | None = None,
         max_tokens: int | None = None,
+        step_id: str | None = None,
+        step_type: str | None = None,
+        step_attempt_id: str | None = None,
+        step_attempt: int | None = None,
+        step_retry_reason: str | None = None,
+        step_retry_previous_attempt_id: str | None = None,
     ) -> None:
         if not system:
             raise ValueError("LLMCall: system is required (e.g. 'anthropic')")
         if not model:
             raise ValueError("LLMCall: model is required")
+        _validate_step_metadata(
+            step_id=step_id,
+            step_type=step_type,
+            step_attempt_id=step_attempt_id,
+            step_attempt=step_attempt,
+            step_retry_reason=step_retry_reason,
+            step_retry_previous_attempt_id=step_retry_previous_attempt_id,
+        )
         self._tracer = tracer
         self._system = system
         self._model = model
         self._temperature = temperature
         self._top_p = top_p
         self._max_tokens = max_tokens
+        self._step_id = step_id
+        self._step_type = step_type
+        self._step_attempt_id = step_attempt_id
+        self._step_attempt = step_attempt
+        self._step_retry_reason = step_retry_reason
+        self._step_retry_previous_attempt_id = step_retry_previous_attempt_id
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
 
@@ -134,6 +244,18 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         # Fabric mirror
         self._span.set_attribute(FABRIC_LLM_SYSTEM, self._system)
         self._span.set_attribute(FABRIC_LLM_REQUEST_MODEL, self._model)
+        # Step taxonomy: ``fabric.step.type`` always (defaults to
+        # "llm_call"); id + attempt/retry metadata only when supplied.
+        _stamp_step_metadata(
+            self._span,
+            default_step_type=_DEFAULT_LLM_STEP_TYPE,
+            step_id=self._step_id,
+            step_type=self._step_type,
+            step_attempt_id=self._step_attempt_id,
+            step_attempt=self._step_attempt,
+            step_retry_reason=self._step_retry_reason,
+            step_retry_previous_attempt_id=self._step_retry_previous_attempt_id,
+        )
         if self._temperature is not None:
             self._span.set_attribute(GEN_AI_REQUEST_TEMPERATURE, self._temperature)
             self._span.set_attribute(FABRIC_LLM_REQUEST_TEMPERATURE, self._temperature)
@@ -265,12 +387,32 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         tracer: Tracer,
         name: str,
         call_id: str | None = None,
+        step_id: str | None = None,
+        step_type: str | None = None,
+        step_attempt_id: str | None = None,
+        step_attempt: int | None = None,
+        step_retry_reason: str | None = None,
+        step_retry_previous_attempt_id: str | None = None,
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
+        _validate_step_metadata(
+            step_id=step_id,
+            step_type=step_type,
+            step_attempt_id=step_attempt_id,
+            step_attempt=step_attempt,
+            step_retry_reason=step_retry_reason,
+            step_retry_previous_attempt_id=step_retry_previous_attempt_id,
+        )
         self._tracer = tracer
         self._name = name
         self._call_id = call_id
+        self._step_id = step_id
+        self._step_type = step_type
+        self._step_attempt_id = step_attempt_id
+        self._step_attempt = step_attempt
+        self._step_retry_reason = step_retry_reason
+        self._step_retry_previous_attempt_id = step_retry_previous_attempt_id
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
 
@@ -289,6 +431,18 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         self._span = self._cm.__enter__()
         self._span.set_attribute(GEN_AI_TOOL_NAME, self._name)
         self._span.set_attribute(FABRIC_TOOL_NAME, self._name)
+        # Step taxonomy: ``fabric.step.type`` always (defaults to
+        # "tool_call"); id + attempt/retry metadata only when supplied.
+        _stamp_step_metadata(
+            self._span,
+            default_step_type=_DEFAULT_TOOL_STEP_TYPE,
+            step_id=self._step_id,
+            step_type=self._step_type,
+            step_attempt_id=self._step_attempt_id,
+            step_attempt=self._step_attempt,
+            step_retry_reason=self._step_retry_reason,
+            step_retry_previous_attempt_id=self._step_retry_previous_attempt_id,
+        )
         if self._call_id is not None:
             self._span.set_attribute(GEN_AI_TOOL_CALL_ID, self._call_id)
             self._span.set_attribute(FABRIC_TOOL_CALL_ID, self._call_id)

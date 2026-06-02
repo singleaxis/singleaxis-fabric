@@ -1,7 +1,7 @@
 ---
 title: Execution & Step capture — outer correlation + lifecycle primitives
 status: draft
-revision: 1
+revision: 2
 last_updated: 2026-06-02
 owner: project-lead
 ---
@@ -32,14 +32,16 @@ This spec introduces two **optional, emit-only** capture primitives:
 1. **Execution** (this PR) — an *outer correlation + lifecycle* span,
    `fabric.execution`, that demarcates and correlates a run of related
    decisions. It does **not** drive decisions; it brackets them.
-2. **Step** (planned, follow-up PR) — a *child* span taxonomy,
-   `fabric.step.*`, that names the phases inside an execution (e.g.
-   `plan`, `act`, `observe`). Documented here for contract stability;
-   not implemented in this PR.
+2. **Step** (implemented) — a per-operation taxonomy, `fabric.step.*`,
+   stamped on the existing child spans (`fabric.llm_call`,
+   `fabric.tool_call`). A *step* is one operation inside an execution (an
+   LLM call, a tool call); the taxonomy names its canonical kind and
+   carries opt-in step-level identity + retry metadata.
 
 Both are additive and backward compatible. A `Decision` opened outside an
-execution behaves exactly as it did before — the entire existing wire
-contract (all 18 conformance goldens) is byte-identical.
+execution behaves exactly as it did before, and the only child-span
+change is the always-on `fabric.step.type` (a deterministic constant per
+call kind) — the rest of the existing wire contract is byte-identical.
 
 ## Non-goals (the OSS↔commercial boundary)
 
@@ -137,32 +139,97 @@ async with fabric.execution() as ex:
     ...  # ex.execution_id is a uuid4, inherited by inner decisions
 ```
 
-## Step taxonomy (planned — follow-up PR)
+## Step taxonomy (implemented)
 
-> **Not implemented in this PR.** Documented here so the child-span
-> contract is stable before code lands. A follow-up PR will implement
-> Step as an emit-only child span under the active decision / execution.
+A **Step** is one operation inside an execution — an LLM call, a tool
+call, a named phase. Rather than introduce a new span, the taxonomy is
+stamped onto the **existing child spans** that already bracket each
+operation:
+[`fabric.llm_call`](../sdk/python/src/fabric/_calls.py) (kind `CLIENT`)
+and `fabric.tool_call` (kind `INTERNAL`). It mirrors the Execution
+attempt/retry model, but at the per-operation grain. Like Execution it is
+**emit-only**: the SDK stamps the attributes; it does not schedule,
+sequence, or retry the operation.
 
-A **Step** names a phase of work inside an execution — the agent loop's
-`plan` / `act` / `observe`, or named pipeline stages. It is a **child
-span**, `fabric.step.<name>` (kind `INTERNAL`), emitted under the current
-decision/execution span. Like Execution it is emit-only: it demarcates a
-phase; it does not schedule it.
+### Shape
 
-Planned child-span tags (subject to refinement when implemented):
+`Decision.llm_call(...)` / `Decision.tool_call(...)` accept these
+additional, all-optional parameters (forwarded verbatim to the
+underlying `LLMCall` / `ToolCall`):
 
-| Attribute | Meaning |
-|-----------|---------|
-| `fabric.schema_version` | const `"1.0"` |
-| `fabric.step.name` | phase label, e.g. `plan` / `act` / `observe` |
-| `fabric.step.kind` | optional coarse category (`reasoning`, `tool`, `io`) |
-| `fabric.step.index` | optional 0-based ordinal within the execution |
-| `fabric.step.execution_id` | inherited correlation id (as for decisions) |
-| `fabric.step.status` | `completed` / `failed`, set on exit |
+```
+step_id, step_type,
+step_attempt_id, step_attempt,
+step_retry_reason, step_retry_previous_attempt_id
+```
 
-The commercial Decision Graph consumes execution → step → decision spans
-to materialize the run hierarchy and lineage. The OSS SDK only emits
-them.
+The child span then carries:
+
+| Attribute | Source | Required |
+|-----------|--------|----------|
+| `fabric.step.type` | supplied `step_type`, else the kind default (`"llm_call"` for `llm_call`, `"tool_call"` for `tool_call`) | **always** (deterministic) |
+| `fabric.step.id` | supplied `step_id` | only when provided |
+| `fabric.step.attempt_id` | supplied `step_attempt_id` | only when provided |
+| `fabric.step.attempt` | supplied `step_attempt` (integer ≥ 1) | only when provided |
+| `fabric.step.retry.reason` | supplied `step_retry_reason` | only when provided |
+| `fabric.step.retry.previous_attempt_id` | supplied `step_retry_previous_attempt_id` | only when provided |
+
+### Canonical step type
+
+`fabric.step.type` is the canonical step kind and is **auto-stamped on
+every child span** — `"llm_call"` on the LLM-call span, `"tool_call"` on
+the tool-call span. It is deterministic (no uuid, no clock) and
+host-overridable: pass `step_type="plan"` / `"act"` / etc. to relabel the
+operation's phase. This is the one always-on addition to the child-span
+contract.
+
+### Opt-in step identity and step-level retry
+
+`fabric.step.id` is a **stable, logical** step id: the same value across
+retries of the *same* operation. It is **opt-in** — stamped only when the
+host supplies `step_id=`. The SDK does **not** auto-mint it, which keeps
+the existing goldens byte-identical and the id deterministic.
+
+The step retry fields mirror Execution's attempt/retry, but describe a
+**concrete attempt of one step** and are entirely **independent** of the
+enclosing execution's attempt/retry:
+
+- `fabric.step.attempt_id` — unique id for *this* concrete step attempt.
+- `fabric.step.attempt` — one-based step attempt number (integer ≥ 1).
+- `fabric.step.retry.reason` — why this step attempt exists.
+- `fabric.step.retry.previous_attempt_id` — prior step attempt id, if any.
+
+All four are opt-in and stamped only when supplied. A child span carries
+`fabric.step.*` (per-operation) while the decision/execution spans carry
+`fabric.execution.*` (per-run); the two never collide.
+
+### Usage
+
+```python
+with fabric.decision(session_id="s", request_id="r") as d:
+    # canonical type auto-stamped: fabric.step.type="tool_call"
+    with d.tool_call("vector_search") as tool:
+        ...
+
+    # a retried tool step with explicit step-level retry metadata
+    with d.tool_call(
+        "vector_search",
+        step_id="step-0001",                       # stable across retries
+        step_attempt_id="step-attempt-0002",
+        step_attempt=2,
+        step_retry_reason="tool_timeout",
+        step_retry_previous_attempt_id="step-attempt-0001",
+    ) as tool:
+        ...
+
+    # host-relabelled phase
+    with d.llm_call(system="anthropic", model="claude", step_type="plan"):
+        ...
+```
+
+The commercial Decision Graph consumes execution → decision → step
+attributes to materialize the run hierarchy, correlate step retries, and
+build lineage. The OSS SDK only emits them.
 
 ## Conformance
 
@@ -181,11 +248,30 @@ them.
   `execution_span` is an allowed but non-required property.
 - The schema-enforcement test validates any emitted `fabric.execution`
   span against `execution_span`.
+- The `llm_call` / `tool_call` scenarios now emit the deterministic
+  `fabric.step.type` (`"llm_call"` / `"tool_call"`) on their child span,
+  so `goldens/llm_call.json` and `goldens/tool_call.json` each gain
+  exactly that one attribute. A new `step_retry` scenario opens a
+  `tool_call` carrying fixed step retry metadata
+  (`step_id="step-0001"`, `step_attempt_id="step-attempt-0002"`,
+  `step_attempt=2`, `step_retry_reason="tool_timeout"`,
+  `step_retry_previous_attempt_id="step-attempt-0001"`), producing
+  `goldens/step_retry.json`. The ids are fixed and deterministic, so they
+  are not normalized away.
+- The conformance schema adds the `fabric.step.*` fields to both
+  `child_spans.fabric.llm_call` and `child_spans.fabric.tool_call`
+  (`fabric.step.type` / `id` / `attempt_id` / `retry.*` as strings,
+  `fabric.step.attempt` as integer ≥ 1). They are kept **optional** in
+  `required` to stay lenient for older consumers — even `fabric.step.type`,
+  which the SDK now always emits and the enforcement test validates on
+  live spans.
 
 ## Compatibility
 
-Additive and emit-only. The Execution primitive introduces no breaking
-change: decisions outside an execution are byte-identical to the prior
-release, the schema additions are optional, and the existing 18
-conformance goldens are unchanged (one new `execution.json` is added).
-`SCHEMA_VERSION` remains `1.0`.
+Additive and emit-only. Neither primitive introduces a breaking change.
+Decisions outside an execution are byte-identical to the prior release;
+the schema additions are optional; `SCHEMA_VERSION` remains `1.0`. The
+only child-span change is the always-on, deterministic
+`fabric.step.type`, so among the existing conformance goldens only
+`llm_call.json` and `tool_call.json` move (gaining `fabric.step.type`),
+plus one new `step_retry.json`; the others are unchanged.
