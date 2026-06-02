@@ -31,6 +31,7 @@
       "fabric.llm.system": "anthropic",
       "fabric.llm.usage.input_tokens": 120,
       "fabric.llm.usage.output_tokens": 64,
+      "fabric.step.type": "llm_call",
       "gen_ai.request.max_tokens": 512,
       "gen_ai.request.model": "claude-opus-4-8",
       "gen_ai.request.temperature": 0.2,

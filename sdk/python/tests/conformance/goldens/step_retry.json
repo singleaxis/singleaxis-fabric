@@ -20,13 +20,15 @@
   },
   {
     "attributes": {
+      "fabric.step.attempt": 2,
+      "fabric.step.attempt_id": "step-attempt-0002",
+      "fabric.step.id": "step-0001",
+      "fabric.step.retry.previous_attempt_id": "step-attempt-0001",
+      "fabric.step.retry.reason": "tool_timeout",
       "fabric.step.type": "tool_call",
-      "fabric.tool.arguments_hash": "4f18a4cd0475a4be6c3c41e5954b1b4dfd730788198402bd10bb352ebff5d0a1",
       "fabric.tool.call.id": "call-1",
       "fabric.tool.kind": "retrieval",
       "fabric.tool.name": "vector_search",
-      "fabric.tool.result_count": 3,
-      "fabric.tool.result_hash": "5429ed31f7eec9dbc86e358b3bacc5eb07eba26715ab1e05c802841f2d3fbd57",
       "gen_ai.tool.call.id": "call-1",
       "gen_ai.tool.name": "vector_search"
     },

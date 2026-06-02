@@ -356,7 +356,13 @@
               "items": { "type": "string" }
             },
             "fabric.llm.usage.input_tokens": { "type": "integer", "minimum": 0 },
-            "fabric.llm.usage.output_tokens": { "type": "integer", "minimum": 0 }
+            "fabric.llm.usage.output_tokens": { "type": "integer", "minimum": 0 },
+            "fabric.step.type": { "type": "string" },
+            "fabric.step.id": { "type": "string" },
+            "fabric.step.attempt_id": { "type": "string" },
+            "fabric.step.attempt": { "type": "integer", "minimum": 1 },
+            "fabric.step.retry.reason": { "type": "string" },
+            "fabric.step.retry.previous_attempt_id": { "type": "string" }
           }
         },
         "fabric.tool_call": {
@@ -374,7 +380,13 @@
             "fabric.tool.arguments_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "fabric.tool.result_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
             "fabric.tool.error": { "type": "boolean" },
-            "fabric.tool.error_category": { "type": "string" }
+            "fabric.tool.error_category": { "type": "string" },
+            "fabric.step.type": { "type": "string" },
+            "fabric.step.id": { "type": "string" },
+            "fabric.step.attempt_id": { "type": "string" },
+            "fabric.step.attempt": { "type": "integer", "minimum": 1 },
+            "fabric.step.retry.reason": { "type": "string" },
+            "fabric.step.retry.previous_attempt_id": { "type": "string" }
           }
         }
       }

@@ -19,6 +19,12 @@ from fabric._calls import (
     FABRIC_LLM_SYSTEM,
     FABRIC_LLM_USAGE_INPUT_TOKENS,
     FABRIC_LLM_USAGE_OUTPUT_TOKENS,
+    FABRIC_STEP_ATTEMPT,
+    FABRIC_STEP_ATTEMPT_ID,
+    FABRIC_STEP_ID,
+    FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID,
+    FABRIC_STEP_RETRY_REASON,
+    FABRIC_STEP_TYPE,
     FABRIC_TOOL_ARGS_HASH,
     FABRIC_TOOL_CALL_ID,
     FABRIC_TOOL_ERROR,
@@ -545,6 +551,184 @@ def test_tool_call_record_error_rejects_empty() -> None:
         pytest.raises(ValueError, match="must be non-empty"),
     ):
         tool.record_error("")
+
+
+# ---------- step taxonomy ----------
+
+
+def test_llm_call_auto_stamps_step_type(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_STEP_TYPE] == "llm_call"
+
+
+def test_tool_call_auto_stamps_step_type(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("vector_search"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_STEP_TYPE] == "tool_call"
+
+
+def test_llm_call_step_type_host_override(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude", step_type="plan"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_STEP_TYPE] == "plan"
+
+
+def test_tool_call_step_type_host_override(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("act_tool", step_type="act"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_STEP_TYPE] == "act"
+
+
+def test_step_metadata_absent_when_not_provided(span_exporter: InMemorySpanExporter) -> None:
+    # Only fabric.step.type lands by default; the opt-in id + retry
+    # fields must be absent so existing calls stay byte-identical.
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert FABRIC_STEP_ID not in attrs
+    assert FABRIC_STEP_ATTEMPT_ID not in attrs
+    assert FABRIC_STEP_ATTEMPT not in attrs
+    assert FABRIC_STEP_RETRY_REASON not in attrs
+    assert FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID not in attrs
+
+
+def test_step_id_stamped_when_provided(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude", step_id="step-42"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_STEP_ID] == "step-42"
+
+
+def test_step_retry_metadata_stamped_when_provided(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call(
+            "search",
+            step_id="step-1",
+            step_attempt_id="step-attempt-2",
+            step_attempt=2,
+            step_retry_reason="tool_timeout",
+            step_retry_previous_attempt_id="step-attempt-1",
+        ),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_STEP_ID] == "step-1"
+    assert attrs[FABRIC_STEP_ATTEMPT_ID] == "step-attempt-2"
+    assert attrs[FABRIC_STEP_ATTEMPT] == 2
+    assert attrs[FABRIC_STEP_RETRY_REASON] == "tool_timeout"
+    assert attrs[FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID] == "step-attempt-1"
+
+
+def test_step_retry_independent_from_execution_attempt(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    # Step-level attempt/retry on the child span is distinct from the
+    # execution-level attempt/retry on the decision/execution span: the
+    # child carries fabric.step.* and NOT fabric.execution.* attempt
+    # fields, and the decision span carries neither step field.
+    client = _client()
+    with (
+        client.execution(
+            execution_id="exec-1",
+            execution_attempt_id="exec-attempt-1",
+            execution_attempt=1,
+        ),
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call(
+            "search",
+            step_attempt_id="step-attempt-9",
+            step_attempt=9,
+        ),
+    ):
+        pass
+
+    spans = span_exporter.get_finished_spans()
+    tool_span = next(s for s in spans if s.name == TOOL_CALL_SPAN_NAME)
+    decision_span = next(s for s in spans if s.name == "fabric.decision")
+    tool_attrs = dict(tool_span.attributes or {})
+    decision_attrs = dict(decision_span.attributes or {})
+
+    # Child span carries step attempt fields, not execution ones.
+    assert tool_attrs[FABRIC_STEP_ATTEMPT] == 9
+    assert tool_attrs[FABRIC_STEP_ATTEMPT_ID] == "step-attempt-9"
+    assert "fabric.execution.attempt" not in tool_attrs
+    # Decision span inherited the execution attempt but has no step fields.
+    assert decision_attrs["fabric.execution.attempt"] == 1
+    assert FABRIC_STEP_ATTEMPT not in decision_attrs
+
+
+def test_step_attempt_rejects_zero() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(ValueError, match="must be >= 1"),
+    ):
+        dec.tool_call("search", step_attempt=0)
+
+
+def test_step_attempt_rejects_bool() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(TypeError, match="step_attempt must be int"),
+    ):
+        dec.llm_call(system="anthropic", model="claude", step_attempt=True)
+
+
+def test_step_type_rejects_empty() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(ValueError, match="step_type must be non-empty"),
+    ):
+        dec.tool_call("search", step_type="")
 
 
 def test_llm_call_and_tool_call_are_exported_at_top_level() -> None:
