@@ -1,0 +1,38 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.memory_kinds": [
+        "semantic"
+      ],
+      "fabric.memory_read_count": 0,
+      "fabric.memory_write_count": 1,
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.memory.content_hash": "4182ed1d482caac18dea11163f50fc13b432dfe355f7456eb272cf4632fc4153",
+          "fabric.memory.direction": "write",
+          "fabric.memory.invalidates": "prior:key",
+          "fabric.memory.key": "pref:contact",
+          "fabric.memory.kind": "semantic",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.memory"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

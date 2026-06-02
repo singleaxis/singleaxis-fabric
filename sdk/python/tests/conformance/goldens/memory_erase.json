@@ -1,0 +1,47 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.memory_erase_count": 2,
+      "fabric.memory_kinds": [
+        "semantic"
+      ],
+      "fabric.memory_read_count": 0,
+      "fabric.memory_write_count": 0,
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.memory.direction": "erase",
+          "fabric.memory.key": "pref:contact",
+          "fabric.memory.kind": "semantic",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.memory"
+      },
+      {
+        "attributes": {
+          "fabric.memory.direction": "erase",
+          "fabric.memory.key": "pref:contact",
+          "fabric.memory.kind": "semantic",
+          "fabric.memory.tenant_scope": true,
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.memory"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

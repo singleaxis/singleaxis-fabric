@@ -1,0 +1,40 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.policy_engines": [
+        "stub-policy"
+      ],
+      "fabric.policy_evaluation_count": 1,
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.policy.decision": "escalate",
+          "fabric.policy.engine": "stub-policy",
+          "fabric.policy.evaluation_id": "<normalized>",
+          "fabric.policy.input_hash": "bf4fa7e3d557d6eb63a54b3f86675bc960ef7a045b431a63965ef8cec8de538b",
+          "fabric.policy.latency_ms": "<normalized>",
+          "fabric.policy.policy_id": "finance.refund.cap",
+          "fabric.policy.policy_version": "v3",
+          "fabric.policy.reason": "requires human approval",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.policy.evaluation"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

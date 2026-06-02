@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Expanded Python conformance coverage (no SDK change).** New
+  deterministic conformance scenarios + frozen goldens exercise existing
+  SDK behaviour that previously lacked golden coverage:
+  `decision_id`-distinct-from-`request_id`, config-level
+  workflow/execution propagation onto a standalone decision, memory
+  erase (`forget`, `tenant_scope`) and invalidation
+  (`remember(invalidates=...)`), policy `warn`/`escalate`/`redact`
+  verdicts, and the parent-tool-call → side-effect linkage
+  (`record_side_effect(parent_tool_call_id=...)`). New goldens only;
+  every pre-existing golden is byte-identical and no SDK source or wire
+  behaviour changed.
 - **Versioned ReplayMetadata envelope (Python SDK).** A new emit-only
   `Decision.record_replay_metadata(*, state_hash=None,
   tool_result_hashes=None)` method emits a single `fabric.replay` span
