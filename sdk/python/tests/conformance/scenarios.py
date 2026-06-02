@@ -33,6 +33,7 @@ from fabric import (
     RetrievalSource,
     SideEffectType,
     ToolAuthorization,
+    ToolErrorCategory,
 )
 from fabric.decision import Decision
 
@@ -394,6 +395,39 @@ def _tool_call() -> None:
         tool.set_result_count(3)
 
 
+def _llm_call_rich() -> None:
+    # An llm_call exercising the opt-in A7 telemetry: prompt-cache token
+    # counts, streaming metrics, and per-call provider retry — in
+    # addition to the usual usage. Fixed values for a stable golden.
+    client = _client()
+    with (
+        _decision(client) as d,
+        d.llm_call(
+            system="anthropic",
+            model="claude-opus-4-8",
+            temperature=0.2,
+            top_p=0.9,
+            max_tokens=512,
+        ) as call,
+    ):
+        call.set_response_model("claude-opus-4-8")
+        call.set_usage(input_tokens=120, output_tokens=64, finish_reason="end_turn")
+        call.set_cache_usage(cache_read_tokens=1000, cache_creation_tokens=200)
+        call.set_streaming(ttft_ms=120, chunk_count=42)
+        call.set_retry(count=1, reason="rate_limit")
+
+
+def _tool_call_error() -> None:
+    # A tool_call that returns an error result (record_error with the
+    # canonical enum), retried, and idempotent with a dedup key.
+    client = _client()
+    with _decision(client) as d, d.tool_call("charge_card", call_id="call-1") as tool:
+        tool.set_kind("action")
+        tool.record_error(ToolErrorCategory.TIMEOUT)
+        tool.set_retry(count=2, reason="timeout")
+        tool.set_idempotency(idempotent=True, key="idem-tool-1")
+
+
 def _step_retry() -> None:
     client = _client()
     with (
@@ -545,7 +579,9 @@ SCENARIOS: dict[str, Callable[[], None]] = {
     "tool_authorization_allow": _tool_authorization_allow,
     "tool_authorization_deny": _tool_authorization_deny,
     "llm_call": _llm_call,
+    "llm_call_rich": _llm_call_rich,
     "tool_call": _tool_call,
+    "tool_call_error": _tool_call_error,
     "step_retry": _step_retry,
     "content_ref_stamped": _content_ref_stamped,
     "decision_id_distinct": _decision_id_distinct,

@@ -1,0 +1,44 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  },
+  {
+    "attributes": {
+      "fabric.step.type": "tool_call",
+      "fabric.tool.call.id": "call-1",
+      "fabric.tool.error": true,
+      "fabric.tool.error_category": "timeout",
+      "fabric.tool.idempotency_key": "idem-tool-1",
+      "fabric.tool.idempotent": true,
+      "fabric.tool.kind": "action",
+      "fabric.tool.name": "charge_card",
+      "fabric.tool.retry.count": 2,
+      "fabric.tool.retry.reason": "timeout",
+      "gen_ai.tool.call.id": "call-1",
+      "gen_ai.tool.name": "charge_card"
+    },
+    "events": [],
+    "kind": "INTERNAL",
+    "name": "fabric.tool_call",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

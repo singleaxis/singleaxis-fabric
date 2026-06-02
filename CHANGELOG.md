@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **LLM/Tool call telemetry (Python SDK).** New opt-in, emit-only
+  setters tighten `llm_call` / `tool_call` child-span telemetry. Each is
+  stamped only when called, so existing calls stay byte-identical.
+  `LLMCall.set_cache_usage(cache_read_tokens=..., cache_creation_tokens=...)`
+  emits `fabric.llm.usage.cache_read_tokens` /
+  `fabric.llm.usage.cache_creation_tokens` (plus the OTel GenAI mirrors
+  `gen_ai.usage.cache_read_input_tokens` /
+  `gen_ai.usage.cache_creation_input_tokens`).
+  `LLMCall.set_streaming(ttft_ms=..., chunk_count=...)` emits
+  `fabric.llm.streaming.ttft_ms` / `fabric.llm.streaming.chunk_count`.
+  `LLMCall.set_retry(count=..., reason=...)` and
+  `ToolCall.set_retry(count=..., reason=...)` record per-call
+  provider/transport retries (`fabric.llm.retry.*` /
+  `fabric.tool.retry.*`), distinct from the step-/execution-level
+  attempt/retry taxonomy. `ToolCall.set_idempotency(idempotent=...,
+  key=...)` emits `fabric.tool.idempotent` /
+  `fabric.tool.idempotency_key`. A new exported `ToolErrorCategory`
+  string enum (`rate_limit`, `timeout`, `invalid_request`,
+  `authentication`, `permission`, `not_found`, `server_error`,
+  `network`, `cancelled`, `content_filter`, `unknown`) gives
+  `ToolCall.record_error` a canonical, aggregatable category set;
+  `record_error` still accepts a raw string for back-compat. The
+  conformance schema gains all new fields (optional) and two new frozen
+  goldens (`llm_call_rich`, `tool_call_error`) cover them; every
+  pre-existing golden is byte-identical.
 - **Expanded Python conformance coverage (no SDK change).** New
   deterministic conformance scenarios + frozen goldens exercise existing
   SDK behaviour that previously lacked golden coverage:

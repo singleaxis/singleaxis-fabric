@@ -10,13 +10,19 @@ import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
 
-from fabric import Fabric, FabricConfig, LLMCall, ToolCall
+from fabric import Fabric, FabricConfig, LLMCall, ToolCall, ToolErrorCategory
 from fabric._calls import (
     FABRIC_LLM_REQUEST_MODEL,
     FABRIC_LLM_REQUEST_TEMPERATURE,
     FABRIC_LLM_RESPONSE_FINISH_REASONS,
     FABRIC_LLM_RESPONSE_MODEL,
+    FABRIC_LLM_RETRY_COUNT,
+    FABRIC_LLM_RETRY_REASON,
+    FABRIC_LLM_STREAMING_CHUNK_COUNT,
+    FABRIC_LLM_STREAMING_TTFT_MS,
     FABRIC_LLM_SYSTEM,
+    FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS,
+    FABRIC_LLM_USAGE_CACHE_READ_TOKENS,
     FABRIC_LLM_USAGE_INPUT_TOKENS,
     FABRIC_LLM_USAGE_OUTPUT_TOKENS,
     FABRIC_STEP_ATTEMPT,
@@ -29,10 +35,14 @@ from fabric._calls import (
     FABRIC_TOOL_CALL_ID,
     FABRIC_TOOL_ERROR,
     FABRIC_TOOL_ERROR_CATEGORY,
+    FABRIC_TOOL_IDEMPOTENCY_KEY,
+    FABRIC_TOOL_IDEMPOTENT,
     FABRIC_TOOL_KIND,
     FABRIC_TOOL_NAME,
     FABRIC_TOOL_RESULT_COUNT,
     FABRIC_TOOL_RESULT_HASH,
+    FABRIC_TOOL_RETRY_COUNT,
+    FABRIC_TOOL_RETRY_REASON,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_REQUEST_TEMPERATURE,
     GEN_AI_RESPONSE_FINISH_REASONS,
@@ -40,6 +50,8 @@ from fabric._calls import (
     GEN_AI_SYSTEM,
     GEN_AI_TOOL_CALL_ID,
     GEN_AI_TOOL_NAME,
+    GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS,
+    GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     LLM_CALL_SPAN_NAME,
@@ -302,6 +314,171 @@ def test_llm_call_optional_request_attrs_omitted_when_unset(
     assert FABRIC_LLM_REQUEST_TEMPERATURE not in attrs
 
 
+# ---------- llm_call A7 telemetry: cache / streaming / retry ----------
+
+
+def test_llm_call_set_cache_usage_writes_both_namespaces(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+    ):
+        call.set_cache_usage(cache_read_tokens=1000, cache_creation_tokens=200)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_LLM_USAGE_CACHE_READ_TOKENS] == 1000
+    assert attrs[FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS] == 200
+    assert attrs[GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS] == 1000
+    assert attrs[GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS] == 200
+
+
+def test_llm_call_cache_usage_absent_when_not_called(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert FABRIC_LLM_USAGE_CACHE_READ_TOKENS not in attrs
+    assert FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS not in attrs
+    assert GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS not in attrs
+    assert GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS not in attrs
+
+
+def test_llm_call_set_cache_usage_rejects_negative() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+        pytest.raises(ValueError, match="non-negative"),
+    ):
+        call.set_cache_usage(cache_read_tokens=-1)
+
+
+def test_llm_call_set_cache_usage_rejects_bool() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+        pytest.raises(TypeError, match="must be int"),
+    ):
+        call.set_cache_usage(cache_creation_tokens=True)
+
+
+def test_llm_call_set_streaming_stamps_attributes(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+    ):
+        call.set_streaming(ttft_ms=120, chunk_count=42)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_LLM_STREAMING_TTFT_MS] == 120
+    assert attrs[FABRIC_LLM_STREAMING_CHUNK_COUNT] == 42
+
+
+def test_llm_call_streaming_absent_when_not_called(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert FABRIC_LLM_STREAMING_TTFT_MS not in attrs
+    assert FABRIC_LLM_STREAMING_CHUNK_COUNT not in attrs
+
+
+def test_llm_call_set_streaming_rejects_negative_ttft() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+        pytest.raises(ValueError, match="non-negative"),
+    ):
+        call.set_streaming(ttft_ms=-0.5)
+
+
+def test_llm_call_set_streaming_rejects_bool_ttft() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+        pytest.raises(TypeError, match="must be a number"),
+    ):
+        call.set_streaming(ttft_ms=True)
+
+
+def test_llm_call_set_retry_stamps_count_and_reason(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+    ):
+        call.set_retry(count=1, reason="rate_limit")
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_LLM_RETRY_COUNT] == 1
+    assert attrs[FABRIC_LLM_RETRY_REASON] == "rate_limit"
+
+
+def test_llm_call_set_retry_reason_optional(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+    ):
+        call.set_retry(count=0)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_LLM_RETRY_COUNT] == 0
+    assert FABRIC_LLM_RETRY_REASON not in attrs
+
+
+def test_llm_call_retry_absent_when_not_called(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == LLM_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert FABRIC_LLM_RETRY_COUNT not in attrs
+    assert FABRIC_LLM_RETRY_REASON not in attrs
+
+
+def test_llm_call_set_retry_rejects_negative_count() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="anthropic", model="claude") as call,
+        pytest.raises(ValueError, match="non-negative"),
+    ):
+        call.set_retry(count=-1)
+
+
 # ---------- tool_call ----------
 
 
@@ -551,6 +728,153 @@ def test_tool_call_record_error_rejects_empty() -> None:
         pytest.raises(ValueError, match="must be non-empty"),
     ):
         tool.record_error("")
+
+
+def test_tool_call_record_error_accepts_enum(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("charge_card") as tool,
+    ):
+        tool.record_error(ToolErrorCategory.TIMEOUT)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_TOOL_ERROR] is True
+    # Stamped as the raw string value, not the enum repr.
+    assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "timeout"
+    assert isinstance(attrs[FABRIC_TOOL_ERROR_CATEGORY], str)
+
+
+def test_tool_call_record_error_accepts_raw_string(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    # Back-compat: a non-canonical raw string is still accepted.
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("charge_card") as tool,
+    ):
+        tool.record_error("payment_declined")
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "payment_declined"
+
+
+def test_tool_error_category_enum_values() -> None:
+    # Guard the canonical set so a rename surfaces as a test diff.
+    assert {c.value for c in ToolErrorCategory} == {
+        "rate_limit",
+        "timeout",
+        "invalid_request",
+        "authentication",
+        "permission",
+        "not_found",
+        "server_error",
+        "network",
+        "cancelled",
+        "content_filter",
+        "unknown",
+    }
+
+
+def test_tool_call_set_retry_stamps_count_and_reason(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+    ):
+        tool.set_retry(count=2, reason="timeout")
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_TOOL_RETRY_COUNT] == 2
+    assert attrs[FABRIC_TOOL_RETRY_REASON] == "timeout"
+
+
+def test_tool_call_retry_absent_when_not_called(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert FABRIC_TOOL_RETRY_COUNT not in attrs
+    assert FABRIC_TOOL_RETRY_REASON not in attrs
+
+
+def test_tool_call_set_retry_rejects_negative() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(ValueError, match="non-negative"),
+    ):
+        tool.set_retry(count=-1)
+
+
+def test_tool_call_set_idempotency_stamps_attributes(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("charge_card") as tool,
+    ):
+        tool.set_idempotency(idempotent=True, key="idem-tool-1")
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_TOOL_IDEMPOTENT] is True
+    assert attrs[FABRIC_TOOL_IDEMPOTENCY_KEY] == "idem-tool-1"
+
+
+def test_tool_call_set_idempotency_key_optional(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+    ):
+        tool.set_idempotency(idempotent=False)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert attrs[FABRIC_TOOL_IDEMPOTENT] is False
+    assert FABRIC_TOOL_IDEMPOTENCY_KEY not in attrs
+
+
+def test_tool_call_idempotency_absent_when_not_called(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search"),
+    ):
+        pass
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == TOOL_CALL_SPAN_NAME)
+    attrs = dict(span.attributes or {})
+    assert FABRIC_TOOL_IDEMPOTENT not in attrs
+    assert FABRIC_TOOL_IDEMPOTENCY_KEY not in attrs
+
+
+def test_tool_call_set_idempotency_rejects_non_bool() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(TypeError, match="idempotent must be bool"),
+    ):
+        tool.set_idempotency(idempotent="yes")  # type: ignore[arg-type]
 
 
 # ---------- step taxonomy ----------

@@ -49,3 +49,33 @@ checklist tracks the outstanding mirror work.
         parentToolCallId="call-1")` linked to a `toolCall(callId="call-1")`;
         the side-effect event carries
         `fabric.side_effect.parent_tool_call_id="call-1"`.
+- [ ] **LLM/Tool call telemetry (A7)** — add opt-in, emit-only setters
+      to the `llm_call` / `tool_call` child spans. Each is stamped only
+      when called, so calls that opt out stay byte-identical.
+      - `LLMCall.setCacheUsage({ cacheReadTokens, cacheCreationTokens })`
+        → `fabric.llm.usage.cache_read_tokens`,
+        `fabric.llm.usage.cache_creation_tokens` (ints ≥ 0), plus the
+        OTel GenAI mirrors `gen_ai.usage.cache_read_input_tokens` /
+        `gen_ai.usage.cache_creation_input_tokens`.
+      - `LLMCall.setStreaming({ ttftMs, chunkCount })` →
+        `fabric.llm.streaming.ttft_ms` (number ≥ 0),
+        `fabric.llm.streaming.chunk_count` (int ≥ 0).
+      - `LLMCall.setRetry({ count, reason })` → `fabric.llm.retry.count`
+        (int ≥ 0), `fabric.llm.retry.reason` (optional). Per-call
+        provider/transport retries, distinct from step/execution retry.
+      - `ToolCall.setRetry({ count, reason })` →
+        `fabric.tool.retry.count`, `fabric.tool.retry.reason`.
+      - `ToolCall.setIdempotency({ idempotent, key })` →
+        `fabric.tool.idempotent` (bool), `fabric.tool.idempotency_key`
+        (optional str).
+      - `ToolErrorCategory` — a canonical, exported string enum
+        (`rate_limit`, `timeout`, `invalid_request`, `authentication`,
+        `permission`, `not_found`, `server_error`, `network`,
+        `cancelled`, `content_filter`, `unknown`). `recordError` accepts
+        either the enum or a raw string (lenient, back-compat) and stamps
+        `fabric.tool.error_category`.
+      - Update the conformance schema's `child_spans.fabric.llm_call` /
+        `child_spans.fabric.tool_call` with the new fields (all
+        optional; `error_category` stays a lenient string).
+      - New goldens: `llm_call_rich.json`, `tool_call_error.json`.
+        Existing goldens stay byte-identical.

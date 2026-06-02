@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
+from enum import StrEnum
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
 
@@ -50,6 +51,11 @@ GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+# OTel GenAI prompt-cache token mirrors. The upstream convention names
+# these on the *input* side (cache reads/writes are charged against the
+# prompt), so we mirror Fabric's cache counters onto these keys.
+GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read_input_tokens"
+GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation_input_tokens"
 GEN_AI_TOOL_NAME = "gen_ai.tool.name"
 GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
 
@@ -64,6 +70,15 @@ FABRIC_LLM_RESPONSE_MODEL = "fabric.llm.response.model"
 FABRIC_LLM_RESPONSE_FINISH_REASONS = "fabric.llm.response.finish_reasons"
 FABRIC_LLM_USAGE_INPUT_TOKENS = "fabric.llm.usage.input_tokens"
 FABRIC_LLM_USAGE_OUTPUT_TOKENS = "fabric.llm.usage.output_tokens"
+# Opt-in LLM cache + streaming + per-call retry telemetry (A7). All
+# emit-only and stamped only when their setter is called, so calls that
+# opt out stay byte-identical to the pre-A7 emission.
+FABRIC_LLM_USAGE_CACHE_READ_TOKENS = "fabric.llm.usage.cache_read_tokens"
+FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS = "fabric.llm.usage.cache_creation_tokens"
+FABRIC_LLM_STREAMING_TTFT_MS = "fabric.llm.streaming.ttft_ms"
+FABRIC_LLM_STREAMING_CHUNK_COUNT = "fabric.llm.streaming.chunk_count"
+FABRIC_LLM_RETRY_COUNT = "fabric.llm.retry.count"
+FABRIC_LLM_RETRY_REASON = "fabric.llm.retry.reason"
 FABRIC_TOOL_NAME = "fabric.tool.name"
 FABRIC_TOOL_CALL_ID = "fabric.tool.call.id"
 FABRIC_TOOL_RESULT_COUNT = "fabric.tool.result_count"
@@ -72,6 +87,35 @@ FABRIC_TOOL_RESULT_HASH = "fabric.tool.result_hash"
 FABRIC_TOOL_KIND = "fabric.tool.kind"
 FABRIC_TOOL_ERROR = "fabric.tool.error"
 FABRIC_TOOL_ERROR_CATEGORY = "fabric.tool.error_category"
+# Opt-in tool per-call retry + idempotency telemetry (A7).
+FABRIC_TOOL_RETRY_COUNT = "fabric.tool.retry.count"
+FABRIC_TOOL_RETRY_REASON = "fabric.tool.retry.reason"
+FABRIC_TOOL_IDEMPOTENT = "fabric.tool.idempotent"
+FABRIC_TOOL_IDEMPOTENCY_KEY = "fabric.tool.idempotency_key"
+
+
+class ToolErrorCategory(StrEnum):
+    """Canonical, stable tool-error categories for ``record_error``.
+
+    A ``StrEnum`` so members compare/serialize as their string value and
+    land verbatim on ``fabric.tool.error_category``. ``record_error``
+    also accepts a raw ``str`` for back-compat, so non-canonical
+    categories are still permitted — but hosts SHOULD prefer these
+    members to keep error analytics aggregatable across tenants.
+    """
+
+    RATE_LIMIT = "rate_limit"
+    TIMEOUT = "timeout"
+    INVALID_REQUEST = "invalid_request"
+    AUTHENTICATION = "authentication"
+    PERMISSION = "permission"
+    NOT_FOUND = "not_found"
+    SERVER_ERROR = "server_error"
+    NETWORK = "network"
+    CANCELLED = "cancelled"
+    CONTENT_FILTER = "content_filter"
+    UNKNOWN = "unknown"
+
 
 # Step taxonomy — per-operation correlation on the child spans. A
 # "step" is one operation inside an execution (an LLM call, a tool
@@ -357,6 +401,90 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self.span.set_attribute(GEN_AI_RESPONSE_MODEL, model)
         self.span.set_attribute(FABRIC_LLM_RESPONSE_MODEL, model)
 
+    def set_cache_usage(
+        self,
+        *,
+        cache_read_tokens: int | None = None,
+        cache_creation_tokens: int | None = None,
+    ) -> None:
+        """Attach prompt-cache token counts from the LLM response.
+
+        Opt-in: stamps ``fabric.llm.usage.cache_read_tokens`` /
+        ``fabric.llm.usage.cache_creation_tokens`` (and the OTel GenAI
+        ``gen_ai.usage.cache_read_input_tokens`` /
+        ``gen_ai.usage.cache_creation_input_tokens`` mirrors) only for
+        the counters supplied. Both must be non-negative ints.
+        """
+        if cache_read_tokens is not None:
+            # bool is a subclass of int; reject it like the usage counters.
+            if not isinstance(cache_read_tokens, int) or isinstance(cache_read_tokens, bool):
+                raise TypeError(
+                    f"cache_read_tokens must be int, got {type(cache_read_tokens).__name__}"
+                )
+            if cache_read_tokens < 0:
+                raise ValueError("cache_read_tokens must be non-negative")
+            self.span.set_attribute(FABRIC_LLM_USAGE_CACHE_READ_TOKENS, cache_read_tokens)
+            self.span.set_attribute(GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, cache_read_tokens)
+        if cache_creation_tokens is not None:
+            if not isinstance(cache_creation_tokens, int) or isinstance(
+                cache_creation_tokens, bool
+            ):
+                raise TypeError(
+                    f"cache_creation_tokens must be int, got {type(cache_creation_tokens).__name__}"
+                )
+            if cache_creation_tokens < 0:
+                raise ValueError("cache_creation_tokens must be non-negative")
+            self.span.set_attribute(FABRIC_LLM_USAGE_CACHE_CREATION_TOKENS, cache_creation_tokens)
+            self.span.set_attribute(GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, cache_creation_tokens)
+
+    def set_streaming(
+        self,
+        *,
+        ttft_ms: float | int | None = None,
+        chunk_count: int | None = None,
+    ) -> None:
+        """Attach streaming metrics for a streamed completion.
+
+        Opt-in: stamps ``fabric.llm.streaming.ttft_ms`` (time-to-first-
+        token, a non-negative number) and
+        ``fabric.llm.streaming.chunk_count`` (a non-negative int) only
+        for the values supplied.
+        """
+        if ttft_ms is not None:
+            # bool is an int subclass; reject it (a flag is not a latency).
+            if not isinstance(ttft_ms, (int, float)) or isinstance(ttft_ms, bool):
+                raise TypeError(f"ttft_ms must be a number, got {type(ttft_ms).__name__}")
+            if ttft_ms < 0:
+                raise ValueError("ttft_ms must be non-negative")
+            self.span.set_attribute(FABRIC_LLM_STREAMING_TTFT_MS, ttft_ms)
+        if chunk_count is not None:
+            if not isinstance(chunk_count, int) or isinstance(chunk_count, bool):
+                raise TypeError(f"chunk_count must be int, got {type(chunk_count).__name__}")
+            if chunk_count < 0:
+                raise ValueError("chunk_count must be non-negative")
+            self.span.set_attribute(FABRIC_LLM_STREAMING_CHUNK_COUNT, chunk_count)
+
+    def set_retry(self, *, count: int, reason: str | None = None) -> None:
+        """Record per-call provider/transport retries for this LLM call.
+
+        Distinct from the step-/execution-level attempt/retry taxonomy:
+        this counts retries the provider client made *within* a single
+        logical call (e.g. transient 429/503 backoff). Stamps
+        ``fabric.llm.retry.count`` (non-negative int) and, when given,
+        ``fabric.llm.retry.reason``.
+        """
+        if not isinstance(count, int) or isinstance(count, bool):
+            raise TypeError(f"count must be int, got {type(count).__name__}")
+        if count < 0:
+            raise ValueError("retry count must be non-negative")
+        self.span.set_attribute(FABRIC_LLM_RETRY_COUNT, count)
+        if reason is not None:
+            if not isinstance(reason, str):
+                raise TypeError(f"reason must be str, got {type(reason).__name__}")
+            if not reason:
+                raise ValueError("retry reason must be non-empty")
+            self.span.set_attribute(FABRIC_LLM_RETRY_REASON, reason)
+
     def set_attribute(self, key: str, value: str | int | float | bool) -> None:
         """Set a custom attribute on the LLM call span.
 
@@ -529,20 +657,65 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             raise ValueError("kind must be non-empty")
         self.span.set_attribute(FABRIC_TOOL_KIND, kind)
 
-    def record_error(self, category: str) -> None:
+    def record_error(self, category: ToolErrorCategory | str) -> None:
         """Mark the tool call as errored without an exception being raised.
 
         The span auto-records raised exceptions via the context manager;
         this is for tools that *return* an error result without raising.
         Stamps ``fabric.tool.error=True`` and
         ``fabric.tool.error_category``.
+
+        ``category`` accepts either a :class:`ToolErrorCategory` member
+        (the canonical, aggregatable set) or a raw ``str`` for
+        back-compat. A ``ToolErrorCategory`` is stamped as its string
+        value. Non-canonical strings are still accepted but won't
+        aggregate cleanly across tenants.
         """
+        # ToolErrorCategory is a StrEnum, so it passes the str check and
+        # serializes to its value on the span.
         if not isinstance(category, str):
             raise TypeError(f"category must be str, got {type(category).__name__}")
         if not category:
             raise ValueError("error category must be non-empty")
         self.span.set_attribute(FABRIC_TOOL_ERROR, True)
-        self.span.set_attribute(FABRIC_TOOL_ERROR_CATEGORY, category)
+        self.span.set_attribute(FABRIC_TOOL_ERROR_CATEGORY, str(category))
+
+    def set_retry(self, *, count: int, reason: str | None = None) -> None:
+        """Record per-call provider/transport retries for this tool call.
+
+        Distinct from the step-/execution-level attempt/retry taxonomy:
+        this counts retries made *within* a single logical tool
+        invocation (e.g. transient backoff before a result returned).
+        Stamps ``fabric.tool.retry.count`` (non-negative int) and, when
+        given, ``fabric.tool.retry.reason``.
+        """
+        if not isinstance(count, int) or isinstance(count, bool):
+            raise TypeError(f"count must be int, got {type(count).__name__}")
+        if count < 0:
+            raise ValueError("retry count must be non-negative")
+        self.span.set_attribute(FABRIC_TOOL_RETRY_COUNT, count)
+        if reason is not None:
+            if not isinstance(reason, str):
+                raise TypeError(f"reason must be str, got {type(reason).__name__}")
+            if not reason:
+                raise ValueError("retry reason must be non-empty")
+            self.span.set_attribute(FABRIC_TOOL_RETRY_REASON, reason)
+
+    def set_idempotency(self, *, idempotent: bool, key: str | None = None) -> None:
+        """Record whether the tool call is idempotent and its dedup key.
+
+        Opt-in: stamps ``fabric.tool.idempotent`` (bool) and, when
+        given, ``fabric.tool.idempotency_key``.
+        """
+        if not isinstance(idempotent, bool):
+            raise TypeError(f"idempotent must be bool, got {type(idempotent).__name__}")
+        self.span.set_attribute(FABRIC_TOOL_IDEMPOTENT, idempotent)
+        if key is not None:
+            if not isinstance(key, str):
+                raise TypeError(f"key must be str, got {type(key).__name__}")
+            if not key:
+                raise ValueError("idempotency key must be non-empty")
+            self.span.set_attribute(FABRIC_TOOL_IDEMPOTENCY_KEY, key)
 
     def set_attribute(self, key: str, value: str | int | float | bool) -> None:
         """Set a custom attribute on the tool call span.
