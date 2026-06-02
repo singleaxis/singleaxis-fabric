@@ -50,3 +50,4 @@ Every spec declares a `Status` in its header:
 | [011](011-roadmap.md) | Phased execution roadmap | draft |
 | [012](012-oss-commercialization-strategy.md) | Operational infrastructure PRD & OSS commercialization strategy | draft |
 | [019](019-policy-engine.md) | Policy Engine — decision-level policy evaluation primitive | draft |
+| [020](020-execution-step-capture.md) | Execution & Step capture — outer correlation + lifecycle primitives | draft |

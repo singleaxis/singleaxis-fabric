@@ -21,12 +21,30 @@ export const ATTR_AGENT = "fabric.agent_id";
 export const ATTR_PROFILE = "fabric.profile";
 export const ATTR_WORKFLOW = "fabric.workflow_id";
 export const ATTR_EXECUTION = "fabric.execution_id";
+export const ATTR_EXECUTION_ATTEMPT_ID = "fabric.execution.attempt_id";
+export const ATTR_EXECUTION_ATTEMPT = "fabric.execution.attempt";
+export const ATTR_EXECUTION_RETRY_REASON = "fabric.execution.retry.reason";
+export const ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID =
+  "fabric.execution.retry.previous_attempt_id";
 export const ATTR_SESSION = "fabric.session_id";
 export const ATTR_REQUEST = "fabric.request_id";
 // Lineage anchor for the decision: host-supplied verbatim, or a minted uuid4
 // when absent. Independent of `request_id` (mirrors Python `ATTR_DECISION_ID`).
 export const ATTR_DECISION_ID = "fabric.decision_id";
 export const ATTR_USER = "fabric.user_id";
+
+// -- Execution span (fabric.execution) ----------------------------------
+//
+// The optional outer correlation + lifecycle span. Mirrors Python's
+// `fabric.execution` (`sdk/python/src/fabric/execution.py`). It carries the
+// schema version, tenant/agent/profile, `fabric.execution_id`, optional
+// `fabric.workflow_id`, the attempt/retry metadata (reusing the
+// ATTR_EXECUTION_ATTEMPT_* keys above), and a terminal `fabric.execution.status`.
+
+export const SPAN_NAME_EXECUTION = "fabric.execution";
+export const ATTR_EXECUTION_STATUS = "fabric.execution.status";
+export const EXECUTION_STATUS_COMPLETED = "completed";
+export const EXECUTION_STATUS_FAILED = "failed";
 
 // -- LLM call span (fabric.llm_call) ------------------------------------
 

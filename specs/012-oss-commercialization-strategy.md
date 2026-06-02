@@ -311,6 +311,10 @@ Canonical `Decision` shape:
   "agent_id": "",
   "workflow_id": "",
   "execution_id": "",
+  "execution_attempt_id": "",
+  "execution_attempt": 1,
+  "execution_retry_reason": "",
+  "execution_retry_previous_attempt_id": "",
   "session_id": "",
   "inputs": {},
   "outputs": {},
@@ -324,6 +328,40 @@ Canonical `Decision` shape:
   "replay_metadata": {}
 }
 ```
+
+Canonical `Execution` attempt metadata:
+
+```json
+{
+  "execution_id": "",
+  "workflow_id": "",
+  "execution_attempt_id": "",
+  "execution_attempt": 1,
+  "retry_reason": "",
+  "previous_attempt_id": "",
+  "status": "completed"
+}
+```
+
+Execution retry semantics:
+
+- `execution_id` identifies the logical task, workflow run, job, or
+  long-lived autonomous operation.
+- `execution_attempt_id` identifies one concrete attempt of that
+  execution.
+- `execution_attempt` is one-based: first attempt is `1`, first retry is
+  `2`.
+- `retry_reason` records why this attempt exists, such as `timeout`,
+  `rate_limit`, `tool_error`, `policy_retry`, `human_retry`, or
+  `unknown`.
+- `previous_attempt_id` links a retry attempt to the attempt that
+  preceded it.
+- The OSS SDK emits these fields as passive telemetry only. It does not
+  retry, schedule, resume, or orchestrate execution.
+- A future optional `fabric.execution` span should carry execution
+  lifecycle status. Until that span exists, retry-attempt metadata may be
+  stamped on `fabric.decision` spans and propagated across service
+  boundaries.
 
 Canonical `SideEffect` shape:
 
@@ -360,6 +398,7 @@ Requirements:
 - unique correlation IDs
 - tenant attribution
 - workflow and execution correlation
+- execution retry-attempt correlation
 - replay metadata emission
 - OpenTelemetry span emission
 - stable `fabric.*` attributes mirroring important GenAI semantic
@@ -391,10 +430,24 @@ Requirements:
 - invocation lineage
 - parameter hashing
 - latency
-- retry tracking
+- step-level retry tracking
 - error classification
 - side-effect attribution
 - idempotency key capture where present
+
+Step retry semantics:
+
+- Retried LLM calls, tool calls, policy checks, memory operations, and
+  evaluator actions should share the same logical `step_id`.
+- Each retry attempt should have a distinct `step_attempt_id` and
+  one-based `step_attempt`.
+- Step retries should remain attributes on existing child spans or span
+  events; Fabric should not introduce a separate `fabric.step` span in
+  v1.
+- Execution retries and step retries are different: an execution retry
+  means the whole task is being attempted again; a step retry means one
+  operation inside the current execution attempt is being attempted
+  again.
 
 ### Side-effect tracking
 
@@ -461,6 +514,7 @@ Requirements:
 - state reconstruction
 - side-effect suppression
 - tool-result hashing
+- execution-attempt correlation for task retries
 - model/provider/version capture
 - prompt/template/version capture when enabled by policy
 
@@ -716,6 +770,7 @@ Targets should be staged.
 - OpenTelemetry integration
 - collector processors
 - canonical Decision / Execution / Step / SideEffect schemas
+- execution-attempt retry metadata for task retries
 - basic replay hooks and metadata
 - LangGraph and CrewAI adapters
 - local debugging flow

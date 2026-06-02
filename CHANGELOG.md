@@ -10,6 +10,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Optional `fabric.execution(...)` lifecycle span with attempt/retry
+  metadata (Python SDK).** A new first-class, emit-only `Execution` primitive
+  demarcates and correlates a run of related decisions without scheduling,
+  orchestrating, retrying, or reconstructing anything (that remains the
+  commercial layer — see specs/012). `Fabric.execution(*, execution_id=None,
+  workflow_id=None, execution_attempt_id=None, execution_attempt=None,
+  execution_retry_reason=None, execution_retry_previous_attempt_id=None,
+  attributes=None)` returns a context manager usable as both `with` and
+  `async with` (mirroring `Decision`); each attempt/retry param defaults to the
+  corresponding `FabricConfig` value when omitted. On enter it opens a
+  `fabric.execution` span (kind=INTERNAL) carrying all seven correlation
+  fields — `fabric.execution_id` (supplied or a minted uuid4),
+  `fabric.workflow_id`, `fabric.execution.status`,
+  `fabric.execution.attempt_id`, `fabric.execution.attempt` (integer ≥ 1),
+  `fabric.execution.retry.reason`, and
+  `fabric.execution.retry.previous_attempt_id` — alongside
+  `fabric.schema_version` / `fabric.tenant_id` / `fabric.agent_id` /
+  `fabric.profile`; on exit it sets `fabric.execution.status` to `completed`,
+  or `failed` (recording the exception) on error. A `Decision` opened inside an
+  execution inherits its `execution_id` / `workflow_id` **and** the attempt/
+  retry metadata via a `contextvars.ContextVar` for correlation, and that
+  metadata also rides W3C `tracestate` cross-service propagation. Precedence:
+  for `execution_id` / `workflow_id`, **explicit kwarg > active Execution >
+  `FabricConfig`**; the attempt/retry fields (no per-decision kwarg) resolve
+  **active Execution > `FabricConfig`**, so a decision with attempt config but
+  no active execution still stamps from config. (Step-level retry metadata
+  stays separate — a later PR adds `fabric.step.*` attempt fields on child
+  spans.) Compatibility: additive and emit-only — a decision opened outside any
+  execution is byte-identical to before (all 18 existing conformance goldens
+  are unchanged; one new `execution.json` golden is added). The conformance
+  schema gains an optional `execution_span` object (now including the four
+  attempt/retry fields) while `decision_span` / `events` / `child_spans` remain
+  the only required roots. See specs/020-execution-step-capture.md.
 - **Stable `side_effect_id` on every side effect (Python SDK).** Each
   `SideEffectRecord` now carries a `side_effect_id` — minted as a uuid4 by
   default (covering both `SideEffectRecord.from_payloads` and direct

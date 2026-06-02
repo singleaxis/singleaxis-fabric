@@ -21,6 +21,7 @@ from .content_store import (
 from .decision import SCHEMA_VERSION, ConcurrentDecisionUseError, Decision
 from .escalation import EscalationMode, EscalationRequested, EscalationSummary
 from .eval import EvalRecord
+from .execution import Execution
 from .guardrail_adapters import HTTPGuardrailChecker, LakeraGuardChecker
 from .guardrails import (
     CheckerVerdict,
@@ -115,6 +116,7 @@ __all__ = [
     "EscalationRequested",
     "EscalationSummary",
     "EvalRecord",
+    "Execution",
     "Fabric",
     "FabricConfig",
     "FabricContext",

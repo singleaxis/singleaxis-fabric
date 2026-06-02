@@ -79,6 +79,19 @@ from uuid import UUID, uuid4
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+from ._attributes import (
+    ATTR_AGENT,
+    ATTR_EXECUTION,
+    ATTR_EXECUTION_ATTEMPT,
+    ATTR_EXECUTION_ATTEMPT_ID,
+    ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
+    ATTR_EXECUTION_RETRY_REASON,
+    ATTR_PROFILE,
+    ATTR_SCHEMA_VERSION,
+    ATTR_TENANT,
+    ATTR_WORKFLOW,
+    SCHEMA_VERSION,
+)
 from ._calls import LLMCall, ToolCall
 from ._id_validators import warn_if_pii_shaped
 from .checkpoint import CheckpointEvent
@@ -112,21 +125,33 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("fabric.decision")
 
+# Explicitly re-export the shared leaf constants pulled in from
+# ``_attributes`` so ``from fabric.decision import ATTR_*`` / ``SCHEMA_VERSION``
+# remains a supported, strict-mypy-clean import surface (their canonical
+# definitions now live in the dependency-free ``_attributes`` module).
+# Listing them in ``__all__`` marks them as explicit re-exports; the
+# module's own public classes/constants stay importable by name as before.
+__all__ = [
+    "ATTR_AGENT",
+    "ATTR_EXECUTION",
+    "ATTR_EXECUTION_ATTEMPT",
+    "ATTR_EXECUTION_ATTEMPT_ID",
+    "ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID",
+    "ATTR_EXECUTION_RETRY_REASON",
+    "ATTR_PROFILE",
+    "ATTR_SCHEMA_VERSION",
+    "ATTR_TENANT",
+    "ATTR_WORKFLOW",
+    "SCHEMA_VERSION",
+]
+
 SPAN_NAME = "fabric.decision"
 
-# Schema version stamped on the decision span and every emitted span
-# event. Downstream consumers (Telemetry Bridge, replay engine, audit
-# exporters) read this to negotiate the event-attribute contract across
-# SDK releases. Bump on any breaking change to the emitted attribute
-# shape; additive changes keep the same major.minor.
-SCHEMA_VERSION = "1.0"
-ATTR_SCHEMA_VERSION = "fabric.schema_version"
-
-ATTR_TENANT = "fabric.tenant_id"
-ATTR_AGENT = "fabric.agent_id"
-ATTR_PROFILE = "fabric.profile"
-ATTR_WORKFLOW = "fabric.workflow_id"
-ATTR_EXECUTION = "fabric.execution_id"
+# Shared identity + execution-correlation constants live in the leaf
+# ``_attributes`` module so both ``decision`` and ``execution`` can import
+# them without a module-level import cycle. They are re-exported here so
+# existing ``from fabric.decision import ATTR_*`` / ``SCHEMA_VERSION``
+# imports keep working unchanged.
 ATTR_SESSION = "fabric.session_id"
 ATTR_REQUEST = "fabric.request_id"
 # Canonical, stable identity of one decision. Distinct from
@@ -200,6 +225,8 @@ class Decision(AbstractContextManager["Decision"]):
         user_id: str | None,
         attributes: dict[str, str],
         decision_id: str | None = None,
+        execution_id: str | None = None,
+        workflow_id: str | None = None,
     ) -> None:
         if not session_id:
             raise ValueError("session_id is required")
@@ -217,6 +244,25 @@ class Decision(AbstractContextManager["Decision"]):
         # Canonical decision identity: host-supplied verbatim, else a
         # freshly minted uuid4. Independent of ``request_id``.
         self._decision_id = decision_id or str(uuid4())
+        # Explicit per-decision overrides for the execution correlation
+        # ids. ``None`` means "not supplied" — resolved at enter time with
+        # precedence: explicit > active Execution (contextvar) > config.
+        # See ``_resolve_execution_ids``. Resolved values are cached here
+        # on enter so the introspection properties reflect what was
+        # actually stamped.
+        self._execution_id = execution_id
+        self._workflow_id = workflow_id
+        self._resolved_execution_id: str | None = None
+        self._resolved_workflow_id: str | None = None
+        # Resolved attempt/retry metadata, cached on enter. There is no
+        # per-decision kwarg for these (they belong to the enclosing
+        # execution / config), so they resolve purely by
+        # active-execution > config; the introspection properties and
+        # cross-service propagation then reflect what was stamped.
+        self._resolved_execution_attempt_id: str | None = None
+        self._resolved_execution_attempt: int | None = None
+        self._resolved_execution_retry_reason: str | None = None
+        self._resolved_execution_retry_previous_attempt_id: str | None = None
         self._user_id = user_id
         self._extra_attrs = dict(attributes)
         self._span: Span | None = None
@@ -269,6 +315,70 @@ class Decision(AbstractContextManager["Decision"]):
         finally:
             self._busy.release()
 
+    # -- execution-id resolution -----------------------------------------
+
+    def _resolve_execution_metadata(self) -> None:
+        """Resolve and cache the execution-correlation metadata by precedence.
+
+        Resolves ``execution_id`` / ``workflow_id`` plus the attempt/retry
+        fields and caches them on ``self`` so :meth:`__enter__` stamps them
+        and the introspection properties / cross-service propagation reflect
+        what was stamped.
+
+        Precedence for ``execution_id`` / ``workflow_id`` is
+        ``explicit kwarg > active Execution (contextvar) > FabricConfig``.
+        The attempt/retry fields have no per-decision kwarg, so their
+        precedence is ``active Execution > FabricConfig`` — inheriting from
+        the enclosing execution when present, and otherwise falling back to
+        the config-level stamping exactly as before (a decision with attempt
+        config but no active execution stamps from config). A decision
+        opened OUTSIDE any :func:`fabric.execution` sees no active execution,
+        so every field falls back to :class:`FabricConfig` — byte-identical
+        to the pre-Execution behavior. The :mod:`fabric.execution` import is
+        kept local (function-level) so neither module imports the other at
+        module load — both pull the shared attribute constants from the leaf
+        :mod:`fabric._attributes`, keeping ``decision`` ↔ ``execution``
+        acyclic.
+        """
+        from .execution import active_execution  # noqa: PLC0415
+
+        active = active_execution()
+        config = self._client.config
+        execution_id = self._execution_id
+        if execution_id is None and active is not None:
+            execution_id = active.execution_id
+        if execution_id is None:
+            execution_id = config.execution_id
+        workflow_id = self._workflow_id
+        if workflow_id is None and active is not None:
+            workflow_id = active.workflow_id
+        if workflow_id is None:
+            workflow_id = config.workflow_id
+        self._resolved_execution_id = execution_id
+        self._resolved_workflow_id = workflow_id
+
+        # Attempt/retry metadata: active execution wins over config.
+        self._resolved_execution_attempt_id = (
+            active.attempt_id
+            if active is not None and active.attempt_id is not None
+            else config.execution_attempt_id
+        )
+        self._resolved_execution_attempt = (
+            active.attempt
+            if active is not None and active.attempt is not None
+            else config.execution_attempt
+        )
+        self._resolved_execution_retry_reason = (
+            active.retry_reason
+            if active is not None and active.retry_reason is not None
+            else config.execution_retry_reason
+        )
+        self._resolved_execution_retry_previous_attempt_id = (
+            active.retry_previous_attempt_id
+            if active is not None and active.retry_previous_attempt_id is not None
+            else config.execution_retry_previous_attempt_id
+        )
+
     # -- context manager --------------------------------------------------
 
     def __enter__(self) -> Self:
@@ -295,10 +405,36 @@ class Decision(AbstractContextManager["Decision"]):
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
-        if self._client.config.workflow_id is not None:
-            self._span.set_attribute(ATTR_WORKFLOW, self._client.config.workflow_id)
-        if self._client.config.execution_id is not None:
-            self._span.set_attribute(ATTR_EXECUTION, self._client.config.execution_id)
+        self._resolve_execution_metadata()
+        if self._resolved_workflow_id is not None:
+            self._span.set_attribute(ATTR_WORKFLOW, self._resolved_workflow_id)
+        if self._resolved_execution_id is not None:
+            self._span.set_attribute(ATTR_EXECUTION, self._resolved_execution_id)
+        # Attempt/retry metadata, inherited from the active execution when
+        # present and otherwise stamped from config (precedence:
+        # active Execution > FabricConfig). Resolved in
+        # ``_resolve_execution_metadata`` so the introspection properties and
+        # cross-service propagation reflect exactly what was stamped here.
+        if self._resolved_execution_attempt_id is not None:
+            self._span.set_attribute(
+                ATTR_EXECUTION_ATTEMPT_ID,
+                self._resolved_execution_attempt_id,
+            )
+        if self._resolved_execution_attempt is not None:
+            self._span.set_attribute(
+                ATTR_EXECUTION_ATTEMPT,
+                self._resolved_execution_attempt,
+            )
+        if self._resolved_execution_retry_reason is not None:
+            self._span.set_attribute(
+                ATTR_EXECUTION_RETRY_REASON,
+                self._resolved_execution_retry_reason,
+            )
+        if self._resolved_execution_retry_previous_attempt_id is not None:
+            self._span.set_attribute(
+                ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
+                self._resolved_execution_retry_previous_attempt_id,
+            )
         self._span.set_attribute(ATTR_SESSION, self._session_id)
         self._span.set_attribute(ATTR_REQUEST, self._request_id)
         if self._user_id is not None:
@@ -407,11 +543,72 @@ class Decision(AbstractContextManager["Decision"]):
 
     @property
     def workflow_id(self) -> str | None:
+        """The workflow id stamped on this decision span.
+
+        After enter, this is the value resolved by precedence (explicit
+        kwarg > active Execution > config). Before enter, it falls back to
+        config so the property is always answerable.
+        """
+        if self._resolved_workflow_id is not None:
+            return self._resolved_workflow_id
         return self._client.config.workflow_id
 
     @property
     def execution_id(self) -> str | None:
+        """The execution id stamped on this decision span.
+
+        After enter, this is the value resolved by precedence (explicit
+        kwarg > active Execution > config). Before enter, it falls back to
+        config so the property is always answerable.
+        """
+        if self._resolved_execution_id is not None:
+            return self._resolved_execution_id
         return self._client.config.execution_id
+
+    @property
+    def execution_attempt_id(self) -> str | None:
+        """The attempt id stamped on this decision span.
+
+        After enter, the value resolved by precedence (active Execution >
+        config). Before enter, it falls back to config so the property is
+        always answerable.
+        """
+        if self._resolved_execution_attempt_id is not None:
+            return self._resolved_execution_attempt_id
+        return self._client.config.execution_attempt_id
+
+    @property
+    def execution_attempt(self) -> int | None:
+        """The one-based attempt number stamped on this decision span.
+
+        After enter, the value resolved by precedence (active Execution >
+        config). Before enter, it falls back to config.
+        """
+        if self._resolved_execution_attempt is not None:
+            return self._resolved_execution_attempt
+        return self._client.config.execution_attempt
+
+    @property
+    def execution_retry_reason(self) -> str | None:
+        """The retry reason stamped on this decision span.
+
+        After enter, the value resolved by precedence (active Execution >
+        config). Before enter, it falls back to config.
+        """
+        if self._resolved_execution_retry_reason is not None:
+            return self._resolved_execution_retry_reason
+        return self._client.config.execution_retry_reason
+
+    @property
+    def execution_retry_previous_attempt_id(self) -> str | None:
+        """The previous attempt id stamped on this decision span.
+
+        After enter, the value resolved by precedence (active Execution >
+        config). Before enter, it falls back to config.
+        """
+        if self._resolved_execution_retry_previous_attempt_id is not None:
+            return self._resolved_execution_retry_previous_attempt_id
+        return self._client.config.execution_retry_previous_attempt_id
 
     @property
     def blocked(self) -> GuardrailResult | None:

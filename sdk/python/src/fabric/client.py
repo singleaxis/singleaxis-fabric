@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
     from .content_store import ContentStore
     from .decision import Decision
+    from .execution import Execution
     from .guardrails import GuardrailChecker
     from .nemo import NemoClient
     from .presidio import PresidioClient
@@ -55,6 +56,10 @@ class FabricConfig:
     profile: str = DEFAULT_PROFILE
     workflow_id: str | None = None
     execution_id: str | None = None
+    execution_attempt_id: str | None = None
+    execution_attempt: int | None = None
+    execution_retry_reason: str | None = None
+    execution_retry_previous_attempt_id: str | None = None
     redaction_mode: Literal["hmac", "tag"] = "hmac"
     """The Presidio redaction mode this client expects.
 
@@ -77,6 +82,21 @@ class FabricConfig:
             object.__setattr__(self, "agent_id", self.agent_id.strip())
         if isinstance(self.profile, str):
             object.__setattr__(self, "profile", self.profile.strip())
+        for attr in (
+            "execution_attempt_id",
+            "execution_retry_reason",
+            "execution_retry_previous_attempt_id",
+        ):
+            value = getattr(self, attr)
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise TypeError(f"{attr} must be str when set")
+            stripped = value.strip()
+            if not stripped:
+                raise ValueError(f"{attr} must be non-empty when set")
+            object.__setattr__(self, attr, stripped)
+        self._validate_execution_attempt()
         if not self.tenant_id:
             raise ValueError("tenant_id is required (empty or whitespace only)")
         if not self.agent_id:
@@ -88,6 +108,20 @@ class FabricConfig:
         # specs/016-foundational-fixes.md §4.5.
         warn_if_pii_shaped("tenant_id", self.tenant_id)
         warn_if_pii_shaped("agent_id", self.agent_id)
+        warn_if_pii_shaped("execution_attempt_id", self.execution_attempt_id)
+        warn_if_pii_shaped(
+            "execution_retry_previous_attempt_id",
+            self.execution_retry_previous_attempt_id,
+        )
+
+    def _validate_execution_attempt(self) -> None:
+        """Validate the optional ``execution_attempt`` (>=1 int when set)."""
+        if self.execution_attempt is None:
+            return
+        if not isinstance(self.execution_attempt, int) or isinstance(self.execution_attempt, bool):
+            raise TypeError("execution_attempt must be int when set")
+        if self.execution_attempt < 1:
+            raise ValueError("execution_attempt must be >= 1")
 
 
 class Fabric:
@@ -210,6 +244,8 @@ class Fabric:
         user_id: str | None = None,
         attributes: dict[str, str] | None = None,
         decision_id: str | None = None,
+        execution_id: str | None = None,
+        workflow_id: str | None = None,
     ) -> Decision:
         """Open a new :class:`~fabric.decision.Decision` context.
 
@@ -221,6 +257,13 @@ class Fabric:
         decision. Supply it to correlate one decision across turns or
         services; omit it to have the SDK mint a uuid4. It is distinct
         from ``request_id`` (a separate per-turn identifier).
+
+        ``execution_id`` / ``workflow_id`` are optional explicit
+        overrides for the execution-correlation ids. When omitted, the
+        decision inherits them from the active :func:`execution` context
+        (if any), then falls back to :class:`FabricConfig`. A decision
+        opened outside any execution with neither supplied behaves exactly
+        as before.
         """
         from .decision import Decision  # noqa: PLC0415  (break import cycle)
 
@@ -231,6 +274,54 @@ class Fabric:
             user_id=user_id,
             attributes=attributes or {},
             decision_id=decision_id,
+            execution_id=execution_id,
+            workflow_id=workflow_id,
+        )
+
+    def execution(
+        self,
+        *,
+        execution_id: str | None = None,
+        workflow_id: str | None = None,
+        execution_attempt_id: str | None = None,
+        execution_attempt: int | None = None,
+        execution_retry_reason: str | None = None,
+        execution_retry_previous_attempt_id: str | None = None,
+        attributes: dict[str, str] | None = None,
+    ) -> Execution:
+        """Open an optional outer correlation + lifecycle span.
+
+        An :class:`~fabric.execution.Execution` demarcates and correlates
+        a run of related decisions. It is **emit-only**: it opens a
+        ``fabric.execution`` span and publishes its execution-correlation
+        metadata so any :class:`~fabric.decision.Decision` opened inside it
+        inherits it (precedence: explicit kwarg > active Execution >
+        config). It does **not** schedule, orchestrate, retry, or
+        reconstruct anything — that is the commercial layer (spec 012).
+
+        The execution span carries all seven correlation fields:
+        ``execution_id`` / ``workflow_id`` / status plus the attempt/retry
+        metadata (``execution_attempt_id``, ``execution_attempt``,
+        ``execution_retry_reason``, ``execution_retry_previous_attempt_id``).
+        Each attempt/retry param defaults to the corresponding
+        :class:`FabricConfig` value when omitted, so a client configured
+        with attempt metadata stamps it without the caller re-passing it.
+
+        Usable as either ``with`` or ``async with``. ``execution_id``
+        defaults to a minted uuid4 when omitted. Decisions opened outside
+        any execution are unchanged.
+        """
+        from .execution import Execution  # noqa: PLC0415  (break import cycle)
+
+        return Execution(
+            client=self,
+            execution_id=execution_id,
+            workflow_id=workflow_id,
+            execution_attempt_id=execution_attempt_id,
+            execution_attempt=execution_attempt,
+            execution_retry_reason=execution_retry_reason,
+            execution_retry_previous_attempt_id=execution_retry_previous_attempt_id,
+            attributes=attributes,
         )
 
     @property

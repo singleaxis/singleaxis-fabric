@@ -82,7 +82,10 @@ class FabricContext:
     ``request_id``) and rides the same member when set.
     ``workflow_id`` and ``execution_id`` are likewise optional — they are
     set only when the caller runs inside a workflow / execution scope
-    (PRD §65: both ride ``tracestate`` across service boundaries).
+    (PRD §65: both ride ``tracestate`` across service boundaries). The
+    execution-attempt fields are optional retry metadata: same
+    ``execution_id`` for the logical task, one attempt id/number per
+    retry.
     """
 
     tenant_id: str
@@ -92,6 +95,10 @@ class FabricContext:
     decision_id: str | None = None
     workflow_id: str | None = None
     execution_id: str | None = None
+    execution_attempt_id: str | None = None
+    execution_attempt: int | None = None
+    execution_retry_reason: str | None = None
+    execution_retry_previous_attempt_id: str | None = None
 
 
 @runtime_checkable
@@ -131,6 +138,22 @@ class DecisionLike(Protocol):
     def execution_id(self) -> str | None:
         """Per-execution identifier, or ``None`` outside an execution."""
 
+    @property
+    def execution_attempt_id(self) -> str | None:
+        """Per-attempt identifier, or ``None`` when not retry-tracked."""
+
+    @property
+    def execution_attempt(self) -> int | None:
+        """One-based attempt number, or ``None`` when not retry-tracked."""
+
+    @property
+    def execution_retry_reason(self) -> str | None:
+        """Retry reason for this attempt, or ``None`` when unset."""
+
+    @property
+    def execution_retry_previous_attempt_id(self) -> str | None:
+        """Previous attempt id, or ``None`` for the first attempt."""
+
 
 def _encode(context: FabricContext) -> str:
     """Pack a :class:`FabricContext` into a tracestate-value-safe string.
@@ -140,7 +163,7 @@ def _encode(context: FabricContext) -> str:
     small. The result uses only ``A-Za-z0-9-_`` — all legal tracestate
     value characters.
     """
-    payload: dict[str, str] = {"t": context.tenant_id, "a": context.agent_id}
+    payload: dict[str, str | int] = {"t": context.tenant_id, "a": context.agent_id}
     if context.session_id is not None:
         payload["s"] = context.session_id
     if context.request_id is not None:
@@ -151,6 +174,14 @@ def _encode(context: FabricContext) -> str:
         payload["w"] = context.workflow_id
     if context.execution_id is not None:
         payload["e"] = context.execution_id
+    if context.execution_attempt_id is not None:
+        payload["ei"] = context.execution_attempt_id
+    if context.execution_attempt is not None:
+        payload["en"] = context.execution_attempt
+    if context.execution_retry_reason is not None:
+        payload["er"] = context.execution_retry_reason
+    if context.execution_retry_previous_attempt_id is not None:
+        payload["ep"] = context.execution_retry_previous_attempt_id
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -181,11 +212,30 @@ def _decode(encoded: str) -> FabricContext | None:
     decision = payload.get("d")
     workflow = payload.get("w")
     execution = payload.get("e")
+    execution_attempt_id = payload.get("ei")
+    execution_attempt = payload.get("en")
+    execution_retry_reason = payload.get("er")
+    execution_retry_previous_attempt_id = payload.get("ep")
     # Optional fields must be strings when present; a wrong-typed value is
     # wire corruption and yields None for the whole member.
     if any(
         opt is not None and not isinstance(opt, str)
-        for opt in (session, request, decision, workflow, execution)
+        for opt in (
+            session,
+            request,
+            decision,
+            workflow,
+            execution,
+            execution_attempt_id,
+            execution_retry_reason,
+            execution_retry_previous_attempt_id,
+        )
+    ):
+        return None
+    if execution_attempt is not None and (
+        not isinstance(execution_attempt, int)
+        or isinstance(execution_attempt, bool)
+        or execution_attempt < 1
     ):
         return None
     return FabricContext(
@@ -196,6 +246,10 @@ def _decode(encoded: str) -> FabricContext | None:
         decision_id=decision,
         workflow_id=workflow,
         execution_id=execution,
+        execution_attempt_id=execution_attempt_id,
+        execution_attempt=execution_attempt,
+        execution_retry_reason=execution_retry_reason,
+        execution_retry_previous_attempt_id=execution_retry_previous_attempt_id,
     )
 
 
@@ -237,7 +291,7 @@ def inject(carrier: MutableMapping[str, str], context: FabricContext) -> None:
         raise ValueError(
             f"encoded Fabric tracestate member is {member_size} bytes, "
             f"over the {_MAX_MEMBER_BYTES}-byte budget; one of "
-            "tenant_id/agent_id/session_id/request_id is too large to "
+            "tenant_id/agent_id/session_id/request_id/execution_id is too large to "
             "propagate. These fields must hold identifiers, not payloads."
         )
     existing = carrier.get(TRACESTATE_HEADER, "")
@@ -271,9 +325,9 @@ def inject_decision(carrier: MutableMapping[str, str], decision: DecisionLike) -
 
     Convenience wrapper: reads ``tenant_id`` / ``agent_id`` /
     ``session_id`` / ``request_id`` / ``decision_id`` / ``workflow_id`` /
-    ``execution_id`` off ``decision`` and delegates to :func:`inject`.
-    ``decision`` is
-    typed via the local :class:`DecisionLike` Protocol so this module
+    ``execution_id`` plus execution-attempt retry metadata off
+    ``decision`` and delegates to :func:`inject`. ``decision`` is typed
+    via the local :class:`DecisionLike` Protocol so this module
     never imports :mod:`fabric.decision` (which would form an import
     cycle).
     """
@@ -285,5 +339,9 @@ def inject_decision(carrier: MutableMapping[str, str], decision: DecisionLike) -
         decision_id=decision.decision_id,
         workflow_id=decision.workflow_id,
         execution_id=decision.execution_id,
+        execution_attempt_id=decision.execution_attempt_id,
+        execution_attempt=decision.execution_attempt,
+        execution_retry_reason=decision.execution_retry_reason,
+        execution_retry_previous_attempt_id=decision.execution_retry_previous_attempt_id,
     )
     inject(carrier, context)
