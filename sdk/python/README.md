@@ -62,14 +62,17 @@ Beta — **Phase 1a shipping.**
   onto the Decision Graph's `Retrieval` node (spec 003).
 - Escalation pause primitive: `EscalationSummary`, `EscalationRequested`,
   `Decision.request_escalation`, `Decision.raise_for_escalation`.
-  Records `fabric.escalated`, `fabric.escalation.reason/rubric_id/
-  mode/triggering_score` on the span and emits a `fabric.escalation`
-  span event. `EscalationSummary.to_payload()` returns the
-  framework-agnostic dict tenants hand to whatever interrupt
+  `request_escalation` **records** the escalation — it tags the span
+  (`fabric.escalated`, `fabric.escalation.reason/rubric_id/mode/triggering_score`)
+  and emits a `fabric.escalation` span event, but does **not** raise.
+  Pair it with `raise_for_escalation()` for an exception-driven flow
+  that raises `EscalationRequested`. `EscalationSummary.to_payload()`
+  returns the framework-agnostic dict tenants hand to whatever interrupt
   primitive their orchestrator exposes (LangGraph `interrupt()`,
-  Agent Framework checkpoints, a bespoke queue). The SDK owns the
-  *local* signal only; the downstream SASF review + signed-verdict
-  resume lives in the escalation service (spec 007).
+  Agent Framework checkpoints, a bespoke queue). OSS emits the
+  *local* signal only; the durable escalation service (SASF reviewer),
+  signed-verdict resume, and pause/resume orchestration are commercial
+  (spec 007).
 - Memory write recording: `MemoryKind`, `MemoryRecord`,
   `Decision.remember(kind=..., content=..., key=..., tags=...,
   ttl_seconds=...)`. Tenants perform the actual write against their
@@ -119,6 +122,18 @@ Beta — **Phase 1a shipping.**
           replay_behavior="suppress",
       )
   ```
+
+- Eval + judge primitives: `Decision.record_eval` (`EvalRecord`)
+  attaches a synchronous score to the span; `Decision.queue_judge`
+  (`JudgeRequest`, `JudgeContext`) forwards an async judge request
+  through a `QueueTransport`. OSS ships these
+  recording/queueing primitives, the transport protocol, and a
+  local/reference judge harness — `JudgeRunner` (drains a transport and
+  scores out-of-band), `SimpleLLMJudge` (a minimal reference worker, not
+  commercial quality), and `LocalQueueTransport` (in-process). The
+  production judge *worker* fleet, rubric corpus, calibration, and
+  drift/longitudinal analysis are **commercial**; OSS does not run
+  managed scoring or persist results (the default result sink is a no-op).
 
 When no rails are configured, `guard_input` / `guard_output_*` raise
 `GuardrailNotConfiguredError`. This is a deliberate fail-loud
@@ -256,40 +271,52 @@ set (or a `PresidioClient` is passed to `Fabric(...)` directly).
 
 ## Module layout
 
-```
-sdk/python/
-├── pyproject.toml
-├── src/fabric/
-│   ├── __init__.py
-│   ├── client.py          # Fabric, FabricConfig, from_env
-│   ├── decision.py        # Decision context manager
-│   ├── guardrails.py      # result + error types
-│   ├── escalation.py      # EscalationSummary + EscalationRequested
-│   ├── presidio.py        # PresidioClient protocol + UDS impl
-│   ├── nemo.py            # NemoClient protocol + UDS impl
-│   ├── retrieval.py       # RetrievalSource + RetrievalRecord
-│   ├── memory.py          # MemoryKind + MemoryRecord
-│   ├── _chain.py          # GuardrailChain (internal)
-│   ├── _uds.py            # HTTP-over-unix-socket transport
-│   ├── _version.py        # version sourced from git tag (hatch-vcs)
-│   ├── tracing.py         # OTel helpers
-│   ├── adapters/          # framework adapters (extras-gated)
-│   │   ├── langgraph.py
-│   │   ├── agent_framework.py
-│   │   └── crewai.py
-│   └── py.typed
-└── tests/
-    ├── conftest.py
-    ├── _fake_sidecar.py
-    ├── test_client.py
-    ├── test_decision.py
-    ├── test_guardrail_chain.py
-    ├── test_escalation.py
-    ├── test_nemo.py
-    ├── test_presidio.py
-    ├── test_retrieval.py
-    └── test_tracing.py
-```
+The SDK lives under `src/fabric/`. Grouped by role (accuracy over a
+flat dump — read the module docstrings for detail):
+
+**Core**
+
+- `client.py` — `Fabric`, `FabricConfig`, `from_env`
+- `decision.py` — `Decision` context manager (the agent-turn span)
+- `execution.py` — optional outer `execution()` correlation span
+- `guardrails.py` — guardrail result + error types
+- `escalation.py` — `EscalationSummary`, `EscalationRequested`
+- `retrieval.py` — `RetrievalSource`, `RetrievalRecord`
+- `memory.py` — `MemoryKind`, `MemoryRecord`
+- `side_effect.py` — `SideEffectType`, `SideEffectRecord`
+- `eval.py` — `EvalRecord` (synchronous score record)
+- `judge.py` — `JudgeContext`, `JudgeRequest`, `JudgeWorker` +
+  `QueueTransport` protocol
+- `judge_runner.py` — `JudgeRunner` (local/reference judge loop)
+- `policy.py` — `PolicyDecision`, `PolicyEngine` protocol
+- `tool_auth.py` — pre-execution `ToolAuthorizer` protocol + gate
+- `checkpoint.py` — `CheckpointEvent` schema (replay breadcrumb; replay
+  engine is commercial)
+- `stream.py` — `StreamRedactor` (boundary-safe streaming redaction)
+- `propagation.py` — W3C `tracestate` cross-service context carrier
+- `presidio.py`, `nemo.py` — PII / Colang sidecar clients
+- `tracing.py` — OTel helpers (`get_tracer`, `install_default_provider`)
+- `auto_instrument.py` — opt-in `opentelemetry-instrumentation-*` hookup
+- internal leaf modules: `_attributes.py`, `_calls.py`, `_chain.py`,
+  `_id_validators.py`, `_uds.py`, `_version.py`
+
+**Adapters & extensions** (each extras-gated)
+
+- `adapters/` — framework adapters (`langgraph`, `agent_framework`,
+  `crewai`)
+- `guardrail_adapters/` — `http`, `lakera`
+- `judge_adapters/` — `simple` (`SimpleLLMJudge`), `deepeval`, `ragas`
+- `policy_adapters/` — `opa`, `cedar`, `http`
+- `queue_transports/` — `local` (`LocalQueueTransport`), `sqs`, `nats`,
+  `redis`
+- `content_store/` — `ContentStore` protocol + `local`, `s3` backends
+
+**Integrations**
+
+- `integrations/mcp.py` — MCP `call_tool` instrumentation
+
+Tests, conformance suites, benchmarks, and soak harness live alongside
+under `tests/`, `benchmarks/`, and `soak/`.
 
 ## Tests
 
