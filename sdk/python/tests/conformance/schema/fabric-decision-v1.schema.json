@@ -238,6 +238,32 @@
             "fabric.checkpoint.state_hash": { "type": "string" }
           }
         },
+        "fabric.replay": {
+          "type": "object",
+          "description": "Versioned ReplayMetadata envelope (spec 021). Emit-only: bundles the metadata a commercial replay engine needs to reconstruct a decision. metadata_version is the envelope's own version, independent of schema_version.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.replay.metadata_version",
+            "fabric.replay.decision_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.replay.metadata_version": { "type": "string" },
+            "fabric.replay.execution_id": { "type": "string" },
+            "fabric.replay.decision_id": { "type": "string" },
+            "fabric.replay.checkpoint_ids": { "type": "array", "items": { "type": "string" } },
+            "fabric.replay.suppressed_side_effect_ids": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "fabric.replay.state_hash": { "type": "string" },
+            "fabric.replay.tool_result_hashes": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
         "fabric.eval": {
           "type": "object",
           "required": [

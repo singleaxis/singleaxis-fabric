@@ -1,0 +1,72 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.checkpoint_count": 1,
+      "fabric.decision_id": "<normalized>",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.side_effect_count": 1,
+      "fabric.side_effect_systems": [
+        "zendesk"
+      ],
+      "fabric.side_effect_types": [
+        "ticket_create"
+      ],
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.checkpoint.checkpoint_id": "<normalized>",
+          "fabric.checkpoint.state_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "fabric.checkpoint.step_name": "after-retrieval",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.checkpoint"
+      },
+      {
+        "attributes": {
+          "fabric.schema_version": "1.0",
+          "fabric.side_effect.approval_required": false,
+          "fabric.side_effect.committed": true,
+          "fabric.side_effect.operation": "create_ticket",
+          "fabric.side_effect.replay_behavior": "suppress",
+          "fabric.side_effect.rollback_supported": false,
+          "fabric.side_effect.side_effect_id": "<normalized>",
+          "fabric.side_effect.target_system": "zendesk",
+          "fabric.side_effect.type": "ticket_create"
+        },
+        "name": "fabric.side_effect"
+      },
+      {
+        "attributes": {
+          "fabric.replay.checkpoint_ids": [
+            "44444444-4444-4444-4444-444444444444"
+          ],
+          "fabric.replay.decision_id": "66666666-6666-6666-6666-666666666666",
+          "fabric.replay.metadata_version": "1",
+          "fabric.replay.state_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "fabric.replay.suppressed_side_effect_ids": [
+            "55555555-5555-5555-5555-555555555555"
+          ],
+          "fabric.replay.tool_result_hashes": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ],
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.replay"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

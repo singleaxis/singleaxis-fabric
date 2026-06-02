@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Versioned ReplayMetadata envelope (Python SDK).** A new emit-only
+  `Decision.record_replay_metadata(*, state_hash=None,
+  tool_result_hashes=None)` method emits a single `fabric.replay` span
+  event bundling the metadata a (commercial) replay engine needs to
+  reconstruct a decision. The envelope carries its own
+  `fabric.replay.metadata_version` (`"1"`), independent of
+  `SCHEMA_VERSION`, so it can evolve without a wire-schema bump. Most
+  fields are assembled automatically from the decision's accumulated
+  state — `fabric.replay.decision_id`, `fabric.replay.execution_id`
+  (only when inside an execution), `fabric.replay.checkpoint_ids` (the
+  recorded checkpoint ids), and `fabric.replay.suppressed_side_effect_ids`
+  (only side effects recorded with `replay_behavior == "suppress"`).
+  Two fields are host-supplied because the decision cannot derive them:
+  `fabric.replay.state_hash` and `fabric.replay.tool_result_hashes`. The
+  arrays are omitted when empty. Emit-only: the SDK assembles and emits
+  the envelope; it never reconstructs, orchestrates, or replays — that is
+  the commercial layer. The conformance schema gains a `fabric.replay`
+  event; among existing goldens nothing changes, plus one new
+  `replay_metadata.json`. `SCHEMA_VERSION` remains `1.0`. See
+  specs/021-replay-metadata.md.
 - **Step taxonomy on `llm_call` / `tool_call` child spans (Python SDK).**
   A "step" is one operation inside an execution (an LLM call, a tool
   call); the taxonomy is emit-only and additive. Every child span now

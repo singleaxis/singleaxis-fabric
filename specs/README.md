@@ -51,3 +51,4 @@ Every spec declares a `Status` in its header:
 | [012](012-oss-commercialization-strategy.md) | Operational infrastructure PRD & OSS commercialization strategy | draft |
 | [019](019-policy-engine.md) | Policy Engine — decision-level policy evaluation primitive | draft |
 | [020](020-execution-step-capture.md) | Execution & Step capture — outer correlation + lifecycle primitives | draft |
+| [021](021-replay-metadata.md) | ReplayMetadata envelope — emit-only reconstruction metadata | draft |

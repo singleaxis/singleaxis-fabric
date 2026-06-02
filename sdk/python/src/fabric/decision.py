@@ -186,6 +186,24 @@ ATTR_POLICY_EVAL_COUNT = "fabric.policy_evaluation_count"
 ATTR_POLICY_ENGINES = "fabric.policy_engines"
 ATTR_TOOL_AUTH_COUNT = "fabric.tool_authorization_count"
 
+# Versioned ReplayMetadata envelope (spec 021). A single ``fabric.replay``
+# span event bundles the metadata a (commercial) replay engine needs to
+# reconstruct a decision. ``metadata_version`` is the envelope's own
+# version, independent of ``SCHEMA_VERSION``, so the envelope can evolve
+# without bumping the wire schema. Emit-only: the SDK assembles + emits
+# this; it never reconstructs or replays (spec 012/003).
+ATTR_REPLAY_METADATA_VERSION = "fabric.replay.metadata_version"
+ATTR_REPLAY_EXECUTION_ID = "fabric.replay.execution_id"
+ATTR_REPLAY_DECISION_ID = "fabric.replay.decision_id"
+ATTR_REPLAY_CHECKPOINT_IDS = "fabric.replay.checkpoint_ids"
+ATTR_REPLAY_SUPPRESSED_SIDE_EFFECT_IDS = "fabric.replay.suppressed_side_effect_ids"
+ATTR_REPLAY_STATE_HASH = "fabric.replay.state_hash"
+ATTR_REPLAY_TOOL_RESULT_HASHES = "fabric.replay.tool_result_hashes"
+
+# Current ReplayMetadata envelope version. Bump independently of
+# SCHEMA_VERSION when the envelope's field set changes.
+REPLAY_METADATA_VERSION = "1"
+
 # Dual-pipeline content references (spec 012 §Content vs trace pipeline).
 # When a tenant configures a ContentStore, the SDK writes the raw,
 # audit-relevant content to it and stamps the returned ``uri`` onto the
@@ -1248,6 +1266,80 @@ class Decision(AbstractContextManager["Decision"]):
 
             span.add_event("fabric.checkpoint", attributes=event_attrs)
             return event
+
+    # -- replay metadata -------------------------------------------------
+
+    def record_replay_metadata(
+        self,
+        *,
+        state_hash: str | None = None,
+        tool_result_hashes: Sequence[str] | None = None,
+    ) -> None:
+        """Emit a versioned ReplayMetadata envelope as a span event.
+
+        Bundles the metadata a (commercial) replay engine needs to
+        reconstruct this decision into a single ``fabric.replay`` span
+        event. The envelope carries its own ``metadata_version`` —
+        independent of ``SCHEMA_VERSION`` — so it can evolve without a
+        wire-schema bump.
+
+        Most of the envelope is assembled automatically from the
+        decision's accumulated state:
+
+        * ``execution_id`` — the decision's resolved execution id, stamped
+          only when the decision is inside an execution.
+        * ``decision_id`` — the decision's canonical id (always present).
+        * ``checkpoint_ids`` — the ids of every checkpoint recorded on
+          this decision; omitted when none were recorded.
+        * ``suppressed_side_effect_ids`` — the ids of side effects this
+          decision recorded with ``replay_behavior == SUPPRESS`` (the
+          mutations a replay must NOT re-execute); omitted when empty.
+
+        Two fields are host-supplied because the decision cannot derive
+        them itself:
+
+        * ``state_hash`` — an optional fingerprint of host state.
+        * ``tool_result_hashes`` — optional hashes of child tool results
+          (the decision does not track child tool spans, so the host
+          passes these).
+
+        Emit-only boundary (spec 012/003): the SDK assembles and emits
+        this envelope; it never reconstructs, orchestrates, or replays a
+        decision — that is the commercial layer.
+
+        Args:
+            state_hash: optional host-supplied state fingerprint.
+            tool_result_hashes: optional host-supplied tool-result hashes.
+        """
+        with self._exclusive():
+            span = self.span
+
+            checkpoint_ids = tuple(str(c.checkpoint_id) for c in self._checkpoints)
+            suppressed_side_effect_ids = tuple(
+                s.side_effect_id
+                for s in self._side_effects
+                if s.replay_behavior == ReplayBehavior.SUPPRESS
+            )
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                ATTR_REPLAY_METADATA_VERSION: REPLAY_METADATA_VERSION,
+                ATTR_REPLAY_DECISION_ID: self._decision_id,
+            }
+            if self._resolved_execution_id is not None:
+                event_attrs[ATTR_REPLAY_EXECUTION_ID] = self._resolved_execution_id
+            if checkpoint_ids:
+                event_attrs[ATTR_REPLAY_CHECKPOINT_IDS] = checkpoint_ids
+            if suppressed_side_effect_ids:
+                event_attrs[ATTR_REPLAY_SUPPRESSED_SIDE_EFFECT_IDS] = suppressed_side_effect_ids
+            if state_hash is not None:
+                event_attrs[ATTR_REPLAY_STATE_HASH] = state_hash
+            if tool_result_hashes is not None:
+                hashes = tuple(tool_result_hashes)
+                if hashes:
+                    event_attrs[ATTR_REPLAY_TOOL_RESULT_HASHES] = hashes
+
+            span.add_event("fabric.replay", attributes=event_attrs)
 
     # -- evals ----------------------------------------------------------
 
