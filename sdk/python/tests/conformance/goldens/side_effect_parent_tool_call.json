@@ -1,0 +1,61 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.side_effect_count": 1,
+      "fabric.side_effect_systems": [
+        "zendesk"
+      ],
+      "fabric.side_effect_types": [
+        "ticket_create"
+      ],
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.schema_version": "1.0",
+          "fabric.side_effect.approval_required": false,
+          "fabric.side_effect.committed": true,
+          "fabric.side_effect.operation": "create_ticket",
+          "fabric.side_effect.parent_tool_call_id": "call-1",
+          "fabric.side_effect.replay_behavior": "suppress",
+          "fabric.side_effect.rollback_supported": false,
+          "fabric.side_effect.side_effect_id": "<normalized>",
+          "fabric.side_effect.target_system": "zendesk",
+          "fabric.side_effect.type": "ticket_create"
+        },
+        "name": "fabric.side_effect"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  },
+  {
+    "attributes": {
+      "fabric.step.type": "tool_call",
+      "fabric.tool.call.id": "call-1",
+      "fabric.tool.kind": "action",
+      "fabric.tool.name": "create_ticket",
+      "gen_ai.tool.call.id": "call-1",
+      "gen_ai.tool.name": "create_ticket"
+    },
+    "events": [],
+    "kind": "INTERNAL",
+    "name": "fabric.tool_call",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

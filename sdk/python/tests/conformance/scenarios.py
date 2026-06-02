@@ -83,6 +83,16 @@ WORKFLOW_ID = "workflow-0001"
 EXECUTION_ATTEMPT_ID = "attempt-0001"
 EXECUTION_ATTEMPT = 1
 
+# Fixed id for the side_effect_parent_tool_call scenario. The
+# ``fabric.side_effect.side_effect_id`` event attribute is normalized
+# away, but pinning the value keeps the raw emitted telemetry stable.
+_PARENT_LINK_SIDE_EFFECT_ID = "77777777-7777-7777-7777-777777777777"
+
+# Fixed explicit decision_id for the decision_id_distinct scenario. It is
+# supplied verbatim to prove decision_id and request_id are independent
+# attributes; the value itself is normalized away on the span.
+_DISTINCT_DECISION_ID = "decision-0001"
+
 
 def _client(**kwargs: object) -> Fabric:
     """Build a Fabric client with the fixed conformance identity."""
@@ -410,6 +420,106 @@ def _content_ref_stamped() -> None:
         d.guard_input("my email is alice@example.com")
 
 
+def _decision_id_distinct() -> None:
+    client = _client()
+    decision = client.decision(
+        session_id=SESSION_ID,
+        request_id=REQUEST_ID,
+        user_id=USER_ID,
+        decision_id=_DISTINCT_DECISION_ID,
+    )
+    with decision:
+        pass
+
+
+def _workflow_execution() -> None:
+    # A STANDALONE decision (no execution span) whose client config carries
+    # workflow_id / execution_id — proving config-level propagation lands on
+    # the decision span.
+    client = Fabric(
+        FabricConfig(
+            tenant_id=TENANT_ID,
+            agent_id=AGENT_ID,
+            profile=PROFILE,
+            workflow_id=WORKFLOW_ID,
+            execution_id=EXECUTION_ID,
+        )
+    )
+    with _decision(client):
+        pass
+
+
+def _memory_erase() -> None:
+    client = _client()
+    with _decision(client) as d:
+        d.forget(MemoryKind.SEMANTIC, "pref:contact")
+        d.forget(MemoryKind.SEMANTIC, "pref:contact", tenant_scope=True)
+
+
+def _memory_invalidate() -> None:
+    client = _client()
+    with _decision(client) as d:
+        d.remember(
+            kind=MemoryKind.SEMANTIC,
+            content="customer prefers email contact",
+            key="pref:contact",
+            invalidates="prior:key",
+        )
+
+
+def _policy_warn() -> None:
+    engine = StubPolicyEngine(
+        verdict=EngineVerdict(
+            decision="warn",
+            policy_version="v3",
+            reason="amount near cap",
+        ),
+    )
+    client = _client()
+    with _decision(client) as d:
+        d.evaluate_policy(engine, policy_id="finance.refund.cap", input={"amount": 90})
+
+
+def _policy_escalate() -> None:
+    engine = StubPolicyEngine(
+        verdict=EngineVerdict(
+            decision="escalate",
+            policy_version="v3",
+            reason="requires human approval",
+        ),
+    )
+    client = _client()
+    with _decision(client) as d:
+        d.evaluate_policy(engine, policy_id="finance.refund.cap", input={"amount": 500})
+
+
+def _policy_redact() -> None:
+    engine = StubPolicyEngine(
+        verdict=EngineVerdict(
+            decision="redact",
+            policy_version="v3",
+            reason="strip PII from response",
+        ),
+    )
+    client = _client()
+    with _decision(client) as d:
+        d.evaluate_policy(engine, policy_id="finance.refund.cap", input={"amount": 50})
+
+
+def _side_effect_parent_tool_call() -> None:
+    client = _client()
+    with _decision(client) as d:
+        with d.tool_call("create_ticket", call_id="call-1") as tool:
+            tool.set_kind("action")
+        d.record_side_effect(
+            SideEffectType.TICKET_CREATE,
+            target_system="zendesk",
+            operation="create_ticket",
+            parent_tool_call_id="call-1",
+            side_effect_id=_PARENT_LINK_SIDE_EFFECT_ID,
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Registry
 # --------------------------------------------------------------------------- #
@@ -438,5 +548,13 @@ SCENARIOS: dict[str, Callable[[], None]] = {
     "tool_call": _tool_call,
     "step_retry": _step_retry,
     "content_ref_stamped": _content_ref_stamped,
+    "decision_id_distinct": _decision_id_distinct,
+    "workflow_execution": _workflow_execution,
+    "memory_erase": _memory_erase,
+    "memory_invalidate": _memory_invalidate,
+    "policy_warn": _policy_warn,
+    "policy_escalate": _policy_escalate,
+    "policy_redact": _policy_redact,
+    "side_effect_parent_tool_call": _side_effect_parent_tool_call,
 }
 """All frozen conformance scenarios, keyed by name."""

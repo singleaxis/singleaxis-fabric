@@ -29,3 +29,23 @@ checklist tracks the outstanding mirror work.
       `Decision.record_replay_metadata`; fields
       `metadata_version`/`execution_id`/`decision_id`/`checkpoint_ids`/`suppressed_side_effect_ids`/`state_hash`/`tool_result_hashes`.
       New golden: `replay_metadata.json`.
+- [ ] **Expanded conformance coverage** — reproduce the new Python
+      conformance scenarios (existing-behaviour coverage, no wire change).
+      The TS SDK must emit byte-identical normalized output for each new
+      golden:
+      - `decision_id_distinct.json` — explicit `decisionId` distinct from
+        `requestId` on the decision span.
+      - `workflow_execution.json` — config-level `workflowId` / `executionId`
+        propagated onto a standalone decision (no execution span).
+      - `memory_erase.json` — `forget(...)` and `forget(..., tenantScope=true)`:
+        `direction="erase"`, `fabric.memory_erase_count`,
+        `fabric.memory.tenant_scope`.
+      - `memory_invalidate.json` — `remember(..., invalidates=...)`:
+        `fabric.memory.invalidates`.
+      - `policy_warn.json`, `policy_escalate.json`, `policy_redact.json` —
+        `evaluatePolicy` with engine verdicts `warn` / `escalate` / `redact`
+        (each requires a reason).
+      - `side_effect_parent_tool_call.json` — `recordSideEffect(...,
+        parentToolCallId="call-1")` linked to a `toolCall(callId="call-1")`;
+        the side-effect event carries
+        `fabric.side_effect.parent_tool_call_id="call-1"`.
