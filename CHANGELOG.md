@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-02
+
 ### Added
 
 - **LLM/Tool call telemetry (Python SDK).** New opt-in, emit-only
@@ -184,6 +186,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `0.2.0` images. They are now stamped from the release tag at publish time
   (and bumped to `0.5.1` in-repo). The third-party `langfuse` subchart is
   excluded — its `appVersion` is the upstream Langfuse version.
+
+- **Hardening from adversarial stress testing (Python SDK).** Six
+  pre-existing robustness gaps surfaced by pre-release stress testing,
+  all fixed with no change to the wire contract — every conformance
+  golden is byte-identical:
+  - **Total content hashing.** The SHA-256 helpers behind memory,
+    retrieval, tool-call, side-effect, and content-store hashing now
+    encode UTF-8 with `surrogatepass`, so content containing lone
+    surrogates hashes deterministically instead of raising
+    `UnicodeEncodeError` mid-call.
+  - **Non-finite span attributes rejected.** `Decision.set_attribute`
+    now raises `ValueError` on `NaN`/`Inf` floats (invalid OTLP values
+    that backends drop), consistent with its existing fail-loud type
+    check; `bool` and finite floats are unaffected.
+  - **In-SDK policy timeout.** `evaluate_policy` now enforces
+    `timeout_seconds` itself by running the adapter on a worker thread
+    with a hard deadline and failing closed to `deny` on timeout — a
+    blocking or non-cooperative engine can no longer hang the caller.
+  - **Closed policy vocabulary.** A verdict whose `decision` falls
+    outside the five-value `PolicyDecision` set now fails closed to
+    `deny` instead of being recorded verbatim.
+  - **W3C tracestate value cap.** `propagation.inject` now enforces the
+    W3C 256-char per-value limit (replacing the looser 512-byte member
+    budget), so an oversized identity field fails loud rather than
+    emitting a header strict validators would reject.
+  - **Bounded attribute length.** `install_default_provider` now sets a
+    `max_span_attribute_length` span limit so a pathological multi-MB
+    attribute value can't bloat a span.
 
 ## [0.5.1] - 2026-05-30
 
