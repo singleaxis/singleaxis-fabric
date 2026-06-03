@@ -250,7 +250,7 @@ def test_32_member_cap_kept_and_fabric_present() -> None:
 
 def test_inject_raises_on_oversized_member() -> None:
     huge = "x" * 1024
-    with pytest.raises(ValueError, match="byte budget"):
+    with pytest.raises(ValueError, match="per-value limit"):
         inject({}, FabricContext(tenant_id=huge, agent_id="a"))
 
 

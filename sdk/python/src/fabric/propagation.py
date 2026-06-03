@@ -60,13 +60,12 @@ FABRIC_KEY = "singleaxis"
 # member first, at most 31 other-vendor members may follow.
 MAX_MEMBERS = 32
 
-# A generous ceiling on the encoded Fabric member's byte size. W3C says
-# each member SHOULD stay well under 512 bytes; the full
-# ``singleaxis=<encoded>`` member must fit that budget. The four
-# identity fields are short identifiers in normal use; exceeding this is
-# a programming error (e.g. a payload smuggled into an ID field), so we
-# fail loud rather than silently emit a non-conformant header.
-_MAX_MEMBER_BYTES = 512
+# W3C tracestate caps each member *value* at 256 chars. The Fabric member's
+# value is base64url (ASCII, so char count == byte count); the identity
+# fields are short identifiers in normal use, so exceeding this means a
+# payload was smuggled into an ID field — fail loud rather than silently
+# emit a header strict W3C validators/proxies would reject or truncate.
+_MAX_VALUE_CHARS = 256
 
 
 @dataclass(frozen=True)
@@ -280,20 +279,20 @@ def inject(carrier: MutableMapping[str, str], context: FabricContext) -> None:
     members by dropping the right-most (oldest) members if needed.
 
     Raises:
-        ValueError: if the encoded Fabric member alone would exceed the
-            ~512-byte per-member budget. That means an identity field is
+        ValueError: if the encoded Fabric member value exceeds the W3C
+            256-char per-value limit. That means an identity field is
             carrying far more than an identifier (a programming error);
             failing loud beats silently emitting a non-conformant header.
     """
-    member = f"{FABRIC_KEY}={_encode(context)}"
-    member_size = len(member.encode("utf-8"))
-    if member_size > _MAX_MEMBER_BYTES:
+    encoded = _encode(context)
+    if len(encoded) > _MAX_VALUE_CHARS:
         raise ValueError(
-            f"encoded Fabric tracestate member is {member_size} bytes, "
-            f"over the {_MAX_MEMBER_BYTES}-byte budget; one of "
+            f"encoded Fabric tracestate value is {len(encoded)} chars, over the "
+            f"W3C {_MAX_VALUE_CHARS}-char per-value limit; one of "
             "tenant_id/agent_id/session_id/request_id/execution_id is too large to "
             "propagate. These fields must hold identifiers, not payloads."
         )
+    member = f"{FABRIC_KEY}={encoded}"
     existing = carrier.get(TRACESTATE_HEADER, "")
     others = [(k, v) for k, v in _parse_members(existing) if k != FABRIC_KEY]
     # Fabric member first; keep at most MAX_MEMBERS total by trimming the

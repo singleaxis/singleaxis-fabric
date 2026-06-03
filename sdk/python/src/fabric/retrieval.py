@@ -42,7 +42,8 @@ class RetrievalSource(StrEnum):
 
 
 def _sha256_hex(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    # surrogatepass: keep hashing total on lone surrogates (see memory._sha256_hex).
+    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 class RetrievalRecord(BaseModel):

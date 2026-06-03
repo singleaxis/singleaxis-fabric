@@ -40,4 +40,4 @@ def content_hash(content: str) -> str:
     """SHA-256 hex of the content's UTF-8 bytes. Shared key strategy
     so the same content lands at the same address (content-addressed).
     """
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return hashlib.sha256(content.encode("utf-8", "surrogatepass")).hexdigest()

@@ -18,7 +18,7 @@ from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 
 from ._version import __version__
@@ -27,6 +27,12 @@ _LOG = logging.getLogger("fabric")
 
 FABRIC_SDK_NAME = "singleaxis-fabric-python"
 """``service.name`` fallback applied when the host hasn't set one."""
+
+_MAX_ATTR_VALUE_LEN = 4096
+"""Cap exported string-attribute length on the SDK's default provider so a
+pathological multi-MB value can't bloat a span or get rejected by a backend.
+Generous for any hash/identifier/short text; hosts that wire their own
+TracerProvider choose their own SpanLimits."""
 
 _NOOP_PROVIDER_WARNED = False
 
@@ -94,7 +100,10 @@ def install_default_provider(
     }
     if resource_attributes:
         attrs.update(resource_attributes)
-    provider = TracerProvider(resource=Resource.create(attrs))
+    provider = TracerProvider(
+        resource=Resource.create(attrs),
+        span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN),
+    )
     if exporter is not None:
         provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
