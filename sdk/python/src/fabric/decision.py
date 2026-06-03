@@ -70,8 +70,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from contextlib import AbstractContextManager, contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
@@ -1578,28 +1581,51 @@ class Decision(AbstractContextManager["Decision"]):
             input_hash = hashlib.sha256(serialized_input.encode("utf-8")).hexdigest()
 
             started = time.monotonic()
+            # Enforce the deadline in-SDK: a synchronous adapter that
+            # ignores timeout_seconds (or blocks on I/O) must not hang the
+            # agent. Run the call on a worker thread and abandon it on
+            # timeout — a running thread can't be cancelled in Python, so we
+            # drain without waiting and fail closed. The orphaned worker
+            # exits if/when the adapter call eventually returns.
+            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="fabric-policy")
             try:
-                verdict = engine.evaluate(
+                future = executor.submit(
+                    engine.evaluate,
                     policy_id=policy_id,
                     input=input,
                     timeout_seconds=timeout_seconds,
                 )
-                latency_ms = (time.monotonic() - started) * 1000.0
                 try:
-                    evaluation = PolicyEvaluation.from_verdict(
-                        verdict=verdict,
-                        engine=engine.engine_name,
-                        policy_id=policy_id,
-                        decision_id=self.decision_id,
-                        input_hash=input_hash,
-                        latency_ms=latency_ms,
-                    )
-                except ValueError as exc:
-                    # Missing reason on non-allow → fail closed
+                    verdict = future.result(timeout=timeout_seconds)
+                    latency_ms = (time.monotonic() - started) * 1000.0
+                    try:
+                        evaluation = PolicyEvaluation.from_verdict(
+                            verdict=verdict,
+                            engine=engine.engine_name,
+                            policy_id=policy_id,
+                            decision_id=self.decision_id,
+                            input_hash=input_hash,
+                            latency_ms=latency_ms,
+                        )
+                    except ValueError as exc:
+                        # Unknown vocab or missing reason on non-allow → fail closed
+                        evaluation = PolicyEvaluation.from_verdict(
+                            verdict=EngineVerdict(
+                                decision="deny",
+                                reason=f"adapter returned malformed verdict: {exc}",
+                            ),
+                            engine=engine.engine_name,
+                            policy_id=policy_id,
+                            decision_id=self.decision_id,
+                            input_hash=input_hash,
+                            latency_ms=latency_ms,
+                        )
+                except FuturesTimeout:  # adapter blew the deadline; fail closed
+                    latency_ms = (time.monotonic() - started) * 1000.0
                     evaluation = PolicyEvaluation.from_verdict(
                         verdict=EngineVerdict(
                             decision="deny",
-                            reason=f"adapter returned malformed verdict: {exc}",
+                            reason=f"adapter exceeded timeout_seconds={timeout_seconds}",
                         ),
                         engine=engine.engine_name,
                         policy_id=policy_id,
@@ -1607,20 +1633,23 @@ class Decision(AbstractContextManager["Decision"]):
                         input_hash=input_hash,
                         latency_ms=latency_ms,
                     )
-            except Exception as exc:  # adapter contract is broad; fail closed
-                latency_ms = (time.monotonic() - started) * 1000.0
-                evaluation = PolicyEvaluation.from_verdict(
-                    verdict=EngineVerdict(
-                        decision="deny",
-                        reason=f"adapter raised: {type(exc).__name__}: {exc}",
-                    ),
-                    engine=engine.engine_name,
-                    policy_id=policy_id,
-                    decision_id=self.decision_id,
-                    input_hash=input_hash,
-                    latency_ms=latency_ms,
-                )
-                span.record_exception(exc)
+                except Exception as exc:  # adapter contract is broad; fail closed
+                    latency_ms = (time.monotonic() - started) * 1000.0
+                    evaluation = PolicyEvaluation.from_verdict(
+                        verdict=EngineVerdict(
+                            decision="deny",
+                            reason=f"adapter raised: {type(exc).__name__}: {exc}",
+                        ),
+                        engine=engine.engine_name,
+                        policy_id=policy_id,
+                        decision_id=self.decision_id,
+                        input_hash=input_hash,
+                        latency_ms=latency_ms,
+                    )
+                    span.record_exception(exc)
+            finally:
+                # Never wait on a possibly-hung worker thread.
+                executor.shutdown(wait=False)
 
             self._policy_evaluations.append(evaluation)
             span.set_attribute(ATTR_POLICY_EVAL_COUNT, len(self._policy_evaluations))
@@ -1907,5 +1936,12 @@ class Decision(AbstractContextManager["Decision"]):
                 raise TypeError(
                     f"set_attribute({key!r}, ...): value must be str/int/float/bool, "
                     f"got {type(value).__name__}"
+                )
+            # NaN/Inf are not valid OTLP attribute values — many backends
+            # reject or silently drop the whole span. Fail loud (bool is not
+            # a float, so True/False are unaffected).
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError(
+                    f"set_attribute({key!r}, ...): float value must be finite, got {value!r}"
                 )
             self.span.set_attribute(key, value)

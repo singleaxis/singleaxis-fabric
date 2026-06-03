@@ -43,7 +43,11 @@ MemoryDirection = Literal["read", "write", "erase"]
 
 
 def _sha256_hex(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    # ``surrogatepass`` keeps hashing total: lone UTF-16 surrogates
+    # (malformed but reachable via arbitrary tool/memory content) would
+    # otherwise raise UnicodeEncodeError mid-hash. Byte-identical for all
+    # well-formed text, so no golden/wire output changes.
+    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 class MemoryRecord(BaseModel):

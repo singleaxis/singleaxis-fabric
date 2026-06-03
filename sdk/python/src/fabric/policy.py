@@ -16,6 +16,12 @@ from uuid import UUID, uuid4
 
 PolicyDecision = Literal["allow", "deny", "warn", "escalate", "redact"]
 
+# The closed vocabulary, materialized for runtime validation. The Literal
+# is type-time only; a buggy/hostile adapter can still hand us an arbitrary
+# string at runtime, which must be rejected (→ fail closed) rather than
+# recorded verbatim.
+_VALID_DECISIONS: frozenset[str] = frozenset(("allow", "deny", "warn", "escalate", "redact"))
+
 
 class PolicyAdapterError(RuntimeError):
     """Raised when a PolicyEngine returns a malformed verdict or
@@ -66,9 +72,17 @@ class PolicyEvaluation:
         """Build a normalized PolicyEvaluation from an EngineVerdict.
 
         Raises:
-            ValueError: if a non-allow decision lacks a reason. Audit
-                policy: silent denies are not permitted.
+            ValueError: if the decision is outside the closed vocabulary,
+                or a non-allow decision lacks a reason. Audit policy:
+                unknown decisions and silent denies are not permitted.
+                Callers (``evaluate_policy``) convert this to a
+                fail-closed deny.
         """
+        if verdict.decision not in _VALID_DECISIONS:
+            raise ValueError(
+                f"policy decision={verdict.decision!r} is not one of "
+                f"{sorted(_VALID_DECISIONS)}; refusing to record an unknown verdict"
+            )
         if verdict.decision != "allow" and not verdict.reason:
             raise ValueError(
                 f"policy decision={verdict.decision!r} requires a non-empty reason "
