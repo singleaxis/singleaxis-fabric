@@ -62,7 +62,10 @@ Scope should identify the component (`decision-graph`, `telemetry-bridge`,
 - `main` is the integration branch. It must always be releasable.
 - Feature work happens in topic branches off `main`.
 - Pull requests are merged by **squash-merge**. Merge commit message must
-  follow conventional-commit format.
+  follow conventional-commit format and retain a `Signed-off-by:` trailer
+  in its body — the squash commit becomes `main`'s HEAD, which the
+  push-event DCO check inspects (per-commit sign-offs are not carried
+  over into the squash automatically).
 - A PR may not be merged by its author.
 
 ## Code standards
