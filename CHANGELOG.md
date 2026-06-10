@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Agent surface logging (Python SDK).** Fabric now captures every way
+  an agent touches the outside world, each as an additive `fabric.*`
+  span event with metadata + SHA-256 hashes (raw data never on the
+  span). New `Decision` methods: `record_skill`, `delegate` /
+  `adelegate` (first-class sub-agent edge; `parent_agent_id` propagates
+  via `tracestate`), `record_hook`, and `record_file_access` (file
+  names + content hash, never the data; `redact_path` hashes the path).
+  MCP gains inventory capture — `InstrumentedMCPSession.snapshot_inventory()`
+  and `record_mcp_inventory(...)` hash each tool *definition* so a
+  tool changing underneath the agent (shadow/poison) is detectable. See
+  [`docs/capturing-interactions.md`](docs/capturing-interactions.md).
+  (spec 022)
+- **Generic interaction capture (Python SDK).** A universal
+  `Decision.record_interaction(kind, target, …)` captures *any*
+  interaction (`http.request`, `db.query`, `shell.exec`, …) — `kind` is
+  free-form. A one-shot `fabric.coverage` signal flags interaction
+  types captured only generically (the coverage loop). Three
+  surface-agnostic capabilities — usable on any `record_*` call:
+  `Baseline.load(...).check(...)` ("is this the approved hash?" for any
+  hashed thing → `fabric.baseline.status`); open-vocabulary `tags=`
+  (`fabric.tags`) with MITRE ATLAS + OWASP LLM reference taxonomies
+  shipped as drop-in data (add a framework = drop a JSON file, zero
+  code); and `verify_signature(...)` (`ed25519` via the `[signing]`
+  extra, `hmac-sha256` via stdlib) → `fabric.signature.verified`. New
+  public exports: `Baseline`, `BaselineCheck`, `verify_signature`,
+  `SignatureResult`, `SignatureCheck`, `Taxonomy`, `TaxonomyEntry`,
+  `bundled_taxonomy_names`. All additive: the conformance goldens stay
+  byte-identical and `fabric.schema_version` remains `1.0`. (spec 023)
+
 ## [0.6.0] - 2026-06-02
 
 ### Added
@@ -176,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **Helm release now publishes the `fabric` umbrella chart.** The
   `publish-chart` release job previously packaged and pushed the
-  `otel-collector` _subchart_ (`oci://ghcr.io/singleaxis/charts/otel-collector`),
+  `otel-collector` *subchart* (`oci://ghcr.io/singleaxis/charts/otel-collector`),
   not the umbrella users actually install — so the documented one-command
   install referenced a chart that was never published. It now packages and
   publishes the `charts/fabric` umbrella as `oci://ghcr.io/singleaxis/charts/fabric`.
@@ -270,7 +301,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `fabric.llm_call` / `fabric.tool_call` child spans) emitting the same
   `fabric.*` / `gen_ai.*` wire contract as the Python SDK. Proven by a
   conformance test that deep-equal-asserts normalized TypeScript spans
-  against the _same_ shared golden fixtures the Python conformance suite
+  against the *same* shared golden fixtures the Python conformance suite
   uses (`bare_decision`, `llm_call`, `tool_call`). Ships CJS + ESM +
   types, with sha-256 hashing byte-identical to Python's `hashlib`.
   Adapters, sidecar clients, and the remaining recording primitives are
@@ -294,11 +325,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   short keys `w` / `e`, mirroring the existing `t` / `a` / `s` / `r`), and
   `Decision` exposes matching read-only properties. `inject_decision` now
   carries both onto the carrier, closing the gap where they were emitted
-  as decision-span attributes but did _not_ actually cross the wire. Fully
+  as decision-span attributes but did *not* actually cross the wire. Fully
   backward compatible: `tracestate` members without `w` / `e` decode with
   those fields as `None`, and the emitted decision-span schema is
   unchanged.
-- **SDK:** memory lineage now supports _invalidation_ and _right-to-erasure_
+- **SDK:** memory lineage now supports *invalidation* and *right-to-erasure*
   markers. `Decision.remember` gains an optional `invalidates=<prior_key>`
   argument that, when set, emits `fabric.memory.invalidates` on the
   `fabric.memory` event — a lineage edge marking the prior key this write
@@ -310,7 +341,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   symmetric with the read/write counters. `MemoryRecord` gains
   `invalidates` / `tenant_scope` fields and a `from_erase` constructor; an
   erase record references a key (no content), so its `content_hash` is
-  `None`. The OSS SDK only _emits_ these markers — acting on an erasure
+  `None`. The OSS SDK only *emits* these markers — acting on an erasure
   marker (the actual purge) is the commercial Decision Graph's job. Fully
   backward compatible: the new attributes are emitted only when the new
   features are used, so existing memory events are byte-identical.
@@ -337,8 +368,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `request_escalation`, `record_retrieval`, `remember`, `recall`,
   `record_side_effect`, `checkpoint`, `record_eval`, `queue_judge`,
   `evaluate_policy`, `authorize_tool_call`, `set_attribute`) is wrapped
-  in a non-blocking overlap sentinel: two operations that _genuinely
-  overlap in time_ on the same instance now raise the new
+  in a non-blocking overlap sentinel: two operations that *genuinely
+  overlap in time* on the same instance now raise the new
   `ConcurrentDecisionUseError` instead of silently racing the internal
   record lists and rolling span-counter attributes. Sequential calls —
   including the async `a*` offload path, where each `await` completes
@@ -983,8 +1014,8 @@ tenant-facing API stable.
   install, ASCII request-path diagram, and a documentation lookup
   table. Replaces the OSS-vs-services-first intro that buried the
   install path.
-- **Apache copyright legal entity** corrected to _AI5Labs Research
-  OPC Private Limited_ and role emails switched to `singleaxis.ai`
+- **Apache copyright legal entity** corrected to *AI5Labs Research
+  OPC Private Limited* and role emails switched to `singleaxis.ai`
   (#20).
 - **GitHub Actions bumped to latest majors** (#23): `checkout` v4 →
   v6, `setup-python` v5 → v6, `setup-go` v5 → v6, `codeql-action` v3

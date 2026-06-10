@@ -1,0 +1,56 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.interaction_count": 1,
+      "fabric.interaction_kinds": [
+        "shell.exec"
+      ],
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.baseline.name": "shell.exec",
+          "fabric.baseline.status": "deviation",
+          "fabric.interaction.kind": "shell.exec",
+          "fabric.interaction.payload_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "fabric.interaction.target_hash": "91f98207e8228b4e50592db9609ff09b14df640bbebdc8f94a9e8cb8dc1ee73e",
+          "fabric.interaction.target_redacted": true,
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.interaction"
+      },
+      {
+        "attributes": {
+          "fabric.coverage.kind": "shell.exec",
+          "fabric.coverage.reason": "new_kind",
+          "fabric.coverage.suggestion": "generic",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.coverage"
+      },
+      {
+        "attributes": {
+          "fabric.coverage.kind": "shell.exec",
+          "fabric.coverage.reason": "unclassified_deviation",
+          "fabric.coverage.suggestion": "generic",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.coverage"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

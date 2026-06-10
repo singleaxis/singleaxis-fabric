@@ -17,10 +17,14 @@ Determinism rules for every scenario:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from collections.abc import Callable
 from uuid import UUID
 
 from fabric import (
+    Baseline,
+    BaselineCheck,
     EngineVerdict,
     EscalationSummary,
     Fabric,
@@ -32,10 +36,12 @@ from fabric import (
     ReplayBehavior,
     RetrievalSource,
     SideEffectType,
+    SignatureCheck,
     ToolAuthorization,
     ToolErrorCategory,
 )
-from fabric.decision import Decision
+from fabric.decision import Decision, reset_coverage_registry
+from fabric.integrations.mcp import record_mcp_inventory
 
 from .stubs import (
     BlockingChecker,
@@ -554,6 +560,156 @@ def _side_effect_parent_tool_call() -> None:
         )
 
 
+def _mcp_inventory() -> None:
+    client = _client()
+    with _decision(client) as d:
+        record_mcp_inventory(
+            d,
+            server="weather-mcp",
+            transport="stdio",
+            tools=[
+                {
+                    "name": "get_weather",
+                    "description": "Return the current weather for a city.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                    },
+                },
+                {
+                    "name": "get_forecast",
+                    "description": "Return a multi-day forecast for a city.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}, "days": {"type": "integer"}},
+                    },
+                },
+            ],
+            resources=["weather://stations"],
+            prompts=["summarize_forecast", "explain_alert"],
+        )
+
+
+def _skill() -> None:
+    client = _client()
+    with _decision(client) as d:
+        d.record_skill(
+            "refund-policy-skill",
+            "2.1.0",
+            source="registry://skills/refund-policy",
+            manifest_hash="e" * 64,
+            signed=True,
+        )
+
+
+def _delegation() -> None:
+    client = _client()
+    with _decision(client) as d, d.delegate("research-agent", protocol="a2a"):
+        pass
+
+
+def _hook() -> None:
+    client = _client()
+    with _decision(client) as d:
+        d.record_hook(
+            "pii-redactor",
+            "pre_model",
+            modified=True,
+            input_hash="a" * 64,
+            output_hash="b" * 64,
+        )
+
+
+def _file_access() -> None:
+    client = _client()
+    with _decision(client) as d:
+        d.record_file_access(
+            "/var/data/report.csv",
+            "read",
+            content_hash="c" * 64,
+            size_bytes=2048,
+        )
+        d.record_file_access(
+            "/patients/jane/record.pdf",
+            "write",
+            content_hash="d" * 64,
+            size_bytes=4096,
+            redact_path=True,
+        )
+
+
+# Fixed shared secret for the hmac-sha256 signature scenario. The
+# verification is stdlib-only and fully deterministic, so the emitted
+# ``fabric.signature.verified`` is stable for a fixed (secret, hash) pair.
+_SIG_SECRET = "conformance-shared-secret"  # noqa: S105 — a test HMAC secret
+
+
+def _hmac_sig(artifact_hash: str) -> str:
+    """Deterministic hmac-sha256 signature over ``artifact_hash``."""
+    return hmac.new(
+        _SIG_SECRET.encode("utf-8"), artifact_hash.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def _interaction() -> None:
+    # The universal generic primitive on a never-before-seen kind. Reset
+    # the process coverage registry so the one-shot coverage signal fires
+    # deterministically every run.
+    reset_coverage_registry()
+    client = _client()
+    with _decision(client) as d:
+        d.record_interaction(
+            "http.request",
+            "https://api.example.com/v1/orders",
+            direction="outbound",
+            payload_hash="a" * 64,
+            metadata={"method": "POST", "status": 200},
+        )
+
+
+def _interaction_tagged() -> None:
+    # record_interaction exercising all three generic cross-cutting
+    # capabilities: open-vocabulary tags, a baseline MATCH, and a verified
+    # hmac-sha256 signature — all surface-agnostic.
+    reset_coverage_registry()
+    payload_hash = "b" * 64
+    baseline = Baseline.load({"db.query": payload_hash})
+    client = _client()
+    with _decision(client) as d:
+        d.record_interaction(
+            "db.query",
+            "orders",
+            direction="internal",
+            payload_hash=payload_hash,
+            tags=["atlas:AML.T0051", "owasp-llm:LLM01", "myco:risk-high"],
+            baseline=BaselineCheck(baseline, "db.query", payload_hash),
+            signature=SignatureCheck(
+                artifact_hash=payload_hash,
+                signature=_hmac_sig(payload_hash),
+                public_key=_SIG_SECRET,
+                scheme="hmac-sha256",
+                key_id="conformance-key-1",
+            ),
+        )
+
+
+def _interaction_deviation() -> None:
+    # A baseline DEVIATION with no classifying tags + a redacted target —
+    # the unclassified-anomaly path, which emits BOTH the new-kind and the
+    # unclassified-deviation coverage signals.
+    reset_coverage_registry()
+    baseline = Baseline.load({"shell.exec": "a" * 64})
+    client = _client()
+    with _decision(client) as d:
+        d.record_interaction(
+            "shell.exec",
+            "/usr/bin/curl --data @/etc/passwd",
+            redact_target=True,
+            payload_hash="c" * 64,
+            baseline=BaselineCheck(baseline, "shell.exec", "f" * 64),
+        )
+
+
 # --------------------------------------------------------------------------- #
 # Registry
 # --------------------------------------------------------------------------- #
@@ -592,5 +748,13 @@ SCENARIOS: dict[str, Callable[[], None]] = {
     "policy_escalate": _policy_escalate,
     "policy_redact": _policy_redact,
     "side_effect_parent_tool_call": _side_effect_parent_tool_call,
+    "mcp_inventory": _mcp_inventory,
+    "skill": _skill,
+    "delegation": _delegation,
+    "hook": _hook,
+    "file_access": _file_access,
+    "interaction": _interaction,
+    "interaction_tagged": _interaction_tagged,
+    "interaction_deviation": _interaction_deviation,
 }
 """All frozen conformance scenarios, keyed by name."""

@@ -1,0 +1,3462 @@
+{
+  "generated_utc": "2026-06-10T03:38:52.866596+00:00",
+  "summary": {
+    "total": 345,
+    "allow": 339,
+    "allow_log": 6,
+    "deny": 0,
+    "unknown": 0
+  },
+  "dependencies": [
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "annotated-doc",
+      "version": "0.0.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "anyio",
+      "version": "4.13.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "certifi",
+      "version": "2026.5.20",
+      "spdx": "MPL-2.0",
+      "raw_license": "Mozilla Public License 2.0 (MPL 2.0)",
+      "disposition": "ALLOW-LOG",
+      "detail": "MPL-2.0: weak/file-level copyleft"
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "h11",
+      "version": "0.16.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "httpcore",
+      "version": "1.0.9",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "httpx",
+      "version": "0.28.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "idna",
+      "version": "3.18",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "markdown-it-py",
+      "version": "4.2.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "mdurl",
+      "version": "0.1.2",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "Pygments",
+      "version": "2.20.0",
+      "spdx": "BSD-2-Clause",
+      "raw_license": "BSD-2-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "rich",
+      "version": "15.0.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "shellingham",
+      "version": "1.5.4",
+      "spdx": "ISC",
+      "raw_license": "ISC License (ISCL)",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "typer",
+      "version": "0.26.7",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/langfuse-bootstrap",
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "spdx": "PSF-2.0",
+      "raw_license": "PSF-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "annotated-doc",
+      "version": "0.0.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "anyio",
+      "version": "4.13.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "click",
+      "version": "8.4.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "fastapi",
+      "version": "0.136.3",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "h11",
+      "version": "0.16.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "idna",
+      "version": "3.18",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "starlette",
+      "version": "1.2.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "spdx": "PSF-2.0",
+      "raw_license": "PSF-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/nemo-sidecar",
+      "ecosystem": "python",
+      "name": "uvicorn",
+      "version": "0.49.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/agnivade/levenshtein",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/beorn7/perks/quantile",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/cenkalti/backoff/v5",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/cespare/xxhash/v2",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/davecgh/go-spew/spew",
+      "version": "",
+      "spdx": "ISC",
+      "raw_license": "ISC",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/ebitengine/purego",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/felixge/httpsnoop",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/foxboron/go-tpm-keyfiles",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/fsnotify/fsnotify",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/go-logr/logr",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/go-logr/stdr",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/go-viper/mapstructure/v2",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/gobwas/glob",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/golang/snappy",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/google/go-tpm",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/google/uuid",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/grpc-ecosystem/grpc-gateway/v2",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/hashicorp/go-version",
+      "version": "",
+      "spdx": "MPL-2.0",
+      "raw_license": "MPL-2.0",
+      "disposition": "ALLOW-LOG",
+      "detail": "MPL-2.0: weak/file-level copyleft"
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/hashicorp/golang-lru/v2/internal",
+      "version": "",
+      "spdx": "MPL-2.0",
+      "raw_license": "MPL-2.0",
+      "disposition": "ALLOW-LOG",
+      "detail": "MPL-2.0: weak/file-level copyleft"
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/hashicorp/golang-lru/v2/simplelru",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/json-iterator/go",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/klauspost/compress",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/klauspost/compress/internal/snapref",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/klauspost/compress/zstd/internal/xxhash",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/knadh/koanf/maps",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/knadh/koanf/providers/confmap",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/knadh/koanf/v2",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/lestrrat-go/blackmagic",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/lestrrat-go/dsig",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/lestrrat-go/httpcc",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/lestrrat-go/httprc/v3",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/lestrrat-go/jwx/v3",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/lestrrat-go/option/v2",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/mitchellh/copystructure",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/mitchellh/reflectwalk",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/modern-go/concurrent",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/modern-go/reflect2",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/mostynb/go-grpc-compression",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/munnerz/goautoneg",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/open-policy-agent/opa",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/open-policy-agent/opa/internal/edittree/bitvector",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/open-policy-agent/opa/internal/gojsonschema",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/open-policy-agent/opa/internal/semver",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/pierrec/lz4/v4",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/pmezard/go-difflib/difflib",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/prometheus/client_golang/prometheus",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/prometheus/client_model/go",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/prometheus/common",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/prometheus/otlptranslator",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/rcrowley/go-metrics",
+      "version": "",
+      "spdx": "BSD-2-Clause",
+      "raw_license": "BSD-2-Clause-FreeBSD",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/rs/cors",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/shirou/gopsutil/v4",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/sirupsen/logrus",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/spf13/cobra",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/spf13/pflag",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/stretchr/testify",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/tchap/go-patricia/v2/patricia",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/tklauser/go-sysconf",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/valyala/fastjson",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/vektah/gqlparser/v2",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/xeipuuv/gojsonpointer",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/xeipuuv/gojsonreference",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "github.com/yashtewari/glob-intersection",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/auto/sdk",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/client",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/component",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/component/componentstatus",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/component/componenttest",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configauth",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configcompression",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configgrpc",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/confighttp",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configmiddleware",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/confignet",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configopaque",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configoptional",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configretry",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configtelemetry",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/config/configtls",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/confmap",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/confmap/provider/envprovider",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/confmap/provider/fileprovider",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/confmap/provider/yamlprovider",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/confmap/xconfmap",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/connector",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/connector/connectortest",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/connector/xconnector",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/consumer",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/consumer/consumererror",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/consumer/consumererror/xconsumererror",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/consumer/consumertest",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/consumer/xconsumer",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/exporter",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/exporter/debugexporter",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/exporter/exporterhelper",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/exporter/exporterhelper/xexporterhelper",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/exporter/exportertest",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/exporter/otlphttpexporter",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/exporter/xexporter",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/extension",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/extension/extensionauth",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/extension/extensioncapabilities",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/extension/extensionmiddleware",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/extension/extensiontest",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/extension/xextension/storage",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/extension/zpagesextension",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/featuregate",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/internal/componentalias",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/internal/fanoutconsumer",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/internal/memorylimiter",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/internal/sharedcomponent",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/internal/statusutil",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/internal/telemetry",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/otelcol",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/pdata",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/pdata/pprofile",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/pdata/testdata",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/pdata/xpdata",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/pipeline",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/pipeline/xpipeline",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/processor",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/processor/batchprocessor",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/processor/memorylimiterprocessor",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/processor/processorhelper",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/processor/processorhelper/xprocessorhelper",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/processor/processortest",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/processor/xprocessor",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/receiver",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/receiver/otlpreceiver",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/receiver/receiverhelper",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/receiver/receivertest",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/receiver/xreceiver",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/service",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/collector/service/hostcapabilities",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/contrib/bridges/otelzap",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/contrib/otelconf",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/contrib/propagators/b3",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/contrib/zpages",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/otlp/otlptrace",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/prometheus",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/stdout/stdoutlog",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/stdout/stdoutmetric",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/exporters/stdout/stdouttrace",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/log",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/metric",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/sdk",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/sdk/log",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/sdk/metric",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/otel/trace",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.opentelemetry.io/proto/otlp",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.uber.org/multierr",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.uber.org/zap",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.yaml.in/yaml/v2",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "go.yaml.in/yaml/v3",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "golang.org/x/exp/maps",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "golang.org/x/net",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "golang.org/x/sync/errgroup",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "golang.org/x/sys/unix",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "golang.org/x/text",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "gonum.org/v1/gonum",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "google.golang.org/genproto/googleapis/api/httpbody",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "google.golang.org/genproto/googleapis/rpc",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "google.golang.org/grpc",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "google.golang.org/protobuf",
+      "version": "",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "gopkg.in/yaml.v3",
+      "version": "",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/otel-collector-fabric",
+      "ecosystem": "go",
+      "name": "sigs.k8s.io/yaml",
+      "version": "",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "annotated-doc",
+      "version": "0.0.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "anyio",
+      "version": "4.13.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "click",
+      "version": "8.4.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "fastapi",
+      "version": "0.136.3",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "h11",
+      "version": "0.16.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "idna",
+      "version": "3.18",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "starlette",
+      "version": "1.2.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "spdx": "PSF-2.0",
+      "raw_license": "PSF-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/presidio-sidecar",
+      "ecosystem": "python",
+      "name": "uvicorn",
+      "version": "0.49.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "annotated-doc",
+      "version": "0.0.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "anyio",
+      "version": "4.13.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "click",
+      "version": "8.4.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "fastapi",
+      "version": "0.136.3",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "h11",
+      "version": "0.16.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "idna",
+      "version": "3.18",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "starlette",
+      "version": "1.2.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "spdx": "PSF-2.0",
+      "raw_license": "PSF-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/prompt-guard-sidecar",
+      "ecosystem": "python",
+      "name": "uvicorn",
+      "version": "0.49.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "annotated-doc",
+      "version": "0.0.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "anyio",
+      "version": "4.13.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "certifi",
+      "version": "2026.5.20",
+      "spdx": "MPL-2.0",
+      "raw_license": "Mozilla Public License 2.0 (MPL 2.0)",
+      "disposition": "ALLOW-LOG",
+      "detail": "MPL-2.0: weak/file-level copyleft"
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "charset-normalizer",
+      "version": "3.4.7",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "googleapis-common-protos",
+      "version": "1.75.0",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache Software License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "h11",
+      "version": "0.16.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "httpcore",
+      "version": "1.0.9",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "httpx",
+      "version": "0.28.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "idna",
+      "version": "3.18",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "markdown-it-py",
+      "version": "4.2.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "mdurl",
+      "version": "0.1.2",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "opentelemetry-api",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "opentelemetry-exporter-otlp-proto-http",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "opentelemetry-proto",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "opentelemetry-sdk",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "opentelemetry-semantic-conventions",
+      "version": "0.63b1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "protobuf",
+      "version": "6.33.6",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "3-Clause BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "Pygments",
+      "version": "2.20.0",
+      "spdx": "BSD-2-Clause",
+      "raw_license": "BSD-2-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "requests",
+      "version": "2.34.2",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache Software License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "rich",
+      "version": "15.0.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "shellingham",
+      "version": "1.5.4",
+      "spdx": "ISC",
+      "raw_license": "ISC License (ISCL)",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "typer",
+      "version": "0.26.7",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "spdx": "PSF-2.0",
+      "raw_license": "PSF-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/redteam-runner",
+      "ecosystem": "python",
+      "name": "urllib3",
+      "version": "2.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "annotated-doc",
+      "version": "0.0.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "anyio",
+      "version": "4.13.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "attrs",
+      "version": "26.1.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "cffi",
+      "version": "2.0.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "click",
+      "version": "8.4.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "cryptography",
+      "version": "48.0.1",
+      "spdx": "Apache-2.0 OR BSD-3-Clause",
+      "raw_license": "Apache-2.0 OR BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": "OR-choice satisfied by Apache-2.0"
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "fastapi",
+      "version": "0.136.3",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "h11",
+      "version": "0.16.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "idna",
+      "version": "3.18",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "jsonschema",
+      "version": "4.26.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "markdown-it-py",
+      "version": "4.2.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "mdurl",
+      "version": "0.1.2",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "packaging",
+      "version": "26.2",
+      "spdx": "Apache-2.0 OR BSD-2-Clause",
+      "raw_license": "Apache-2.0 OR BSD-2-Clause",
+      "disposition": "ALLOW",
+      "detail": "OR-choice satisfied by Apache-2.0"
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "pycparser",
+      "version": "3.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "Pygments",
+      "version": "2.20.0",
+      "spdx": "BSD-2-Clause",
+      "raw_license": "BSD-2-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "referencing",
+      "version": "0.37.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "rich",
+      "version": "15.0.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "rpds-py",
+      "version": "2026.5.1",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "shellingham",
+      "version": "1.5.4",
+      "spdx": "ISC",
+      "raw_license": "ISC License (ISCL)",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "starlette",
+      "version": "1.2.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "typer",
+      "version": "0.26.7",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "spdx": "PSF-2.0",
+      "raw_license": "PSF-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "components/update-agent",
+      "ecosystem": "python",
+      "name": "uvicorn",
+      "version": "0.49.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "anyio",
+      "version": "4.13.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "certifi",
+      "version": "2026.5.20",
+      "spdx": "MPL-2.0",
+      "raw_license": "Mozilla Public License 2.0 (MPL 2.0)",
+      "disposition": "ALLOW-LOG",
+      "detail": "MPL-2.0: weak/file-level copyleft"
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "charset-normalizer",
+      "version": "3.4.7",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "googleapis-common-protos",
+      "version": "1.75.0",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache Software License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "h11",
+      "version": "0.16.0",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "httpcore",
+      "version": "1.0.9",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "httpx",
+      "version": "0.28.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "idna",
+      "version": "3.18",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "jsonpatch",
+      "version": "1.33",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "jsonpointer",
+      "version": "3.1.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "langchain-core",
+      "version": "1.4.3",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "langchain-protocol",
+      "version": "0.0.16",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "langgraph",
+      "version": "1.2.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "langgraph-checkpoint",
+      "version": "4.1.1",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "langgraph-prebuilt",
+      "version": "1.1.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "langgraph-sdk",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "langsmith",
+      "version": "0.8.11",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "opentelemetry-api",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "opentelemetry-exporter-otlp-proto-http",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "opentelemetry-proto",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "opentelemetry-sdk",
+      "version": "1.42.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "opentelemetry-semantic-conventions",
+      "version": "0.63b1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "orjson",
+      "version": "3.11.9",
+      "spdx": "MPL-2.0 AND Apache-2.0 OR MIT",
+      "raw_license": "MPL-2.0 AND (Apache-2.0 OR MIT)",
+      "disposition": "ALLOW-LOG",
+      "detail": "MPL-2.0: weak/file-level copyleft"
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "ormsgpack",
+      "version": "1.12.2",
+      "spdx": "Apache-2.0 OR MIT",
+      "raw_license": "Apache-2.0 OR MIT",
+      "disposition": "ALLOW",
+      "detail": "OR-choice satisfied by Apache-2.0"
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "packaging",
+      "version": "26.2",
+      "spdx": "Apache-2.0 OR BSD-2-Clause",
+      "raw_license": "Apache-2.0 OR BSD-2-Clause",
+      "disposition": "ALLOW",
+      "detail": "OR-choice satisfied by Apache-2.0"
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "protobuf",
+      "version": "6.33.6",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "3-Clause BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "pydantic",
+      "version": "2.13.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "pydantic_core",
+      "version": "2.46.4",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "PyYAML",
+      "version": "6.0.3",
+      "spdx": "MIT",
+      "raw_license": "MIT License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "requests",
+      "version": "2.34.2",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache Software License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "requests-toolbelt",
+      "version": "1.0.0",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache Software License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "tenacity",
+      "version": "9.1.4",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache Software License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "typing_extensions",
+      "version": "4.15.0",
+      "spdx": "PSF-2.0",
+      "raw_license": "PSF-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "urllib3",
+      "version": "2.7.0",
+      "spdx": "MIT",
+      "raw_license": "MIT",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "uuid_utils",
+      "version": "0.16.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "websockets",
+      "version": "15.0.1",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "xxhash",
+      "version": "3.7.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD License",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/python",
+      "ecosystem": "python",
+      "name": "zstandard",
+      "version": "0.25.0",
+      "spdx": "BSD-3-Clause",
+      "raw_license": "BSD-3-Clause",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/api",
+      "version": "1.9.0",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/context-async-hooks",
+      "version": "1.30.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/core",
+      "version": "1.30.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/propagator-b3",
+      "version": "1.30.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/propagator-jaeger",
+      "version": "1.30.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/resources",
+      "version": "1.30.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/sdk-trace-base",
+      "version": "1.30.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/sdk-trace-node",
+      "version": "1.30.1",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "@opentelemetry/semantic-conventions",
+      "version": "1.28.0",
+      "spdx": "Apache-2.0",
+      "raw_license": "Apache-2.0",
+      "disposition": "ALLOW",
+      "detail": ""
+    },
+    {
+      "surface": "sdk/typescript",
+      "ecosystem": "npm",
+      "name": "semver",
+      "version": "7.8.1",
+      "spdx": "ISC",
+      "raw_license": "ISC",
+      "disposition": "ALLOW",
+      "detail": ""
+    }
+  ]
+}

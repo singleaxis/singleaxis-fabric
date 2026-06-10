@@ -1,0 +1,45 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.file_access_count": 2,
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.file.content_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "fabric.file.operation": "read",
+          "fabric.file.path": "/var/data/report.csv",
+          "fabric.file.path_redacted": false,
+          "fabric.file.size_bytes": 2048,
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.file"
+      },
+      {
+        "attributes": {
+          "fabric.file.content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "fabric.file.operation": "write",
+          "fabric.file.path_hash": "1ab8d4a0c1f7a68a403c789d4c7910bb2a08abcc287de3ce9354a87ecfdce2c8",
+          "fabric.file.path_redacted": true,
+          "fabric.file.size_bytes": 4096,
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.file"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

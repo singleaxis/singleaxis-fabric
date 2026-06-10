@@ -52,6 +52,12 @@ Apache-2.0. Zero-signup. Works offline.
 - **Decision spans** — one OpenTelemetry span per agent turn, tagged
   with tenant / agent / session / request / user, plus span events for
   every retrieval, guardrail check, memory write, and escalation.
+- **Every interaction captured** — MCP servers (with tool-definition
+  drift detection), skills, sub-agents, hooks, file access, and a
+  universal `record_interaction` for *any* surface — all hash-on-span,
+  with generic baseline / taxonomy-tag (MITRE ATLAS, OWASP LLM) /
+  signature-verification helpers. See
+  [`docs/capturing-interactions.md`](docs/capturing-interactions.md).
 - **Inline guardrails** — [Presidio](https://microsoft.github.io/presidio/)
   for PII redaction and [NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
   for Colang policy rails, both exposed over Unix domain sockets
@@ -289,6 +295,9 @@ follow.
 | Install the SDK and instrument one agent turn in 5 minutes | [`docs/quickstart.md`](docs/quickstart.md) |
 | Understand the 3-layer mental model and the latency principle | [`docs/architecture.md`](docs/architecture.md) |
 | Deploy the Helm chart with a regulatory profile | [`docs/deployment.md`](docs/deployment.md) |
+| Run a security / procurement review (the trust overview) | [`docs/enterprise-readiness.md`](docs/enterprise-readiness.md) |
+| Capture every interaction an agent has (MCP, skills, sub-agents, files…) | [`docs/capturing-interactions.md`](docs/capturing-interactions.md) |
+| See what an auditor will ask, mapped to what Fabric captures | [`docs/auditor-checklist.md`](docs/auditor-checklist.md) |
 | See every SDK surface exercised in one runnable file | [`examples/reference-agent/`](examples/reference-agent/) |
 | Read the authoritative design of record | [`specs/`](specs/) |
 | Look up an SDK symbol or environment variable | [`sdk/python/README.md`](sdk/python/README.md) |

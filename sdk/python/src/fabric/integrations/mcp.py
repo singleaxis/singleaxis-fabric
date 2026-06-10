@@ -34,11 +34,27 @@ recorded in the clear.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from fabric._attributes import (
+    ATTR_MCP_PROMPT_COUNT,
+    ATTR_MCP_RESOURCE_COUNT,
+    ATTR_MCP_TOOL_COUNT,
+    ATTR_MCP_TOOLS,
+    ATTR_MCP_TOOLS_HASH,
+    SCHEMA_VERSION,
+)
+from fabric._crosscut import apply_cross_cutting
+
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from fabric.baseline import BaselineCheck
     from fabric.decision import Decision
+    from fabric.signing import SignatureCheck
     from fabric.tool_auth import ToolAuthorizer
 
 # MCP-specific span attribute keys. Tool name / arguments / result are
@@ -47,6 +63,13 @@ if TYPE_CHECKING:
 # transport it was reached over.
 FABRIC_MCP_SERVER = "fabric.mcp.server"
 FABRIC_MCP_TRANSPORT = "fabric.mcp.transport"
+
+
+def _sha256_hex(value: str) -> str:
+    # ``surrogatepass`` keeps hashing total on lone UTF-16 surrogates,
+    # matching the SDK-wide hash helper so a hash computed here is
+    # byte-identical to one a record module would produce.
+    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 @runtime_checkable
@@ -86,6 +109,136 @@ def _result_hashable_view(result: Any) -> str:
         return json.dumps(result, sort_keys=True, default=str)
     except (TypeError, ValueError):
         return repr(result)
+
+
+# --------------------------------------------------------------------------- #
+# MCP server inventory (spec 022 §1)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class MCPInventory:
+    """The normalized result of an MCP inventory snapshot.
+
+    Returned by :func:`record_mcp_inventory` (and
+    :meth:`InstrumentedMCPSession.snapshot_inventory`) so a caller can
+    assert / diff what was captured. Carries only metadata + hashes — no
+    raw tool description or input schema — mirroring exactly what lands on
+    the ``fabric.mcp.inventory`` span event.
+    """
+
+    server: str
+    transport: str
+    tool_count: int
+    tools: tuple[str, ...]
+    tools_hash: str
+    resource_count: int | None = None
+    prompt_count: int | None = None
+
+
+def _tool_definition(tool: Any) -> dict[str, Any]:
+    """Extract the hashable definition (name + description + inputSchema).
+
+    Accepts either a mapping (``{"name", "description", "inputSchema"}``)
+    or an object exposing those as attributes (the real ``mcp.types.Tool``
+    and most fakes). Missing fields normalize to ``None`` so the canonical
+    form is stable. Only these three fields define a tool's identity for
+    shadow/poison detection.
+    """
+    if isinstance(tool, dict):
+        name = tool.get("name")
+        description = tool.get("description")
+        input_schema = tool.get("inputSchema", tool.get("input_schema"))
+    else:
+        name = getattr(tool, "name", None)
+        description = getattr(tool, "description", None)
+        input_schema = getattr(tool, "inputSchema", getattr(tool, "input_schema", None))
+    return {"name": name, "description": description, "inputSchema": input_schema}
+
+
+def _canonical(value: Any) -> str:
+    """Deterministic JSON for hashing (sorted keys, ``default=str``)."""
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def record_mcp_inventory(
+    decision: Decision,
+    *,
+    server: str,
+    transport: str,
+    tools: Sequence[Any],
+    resources: Sequence[Any] | None = None,
+    prompts: Sequence[Any] | None = None,
+    tags: Sequence[str] | None = None,
+    baseline: BaselineCheck | None = None,
+    signature: SignatureCheck | None = None,
+) -> MCPInventory:
+    """Record what an MCP server exposes as a ``fabric.mcp.inventory`` event.
+
+    Captures the server's tool surface so a downstream consumer can detect
+    a server's tools changing underneath the agent (a shadow / poison
+    attack). Each tool's full **definition** (name + description +
+    inputSchema) is canonicalized and SHA-256-hashed; the raw description
+    and schema NEVER land on the span — only the tool name, a per-tool
+    ``def_hash``, and an aggregate ``tools_hash``.
+
+    Emits onto ``decision``'s span:
+
+    * ``fabric.mcp.server`` / ``fabric.mcp.transport``
+    * ``fabric.mcp.tool_count`` (int)
+    * ``fabric.mcp.tools`` — tuple of ``"<tool_name>:<def_hash[:12]>"``,
+      ordered as supplied
+    * ``fabric.mcp.tools_hash`` — hash over the canonical full tool list
+    * ``fabric.mcp.resource_count`` / ``fabric.mcp.prompt_count`` — stamped
+      only when ``resources`` / ``prompts`` are supplied
+
+    Args:
+        decision: the active :class:`fabric.Decision` (must be entered).
+        server: MCP server identity.
+        transport: transport label (``"stdio"`` / ``"sse"`` / …).
+        tools: the server's advertised tool definitions.
+        resources: optional advertised resources (counted only).
+        prompts: optional advertised prompts (counted only).
+
+    Returns:
+        The :class:`MCPInventory` describing what was recorded.
+    """
+    definitions = [_tool_definition(t) for t in tools]
+    tool_entries = tuple(f"{d['name']}:{_sha256_hex(_canonical(d))[:12]}" for d in definitions)
+    tools_hash = _sha256_hex(_canonical(definitions))
+
+    resource_count = None if resources is None else len(resources)
+    prompt_count = None if prompts is None else len(prompts)
+
+    event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+        "fabric.schema_version": SCHEMA_VERSION,
+        FABRIC_MCP_SERVER: server,
+        FABRIC_MCP_TRANSPORT: transport,
+        ATTR_MCP_TOOL_COUNT: len(definitions),
+        ATTR_MCP_TOOLS: tool_entries,
+        ATTR_MCP_TOOLS_HASH: tools_hash,
+    }
+    if resource_count is not None:
+        event_attrs[ATTR_MCP_RESOURCE_COUNT] = resource_count
+    if prompt_count is not None:
+        event_attrs[ATTR_MCP_PROMPT_COUNT] = prompt_count
+
+    # Generic cross-cutting (spec 023): the MCP tool set is exactly the kind
+    # of hashed artifact a baseline / signature applies to. Stamped only when
+    # supplied, so existing inventory calls stay byte-identical.
+    apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+
+    decision.span.add_event("fabric.mcp.inventory", attributes=event_attrs)
+
+    return MCPInventory(
+        server=server,
+        transport=transport,
+        tool_count=len(definitions),
+        tools=tool_entries,
+        tools_hash=tools_hash,
+        resource_count=resource_count,
+        prompt_count=prompt_count,
+    )
 
 
 async def traced_call_tool(
@@ -208,6 +361,53 @@ class InstrumentedMCPSession:
             server_name=self._server_name,
             transport=self._transport,
             authorizer=self._authorizer,
+        )
+
+    async def snapshot_inventory(self) -> MCPInventory:
+        """Capture the wrapped server's advertised surface as an event.
+
+        Auto-capture wrapper around the session's ``list_tools()`` (and
+        ``list_resources()`` / ``list_prompts()`` when the session exposes
+        them): awaits each listing, then forwards the definitions to
+        :func:`record_mcp_inventory`, which hashes them and emits the
+        ``fabric.mcp.inventory`` event onto the bound decision's span.
+        Call after connecting (and again later to detect the server's
+        tools changing underneath the agent). Raw tool descriptions /
+        schemas never land on the span — only names + hashes.
+
+        Returns:
+            The :class:`MCPInventory` describing what was recorded.
+        """
+        # ``list_tools`` is not part of the minimal ``MCPSessionLike``
+        # contract (which only declares ``call_tool``), so reach it via
+        # ``getattr`` and fail loud if the wrapped session cannot list.
+        list_tools = getattr(self._session, "list_tools", None)
+        if list_tools is None:
+            raise AttributeError(
+                "wrapped MCP session has no list_tools(); cannot snapshot inventory"
+            )
+        tools_result = await list_tools()
+        tools = getattr(tools_result, "tools", tools_result)
+
+        resources: Any | None = None
+        list_resources = getattr(self._session, "list_resources", None)
+        if list_resources is not None:
+            resources_result = await list_resources()
+            resources = getattr(resources_result, "resources", resources_result)
+
+        prompts: Any | None = None
+        list_prompts = getattr(self._session, "list_prompts", None)
+        if list_prompts is not None:
+            prompts_result = await list_prompts()
+            prompts = getattr(prompts_result, "prompts", prompts_result)
+
+        return record_mcp_inventory(
+            self._decision,
+            server=self._server_name or "",
+            transport=self._transport or "",
+            tools=tools,
+            resources=resources,
+            prompts=prompts,
         )
 
     def __getattr__(self, item: str) -> Any:

@@ -1,0 +1,32 @@
+{
+  "namespace": "atlas",
+  "title": "MITRE ATLAS",
+  "version": "4.5.2",
+  "homepage": "https://atlas.mitre.org/",
+  "entries": {
+    "AML.T0051": {
+      "name": "LLM Prompt Injection",
+      "url": "https://atlas.mitre.org/techniques/AML.T0051"
+    },
+    "AML.T0054": {
+      "name": "LLM Jailbreak",
+      "url": "https://atlas.mitre.org/techniques/AML.T0054"
+    },
+    "AML.T0057": {
+      "name": "LLM Data Leakage",
+      "url": "https://atlas.mitre.org/techniques/AML.T0057"
+    },
+    "AML.T0024": {
+      "name": "Exfiltration via ML Inference API",
+      "url": "https://atlas.mitre.org/techniques/AML.T0024"
+    },
+    "AML.T0011": {
+      "name": "User Execution",
+      "url": "https://atlas.mitre.org/techniques/AML.T0011"
+    },
+    "AML.T0048": {
+      "name": "External Harms",
+      "url": "https://atlas.mitre.org/techniques/AML.T0048"
+    }
+  }
+}

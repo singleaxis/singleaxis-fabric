@@ -110,6 +110,14 @@ cedar = [
 mcp = [
   "mcp>=1.0",
 ]
+# Optional generic signature verification (spec 023 §4). The
+# `fabric.verify_signature` ed25519 path uses `cryptography` when present
+# and otherwise degrades to verified=False; hmac-sha256 is stdlib-only and
+# needs nothing here. This extra pulls the real primitive in for users who
+# want ed25519 verification.
+signing = [
+  "cryptography>=42",
+]
 nats = [
   "nats-py>=2.6",
 ]
@@ -130,6 +138,10 @@ dev = [
   # httpx powers the HTTP-backed adapters (lakera, opa); pulled into
   # [dev] so their adapter tests can construct and exercise the client.
   "httpx>=0.27",
+  # cryptography exercises the real ed25519 path in the generic
+  # signature-verification tests (spec 023); without it ed25519 degrades
+  # to verified=False and those asserts are skipped.
+  "cryptography>=42",
 ]
 
 [project.urls]

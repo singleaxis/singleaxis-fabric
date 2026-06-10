@@ -1,0 +1,66 @@
+# SingleAxis Fabric — dependency license policy (auditable source of truth)
+# ---------------------------------------------------------------------------
+# This file is the policy consumed by scripts/license_check.py and enforced by
+# the License Compatibility CI gate (.github/workflows/license.yml).
+#
+# The gate is FAIL-CLOSED / ALLOWLIST-based: a dependency license passes ONLY
+# if it resolves to a license on the ALLOW list below. Anything not explicitly
+# allowed — including unrecognised, missing, or "UNKNOWN" licenses — FAILS the
+# build, forcing a conscious human review before the dependency can land.
+#
+# Line format (one directive per line, '#' starts a comment):
+#   ALLOW      <SPDX-id>     Permissive license. Passes the gate.
+#   ALLOW-LOG  <SPDX-id>     Weak / file-level copyleft. Passes, but is
+#                            surfaced in the report as a notable obligation.
+#   DENY       <substring>   Case-insensitive substring. Any dependency whose
+#                            (normalized) license string contains it HARD-FAILS,
+#                            even if some other token would otherwise allow it.
+#
+# SPDX identifiers are matched after normalization (scripts/license_check.py
+# maps tool-specific spellings — e.g. "Apache Software License",
+# "BSD License", "MIT License" — onto canonical SPDX ids before matching).
+# ---------------------------------------------------------------------------
+
+# --- ALLOW: permissive licenses ---------------------------------------------
+ALLOW MIT
+ALLOW BSD-2-Clause
+ALLOW BSD-3-Clause
+ALLOW Apache-2.0
+ALLOW ISC
+ALLOW Python-2.0
+ALLOW PSF-2.0
+ALLOW 0BSD
+ALLOW Unlicense
+ALLOW CC0-1.0
+ALLOW BSD-3-Clause-Clear
+ALLOW Zlib
+ALLOW BlueOak-1.0.0
+
+# --- ALLOW-LOG: weak / file-level copyleft (allowed, but flagged) -----------
+# MPL-2.0 is file-level copyleft: only modified MPL files carry the obligation,
+# which is compatible with shipping Apache-2.0 software. Allowed, but logged so
+# procurement is aware of the per-file source-availability obligation.
+ALLOW-LOG MPL-2.0
+
+# --- DENY: copyleft / restrictive / source-available (hard fail) ------------
+# Substring matches are intentional: they catch version-suffixed and
+# "-or-later"/"-only" SPDX variants (e.g. GPL-3.0-or-later, LGPL-2.1-only) and
+# any vendor spelling that embeds the family name.
+DENY GPL          # covers GPL-2.0/3.0 AND LGPL-2.1/3.0 (substring) AND AGPL
+DENY AGPL
+DENY LGPL
+DENY SSPL
+DENY BSL          # Business Source License (BSL-1.1)
+DENY Business Source
+DENY EUPL
+DENY CDDL
+DENY EPL          # Eclipse Public License (weak copyleft, file-level but
+                  # patent-termination terms we don't accept by default)
+DENY CC-BY-NC
+DENY CC-BY-SA
+DENY CC-BY-ND
+DENY Commons Clause
+DENY Elastic-2.0
+DENY copyleft
+DENY Proprietary
+DENY Commercial

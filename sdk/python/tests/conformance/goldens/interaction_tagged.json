@@ -1,0 +1,56 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.interaction_count": 1,
+      "fabric.interaction_kinds": [
+        "db.query"
+      ],
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.baseline.name": "db.query",
+          "fabric.baseline.status": "match",
+          "fabric.interaction.direction": "internal",
+          "fabric.interaction.kind": "db.query",
+          "fabric.interaction.payload_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "fabric.interaction.target": "orders",
+          "fabric.interaction.target_redacted": false,
+          "fabric.schema_version": "1.0",
+          "fabric.signature.key_id": "conformance-key-1",
+          "fabric.signature.scheme": "hmac-sha256",
+          "fabric.signature.verified": true,
+          "fabric.tags": [
+            "atlas:AML.T0051",
+            "owasp-llm:LLM01",
+            "myco:risk-high"
+          ]
+        },
+        "name": "fabric.interaction"
+      },
+      {
+        "attributes": {
+          "fabric.coverage.kind": "db.query",
+          "fabric.coverage.reason": "new_kind",
+          "fabric.coverage.suggestion": "generic",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.coverage"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]
