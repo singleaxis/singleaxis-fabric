@@ -1,0 +1,202 @@
+name: License compliance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly re-scan: upstream can relicense a transitive dep between
+    # dependency bumps (e.g. a permissive lib moving to BSL). Catch it
+    # even when no PR is touching the lockfiles.
+    - cron: "0 6 * * 2"
+
+# Read-only by default; the report is published as a build artifact, not
+# committed, so no write scopes are needed anywhere in this workflow.
+permissions:
+  contents: read
+
+concurrency:
+  group: license-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Each surface scans into raw/<surface>.{json,csv} and uploads it. The
+  # license-gate job then aggregates every raw inventory, applies the
+  # allowlist policy ONCE, fails the build on any non-permissive license,
+  # and publishes the combined procurement report. Splitting the scan from
+  # the gate keeps a single authoritative pass/fail and one report artifact
+  # while letting the three toolchains run in parallel.
+
+  scan-python:
+    name: Scan Python licenses
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `extras` are installed alongside the core package so the scan
+          # covers the transitive tree a real install pulls. Heavy optional
+          # extras (presidio, garak/pyrit, crewai) are intentionally left to
+          # the runtime-image scan; the gate here covers the default install.
+          - package: sdk/python
+            extras: "[otlp,langgraph]"
+          - package: components/presidio-sidecar
+            extras: ""
+          - package: components/nemo-sidecar
+            extras: ""
+          - package: components/prompt-guard-sidecar
+            extras: ""
+          - package: components/langfuse-bootstrap
+            extras: ""
+          - package: components/redteam-runner
+            extras: ""
+          - package: components/update-agent
+            extras: ""
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install package + pip-licenses into an isolated venv
+        run: |
+          python -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          python -m pip install --upgrade pip
+          # pip-licenses scans the whole environment, so the package under
+          # test gets its own venv — no cross-contamination between surfaces.
+          pip install pip-licenses "./${{ matrix.package }}${{ matrix.extras }}"
+      - name: Scan installed licenses
+        run: |
+          . /tmp/venv/bin/activate
+          mkdir -p raw
+          slug=$(echo "${{ matrix.package }}" | tr '/' '-')
+          # Exclude the scanner's own toolchain and the build backends — they
+          # are CI tooling, not shipped dependencies of the package.
+          pip-licenses --format=json \
+            --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel hatchling hatch-vcs pathspec trove-classifiers \
+            > "raw/python-${slug}.json"
+          echo "Scanned ${{ matrix.package }}:"
+          python -c "import json,sys;print(' ',len(json.load(open(sys.argv[1]))),'packages')" "raw/python-${slug}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: license-raw-python-${{ strategy.job-index }}
+          path: raw/
+          retention-days: 14
+
+  scan-go:
+    name: Scan Go collector licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@v1.6.0
+      - name: Build collector distribution (generates dist/)
+        # The OCB-assembled module under dist/ is what actually ships, so
+        # the third-party Go inventory must be taken from it. dist/ is
+        # build output (gitignored), so generate it here before scanning.
+        working-directory: components/otel-collector-fabric
+        run: |
+          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+          "$(go env GOPATH)/bin/builder" --config ocb-config.yaml
+      - name: Scan collector dependency licenses
+        working-directory: components/otel-collector-fabric/dist
+        run: |
+          go mod download
+          mkdir -p "${GITHUB_WORKSPACE}/raw"
+          # Ignore first-party modules: the four fabric processors and the
+          # OCB-generated `cmd/builder` main module carry the repo's own
+          # Apache-2.0 license and aren't third-party supply-chain deps.
+          "$(go env GOPATH)/bin/go-licenses" report ./... \
+            --ignore github.com/singleaxis/singleaxis-fabric \
+            --ignore go.opentelemetry.io/collector/cmd/builder \
+            > "${GITHUB_WORKSPACE}/raw/go-otel-collector-fabric.csv"
+          wc -l "${GITHUB_WORKSPACE}/raw/go-otel-collector-fabric.csv"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: license-raw-go
+          path: raw/
+          retention-days: 14
+
+  scan-typescript:
+    name: Scan TypeScript SDK licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+      - name: Scan production dependency licenses
+        run: |
+          mkdir -p raw
+          # --production scopes the gate to what actually ships in the
+          # published package; devDependencies (eslint, tsup, vitest, …) are
+          # build-time only and not redistributed.
+          npx --yes license-checker-rseidelsohn \
+            --production --json \
+            --start sdk/typescript \
+            > raw/npm-typescript.json
+          node -e "console.log(' ',Object.keys(require('./raw/npm-typescript.json')).length,'packages')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: license-raw-typescript
+          path: raw/
+          retention-days: 14
+
+  license-gate:
+    name: License gate + report
+    runs-on: ubuntu-latest
+    needs: [scan-python, scan-go, scan-typescript]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Download all raw license inventories
+        uses: actions/download-artifact@v4
+        with:
+          pattern: license-raw-*
+          merge-multiple: true
+          path: raw
+      - name: List collected inventories
+        run: ls -la raw/
+      - name: Apply allowlist policy + build report
+        # The script's exit code IS the gate: non-zero on any DENY/UNKNOWN
+        # license. It also writes the procurement report (md/csv/json).
+        run: |
+          python scripts/license_check.py \
+            --policy .github/license-allowlist.txt \
+            --pip "sdk/python=raw/python-sdk-python.json" \
+            --pip "components/presidio-sidecar=raw/python-components-presidio-sidecar.json" \
+            --pip "components/nemo-sidecar=raw/python-components-nemo-sidecar.json" \
+            --pip "components/prompt-guard-sidecar=raw/python-components-prompt-guard-sidecar.json" \
+            --pip "components/langfuse-bootstrap=raw/python-components-langfuse-bootstrap.json" \
+            --pip "components/redteam-runner=raw/python-components-redteam-runner.json" \
+            --pip "components/update-agent=raw/python-components-update-agent.json" \
+            --go  "components/otel-collector-fabric=raw/go-otel-collector-fabric.csv" \
+            --npm "sdk/typescript=raw/npm-typescript.json" \
+            --ignore "go.opentelemetry.io/collector/cmd/builder" \
+            --ignore "@singleaxis/fabric" \
+            --ignore "singleaxis-fabric" \
+            --ignore "fabric-" \
+            --md docs/licenses/THIRD-PARTY-LICENSES.md \
+            --csv docs/licenses/third-party-licenses.csv \
+            --json docs/licenses/third-party-licenses.json
+      - name: Upload procurement license report
+        # always(): publish the report even when the gate fails, so a
+        # reviewer can see exactly which dependency tripped it.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: third-party-license-report
+          path: docs/licenses/
+          retention-days: 90

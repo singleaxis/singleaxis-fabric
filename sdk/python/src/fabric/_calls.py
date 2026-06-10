@@ -522,6 +522,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         step_attempt: int | None = None,
         step_retry_reason: str | None = None,
         step_retry_previous_attempt_id: str | None = None,
+        extra_attributes: dict[str, str | int | float | bool | tuple[str, ...]] | None = None,
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
@@ -542,6 +543,12 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         self._step_attempt = step_attempt
         self._step_retry_reason = step_retry_reason
         self._step_retry_previous_attempt_id = step_retry_previous_attempt_id
+        # Pre-resolved generic cross-cutting attributes (spec 023 tags /
+        # baseline / signature results), stamped on the child span at enter.
+        # Resolved by ``Decision.tool_call`` so ``_calls`` stays free of the
+        # baseline / signing imports. ``None``/empty leaves the span
+        # byte-identical to the pre-023 emission (additive).
+        self._extra_attributes = extra_attributes
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
 
@@ -575,6 +582,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         if self._call_id is not None:
             self._span.set_attribute(GEN_AI_TOOL_CALL_ID, self._call_id)
             self._span.set_attribute(FABRIC_TOOL_CALL_ID, self._call_id)
+        if self._extra_attributes:
+            for key, value in self._extra_attributes.items():
+                self._span.set_attribute(key, value)
         return self
 
     def __exit__(

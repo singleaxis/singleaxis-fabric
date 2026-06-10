@@ -1,0 +1,38 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.mcp.prompt_count": 2,
+          "fabric.mcp.resource_count": 1,
+          "fabric.mcp.server": "weather-mcp",
+          "fabric.mcp.tool_count": 2,
+          "fabric.mcp.tools": [
+            "get_weather:e66ea4b071ac",
+            "get_forecast:fc903bb2ed70"
+          ],
+          "fabric.mcp.tools_hash": "2e1005d938a31e0ce7b1c4c7f992afab4dc4db196e841c6908accd76999a4c27",
+          "fabric.mcp.transport": "stdio",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.mcp.inventory"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]

@@ -84,7 +84,10 @@ class FabricContext:
     (PRD §65: both ride ``tracestate`` across service boundaries). The
     execution-attempt fields are optional retry metadata: same
     ``execution_id`` for the logical task, one attempt id/number per
-    retry.
+    retry. ``parent_agent_id`` is optional sub-agent-delegation lineage
+    (spec 022): when agent A delegates to agent B, the carrier B receives
+    names A here so B's spans link back to the delegating parent. It is
+    backward-compatible — absent on every non-delegated context.
     """
 
     tenant_id: str
@@ -98,6 +101,7 @@ class FabricContext:
     execution_attempt: int | None = None
     execution_retry_reason: str | None = None
     execution_retry_previous_attempt_id: str | None = None
+    parent_agent_id: str | None = None
 
 
 @runtime_checkable
@@ -181,6 +185,8 @@ def _encode(context: FabricContext) -> str:
         payload["er"] = context.execution_retry_reason
     if context.execution_retry_previous_attempt_id is not None:
         payload["ep"] = context.execution_retry_previous_attempt_id
+    if context.parent_agent_id is not None:
+        payload["pa"] = context.parent_agent_id
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -215,6 +221,7 @@ def _decode(encoded: str) -> FabricContext | None:
     execution_attempt = payload.get("en")
     execution_retry_reason = payload.get("er")
     execution_retry_previous_attempt_id = payload.get("ep")
+    parent_agent_id = payload.get("pa")
     # Optional fields must be strings when present; a wrong-typed value is
     # wire corruption and yields None for the whole member.
     if any(
@@ -228,6 +235,7 @@ def _decode(encoded: str) -> FabricContext | None:
             execution_attempt_id,
             execution_retry_reason,
             execution_retry_previous_attempt_id,
+            parent_agent_id,
         )
     ):
         return None
@@ -249,6 +257,7 @@ def _decode(encoded: str) -> FabricContext | None:
         execution_attempt=execution_attempt,
         execution_retry_reason=execution_retry_reason,
         execution_retry_previous_attempt_id=execution_retry_previous_attempt_id,
+        parent_agent_id=parent_agent_id,
     )
 
 

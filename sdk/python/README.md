@@ -135,6 +135,23 @@ Beta — **Phase 1a shipping.**
   drift/longitudinal analysis are **commercial**; OSS does not run
   managed scoring or persist results (the default result sink is a no-op).
 
+- Surface logging — every interaction an agent has, hash-on-span:
+  `Decision.record_skill`, `delegate` / `adelegate` (first-class
+  sub-agent edge), `record_hook`, `record_file_access` (names + content
+  hash, never the data), and MCP inventory capture
+  (`InstrumentedMCPSession.snapshot_inventory`, `record_mcp_inventory` —
+  hashes tool *definitions* to detect shadow/poison drift). The
+  universal `Decision.record_interaction(kind, target, …)` captures
+  *any* interaction (`http.request`, `db.query`, `shell.exec`, …); a
+  one-shot `fabric.coverage` signal reports kinds captured only
+  generically. Three surface-agnostic helpers compose onto any
+  `record_*` call: `Baseline` / `BaselineCheck` (approved-hash
+  comparison), open-vocabulary `tags=` with MITRE ATLAS + OWASP LLM
+  taxonomies as drop-in data (`Taxonomy`, `bundled_taxonomy_names`), and
+  `verify_signature` / `SignatureCheck` (`ed25519` via the `[signing]`
+  extra, `hmac-sha256` via stdlib). See
+  [`docs/capturing-interactions.md`](../../docs/capturing-interactions.md).
+
 When no rails are configured, `guard_input` / `guard_output_*` raise
 `GuardrailNotConfiguredError`. This is a deliberate fail-loud
 posture — a silently passing guardrail is a compliance footgun.

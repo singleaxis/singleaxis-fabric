@@ -1,0 +1,32 @@
+{
+  "namespace": "owasp-llm",
+  "title": "OWASP Top 10 for LLM Applications",
+  "version": "2025",
+  "homepage": "https://genai.owasp.org/llm-top-10/",
+  "entries": {
+    "LLM01": {
+      "name": "Prompt Injection",
+      "url": "https://genai.owasp.org/llmrisk/llm01-prompt-injection/"
+    },
+    "LLM02": {
+      "name": "Sensitive Information Disclosure",
+      "url": "https://genai.owasp.org/llmrisk/llm02-sensitive-information-disclosure/"
+    },
+    "LLM03": {
+      "name": "Supply Chain",
+      "url": "https://genai.owasp.org/llmrisk/llm03-supply-chain/"
+    },
+    "LLM04": {
+      "name": "Data and Model Poisoning",
+      "url": "https://genai.owasp.org/llmrisk/llm04-data-and-model-poisoning/"
+    },
+    "LLM06": {
+      "name": "Excessive Agency",
+      "url": "https://genai.owasp.org/llmrisk/llm06-excessive-agency/"
+    },
+    "LLM07": {
+      "name": "System Prompt Leakage",
+      "url": "https://genai.owasp.org/llmrisk/llm07-system-prompt-leakage/"
+    }
+  }
+}

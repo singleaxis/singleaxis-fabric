@@ -37,6 +37,7 @@
   },
   "globs": [
     "**/*.md",
+    "!**/licenses/THIRD-PARTY-LICENSES.md",
     "!**/node_modules/**",
     "!**/_internal/**",
     "!**/.venv/**",

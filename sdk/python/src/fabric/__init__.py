@@ -10,6 +10,7 @@ import contextlib
 
 from ._calls import LLMCall, ToolCall, ToolErrorCategory
 from ._version import __version__
+from .baseline import Baseline, BaselineCheck
 from .checkpoint import CheckpointEvent
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
 from .content_store import (
@@ -90,7 +91,19 @@ from .queue_transports import (
 )
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
+from .signing import (
+    SignatureCheck,
+    SignatureResult,
+    verify_signature,
+)
 from .stream import StreamRedactor
+from .taxonomy import (
+    Taxonomy,
+    TaxonomyEntry,
+    bundled_taxonomy_names,
+    load_bundled_taxonomies,
+    validate_tag,
+)
 from .tool_auth import (
     ToolAuthorization,
     ToolAuthorizer,
@@ -102,6 +115,8 @@ from .tracing import get_tracer, install_default_provider
 __all__ = [
     "DEFAULT_PROFILE",
     "SCHEMA_VERSION",
+    "Baseline",
+    "BaselineCheck",
     "CedarAdapter",
     "CheckerVerdict",
     "CheckpointEvent",
@@ -165,8 +180,12 @@ __all__ = [
     "ScoreParseError",
     "SideEffectRecord",
     "SideEffectType",
+    "SignatureCheck",
+    "SignatureResult",
     "SimpleLLMJudge",
     "StreamRedactor",
+    "Taxonomy",
+    "TaxonomyEntry",
     "ToolAuthorization",
     "ToolAuthorizer",
     "ToolAuthorizerError",
@@ -177,10 +196,14 @@ __all__ = [
     "UDSNemoClient",
     "UDSPresidioClient",
     "__version__",
+    "bundled_taxonomy_names",
     "extract",
     "get_tracer",
     "inject",
     "inject_decision",
     "install_default_provider",
+    "load_bundled_taxonomies",
     "traced_call_tool",
+    "validate_tag",
+    "verify_signature",
 ]

@@ -82,7 +82,13 @@
         "fabric.judge_rubrics": { "type": "array", "items": { "type": "string" } },
         "fabric.policy_evaluation_count": { "type": "integer", "minimum": 0 },
         "fabric.policy_engines": { "type": "array", "items": { "type": "string" } },
-        "fabric.tool_authorization_count": { "type": "integer", "minimum": 0 }
+        "fabric.tool_authorization_count": { "type": "integer", "minimum": 0 },
+        "fabric.skill_count": { "type": "integer", "minimum": 0 },
+        "fabric.delegation_count": { "type": "integer", "minimum": 0 },
+        "fabric.hook_count": { "type": "integer", "minimum": 0 },
+        "fabric.file_access_count": { "type": "integer", "minimum": 0 },
+        "fabric.interaction_count": { "type": "integer", "minimum": 0 },
+        "fabric.interaction_kinds": { "type": "array", "items": { "type": "string" } }
       }
     },
     "events": {
@@ -348,6 +354,185 @@
             "fabric.tool.authorization.reason": { "type": "string" },
             "fabric.tool.arguments_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
           }
+        },
+        "fabric.mcp.inventory": {
+          "type": "object",
+          "description": "MCP server inventory snapshot (spec 022). Captures what a server exposes so a consumer can detect its tools changing underneath the agent. Raw tool descriptions / schemas are never present — only names, per-tool def hashes, and an aggregate tools_hash.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.mcp.server",
+            "fabric.mcp.transport",
+            "fabric.mcp.tool_count",
+            "fabric.mcp.tools",
+            "fabric.mcp.tools_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.mcp.server": { "type": "string" },
+            "fabric.mcp.transport": { "type": "string" },
+            "fabric.mcp.tool_count": { "type": "integer", "minimum": 0 },
+            "fabric.mcp.tools": { "type": "array", "items": { "type": "string" } },
+            "fabric.mcp.tools_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "fabric.mcp.resource_count": { "type": "integer", "minimum": 0 },
+            "fabric.mcp.prompt_count": { "type": "integer", "minimum": 0 },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
+          }
+        },
+        "fabric.skill": {
+          "type": "object",
+          "description": "A skill / plugin loaded by the agent (spec 022). manifest_hash is a hash of the prompt+tools bundle; signed records whether its signature verified.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.skill.name",
+            "fabric.skill.version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.skill.name": { "type": "string" },
+            "fabric.skill.version": { "type": "string" },
+            "fabric.skill.source": { "type": "string" },
+            "fabric.skill.manifest_hash": { "type": "string" },
+            "fabric.skill.signed": { "type": "boolean" },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
+          }
+        },
+        "fabric.delegation": {
+          "type": "object",
+          "description": "A sub-agent delegation (spec 022): agent A invoked agent B. depth is the delegation nesting depth.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.delegation.to_agent",
+            "fabric.delegation.protocol",
+            "fabric.delegation.depth"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.delegation.to_agent": { "type": "string" },
+            "fabric.delegation.protocol": { "type": "string" },
+            "fabric.delegation.depth": { "type": "integer", "minimum": 1 },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
+          }
+        },
+        "fabric.hook": {
+          "type": "object",
+          "description": "A hook / middleware that ran around a decision step (spec 022). phase is a closed vocab; a differing input/output hash with modified=true is the context-tampering signal.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.hook.name",
+            "fabric.hook.phase",
+            "fabric.hook.modified"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.hook.name": { "type": "string" },
+            "fabric.hook.phase": {
+              "enum": [
+                "pre_model",
+                "post_model",
+                "pre_tool",
+                "post_tool",
+                "pre_decision",
+                "post_decision"
+              ]
+            },
+            "fabric.hook.modified": { "type": "boolean" },
+            "fabric.hook.input_hash": { "type": "string" },
+            "fabric.hook.output_hash": { "type": "string" },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
+          }
+        },
+        "fabric.file": {
+          "type": "object",
+          "description": "A file access (spec 022). Contents are never on the span (content_hash only). The path is readable by default (fabric.file.path) or hashed when redacted (fabric.file.path_hash); path_redacted records which form was emitted.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.file.operation",
+            "fabric.file.path_redacted"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.file.operation": { "enum": ["read", "write", "delete", "append"] },
+            "fabric.file.path": { "type": "string" },
+            "fabric.file.path_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "fabric.file.path_redacted": { "type": "boolean" },
+            "fabric.file.content_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "fabric.file.size_bytes": { "type": "integer", "minimum": 0 },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
+          }
+        },
+        "fabric.interaction": {
+          "type": "object",
+          "description": "Generic interaction capture (spec 023 §1). The UNIVERSAL primitive: kind is a free-form namespaced string (http.request / db.query / shell.exec / ...), so any interaction is capturable without a first-class method. Raw payload + metadata are never present — only a caller-supplied payload_hash and a wholesale metadata_hash. target is readable by default or hashed (target_hash) when redacted.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.interaction.kind",
+            "fabric.interaction.target_redacted"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.interaction.kind": { "type": "string" },
+            "fabric.interaction.target": { "type": "string" },
+            "fabric.interaction.target_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "fabric.interaction.target_redacted": { "type": "boolean" },
+            "fabric.interaction.direction": { "enum": ["inbound", "outbound", "internal"] },
+            "fabric.interaction.payload_hash": { "type": "string" },
+            "fabric.interaction.metadata_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
+          }
+        },
+        "fabric.coverage": {
+          "type": "object",
+          "description": "Coverage-loop signal (spec 023 §5). A one-shot, low-rate SIGNAL emitted the first time a new generic interaction kind appears in a process (reason=new_kind), or when a kind is seen with a baseline deviation and no classifying tags (reason=unclassified_deviation). Not analysis — clustering / scoring / auto-baselining is Commercial.",
+          "required": [
+            "fabric.schema_version",
+            "fabric.coverage.kind",
+            "fabric.coverage.suggestion"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "fabric.schema_version": { "const": "1.0" },
+            "fabric.coverage.kind": { "type": "string" },
+            "fabric.coverage.suggestion": { "const": "generic" },
+            "fabric.coverage.reason": {
+              "enum": ["new_kind", "unclassified_deviation"]
+            }
+          }
         }
       }
     },
@@ -396,7 +581,13 @@
             "fabric.step.attempt_id": { "type": "string" },
             "fabric.step.attempt": { "type": "integer", "minimum": 1 },
             "fabric.step.retry.reason": { "type": "string" },
-            "fabric.step.retry.previous_attempt_id": { "type": "string" }
+            "fabric.step.retry.previous_attempt_id": { "type": "string" },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
           }
         },
         "fabric.tool_call": {
@@ -424,7 +615,13 @@
             "fabric.step.attempt_id": { "type": "string" },
             "fabric.step.attempt": { "type": "integer", "minimum": 1 },
             "fabric.step.retry.reason": { "type": "string" },
-            "fabric.step.retry.previous_attempt_id": { "type": "string" }
+            "fabric.step.retry.previous_attempt_id": { "type": "string" },
+            "fabric.tags": { "type": "array", "items": { "type": "string" } },
+            "fabric.baseline.name": { "type": "string" },
+            "fabric.baseline.status": { "enum": ["match", "deviation", "unknown"] },
+            "fabric.signature.verified": { "type": "boolean" },
+            "fabric.signature.scheme": { "type": "string" },
+            "fabric.signature.key_id": { "type": "string" }
           }
         }
       }

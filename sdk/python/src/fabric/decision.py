@@ -75,7 +75,12 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import (
+    AbstractContextManager,
+    asynccontextmanager,
+    contextmanager,
+)
+from dataclasses import dataclass
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
 from uuid import UUID, uuid4
@@ -84,19 +89,56 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from ._attributes import (
     ATTR_AGENT,
+    ATTR_COVERAGE_KIND,
+    ATTR_COVERAGE_REASON,
+    ATTR_COVERAGE_SUGGESTION,
+    ATTR_DELEGATION_COUNT,
+    ATTR_DELEGATION_DEPTH,
+    ATTR_DELEGATION_PROTOCOL,
+    ATTR_DELEGATION_TO_AGENT,
     ATTR_EXECUTION,
     ATTR_EXECUTION_ATTEMPT,
     ATTR_EXECUTION_ATTEMPT_ID,
     ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
     ATTR_EXECUTION_RETRY_REASON,
+    ATTR_FILE_ACCESS_COUNT,
+    ATTR_FILE_CONTENT_HASH,
+    ATTR_FILE_OPERATION,
+    ATTR_FILE_PATH,
+    ATTR_FILE_PATH_HASH,
+    ATTR_FILE_PATH_REDACTED,
+    ATTR_FILE_SIZE_BYTES,
+    ATTR_HOOK_COUNT,
+    ATTR_HOOK_INPUT_HASH,
+    ATTR_HOOK_MODIFIED,
+    ATTR_HOOK_NAME,
+    ATTR_HOOK_OUTPUT_HASH,
+    ATTR_HOOK_PHASE,
+    ATTR_INTERACTION_COUNT,
+    ATTR_INTERACTION_DIRECTION,
+    ATTR_INTERACTION_KIND,
+    ATTR_INTERACTION_KINDS,
+    ATTR_INTERACTION_METADATA_HASH,
+    ATTR_INTERACTION_PAYLOAD_HASH,
+    ATTR_INTERACTION_TARGET,
+    ATTR_INTERACTION_TARGET_HASH,
+    ATTR_INTERACTION_TARGET_REDACTED,
     ATTR_PROFILE,
     ATTR_SCHEMA_VERSION,
+    ATTR_SKILL_COUNT,
+    ATTR_SKILL_MANIFEST_HASH,
+    ATTR_SKILL_NAME,
+    ATTR_SKILL_SIGNED,
+    ATTR_SKILL_SOURCE,
+    ATTR_SKILL_VERSION,
     ATTR_TENANT,
     ATTR_WORKFLOW,
     SCHEMA_VERSION,
 )
 from ._calls import LLMCall, ToolCall
+from ._crosscut import apply_cross_cutting
 from ._id_validators import warn_if_pii_shaped
+from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
 from .escalation import EscalationRequested, EscalationSummary
 from .eval import EvalRecord
@@ -113,13 +155,15 @@ from .judge import (
 )
 from .memory import MemoryKind, MemoryRecord
 from .policy import EngineVerdict, PolicyEngine, PolicyEvaluation
+from .propagation import FabricContext, inject
 from .retrieval import RetrievalRecord, RetrievalSource
 from .side_effect import ReplayBehavior, SideEffectRecord, SideEffectType
+from .signing import SignatureCheck
 from .stream import StreamRedactor
 from .tool_auth import ToolAuthorization, ToolAuthorizer
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 
     from opentelemetry.trace import Span
 
@@ -215,6 +259,78 @@ REPLAY_METADATA_VERSION = "1"
 ATTR_GUARDRAIL_CONTENT_REF = "fabric.guardrail.content_ref"
 ATTR_POLICY_INPUT_CONTENT_REF = "fabric.policy.input_content_ref"
 
+# Closed vocabularies for the agent-surface-logging touch points (spec
+# 022). A value outside the set is a programming error and raises
+# ``ValueError`` at the call site (matching how the SDK validates other
+# enum-shaped inputs) rather than silently emitting an off-contract event.
+HOOK_PHASES = frozenset(
+    {"pre_model", "post_model", "pre_tool", "post_tool", "pre_decision", "post_decision"}
+)
+FILE_OPERATIONS = frozenset({"read", "write", "delete", "append"})
+
+# Closed vocabulary for ``record_interaction``'s direction (spec 023 §1).
+# ``None`` (unset) is allowed; any other value outside this set is a
+# programming error and raises ``ValueError`` at the call site.
+INTERACTION_DIRECTIONS = frozenset({"inbound", "outbound", "internal"})
+
+# Coverage-loop constants (spec 023 §5). The suggestion is a fixed signal
+# ("this kind is captured generically; consider first-class support"); the
+# reason distinguishes the two low-rate triggers.
+COVERAGE_SUGGESTION = "generic"
+COVERAGE_REASON_NEW_KIND = "new_kind"
+COVERAGE_REASON_UNCLASSIFIED_DEVIATION = "unclassified_deviation"
+
+# Process-global coverage registry. The coverage signal is deliberately
+# one-shot PER PROCESS per (signal) so it stays low-rate: a never-before-
+# seen generic kind, or a kind seen with an unclassified deviation, fires
+# exactly once. Guarded by a lock so concurrent decisions in one process
+# do not double-emit or race the set. ``reset_coverage_registry`` exists
+# for tests / long-lived workers that want to re-arm the signal.
+_coverage_lock = threading.Lock()
+_coverage_seen: set[str] = set()
+
+
+def _coverage_should_emit(signal_id: str) -> bool:
+    """Return ``True`` exactly once per process for ``signal_id``."""
+    with _coverage_lock:
+        if signal_id in _coverage_seen:
+            return False
+        _coverage_seen.add(signal_id)
+        return True
+
+
+def reset_coverage_registry() -> None:
+    """Clear the process-global coverage registry (re-arms the one-shots)."""
+    with _coverage_lock:
+        _coverage_seen.clear()
+
+
+def _sha256_hex(value: str) -> str:
+    # ``surrogatepass`` keeps hashing total on lone UTF-16 surrogates
+    # (malformed but reachable via arbitrary file paths / content),
+    # matching ``memory._sha256_hex`` so a hash computed here is
+    # byte-identical to one a record module would produce.
+    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+
+
+@dataclass(frozen=True)
+class DelegationContext:
+    """The handle yielded by :meth:`Decision.delegate` / :meth:`Decision.adelegate`.
+
+    Exposes the cross-service carrier the host passes to the sub-agent
+    (``carrier`` — a ``tracestate``-bearing header dict already injected
+    with this decision's :class:`~fabric.propagation.FabricContext` and
+    ``parent_agent_id`` set to the delegating agent), the structured
+    ``context`` it encodes, and the recorded delegation metadata
+    (``to_agent`` / ``protocol`` / ``depth``).
+    """
+
+    to_agent: str
+    protocol: str
+    depth: int
+    context: FabricContext
+    carrier: dict[str, str]
+
 
 class ConcurrentDecisionUseError(RuntimeError):
     """Raised when one :class:`Decision` is mutated concurrently.
@@ -298,6 +414,23 @@ class Decision(AbstractContextManager["Decision"]):
         self._judge_requests: list[JudgeRequest] = []
         self._policy_evaluations: list[PolicyEvaluation] = []
         self._tool_authorizations: list[ToolAuthorization] = []
+        # Agent-surface-logging rolling counters (spec 022). Monotonic
+        # totals stamped on the decision span so the Telemetry Bridge can
+        # fold them into the DecisionSummary without replaying events.
+        self._skill_count = 0
+        self._hook_count = 0
+        self._file_access_count = 0
+        self._delegation_count = 0
+        # Generic interaction capture (spec 023). The rolling count + the
+        # set of distinct generic ``kind``s seen via ``record_interaction``
+        # are stamped on the decision span so the Telemetry Bridge folds
+        # them into the DecisionSummary without replaying events.
+        self._interaction_count = 0
+        self._interaction_kinds: set[str] = set()
+        # Current sub-agent-delegation nesting depth: incremented on each
+        # ``delegate`` enter, decremented on exit. The depth stamped on the
+        # event is the value at entry (1 for a first-level delegation).
+        self._delegation_depth = 0
         # Concurrency overlap sentinel. A non-blocking lock that is held
         # only for the duration of a single mutating call. Two operations
         # that genuinely overlap in time on the same instance contend for
@@ -1805,6 +1938,451 @@ class Decision(AbstractContextManager["Decision"]):
             )
         )
 
+    # -- generic interaction capture (spec 023) --------------------------
+
+    def record_interaction(
+        self,
+        kind: str,
+        target: str,
+        *,
+        direction: str | None = None,
+        payload_hash: str | None = None,
+        metadata: Mapping[str, object] | None = None,
+        redact_target: bool = False,
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
+    ) -> None:
+        """Capture ANY interaction an agentic system has — generically.
+
+        This is the universal primitive: ``kind`` is a free-form,
+        namespaced string (``"http.request"``, ``"db.query"``,
+        ``"queue.publish"``, ``"shell.exec"``, ``"browser.navigate"``, …),
+        so an interaction type nobody anticipated is capturable today
+        without waiting for a first-class method. The first-class surfaces
+        (``llm_call`` / ``tool_call`` / ``record_skill`` / …) are
+        specializations of this same shape.
+
+        Emits a ``fabric.interaction`` span event carrying
+        ``kind`` / ``target`` / ``direction`` / ``payload_hash`` plus any
+        generic tag / baseline / signature results, and bumps the rolling
+        ``fabric.interaction_count`` + ``fabric.interaction_kinds`` decision
+        attributes.
+
+        **Privacy.** Raw payload and metadata NEVER land on the span. The
+        caller passes a precomputed ``payload_hash``; any ``metadata`` dict
+        is canonicalized and hashed wholesale into
+        ``fabric.interaction.metadata_hash`` (use ``tags`` for queryable
+        classification). ``target`` is readable by default; pass
+        ``redact_target=True`` to hash it instead for sensitive targets.
+
+        The generic cross-cutting kwargs apply to ANY interaction:
+
+        * ``tags`` — open-vocabulary ``namespace:code`` tags (§3).
+        * ``baseline`` — a :class:`~fabric.baseline.BaselineCheck` (§2):
+          "is this the hash we approved?".
+        * ``signature`` — a :class:`~fabric.signing.SignatureCheck` (§4):
+          verify a signature over any artifact hash.
+
+        Args:
+            kind: free-form namespaced interaction type.
+            target: what was touched (URL / host / table / path / topic).
+            direction: optional ``"inbound"`` / ``"outbound"`` /
+                ``"internal"``. Other values raise :class:`ValueError`.
+            payload_hash: optional caller-supplied hash of the payload.
+            metadata: optional scalar metadata dict; hashed, never raw.
+            redact_target: hash ``target`` instead of recording it readable.
+            tags: optional open-vocabulary taxonomy tags.
+            baseline: optional generic baseline comparison.
+            signature: optional generic signature verification.
+
+        Raises:
+            ValueError: if ``direction`` is not a known value.
+        """
+        with self._exclusive():
+            if direction is not None and direction not in INTERACTION_DIRECTIONS:
+                raise ValueError(
+                    f"unknown interaction direction {direction!r}; must be one of "
+                    f"{sorted(INTERACTION_DIRECTIONS)} or None"
+                )
+            span = self.span
+            self._interaction_count += 1
+            self._interaction_kinds.add(kind)
+            span.set_attribute(ATTR_INTERACTION_COUNT, self._interaction_count)
+            span.set_attribute(ATTR_INTERACTION_KINDS, tuple(sorted(self._interaction_kinds)))
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                ATTR_INTERACTION_KIND: kind,
+                ATTR_INTERACTION_TARGET_REDACTED: redact_target,
+            }
+            if redact_target:
+                event_attrs[ATTR_INTERACTION_TARGET_HASH] = _sha256_hex(target)
+            else:
+                event_attrs[ATTR_INTERACTION_TARGET] = target
+            if direction is not None:
+                event_attrs[ATTR_INTERACTION_DIRECTION] = direction
+            if payload_hash is not None:
+                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = payload_hash
+            if metadata:
+                # Canonicalize then hash the whole dict — raw metadata
+                # (which may carry secrets) never lands on the span.
+                canonical = json.dumps(metadata, sort_keys=True, default=str)
+                event_attrs[ATTR_INTERACTION_METADATA_HASH] = _sha256_hex(canonical)
+
+            resolved = apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature
+            )
+            span.add_event("fabric.interaction", attributes=event_attrs)
+
+            # Improvement loop: a one-shot, low-rate coverage signal.
+            self._emit_coverage_signals(kind, resolved.baseline_status, resolved.has_tags)
+
+    def _emit_coverage_signals(
+        self, kind: str, baseline_status: str | None, has_tags: bool
+    ) -> None:
+        """Emit the one-shot ``fabric.coverage`` signal(s) for a generic kind.
+
+        Two low-rate triggers, each fired at most once per process: a
+        never-before-seen generic ``kind``, and a ``kind`` observed with a
+        baseline ``deviation`` but no classifying tags (an unclassified
+        anomaly). This is a SIGNAL, not analysis — clustering / scoring /
+        auto-baselining is Commercial.
+        """
+        if _coverage_should_emit(f"kind:{kind}"):
+            self._add_coverage_event(kind, COVERAGE_REASON_NEW_KIND)
+        if (
+            baseline_status == "deviation"
+            and not has_tags
+            and _coverage_should_emit(f"deviation:{kind}")
+        ):
+            self._add_coverage_event(kind, COVERAGE_REASON_UNCLASSIFIED_DEVIATION)
+
+    def _add_coverage_event(self, kind: str, reason: str) -> None:
+        """Write one ``fabric.coverage`` span event."""
+        self.span.add_event(
+            "fabric.coverage",
+            attributes={
+                "fabric.schema_version": SCHEMA_VERSION,
+                ATTR_COVERAGE_KIND: kind,
+                ATTR_COVERAGE_SUGGESTION: COVERAGE_SUGGESTION,
+                ATTR_COVERAGE_REASON: reason,
+            },
+        )
+
+    # -- agent surface logging (spec 022) --------------------------------
+    #
+    # Five additional ways an agent touches the outside world: skills,
+    # sub-agent delegation, hooks, and file access (MCP server inventory
+    # lives in ``fabric.integrations.mcp`` and emits onto this span via a
+    # module helper). Each follows the ``record_*`` template: take the
+    # overlap guard, emit a ``fabric.*`` span event carrying metadata +
+    # SHA-256 hashes (never raw data), and bump a rolling count attribute.
+
+    def record_skill(
+        self,
+        name: str,
+        version: str,
+        *,
+        source: str | None = None,
+        manifest_hash: str | None = None,
+        signed: bool | None = None,
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
+    ) -> None:
+        """Record that this decision loaded a skill / plugin.
+
+        Captures which named, versioned capability bundle the agent
+        pulled in as a ``fabric.skill`` span event and bumps the rolling
+        ``fabric.skill_count`` attribute on the decision span.
+
+        ``manifest_hash`` is a caller-supplied hash of the skill's
+        prompt+tools bundle (the SDK never sees the raw manifest);
+        ``signed`` records whether the manifest's signature verified.
+        A skill whose ``manifest_hash`` changes between runs — or whose
+        ``signed`` flips to ``False`` — is the "a capability mutated
+        underneath the agent" signal a downstream Surface Audit acts on.
+
+        Args:
+            name: skill / plugin identifier.
+            version: skill version string.
+            source: optional origin (registry, path, URL).
+            manifest_hash: optional hash of the prompt+tools bundle.
+            signed: optional — was the manifest signature valid?
+        """
+        with self._exclusive():
+            span = self.span
+            self._skill_count += 1
+            span.set_attribute(ATTR_SKILL_COUNT, self._skill_count)
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                ATTR_SKILL_NAME: name,
+                ATTR_SKILL_VERSION: version,
+            }
+            if source is not None:
+                event_attrs[ATTR_SKILL_SOURCE] = source
+            if manifest_hash is not None:
+                event_attrs[ATTR_SKILL_MANIFEST_HASH] = manifest_hash
+            if signed is not None:
+                event_attrs[ATTR_SKILL_SIGNED] = signed
+            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            span.add_event("fabric.skill", attributes=event_attrs)
+
+    def _open_delegation(
+        self,
+        to_agent: str,
+        *,
+        protocol: str,
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
+    ) -> DelegationContext:
+        """Emit the ``fabric.delegation`` event and build the child carrier.
+
+        Shared by the sync :meth:`delegate` and async :meth:`adelegate`
+        context managers. Increments the rolling ``fabric.delegation_count``
+        and the live nesting ``depth``, stamps the event, and returns the
+        :class:`DelegationContext` (carrier + structured context) the host
+        passes to the sub-agent. The work is pure-CPU (event write +
+        tracestate inject), so the async variant reuses this directly.
+        """
+        with self._exclusive():
+            span = self.span
+            self._delegation_count += 1
+            self._delegation_depth += 1
+            depth = self._delegation_depth
+            span.set_attribute(ATTR_DELEGATION_COUNT, self._delegation_count)
+
+            # Build the carrier the sub-agent extracts. It carries this
+            # decision's identity with ``parent_agent_id`` set to the
+            # delegating agent so the child's spans link back.
+            context = FabricContext(
+                tenant_id=self.tenant_id,
+                agent_id=self.agent_id,
+                session_id=self._session_id,
+                request_id=self._request_id,
+                decision_id=self._decision_id,
+                workflow_id=self._resolved_workflow_id,
+                execution_id=self._resolved_execution_id,
+                execution_attempt_id=self._resolved_execution_attempt_id,
+                execution_attempt=self._resolved_execution_attempt,
+                execution_retry_reason=self._resolved_execution_retry_reason,
+                execution_retry_previous_attempt_id=(
+                    self._resolved_execution_retry_previous_attempt_id
+                ),
+                parent_agent_id=self.agent_id,
+            )
+            carrier: dict[str, str] = {}
+            inject(carrier, context)
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                ATTR_DELEGATION_TO_AGENT: to_agent,
+                ATTR_DELEGATION_PROTOCOL: protocol,
+                ATTR_DELEGATION_DEPTH: depth,
+            }
+            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            span.add_event("fabric.delegation", attributes=event_attrs)
+            return DelegationContext(
+                to_agent=to_agent,
+                protocol=protocol,
+                depth=depth,
+                context=context,
+                carrier=carrier,
+            )
+
+    def _close_delegation(self) -> None:
+        """Pop one delegation nesting level on context exit."""
+        with self._exclusive():
+            self._delegation_depth -= 1
+
+    @contextmanager
+    def delegate(
+        self,
+        to_agent: str,
+        *,
+        protocol: str = "custom",
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
+    ) -> Iterator[DelegationContext]:
+        """Record a sub-agent delegation as a scoped context manager.
+
+        First-class "agent A invoked agent B". On enter, emits a
+        ``fabric.delegation`` event (``to_agent`` / ``protocol`` /
+        ``depth``) and bumps the rolling ``fabric.delegation_count``. The
+        yielded :class:`DelegationContext` exposes the ``carrier`` (a
+        ``tracestate``-bearing header dict) the host passes downstream so
+        the sub-agent's spans link back via ``parent_agent_id``. Nested
+        ``delegate`` blocks increment ``depth``::
+
+            with decision.delegate("researcher", protocol="a2a") as sub:
+                call_sub_agent(headers=sub.carrier)
+
+        Args:
+            to_agent: identifier of the sub-agent being invoked.
+            protocol: delegation protocol label (e.g. ``"a2a"``,
+                ``"mcp"``, ``"custom"``). Defaults to ``"custom"``.
+            tags: optional open-vocabulary taxonomy tags (spec 023 §3).
+            baseline: optional generic baseline comparison (spec 023 §2).
+            signature: optional generic signature verification (spec 023 §4).
+        """
+        ctx = self._open_delegation(
+            to_agent, protocol=protocol, tags=tags, baseline=baseline, signature=signature
+        )
+        try:
+            yield ctx
+        finally:
+            self._close_delegation()
+
+    @asynccontextmanager
+    async def adelegate(
+        self,
+        to_agent: str,
+        *,
+        protocol: str = "custom",
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
+    ) -> AsyncIterator[DelegationContext]:
+        """Async :meth:`delegate`; usable with ``async with``.
+
+        The delegation work (event write + ``tracestate`` inject) is
+        pure-CPU, so this reuses the sync open/close helpers directly —
+        the emitted ``fabric.delegation`` event is byte-identical to the
+        sync path. Provided so a delegation can scope an ``await`` of the
+        sub-agent without leaving the ``async with`` style.
+        """
+        ctx = self._open_delegation(
+            to_agent, protocol=protocol, tags=tags, baseline=baseline, signature=signature
+        )
+        try:
+            yield ctx
+        finally:
+            self._close_delegation()
+
+    def record_hook(
+        self,
+        name: str,
+        phase: str,
+        *,
+        modified: bool = False,
+        input_hash: str | None = None,
+        output_hash: str | None = None,
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
+    ) -> None:
+        """Record that a hook / middleware ran around a decision step.
+
+        Emits a ``fabric.hook`` span event and bumps the rolling
+        ``fabric.hook_count``. ``phase`` is a closed vocabulary
+        (:data:`HOOK_PHASES`); an unknown phase raises :class:`ValueError`
+        rather than emitting an off-contract event.
+
+        A differing ``input_hash`` / ``output_hash`` with ``modified=True``
+        is the "something rewrote the context" signal a downstream Surface
+        Audit acts on. Both hashes are caller-supplied — the SDK never
+        sees the raw hooked content.
+
+        Args:
+            name: hook identifier.
+            phase: one of ``pre_model`` / ``post_model`` / ``pre_tool`` /
+                ``post_tool`` / ``pre_decision`` / ``post_decision``.
+            modified: did the hook mutate the value it wrapped?
+            input_hash: optional hash of the value entering the hook.
+            output_hash: optional hash of the value leaving the hook.
+
+        Raises:
+            ValueError: if ``phase`` is not in :data:`HOOK_PHASES`.
+        """
+        with self._exclusive():
+            if phase not in HOOK_PHASES:
+                raise ValueError(
+                    f"unknown hook phase {phase!r}; must be one of {sorted(HOOK_PHASES)}"
+                )
+            span = self.span
+            self._hook_count += 1
+            span.set_attribute(ATTR_HOOK_COUNT, self._hook_count)
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                ATTR_HOOK_NAME: name,
+                ATTR_HOOK_PHASE: phase,
+                ATTR_HOOK_MODIFIED: modified,
+            }
+            if input_hash is not None:
+                event_attrs[ATTR_HOOK_INPUT_HASH] = input_hash
+            if output_hash is not None:
+                event_attrs[ATTR_HOOK_OUTPUT_HASH] = output_hash
+            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            span.add_event("fabric.hook", attributes=event_attrs)
+
+    def record_file_access(
+        self,
+        path: str,
+        operation: str,
+        *,
+        content_hash: str | None = None,
+        size_bytes: int | None = None,
+        redact_path: bool = False,
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
+    ) -> None:
+        """Record that this decision touched a file on disk.
+
+        Emits a ``fabric.file`` span event and bumps the rolling
+        ``fabric.file_access_count``. ``operation`` is a closed vocabulary
+        (:data:`FILE_OPERATIONS`); an unknown operation raises
+        :class:`ValueError`.
+
+        **Privacy.** The file's *contents* are never placed on the span —
+        only a caller-supplied ``content_hash``. The *path* is captured
+        readable by default (``fabric.file.path``); when ``redact_path`` is
+        set the path is hashed instead (``fabric.file.path_hash``) for
+        sensitive locations like ``/patients/jane/record.pdf``. Either way
+        a ``fabric.file.path_redacted`` boolean records which form was
+        emitted, and the raw path never appears once redacted.
+
+        Args:
+            path: filesystem path touched.
+            operation: one of ``read`` / ``write`` / ``delete`` / ``append``.
+            content_hash: optional hash of the file contents.
+            size_bytes: optional size in bytes.
+            redact_path: hash the path instead of recording it readable.
+
+        Raises:
+            ValueError: if ``operation`` is not in :data:`FILE_OPERATIONS`.
+        """
+        with self._exclusive():
+            if operation not in FILE_OPERATIONS:
+                raise ValueError(
+                    f"unknown file operation {operation!r}; must be one of "
+                    f"{sorted(FILE_OPERATIONS)}"
+                )
+            span = self.span
+            self._file_access_count += 1
+            span.set_attribute(ATTR_FILE_ACCESS_COUNT, self._file_access_count)
+
+            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.schema_version": SCHEMA_VERSION,
+                ATTR_FILE_OPERATION: operation,
+                ATTR_FILE_PATH_REDACTED: redact_path,
+            }
+            if redact_path:
+                event_attrs[ATTR_FILE_PATH_HASH] = _sha256_hex(path)
+            else:
+                event_attrs[ATTR_FILE_PATH] = path
+            if content_hash is not None:
+                event_attrs[ATTR_FILE_CONTENT_HASH] = content_hash
+            if size_bytes is not None:
+                event_attrs[ATTR_FILE_SIZE_BYTES] = size_bytes
+            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            span.add_event("fabric.file", attributes=event_attrs)
+
     # -- child spans (LLM call / tool call) ------------------------------
 
     def llm_call(
@@ -1883,6 +2461,9 @@ class Decision(AbstractContextManager["Decision"]):
         step_attempt: int | None = None,
         step_retry_reason: str | None = None,
         step_retry_previous_attempt_id: str | None = None,
+        tags: Sequence[str] | None = None,
+        baseline: BaselineCheck | None = None,
+        signature: SignatureCheck | None = None,
     ) -> ToolCall:
         """Open a child span for one tool / function call.
 
@@ -1905,8 +2486,15 @@ class Decision(AbstractContextManager["Decision"]):
         ``step_retry_reason`` / ``step_retry_previous_attempt_id``,
         distinct from the enclosing execution's attempt/retry) are
         opt-in and stamped only when supplied.
+
+        The generic cross-cutting kwargs (``tags`` / ``baseline`` /
+        ``signature``, spec 023) apply here too: their results are stamped
+        on the child ``fabric.tool_call`` span. Calls that omit them stay
+        byte-identical to the pre-023 emission (additive).
         """
         _ = self.span
+        extra: dict[str, str | int | float | bool | tuple[str, ...]] = {}
+        apply_cross_cutting(extra, tags=tags, baseline=baseline, signature=signature)
         return ToolCall(
             tracer=self._client.tracer,
             name=name,
@@ -1917,6 +2505,7 @@ class Decision(AbstractContextManager["Decision"]):
             step_attempt=step_attempt,
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
+            extra_attributes=extra or None,
         )
 
     # -- OTel passthrough -------------------------------------------------

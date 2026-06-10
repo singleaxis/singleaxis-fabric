@@ -1,0 +1,47 @@
+[
+  {
+    "attributes": {
+      "fabric.agent_id": "agent-conformance",
+      "fabric.decision_id": "<normalized>",
+      "fabric.interaction_count": 1,
+      "fabric.interaction_kinds": [
+        "http.request"
+      ],
+      "fabric.profile": "permissive-dev",
+      "fabric.request_id": "request-0001",
+      "fabric.schema_version": "1.0",
+      "fabric.session_id": "session-0001",
+      "fabric.tenant_id": "tenant-conformance",
+      "fabric.user_id": "user-0001"
+    },
+    "events": [
+      {
+        "attributes": {
+          "fabric.interaction.direction": "outbound",
+          "fabric.interaction.kind": "http.request",
+          "fabric.interaction.metadata_hash": "1154509f33ee161869c70e4c6c33e5ee6c8509a78df1f5e064a1c3f56411381b",
+          "fabric.interaction.payload_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "fabric.interaction.target": "https://api.example.com/v1/orders",
+          "fabric.interaction.target_redacted": false,
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.interaction"
+      },
+      {
+        "attributes": {
+          "fabric.coverage.kind": "http.request",
+          "fabric.coverage.reason": "new_kind",
+          "fabric.coverage.suggestion": "generic",
+          "fabric.schema_version": "1.0"
+        },
+        "name": "fabric.coverage"
+      }
+    ],
+    "kind": "INTERNAL",
+    "name": "fabric.decision",
+    "status": {
+      "code": "UNSET",
+      "description": null
+    }
+  }
+]
