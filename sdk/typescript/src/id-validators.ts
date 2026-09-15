@@ -50,6 +50,15 @@ const ENV_ALLOW_PLACEHOLDER = "FABRIC_ALLOW_PLACEHOLDER_IDS";
 const LIKELY_EMAIL = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const LIKELY_PHONE = /^\+?\d{7,15}$|^\+?\d[\d -]{8,}\d$/;
 
+// Embedded variants for free-form text fields (interaction kind, raw
+// target): PII shows up INSIDE the string there, so anchored matches
+// would miss it. Email stays distinctive (requires @ + dotted TLD). SSN
+// and phone require separators or a leading + so plain digit runs like
+// "id.12345678" don't flag.
+const LIKELY_EMAIL_EMBEDDED = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+const LIKELY_SSN_EMBEDDED = /\b\d{3}-\d{2}-\d{4}\b/;
+const LIKELY_PHONE_EMBEDDED = /\+\d[\d -]{8,}\d|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/;
+
 /**
  * Tier A. Stringified absence — never a deliberate identifier. Matched
  * case-insensitively against the whitespace-stripped value.
@@ -177,26 +186,39 @@ export function checkIdentifier(fieldName: string, value: string): void {
  *
  * No-ops when `value` is falsy or non-string, or when
  * `FABRIC_QUIET_PII_WARN=1` is set in the environment.
+ *
+ * `embedded: true` searches for PII-shaped substrings instead of
+ * requiring the whole value to match — use it for free-form text fields
+ * (`interaction.kind`, a raw `interaction.target`) where an email, SSN,
+ * or formatted phone number would appear embedded in longer
+ * caller-controlled text.
  */
-export function warnIfPiiShaped(fieldName: string, value: string | null | undefined): void {
+export function warnIfPiiShaped(
+  fieldName: string,
+  value: string | null | undefined,
+  options: { embedded?: boolean } = {},
+): void {
   if (!value || typeof value !== "string") {
     return;
   }
   if (process.env[ENV_QUIET] === "1") {
     return;
   }
-  if (LIKELY_EMAIL.test(value)) {
-    warnOnce(
-      `${fieldName}=${JSON.stringify(value)} looks like an email — these will appear ` +
-        `in every emitted span, exporting PII to your trace backend. ` +
-        `Consider an opaque ID instead and put the email in a separate ` +
-        `non-emitted attribute. (suppress with FABRIC_QUIET_PII_WARN=1)`,
-    );
+  let matched: string | null = null;
+  if (options.embedded) {
+    if (LIKELY_EMAIL_EMBEDDED.test(value)) matched = "an email";
+    else if (LIKELY_SSN_EMBEDDED.test(value)) matched = "an SSN";
+    else if (LIKELY_PHONE_EMBEDDED.test(value)) matched = "a phone number";
+  } else if (LIKELY_EMAIL.test(value)) {
+    matched = "an email";
   } else if (LIKELY_PHONE.test(value)) {
+    matched = "a phone number";
+  }
+  if (matched !== null) {
     warnOnce(
-      `${fieldName}=${JSON.stringify(value)} looks like a phone number — these will ` +
+      `${fieldName}=${JSON.stringify(value)} looks like ${matched} — these will ` +
         `appear in every emitted span, exporting PII to your trace ` +
-        `backend. Consider an opaque ID instead and put the phone in a ` +
+        `backend. Consider an opaque ID instead and put the value in a ` +
         `separate non-emitted attribute. ` +
         `(suppress with FABRIC_QUIET_PII_WARN=1)`,
     );

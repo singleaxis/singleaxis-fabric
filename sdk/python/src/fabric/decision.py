@@ -1430,6 +1430,9 @@ class Decision(AbstractContextManager["Decision"]):
                 raise ValueError("kind is required")
             if not target:
                 raise ValueError("target is required")
+            warn_if_pii_shaped("interaction.kind", kind, embedded=True)
+            if not redact_target:
+                warn_if_pii_shaped("interaction.target", target, embedded=True)
             if direction is not None and direction not in INTERACTION_DIRECTIONS:
                 raise ValueError(
                     f"unknown interaction direction {direction!r}; must be one of "

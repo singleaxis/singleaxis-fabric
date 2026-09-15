@@ -85,6 +85,15 @@ ENV_ALLOW_PLACEHOLDER = "FABRIC_ALLOW_PLACEHOLDER_IDS"
 _LIKELY_EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _LIKELY_PHONE = re.compile(r"^\+?\d{7,15}$|^\+?\d[\d -]{8,}\d$")
 
+# Embedded variants for free-form text fields (interaction kind, raw target):
+# PII shows up INSIDE the string there, so anchored matches would miss it.
+# Email stays distinctive (requires @ + dotted TLD). SSN needs separators so
+# plain digit runs like ``id.12345678`` don't flag. Phone requires separators
+# or a leading ``+`` for the same reason.
+_LIKELY_EMAIL_EMBEDDED = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_LIKELY_SSN_EMBEDDED = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+_LIKELY_PHONE_EMBEDDED = re.compile(r"\+\d[\d -]{8,}\d|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b")
+
 
 _SENTINEL_VALUES: frozenset[str] = frozenset(
     {
@@ -230,7 +239,9 @@ class PIIShapedIdentifierWarning(UserWarning):
     """
 
 
-def warn_if_pii_shaped(field_name: str, value: str | None) -> None:
+def warn_if_pii_shaped(
+    field_name: str, value: str | None, *, embedded: bool = False
+) -> None:
     """Emit a one-shot stderr warning if ``value`` looks like PII.
 
     Called from :class:`fabric.client.FabricConfig.__post_init__` and
@@ -242,27 +253,40 @@ def warn_if_pii_shaped(field_name: str, value: str | None) -> None:
 
     No-ops when ``value`` is falsy, when ``value`` is not a string,
     or when ``FABRIC_QUIET_PII_WARN=1`` is set in the environment.
+
+    ``embedded=True`` searches for PII-shaped substrings instead of
+    requiring the whole value to match — use it for free-form text
+    fields (``interaction.kind``, a raw ``interaction.target``) where an
+    email, SSN, or formatted phone number would appear embedded in
+    longer caller-controlled text.
     """
     if not value or not isinstance(value, str):
         return
     if os.environ.get(ENV_QUIET) == "1":
         return
-    if _LIKELY_EMAIL.match(value):
-        warnings.warn(
-            f"{field_name}={value!r} looks like an email — these will appear "
-            f"in every emitted span, exporting PII to your trace backend. "
-            f"Consider an opaque ID instead and put the email in a separate "
-            f"non-emitted attribute. (suppress with FABRIC_QUIET_PII_WARN=1)",
-            PIIShapedIdentifierWarning,
-            stacklevel=3,
+    if embedded:
+        patterns = (
+            (_LIKELY_EMAIL_EMBEDDED, "an email"),
+            (_LIKELY_SSN_EMBEDDED, "an SSN"),
+            (_LIKELY_PHONE_EMBEDDED, "a phone number"),
         )
-    elif _LIKELY_PHONE.match(value):
+        matched = next(
+            (label for pattern, label in patterns if pattern.search(value)), None
+        )
+    else:
+        matched = (
+            "an email"
+            if _LIKELY_EMAIL.match(value)
+            else "a phone number"
+            if _LIKELY_PHONE.match(value)
+            else None
+        )
+    if matched is not None:
         warnings.warn(
-            f"{field_name}={value!r} looks like a phone number — these will "
-            f"appear in every emitted span, exporting PII to your trace "
-            f"backend. Consider an opaque ID instead and put the phone in a "
-            f"separate non-emitted attribute. "
-            f"(suppress with FABRIC_QUIET_PII_WARN=1)",
+            f"{field_name}={value!r} looks like {matched} — these will appear "
+            f"in every emitted span, exporting PII to your trace backend. "
+            f"Consider an opaque ID instead and put the value in a separate "
+            f"non-emitted attribute. (suppress with FABRIC_QUIET_PII_WARN=1)",
             PIIShapedIdentifierWarning,
             stacklevel=3,
         )

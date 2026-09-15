@@ -124,6 +124,48 @@ def test_record_interaction_arbitrary_kind_is_captured(span_exporter: InMemorySp
     assert attrs["fabric.interaction.kind"] == "quantum.teleport"
 
 
+def test_record_interaction_kind_warns_on_pii_shape(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """``kind`` is free-form and lands verbatim on the allowlisted
+    ``fabric.interaction.kind`` attribute, so PII-shaped values must warn
+    at emit time — the same contract as ``user_id``/``session_id``."""
+    from fabric._id_validators import PIIShapedIdentifierWarning
+
+    client = _client()
+    with pytest.warns(PIIShapedIdentifierWarning, match="interaction.kind"):
+        with client.decision(session_id="s", request_id="r") as d:
+            d.record_interaction("check for user bryan@example.test", "input")
+
+
+def test_record_interaction_raw_target_warns_on_pii_shape(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """``target`` is hashed by default; when ``redact_target=False`` opts
+    into a readable value, a PII-shaped target must warn."""
+    from fabric._id_validators import PIIShapedIdentifierWarning
+
+    client = _client()
+    with pytest.warns(PIIShapedIdentifierWarning, match="interaction.target"):
+        with client.decision(session_id="s", request_id="r") as d:
+            d.record_interaction(
+                "db.query", "555-010-9999", redact_target=False
+            )
+
+
+def test_record_interaction_redacted_target_does_not_warn(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Hashed targets never carry the raw value, so no warning is needed."""
+    import warnings
+
+    client = _client()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with client.decision(session_id="s", request_id="r") as d:
+            d.record_interaction("db.query", "555-010-9999")
+
+
 def test_record_interaction_optionals_omitted(span_exporter: InMemorySpanExporter) -> None:
     reset_coverage_registry()
     client = _client()

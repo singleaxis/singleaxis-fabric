@@ -17,7 +17,7 @@ import {
   SimpleSpanProcessor,
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-node";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ConcurrentDecisionUseError,
@@ -657,6 +657,44 @@ describe("coverage loop", () => {
       (e) => e["fabric.coverage.reason"] === "unclassified_deviation",
     );
     expect(deviations).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PII-shape warnings on free-form interaction fields
+// ---------------------------------------------------------------------------
+
+describe("recordInteraction PII-shape warnings", () => {
+  it("warns when kind embeds an email-shaped value", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.recordInteraction("check user bryan@example.test", "input");
+      });
+      expect(
+        spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind")),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("warns on a PII-shaped target only when redactTarget is off", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        // Hashed by default: raw value never emits, so no warning.
+        d.recordInteraction("db.query", "555-010-9999");
+        // Opted into a readable target: a phone-shaped value must warn.
+        d.recordInteraction("db.query", "555-010-9999", { redactTarget: false });
+      });
+      const targetWarns = spy.mock.calls.filter((c) =>
+        String(c[0]).includes("interaction.target"),
+      );
+      expect(targetWarns).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

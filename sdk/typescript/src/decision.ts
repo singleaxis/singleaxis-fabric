@@ -1437,6 +1437,11 @@ export class Decision implements DecisionLike {
     this.exclusive(() => {
       assertNonEmpty("recordInteraction: kind", kind);
       assertNonEmpty("recordInteraction: target", target);
+      warnIfPiiShaped("interaction.kind", kind, { embedded: true });
+      const redactTarget = options.redactTarget ?? true;
+      if (!redactTarget) {
+        warnIfPiiShaped("interaction.target", target, { embedded: true });
+      }
       if (options.direction !== undefined) {
         assertOneOf("recordInteraction: direction", options.direction, INTERACTION_DIRECTIONS);
       }
@@ -1444,7 +1449,6 @@ export class Decision implements DecisionLike {
       this.interactionKinds.add(kind);
       this.span.setAttribute(A.ATTR_INTERACTION_COUNT, this.interactionCount);
       this.span.setAttribute(A.ATTR_INTERACTION_KINDS, sortedSet(this.interactionKinds));
-      const redactTarget = options.redactTarget ?? true;
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_INTERACTION_KIND]: kind,
