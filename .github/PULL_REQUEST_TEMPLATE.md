@@ -8,7 +8,7 @@
 
 <!-- Link to relevant spec, issue, or discussion. -->
 
-- Spec: <!-- e.g. specs/004-telemetry-bridge.md -->
+- Spec: <!-- e.g. specs/027-recorder-v1.md -->
 - Issue: <!-- e.g. #123 -->
 
 ## Type of change

@@ -1,9 +1,0 @@
-{
-  "schema_version": "fabricctl.pairing-request/v1",
-  "bundle_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "target_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "effective_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-  "target": {"backend": "kubernetes-helm", "cluster_uid": "cluster-01", "release_name": "fabric"},
-  "workload": {"type": "oidc", "reference": "workload/fabric-site"},
-  "device_code": "must-never-be-persisted"
-}

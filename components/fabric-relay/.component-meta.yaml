@@ -1,9 +1,0 @@
-name: fabric-relay
-language: [go]
-owner: fabric-platform
-primary_spec: specs/002-architecture.md
-exports:
-  - package: ghcr.io/singleaxis/fabric-relay
-    kind: container
-    path: components/fabric-relay
-stability: alpha

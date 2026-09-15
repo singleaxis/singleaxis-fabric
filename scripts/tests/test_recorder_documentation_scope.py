@@ -114,13 +114,9 @@ def test_extended_recorder_docs_do_not_restore_legacy_product_claims() -> None:
 
 
 def test_downstream_design_docs_are_prominently_scoped() -> None:
-    assurance = (ROOT / "docs/assurance-findings.md").read_text(encoding="utf-8")
-    graph = (ROOT / "docs/decision-graph.md").read_text(encoding="utf-8")
     superseded = (ROOT / "specs/025-product-planes-and-packaging.md").read_text(
         encoding="utf-8"
     )
-    assert "Platform design, not recorder v1" in assurance[:600]
-    assert "SingleAxis Platform, not the OSS recorder runtime" in graph[:600]
     assert "Superseded. Do not implement recorder v1" in superseded[:700]
 
 

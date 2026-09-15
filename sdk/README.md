@@ -9,9 +9,9 @@ checkpoints).
 
 ## Authoritative specs
 
-- [`../specs/002-architecture.md`](../specs/002-architecture.md) — overall
-- [`../specs/005-guardrails-inline.md`](../specs/005-guardrails-inline.md) — inline guardrails
-- [`../specs/003-decision-graph.md`](../specs/003-decision-graph.md) — memory / retrieval audit
+- [`../specs/027-recorder-v1.md`](../specs/027-recorder-v1.md) — recorder scope
+- [`../specs/020-execution-step-capture.md`](../specs/020-execution-step-capture.md) — decision/step capture model
+- [`../specs/022-surface-logging.md`](../specs/022-surface-logging.md) — agent surface logging (delegation, MCP, skills, hooks, file access)
 
 ## Status
 

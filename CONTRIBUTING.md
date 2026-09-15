@@ -27,7 +27,7 @@ licence.
 Every commit must be signed off:
 
 ```bash
-git commit -s -m "feat(decision-graph): add temporal edge type"
+git commit -s -m "feat(fabricguard): normalize raw event names"
 ```
 
 This appends a `Signed-off-by:` trailer using your configured Git identity.
@@ -54,8 +54,9 @@ Accepted types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`,
 `ci`, `chore`, `revert`. Breaking changes must include `!` after the type
 and a `BREAKING CHANGE:` footer.
 
-Scope should identify the component (`decision-graph`, `telemetry-bridge`,
-`judge-worker`, `charts`, `sdk-python`, etc.).
+Scope should identify the component (`otel-collector-fabric`,
+`fabricguard`, `sdk-python`, `sdk-typescript`, `fabricctl`, `charts`,
+`contracts`, `deploy`, etc.).
 
 ## Branching and merge strategy
 
@@ -122,12 +123,12 @@ overall coverage will be flagged; reductions must be justified.
 Any PR touching the following is automatically labelled `security-review`
 and requires approval from a security maintainer:
 
-- Redaction pipeline (`components/presidio-sidecar`)
-- Guardrail libraries (`sdk/*/guardrails`)
-- Cryptographic boundaries (envelope encryption, mTLS, signing)
+- The metadata allowlist and content-filtering rules
+  (`components/otel-collector-fabric/processor/fabricguardprocessor`)
+- Cryptographic boundaries (mTLS, token auth, signing, hashing rules)
 - Dependency updates that cross a major version or touch crypto
-- Escalation / resume webhooks
-- Any code that egresses the tenant VPC
+- Export/egress configuration and delivery semantics
+- Any code that egresses the customer boundary
 
 See [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 

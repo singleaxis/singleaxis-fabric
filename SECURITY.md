@@ -93,7 +93,7 @@ Issues that undermine any of these will be treated as critical:
    agent's behaviour is recorded as a Decision Graph node with tamper-
    evident lineage.
 
-See [`specs/004-telemetry-bridge.md`](specs/004-telemetry-bridge.md) and
+See [`specs/027-recorder-v1.md`](specs/027-recorder-v1.md) and
 [`specs/010-development-standards.md`](specs/010-development-standards.md).
 
 ## Release signing and provenance

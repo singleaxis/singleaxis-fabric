@@ -18,8 +18,9 @@ fabricctl version
 
 It does not contain management pairing, installation or rollout workflows,
 assurance levels, runtime controls, judges, red-team campaigns, regulatory
-profiles, or governance features. Historical implementations may remain in
-the repository for migration work, but the normal build does not link them
+profiles, or governance features. Those implementations were removed when
+the recorder scope became authoritative; the release boundary tests prove
+the binary cannot link them
 into the release executable.
 
 ## Prepare recorder configuration

@@ -54,11 +54,12 @@ Public, vendor-neutral interchange contracts or optional adapters may exist
 when needed for interoperability, but they must not expand the OSS product
 promise or become required dependencies of capture and delivery.
 
-Historical source may remain visible during migration, but recorder release
-artifacts must not compile, bundle, expose, install, or advertise legacy
-assurance, management, runtime-control, judge, red-team, or regulatory
-capabilities. Enforce this with artifact-content tests, not only disabled
-defaults.
+Legacy assurance, management, runtime-control, judge, red-team, and
+regulatory sources were removed from the repository when the recorder scope
+became authoritative; their history lives in git. Recorder release artifacts
+must never compile, bundle, expose, install, or advertise those
+capabilities — enforce this with artifact-content tests, not only disabled
+defaults. Do not reintroduce them.
 
 ## Product and repository boundary
 

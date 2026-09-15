@@ -14,9 +14,8 @@ owner: project-lead
 > boundary is strict — the SDK *emits* this envelope; it never
 > reconstructs, orchestrates, or replays a decision. Reconstruction and
 > replay orchestration belong to the commercial operational-intelligence
-> layer (Decision Graph, replay orchestration). See
-> [012](012-oss-commercialization-strategy.md) and
-> [003](003-decision-graph.md) for the full OSS↔commercial split.
+> layer (Decision Graph, replay orchestration), which is downstream of and
+> not part of this repository.
 
 ## Summary
 
@@ -73,15 +72,15 @@ The OSS SDK **emits** the `fabric.replay` envelope. It explicitly does
 
 - **reconstruct** a decision from the envelope — rebuilding the decision
   state, re-running the agent, or re-deriving outputs is the commercial
-  replay layer ([012](012-oss-commercialization-strategy.md)).
+  replay layer (downstream, not part of this repository).
 - **orchestrate or drive** a replay — suppressing side effects, mocking
   tool results, and stepping a reconstruction forward are commercial
   concerns. `replay_behavior == "suppress"` is a *recorded intent*, not
   an enforced control signal.
 - **materialize lineage** — joining the envelope with checkpoints, side
   effects, and child spans into a replayable graph and signing audit
-  bundles is the commercial Decision Graph
-  ([003](003-decision-graph.md)).
+  bundles is the commercial Decision Graph (downstream, not part of this
+  repository).
 
 The envelope is metadata about how a decision *could* be reconstructed;
 the act of reconstruction stays behind the commercial boundary.

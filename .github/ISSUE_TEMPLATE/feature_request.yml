@@ -37,7 +37,7 @@ body:
     id: related-spec
     attributes:
       label: Related spec (if any)
-      description: e.g. specs/003-context-graph.md
+      description: e.g. specs/027-recorder-v1.md
     validations:
       required: false
 

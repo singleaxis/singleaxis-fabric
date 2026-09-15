@@ -45,17 +45,16 @@ candidate is being qualified.
 The schema `$id` authorities differ across contract families for historical
 reasons and are stable published identities, not resolvable URLs:
 `schemas.singleaxis.dev` (activity v2, privacy, delivery), `singleaxis.ai`
-(connect, assurance), `singleaxis.dev` (recorder), `fabric.singleaxis.dev`
-(lifecycle, management), and a `github.com` repository address (activity v1).
-They are intentionally not renumbered.
+(connect), `singleaxis.dev` (recorder), and a `github.com` repository address
+(activity v1). They are intentionally not renumbered.
 
-## Historical and optional capability documents
+## Removed capability surfaces
 
-Documents about judges, red teams, prompt-time guardrails, policy enforcement,
-assurance findings, Decision Graph, regulatory profiles, or enterprise
-governance are not the recorder-v1 product guide. They remain in the repository
-as historical design records or optional integration references until they are
-migrated or removed. None of those systems is installed by the recorder default.
+This repository carries recorder-v1 scope only. Judges, red-team runners,
+prompt-time guardrails, policy enforcement, assurance findings, Decision
+Graph, and enterprise governance sources were removed when the recorder scope
+became authoritative; their design history lives in git history. The release
+boundary tests prove none of them can reach an artifact.
 
 ## Status
 

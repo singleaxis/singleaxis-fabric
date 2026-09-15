@@ -1,9 +1,0 @@
-name: nemo-sidecar
-language: python
-owner: fabric-guardrails
-primary_spec: specs/005-guardrails-inline.md
-exports:
-  - package: fabric_nemo_sidecar
-    kind: python
-    path: components/nemo-sidecar/src/fabric_nemo_sidecar
-stability: pre-alpha

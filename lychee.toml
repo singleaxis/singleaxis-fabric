@@ -89,13 +89,12 @@ exclude = [
   "^https://www\\.conventionalcommits\\.org/",
 
   # opentelemetry.io Connection Reset under CI bursts. The GenAI
-  # semconv URL (specs/002-architecture.md, CHANGELOG.md) returns 200
+  # semconv URL (CHANGELOG.md) returns 200
   # from a browser; lychee fails it sporadically. The URL is canonical.
   "^https://opentelemetry\\.io/",
 
   # kubernetes.io Connection Reset under CI bursts. Cited from chart
-  # READMEs and update-agent docs (admission-controller spec is the
-  # canonical reference for what fail-closed means). Stable URL.
+  # READMEs (fail-closed deployment semantics). Stable URL.
   "^https://kubernetes\\.io/",
 
   # v0.2.0 release tag URL is referenced in the CHANGELOG link footer
