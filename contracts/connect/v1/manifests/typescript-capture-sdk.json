@@ -2,11 +2,11 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.typescript-capture-sdk",
   "display_name": "SingleAxis Fabric TypeScript Capture SDK",
-  "release": {"version": "0.2.0", "maturity": "beta", "distribution": "npm-package"},
+  "release": {"version": "0.8.0-rc.1", "maturity": "beta", "distribution": "npm-package"},
   "implementation": {"kind": "in_process_sdk", "deployment_modes": ["application"]},
   "compatibility": {
-    "activity_contract": "1.0.0",
-    "fabric_versions": ">=0.2.0,<1.0.0",
+    "activity_contract": null,
+    "fabric_versions": ">=0.8.0-rc.1,<1.0.0",
     "runtimes": ["Node.js >=20"],
     "protocols": ["OpenTelemetry API", "W3C Trace Context through host OpenTelemetry configuration"]
   },
@@ -18,17 +18,12 @@
       {"surface": "retrieval", "source": "caller_reported"},
       {"surface": "memory", "source": "caller_reported"},
       {"surface": "side_effect", "source": "caller_reported"},
-      {"surface": "policy_verdict", "source": "caller_reported"},
-      {"surface": "guardrail_verdict", "source": "caller_reported"},
-      {"surface": "authorization_verdict", "source": "caller_reported"},
-      {"surface": "escalation", "source": "caller_reported"},
-      {"surface": "evaluation", "source": "caller_reported"},
       {"surface": "framework_lifecycle", "source": "caller_reported"},
       {"surface": "generic_interaction", "source": "caller_reported"},
       {"surface": "file_access_metadata", "source": "caller_reported"}
     ],
     "decision_semantics": "native",
-    "coverage_basis": "In-process decision, LLM, and tool spans with host-reported capture primitives; no framework or sidecar I/O adapters ship in this package."
+    "coverage_basis": "In-process decision, LLM, and tool spans with host-reported recorder primitives. No framework, control, evaluation, or sidecar I/O implementation ships in this package, and it does not materialize Activity Envelope v2."
   },
   "control": {
     "interposition": "in_process",
@@ -69,13 +64,14 @@
     "default_destination": null
   },
   "verification_evidence": [
-    {"type": "conformance_test", "path": "sdk/typescript/test/conformance.test.ts", "claim": "Executes declared public activity-contract scenarios."},
-    {"type": "unit_test", "path": "sdk/typescript/test/primitives.test.ts", "claim": "Exercises decision, LLM, tool, content, and correlation behavior."}
+    {"type": "unit_test", "path": "sdk/typescript/test/recorder-surface.test.ts", "claim": "Proves the package root and Decision prototype exclude runtime-control and evaluation surfaces."},
+    {"type": "unit_test", "path": "sdk/typescript/test/primitives.test.ts", "claim": "Exercises recorder decision, LLM, tool, content, and correlation behavior."},
+    {"type": "integration_test", "path": "sdk/typescript/test/package-artifact.node.mjs", "claim": "Qualifies and smoke-installs the exact npm artifact for ESM, CommonJS, and TypeScript consumers."}
   ],
   "known_blind_spots": [
-    "The package is currently marked private and is not yet published to npm.",
-    "No framework adapters, guardrail clients, policy transports, queue transports, or MCP wrappers ship in the TypeScript package.",
+    "No framework adapters or MCP wrappers ship in the TypeScript package, so those operations require explicit host instrumentation.",
     "Tenant and agent identifiers are non-empty caller assertions and are not cryptographically verified.",
-    "Optional raw content capture has no built-in redactor and must be governed before exporter egress."
+    "Optional raw content capture has no built-in redactor and must be governed before exporter egress.",
+    "The SDK emits OpenTelemetry and does not materialize Activity Envelope v2, privacy assertions, delivery receipts, durable retention, or immutable evidence."
   ]
 }

@@ -2,11 +2,11 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.collector-otlp-receiver",
   "display_name": "SingleAxis Fabric Collector OTLP Receiver",
-  "release": {"version": "0.7.0", "maturity": "beta", "distribution": "container"},
+  "release": {"version": "0.8.0-rc.1", "maturity": "beta", "distribution": "container"},
   "implementation": {"kind": "otlp_receiver", "deployment_modes": ["sidecar", "gateway", "collector"]},
   "compatibility": {
-    "activity_contract": "1.0.0",
-    "fabric_versions": ">=0.7.0,<1.0.0",
+    "activity_contract": null,
+    "fabric_versions": ">=0.8.0-rc.1,<1.0.0",
     "runtimes": ["Kubernetes >=1.29", "OCI container runtime"],
     "protocols": ["OTLP/gRPC", "OTLP/HTTP", "OTLP/HTTP exporter"]
   },
@@ -16,23 +16,20 @@
       {"surface": "otlp_log", "source": "protocol_preserved"},
       {"surface": "decision_boundary", "source": "protocol_preserved"},
       {"surface": "llm_operation", "source": "protocol_preserved"},
-      {"surface": "tool_operation", "source": "protocol_preserved"},
-      {"surface": "policy_verdict", "source": "protocol_preserved"},
-      {"surface": "guardrail_verdict", "source": "protocol_preserved"},
-      {"surface": "authorization_verdict", "source": "protocol_preserved"}
+      {"surface": "tool_operation", "source": "protocol_preserved"}
     ],
     "decision_semantics": "protocol_preserved",
-    "coverage_basis": "Receives already-instrumented OTLP logs and spans; Fabric processors validate, redact, filter, sample, and route telemetry but do not reconstruct missing agent semantics."
+    "coverage_basis": "Receives already-instrumented OTLP logs and spans. The recorder preserves supported metadata, removes fields outside exact allowlists, and routes accepted activity, but cannot reconstruct semantics that upstream instrumentation did not emit."
   },
   "control": {
     "interposition": "telemetry_pipeline",
     "agent_runtime_actions": [],
-    "telemetry_pipeline_actions": ["accept", "reject", "redact", "sample", "route"]
+    "telemetry_pipeline_actions": ["accept", "reject", "route"]
   },
   "content": {
-    "raw_content_behavior": "transport_passthrough",
+    "raw_content_behavior": "excluded",
     "default_raw_capture": false,
-    "pre_egress_redaction": "operator_configurable",
+    "pre_egress_redaction": "none",
     "sensitive_field_allowlist": true
   },
   "identity": {
@@ -41,7 +38,7 @@
     "tenant_partitioning": "accepted_unverified"
   },
   "authentication": {
-    "ingress_supported": ["none", "network_policy_only"],
+    "ingress_supported": ["none", "network_policy_only", "mtls"],
     "ingress_default": "none",
     "egress_supported": ["none", "bearer_token", "mtls"],
     "egress_default": "none",
@@ -63,15 +60,15 @@
     "default_destination": "debug://stdout"
   },
   "verification_evidence": [
-    {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-traces-pipeline.sh", "claim": "Verifies trace receiver and exporter pipeline rendering."},
-    {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-privacy-policy-wiring.sh", "claim": "Verifies telemetry redaction and policy wiring invariants."},
+    {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-recorder-boundary.sh", "claim": "Verifies that logs and traces are forced through the exact-key allowlist and that legacy control, redaction, and sampling surfaces cannot render."},
     {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-durable-delivery.sh", "claim": "Verifies persistent queue, retry, TLS, and authentication configuration gates."}
   ],
   "known_blind_spots": [
-    "OTLP ingress has no mTLS, bearer-token, or workload-identity authentication in the current chart.",
+    "The production chart supports mTLS ingress, but does not bind asserted telemetry identity attributes to a verified workload identity.",
     "The receiver cannot observe agent activity that was never emitted by upstream instrumentation.",
-    "The default debug exporter is local stdout, not durable evidence storage or a compliance posture.",
+    "The recorder preserves protected OTLP and does not materialize Activity Envelope v2, privacy assertions, or delivery receipts; a downstream adapter or destination must provide those contracts.",
+    "The default development exporter is local stdout, not durable evidence storage or a compliance posture; the production profile requires an authenticated TLS destination.",
     "Persistent queues provide bounded at-least-once transport and cannot prove backend retention or exactly-once delivery.",
-    "Telemetry redaction occurs after the agent and model interaction and cannot prevent raw PII from reaching an LLM."
+    "Metadata allowlisting occurs after the agent and model interaction and cannot prevent raw PII from reaching an LLM."
   ]
 }

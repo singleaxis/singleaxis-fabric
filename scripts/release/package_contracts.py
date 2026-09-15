@@ -150,13 +150,27 @@ def _manifest_pins(
     return pins
 
 
-def _iter_contract_files(root: Path) -> tuple[ContractFile, ...]:
+def _iter_contract_files(
+    root: Path,
+    *,
+    included_families: frozenset[str] | None = None,
+    included_versions: dict[str, frozenset[str]] | None = None,
+) -> tuple[ContractFile, ...]:
     if root.is_symlink() or not root.is_dir():
         raise QualificationError(f"{root}: contracts root must be a real directory")
     files: list[ContractFile] = []
     casefold_paths: dict[str, PurePosixPath] = {}
     for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
         relative = PurePosixPath(path.relative_to(root).as_posix())
+        if included_families is not None and relative.parts[0] not in included_families:
+            continue
+        if (
+            included_versions is not None
+            and len(relative.parts) >= 2
+            and relative.parts[1]
+            not in included_versions.get(relative.parts[0], frozenset())
+        ):
+            continue
         _validate_relative_path(relative.as_posix(), context=str(root))
         if path.is_symlink():
             raise QualificationError(f"{path}: symlinks are not permitted")
@@ -182,13 +196,30 @@ def _iter_contract_files(root: Path) -> tuple[ContractFile, ...]:
 
 
 def validate_contract_tree(
-    root: Path, *, manifest_name: str
+    root: Path,
+    *,
+    manifest_name: str,
+    included_families: frozenset[str] | None = None,
+    included_versions: dict[str, frozenset[str]] | None = None,
 ) -> tuple[tuple[ContractFile, ...], dict[str, tuple[str, ...]]]:
-    files = _iter_contract_files(root)
+    files = _iter_contract_files(
+        root,
+        included_families=included_families,
+        included_versions=included_versions,
+    )
     by_path = {member.relative_path: member for member in files}
     families: dict[str, tuple[str, ...]] = {}
 
     top_level = sorted(root.iterdir(), key=lambda path: path.name)
+    if included_families is not None:
+        available = {path.name for path in top_level if path.is_dir()}
+        missing = sorted(included_families - available)
+        if missing:
+            raise QualificationError(
+                f"{root}: configured public contract families are missing: "
+                f"{', '.join(missing)}"
+            )
+        top_level = [path for path in top_level if path.name in included_families]
     if not top_level:
         raise QualificationError(f"{root}: no contract families found")
     for family_path in top_level:
@@ -199,6 +230,11 @@ def validate_contract_tree(
             )
         versions: list[str] = []
         for version_path in sorted(family_path.iterdir(), key=lambda path: path.name):
+            if (
+                included_versions is not None
+                and version_path.name not in included_versions[family_path.name]
+            ):
+                continue
             _validate_relative_path(version_path.name, context=str(family_path))
             if version_path.is_symlink() or not version_path.is_dir():
                 raise QualificationError(
@@ -241,7 +277,9 @@ def validate_contract_tree(
                     f"{manifest_relative}: unpinned JSON: {', '.join(unpinned_json)}"
                 )
         if not versions:
-            raise QualificationError(f"{family_path}: contract family has no versions")
+            raise QualificationError(
+                f"{family_path}: configured public contract versions are missing"
+            )
         families[family_path.name] = tuple(versions)
     return files, families
 
@@ -336,6 +374,39 @@ def _load_contract_policy(path: Path) -> tuple[dict[str, Any], str]:
         raise QualificationError(
             f"{path}: contracts policy must require SHA-256 pins for JSON"
         )
+    public_families = config.get("public_families")
+    if (
+        not isinstance(public_families, list)
+        or not public_families
+        or any(
+            not isinstance(family, str) or SAFE_COMPONENT_RE.fullmatch(family) is None
+            for family in public_families
+        )
+        or len(public_families) != len(set(public_families))
+    ):
+        raise QualificationError(
+            f"{path}: contracts public_families is required and must be a non-empty unique list"
+        )
+    public_versions = config.get("public_versions")
+    if (
+        not isinstance(public_versions, dict)
+        or set(public_versions) != set(public_families)
+        or any(
+            not isinstance(versions, list)
+            or not versions
+            or any(
+                not isinstance(version, str)
+                or SAFE_COMPONENT_RE.fullmatch(version) is None
+                for version in versions
+            )
+            or len(versions) != len(set(versions))
+            for versions in public_versions.values()
+        )
+    ):
+        raise QualificationError(
+            f"{path}: contracts public_versions must exactly map every public family "
+            "to a non-empty unique version list"
+        )
     return config, _sha256_bytes(content)
 
 
@@ -348,7 +419,13 @@ def package_contracts(
     semver, _ = release_versions(version)
     config, policy_sha256 = _load_contract_policy(policy_path)
     files, families = validate_contract_tree(
-        contracts_dir, manifest_name=str(config["manifest_name"])
+        contracts_dir,
+        manifest_name=str(config["manifest_name"]),
+        included_families=frozenset(config["public_families"]),
+        included_versions={
+            family: frozenset(versions)
+            for family, versions in config["public_versions"].items()
+        },
     )
     archive_root = f"{config['archive_prefix']}-{semver}"
     filename = f"{archive_root}.tar.gz"

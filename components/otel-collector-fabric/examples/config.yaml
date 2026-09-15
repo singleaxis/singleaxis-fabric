@@ -1,23 +1,9 @@
-# Example runtime config for the Fabric Collector distribution.
-#
-# Flow:
-#   OTLP receiver → controls → batch → persistent queue → OTLP/HTTP
-#
-# The `fabricguard` processor enforces the deny-by-default Fabric
-# field allowlist on every incoming log record. Anything that is not
-# allowlisted for its event_class is stripped; records whose class is
-# unknown are dropped outright. This runs BEFORE batching so a single
-# misbehaving agent cannot flood the batcher with junk.
+# Recorder-only example. Supply certificate and queue paths appropriate to
+# your environment; use the Helm shadow-production profile for Kubernetes.
 
 extensions:
-  # Liveness / readiness probe endpoint. The Dockerfile exposes
-  # 13133 by default; operators wire this as the k8s probe target.
   health_check:
     endpoint: 0.0.0.0:13133
-  # zpages stays on its default port (55679) for debug introspection.
-  zpages:
-  # Disk-backed exporter queue. The directory must be a dedicated,
-  # encrypted persistent volume in production.
   file_storage/fabric:
     directory: /var/lib/otelcol-fabric/storage
     create_directory: true
@@ -35,63 +21,12 @@ processors:
   memory_limiter:
     check_interval: 1s
     limit_mib: 512
-
   fabricguard:
-    # Attribute the processor uses to classify each log record.
     event_class_attribute: event_class
-    # Deny-by-default: unknown classes are dropped. Set to false for
-    # pass-through mode while debugging.
     drop_unknown_classes: true
-    # Per-field byte cap. Matches spec 004 §A.4.
     max_field_bytes: 8192
-    # Tenant-specific additions to the built-in allowlist. Leave empty
-    # to run only the built-in set.
-    extra_allowed_fields:
-      decision_summary:
-        - tenant_override_id
-
-  # OPA policy gate. Bundle path can be a single .rego file or a
-  # directory. Leaving bundle_path empty makes this a no-op so you can
-  # wire the processor into the pipeline before shipping a policy.
-  fabricpolicy:
-    bundle_path: /etc/fabric/policy
-    query: data.fabric.egress.allow
-    event_class_attribute: event_class
-
-  # Presidio redaction. Forwards every string attribute to the
-  # fabric-presidio-sidecar over a Unix socket; hashed values replace
-  # the original string in place. Fail-closed: any sidecar error drops
-  # the record. Omit this processor (and its pipeline entry) to skip
-  # redaction entirely.
-  fabricredact:
-    unix_socket: /var/run/fabric/presidio.sock
-    timeout: 500ms
-    event_class_attribute: event_class
-    # Attributes listed here are never sent to the sidecar.
-    skip_attributes:
-      - tenant_id
-      - agent_id
-      - decision_id
-
-  # Deterministic HMAC sampler. Same crypto contract as the Bridge's
-  # in-process sampler, so decisions align across topologies.
-  fabricsampler:
-    # Either hmac_key_hex OR hmac_key_file must be set.
-    hmac_key_file: /etc/fabric/sampler.key
-    default_rate: 1.0
-    rates:
-      decision_summary: 0.1
-      cost_usage_aggregate: 1.0
-      escalation: 1.0
-      red_team_result: 1.0
-
-  batch:
-    timeout: 5s
-    send_batch_size: 512
 
 exporters:
-  # Environment providers keep endpoint and authorization values out of
-  # source-controlled configuration. TLS verification remains enabled.
   otlp_http/fabric:
     endpoint: ${env:FABRIC_EXPORT_ENDPOINT}
     headers:
@@ -110,23 +45,16 @@ exporters:
       enabled: true
       initial_interval: 5s
       max_interval: 30s
-      # Transient errors stay queued. Permanent failures can still drop.
       max_elapsed_time: 0s
 
-  debug:
-    verbosity: basic
-
 service:
-  extensions: [health_check, zpages, file_storage/fabric]
-  telemetry:
-    logs:
-      level: info
+  extensions: [health_check, file_storage/fabric]
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, fabricredact, fabricpolicy, fabricsampler, batch]
-      exporters: [otlp_http/fabric, debug]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlp_http/fabric]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, fabricredact, fabricpolicy, fabricsampler, batch]
-      exporters: [otlp_http/fabric, debug]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlp_http/fabric]

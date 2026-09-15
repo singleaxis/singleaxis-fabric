@@ -1,0 +1,140 @@
+name: Recorder security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: recorder-security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Repository secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Install verified gitleaks binary
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          workdir="$(mktemp -d)"
+          cd "${workdir}"
+          curl -sSfLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLo checksums.txt "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\$" checksums.txt | sha256sum --check -
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          install -m 0755 gitleaks /usr/local/bin/gitleaks
+      - name: Scan the complete public repository
+        run: gitleaks detect --source . --redact --verbose --exit-code 1
+
+  trivy:
+    name: Released dependency scan (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: python-sdk
+            path: sdk/python
+          - name: typescript-sdk
+            path: sdk/typescript
+          - name: fabric-node
+            # Go-module scan for the only first-party processor in the image.
+            # The assembled OCB dependency graph is scanned on the built image
+            # in recorder-ci.yml.
+            path: components/otel-collector-fabric/processor/fabricguardprocessor
+          - name: fabricctl
+            path: tools/fabricctl
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.path }}
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          limit-severities-for-sarif: "true"
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: trivy-recorder-${{ matrix.name }}
+
+  semgrep:
+    name: Released source SAST
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep@sha256:f1f7b71861c7b28b6e0f661225a2c4f58a484f5d0f182465c6d6b3b22f972ade # 1.174.0
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Scan recorder release source only
+        run: >-
+          semgrep scan --config auto --sarif --output semgrep-recorder.sarif
+          sdk/python/src/fabric
+          sdk/typescript/src
+          components/otel-collector-fabric/processor/fabricguardprocessor
+          tools/fabricctl/cmd/fabricctl/release_main.go
+          tools/fabricctl/internal/recorder
+          tools/fabricctl/internal/recorderinit
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        if: always()
+        with:
+          sarif_file: semgrep-recorder.sarif
+          category: semgrep-recorder
+
+  osv:
+    name: Released lockfile vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: google/osv-scanner-action/osv-scanner-action@19ec1116569a47416e11a45848722b1af31a857b # v1.9.0
+        with:
+          scan-args: |-
+            --recursive
+            --lockfile-only
+            --skip-git
+            sdk/python
+            sdk/typescript
+            components/otel-collector-fabric/processor/fabricguardprocessor
+            tools/fabricctl
+
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46 # v2.4.0
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        if: always()
+        with:
+          sarif_file: scorecard.sarif

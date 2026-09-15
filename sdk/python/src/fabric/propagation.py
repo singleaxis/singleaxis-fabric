@@ -30,6 +30,19 @@ the single forbidden character base64 would otherwise introduce. The
 transform is fully reversible: re-pad to a multiple of four on decode,
 base64-decode, then JSON-load.
 
+W3C ``traceparent``
+------------------
+
+:func:`inject` (and therefore :func:`inject_decision` and
+:class:`~fabric.decision.DelegationContext`'s ``carrier``) also runs the
+standard :func:`opentelemetry.propagate.inject` so the carrier carries a
+W3C ``traceparent`` — the only header downstream tracers can use to keep
+the delegated / cross-service call in the *same* distributed trace.
+Without it every hop produced a disconnected trace. When no valid span
+context is active (e.g. ``inject`` called outside any span), the W3C
+propagator is a no-op and the carrier carries only the Fabric
+``tracestate`` member, exactly as before.
+
 No import of :mod:`fabric.decision` or :mod:`fabric.client` — that would
 create a module-level import cycle. :func:`inject_decision` accepts any
 object structurally matching :class:`DecisionLike` (a local Protocol),
@@ -287,6 +300,15 @@ def inject(carrier: MutableMapping[str, str], context: FabricContext) -> None:
     members are preserved and appended after. The list is capped at 32
     members by dropping the right-most (oldest) members if needed.
 
+    The carrier also receives the standard W3C ``traceparent`` for the
+    *currently active* span via :func:`opentelemetry.propagate.inject`, so
+    a delegated or cross-service call lands in the same distributed trace
+    instead of starting a disconnected one. The propagator may also write
+    its own ``tracestate`` members (from the active span's ``TraceState``);
+    those are preserved alongside the Fabric member. When no valid span is
+    active the propagator writes nothing, keeping ``inject`` safe to call
+    outside any span.
+
     Raises:
         ValueError: if the encoded Fabric member value exceeds the W3C
             256-char per-value limit. That means an identity field is
@@ -301,6 +323,13 @@ def inject(carrier: MutableMapping[str, str], context: FabricContext) -> None:
             "tenant_id/agent_id/session_id/request_id/execution_id is too large to "
             "propagate. These fields must hold identifiers, not payloads."
         )
+    # Stamp W3C traceparent (+ the active span's tracestate, if any) BEFORE
+    # rebuilding tracestate so the merge below preserves whatever the
+    # propagator wrote rather than clobbering it. A no-op when the ambient
+    # context has no valid span.
+    from opentelemetry import propagate  # noqa: PLC0415
+
+    propagate.inject(carrier)
     member = f"{FABRIC_KEY}={encoded}"
     existing = carrier.get(TRACESTATE_HEADER, "")
     others = [(k, v) for k, v in _parse_members(existing) if k != FABRIC_KEY]

@@ -1,0 +1,49 @@
+{
+  "contract": "singleaxis.fabric.activity-sequence",
+  "version": "2.0.0",
+  "sequence_id": "70000000-0000-4000-8000-000000000001",
+  "events": [
+    {
+      "contract": "singleaxis.fabric.activity-envelope",
+      "schema_version": "2.0.0",
+      "event_id": "10000000-0000-4000-8000-000000000001",
+      "event_type": "model.request",
+      "identity": {"tenant_id": "tenant-example", "system_id": "ambient-agent", "agent_id": "note-writer", "deployment_id": "production-us-1", "environment": "production", "release_id": "release-2026-08-31"},
+      "correlation": {"trace_id": {"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provenance": "observed"}, "span_id": {"value": "bbbbbbbbbbbbbbb1", "provenance": "observed"}, "causal_references": [{"scope": "external", "event_id": "10000000-0000-4000-8000-000000000099", "source_id": "50000000-0000-4000-8000-000000000099", "source_sequence": 48, "provenance": "reported"}]},
+      "source": {"source_id": "50000000-0000-4000-8000-000000000001", "kind": "otlp", "component": "fabric-collector", "component_version": "0.8.0"},
+      "original_timestamp": "2026-08-31T10:00:00Z",
+      "source_sequence": 1,
+      "capture_semantics": "observed",
+      "content": {"mode": "metadata", "classification": "restricted"},
+      "activity": {"outcome": "requested", "operation": "chat", "name": "clinical-note-draft", "input": {"mode": "hash", "classification": "restricted", "sha256": "1111111111111111111111111111111111111111111111111111111111111111"}}
+    },
+    {
+      "contract": "singleaxis.fabric.activity-envelope",
+      "schema_version": "2.0.0",
+      "event_id": "10000000-0000-4000-8000-000000000002",
+      "event_type": "model.response",
+      "identity": {"tenant_id": "tenant-example", "system_id": "ambient-agent", "agent_id": "note-writer", "deployment_id": "production-us-1", "environment": "production", "release_id": "release-2026-08-31"},
+      "correlation": {"trace_id": {"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provenance": "observed"}, "span_id": {"value": "bbbbbbbbbbbbbbb2", "provenance": "observed"}, "parent_span_id": {"value": "bbbbbbbbbbbbbbb1", "provenance": "observed"}, "causal_references": [{"scope": "sequence", "event_id": "10000000-0000-4000-8000-000000000001", "provenance": "observed"}]},
+      "source": {"source_id": "50000000-0000-4000-8000-000000000001", "kind": "otlp", "component": "fabric-collector", "component_version": "0.8.0"},
+      "original_timestamp": "2026-08-31T10:00:01Z",
+      "source_sequence": 2,
+      "capture_semantics": "observed",
+      "content": {"mode": "metadata", "classification": "restricted"},
+      "activity": {"outcome": "succeeded", "operation": "chat", "name": "clinical-note-draft", "latency_ms": 842, "output": {"mode": "governed_reference", "classification": "restricted", "sha256": "2222222222222222222222222222222222222222222222222222222222222222", "governed_reference": "ref_customer-vault-record-note-42"}}
+    },
+    {
+      "contract": "singleaxis.fabric.activity-envelope",
+      "schema_version": "2.0.0",
+      "event_id": "10000000-0000-4000-8000-000000000003",
+      "event_type": "side_effect.completed",
+      "identity": {"tenant_id": "tenant-example", "system_id": "ambient-agent", "agent_id": "note-writer", "deployment_id": "production-us-1", "environment": "production", "release_id": "release-2026-08-31"},
+      "correlation": {"trace_id": {"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provenance": "reported"}, "span_id": {"value": "bbbbbbbbbbbbbbb3", "provenance": "reported"}, "parent_span_id": {"value": "bbbbbbbbbbbbbbb2", "provenance": "reported"}, "causal_references": [{"scope": "sequence", "event_id": "10000000-0000-4000-8000-000000000002", "provenance": "reported"}]},
+      "source": {"source_id": "50000000-0000-4000-8000-000000000001", "kind": "otlp", "component": "fabric-collector", "component_version": "0.8.0"},
+      "original_timestamp": "2026-08-31T10:00:02Z",
+      "source_sequence": 3,
+      "capture_semantics": "reported",
+      "content": {"mode": "metadata", "classification": "restricted"},
+      "activity": {"outcome": "succeeded", "operation": "fhir-create", "name": "document-reference", "target": "ehr-production"}
+    }
+  ]
+}

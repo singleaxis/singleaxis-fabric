@@ -201,19 +201,39 @@ def inspect_wheel(
             raise QualificationError(
                 f"{path}: unexpected wheel content: {', '.join(unexpected)}"
             )
+        forbidden_paths = set(
+            policy["python_distribution"].get("forbidden_wheel_paths", [])
+        )
+        forbidden_prefixes = tuple(
+            policy["python_distribution"].get("forbidden_wheel_prefixes", [])
+        )
+        forbidden = sorted(
+            member
+            for member in names
+            if member in forbidden_paths or member.startswith(forbidden_prefixes)
+        )
+        if forbidden:
+            raise QualificationError(
+                f"{path}: wheel contains forbidden capability paths: "
+                f"{', '.join(forbidden)}"
+            )
         name, version, requires_python = _metadata_fields(
             archive.read(metadata_paths[0]), path
         )
+        parser = configparser.ConfigParser(interpolation=None)
+        required_scripts = policy["python_distribution"]["required_console_scripts"]
         entry_point_paths = [
             member for member in names if member == f"{dist_info}/entry_points.txt"
         ]
-        if len(entry_point_paths) != 1:
-            raise QualificationError(f"{path}: missing dist-info/entry_points.txt")
-        parser = configparser.ConfigParser(interpolation=None)
-        try:
-            parser.read_string(archive.read(entry_point_paths[0]).decode("utf-8"))
-        except (UnicodeDecodeError, configparser.Error) as exc:
-            raise QualificationError(f"{path}: invalid entry_points.txt") from exc
+        if len(entry_point_paths) > 1 or (required_scripts and not entry_point_paths):
+            raise QualificationError(
+                f"{path}: expected one dist-info/entry_points.txt when scripts are required"
+            )
+        if entry_point_paths:
+            try:
+                parser.read_string(archive.read(entry_point_paths[0]).decode("utf-8"))
+            except (UnicodeDecodeError, configparser.Error) as exc:
+                raise QualificationError(f"{path}: invalid entry_points.txt") from exc
     expected_name = policy["python_distribution"]["name"]
     if name != expected_name or version != expected_version:
         raise QualificationError(
@@ -225,7 +245,6 @@ def inspect_wheel(
         raise QualificationError(
             f"{path}: missing required wheel paths: {', '.join(missing)}"
         )
-    required_scripts = policy["python_distribution"]["required_console_scripts"]
     observed_scripts = (
         dict(parser.items("console_scripts"))
         if parser.has_section("console_scripts")
@@ -243,6 +262,17 @@ def inspect_wheel(
         raise QualificationError(
             f"{path}: missing required console scripts: {expected}"
         )
+    unexpected_scripts = {
+        script: target
+        for script, target in observed_scripts.items()
+        if required_scripts.get(script) != target
+    }
+    if unexpected_scripts:
+        observed = ", ".join(
+            f"{script}={target}"
+            for script, target in sorted(unexpected_scripts.items())
+        )
+        raise QualificationError(f"{path}: unexpected console scripts: {observed}")
     return {
         "filename": path.name,
         "sha256": _sha256(path),
@@ -282,6 +312,25 @@ def inspect_sdist(
         if unexpected:
             raise QualificationError(
                 f"{path}: unexpected sdist content: {', '.join(sorted(unexpected))}"
+            )
+        forbidden_paths = set(
+            policy["python_distribution"].get("forbidden_sdist_paths", [])
+        )
+        forbidden_prefixes = tuple(
+            policy["python_distribution"].get("forbidden_sdist_prefixes", [])
+        )
+        forbidden = []
+        for member_name in names:
+            parts = PurePosixPath(member_name).parts
+            if len(parts) < 2:
+                continue
+            relative = PurePosixPath(*parts[1:]).as_posix()
+            if relative in forbidden_paths or relative.startswith(forbidden_prefixes):
+                forbidden.append(member_name)
+        if forbidden:
+            raise QualificationError(
+                f"{path}: source distribution contains forbidden capability paths: "
+                f"{', '.join(sorted(forbidden))}"
             )
         pkg_info = f"{root}/PKG-INFO"
         try:
@@ -323,7 +372,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def smoke_install_wheel(path: Path, expected_version: str) -> None:
+def smoke_install_wheel(
+    path: Path,
+    expected_version: str,
+    required_scripts: dict[str, str],
+) -> None:
     with tempfile.TemporaryDirectory(prefix="fabric-release-smoke-") as directory:
         environment = Path(directory) / "venv"
         subprocess.run([sys.executable, "-m", "venv", str(environment)], check=True)
@@ -343,16 +396,14 @@ def smoke_install_wheel(path: Path, expected_version: str) -> None:
             ],
             check=True,
         )
+        expected_scripts = sorted(required_scripts.items())
         code = (
             "from importlib.metadata import distribution; "
-            "from pathlib import Path; import sys,sysconfig; "
             "d=distribution('singleaxis-fabric'); "
             f"assert d.version == {expected_version!r}; "
             "assert d.locate_file('fabric/py.typed').is_file(); "
-            "eps=[e for e in d.entry_points if e.group=='console_scripts' and e.name=='fabricctl']; "
-            "assert len(eps)==1 and eps[0].value=='fabric.cli:main'; "
-            "suffix='.exe' if sys.platform=='win32' else ''; "
-            "assert (Path(sysconfig.get_path('scripts')) / ('fabricctl'+suffix)).is_file()"
+            "eps=sorted((e.name,e.value) for e in d.entry_points if e.group=='console_scripts'); "
+            f"assert eps == {expected_scripts!r}, eps"
         )
         subprocess.run([str(python), "-I", "-c", code], check=True)
 
@@ -375,7 +426,11 @@ def qualify_python_dist(
         inspect_sdist(sdists[0], policy, expected_version),
     ]
     if smoke_install:
-        smoke_install_wheel(wheels[0], expected_version)
+        smoke_install_wheel(
+            wheels[0],
+            expected_version,
+            policy["python_distribution"]["required_console_scripts"],
+        )
     return records
 
 

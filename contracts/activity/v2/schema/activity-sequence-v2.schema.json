@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.singleaxis.dev/fabric/activity/v2/activity-sequence-v2.schema.json",
+  "title": "Fabric activity envelope v2 conformance sequence",
+  "type": "object",
+  "required": ["contract", "version", "sequence_id", "events"],
+  "additionalProperties": false,
+  "properties": {
+    "contract": {"const": "singleaxis.fabric.activity-sequence"},
+    "version": {"const": "2.0.0"},
+    "sequence_id": {"$ref": "#/$defs/uuid"},
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#activity-envelope-v2"}
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "opaqueId": {"type": "string", "minLength": 1, "maxLength": 256},
+    "activityIdentifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,127}$"
+    },
+    "governedReference": {
+      "type": "string",
+      "pattern": "^ref_[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+    },
+    "provenance": {"enum": ["observed", "reported", "inferred"]},
+    "uuidCorrelation": {
+      "type": "object",
+      "required": ["value", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"$ref": "#/$defs/uuid"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "traceCorrelation": {
+      "type": "object",
+      "required": ["value", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "spanCorrelation": {
+      "type": "object",
+      "required": ["value", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "causalReference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["scope", "event_id", "provenance"],
+          "additionalProperties": false,
+          "properties": {
+            "scope": {"const": "sequence"},
+            "event_id": {"$ref": "#/$defs/uuid"},
+            "provenance": {"$ref": "#/$defs/provenance"}
+          }
+        },
+        {
+          "type": "object",
+          "required": ["scope", "event_id", "source_id", "source_sequence", "provenance"],
+          "additionalProperties": false,
+          "properties": {
+            "scope": {"const": "external"},
+            "event_id": {"$ref": "#/$defs/uuid"},
+            "source_id": {"$ref": "#/$defs/uuid"},
+            "source_sequence": {"type": "integer", "minimum": 0},
+            "provenance": {"$ref": "#/$defs/provenance"}
+          }
+        }
+      ]
+    },
+    "contentDescriptor": {
+      "type": "object",
+      "required": ["mode", "classification"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["metadata", "hash", "governed_reference"]},
+        "classification": {"enum": ["none", "public", "internal", "confidential", "restricted"]},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "governed_reference": {"$ref": "#/$defs/governedReference"}
+      },
+      "oneOf": [
+        {
+          "properties": {"mode": {"const": "metadata"}},
+          "not": {"anyOf": [{"required": ["sha256"]}, {"required": ["governed_reference"]}]}
+        },
+        {
+          "properties": {"mode": {"const": "hash"}},
+          "required": ["sha256"],
+          "not": {"required": ["governed_reference"]}
+        },
+        {
+          "properties": {"mode": {"const": "governed_reference"}},
+          "required": ["governed_reference"]
+        }
+      ]
+    },
+    "activityEnvelope": {
+      "$anchor": "activity-envelope-v2",
+      "type": "object",
+      "required": [
+        "contract", "schema_version", "event_id", "event_type", "identity",
+        "correlation", "source", "original_timestamp", "source_sequence",
+        "capture_semantics", "content", "activity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "contract": {"const": "singleaxis.fabric.activity-envelope"},
+        "schema_version": {"const": "2.0.0"},
+        "event_id": {"$ref": "#/$defs/uuid"},
+        "event_type": {
+          "enum": [
+            "model.request", "model.response", "tool.request", "tool.result",
+            "retrieval.request", "retrieval.result", "side_effect.requested",
+            "side_effect.completed", "human.action", "execution.error",
+            "execution.retry", "execution.cancelled", "deployment.changed"
+          ]
+        },
+        "identity": {
+          "type": "object",
+          "required": ["tenant_id", "system_id", "agent_id", "deployment_id", "environment", "release_id"],
+          "additionalProperties": false,
+          "properties": {
+            "tenant_id": {"$ref": "#/$defs/opaqueId"},
+            "system_id": {"$ref": "#/$defs/opaqueId"},
+            "agent_id": {"$ref": "#/$defs/opaqueId"},
+            "deployment_id": {"$ref": "#/$defs/opaqueId"},
+            "environment": {"$ref": "#/$defs/opaqueId"},
+            "release_id": {"$ref": "#/$defs/opaqueId"}
+          }
+        },
+        "correlation": {
+          "type": "object",
+          "required": ["causal_references"],
+          "additionalProperties": false,
+          "properties": {
+            "trace_id": {"$ref": "#/$defs/traceCorrelation"},
+            "span_id": {"$ref": "#/$defs/spanCorrelation"},
+            "parent_span_id": {"$ref": "#/$defs/spanCorrelation"},
+            "execution_id": {"$ref": "#/$defs/uuidCorrelation"},
+            "decision_id": {"$ref": "#/$defs/uuidCorrelation"},
+            "attempt_id": {"$ref": "#/$defs/uuidCorrelation"},
+            "causal_references": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/causalReference"}
+            }
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": ["source_id", "kind", "component", "component_version"],
+          "additionalProperties": false,
+          "properties": {
+            "source_id": {"$ref": "#/$defs/uuid"},
+            "kind": {"enum": ["sdk", "framework_adapter", "gateway", "otlp", "vendor_receiver", "discovery"]},
+            "component": {"$ref": "#/$defs/opaqueId"},
+            "component_version": {"$ref": "#/$defs/opaqueId"}
+          }
+        },
+        "original_timestamp": {"type": "string", "format": "date-time"},
+        "source_sequence": {"type": "integer", "minimum": 0},
+        "capture_semantics": {"enum": ["observed", "reported", "inferred"]},
+        "content": {"$ref": "#/$defs/contentDescriptor"},
+        "activity": {
+          "type": "object",
+          "required": ["outcome"],
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {"enum": ["requested", "succeeded", "failed", "cancelled", "unknown"]},
+            "operation": {"$ref": "#/$defs/activityIdentifier"},
+            "name": {"$ref": "#/$defs/activityIdentifier"},
+            "target": {"$ref": "#/$defs/activityIdentifier"},
+            "latency_ms": {"type": "number", "minimum": 0},
+            "status_code": {"type": "integer", "minimum": 0},
+            "error_code": {"type": "string", "minLength": 1, "maxLength": 256},
+            "input": {"$ref": "#/$defs/contentDescriptor"},
+            "output": {"$ref": "#/$defs/contentDescriptor"}
+          }
+        }
+      }
+    }
+  }
+}

@@ -26,12 +26,56 @@ export const ATTR_EXECUTION_ATTEMPT = "fabric.execution.attempt";
 export const ATTR_EXECUTION_RETRY_REASON = "fabric.execution.retry.reason";
 export const ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID =
   "fabric.execution.retry.previous_attempt_id";
+
+// GenAI error convention: the exception class name stamped on a span
+// alongside ERROR status when a context exits with a failure (mirrors
+// Python's ATTR_ERROR_TYPE, stamped on decision/llm/tool spans alike).
+export const ATTR_ERROR_TYPE = "error.type";
+
 export const ATTR_SESSION = "fabric.session_id";
 export const ATTR_REQUEST = "fabric.request_id";
 // Lineage anchor for the decision: host-supplied verbatim, or a minted uuid4
 // when absent. Independent of `request_id` (mirrors Python `ATTR_DECISION_ID`).
 export const ATTR_DECISION_ID = "fabric.decision_id";
 export const ATTR_USER = "fabric.user_id";
+
+// Delegation lineage stamped on a decision opened from a propagated
+// FabricContext (see DecisionIds.context): the delegating agent and the
+// upstream decision id so the child's spans link back across the service
+// boundary (mirrors Python's ATTR_PARENT_* keys).
+export const ATTR_PARENT_AGENT_ID = "fabric.parent_agent_id";
+export const ATTR_PARENT_DECISION_ID = "fabric.parent_decision_id";
+
+// -- Caller-supplied attribute guards ------------------------------------
+//
+// The `fabric.` and `gen_ai.` namespaces are written by the SDK itself.
+// A caller override via `FabricConfig.extra` / `decision(attributes)` /
+// `execution(attributes)` would silently clobber the identity every
+// downstream isolation / correlation check relies on, so the convenience
+// entry points reject them. `setAttribute` remains the escape hatch for
+// hosts that truly must override (mirrors Python's check_attribute_key).
+export const RESERVED_ATTRIBUTE_PREFIXES = ["fabric.", "gen_ai."] as const;
+
+/** Return `key` unless it sits under a reserved namespace. */
+export function checkAttributeKey(key: string): string {
+  if (RESERVED_ATTRIBUTE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+    throw new Error(
+      `attribute key ${JSON.stringify(key)} is under a reserved namespace ` +
+        "('fabric.'/'gen_ai.'); identity and GenAI convention " +
+        "attributes are SDK-owned. Use a caller namespace such as " +
+        "'agent.*' or '<your-org>.*' instead.",
+    );
+  }
+  return key;
+}
+
+/** Validate every key of a caller-supplied attribute dict. */
+export function checkAttributeKeys<T extends Record<string, string>>(attributes: T): T {
+  for (const key of Object.keys(attributes)) {
+    checkAttributeKey(key);
+  }
+  return attributes;
+}
 
 // -- Execution span (fabric.execution) ----------------------------------
 //
@@ -63,6 +107,7 @@ export const GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens";
 export const GEN_AI_REQUEST_STREAM = "gen_ai.request.stream";
 export const GEN_AI_REQUEST_REASONING_LEVEL = "gen_ai.request.reasoning.level";
 export const GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID = "gen_ai.request.previous_response.id";
+export const GEN_AI_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats";
 export const GEN_AI_OUTPUT_TYPE = "gen_ai.output.type";
 export const GEN_AI_RESPONSE_ID = "gen_ai.response.id";
 export const GEN_AI_RESPONSE_MODEL = "gen_ai.response.model";
@@ -70,8 +115,16 @@ export const GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons";
 export const GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens";
 export const GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
 export const GEN_AI_USAGE_REASONING_OUTPUT_TOKENS = "gen_ai.usage.reasoning.output_tokens";
-export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read_input_tokens";
-export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation_input_tokens";
+// OTel GenAI prompt-cache token mirrors. The upstream convention names
+// these on the *input* side (cache reads/writes are charged against the
+// prompt), so we mirror Fabric's cache counters onto the current dotted
+// keys; the underscore-separated legacy aliases are emitted only under
+// `emitLegacyAttributes` (mirrors Python `_calls.py`).
+export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens";
+export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation.input_tokens";
+export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_LEGACY = "gen_ai.usage.cache_read_input_tokens";
+export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS_LEGACY =
+  "gen_ai.usage.cache_creation_input_tokens";
 export const GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK = "gen_ai.response.time_to_first_chunk";
 export const GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id";
 export const GEN_AI_CONVERSATION_COMPACTED = "gen_ai.conversation.compacted";
@@ -81,6 +134,8 @@ export const GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages";
 export const GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions";
 export const GEN_AI_PROMPT_NAME = "gen_ai.prompt.name";
 export const GEN_AI_PROMPT_VERSION = "gen_ai.prompt.version";
+export const GEN_AI_AGENT_NAME = "gen_ai.agent.name";
+export const GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count";
 
 // Fabric mirrors of the GenAI fields.
 export const FABRIC_LLM_SYSTEM = "fabric.llm.system";
@@ -131,45 +186,6 @@ export const FABRIC_LLM_STREAMING_TTFT_MS = "fabric.llm.streaming.ttft_ms";
 export const FABRIC_LLM_STREAMING_CHUNK_COUNT = "fabric.llm.streaming.chunk_count";
 export const FABRIC_LLM_RETRY_COUNT = "fabric.llm.retry.count";
 export const FABRIC_LLM_RETRY_REASON = "fabric.llm.retry.reason";
-
-// -- Guardrail (fabric.guardrail span event, per spec 005) --------------
-//
-// These mirror `sdk/python/src/fabric/decision.py` (`_record_guardrail_event`
-// and the block bookkeeping in `Decision.__exit__`). The keys land verbatim
-// on the emitted span/event, so they MUST stay byte-identical to the Python
-// constants or the shared `guardrail_*` conformance goldens will not match.
-
-export const EVENT_NAME_GUARDRAIL = "fabric.guardrail";
-
-export const ATTR_GUARDRAIL_PHASE = "fabric.guardrail.phase";
-export const ATTR_GUARDRAIL_LATENCY_MS = "fabric.guardrail.latency_ms";
-export const ATTR_GUARDRAIL_BLOCKED = "fabric.guardrail.blocked";
-export const ATTR_GUARDRAIL_ENTITIES = "fabric.guardrail.entities";
-export const ATTR_GUARDRAIL_POLICIES = "fabric.guardrail.policies";
-
-// Block bookkeeping stamped on the decision span itself when a guardrail
-// blocks (mirrors Python's ATTR_BLOCKED / ATTR_BLOCK_POLICIES).
-export const ATTR_BLOCKED = "fabric.blocked";
-export const ATTR_BLOCKED_POLICIES = "fabric.blocked.policies";
-
-// Dual-pipeline content-reference locator stamped on the guardrail event
-// when the host resolves the raw content into a ContentStore (spec 012).
-export const ATTR_GUARDRAIL_CONTENT_REF = "fabric.guardrail.content_ref";
-
-// Span status descriptions (match Python decision.py __exit__ precedence).
-export const STATUS_GUARDRAIL_BLOCKED = "guardrail_blocked";
-export const STATUS_ESCALATION_REQUESTED = "escalation_requested";
-export const STATUS_BLOCKED_AND_ESCALATED = "blocked_and_escalated";
-
-// -- Escalation (fabric.escalation span event) --------------------------
-
-export const EVENT_NAME_ESCALATION = "fabric.escalation";
-
-export const ATTR_ESCALATED = "fabric.escalated";
-export const ATTR_ESC_REASON = "fabric.escalation.reason";
-export const ATTR_ESC_RUBRIC = "fabric.escalation.rubric_id";
-export const ATTR_ESC_MODE = "fabric.escalation.mode";
-export const ATTR_ESC_SCORE = "fabric.escalation.triggering_score";
 
 // -- Retrieval (fabric.retrieval span event) ----------------------------
 
@@ -235,62 +251,6 @@ export const ATTR_CHECKPOINT_COUNT = "fabric.checkpoint_count";
 export const ATTR_CHECKPOINT_ID = "fabric.checkpoint.checkpoint_id";
 export const ATTR_CHECKPOINT_STEP_NAME = "fabric.checkpoint.step_name";
 export const ATTR_CHECKPOINT_STATE_HASH = "fabric.checkpoint.state_hash";
-
-// -- Eval (fabric.eval span event) --------------------------------------
-
-export const EVENT_NAME_EVAL = "fabric.eval";
-
-export const ATTR_EVAL_COUNT = "fabric.eval_count";
-export const ATTR_EVAL_RUBRICS = "fabric.eval_rubrics";
-
-export const ATTR_EVAL_ID = "fabric.eval.eval_id";
-export const ATTR_EVAL_RUBRIC_ID = "fabric.eval.rubric_id";
-export const ATTR_EVAL_SCORE = "fabric.eval.score";
-export const ATTR_EVAL_DIMENSION = "fabric.eval.dimension";
-export const ATTR_EVAL_EVALUATOR_NAME = "fabric.eval.evaluator_name";
-export const ATTR_EVAL_EVALUATOR_VERSION = "fabric.eval.evaluator_version";
-export const ATTR_EVAL_CONFIDENCE = "fabric.eval.confidence";
-export const ATTR_EVAL_PAYLOAD_REF = "fabric.eval.payload_ref";
-
-// -- Judge queue (fabric.judge.queued span event) -----------------------
-
-export const EVENT_NAME_JUDGE_QUEUED = "fabric.judge.queued";
-
-export const ATTR_JUDGE_QUEUED_COUNT = "fabric.judge_queued_count";
-export const ATTR_JUDGE_RUBRICS = "fabric.judge_rubrics";
-
-export const ATTR_JUDGE_REQUEST_ID = "fabric.judge.request_id";
-export const ATTR_JUDGE_RUBRIC_ID = "fabric.judge.rubric_id";
-export const ATTR_JUDGE_DIMENSIONS = "fabric.judge.dimensions";
-export const ATTR_JUDGE_PAYLOAD_REF = "fabric.judge.payload_ref";
-
-// -- Policy evaluation (fabric.policy.evaluation span event) -------------
-
-export const EVENT_NAME_POLICY_EVALUATION = "fabric.policy.evaluation";
-
-export const ATTR_POLICY_EVAL_COUNT = "fabric.policy_evaluation_count";
-export const ATTR_POLICY_ENGINES = "fabric.policy_engines";
-
-export const ATTR_POLICY_EVALUATION_ID = "fabric.policy.evaluation_id";
-export const ATTR_POLICY_ENGINE = "fabric.policy.engine";
-export const ATTR_POLICY_POLICY_ID = "fabric.policy.policy_id";
-export const ATTR_POLICY_DECISION = "fabric.policy.decision";
-export const ATTR_POLICY_INPUT_HASH = "fabric.policy.input_hash";
-export const ATTR_POLICY_LATENCY_MS = "fabric.policy.latency_ms";
-export const ATTR_POLICY_POLICY_VERSION = "fabric.policy.policy_version";
-export const ATTR_POLICY_REASON = "fabric.policy.reason";
-export const ATTR_POLICY_EVIDENCE_REF = "fabric.policy.evidence_ref";
-export const ATTR_POLICY_BUNDLE_SIGNATURE = "fabric.policy.bundle_signature";
-export const ATTR_POLICY_INPUT_CONTENT_REF = "fabric.policy.input_content_ref";
-
-// -- Tool authorization (fabric.tool.authorization span event) ----------
-
-export const EVENT_NAME_TOOL_AUTHORIZATION = "fabric.tool.authorization";
-
-export const ATTR_TOOL_AUTH_COUNT = "fabric.tool_authorization_count";
-
-export const ATTR_TOOL_AUTH_DECISION = "fabric.tool.authorization.decision";
-export const ATTR_TOOL_AUTH_REASON = "fabric.tool.authorization.reason";
 
 // -- Replay, inventory, extensibility, and generic interaction events ----
 

@@ -1,6 +1,5 @@
 {{- include "fabric.validateTenantId" . -}}
-{{- include "fabric.validateHighRiskAdmission" . -}}
-{{- include "fabric.validateProfileLocks" . -}}
+{{- include "fabric.validateShadowProduction" . -}}
 {{- if .Values.namespace.create }}
 apiVersion: v1
 kind: Namespace

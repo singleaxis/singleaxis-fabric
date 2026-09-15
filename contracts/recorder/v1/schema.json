@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.dev/contracts/recorder/v1/schema.json",
+  "title": "FabricRecorder",
+  "description": "Customer-controlled passive recorder configuration for Capture, Protect, and Deliver.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "fabric.singleaxis.dev/v1alpha1" },
+    "kind": { "const": "FabricRecorder" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "input", "content", "protect", "destination", "installation"],
+      "properties": {
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["recorderId", "systemId", "deploymentId"],
+          "properties": {
+            "recorderId": { "$ref": "#/$defs/reference" },
+            "systemId": { "$ref": "#/$defs/reference" },
+            "deploymentId": { "$ref": "#/$defs/reference" }
+          }
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method"],
+          "properties": { "method": { "enum": ["otlp", "http", "sdk", "adapter"] } }
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": { "mode": { "enum": ["metadata", "hash", "governed-reference"] } }
+        },
+        "protect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["privacyPolicyRef", "configDigest"],
+          "properties": {
+            "privacyPolicyRef": { "$ref": "#/$defs/reference" },
+            "configDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          }
+        },
+        "destination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": { "ref": { "$ref": "#/$defs/reference" } }
+        },
+        "installation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": { "ref": { "$ref": "#/$defs/reference" } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,251}[A-Za-z0-9])?$"
+    }
+  }
+}

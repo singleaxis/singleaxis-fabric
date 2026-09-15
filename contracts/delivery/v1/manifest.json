@@ -1,0 +1,12 @@
+{
+  "contract": "singleaxis.fabric.delivery",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "schema/delivery-evidence-v1.schema.json", "role": "delivery-evidence-schema", "sha256": "0389240c63b22485d2f47bb7b38b8560febda2bb10d127ddb00902293c7604b8", "expectation": "schema"},
+    {"path": "valid/audit-delivery.json", "role": "valid-audit-delivery", "sha256": "cb7c955fbcc08badd9a56ef0583eab00595f38e59b880e1334921fa30e79e894", "expectation": "valid"},
+    {"path": "invalid/collapsed-delivery-stage.json", "role": "invalid-collapsed-delivery-stage", "sha256": "25382ebc1bfd52981af80fe2d062cdee4705957cfdd3fe146b47801e873af07e", "expectation": "invalid", "expected_error": "delivery.stage.sequence"},
+    {"path": "invalid/non-destination-persistence-proof.json", "role": "invalid-non-destination-persistence-proof", "sha256": "35e558ff1b20cc0875af6ae52edbf60307aa8bc64847fa5e89cf913e04695e44", "expectation": "invalid", "expected_error": "delivery.persistence.not_destination_issued"},
+    {"path": "invalid/privacy-batch-mismatch.json", "role": "invalid-privacy-batch-mismatch", "sha256": "7e65f6b4d005fd1fcd17a7653c5e447b877cae8f965fb2ac29ec7fb04597d96c", "expectation": "invalid", "expected_error": "delivery.privacy.batch_binding"}
+  ]
+}

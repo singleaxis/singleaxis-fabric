@@ -7,6 +7,11 @@ export default defineConfig({
   format: ["esm", "cjs"],
   dts: true,
   sourcemap: true,
+  // Published maps preserve source locations without embedding the repository
+  // source tree. This keeps unshipped modules/constants out of the npm artifact.
+  esbuildOptions(options) {
+    options.sourcesContent = false;
+  },
   clean: true,
   target: "es2022",
 });

@@ -1,0 +1,9 @@
+{
+  "contract": "singleaxis.fabric.export-privacy-assertion", "version": "1.0.0", "assertion_id": "80000000-0000-4000-8000-000000000002", "batch_id": "90000000-0000-4000-8000-000000000002",
+  "input_payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "protected_payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "policy": {"policy_id": "unsafe", "policy_version": "1.0.0", "policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "default_behavior": "deny"},
+  "processor": {"component": "fabric-protect", "component_version": "1.0.0", "component_build_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "instance_id": "81000000-0000-4000-8000-000000000002", "identity": {"kind": "local_instance", "value": "fabric-node-02", "provenance": "self_reported"}},
+  "applied_at": "2026-08-31T10:00:03Z", "output_event_ids": ["10000000-0000-4000-8000-000000000001"],
+  "decision": {"export_allowed": true, "raw_content_exported": true, "allowed_content_modes": ["metadata"], "removed_fields": [], "identifier_actions": [], "prohibited_content_detected": false},
+  "verification": {"status": "unverified"}
+}

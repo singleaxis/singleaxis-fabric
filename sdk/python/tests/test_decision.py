@@ -1,12 +1,11 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Decision context manager behaviour — span shape, block recording,
-exception handling."""
+"""Decision context manager behavior and passive activity recording."""
 
 from __future__ import annotations
 
 from unittest.mock import Mock
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -16,15 +15,10 @@ from fabric import (
     SCHEMA_VERSION,
     Fabric,
     FabricConfig,
-    GuardrailBlocked,
-    GuardrailNotConfiguredError,
-    GuardrailResult,
     MemoryKind,
 )
 from fabric.decision import (
     ATTR_AGENT,
-    ATTR_BLOCK_POLICIES,
-    ATTR_BLOCKED,
     ATTR_DECISION_ID,
     ATTR_PROFILE,
     ATTR_REQUEST,
@@ -38,17 +32,6 @@ from fabric.decision import (
 
 def _client(profile: str = "permissive-dev") -> Fabric:
     return Fabric(FabricConfig(tenant_id="acme", agent_id="support-bot", profile=profile))
-
-
-def _blocking_result() -> GuardrailResult:
-    return GuardrailResult(
-        event_id=uuid4(),
-        blocked=True,
-        block_response="blocked by policy",
-        redacted_content="",
-        policies_fired=["presidio:pii_email"],
-        latency_ms=3.2,
-    )
 
 
 def test_happy_path_emits_single_span(span_exporter: InMemorySpanExporter) -> None:
@@ -134,42 +117,6 @@ def test_extra_attributes_flow_through(span_exporter: InMemorySpanExporter) -> N
     assert attrs["agent.tier"] == "gold"
 
 
-def test_record_block_marks_span_error(span_exporter: InMemorySpanExporter) -> None:
-    client = _client()
-    with client.decision(session_id="s", request_id="r") as dec:
-        dec.record_block(_blocking_result())
-        assert dec.blocked is not None
-    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
-    attrs = dict(span.attributes or {})
-    assert attrs[ATTR_BLOCKED] is True
-    assert attrs[ATTR_BLOCK_POLICIES] == ("presidio:pii_email",)
-    assert span.status.status_code == StatusCode.ERROR
-    assert span.status.description == "guardrail_blocked"
-
-
-def test_record_block_rejects_non_blocking_result() -> None:
-    client = _client()
-    ok = GuardrailResult(
-        event_id=uuid4(),
-        blocked=False,
-        redacted_content="hi",
-        latency_ms=0.5,
-    )
-    with client.decision(session_id="s", request_id="r") as dec, pytest.raises(ValueError):
-        dec.record_block(ok)
-
-
-def test_raise_for_block_raises_after_record() -> None:
-    client = _client()
-    with (
-        pytest.raises(GuardrailBlocked) as info,
-        client.decision(session_id="s", request_id="r") as dec,
-    ):
-        dec.record_block(_blocking_result())
-        dec.raise_for_block()
-    assert info.value.result.policies_fired == ["presidio:pii_email"]
-
-
 def test_exception_inside_block_records_on_span(span_exporter: InMemorySpanExporter) -> None:
     client = _client()
     fail = Mock(side_effect=RuntimeError("boom"))
@@ -183,17 +130,6 @@ def test_exception_inside_block_records_on_span(span_exporter: InMemorySpanExpor
     # record_exception appends the message; we accept either form.
     assert (span.status.description or "").startswith("RuntimeError")
     assert any(ev.name == "exception" for ev in span.events)
-
-
-def test_guard_methods_raise_when_unconfigured() -> None:
-    client = _client()
-    with client.decision(session_id="s", request_id="r") as dec:
-        with pytest.raises(GuardrailNotConfiguredError):
-            dec.guard_input("hi")
-        with pytest.raises(GuardrailNotConfiguredError):
-            dec.guard_output_chunk("chunk")
-        with pytest.raises(GuardrailNotConfiguredError):
-            dec.guard_output_final("full")
 
 
 def test_missing_required_ids_rejected() -> None:
@@ -288,3 +224,80 @@ def test_recall_content_hash_matches_remember_hash_for_same_input(
     h0 = dict(events[0].attributes or {})["fabric.memory.content_hash"]
     h1 = dict(events[1].attributes or {})["fabric.memory.content_hash"]
     assert h0 == h1
+
+
+# -- reserved attribute namespaces ------------------------------------------
+
+
+def test_decision_attributes_reject_reserved_namespace() -> None:
+    """Caller ``attributes=`` cannot clobber SDK-owned identity keys."""
+    client = _client()
+    with pytest.raises(ValueError, match="reserved namespace"):
+        client.decision(session_id="s", request_id="r", attributes={"fabric.tenant_id": "evil"})
+    with pytest.raises(ValueError, match="reserved namespace"):
+        client.decision(session_id="s", request_id="r", attributes={"gen_ai.system": "x"})
+
+
+def test_set_attribute_rejects_reserved_namespace() -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        with pytest.raises(ValueError, match="reserved namespace"):
+            dec.set_attribute("fabric.session_id", "hijacked")
+        with pytest.raises(ValueError, match="reserved namespace"):
+            dec.set_attribute("gen_ai.conversation.id", "hijacked")
+        # A caller namespace still works.
+        dec.set_attribute("agent.custom", "ok")
+
+
+def test_config_extra_stamped_on_decision(span_exporter: InMemorySpanExporter) -> None:
+    """``FabricConfig.extra`` lands as default attributes on the span."""
+    client = Fabric(
+        FabricConfig(
+            tenant_id="acme",
+            agent_id="bot",
+            extra={"acme.region": "us-east-1", "acme.tier": "gold"},
+        )
+    )
+    with client.decision(session_id="s", request_id="r"):
+        pass
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    attrs = dict(span.attributes or {})
+    assert attrs["acme.region"] == "us-east-1"
+    assert attrs["acme.tier"] == "gold"
+
+
+def test_config_extra_caller_attributes_win(span_exporter: InMemorySpanExporter) -> None:
+    """Per-decision ``attributes=`` overrides a colliding config extra."""
+    client = Fabric(
+        FabricConfig(
+            tenant_id="acme",
+            agent_id="bot",
+            extra={"acme.tier": "config-default"},
+        )
+    )
+    with client.decision(session_id="s", request_id="r", attributes={"acme.tier": "call"}):
+        pass
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    assert dict(span.attributes or {})["acme.tier"] == "call"
+
+
+def test_config_extra_rejects_reserved_namespace() -> None:
+    """A reserved key in ``FabricConfig.extra`` fails fast at build time."""
+    with pytest.raises(ValueError, match="reserved namespace"):
+        FabricConfig(tenant_id="t", agent_id="a", extra={"fabric.tenant_id": "evil"})
+    with pytest.raises(ValueError, match="reserved namespace"):
+        FabricConfig(tenant_id="t", agent_id="a", extra={"gen_ai.system": "x"})
+
+
+# -- failure visibility -----------------------------------------------------
+
+
+def test_decision_stamps_error_type_on_exception(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with pytest.raises(ValueError, match="bad"), client.decision(session_id="s", request_id="r"):
+        raise ValueError("bad")
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    assert span.status.status_code == StatusCode.ERROR
+    assert dict(span.attributes or {})["error.type"] == "ValueError"

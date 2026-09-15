@@ -1,3 +1,5 @@
+//go:build legacy
+
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
@@ -194,17 +196,6 @@ func runMutation(operation string, args []string, stdin io.Reader, stdout, stder
 	options := bootstrapOptions
 	options.Operation = operation
 	options.ClusterUID = clusterUID
-	if operation == "upgrade" {
-		current, exists, releaseErr := kubernetes.DiscoverRelease(ctx, processRunner{}, draft.Target.Spec.Backend.Helm.Context, draft.Target.Spec.Backend.Helm.Namespace, draft.Target.Spec.Backend.Helm.ReleaseName)
-		if releaseErr != nil {
-			return renderInstallFailure(stdout, stderr, *output, "upgrade.release.unverified", releaseErr.Error())
-		}
-		if !exists {
-			return renderInstallFailure(stdout, stderr, *output, "upgrade.release.missing", "Upgrade requires an existing reviewed Helm release")
-		}
-		options.SourceVersion = current.AppVersion
-		options.RollbackRevision = "helm-revision/" + current.Revision
-	}
 	resolved, err := kubernetes.Plan(ctx, processRunner{}, options)
 	if err != nil {
 		return renderInstallFailure(stdout, stderr, *output, "install.plan.failed", err.Error())

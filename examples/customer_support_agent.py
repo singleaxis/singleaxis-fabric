@@ -1,6 +1,14 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Enterprise Customer-Support Agent — instrumented with SingleAxis Fabric.
+"""LEGACY EXAMPLE — NOT PART OF RECORDER V1.
+
+This file demonstrates the pre-0.8 SDK surface (guardrails, policy
+engines, tool authorization, escalation, and eval/judge capture). Those
+APIs were removed in singleaxis-fabric 0.8; this example does not run
+against the recorder SDK and is kept for historical reference only. See
+examples/reference-agent/ for the recorder-v1 surface.
+
+Enterprise Customer-Support Agent — instrumented with SingleAxis Fabric.
 
 Scenario
 --------

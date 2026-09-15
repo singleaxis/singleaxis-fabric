@@ -15,7 +15,6 @@ import asyncio
 import hashlib
 from typing import Any
 
-import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import Fabric, FabricConfig
@@ -31,9 +30,9 @@ from fabric.integrations.mcp import (
     FABRIC_MCP_SERVER,
     FABRIC_MCP_TRANSPORT,
     InstrumentedMCPSession,
+    record_mcp_inventory,
     traced_call_tool,
 )
-from fabric.tool_auth import ToolAuthorization, ToolCallDenied
 
 
 def _client() -> Fabric:
@@ -63,16 +62,6 @@ class _FakeSession:
     async def call_tool(self, name: str, arguments: dict[str, Any] | None) -> Any:
         self.calls.append({"name": name, "arguments": arguments})
         return self._result
-
-
-class _AllowAll:
-    def authorize(self, *, tool_name: str, arguments_hash: str | None) -> ToolAuthorization:
-        return ToolAuthorization(decision="allow")
-
-
-class _DenyAll:
-    def authorize(self, *, tool_name: str, arguments_hash: str | None) -> ToolAuthorization:
-        return ToolAuthorization(decision="deny", reason="not on allow-list")
 
 
 def test_traced_call_tool_happy_path(span_exporter: InMemorySpanExporter) -> None:
@@ -130,7 +119,8 @@ def test_traced_call_tool_error_result(span_exporter: InMemorySpanExporter) -> N
     )
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_ERROR] is True
-    assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "mcp_tool_error"
+    # MCP ``isError`` results map to the canonical tool error category.
+    assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "server_error"
     # error results still record their content count
     assert attrs[FABRIC_TOOL_RESULT_COUNT] == 1
 
@@ -216,35 +206,6 @@ def test_traced_call_tool_unserializable_result(span_exporter: InMemorySpanExpor
     assert "fabric.tool.result_hash" in attrs
 
 
-def test_authorizer_allow_runs_tool(span_exporter: InMemorySpanExporter) -> None:
-    client = _client()
-    session = _FakeSession(result=_FakeResult(content=["ok"]))
-
-    with client.decision(session_id="s", request_id="r") as dec:
-        result = asyncio.run(
-            traced_call_tool(dec, session, "get_weather", {"city": "x"}, authorizer=_AllowAll()),
-        )
-
-    assert result is session._result
-    assert len(session.calls) == 1
-
-
-def test_authorizer_deny_blocks_tool() -> None:
-    client = _client()
-    session = _FakeSession(result=_FakeResult(content=["ok"]))
-
-    with (
-        client.decision(session_id="s", request_id="r") as dec,
-        pytest.raises(ToolCallDenied, match="not on allow-list"),
-    ):
-        asyncio.run(
-            traced_call_tool(dec, session, "rm_rf", {"path": "/"}, authorizer=_DenyAll()),
-        )
-
-    # the tool was NEVER invoked
-    assert session.calls == []
-
-
 def test_instrumented_session_call_tool(span_exporter: InMemorySpanExporter) -> None:
     client = _client()
     session = _FakeSession(result=_FakeResult(content=["x", "y"]))
@@ -289,13 +250,48 @@ def test_instrumented_session_passthrough() -> None:
         assert close_result == "closed"
 
 
-def test_instrumented_session_deny_blocks() -> None:
+def test_inventory_omits_empty_server_and_transport(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """A snapshot with no identified server/transport must omit those
+    attributes rather than stamp empty strings."""
     client = _client()
-    session = _FakeSession(result=_FakeResult(content=["ok"]))
-
     with client.decision(session_id="s", request_id="r") as dec:
-        wrapped = InstrumentedMCPSession(session, dec, authorizer=_DenyAll())
-        with pytest.raises(ToolCallDenied):
-            asyncio.run(wrapped.call_tool("danger", {"x": 1}))
+        inv = record_mcp_inventory(
+            dec,
+            server=None,
+            transport=None,
+            tools=[{"name": "read_file"}, {"name": "write_file"}],
+        )
 
-    assert session.calls == []
+    assert inv.server is None
+    assert inv.transport is None
+    span = next(
+        s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+    )
+    event = next(e for e in span.events if e.name == "fabric.mcp.inventory")
+    attrs = dict(event.attributes or {})
+    assert FABRIC_MCP_SERVER not in attrs
+    assert FABRIC_MCP_TRANSPORT not in attrs
+    assert attrs["fabric.mcp.tool_count"] == 2
+
+
+def test_inventory_stamps_identified_server_and_transport(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        record_mcp_inventory(
+            dec,
+            server="fs-mcp",
+            transport="stdio",
+            tools=[{"name": "read_file"}],
+        )
+
+    span = next(
+        s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
+    )
+    event = next(e for e in span.events if e.name == "fabric.mcp.inventory")
+    attrs = dict(event.attributes or {})
+    assert attrs[FABRIC_MCP_SERVER] == "fs-mcp"
+    assert attrs[FABRIC_MCP_TRANSPORT] == "stdio"

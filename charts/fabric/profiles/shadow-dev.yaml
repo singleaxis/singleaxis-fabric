@@ -1,0 +1,35 @@
+# LOCAL EVALUATION ONLY. This profile is plaintext, unauthenticated, and uses
+# pod stdout when no destination is supplied. Never use it across a trust
+# boundary or claim it provides durable audit retention.
+profile:
+  name: shadow-dev
+
+namespace:
+  create: true
+  name: fabric-system
+
+networkPolicy:
+  denyDefault: false
+
+otelCollector:
+  enabled: true
+
+otel-collector:
+  replicaCount: 1
+  receiver:
+    requireTLS: false
+    requireClientCertificate: false
+  fabric:
+    guard:
+      dropUnknownClasses: true
+  exporter:
+    endpoint: ""
+    requireEndpoint: false
+    requireTLS: false
+    requireAuth: false
+    requireDurableQueue: false
+  debugExporter:
+    enabled: true
+    verbosity: basic
+  networkPolicy:
+    enabled: false

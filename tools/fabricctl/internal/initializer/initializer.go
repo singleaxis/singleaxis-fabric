@@ -22,6 +22,8 @@ import (
 	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/bundle"
 	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/deployment"
 	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/installtarget"
+	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/recorder"
+	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/recorderinit"
 )
 
 const (
@@ -32,15 +34,15 @@ const (
 var (
 	// ErrDeclined reports that the operator did not explicitly authorize the
 	// write. No desired-state files are written in this case.
-	ErrDeclined = errors.New("initialization was not confirmed")
+	ErrDeclined = recorderinit.ErrDeclined
 	// ErrTargetExists reports that a generated target already exists and cannot
 	// be replaced by the initializer.
-	ErrTargetExists = errors.New("initializer target already exists")
+	ErrTargetExists = recorderinit.ErrTargetExists
 	// ErrSymlinkTarget reports that an output path contains a symbolic link.
-	ErrSymlinkTarget = errors.New("initializer target is a symbolic link")
+	ErrSymlinkTarget = recorderinit.ErrSymlinkTarget
 	// ErrInteractiveTerminalRequired reports that init was invoked without a
 	// real operator terminal, such as through piped standard input.
-	ErrInteractiveTerminalRequired = errors.New("interactive terminal required; piped input is not supported by fabricctl init")
+	ErrInteractiveTerminalRequired = recorderinit.ErrInteractiveTerminalRequired
 	// ErrNoCompatibleInstallProfile reports an assurance level for which this
 	// release has no truthful shipped Helm profile.
 	ErrNoCompatibleInstallProfile = errors.New("no compatible shipped Helm profile exists for this assurance level")
@@ -60,10 +62,20 @@ type Options struct {
 	OutputDir   string
 	Interactive bool
 	Generator   bundle.Generator
+	// LegacyManagement selects the superseded management/assurance bundle
+	// initializer. It exists only so reviewed historical automation remains
+	// usable while operators migrate to the recorder-first contract.
+	LegacyManagement bool
 }
 
 // Result identifies the validated desired state and artifacts written by Run.
 type Result struct {
+	Recorder        *recorder.Resource
+	RecorderPath    string
+	InitReceiptPath string
+	RecorderDigest  string
+
+	// The fields below are populated only by --legacy-management.
 	Resource       deployment.Resource
 	Target         installtarget.Resource
 	DeploymentPath string
@@ -75,9 +87,19 @@ type Result struct {
 	BundleDigest   string
 }
 
-// Run conducts an interactive initialization and writes its two artifacts
-// only after explicit confirmation. It performs no install or network action.
+// Run conducts the recorder-first initialization by default. The previous
+// management/assurance bundle wizard is available only through the explicit
+// LegacyManagement compatibility option.
 func Run(options Options) (*Result, error) {
+	if options.LegacyManagement {
+		return runLegacy(options)
+	}
+	return runRecorder(options)
+}
+
+// runLegacy preserves the historical six-file management/assurance bundle
+// initializer without making its concepts part of the recorder-first journey.
+func runLegacy(options Options) (*Result, error) {
 	if options.Input == nil {
 		return nil, errors.New("initializer input is required")
 	}

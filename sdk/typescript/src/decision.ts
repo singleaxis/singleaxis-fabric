@@ -12,6 +12,20 @@
  * made the active span for the duration of the callback so child spans
  * (`d.llmCall`, `d.toolCall`) parent correctly. An explicit `start()` /
  * `end()` pair is also exposed for callers who can't nest a callback.
+ *
+ * Concurrency contract
+ * --------------------
+ *
+ * A {@link Decision} instance represents a single agent turn and is
+ * **not** safe to share across async tasks. Open one `Decision` per
+ * turn; do not pass the same instance into parallel callbacks or
+ * workers. Mutation methods on a single `Decision` are not internally
+ * synchronized — the rolling counter attributes and the internal record
+ * lists they update would race under concurrent access. A genuinely
+ * *overlapping* mutating call (a re-entrant mutation from inside another
+ * mutating call) raises {@link ConcurrentDecisionUseError} rather than
+ * racing silently — the analogue of Python's non-blocking sentinel lock.
+ * The `Fabric` client itself is safe to share.
  */
 
 import {
@@ -43,7 +57,24 @@ import {
   SPAN_NAME_DECISION,
 } from "./attributes.js";
 import { activeExecution } from "./execution.js";
-import { policyInputHash, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
+import { assertSha256Hex, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
+import { warnIfPiiShaped } from "./id-validators.js";
+import {
+  applyCrossCutting,
+  type AttrValue,
+  type BaselineResult,
+  type BaselineStatus,
+  type CrossCuttingOptions,
+  type SignatureResult,
+} from "./crosscut.js";
+import {
+  assertLength,
+  assertNonEmpty,
+  assertNonNegativeInt,
+  assertOneOf,
+  assertScalarAttribute,
+} from "./validators.js";
+import { inject, type DecisionLike, type FabricContext } from "./propagation.js";
 import {
   LlmCall,
   ToolCall,
@@ -67,6 +98,12 @@ export interface DecisionClientIdentity {
   executionAttempt?: number;
   executionRetryReason?: string;
   executionRetryPreviousAttemptId?: string;
+  /**
+   * Client-level `extra` attributes validated at config build — default
+   * attributes on every decision / execution span. Per-span `attributes`
+   * sit on top (explicit keys win on collision).
+   */
+  extra?: Record<string, string>;
 }
 
 /** Per-turn identifiers for one {@link Decision}. */
@@ -94,97 +131,147 @@ export interface DecisionIds {
   workflowId?: string;
   workflowName?: string;
   conversationCompacted?: boolean;
+  /**
+   * Delegation lineage: a `FabricContext` recovered via `extract` on the
+   * receiving side. When set, the decision span is stamped
+   * `fabric.parent_agent_id` (the upstream `parentAgentId`, falling back to
+   * its `agentId` for a plain hand-off) and `fabric.parent_decision_id` —
+   * the child's spans then link back to the delegating parent across the
+   * service boundary. Mirrors Python's `Fabric.decision(context=...)`.
+   */
+  context?: FabricContext;
+  /**
+   * Extra scalar attributes stamped on the decision span, merged over
+   * `FabricConfig.extra` (explicit per-decision keys win on collision).
+   * Keys under the reserved `fabric.`/`gen_ai.` namespaces are rejected —
+   * they are SDK-owned.
+   */
+  attributes?: Record<string, string>;
 }
 
-/** The phase of the agent turn a guardrail ran in (mirrors Python `GuardrailPhase`). */
-export type GuardrailPhase = "input" | "output_stream" | "output_final";
+// ---------------------------------------------------------------------------
+// Closed vocabularies (mirror Python's StrEnum / frozenset members exactly)
+// ---------------------------------------------------------------------------
 
 /**
- * Normalized policy verdict vocabulary (mirrors Python `PolicyDecision`;
- * schema `fabric.policy.decision` enum).
+ * Where retrieved context came from. Mirrors Python's `RetrievalSource`
+ * StrEnum (`retrieval.py:30-43`) and the contract enum on
+ * `fabric.retrieval.source`. A value outside the set throws.
  */
-export type PolicyDecision = "allow" | "deny" | "warn" | "escalate" | "redact";
+export const RetrievalSource = {
+  RAG: "rag",
+  KG: "kg",
+  SQL: "sql",
+  TOOL: "tool",
+  MEMORY: "memory",
+  DOCUMENT: "document",
+  HYBRID: "hybrid",
+} as const;
+export type RetrievalSource = (typeof RetrievalSource)[keyof typeof RetrievalSource];
+
+/** Closed set mirroring the `RetrievalSource` members. */
+export const RETRIEVAL_SOURCES: readonly RetrievalSource[] = Object.values(RetrievalSource);
 
 /**
- * Tool-authorization verdict vocabulary. The schema restricts
- * `fabric.tool.authorization.decision` to allow/deny only.
+ * What kind of memory the agent touched. Mirrors Python's `MemoryKind`
+ * StrEnum (`memory.py:29-39`) and the `fabric.memory.kind` enum.
  */
-export type ToolAuthorizationDecision = "allow" | "deny";
+export const MemoryKind = {
+  EPISODIC: "episodic",
+  SEMANTIC: "semantic",
+  SCRATCH: "scratch",
+} as const;
+export type MemoryKind = (typeof MemoryKind)[keyof typeof MemoryKind];
+
+/** Closed set mirroring the `MemoryKind` members. */
+export const MEMORY_KINDS: readonly MemoryKind[] = Object.values(MemoryKind);
 
 /**
- * Human-handoff escalation mode (mirrors Python `EscalationMode`; schema
- * `fabric.escalation.mode` enum).
+ * Class of external mutation caused by a decision. Mirrors Python's
+ * `SideEffectType` StrEnum (`side_effect.py:24-35`) and the
+ * `fabric.side_effect.type` contract enum (contracts/activity/v1).
  */
-export type EscalationMode = "sync" | "async" | "deferred";
+export const SideEffectType = {
+  EXTERNAL_WRITE: "external_write",
+  API_MUTATION: "api_mutation",
+  DATABASE_WRITE: "database_write",
+  FILE_WRITE: "file_write",
+  EMAIL_SEND: "email_send",
+  TICKET_CREATE: "ticket_create",
+  PAYMENT: "payment",
+  NOTIFICATION: "notification",
+  OTHER: "other",
+} as const;
+export type SideEffectType = (typeof SideEffectType)[keyof typeof SideEffectType];
+
+/** Closed set mirroring the `SideEffectType` members. */
+export const SIDE_EFFECT_TYPES: readonly SideEffectType[] = Object.values(SideEffectType);
 
 /**
  * Side-effect replay behavior (mirrors Python `ReplayBehavior`; schema
  * `fabric.side_effect.replay_behavior` enum).
  */
-export type ReplayBehavior = "replay" | "suppress" | "mock" | "manual";
+export const ReplayBehavior = {
+  REPLAY: "replay",
+  SUPPRESS: "suppress",
+  MOCK: "mock",
+  MANUAL: "manual",
+} as const;
+export type ReplayBehavior = (typeof ReplayBehavior)[keyof typeof ReplayBehavior];
 
-const POLICY_DECISIONS: readonly PolicyDecision[] = ["allow", "deny", "warn", "escalate", "redact"];
-const TOOL_AUTH_DECISIONS: readonly ToolAuthorizationDecision[] = ["allow", "deny"];
-const ESCALATION_MODES: readonly EscalationMode[] = ["sync", "async", "deferred"];
-const REPLAY_BEHAVIORS: readonly ReplayBehavior[] = ["replay", "suppress", "mock", "manual"];
-const GUARDRAIL_PHASES: readonly GuardrailPhase[] = ["input", "output_stream", "output_final"];
-const INTERACTION_DIRECTIONS: readonly InteractionDirection[] = ["inbound", "outbound", "internal"];
-const BASELINE_STATUSES: readonly BaselineStatus[] = ["match", "deviation", "unknown"];
-
-/** A detected PII/entity class and how many times it occurred. */
-export interface GuardrailEntity {
-  category: string;
-  count: number;
-}
+/** Closed set mirroring the `ReplayBehavior` members. */
+export const REPLAY_BEHAVIORS: readonly ReplayBehavior[] = Object.values(ReplayBehavior);
 
 /**
- * The outcome of one guardrail pass, recorded on the decision via
- * {@link Decision.recordGuardrail} (and {@link Decision.recordBlock} when it
- * blocks). Mirrors the Python `GuardrailResult` fields that land on the wire;
- * the SDK owns the attribute-key formatting so TS guardrail telemetry stays
- * in lockstep with the shared `fabric.guardrail` contract.
+ * Closed vocabulary for {@link Decision.recordHook}'s `phase` (spec 022;
+ * mirrors Python's `HOOK_PHASES` frozenset, decision.py:199-201). A value
+ * outside the set is a programming error and throws at the call site.
  */
-export interface GuardrailResult {
-  /** Which phase of the turn this guardrail ran in. */
-  phase: GuardrailPhase;
-  /** Whether the guardrail blocked the content. */
-  blocked: boolean;
-  /** How long the guardrail took, in milliseconds. */
-  latencyMs: number;
-  /** Policy identifiers that fired (e.g. `presidio:EMAIL_ADDRESS`). */
-  policies?: string[];
-  /** Detected entity classes (e.g. `{ category: "EMAIL_ADDRESS", count: 1 }`). */
-  entities?: GuardrailEntity[];
-  /**
-   * Dual-pipeline content-store locator for the raw content (spec 012). When
-   * the host resolves the raw input into a ContentStore it passes the
-   * returned URI here; the SDK stamps `fabric.guardrail.content_ref`. The
-   * trace still carries only the hash/URI, never raw content.
-   */
-  contentRef?: string;
-}
+export const HOOK_PHASES = [
+  "pre_model",
+  "post_model",
+  "pre_tool",
+  "post_tool",
+  "pre_decision",
+  "post_decision",
+] as const;
+export type HookPhase = (typeof HOOK_PHASES)[number];
 
-/** A request to escalate a decision to a human (mirrors Python `EscalationSummary`). */
-export interface EscalationSummary {
-  /** Why escalation is needed. */
-  reason: string;
-  /** Sync (block for a verdict), async (fire-and-forget), or deferred handoff. */
-  mode: EscalationMode;
-  /** Optional rubric the triggering score came from. */
-  rubricId?: string;
-  /** Optional score that triggered the escalation. */
-  triggeringScore?: number;
-}
+/**
+ * Closed vocabulary for {@link Decision.recordFileAccess}'s `operation`
+ * (mirrors Python's `FILE_OPERATIONS` frozenset, decision.py:202).
+ */
+export const FILE_OPERATIONS = ["read", "write", "delete", "append"] as const;
+export type FileOperation = (typeof FILE_OPERATIONS)[number];
+
+/**
+ * Closed vocabulary for {@link Decision.recordInteraction}'s `direction`
+ * (spec 023 §1). Unset is allowed; any other value throws.
+ */
+export const INTERACTION_DIRECTIONS = ["inbound", "outbound", "internal"] as const;
+export type InteractionDirection = (typeof INTERACTION_DIRECTIONS)[number];
+
+export type { BaselineResult, BaselineStatus, CrossCuttingOptions, SignatureResult };
+
+// Coverage-loop constants (spec 023 §5). The suggestion is a fixed signal
+// ("this kind is captured generically; consider first-class support"); the
+// reason distinguishes the two low-rate triggers.
+const COVERAGE_SUGGESTION = "generic";
+const COVERAGE_REASON_NEW_KIND = "new_kind";
+const COVERAGE_REASON_UNCLASSIFIED_DEVIATION = "unclassified_deviation";
 
 /** Options for {@link Decision.recordRetrieval}. */
 export interface RetrievalOptions {
-  /** Retrieval source label (e.g. `rag`, `kg`, `sql`, `tool`, `memory`). */
-  source: string;
+  /** Retrieval source label — a closed vocabulary ({@link RetrievalSource}). */
+  source: RetrievalSource;
   /** Raw query text; hashed locally to `query_hash`, never emitted. */
   query: string;
   /** Number of results returned. */
   resultCount: number;
-  /** Optional per-result hashes. */
+  /**
+   * Optional per-result hashes. When supplied, the count must equal
+   * `resultCount` — partial supply corrupts the downstream projection.
+   */
   resultHashes?: string[];
   /** Optional caller-supplied source document ids. */
   sourceDocumentIds?: string[];
@@ -194,7 +281,8 @@ export interface RetrievalOptions {
 
 /** Options for {@link Decision.remember} (a memory write). */
 export interface RememberOptions {
-  kind: string;
+  /** Memory kind — a closed vocabulary ({@link MemoryKind}). */
+  kind: MemoryKind;
   /** Raw content; hashed locally to `content_hash`, never emitted. */
   content: string;
   key?: string;
@@ -206,7 +294,8 @@ export interface RememberOptions {
 
 /** Options for {@link Decision.recall} (a memory read). */
 export interface RecallOptions {
-  kind: string;
+  /** Memory kind — a closed vocabulary ({@link MemoryKind}). */
+  kind: MemoryKind;
   key: string;
   /** Raw content; hashed locally to `content_hash`, never emitted. */
   content: string;
@@ -220,7 +309,8 @@ export interface SideEffectOptions {
    * the SDK mints a uuid4 (mirrors Python's `side_effect_id` defaulting).
    */
   sideEffectId?: string;
-  type: string;
+  /** Side-effect class — a closed vocabulary ({@link SideEffectType}). */
+  type: SideEffectType;
   targetSystem: string;
   operation: string;
   /** Raw request payload; hashed locally. Mutually exclusive with `requestHash`. */
@@ -246,69 +336,25 @@ export interface CheckpointOptions {
   checkpointId?: string;
 }
 
-/** Options for {@link Decision.recordEval}. */
-export interface EvalOptions {
-  rubricId: string;
-  score: number;
-  dimension: string;
-  evaluatorName: string;
-  evaluatorVersion?: string;
-  confidence?: number;
-  payloadRef?: string;
-}
-
-/** Options for {@link Decision.queueJudge}. */
-export interface QueueJudgeOptions {
-  rubricId: string;
-  dimensions: string[];
-  payloadRef?: string;
-  /** Optional caller-supplied request id; a UUID is minted otherwise. */
-  requestId?: string;
-}
-
-/** Options for {@link Decision.recordPolicyEvaluation}. */
-export interface PolicyEvaluationOptions {
-  engine: string;
-  policyId: string;
-  decision: PolicyDecision;
-  /** Raw input object; hashed Python-compatibly to `input_hash`. Mutually exclusive with `inputHash`. */
-  input?: unknown;
-  /** Precomputed input hash. Mutually exclusive with `input`. */
-  inputHash?: string;
-  policyVersion?: string;
-  reason?: string;
-  evidenceRef?: string;
-  bundleSignature?: string;
-  latencyMs?: number;
-  /** Optional dual-pipeline content-store locator for the raw input. */
-  inputContentRef?: string;
-}
-
-/** Options for {@link Decision.recordToolAuthorization}. */
-export interface ToolAuthorizationOptions {
-  toolName: string;
-  decision: ToolAuthorizationDecision;
-  /** Raw serialized arguments; hashed locally to `arguments_hash`. Mutually exclusive with `argumentsHash`. */
-  arguments?: string;
-  /** Precomputed arguments hash. Mutually exclusive with `arguments`. */
-  argumentsHash?: string;
-  reason?: string;
-}
-
 /** Replay envelope inputs. Only hashes and lineage identifiers are emitted. */
 export interface ReplayMetadataOptions {
   stateHash?: string;
   toolResultHashes?: string[];
 }
 
-/** One privacy-preserving MCP tool definition used for inventory hashing. */
+/**
+ * One privacy-preserving MCP tool definition used for inventory hashing.
+ * Accepts either `inputSchema` or `input_schema` (mirroring Python's
+ * `_tool_definition`, which normalizes both to `inputSchema`).
+ */
 export interface McpToolDefinition {
   name: string;
   description?: string | null;
   inputSchema?: unknown;
+  input_schema?: unknown;
 }
 
-export interface McpInventoryOptions {
+export interface McpInventoryOptions extends CrossCuttingOptions {
   server: string;
   transport: string;
   tools: McpToolDefinition[];
@@ -316,29 +362,26 @@ export interface McpInventoryOptions {
   prompts?: unknown[];
 }
 
-export interface SkillOptions {
+export interface SkillOptions extends CrossCuttingOptions {
   source?: string;
   manifestHash?: string;
   signed?: boolean;
 }
 
-export interface HookOptions {
+export interface HookOptions extends CrossCuttingOptions {
   modified: boolean;
   inputHash?: string;
   outputHash?: string;
 }
 
-export interface FileAccessOptions {
+export interface FileAccessOptions extends CrossCuttingOptions {
   contentHash?: string;
   sizeBytes?: number;
   /** Hash the path locally instead of emitting it. Defaults to true. */
   redactPath?: boolean;
 }
 
-export type InteractionDirection = "inbound" | "outbound" | "internal";
-export type BaselineStatus = "match" | "deviation" | "unknown";
-
-export interface InteractionOptions {
+export interface InteractionOptions extends CrossCuttingOptions {
   direction?: InteractionDirection;
   /** Caller-supplied hash of the interaction payload; raw payload is never accepted. */
   payloadHash?: string;
@@ -346,28 +389,156 @@ export interface InteractionOptions {
   metadata?: Record<string, unknown>;
   /** Hash the target locally instead of emitting it. Defaults to true. */
   redactTarget?: boolean;
-  tags?: string[];
-  baseline?: { name: string; status: BaselineStatus };
-  /** Result of host-side signature verification; no key or artifact is accepted. */
-  signature?: { verified: boolean; scheme: string; keyId?: string };
 }
 
-const COVERED_INTERACTION_KINDS = new Set<string>();
+/** Options for {@link Decision.delegate}. */
+export interface DelegateOptions extends CrossCuttingOptions {
+  /**
+   * Delegation protocol label (e.g. `"a2a"`, `"mcp"`, `"custom"`).
+   * Defaults to `"custom"`, mirroring Python.
+   */
+  protocol?: string;
+}
 
-/** Reset one-shot generic coverage signals. Primarily useful for isolated test processes. */
+/**
+ * The handle passed to the {@link Decision.delegate} callback. Exposes the
+ * cross-service carrier the host passes to the sub-agent (`carrier` — a
+ * `traceparent` + `tracestate`-bearing header map already injected with
+ * this decision's {@link FabricContext} and `parentAgentId` set to the
+ * delegating agent), the structured `context` it encodes, and the
+ * recorded delegation metadata (`toAgent` / `protocol` / `depth`).
+ * Mirrors Python's `DelegationContext` (decision.py:249-265).
+ */
+export interface DelegationContext {
+  toAgent: string;
+  protocol: string;
+  depth: number;
+  context: FabricContext;
+  carrier: Record<string, string>;
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight record objects returned by the record_* methods (spec: the
+// Python SDK returns frozen models; the TS SDK returns plain immutable-view
+// objects carrying exactly what was emitted — hashes and ids, never raw
+// payloads).
+// ---------------------------------------------------------------------------
+
+/** One retrieval event captured on a decision span. */
+export interface RetrievalRecord {
+  readonly source: RetrievalSource;
+  readonly queryHash: string;
+  readonly resultCount: number;
+  readonly resultHashes: readonly string[];
+  readonly sourceDocumentIds: readonly string[];
+  readonly latencyMs?: number;
+}
+
+/** One memory event captured on a decision span. */
+export interface MemoryRecord {
+  readonly kind: MemoryKind;
+  readonly contentHash?: string;
+  readonly key?: string;
+  readonly tags: readonly string[];
+  readonly ttlSeconds?: number;
+  readonly direction: "read" | "write" | "erase";
+  readonly source?: string;
+  readonly invalidates?: string;
+  readonly tenantScope?: boolean;
+}
+
+/** One external mutation attributed to a decision. */
+export interface SideEffectRecord {
+  readonly sideEffectId: string;
+  readonly effectType: SideEffectType;
+  readonly targetSystem: string;
+  readonly operation: string;
+  readonly requestHash?: string;
+  readonly resultHash?: string;
+  readonly idempotencyKey?: string;
+  readonly approvalRequired: boolean;
+  readonly committed: boolean;
+  readonly rollbackSupported: boolean;
+  readonly replayBehavior: ReplayBehavior;
+  readonly parentToolCallId?: string;
+}
+
+/** One save-point on the decision timeline. */
+export interface CheckpointEvent {
+  readonly checkpointId: string;
+  readonly stepName: string;
+  readonly stateHash?: string;
+}
+
+/** The normalized result of an MCP inventory snapshot. */
+export interface McpInventory {
+  readonly server: string;
+  readonly transport: string;
+  readonly toolCount: number;
+  readonly tools: readonly string[];
+  readonly toolsHash: string;
+  readonly resourceCount?: number;
+  readonly promptCount?: number;
+}
+
+/**
+ * Raised when one {@link Decision} is mutated concurrently (re-entrantly).
+ *
+ * A `Decision` represents a single agent turn and is not safe to share
+ * across tasks (see the module concurrency contract). The SDK detects
+ * *genuinely overlapping* mutating calls on the same instance via a
+ * non-blocking sentinel flag and throws this rather than letting the
+ * internal record lists and rolling span-counter attributes race
+ * silently — the analogue of Python's `ConcurrentDecisionUseError`,
+ * which guards a `threading.Lock` held only for the duration of a single
+ * mutating call.
+ */
+export class ConcurrentDecisionUseError extends Error {
+  constructor(message?: string) {
+    super(
+      message ??
+        "Decision used concurrently from multiple tasks; open one Decision per " +
+          "agent turn — see the concurrency contract in the module docstring",
+    );
+    this.name = "ConcurrentDecisionUseError";
+  }
+}
+
+/**
+ * Process-global coverage registry. The coverage signal is deliberately
+ * one-shot PER PROCESS per signal id so it stays low-rate: a
+ * never-before-seen generic kind fires once under `kind:{kind}`, and a
+ * kind seen with an unclassified deviation fires once under
+ * `deviation:{kind}` — keyed separately like Python's
+ * `_coverage_should_emit` (decision.py:226-232), so one signal cannot
+ * suppress the other. `resetCoverageRegistry` (exported via the
+ * `testing` namespace) exists for tests / long-lived workers that want
+ * to re-arm the signals.
+ */
+const COVERAGE_SEEN = new Set<string>();
+
+/** Return `true` exactly once per process for `signalId`. */
+function coverageShouldEmit(signalId: string): boolean {
+  if (COVERAGE_SEEN.has(signalId)) {
+    return false;
+  }
+  COVERAGE_SEEN.add(signalId);
+  return true;
+}
+
+/** Reset one-shot generic coverage signals. Reachable via `testing.resetCoverageRegistry`. */
 export function resetCoverageRegistry(): void {
-  COVERED_INTERACTION_KINDS.clear();
+  COVERAGE_SEEN.clear();
 }
 
 /**
  * One agent turn. Not safe to share across async tasks — open one
  * `Decision` per turn.
  */
-export class Decision {
+export class Decision implements DecisionLike {
   private readonly tracer: Tracer;
   private readonly span: Span;
-  private blockedResult: GuardrailResult | null = null;
-  private escalationResult: EscalationSummary | null = null;
+  private readonly identity: DecisionClientIdentity;
   // Rolling counters + distinct-value sets folded onto the decision span,
   // mirroring the Python SDK so the Telemetry Bridge can summarize a
   // decision without replaying every event.
@@ -381,15 +552,17 @@ export class Decision {
   private readonly sideEffectTypes = new Set<string>();
   private readonly sideEffectSystems = new Set<string>();
   private checkpointCount = 0;
-  private evalCount = 0;
-  private readonly evalRubrics = new Set<string>();
-  private judgeQueuedCount = 0;
-  private readonly judgeRubrics = new Set<string>();
-  private policyEvalCount = 0;
-  private readonly policyEngines = new Set<string>();
-  private toolAuthCount = 0;
-  private readonly decisionId: string;
+  private readonly sessionIdStored: string;
+  private readonly requestIdStored: string;
+  private readonly decisionIdValue: string;
+  private readonly userIdStored?: string;
+  private readonly conversationCompacted: boolean;
+  private readonly resolvedWorkflowId?: string;
   private readonly resolvedExecutionId?: string;
+  private readonly resolvedExecutionAttemptId?: string;
+  private readonly resolvedExecutionAttempt?: number;
+  private readonly resolvedExecutionRetryReason?: string;
+  private readonly resolvedExecutionRetryPreviousAttemptId?: string;
   private readonly checkpointIds: string[] = [];
   private readonly suppressedSideEffectIds: string[] = [];
   private skillCount = 0;
@@ -399,10 +572,16 @@ export class Decision {
   private fileAccessCount = 0;
   private interactionCount = 0;
   private readonly interactionKinds = new Set<string>();
+  // Concurrency overlap sentinel. Held only for the duration of a single
+  // mutating call; two operations that genuinely overlap in time on the
+  // same instance contend for it and the loser throws
+  // ConcurrentDecisionUseError. Sequential calls never contend.
+  private busy = false;
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
     this.span = span;
+    this.identity = identity;
     span.setAttribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION);
     span.setAttribute(ATTR_TENANT, identity.tenantId);
     span.setAttribute(ATTR_AGENT, identity.agentId);
@@ -417,7 +596,8 @@ export class Decision {
     if (identity.agentDescription !== undefined) {
       span.setAttribute("gen_ai.agent.description", identity.agentDescription);
     }
-    if (ids.conversationCompacted) {
+    this.conversationCompacted = ids.conversationCompacted ?? false;
+    if (this.conversationCompacted) {
       span.setAttribute("gen_ai.conversation.compacted", true);
     }
     // Resolve the execution-correlation metadata with precedence:
@@ -427,52 +607,195 @@ export class Decision {
     const active = activeExecution();
     const workflowId = ids.workflowId ?? active?.workflowId ?? identity.workflowId;
     const executionId = ids.executionId ?? active?.executionId ?? identity.executionId;
+    this.resolvedWorkflowId = workflowId;
     this.resolvedExecutionId = executionId;
     // The attempt/retry metadata has no per-decision kwarg, so it is inherited
     // from the active execution when present and otherwise the config value.
-    const executionAttemptId = active?.executionAttemptId ?? identity.executionAttemptId;
-    const executionAttempt = active?.executionAttempt ?? identity.executionAttempt;
-    const executionRetryReason = active?.executionRetryReason ?? identity.executionRetryReason;
-    const executionRetryPreviousAttemptId =
+    this.resolvedExecutionAttemptId = active?.executionAttemptId ?? identity.executionAttemptId;
+    this.resolvedExecutionAttempt = active?.executionAttempt ?? identity.executionAttempt;
+    this.resolvedExecutionRetryReason =
+      active?.executionRetryReason ?? identity.executionRetryReason;
+    this.resolvedExecutionRetryPreviousAttemptId =
       active?.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId;
     if (workflowId !== undefined) {
       span.setAttribute(ATTR_WORKFLOW, workflowId);
-      span.setAttribute("gen_ai.workflow.name", ids.workflowName ?? workflowId);
+    }
+    // `gen_ai.workflow.name` resolves to the supplied name or the workflow
+    // id, and is stamped whenever either is present — even without a
+    // resolved workflow_id (mirrors Python decision.py:504-506). An empty
+    // name falls back to the id exactly like Python's `or`.
+    const semanticWorkflowName = ids.workflowName || workflowId;
+    if (semanticWorkflowName !== undefined) {
+      span.setAttribute("gen_ai.workflow.name", semanticWorkflowName);
     }
     if (executionId !== undefined) {
       span.setAttribute(ATTR_EXECUTION, executionId);
     }
-    if (executionAttemptId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, executionAttemptId);
+    if (this.resolvedExecutionAttemptId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, this.resolvedExecutionAttemptId);
     }
-    if (executionAttempt !== undefined) {
-      span.setAttribute(ATTR_EXECUTION_ATTEMPT, executionAttempt);
+    if (this.resolvedExecutionAttempt !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_ATTEMPT, this.resolvedExecutionAttempt);
     }
-    if (executionRetryReason !== undefined) {
-      span.setAttribute(ATTR_EXECUTION_RETRY_REASON, executionRetryReason);
+    if (this.resolvedExecutionRetryReason !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_RETRY_REASON, this.resolvedExecutionRetryReason);
     }
-    if (executionRetryPreviousAttemptId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, executionRetryPreviousAttemptId);
+    if (this.resolvedExecutionRetryPreviousAttemptId !== undefined) {
+      span.setAttribute(
+        ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
+        this.resolvedExecutionRetryPreviousAttemptId,
+      );
     }
+    this.sessionIdStored = ids.sessionId;
+    this.requestIdStored = ids.requestId;
+    this.userIdStored = ids.userId;
     span.setAttribute(ATTR_SESSION, ids.sessionId);
     span.setAttribute(ATTR_REQUEST, ids.requestId);
-    this.decisionId = ids.decisionId ?? randomUuid();
-    span.setAttribute(ATTR_DECISION_ID, this.decisionId);
+    this.decisionIdValue = ids.decisionId ?? randomUuid();
+    span.setAttribute(ATTR_DECISION_ID, this.decisionIdValue);
     if (ids.userId !== undefined) {
       span.setAttribute(ATTR_USER, ids.userId);
     }
+    // Delegation lineage from a propagated context. `parentAgentId` names
+    // the delegating agent when the upstream carried one (a `delegate`
+    // carrier); for a plain hand-off the upstream's own `agentId` is the
+    // causal parent, so fall back to it (mirrors Python decision.py).
+    if (ids.context !== undefined) {
+      const parentAgent = ids.context.parentAgentId || ids.context.agentId || undefined;
+      if (parentAgent !== undefined) {
+        span.setAttribute(A.ATTR_PARENT_AGENT_ID, parentAgent);
+      }
+      if (ids.context.decisionId !== undefined) {
+        span.setAttribute(A.ATTR_PARENT_DECISION_ID, ids.context.decisionId);
+      }
+    }
+    // Caller-supplied extras sit on top of the client-level
+    // `FabricConfig.extra` defaults (explicit per-decision keys win on
+    // collision). Reserved `fabric.*` / `gen_ai.*` keys are rejected so a
+    // caller cannot clobber SDK-owned identity — `FabricConfig.extra`
+    // itself was already validated at config build.
+    for (const [key, value] of Object.entries(
+      A.checkAttributeKeys({ ...identity.extra, ...(ids.attributes ?? {}) }),
+    )) {
+      span.setAttribute(key, value);
+    }
+  }
+
+  // -- concurrency overlap guard ---------------------------------------
+
+  /**
+   * Hold the overlap sentinel for one mutating call, else throw.
+   * Non-blocking so a second *concurrent* (re-entrant) mutating call
+   * fails fast with {@link ConcurrentDecisionUseError} instead of
+   * silently racing the record lists / span counters. Do NOT call a
+   * guarded method from inside another guarded method on the same
+   * instance — none of the public methods do.
+   */
+  private exclusive<T>(fn: () => T): T {
+    if (this.busy) {
+      throw new ConcurrentDecisionUseError();
+    }
+    this.busy = true;
+    try {
+      return fn();
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  // -- introspection ----------------------------------------------------
+
+  /** Canonical, stable identity of this decision (minted when not supplied). */
+  get decisionId(): string {
+    return this.decisionIdValue;
+  }
+
+  /** Per-session identifier stamped on this decision. */
+  get sessionId(): string {
+    return this.sessionIdStored;
+  }
+
+  /** Per-request identifier stamped on this decision. */
+  get requestId(): string {
+    return this.requestIdStored;
+  }
+
+  /** Hex-formatted trace id for cross-system correlation. */
+  get traceId(): string {
+    return this.span.spanContext().traceId;
+  }
+
+  /** The user id stamped on this decision, if supplied. */
+  get userId(): string | undefined {
+    return this.userIdStored;
+  }
+
+  /** Owning tenant identifier (from the Fabric client identity). */
+  get tenantId(): string {
+    return this.identity.tenantId;
+  }
+
+  /** Agent identifier (from the Fabric client identity). */
+  get agentId(): string {
+    return this.identity.agentId;
+  }
+
+  /** The workflow id resolved for this decision (explicit > execution > config). */
+  get workflowId(): string | undefined {
+    return this.resolvedWorkflowId;
+  }
+
+  /** The execution id resolved for this decision (explicit > execution > config). */
+  get executionId(): string | undefined {
+    return this.resolvedExecutionId;
+  }
+
+  /** The attempt id stamped on this decision span (execution > config). */
+  get executionAttemptId(): string | undefined {
+    return this.resolvedExecutionAttemptId;
+  }
+
+  /** The one-based attempt number stamped on this decision span. */
+  get executionAttempt(): number | undefined {
+    return this.resolvedExecutionAttempt;
+  }
+
+  /** The retry reason stamped on this decision span. */
+  get executionRetryReason(): string | undefined {
+    return this.resolvedExecutionRetryReason;
+  }
+
+  /** The previous attempt id stamped on this decision span. */
+  get executionRetryPreviousAttemptId(): string | undefined {
+    return this.resolvedExecutionRetryPreviousAttemptId;
   }
 
   /**
    * Wrap one LLM API call in a `{operation} {model}` child span (kind=CLIENT).
    * The span is active for the duration of `fn` and ended afterwards. A
    * thrown error is recorded on the span and re-thrown.
+   *
+   * `gen_ai.conversation.id` defaults to the decision's `sessionId` and
+   * the conversation `compacted` flag is inherited from the decision
+   * unless overridden per call (mirrors Python `Decision.llm_call`).
    */
   llmCall<T>(options: LlmCallOptions, fn: (call: LlmCall) => T): T {
-    const span = startLlmSpan(this.tracer, options);
+    const extra: Record<string, AttrValue> = {};
+    applyCrossCutting(extra, options);
+    const resolved = {
+      ...options,
+      conversationId: options.conversationId || this.sessionIdStored,
+      conversationCompacted: options.conversationCompacted ?? this.conversationCompacted,
+      extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
+    };
+    const span = startLlmSpan(this.tracer, resolved);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
-      const call = new LlmCall(span, options.captureContent ?? false);
+      const call = new LlmCall(
+        span,
+        options.captureContent ?? false,
+        options.emitLegacyAttributes ?? true,
+      );
       return runAndEnd(span, () => fn(call));
     });
   }
@@ -480,9 +803,19 @@ export class Decision {
   /**
    * Wrap one tool/function call in a tool-named `execute_tool` child span
    * (kind=INTERNAL). The span is active for the duration of `fn`.
+   * `gen_ai.agent.name` always lands from the client's agent name unless
+   * overridden; `tags`/`baseline`/`signature` results stamp on the child
+   * span (mirrors Python `Decision.tool_call`).
    */
   toolCall<T>(name: string, options: ToolCallOptions, fn: (tool: ToolCall) => T): T {
-    const span = startToolSpan(this.tracer, name, options);
+    const extra: Record<string, AttrValue> = {};
+    applyCrossCutting(extra, options);
+    const resolved = {
+      ...options,
+      agentName: options.agentName ?? this.identity.agentName,
+      extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
+    };
+    const span = startToolSpan(this.tracer, name, resolved);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
       const tool = new ToolCall(span, options.captureContent ?? false);
@@ -491,192 +824,109 @@ export class Decision {
   }
 
   /**
-   * Record a guardrail outcome as a `fabric.guardrail` span event on the
-   * decision span (spec 005). This is the TS counterpart to the Python
-   * SDK's guardrail event — the host runs its own guardrail/redaction
-   * service, then hands the result here so the keys (`fabric.guardrail.*`)
-   * and shape stay byte-identical to the shared wire contract instead of
-   * being hand-rolled via `getSpan().addEvent(...)`.
-   *
-   * This records the event only; it does NOT mark the decision blocked.
-   * For a blocking outcome, also call {@link recordBlock}.
-   */
-  recordGuardrail(result: GuardrailResult): void {
-    assertOneOf("recordGuardrail: phase", result.phase, GUARDRAIL_PHASES);
-    assertFiniteNumber("recordGuardrail: latencyMs", result.latencyMs);
-    const attrs: Record<string, string | number | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_GUARDRAIL_PHASE]: result.phase,
-      [A.ATTR_GUARDRAIL_LATENCY_MS]: result.latencyMs,
-      [A.ATTR_GUARDRAIL_BLOCKED]: result.blocked,
-    };
-    if (result.entities && result.entities.length > 0) {
-      attrs[A.ATTR_GUARDRAIL_ENTITIES] = result.entities.map((e) => `${e.category}:${e.count}`);
-    }
-    if (result.policies && result.policies.length > 0) {
-      attrs[A.ATTR_GUARDRAIL_POLICIES] = [...result.policies];
-    }
-    if (result.contentRef !== undefined) {
-      attrs[A.ATTR_GUARDRAIL_CONTENT_REF] = result.contentRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_GUARDRAIL, attrs);
-  }
-
-  /**
-   * Mark this decision blocked by a guardrail. First-wins: the first block
-   * recorded is canonical; a second call throws rather than silently
-   * overwriting (mirrors Python `Decision.record_block`). Stamps
-   * `fabric.blocked` / `fabric.blocked.policies` on the decision span and
-   * sets the block/escalation-precedence ERROR status.
-   *
-   * Call {@link recordGuardrail} too if you also want the `fabric.guardrail`
-   * event (the audit record of what fired); `recordBlock` only writes the
-   * canonical block bookkeeping.
-   */
-  recordBlock(result: GuardrailResult): void {
-    if (!result.blocked) {
-      throw new Error("recordBlock called with a non-blocking GuardrailResult");
-    }
-    if (this.blockedResult !== null) {
-      throw new Error(
-        "Decision is already blocked; recordBlock is first-wins. Call only once per Decision.",
-      );
-    }
-    this.blockedResult = result;
-    this.span.setAttribute(A.ATTR_BLOCKED, true);
-    if (result.policies && result.policies.length > 0) {
-      this.span.setAttribute(A.ATTR_BLOCKED_POLICIES, [...result.policies]);
-    }
-    this.applyStatus();
-  }
-
-  /** The blocking guardrail result, or `null` if none fired. */
-  get blocked(): GuardrailResult | null {
-    return this.blockedResult;
-  }
-
-  /**
-   * Record that this decision should be escalated for human review. Stamps
-   * `fabric.escalated` + `fabric.escalation.*` on the decision span and emits
-   * a `fabric.escalation` event. First-wins: a second call throws (mirrors
-   * Python `Decision.request_escalation`). Does not throw on its own — the
-   * host decides flow control.
-   */
-  requestEscalation(summary: EscalationSummary): void {
-    assertOneOf("requestEscalation: mode", summary.mode, ESCALATION_MODES);
-    if (summary.triggeringScore !== undefined) {
-      assertFiniteNumber("requestEscalation: triggeringScore", summary.triggeringScore);
-    }
-    if (this.escalationResult !== null) {
-      throw new Error(
-        "Decision already has an escalation requested; requestEscalation is first-wins. " +
-          "Call only once per Decision.",
-      );
-    }
-    this.escalationResult = summary;
-    this.span.setAttribute(A.ATTR_ESCALATED, true);
-    this.span.setAttribute(A.ATTR_ESC_REASON, summary.reason);
-    this.span.setAttribute(A.ATTR_ESC_MODE, summary.mode);
-    if (summary.rubricId !== undefined) {
-      this.span.setAttribute(A.ATTR_ESC_RUBRIC, summary.rubricId);
-    }
-    if (summary.triggeringScore !== undefined) {
-      this.span.setAttribute(A.ATTR_ESC_SCORE, summary.triggeringScore);
-    }
-
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_ESC_REASON]: summary.reason,
-      [A.ATTR_ESC_MODE]: summary.mode,
-    };
-    if (summary.rubricId !== undefined) {
-      attrs[A.ATTR_ESC_RUBRIC] = summary.rubricId;
-    }
-    if (summary.triggeringScore !== undefined) {
-      attrs[A.ATTR_ESC_SCORE] = summary.triggeringScore;
-    }
-    this.span.addEvent(A.EVENT_NAME_ESCALATION, attrs);
-    this.applyStatus();
-  }
-
-  /** The recorded escalation, or `null` if none requested. */
-  get escalation(): EscalationSummary | null {
-    return this.escalationResult;
-  }
-
-  /**
-   * Set the decision-span status from the block/escalation precedence,
-   * matching Python's `Decision.__exit__`: both → `blocked_and_escalated`,
-   * block only → `guardrail_blocked`, escalation only → `escalation_requested`.
-   */
-  private applyStatus(): void {
-    const isBlocked = this.blockedResult !== null;
-    const isEscalated = this.escalationResult !== null;
-    if (isBlocked && isEscalated) {
-      this.span.setStatus({ code: SpanStatusCode.ERROR, message: A.STATUS_BLOCKED_AND_ESCALATED });
-    } else if (isBlocked) {
-      this.span.setStatus({ code: SpanStatusCode.ERROR, message: A.STATUS_GUARDRAIL_BLOCKED });
-    } else if (isEscalated) {
-      this.span.setStatus({ code: SpanStatusCode.ERROR, message: A.STATUS_ESCALATION_REQUESTED });
-    }
-  }
-
-  /**
    * Record a retrieval (RAG/KG/SQL/tool/memory) as a `fabric.retrieval`
    * event. The raw query is hashed locally; rolling `fabric.retrieval_count`
    * and `fabric.retrieval_sources` are folded onto the decision span.
    */
-  recordRetrieval(options: RetrievalOptions): void {
-    this.retrievalCount += 1;
-    this.retrievalSources.add(options.source);
-    this.span.setAttribute(A.ATTR_RETRIEVAL_COUNT, this.retrievalCount);
-    this.span.setAttribute(A.ATTR_RETRIEVAL_SOURCES, sortedSet(this.retrievalSources));
+  recordRetrieval(options: RetrievalOptions): RetrievalRecord {
+    return this.exclusive(() => {
+      assertOneOf("recordRetrieval: source", options.source, RETRIEVAL_SOURCES);
+      if (!options.query) {
+        throw new Error("recordRetrieval: query must be non-empty");
+      }
+      assertNonNegativeInt("recordRetrieval: resultCount", options.resultCount);
+      if (options.latencyMs !== undefined) {
+        assertNonNegativeInt("recordRetrieval: latencyMs", options.latencyMs);
+      }
+      const resultHashes = (options.resultHashes ?? []).map((value) =>
+        assertSha256Hex("recordRetrieval: resultHashes", value),
+      );
+      // If the caller supplied per-result hashes, require 1:1 parity with
+      // result_count. Partial supply corrupts the downstream projection
+      // silently — better to fail loudly (mirrors retrieval.py:98-102).
+      if (resultHashes.length > 0 && resultHashes.length !== options.resultCount) {
+        throw new Error(
+          `recordRetrieval: resultHashes length (${resultHashes.length}) must equal ` +
+            `resultCount (${options.resultCount}) when supplied`,
+        );
+      }
+      const record: RetrievalRecord = {
+        source: options.source,
+        queryHash: sha256Hex(options.query),
+        resultCount: options.resultCount,
+        resultHashes,
+        sourceDocumentIds: [...(options.sourceDocumentIds ?? [])],
+        latencyMs: options.latencyMs,
+      };
 
-    const attrs: Record<string, string | number | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_RETRIEVAL_SOURCE]: options.source,
-      [A.ATTR_RETRIEVAL_QUERY_HASH]: sha256Hex(options.query),
-      [A.ATTR_RETRIEVAL_RESULT_COUNT]: options.resultCount,
-    };
-    if (options.resultHashes && options.resultHashes.length > 0) {
-      attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...options.resultHashes];
-    }
-    if (options.sourceDocumentIds && options.sourceDocumentIds.length > 0) {
-      attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = [...options.sourceDocumentIds];
-    }
-    if (options.latencyMs !== undefined) {
-      attrs[A.ATTR_RETRIEVAL_LATENCY_MS] = options.latencyMs;
-    }
-    this.span.addEvent(A.EVENT_NAME_RETRIEVAL, attrs);
+      this.retrievalCount += 1;
+      this.retrievalSources.add(record.source);
+      this.span.setAttribute(A.ATTR_RETRIEVAL_COUNT, this.retrievalCount);
+      this.span.setAttribute(A.ATTR_RETRIEVAL_SOURCES, sortedSet(this.retrievalSources));
+
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_RETRIEVAL_SOURCE]: record.source,
+        [A.ATTR_RETRIEVAL_QUERY_HASH]: record.queryHash,
+        [A.ATTR_RETRIEVAL_RESULT_COUNT]: record.resultCount,
+      };
+      if (record.resultHashes.length > 0) {
+        attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...record.resultHashes];
+      }
+      if (record.sourceDocumentIds.length > 0) {
+        attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = [...record.sourceDocumentIds];
+      }
+      if (record.latencyMs !== undefined) {
+        attrs[A.ATTR_RETRIEVAL_LATENCY_MS] = record.latencyMs;
+      }
+      this.span.addEvent(A.EVENT_NAME_RETRIEVAL, attrs);
+      return record;
+    });
   }
 
   /**
    * Record a memory WRITE as a `fabric.memory` event (direction=`write`).
    * Raw content is hashed locally to `content_hash`.
    */
-  remember(options: RememberOptions): void {
-    this.memoryWriteCount += 1;
-    this.memoryKinds.add(options.kind);
-    this.updateMemoryCounters();
-    const attrs: Record<string, string | number | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_MEMORY_DIRECTION]: "write",
-      [A.ATTR_MEMORY_KIND]: options.kind,
-      [A.ATTR_MEMORY_CONTENT_HASH]: sha256Hex(options.content),
-    };
-    if (options.key !== undefined) {
-      attrs[A.ATTR_MEMORY_KEY] = options.key;
-    }
-    if (options.tags && options.tags.length > 0) {
-      attrs[A.ATTR_MEMORY_TAGS] = [...options.tags];
-    }
-    if (options.ttlSeconds !== undefined) {
-      attrs[A.ATTR_MEMORY_TTL_SECONDS] = options.ttlSeconds;
-    }
-    if (options.invalidates !== undefined) {
-      attrs[A.ATTR_MEMORY_INVALIDATES] = options.invalidates;
-    }
-    this.span.addEvent(A.EVENT_NAME_MEMORY, attrs);
+  remember(options: RememberOptions): MemoryRecord {
+    return this.exclusive(() => {
+      assertOneOf("remember: kind", options.kind, MEMORY_KINDS);
+      if (options.ttlSeconds !== undefined) {
+        assertNonNegativeInt("remember: ttlSeconds", options.ttlSeconds);
+      }
+      const record: MemoryRecord = {
+        kind: options.kind,
+        contentHash: sha256Hex(options.content),
+        key: options.key,
+        tags: [...(options.tags ?? [])],
+        ttlSeconds: options.ttlSeconds,
+        direction: "write",
+        invalidates: options.invalidates,
+      };
+      this.memoryWriteCount += 1;
+      this.memoryKinds.add(record.kind);
+      this.updateMemoryCounters();
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_MEMORY_DIRECTION]: "write",
+        [A.ATTR_MEMORY_KIND]: record.kind,
+        [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
+      };
+      if (record.key !== undefined) {
+        attrs[A.ATTR_MEMORY_KEY] = record.key;
+      }
+      if (record.tags.length > 0) {
+        attrs[A.ATTR_MEMORY_TAGS] = [...record.tags];
+      }
+      if (record.ttlSeconds !== undefined) {
+        attrs[A.ATTR_MEMORY_TTL_SECONDS] = record.ttlSeconds;
+      }
+      if (record.invalidates !== undefined) {
+        attrs[A.ATTR_MEMORY_INVALIDATES] = record.invalidates;
+      }
+      this.span.addEvent(A.EVENT_NAME_MEMORY, attrs);
+      return record;
+    });
   }
 
   /**
@@ -684,21 +934,33 @@ export class Decision {
    * Uses the same `content_hash` strategy as {@link remember} so reads and
    * writes can be correlated by hash downstream.
    */
-  recall(options: RecallOptions): void {
-    this.memoryReadCount += 1;
-    this.memoryKinds.add(options.kind);
-    this.updateMemoryCounters();
-    const attrs: Record<string, string | number | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_MEMORY_DIRECTION]: "read",
-      [A.ATTR_MEMORY_KIND]: options.kind,
-      [A.ATTR_MEMORY_KEY]: options.key,
-      [A.ATTR_MEMORY_CONTENT_HASH]: sha256Hex(options.content),
-    };
-    if (options.source !== undefined) {
-      attrs[A.ATTR_MEMORY_SOURCE] = options.source;
-    }
-    this.span.addEvent(A.EVENT_NAME_MEMORY, attrs);
+  recall(options: RecallOptions): MemoryRecord {
+    return this.exclusive(() => {
+      assertOneOf("recall: kind", options.kind, MEMORY_KINDS);
+      const record: MemoryRecord = {
+        kind: options.kind,
+        contentHash: sha256Hex(options.content),
+        key: options.key,
+        tags: [],
+        direction: "read",
+        source: options.source,
+      };
+      this.memoryReadCount += 1;
+      this.memoryKinds.add(record.kind);
+      this.updateMemoryCounters();
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_MEMORY_DIRECTION]: "read",
+        [A.ATTR_MEMORY_KIND]: record.kind,
+        [A.ATTR_MEMORY_KEY]: options.key,
+        [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
+      };
+      if (record.source !== undefined) {
+        attrs[A.ATTR_MEMORY_SOURCE] = record.source;
+      }
+      this.span.addEvent(A.EVENT_NAME_MEMORY, attrs);
+      return record;
+    });
   }
 
   /**
@@ -706,21 +968,32 @@ export class Decision {
    * (direction=`erase`). The OSS SDK only emits the marker — it deletes
    * nothing. An erase references a key, not content, so no hash is produced.
    */
-  forget(kind: string, key: string, options: { tenantScope?: boolean } = {}): void {
-    this.memoryEraseCount += 1;
-    this.memoryKinds.add(kind);
-    this.updateMemoryCounters();
-    this.span.setAttribute(A.ATTR_MEMORY_ERASE_COUNT, this.memoryEraseCount);
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_MEMORY_DIRECTION]: "erase",
-      [A.ATTR_MEMORY_KIND]: kind,
-      [A.ATTR_MEMORY_KEY]: key,
-    };
-    if (options.tenantScope === true) {
-      attrs[A.ATTR_MEMORY_TENANT_SCOPE] = true;
-    }
-    this.span.addEvent(A.EVENT_NAME_MEMORY, attrs);
+  forget(kind: MemoryKind, key: string, options: { tenantScope?: boolean } = {}): MemoryRecord {
+    return this.exclusive(() => {
+      assertOneOf("forget: kind", kind, MEMORY_KINDS);
+      const record: MemoryRecord = {
+        kind,
+        key,
+        tags: [],
+        direction: "erase",
+        tenantScope: options.tenantScope === true,
+      };
+      this.memoryEraseCount += 1;
+      this.memoryKinds.add(kind);
+      this.updateMemoryCounters();
+      this.span.setAttribute(A.ATTR_MEMORY_ERASE_COUNT, this.memoryEraseCount);
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_MEMORY_DIRECTION]: "erase",
+        [A.ATTR_MEMORY_KIND]: kind,
+        [A.ATTR_MEMORY_KEY]: key,
+      };
+      if (record.tenantScope) {
+        attrs[A.ATTR_MEMORY_TENANT_SCOPE] = true;
+      }
+      this.span.addEvent(A.EVENT_NAME_MEMORY, attrs);
+      return record;
+    });
   }
 
   private updateMemoryCounters(): void {
@@ -734,384 +1007,426 @@ export class Decision {
    * `fabric.side_effect` event. Raw payloads are hashed locally; pass either
    * the raw payload OR a precomputed hash per field, not both.
    */
-  recordSideEffect(options: SideEffectOptions): void {
-    if (options.replayBehavior !== undefined) {
-      assertOneOf("recordSideEffect: replayBehavior", options.replayBehavior, REPLAY_BEHAVIORS);
-    }
+  recordSideEffect(options: SideEffectOptions): SideEffectRecord {
+    // Supplying both raw payload and precomputed hash for the same field
+    // is rejected up front to avoid ambiguous evidence — before the
+    // vocabulary/length checks, mirroring Python's record_side_effect.
     if (options.requestPayload !== undefined && options.requestHash !== undefined) {
       throw new Error("pass either requestPayload or requestHash, not both");
     }
     if (options.resultPayload !== undefined && options.resultHash !== undefined) {
       throw new Error("pass either resultPayload or resultHash, not both");
     }
-    const requestHash =
-      options.requestPayload !== undefined
-        ? sha256Hex(options.requestPayload)
-        : options.requestHash;
-    const resultHash =
-      options.resultPayload !== undefined ? sha256Hex(options.resultPayload) : options.resultHash;
+    return this.exclusive(() => {
+      assertOneOf("recordSideEffect: type", options.type, SIDE_EFFECT_TYPES);
+      if (options.replayBehavior !== undefined) {
+        assertOneOf("recordSideEffect: replayBehavior", options.replayBehavior, REPLAY_BEHAVIORS);
+      }
+      // Mirrors the pydantic Field constraints on SideEffectRecord:
+      // target_system (1..128), operation (1..256), idempotency_key /
+      // parent_tool_call_id (<=256).
+      assertLength("recordSideEffect: targetSystem", options.targetSystem, 1, 128);
+      assertLength("recordSideEffect: operation", options.operation, 1, 256);
+      if (options.idempotencyKey !== undefined) {
+        assertLength("recordSideEffect: idempotencyKey", options.idempotencyKey, 0, 256);
+      }
+      if (options.parentToolCallId !== undefined) {
+        assertLength("recordSideEffect: parentToolCallId", options.parentToolCallId, 0, 256);
+      }
+      const requestHash =
+        options.requestPayload !== undefined
+          ? sha256Hex(options.requestPayload)
+          : options.requestHash === undefined
+            ? undefined
+            : assertSha256Hex("recordSideEffect: requestHash", options.requestHash);
+      const resultHash =
+        options.resultPayload !== undefined
+          ? sha256Hex(options.resultPayload)
+          : options.resultHash === undefined
+            ? undefined
+            : assertSha256Hex("recordSideEffect: resultHash", options.resultHash);
 
-    this.sideEffectCount += 1;
-    this.sideEffectTypes.add(options.type);
-    this.sideEffectSystems.add(options.targetSystem);
-    this.span.setAttribute(A.ATTR_SIDE_EFFECT_COUNT, this.sideEffectCount);
-    this.span.setAttribute(A.ATTR_SIDE_EFFECT_TYPES, sortedSet(this.sideEffectTypes));
-    this.span.setAttribute(A.ATTR_SIDE_EFFECT_SYSTEMS, sortedSet(this.sideEffectSystems));
+      const record: SideEffectRecord = {
+        sideEffectId: options.sideEffectId ?? randomUuid(),
+        effectType: options.type,
+        targetSystem: options.targetSystem,
+        operation: options.operation,
+        requestHash,
+        resultHash,
+        idempotencyKey: options.idempotencyKey,
+        approvalRequired: options.approvalRequired ?? false,
+        committed: options.committed ?? true,
+        rollbackSupported: options.rollbackSupported ?? false,
+        replayBehavior: options.replayBehavior ?? "suppress",
+        parentToolCallId: options.parentToolCallId,
+      };
 
-    const sideEffectId = options.sideEffectId ?? randomUuid();
-    if ((options.replayBehavior ?? "suppress") === "suppress") {
-      this.suppressedSideEffectIds.push(sideEffectId);
-    }
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_SE_ID]: sideEffectId,
-      [A.ATTR_SE_TYPE]: options.type,
-      [A.ATTR_SE_TARGET_SYSTEM]: options.targetSystem,
-      [A.ATTR_SE_OPERATION]: options.operation,
-      [A.ATTR_SE_APPROVAL_REQUIRED]: options.approvalRequired ?? false,
-      [A.ATTR_SE_COMMITTED]: options.committed ?? true,
-      [A.ATTR_SE_ROLLBACK_SUPPORTED]: options.rollbackSupported ?? false,
-      [A.ATTR_SE_REPLAY_BEHAVIOR]: options.replayBehavior ?? "suppress",
-    };
-    if (requestHash !== undefined) {
-      attrs[A.ATTR_SE_REQUEST_HASH] = requestHash;
-    }
-    if (resultHash !== undefined) {
-      attrs[A.ATTR_SE_RESULT_HASH] = resultHash;
-    }
-    if (options.idempotencyKey !== undefined) {
-      attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = options.idempotencyKey;
-    }
-    if (options.parentToolCallId !== undefined) {
-      attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = options.parentToolCallId;
-    }
-    this.span.addEvent(A.EVENT_NAME_SIDE_EFFECT, attrs);
+      this.sideEffectCount += 1;
+      this.sideEffectTypes.add(record.effectType);
+      this.sideEffectSystems.add(record.targetSystem);
+      this.span.setAttribute(A.ATTR_SIDE_EFFECT_COUNT, this.sideEffectCount);
+      this.span.setAttribute(A.ATTR_SIDE_EFFECT_TYPES, sortedSet(this.sideEffectTypes));
+      this.span.setAttribute(A.ATTR_SIDE_EFFECT_SYSTEMS, sortedSet(this.sideEffectSystems));
+
+      if (record.replayBehavior === "suppress") {
+        this.suppressedSideEffectIds.push(record.sideEffectId);
+      }
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_SE_ID]: record.sideEffectId,
+        [A.ATTR_SE_TYPE]: record.effectType,
+        [A.ATTR_SE_TARGET_SYSTEM]: record.targetSystem,
+        [A.ATTR_SE_OPERATION]: record.operation,
+        [A.ATTR_SE_APPROVAL_REQUIRED]: record.approvalRequired,
+        [A.ATTR_SE_COMMITTED]: record.committed,
+        [A.ATTR_SE_ROLLBACK_SUPPORTED]: record.rollbackSupported,
+        [A.ATTR_SE_REPLAY_BEHAVIOR]: record.replayBehavior,
+      };
+      if (record.requestHash !== undefined) {
+        attrs[A.ATTR_SE_REQUEST_HASH] = record.requestHash;
+      }
+      if (record.resultHash !== undefined) {
+        attrs[A.ATTR_SE_RESULT_HASH] = record.resultHash;
+      }
+      if (record.idempotencyKey !== undefined) {
+        attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = record.idempotencyKey;
+      }
+      if (record.parentToolCallId !== undefined) {
+        attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = record.parentToolCallId;
+      }
+      this.span.addEvent(A.EVENT_NAME_SIDE_EFFECT, attrs);
+      return record;
+    });
   }
 
   /**
    * Mark a save point on the decision timeline as a `fabric.checkpoint`
    * event. Multiple checkpoints per decision are allowed.
    */
-  checkpoint(stepName: string, options: CheckpointOptions = {}): void {
-    this.checkpointCount += 1;
-    this.span.setAttribute(A.ATTR_CHECKPOINT_COUNT, this.checkpointCount);
-    const checkpointId = options.checkpointId ?? randomUuid();
-    this.checkpointIds.push(checkpointId);
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_CHECKPOINT_ID]: checkpointId,
-      [A.ATTR_CHECKPOINT_STEP_NAME]: stepName,
-    };
-    if (options.stateHash !== undefined) {
-      attrs[A.ATTR_CHECKPOINT_STATE_HASH] = options.stateHash;
-    }
-    this.span.addEvent(A.EVENT_NAME_CHECKPOINT, attrs);
-  }
-
-  /**
-   * Attach a synchronous evaluation score as a `fabric.eval` event. Rolling
-   * `fabric.eval_count` / `fabric.eval_rubrics` are folded onto the span.
-   */
-  recordEval(options: EvalOptions): void {
-    assertFiniteNumber("recordEval: score", options.score);
-    if (options.confidence !== undefined) {
-      assertFiniteNumber("recordEval: confidence", options.confidence);
-    }
-    this.evalCount += 1;
-    this.evalRubrics.add(options.rubricId);
-    this.span.setAttribute(A.ATTR_EVAL_COUNT, this.evalCount);
-    this.span.setAttribute(A.ATTR_EVAL_RUBRICS, sortedSet(this.evalRubrics));
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_EVAL_ID]: randomUuid(),
-      [A.ATTR_EVAL_RUBRIC_ID]: options.rubricId,
-      [A.ATTR_EVAL_SCORE]: options.score,
-      [A.ATTR_EVAL_DIMENSION]: options.dimension,
-      [A.ATTR_EVAL_EVALUATOR_NAME]: options.evaluatorName,
-    };
-    if (options.evaluatorVersion !== undefined) {
-      attrs[A.ATTR_EVAL_EVALUATOR_VERSION] = options.evaluatorVersion;
-    }
-    if (options.confidence !== undefined) {
-      attrs[A.ATTR_EVAL_CONFIDENCE] = options.confidence;
-    }
-    if (options.payloadRef !== undefined) {
-      attrs[A.ATTR_EVAL_PAYLOAD_REF] = options.payloadRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_EVAL, attrs);
-  }
-
-  /**
-   * Record a `fabric.judge.queued` event for out-of-band (async) grading.
-   * The host enqueues the request to its own transport; the SDK records the
-   * allowlisted metadata. No content lands on the trace.
-   */
-  queueJudge(options: QueueJudgeOptions): void {
-    if (!options.rubricId.trim()) {
-      throw new Error("rubricId must be non-empty");
-    }
-    if (options.dimensions.length === 0) {
-      throw new Error("at least one dimension required");
-    }
-    this.judgeQueuedCount += 1;
-    this.judgeRubrics.add(options.rubricId);
-    this.span.setAttribute(A.ATTR_JUDGE_QUEUED_COUNT, this.judgeQueuedCount);
-    this.span.setAttribute(A.ATTR_JUDGE_RUBRICS, sortedSet(this.judgeRubrics));
-    const attrs: Record<string, string | number | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_JUDGE_REQUEST_ID]: options.requestId ?? randomUuid(),
-      [A.ATTR_JUDGE_RUBRIC_ID]: options.rubricId,
-      [A.ATTR_JUDGE_DIMENSIONS]: [...options.dimensions],
-    };
-    if (options.payloadRef !== undefined) {
-      attrs[A.ATTR_JUDGE_PAYLOAD_REF] = options.payloadRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_JUDGE_QUEUED, attrs);
-  }
-
-  /**
-   * Record a normalized policy verdict as a `fabric.policy.evaluation` event.
-   * The host runs its own policy engine (OPA/Cedar/HTTP) and passes the
-   * verdict here. Pass `input` to have the SDK hash it Python-compatibly, or
-   * `inputHash` if already computed. Rolling `fabric.policy_evaluation_count`
-   * / `fabric.policy_engines` are folded onto the span.
-   */
-  recordPolicyEvaluation(options: PolicyEvaluationOptions): void {
-    assertOneOf("recordPolicyEvaluation: decision", options.decision, POLICY_DECISIONS);
-    if (options.latencyMs !== undefined) {
-      assertFiniteNumber("recordPolicyEvaluation: latencyMs", options.latencyMs);
-    }
-    if (options.input !== undefined && options.inputHash !== undefined) {
-      throw new Error("pass either input or inputHash, not both");
-    }
-    const inputHash =
-      options.input !== undefined ? policyInputHash(options.input) : options.inputHash;
-
-    this.policyEvalCount += 1;
-    this.policyEngines.add(options.engine);
-    this.span.setAttribute(A.ATTR_POLICY_EVAL_COUNT, this.policyEvalCount);
-    this.span.setAttribute(A.ATTR_POLICY_ENGINES, sortedSet(this.policyEngines));
-
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_POLICY_EVALUATION_ID]: randomUuid(),
-      [A.ATTR_POLICY_ENGINE]: options.engine,
-      [A.ATTR_POLICY_POLICY_ID]: options.policyId,
-      [A.ATTR_POLICY_DECISION]: options.decision,
-    };
-    if (inputHash !== undefined) {
-      attrs[A.ATTR_POLICY_INPUT_HASH] = inputHash;
-    }
-    if (options.latencyMs !== undefined) {
-      attrs[A.ATTR_POLICY_LATENCY_MS] = options.latencyMs;
-    }
-    if (options.policyVersion !== undefined) {
-      attrs[A.ATTR_POLICY_POLICY_VERSION] = options.policyVersion;
-    }
-    if (options.reason !== undefined) {
-      attrs[A.ATTR_POLICY_REASON] = options.reason;
-    }
-    if (options.evidenceRef !== undefined) {
-      attrs[A.ATTR_POLICY_EVIDENCE_REF] = options.evidenceRef;
-    }
-    if (options.bundleSignature !== undefined) {
-      attrs[A.ATTR_POLICY_BUNDLE_SIGNATURE] = options.bundleSignature;
-    }
-    if (options.inputContentRef !== undefined) {
-      attrs[A.ATTR_POLICY_INPUT_CONTENT_REF] = options.inputContentRef;
-    }
-    this.span.addEvent(A.EVENT_NAME_POLICY_EVALUATION, attrs);
-  }
-
-  /**
-   * Record a pre-execution tool-authorization verdict as a
-   * `fabric.tool.authorization` event. Raw arguments are hashed locally;
-   * rolling `fabric.tool_authorization_count` is folded onto the span.
-   */
-  recordToolAuthorization(options: ToolAuthorizationOptions): void {
-    assertOneOf("recordToolAuthorization: decision", options.decision, TOOL_AUTH_DECISIONS);
-    if (options.arguments !== undefined && options.argumentsHash !== undefined) {
-      throw new Error("pass either arguments or argumentsHash, not both");
-    }
-    const argumentsHash =
-      options.arguments !== undefined ? sha256Hex(options.arguments) : options.argumentsHash;
-
-    this.toolAuthCount += 1;
-    this.span.setAttribute(A.ATTR_TOOL_AUTH_COUNT, this.toolAuthCount);
-
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.FABRIC_TOOL_NAME]: options.toolName,
-      [A.ATTR_TOOL_AUTH_DECISION]: options.decision,
-    };
-    if (options.reason !== undefined) {
-      attrs[A.ATTR_TOOL_AUTH_REASON] = options.reason;
-    }
-    if (argumentsHash !== undefined) {
-      attrs[A.FABRIC_TOOL_ARGS_HASH] = argumentsHash;
-    }
-    this.span.addEvent(A.EVENT_NAME_TOOL_AUTHORIZATION, attrs);
+  checkpoint(stepName: string, options: CheckpointOptions = {}): CheckpointEvent {
+    return this.exclusive(() => {
+      // Python strips the label and rejects empties; the stripped value
+      // is what lands on the event (checkpoint.py:45-49).
+      const stripped = typeof stepName === "string" ? stepName.trim() : "";
+      if (stripped === "") {
+        throw new Error("checkpoint: stepName must be non-empty");
+      }
+      const event: CheckpointEvent = {
+        checkpointId: options.checkpointId ?? randomUuid(),
+        stepName: stripped,
+        stateHash:
+          options.stateHash === undefined
+            ? undefined
+            : assertSha256Hex("checkpoint: stateHash", options.stateHash),
+      };
+      this.checkpointCount += 1;
+      this.span.setAttribute(A.ATTR_CHECKPOINT_COUNT, this.checkpointCount);
+      this.checkpointIds.push(event.checkpointId);
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_CHECKPOINT_ID]: event.checkpointId,
+        [A.ATTR_CHECKPOINT_STEP_NAME]: event.stepName,
+      };
+      if (event.stateHash !== undefined) {
+        attrs[A.ATTR_CHECKPOINT_STATE_HASH] = event.stateHash;
+      }
+      this.span.addEvent(A.EVENT_NAME_CHECKPOINT, attrs);
+      return event;
+    });
   }
 
   /** Emit a replay envelope derived from checkpoints and suppressed side effects in this decision. */
   recordReplayMetadata(options: ReplayMetadataOptions = {}): void {
-    const attrs: Record<string, string | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_REPLAY_METADATA_VERSION]: "1",
-      [A.ATTR_REPLAY_DECISION_ID]: this.decisionId,
-    };
-    if (this.resolvedExecutionId !== undefined) {
-      attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.resolvedExecutionId;
-    }
-    if (this.checkpointIds.length > 0) {
-      attrs[A.ATTR_REPLAY_CHECKPOINT_IDS] = [...this.checkpointIds];
-    }
-    if (this.suppressedSideEffectIds.length > 0) {
-      attrs[A.ATTR_REPLAY_SUPPRESSED_SIDE_EFFECT_IDS] = [...this.suppressedSideEffectIds];
-    }
-    if (options.stateHash !== undefined) {
-      attrs[A.ATTR_REPLAY_STATE_HASH] = options.stateHash;
-    }
-    if (options.toolResultHashes && options.toolResultHashes.length > 0) {
-      attrs[A.ATTR_REPLAY_TOOL_RESULT_HASHES] = [...options.toolResultHashes];
-    }
-    this.span.addEvent(A.EVENT_NAME_REPLAY, attrs);
+    this.exclusive(() => {
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_REPLAY_METADATA_VERSION]: "1",
+        [A.ATTR_REPLAY_DECISION_ID]: this.decisionIdValue,
+      };
+      if (this.resolvedExecutionId !== undefined) {
+        attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.resolvedExecutionId;
+      }
+      if (this.checkpointIds.length > 0) {
+        attrs[A.ATTR_REPLAY_CHECKPOINT_IDS] = [...this.checkpointIds];
+      }
+      if (this.suppressedSideEffectIds.length > 0) {
+        attrs[A.ATTR_REPLAY_SUPPRESSED_SIDE_EFFECT_IDS] = [...this.suppressedSideEffectIds];
+      }
+      if (options.stateHash !== undefined) {
+        attrs[A.ATTR_REPLAY_STATE_HASH] = assertSha256Hex(
+          "recordReplayMetadata: stateHash",
+          options.stateHash,
+        );
+      }
+      if (options.toolResultHashes && options.toolResultHashes.length > 0) {
+        attrs[A.ATTR_REPLAY_TOOL_RESULT_HASHES] = options.toolResultHashes.map((value) =>
+          assertSha256Hex("recordReplayMetadata: toolResultHashes", value),
+        );
+      }
+      this.span.addEvent(A.EVENT_NAME_REPLAY, attrs);
+    });
   }
 
   /** Record an MCP server's advertised surface using definition hashes, never raw schemas. */
-  recordMcpInventory(options: McpInventoryOptions): {
-    tools: string[];
-    toolsHash: string;
-  } {
-    assertNonEmpty("recordMcpInventory: server", options.server);
-    assertNonEmpty("recordMcpInventory: transport", options.transport);
-    for (const tool of options.tools) {
-      assertNonEmpty("recordMcpInventory: tool name", tool.name);
-    }
-    const definitions = options.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description ?? null,
-      inputSchema: tool.inputSchema ?? null,
-    }));
-    const tools = definitions.map(
-      (definition) =>
-        `${definition.name}:${sha256Hex(pythonJsonStringify(definition)).slice(0, 12)}`,
-    );
-    const toolsHash = sha256Hex(pythonJsonStringify(definitions));
-    const attrs: Record<string, string | number | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_MCP_SERVER]: options.server,
-      [A.ATTR_MCP_TRANSPORT]: options.transport,
-      [A.ATTR_MCP_TOOL_COUNT]: definitions.length,
-      [A.ATTR_MCP_TOOLS]: tools,
-      [A.ATTR_MCP_TOOLS_HASH]: toolsHash,
-    };
-    if (options.resources !== undefined) {
-      attrs[A.ATTR_MCP_RESOURCE_COUNT] = options.resources.length;
-    }
-    if (options.prompts !== undefined) {
-      attrs[A.ATTR_MCP_PROMPT_COUNT] = options.prompts.length;
-    }
-    this.span.addEvent(A.EVENT_NAME_MCP_INVENTORY, attrs);
-    return { tools, toolsHash };
+  recordMcpInventory(options: McpInventoryOptions): McpInventory {
+    return this.exclusive(() => {
+      assertNonEmpty("recordMcpInventory: server", options.server);
+      assertNonEmpty("recordMcpInventory: transport", options.transport);
+      // Mirror Python's `_tool_definition`: either a mapping or an
+      // attribute-shaped object exposing name/description/inputSchema
+      // (input_schema also accepted and normalized to inputSchema).
+      const definitions = options.tools.map((tool) => {
+        const t = tool as unknown as Record<string, unknown>;
+        const name = t["name"];
+        assertNonEmpty("recordMcpInventory: tool name", name as string);
+        const inputSchema = "inputSchema" in t ? t["inputSchema"] : t["input_schema"];
+        return {
+          name,
+          description: t["description"] ?? null,
+          inputSchema: inputSchema ?? null,
+        };
+      });
+      const tools = definitions.map(
+        (definition) =>
+          `${definition.name}:${sha256Hex(pythonJsonStringify(definition)).slice(0, 12)}`,
+      );
+      const toolsHash = sha256Hex(pythonJsonStringify(definitions));
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_MCP_SERVER]: options.server,
+        [A.ATTR_MCP_TRANSPORT]: options.transport,
+        [A.ATTR_MCP_TOOL_COUNT]: definitions.length,
+        [A.ATTR_MCP_TOOLS]: tools,
+        [A.ATTR_MCP_TOOLS_HASH]: toolsHash,
+      };
+      const resourceCount = options.resources === undefined ? undefined : options.resources.length;
+      const promptCount = options.prompts === undefined ? undefined : options.prompts.length;
+      if (resourceCount !== undefined) {
+        attrs[A.ATTR_MCP_RESOURCE_COUNT] = resourceCount;
+      }
+      if (promptCount !== undefined) {
+        attrs[A.ATTR_MCP_PROMPT_COUNT] = promptCount;
+      }
+      applyCrossCutting(attrs, options);
+      this.span.addEvent(A.EVENT_NAME_MCP_INVENTORY, attrs);
+      return {
+        server: options.server,
+        transport: options.transport,
+        toolCount: definitions.length,
+        tools,
+        toolsHash,
+        resourceCount,
+        promptCount,
+      };
+    });
   }
 
   /** Record a loaded skill by identity and integrity metadata. */
   recordSkill(name: string, version: string, options: SkillOptions = {}): void {
-    assertNonEmpty("recordSkill: name", name);
-    assertNonEmpty("recordSkill: version", version);
-    this.skillCount += 1;
-    this.span.setAttribute(A.ATTR_SKILL_COUNT, this.skillCount);
-    const attrs: Record<string, string | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_SKILL_NAME]: name,
-      [A.ATTR_SKILL_VERSION]: version,
-    };
-    if (options.source !== undefined) attrs[A.ATTR_SKILL_SOURCE] = options.source;
-    if (options.manifestHash !== undefined) {
-      attrs[A.ATTR_SKILL_MANIFEST_HASH] = options.manifestHash;
-    }
-    if (options.signed !== undefined) attrs[A.ATTR_SKILL_SIGNED] = options.signed;
-    this.span.addEvent(A.EVENT_NAME_SKILL, attrs);
+    this.exclusive(() => {
+      assertNonEmpty("recordSkill: name", name);
+      assertNonEmpty("recordSkill: version", version);
+      this.skillCount += 1;
+      this.span.setAttribute(A.ATTR_SKILL_COUNT, this.skillCount);
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_SKILL_NAME]: name,
+        [A.ATTR_SKILL_VERSION]: version,
+      };
+      if (options.source !== undefined) attrs[A.ATTR_SKILL_SOURCE] = options.source;
+      if (options.manifestHash !== undefined) {
+        attrs[A.ATTR_SKILL_MANIFEST_HASH] = assertSha256Hex(
+          "recordSkill: manifestHash",
+          options.manifestHash,
+        );
+      }
+      if (options.signed !== undefined) attrs[A.ATTR_SKILL_SIGNED] = options.signed;
+      applyCrossCutting(attrs, options);
+      this.span.addEvent(A.EVENT_NAME_SKILL, attrs);
+    });
   }
 
-  /** Run a delegated operation while recording only the target agent, protocol, and depth. */
-  delegate<T>(toAgent: string, protocol: string, fn: () => T): T {
+  /**
+   * Run a delegated operation while recording only the target agent,
+   * protocol, and depth. The callback receives a {@link DelegationContext}
+   * exposing the injected `carrier` (with `traceparent` + the `singleaxis`
+   * tracestate member) the host forwards downstream so the sub-agent's
+   * spans link back via `parent_agent_id`.
+   *
+   * `protocol` defaults to `"custom"` (mirroring Python). The three call
+   * shapes are equivalent:
+   *
+   * ```ts
+   * d.delegate("researcher", (sub) => callSubAgent({ headers: sub.carrier }));
+   * d.delegate("researcher", "a2a", (sub) => callSubAgent({ headers: sub.carrier }));
+   * d.delegate("researcher", { protocol: "a2a", tags: ["squad:research"] }, (sub) => ...);
+   * ```
+   */
+  delegate<T>(toAgent: string, fn: (sub: DelegationContext) => T): T;
+  delegate<T>(toAgent: string, protocol: string, fn: (sub: DelegationContext) => T): T;
+  delegate<T>(toAgent: string, options: DelegateOptions, fn: (sub: DelegationContext) => T): T;
+  delegate<T>(
+    toAgent: string,
+    protocolOrOptionsOrFn: string | DelegateOptions | ((sub: DelegationContext) => T),
+    maybeFn?: (sub: DelegationContext) => T,
+  ): T {
+    let options: DelegateOptions;
+    let fn: (sub: DelegationContext) => T;
+    if (typeof protocolOrOptionsOrFn === "function") {
+      options = {};
+      fn = protocolOrOptionsOrFn;
+    } else if (typeof protocolOrOptionsOrFn === "string") {
+      options = { protocol: protocolOrOptionsOrFn };
+      if (maybeFn === undefined) {
+        throw new Error("delegate: fn callback is required");
+      }
+      fn = maybeFn;
+    } else {
+      options = protocolOrOptionsOrFn;
+      if (maybeFn === undefined) {
+        throw new Error("delegate: fn callback is required");
+      }
+      fn = maybeFn;
+    }
     assertNonEmpty("delegate: toAgent", toAgent);
+    const protocol = options.protocol ?? "custom";
     assertNonEmpty("delegate: protocol", protocol);
-    this.delegationCount += 1;
-    this.delegationDepth += 1;
-    this.span.setAttribute(A.ATTR_DELEGATION_COUNT, this.delegationCount);
-    this.span.addEvent(A.EVENT_NAME_DELEGATION, {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_DELEGATION_TO_AGENT]: toAgent,
-      [A.ATTR_DELEGATION_PROTOCOL]: protocol,
-      [A.ATTR_DELEGATION_DEPTH]: this.delegationDepth,
-    });
+    const delegation = this.openDelegation(toAgent, protocol, options);
     let result: T;
     try {
-      result = fn();
+      result = fn(delegation);
     } catch (error) {
-      this.delegationDepth -= 1;
+      this.closeDelegation();
       throw error;
     }
     if (isThenable(result)) {
       return result.then(
         (value) => {
-          this.delegationDepth -= 1;
+          this.closeDelegation();
           return value;
         },
         (error: unknown) => {
-          this.delegationDepth -= 1;
+          this.closeDelegation();
           throw error;
         },
       ) as T;
     }
-    this.delegationDepth -= 1;
+    this.closeDelegation();
     return result;
   }
 
+  /**
+   * Emit the `fabric.delegation` event and build the child carrier —
+   * shared open half of {@link delegate} (mirrors Python
+   * `_open_delegation`, decision.py:1448-1509).
+   */
+  private openDelegation(
+    toAgent: string,
+    protocol: string,
+    options: CrossCuttingOptions,
+  ): DelegationContext {
+    return this.exclusive(() => {
+      this.delegationCount += 1;
+      this.delegationDepth += 1;
+      const depth = this.delegationDepth;
+      this.span.setAttribute(A.ATTR_DELEGATION_COUNT, this.delegationCount);
+
+      // Build the carrier the sub-agent extracts. It carries this
+      // decision's identity with `parentAgentId` set to the delegating
+      // agent so the child's spans link back, plus `traceparent` sourced
+      // from this decision's span so the downstream service continues
+      // the same trace.
+      const context: FabricContext = {
+        tenantId: this.identity.tenantId,
+        agentId: this.identity.agentId,
+        sessionId: this.sessionIdStored,
+        requestId: this.requestIdStored,
+        decisionId: this.decisionIdValue,
+        workflowId: this.resolvedWorkflowId,
+        executionId: this.resolvedExecutionId,
+        executionAttemptId: this.resolvedExecutionAttemptId,
+        executionAttempt: this.resolvedExecutionAttempt,
+        executionRetryReason: this.resolvedExecutionRetryReason,
+        executionRetryPreviousAttemptId: this.resolvedExecutionRetryPreviousAttemptId,
+        parentAgentId: this.identity.agentId,
+      };
+      const carrier: Record<string, string> = {};
+      inject(carrier, context, trace.setSpanContext(otelContext.active(), this.span.spanContext()));
+
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_DELEGATION_TO_AGENT]: toAgent,
+        [A.ATTR_DELEGATION_PROTOCOL]: protocol,
+        [A.ATTR_DELEGATION_DEPTH]: depth,
+      };
+      applyCrossCutting(attrs, options);
+      this.span.addEvent(A.EVENT_NAME_DELEGATION, attrs);
+      return { toAgent, protocol, depth, context, carrier };
+    });
+  }
+
+  /** Pop one delegation nesting level on callback completion. */
+  private closeDelegation(): void {
+    this.exclusive(() => {
+      this.delegationDepth -= 1;
+    });
+  }
+
   /** Record a lifecycle hook without accepting raw hook inputs or outputs. */
-  recordHook(name: string, phase: string, options: HookOptions): void {
-    assertNonEmpty("recordHook: name", name);
-    assertNonEmpty("recordHook: phase", phase);
-    this.hookCount += 1;
-    this.span.setAttribute(A.ATTR_HOOK_COUNT, this.hookCount);
-    const attrs: Record<string, string | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_HOOK_NAME]: name,
-      [A.ATTR_HOOK_PHASE]: phase,
-      [A.ATTR_HOOK_MODIFIED]: options.modified,
-    };
-    if (options.inputHash !== undefined) attrs[A.ATTR_HOOK_INPUT_HASH] = options.inputHash;
-    if (options.outputHash !== undefined) {
-      attrs[A.ATTR_HOOK_OUTPUT_HASH] = options.outputHash;
-    }
-    this.span.addEvent(A.EVENT_NAME_HOOK, attrs);
+  recordHook(name: string, phase: HookPhase, options: HookOptions): void {
+    this.exclusive(() => {
+      assertNonEmpty("recordHook: name", name);
+      assertOneOf("recordHook: phase", phase, HOOK_PHASES);
+      this.hookCount += 1;
+      this.span.setAttribute(A.ATTR_HOOK_COUNT, this.hookCount);
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_HOOK_NAME]: name,
+        [A.ATTR_HOOK_PHASE]: phase,
+        [A.ATTR_HOOK_MODIFIED]: options.modified,
+      };
+      if (options.inputHash !== undefined) {
+        attrs[A.ATTR_HOOK_INPUT_HASH] = assertSha256Hex("recordHook: inputHash", options.inputHash);
+      }
+      if (options.outputHash !== undefined) {
+        attrs[A.ATTR_HOOK_OUTPUT_HASH] = assertSha256Hex(
+          "recordHook: outputHash",
+          options.outputHash,
+        );
+      }
+      applyCrossCutting(attrs, options);
+      this.span.addEvent(A.EVENT_NAME_HOOK, attrs);
+    });
   }
 
   /** Record filesystem access, with opt-in local path hashing for sensitive paths. */
-  recordFileAccess(path: string, operation: string, options: FileAccessOptions = {}): void {
-    assertNonEmpty("recordFileAccess: path", path);
-    assertNonEmpty("recordFileAccess: operation", operation);
-    if (options.sizeBytes !== undefined) {
-      assertNonNegativeInt("recordFileAccess: sizeBytes", options.sizeBytes);
-    }
-    this.fileAccessCount += 1;
-    this.span.setAttribute(A.ATTR_FILE_ACCESS_COUNT, this.fileAccessCount);
-    const redactPath = options.redactPath ?? true;
-    const attrs: Record<string, string | number | boolean> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_FILE_OPERATION]: operation,
-      [A.ATTR_FILE_PATH_REDACTED]: redactPath,
-    };
-    if (redactPath) attrs[A.ATTR_FILE_PATH_HASH] = sha256Hex(path);
-    else attrs[A.ATTR_FILE_PATH] = path;
-    if (options.contentHash !== undefined) {
-      attrs[A.ATTR_FILE_CONTENT_HASH] = options.contentHash;
-    }
-    if (options.sizeBytes !== undefined) attrs[A.ATTR_FILE_SIZE_BYTES] = options.sizeBytes;
-    this.span.addEvent(A.EVENT_NAME_FILE, attrs);
+  recordFileAccess(path: string, operation: FileOperation, options: FileAccessOptions = {}): void {
+    this.exclusive(() => {
+      assertNonEmpty("recordFileAccess: path", path);
+      assertOneOf("recordFileAccess: operation", operation, FILE_OPERATIONS);
+      if (options.sizeBytes !== undefined) {
+        assertNonNegativeInt("recordFileAccess: sizeBytes", options.sizeBytes);
+      }
+      this.fileAccessCount += 1;
+      this.span.setAttribute(A.ATTR_FILE_ACCESS_COUNT, this.fileAccessCount);
+      const redactPath = options.redactPath ?? true;
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_FILE_OPERATION]: operation,
+        [A.ATTR_FILE_PATH_REDACTED]: redactPath,
+      };
+      if (redactPath) attrs[A.ATTR_FILE_PATH_HASH] = sha256Hex(path);
+      else attrs[A.ATTR_FILE_PATH] = path;
+      if (options.contentHash !== undefined) {
+        attrs[A.ATTR_FILE_CONTENT_HASH] = assertSha256Hex(
+          "recordFileAccess: contentHash",
+          options.contentHash,
+        );
+      }
+      if (options.sizeBytes !== undefined) attrs[A.ATTR_FILE_SIZE_BYTES] = options.sizeBytes;
+      applyCrossCutting(attrs, options);
+      this.span.addEvent(A.EVENT_NAME_FILE, attrs);
+    });
   }
 
   /**
@@ -1119,72 +1434,72 @@ export class Decision {
    * is canonicalized and hashed; sensitive targets can be locally hashed.
    */
   recordInteraction(kind: string, target: string, options: InteractionOptions = {}): void {
-    assertNonEmpty("recordInteraction: kind", kind);
-    assertNonEmpty("recordInteraction: target", target);
-    if (options.direction !== undefined) {
-      assertOneOf("recordInteraction: direction", options.direction, INTERACTION_DIRECTIONS);
-    }
-    if (options.baseline !== undefined) {
-      assertNonEmpty("recordInteraction: baseline name", options.baseline.name);
-      assertOneOf("recordInteraction: baseline status", options.baseline.status, BASELINE_STATUSES);
-    }
-    this.interactionCount += 1;
-    this.interactionKinds.add(kind);
-    this.span.setAttribute(A.ATTR_INTERACTION_COUNT, this.interactionCount);
-    this.span.setAttribute(A.ATTR_INTERACTION_KINDS, sortedSet(this.interactionKinds));
-    const redactTarget = options.redactTarget ?? true;
-    const attrs: Record<string, string | boolean | string[]> = {
-      [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-      [A.ATTR_INTERACTION_KIND]: kind,
-      [A.ATTR_INTERACTION_TARGET_REDACTED]: redactTarget,
-    };
-    if (redactTarget) attrs[A.ATTR_INTERACTION_TARGET_HASH] = sha256Hex(target);
-    else attrs[A.ATTR_INTERACTION_TARGET] = target;
-    if (options.direction !== undefined) {
-      attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
-    }
-    if (options.payloadHash !== undefined) {
-      attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = options.payloadHash;
-    }
-    if (options.metadata !== undefined) {
-      attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
-    }
-    if (options.tags && options.tags.length > 0) attrs[A.ATTR_TAGS] = [...options.tags];
-    if (options.baseline !== undefined) {
-      attrs[A.ATTR_BASELINE_NAME] = options.baseline.name;
-      attrs[A.ATTR_BASELINE_STATUS] = options.baseline.status;
-    }
-    if (options.signature !== undefined) {
-      attrs[A.ATTR_SIGNATURE_VERIFIED] = options.signature.verified;
-      attrs[A.ATTR_SIGNATURE_SCHEME] = options.signature.scheme;
-      if (options.signature.keyId !== undefined) {
-        attrs[A.ATTR_SIGNATURE_KEY_ID] = options.signature.keyId;
+    this.exclusive(() => {
+      assertNonEmpty("recordInteraction: kind", kind);
+      assertNonEmpty("recordInteraction: target", target);
+      if (options.direction !== undefined) {
+        assertOneOf("recordInteraction: direction", options.direction, INTERACTION_DIRECTIONS);
       }
-    }
-    this.span.addEvent(A.EVENT_NAME_INTERACTION, attrs);
+      this.interactionCount += 1;
+      this.interactionKinds.add(kind);
+      this.span.setAttribute(A.ATTR_INTERACTION_COUNT, this.interactionCount);
+      this.span.setAttribute(A.ATTR_INTERACTION_KINDS, sortedSet(this.interactionKinds));
+      const redactTarget = options.redactTarget ?? true;
+      const attrs: Record<string, AttrValue> = {
+        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
+        [A.ATTR_INTERACTION_KIND]: kind,
+        [A.ATTR_INTERACTION_TARGET_REDACTED]: redactTarget,
+      };
+      if (redactTarget) attrs[A.ATTR_INTERACTION_TARGET_HASH] = sha256Hex(target);
+      else attrs[A.ATTR_INTERACTION_TARGET] = target;
+      if (options.direction !== undefined) {
+        attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
+      }
+      if (options.payloadHash !== undefined) {
+        attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = assertSha256Hex(
+          "recordInteraction: payloadHash",
+          options.payloadHash,
+        );
+      }
+      if (options.metadata !== undefined) {
+        attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
+      }
+      const resolved = applyCrossCutting(attrs, options);
+      this.span.addEvent(A.EVENT_NAME_INTERACTION, attrs);
 
-    if (!COVERED_INTERACTION_KINDS.has(kind)) {
-      COVERED_INTERACTION_KINDS.add(kind);
-      this.recordCoverage(kind, "new_kind");
-    }
-    if (options.baseline?.status === "deviation" && (!options.tags || options.tags.length === 0)) {
-      this.recordCoverage(kind, "unclassified_deviation");
-    }
+      // Improvement loop: a one-shot, low-rate coverage signal. Two
+      // triggers, each fired at most once per process and keyed
+      // separately: a never-before-seen generic `kind` ("kind:{k}"), and
+      // a `kind` observed with a baseline deviation but no classifying
+      // tags ("deviation:{k}").
+      if (coverageShouldEmit(`kind:${kind}`)) {
+        this.recordCoverage(kind, COVERAGE_REASON_NEW_KIND);
+      }
+      if (
+        resolved.baselineStatus === "deviation" &&
+        !resolved.hasTags &&
+        coverageShouldEmit(`deviation:${kind}`)
+      ) {
+        this.recordCoverage(kind, COVERAGE_REASON_UNCLASSIFIED_DEVIATION);
+      }
+    });
   }
 
   private recordCoverage(kind: string, reason: string): void {
     this.span.addEvent(A.EVENT_NAME_COVERAGE, {
       [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
       [A.ATTR_COVERAGE_KIND]: kind,
-      [A.ATTR_COVERAGE_SUGGESTION]: "generic",
+      [A.ATTR_COVERAGE_SUGGESTION]: COVERAGE_SUGGESTION,
       [A.ATTR_COVERAGE_REASON]: reason,
     });
   }
 
   /** Set a custom scalar attribute on the decision span. */
   setAttribute(key: string, value: string | number | boolean): void {
-    assertScalarAttribute(key, value);
-    this.span.setAttribute(key, value);
+    this.exclusive(() => {
+      assertScalarAttribute(key, value);
+      this.span.setAttribute(key, value);
+    });
   }
 
   /** The live OTel span for this decision. */
@@ -1235,6 +1550,10 @@ function runAndEnd<T>(span: Span, fn: () => T): T {
 
 /** Record an exception + ERROR status on `span` (does not end it). */
 function recordError(span: Span, err: unknown): void {
+  // `error.type` mirrors the GenAI error convention: the exception class
+  // name stamped alongside the ERROR status on every failure exit —
+  // decision, llm and tool spans alike (mirrors Python).
+  span.setAttribute(A.ATTR_ERROR_TYPE, errorName(err));
   span.setStatus({ code: SpanStatusCode.ERROR, message: errorName(err) });
   if (err instanceof Error) {
     span.recordException(err);
@@ -1265,69 +1584,6 @@ function errorName(err: unknown): string {
  * `sorted({...})` used for the rolling distinct-value span attributes. */
 function sortedSet(values: Set<string>): string[] {
   return [...values].sort();
-}
-
-/**
- * Runtime telemetry guards. TS types protect compile-time callers, but
- * plain-JS callers can pass anything; these helpers fail loud (throw a
- * specific Error) rather than letting an out-of-contract span be emitted,
- * matching the Python SDK's posture. They never run for valid inputs, so the
- * emitted shape — and the conformance goldens — stay byte-identical.
- */
-
-/** Throw unless `value` is a JSON scalar (string | number | boolean). */
-function assertScalarAttribute(key: string, value: unknown): void {
-  const t = typeof value;
-  if (t === "string" || t === "boolean") {
-    return;
-  }
-  if (t === "number") {
-    assertFiniteNumber(key, value as number);
-    return;
-  }
-  throw new Error(
-    `setAttribute: value for "${key}" must be a string, number, or boolean; got ${describe(value)}`,
-  );
-}
-
-/** Throw if `value` is a non-finite number (NaN / Infinity / -Infinity). */
-function assertFiniteNumber(field: string, value: number): void {
-  if (!Number.isFinite(value)) {
-    throw new Error(`${field} must be a finite number; got ${String(value)}`);
-  }
-}
-
-function assertNonNegativeInt(field: string, value: number): void {
-  if (!Number.isInteger(value) || value < 0) {
-    throw new Error(`${field} must be a non-negative integer; got ${String(value)}`);
-  }
-}
-
-function assertNonEmpty(field: string, value: string): void {
-  if (value.trim() === "") {
-    throw new Error(`${field} must be non-empty`);
-  }
-}
-
-/** Throw unless `value` is one of `allowed`. */
-function assertOneOf<T extends string>(field: string, value: unknown, allowed: readonly T[]): void {
-  if (typeof value !== "string" || !allowed.includes(value as T)) {
-    throw new Error(`${field} must be one of {${allowed.join(", ")}}; got ${describe(value)}`);
-  }
-}
-
-/** Render an offending value for an error message. */
-function describe(value: unknown): string {
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (value === null) {
-    return "null";
-  }
-  if (typeof value === "object" || typeof value === "function") {
-    return typeof value;
-  }
-  return String(value);
 }
 
 /**
@@ -1381,4 +1637,10 @@ function validateIds(ids: DecisionIds): void {
   if (!ids.requestId) {
     throw new Error("requestId is required");
   }
+  // PII shape warnings on per-turn identifiers. These attach to every
+  // emitted span; flagging email/phone shapes once per process keeps a
+  // quiet leak loud (mirrors Python Decision.__init__).
+  warnIfPiiShaped("session_id", ids.sessionId);
+  warnIfPiiShaped("request_id", ids.requestId);
+  warnIfPiiShaped("user_id", ids.userId);
 }

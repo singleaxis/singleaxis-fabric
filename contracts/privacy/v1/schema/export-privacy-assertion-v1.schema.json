@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.singleaxis.dev/fabric/privacy/v1/export-privacy-assertion-v1.schema.json",
+  "title": "Fabric export privacy processor assertion v1",
+  "type": "object",
+  "required": ["contract", "version", "assertion_id", "batch_id", "input_payload_sha256", "protected_payload_sha256", "policy", "processor", "applied_at", "output_event_ids", "decision", "verification"],
+  "additionalProperties": false,
+  "properties": {
+    "contract": {"const": "singleaxis.fabric.export-privacy-assertion"},
+    "version": {"const": "1.0.0"},
+    "assertion_id": {"$ref": "#/$defs/uuid"},
+    "batch_id": {"$ref": "#/$defs/uuid"},
+    "input_payload_sha256": {"$ref": "#/$defs/sha256"},
+    "protected_payload_sha256": {"$ref": "#/$defs/sha256"},
+    "policy": {"type": "object", "required": ["policy_id", "policy_version", "policy_sha256", "default_behavior"], "additionalProperties": false, "properties": {"policy_id": {"$ref": "#/$defs/safeIdentifier"}, "policy_version": {"$ref": "#/$defs/safeIdentifier"}, "policy_sha256": {"$ref": "#/$defs/sha256"}, "default_behavior": {"const": "deny"}}},
+    "processor": {
+      "type": "object", "required": ["component", "component_version", "component_build_sha256", "instance_id", "identity"], "additionalProperties": false,
+      "properties": {
+        "component": {"$ref": "#/$defs/safeIdentifier"}, "component_version": {"$ref": "#/$defs/safeIdentifier"}, "component_build_sha256": {"$ref": "#/$defs/sha256"}, "instance_id": {"$ref": "#/$defs/uuid"},
+        "identity": {"type": "object", "required": ["kind", "value", "provenance"], "additionalProperties": false, "properties": {"kind": {"enum": ["workload_identity", "local_instance"]}, "value": {"$ref": "#/$defs/safeIdentifier"}, "provenance": {"enum": ["authenticated", "self_reported"]}}}
+      }
+    },
+    "applied_at": {"type": "string", "format": "date-time"},
+    "output_event_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/uuid"}},
+    "decision": {
+      "type": "object", "required": ["export_allowed", "raw_content_exported", "allowed_content_modes", "removed_fields", "identifier_actions", "prohibited_content_detected"], "additionalProperties": false,
+      "properties": {
+        "export_allowed": {"type": "boolean"}, "raw_content_exported": {"const": false},
+        "allowed_content_modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["metadata", "hash", "governed_reference"]}},
+        "removed_fields": {"type": "array", "items": {"type": "object", "required": ["field_path_hash", "reason"], "additionalProperties": false, "properties": {"field_path_hash": {"$ref": "#/$defs/sha256"}, "reason": {"enum": ["not_allowlisted", "credential_shaped", "prohibited", "identifier_policy"]}}}},
+        "identifier_actions": {"type": "array", "items": {"type": "object", "required": ["field_path_hash", "action"], "additionalProperties": false, "properties": {"field_path_hash": {"$ref": "#/$defs/sha256"}, "action": {"enum": ["dropped", "tokenized"]}, "profile_id": {"$ref": "#/$defs/safeIdentifier"}}, "allOf": [{"if": {"properties": {"action": {"const": "tokenized"}}}, "then": {"required": ["profile_id"]}}, {"if": {"properties": {"action": {"const": "dropped"}}}, "then": {"not": {"required": ["profile_id"]}}}]}},
+        "prohibited_content_detected": {"type": "boolean"}
+      }
+    },
+    "verification": {
+      "oneOf": [
+        {"type": "object", "required": ["status"], "additionalProperties": false, "properties": {"status": {"const": "unverified"}}},
+        {"type": "object", "required": ["status", "issuer_id", "key_id", "subject_sha256", "algorithm", "signature"], "additionalProperties": false, "properties": {"status": {"const": "verified"}, "issuer_id": {"$ref": "#/$defs/safeIdentifier"}, "key_id": {"$ref": "#/$defs/safeIdentifier"}, "subject_sha256": {"$ref": "#/$defs/sha256"}, "algorithm": {"enum": ["ed25519", "ecdsa-p256-sha256", "rsa-pss-sha256"]}, "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{32,}$"}}}
+      ]
+    }
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "safeIdentifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"}
+  }
+}

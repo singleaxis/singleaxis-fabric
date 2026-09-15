@@ -2,23 +2,5 @@ dependencies:
 - name: otel-collector
   repository: ""
   version: 0.4.0
-- name: fabric-relay
-  repository: ""
-  version: 0.1.0
-- name: nemo-sidecar
-  repository: ""
-  version: 0.3.0
-- name: presidio-sidecar
-  repository: ""
-  version: 0.2.0
-- name: langfuse
-  repository: ""
-  version: 0.2.0
-- name: redteam-runner
-  repository: ""
-  version: 0.2.0
-- name: update-agent
-  repository: ""
-  version: 0.2.0
-digest: sha256:4bccb5b5e081e05aa326e4a709a947fa78a1fc6f6f3aab7d8b1c57636394ba41
-generated: "2026-08-25T02:38:15.019681+05:30"
+digest: sha256:0a57ddb44621ac042629474d2d7f09f17e36e95050d6dfda9c3892694730b287
+generated: "2026-08-31T01:55:59.914609+05:30"

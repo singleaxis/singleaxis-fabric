@@ -11,7 +11,12 @@ the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 026.
+next unused public number is 028.
+
+Spec [027](027-recorder-v1.md) is the authoritative product and release scope
+for the first stable OSS recorder. Older capability specs remain as historical
+design records or optional implementation references; they do not add artifacts
+to the recorder release unless 027 is revised first.
 
 ## Status values
 
@@ -57,5 +62,6 @@ Every spec declares a `Status` in its header:
 | [021](021-replay-metadata.md) | ReplayMetadata envelope — emit-only reconstruction metadata | implemented |
 | [022](022-surface-logging.md) | Agent surface logging — MCP inventory, skills, delegation, hooks, file access | implemented |
 | [023](023-generic-interaction-capture.md) | Generic interaction capture — universal primitive, baseline, tags, signatures | implemented |
-| [025](025-product-planes-and-packaging.md) | Product planes, packaging, and deployment model | accepted |
-| [026](026-fabricctl-lifecycle.md) | `fabricctl` lifecycle and deployment bundle | draft |
+| [025](025-product-planes-and-packaging.md) | Product planes, packaging, and deployment model | superseded |
+| [026](026-fabricctl-lifecycle.md) | `fabricctl` lifecycle and deployment bundle | accepted |
+| [027](027-recorder-v1.md) | Recorder-first OSS release | accepted |

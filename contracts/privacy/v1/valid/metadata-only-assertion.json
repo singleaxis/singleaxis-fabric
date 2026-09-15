@@ -1,0 +1,14 @@
+{
+  "contract": "singleaxis.fabric.export-privacy-assertion",
+  "version": "1.0.0",
+  "assertion_id": "80000000-0000-4000-8000-000000000001",
+  "batch_id": "90000000-0000-4000-8000-000000000001",
+  "input_payload_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "protected_payload_sha256": "36280babb2ca77ee9a9e771f80dea84a1f81b2ad7bf9da1b064fcba0ab17f55f",
+  "policy": {"policy_id": "healthcare-metadata-only", "policy_version": "1.0.0", "policy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "default_behavior": "deny"},
+  "processor": {"component": "fabric-protect", "component_version": "1.0.0", "component_build_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "instance_id": "81000000-0000-4000-8000-000000000001", "identity": {"kind": "local_instance", "value": "fabric-node-01", "provenance": "self_reported"}},
+  "applied_at": "2026-08-31T10:00:03Z",
+  "output_event_ids": ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002", "10000000-0000-4000-8000-000000000003"],
+  "decision": {"export_allowed": true, "raw_content_exported": false, "allowed_content_modes": ["metadata", "hash", "governed_reference"], "removed_fields": [{"field_path_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "reason": "not_allowlisted"}], "identifier_actions": [{"field_path_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "action": "tokenized", "profile_id": "patient-token-v1"}], "prohibited_content_detected": false},
+  "verification": {"status": "unverified"}
+}

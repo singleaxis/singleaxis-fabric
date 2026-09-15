@@ -31,7 +31,9 @@ from enum import StrEnum
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
 
-from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind, Status, StatusCode
+
+from ._attributes import check_attribute_key
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Histogram, Meter
@@ -482,6 +484,21 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             metric_attrs[GEN_AI_RESPONSE_MODEL] = self._response_model
         if exc is not None:
             metric_attrs[ERROR_TYPE] = type(exc).__name__
+            # ``error.type`` span attribute per the GenAI error
+            # convention — stamped for every failure exit.
+            span = self._span
+            if span is not None:
+                span.set_attribute(ERROR_TYPE, type(exc).__name__)
+                # OTel's context manager only records ``Exception``
+                # subclasses: a ``BaseException`` (asyncio.CancelledError,
+                # KeyboardInterrupt, GeneratorExit) would otherwise end the
+                # span UNSET with no exception event — a silent gap for
+                # cancellations. Record + mark ERROR ourselves.
+                if not isinstance(exc, Exception):
+                    span.record_exception(exc)
+                    span.set_status(
+                        Status(StatusCode.ERROR, description=type(exc).__name__)
+                    )
         if elapsed is not None and self._duration_histogram is not None:
             self._duration_histogram.record(elapsed, attributes=metric_attrs)
         if self._token_histogram is not None:
@@ -755,7 +772,11 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         """Set a custom attribute on the LLM call span.
 
         Same scalar-type contract as :meth:`Decision.set_attribute`.
+        Keys under the reserved ``fabric.*`` / ``gen_ai.*`` namespaces
+        are rejected — they are SDK-owned (use the :attr:`span` escape
+        hatch for deliberate overrides).
         """
+        check_attribute_key(key)
         # bool first because isinstance(True, int) is True
         if not isinstance(value, (bool, str, int, float)):
             raise TypeError(
@@ -887,6 +908,21 @@ class ToolCall(AbstractContextManager["ToolCall"]):
     ) -> bool | None:
         if self._cm is None:
             raise RuntimeError("ToolCall.__exit__ called before __enter__")
+        if exc is not None:
+            # ``error.type`` span attribute per the GenAI error
+            # convention — stamped for every failure exit.
+            span = self._span
+            if span is not None:
+                span.set_attribute(ERROR_TYPE, type(exc).__name__)
+                # OTel only records ``Exception`` subclasses; a
+                # ``BaseException`` (CancelledError / KeyboardInterrupt /
+                # GeneratorExit) would otherwise end UNSET with no
+                # exception event. Record + mark ERROR ourselves.
+                if not isinstance(exc, Exception):
+                    span.record_exception(exc)
+                    span.set_status(
+                        Status(StatusCode.ERROR, description=type(exc).__name__)
+                    )
         if self._duration_histogram is not None and self._started_at is not None:
             attrs: dict[str, str] = {
                 GEN_AI_TOOL_NAME: self._name,
@@ -1046,7 +1082,11 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         """Set a custom attribute on the tool call span.
 
         Same scalar-type contract as :meth:`Decision.set_attribute`.
+        Keys under the reserved ``fabric.*`` / ``gen_ai.*`` namespaces
+        are rejected — they are SDK-owned (use the :attr:`span` escape
+        hatch for deliberate overrides).
         """
+        check_attribute_key(key)
         if not isinstance(value, (bool, str, int, float)):
             raise TypeError(
                 f"set_attribute({key!r}, ...): value must be str/int/float/bool, "

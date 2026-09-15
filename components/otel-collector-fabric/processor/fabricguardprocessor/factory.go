@@ -21,13 +21,8 @@ const typeStr = "fabricguard"
 // the Collector's components.go (or via OCB) to make the processor
 // available in user configs.
 //
-// The factory exposes both Logs and Traces pipelines:
-//
-//   - Logs: enforces the per-event-class allowlist on log records
-//     emitted by the L2 Telemetry Bridge wire format (always on).
-//   - Traces: enforces the namespace-prefix allowlist on spans
-//     emitted by the L1 Fabric SDK. Off by default; enable via
-//     `trace_processing_enabled: true` in the processor config.
+// The factory exposes Logs and Traces variants. Both enforce the recorder's
+// exact metadata-only export policy; trace protection is enabled by default.
 func NewFactory() processor.Factory {
 	return processor.NewFactory(
 		component.MustNewType(typeStr),

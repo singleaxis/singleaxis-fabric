@@ -121,22 +121,6 @@ func toYAMLRollout(value *deployment.Rollout) *yamlRollout {
 	return &yamlRollout{ApprovalRef: value.ApprovalRef}
 }
 
-func renderPlan(resource deployment.Resource, desiredState []byte) ([]byte, error) {
-	document, err := deployment.LoadBytes(desiredState, "yaml")
-	if err != nil {
-		return nil, fmt.Errorf("decode rendered desired state for plan identity: %w", err)
-	}
-	digest, err := deployment.Digest(document)
-	if err != nil {
-		return nil, fmt.Errorf("digest rendered desired state for plan identity: %w", err)
-	}
-	envelope, err := deployment.NewResourceBoundPlanEnvelope(resource, digest, deployment.BuildPlan(resource))
-	if err != nil {
-		return nil, fmt.Errorf("bind installation plan to desired state: %w", err)
-	}
-	return deployment.RenderJSON(envelope)
-}
-
 type validationError struct {
 	diagnostics []deployment.Diagnostic
 }

@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""CrewAI adapter — callbacks record on decision span; escalation returns payload."""
+"""CrewAI adapter callbacks record passive, content-safe activity."""
 
 from __future__ import annotations
 
@@ -9,9 +9,8 @@ from types import SimpleNamespace
 
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from fabric import EscalationSummary, Fabric, FabricConfig
-from fabric.adapters.crewai import attach_callbacks, request_escalation
-from fabric.decision import ATTR_ESC_REASON, ATTR_ESCALATED
+from fabric import Fabric, FabricConfig
+from fabric.adapters.crewai import attach_callbacks
 
 
 def _client() -> Fabric:
@@ -261,26 +260,3 @@ def test_task_callback_never_raises_into_host(
     with client.decision(session_id="s", request_id="r") as dec:
         hooks = attach_callbacks(dec)
         hooks.task(_HostileOutput())
-
-
-def test_request_escalation_records_span_and_returns_payload(
-    span_exporter: InMemorySpanExporter,
-) -> None:
-    client = _client()
-    summary = EscalationSummary(
-        reason="factuality below threshold",
-        rubric_id="factuality.v3",
-        triggering_score=0.42,
-        mode="sync",
-    )
-    with client.decision(session_id="s", request_id="r") as dec:
-        payload = request_escalation(dec, summary)
-
-    assert payload == summary.to_payload()
-    assert payload["kind"] == "fabric.escalation"
-    assert payload["reason"] == summary.reason
-
-    span = span_exporter.get_finished_spans()[0]
-    attrs = dict(span.attributes or {})
-    assert attrs[ATTR_ESCALATED] is True
-    assert attrs[ATTR_ESC_REASON] == summary.reason

@@ -1,19 +1,15 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Framework / protocol integrations that wrap Fabric primitives.
+"""Passive protocol integrations that wrap Fabric capture primitives.
 
-These modules adapt external agent runtimes and tool protocols onto
-Fabric's decision-span tracing and control hooks. Unlike the
-``judge_adapters`` (which depend on a heavy optional package and ship
-behind an import guard), the MCP integration duck-types the MCP client
-session via a local Protocol, so the module is always importable — the
-``[mcp]`` extra only pulls the real ``mcp`` package in for users.
+The MCP integration duck-types the MCP client session via a local Protocol,
+so the module is always importable. The ``[mcp]`` extra only installs the real
+``mcp`` package for users connecting to a live server.
 
 - ``traced_call_tool`` / ``InstrumentedMCPSession`` ([mcp] extra):
   wrap MCP ``ClientSession.call_tool`` so each invocation emits a
   tool-named ``execute_tool`` child span (kind="mcp") under the active
-  ``fabric.decision`` and optionally runs through a pre-execution
-  tool authorizer.
+  ``fabric.decision`` without altering or authorizing the invocation.
 """
 
 from fabric.integrations.mcp import (

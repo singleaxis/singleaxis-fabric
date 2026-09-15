@@ -1,183 +1,158 @@
 # Deployment
 
-Fabric's deployable unit is the umbrella Helm chart at
-[`charts/fabric/`](../charts/fabric/). The authoritative spec for the
-deployment model is
-[`specs/008-deployment-model.md`](../specs/008-deployment-model.md);
-this page is a pointer and a posture statement.
+The supported recorder-v1 Kubernetes unit is the Fabric umbrella chart. It
+packages only Fabric Node.
 
-## Chart + profiles
+## Choose a profile
 
-```bash
-cd charts/fabric
-helm dependency build
-
-# Dev / evaluation cluster:
-helm install fabric . \
-    --namespace fabric-system --create-namespace \
-    --values profiles/permissive-dev.yaml
-
-# Regulated posture (EU AI Act high-risk): provision the five
-# operator-owned Secrets listed below, then name a real HTTPS OTLP
-# destination, explicit egress route, release verification key, and
-# an operator-managed cert-manager ClusterIssuer named fabric-ca-issuer.
-helm upgrade --install fabric . \
-    --namespace fabric-system --create-namespace \
-    --values profiles/eu-ai-act-high-risk.yaml \
-    --set tenant.id=TENANT_UUID \
-    --set otel-collector.exporter.endpoint=https://otlp.example.com \
-    --set 'update-agent.config.trustedKeys[0].publicKey=BASE64_ED25519_PUBLIC_KEY' \
-    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
-    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
-    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
-```
-
-Create these Secrets in `fabric-system` before the rollout. Their values stay
-outside Helm values, rendered ConfigMaps, and source control:
-
-| Secret | Key | Purpose |
+| Profile | Use | Posture |
 |---|---|---|
-| `fabric-otel-receiver-tls` | `tls.crt`, `tls.key` | Server identity for both OTLP/gRPC and OTLP/HTTP receivers |
-| `fabric-otel-client-ca` | `ca.crt` | CA used to verify client certificates at OTLP ingress |
-| `fabric-presidio-tenant-key` | `tenant.key` | Tenant-specific HMAC material used by the embedded telemetry redactor |
-| `fabric-otel-sampler-key` | `hmac_key` | 32-byte deterministic sampling key |
-| `fabric-otel-export-auth` | `authorization` | Complete outbound authorization header value |
+| `shadow-dev` | Local evaluation | Plaintext input and debug output are allowed; no durability claim |
+| `shadow-production` | Passive enterprise monitoring | Fail-closed configuration, mTLS input, authenticated HTTPS output, persistent queue, no sampling |
 
-`203.0.113.10/32` is documentation-only. Replace it with the approved backend
-or controlled egress-gateway CIDR that serves the exporter endpoint. Kubernetes
-NetworkPolicy cannot match a DNS name or prove that a CIDR belongs to a URL.
+These profiles are operating postures, not regulatory certifications.
 
-The high-risk profile requires mTLS on both OTLP receivers. A verified client
-certificate authenticates possession of a key chained to the configured CA;
-it does not map the certificate subject to a Fabric tenant or replace tenant
-authorization. The profile also renders Presidio as a container in the
-Collector pod and connects it over a mode-0600 Unix socket. The umbrella's
-standalone Presidio Deployment remains disabled; cross-pod Unix-socket provider
-flags from older releases are no longer valid. Kubernetes can validate that a
-Secret reference is syntactically present, but only the pod rollout proves that
-each named Secret and key exists.
-
-The high-risk profile also requires cert-manager and an existing issuer at
-`update-agent.tls.certManager.issuerRef` (the shipped reference is the
-`fabric-ca-issuer` `ClusterIssuer`). cert-manager, rather than Helm, owns the
-admission webhook serving key and its rotation. Override the issuer reference
-when your organization uses a namespaced `Issuer` or another approved PKI.
-
-### Inspecting the rendered manifests (template / lint only)
-
-For pre-install review (`helm template`, `helm lint`, compliance audit
-of the rendered manifests), allow only the placeholder update signing key and
-provide a non-secret test endpoint:
+## Local evaluation
 
 ```bash
-helm template fabric . \
-    --namespace fabric-system \
-    --values profiles/eu-ai-act-high-risk.yaml \
-    --set tenant.id=00000000-0000-4000-8000-000000000000 \
-    --set otel-collector.exporter.endpoint=https://otlp.invalid.example \
-    --set update-agent.config.allowPlaceholderKey=true \
-    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
-    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
-    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
+helm dependency build charts/fabric
+helm upgrade --install fabric charts/fabric \
+  --namespace fabric-system \
+  --create-namespace \
+  --values charts/fabric/profiles/shadow-dev.yaml
 ```
 
-`allowPlaceholderKey` is for offline render review only. Do not carry it into a
-release values file. The deployed containers still require the referenced
-Secrets to exist before they become Ready.
+With no destination, `shadow-dev` writes protected metadata to the Collector
+debug exporter. Pod logs are neither durable storage nor an audit trail.
 
-Two regulatory profiles ship today:
+## Production shadow deployment
 
-- `permissive-dev` — local / evaluation / non-regulated. Loose
-  sampling, no retention constraints.
-- `eu-ai-act-high-risk` — EU AI Act high-risk systems. Deny-default
-  NetworkPolicy, tightened guardrail chain, pinned sampling, red-team
-  cadence. Judge workers and the escalation service are **not** in this
-  distribution; the profile configures only the OSS substrate.
+The production profile deliberately cannot invent credentials, storage, or an
+approved egress route. Before installation, create these Secrets in the target
+namespace:
 
-Other profiles (NIST AI RMF, ISO 42001, SR 11-7, HIPAA) land
-profile-by-profile as rubric content does. See the chart
-[`README.md`](../charts/fabric/README.md) for current subchart
-inventory (shipped vs. Phase 2).
+| Secret | Keys | Purpose |
+|---|---|---|
+| `fabric-node-receiver-tls` | `tls.crt`, `tls.key` | Fabric Node OTLP server identity |
+| `fabric-node-client-ca` | `ca.crt` | CA used to authenticate OTLP clients |
+| `fabric-node-export-auth` | `authorization` | Complete outbound authorization value |
 
-## Compose (local smoke only)
-
-[`deploy/compose/`](../deploy/compose/) provides a docker-compose
-topology for local smoke testing the SDK + sidecars + OTel Collector
-chain without a cluster. It is **not** a supported production
-topology. Use Helm for anything that touches real traffic.
-
-## What this OSS distribution covers
-
-The OSS Fabric provides the **Connect, Observe, and Relay spine**—decision and
-interaction records, public contracts, privacy filtering, correlation, and
-customer-selected OTLP delivery—plus optional Control and Assurance building
-blocks. It does not turn the Collector queue into an evidence store or ship the
-enterprise investigation and retention workflows. Those belong in a
-customer-owned backend or the SingleAxis Platform's Management, Assurance, and
-Governance planes.
-
-If your team operates the collection infrastructure and builds its own audit
-trail on the public contract, this distribution is sufficient. If you need the
-Decision Graph and evidence lifecycle as a managed or privately deployed
-product, that is the SingleAxis Platform.
-
-Fabric does not issue certifications either way: no SOC 2 report,
-no ISO/IEC 42001 certificate, no EU AI Act conformity marking comes
-out of installing this chart. Certification remains the tenant's
-process; Fabric (with or without the commercial layer on top) is
-what makes the evidence collection automatic.
-
-## Operational posture
-
-### Break-glass: disabling the admission webhook
-
-If the update-agent webhook is down or misbehaving and is blocking
-cluster operations (`failurePolicy: Fail` rejects admission when the
-webhook is unreachable), you can flip it to fail-open **directly on
-the ValidatingWebhookConfiguration**. Helm does not intercept this
-object at apply time in a way that conflicts with `kubectl patch` —
-patching it takes effect immediately:
+Select an encrypted StorageClass or a customer-owned persistent volume. Then
+label or select the monitored workload namespace, then install with a real
+tenant identity, HTTPS destination, and explicit ingress and egress peers. This
+example CIDR is documentation-only:
 
 ```bash
-# Find the VWC (named <release>-update-agent):
-kubectl get validatingwebhookconfiguration -l app.kubernetes.io/part-of=fabric
+kubectl label namespace monitored-agents fabric.singleaxis.ai/agent=true
 
-# Flip to Ignore (admission proceeds when the webhook can't answer):
-kubectl patch validatingwebhookconfiguration <release>-update-agent \
-  --type=merge \
-  -p '{"webhooks":[{"name":"<release>-update-agent.fabric.singleaxis.dev","failurePolicy":"Ignore"}]}'
+helm dependency build charts/fabric
+helm upgrade --install fabric charts/fabric \
+  --namespace fabric-system \
+  --create-namespace \
+  --values charts/fabric/profiles/shadow-production.yaml \
+  --set tenant.id=TENANT_UUID \
+  --set otel-collector.exporter.endpoint=https://otlp.example.com \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
 
-Rules of engagement:
+Set the persistent volume StorageClass through the Collector subchart values
+described in the chart README. Kubernetes NetworkPolicy cannot match a DNS name
+or prove that a CIDR belongs to the configured URL; route through an approved
+egress gateway when that is the organization's control point.
 
-- **Time-box it.** Note the timestamp; the next `helm upgrade` of the
-  chart restores `failurePolicy: Fail` from values
-  (`update-agent.webhook.failurePolicy`). To restore sooner, patch
-  back to `"Fail"` manually.
-- **Audit it.** While `Ignore` is set, unsigned/tampered channel
-  manifests are admitted silently. Export the audit log for the
-  window (`kubectl get events --field-selector
-  involvedObject.kind=ValidatingWebhookConfiguration`) and note who
-  patched.
-- **Never edit the rendered manifest instead** — a `helm upgrade`
-  will reconcile over it without telling you the escape hatch was
-  open.
+Operational notes:
 
-| Concern | Current state (v0.7.x) | Pointer |
-|---------|------------------------|---------|
-| Disaster recovery | Stateless components recoverable from Git; stateful services (Postgres, NATS) follow standard backup practice. A DR runbook ships; the wider runbook set (upgrade, rollback, key rotation, collector backpressure) does not yet | [`operations/dr.md`](operations/dr.md) |
-| Upgrade channel | Manual `helm upgrade`. The signed-manifest Update Agent ships as an opt-in subchart (`updateAgent.enabled=true`, requires a real Ed25519 signing key) | Chart [`README`](../charts/fabric/README.md) |
-| High availability | `profile.availability: ha` opt-in (3-node NATS, replicated Postgres, ≥2 worker replicas) | [`specs/008-deployment-model.md`](../specs/008-deployment-model.md) |
-| Image signing | Cosign (keyless via Fulcio), SLSA build provenance, SBOM shipped from `0.1.0`; Helm `.prov` on roadmap | [`SECURITY.md`](../SECURITY.md) §Release signing |
+- **Dedicated namespace.** Install into a namespace used only by the
+  recorder. `networkPolicy.denyDefault` selects every pod in the release
+  namespace, so co-located workloads lose pod-to-pod traffic unless a
+  subchart policy opens it. When `namespace.create=true`,
+  `namespace.name` must equal the release namespace (`--namespace`) —
+  resources are always rendered into the release namespace.
+- **Pinned image.** `shadow-production` rejects the `latest` tag and the
+  empty-tag appVersion fallback. Prefer
+  `--set otel-collector.image.digest=sha256:<64-hex>`; an explicit
+  non-latest `otel-collector.image.tag` is accepted.
+- **Peer rules.** Every NetworkPolicy peer in `ingressFrom`,
+  `exporterEgress.to`, and `egressTo` must be non-empty and must not use a
+  world CIDR (`0.0.0.0/0`, `::/0`); such entries are equivalent to no
+  policy and are rejected at render time. The health extension is not
+  exposed by NetworkPolicy by default — kubelet probes are node traffic.
+  To let a monitoring stack scrape it, set
+  `otel-collector.networkPolicy.monitoringNamespaceSelector`.
+- **Pull secrets.** Set `otel-collector.imagePullSecrets`; there is no
+  parent-level `imagePullSecrets` key.
+- **`helm test` is dev-only.** The bundled test pod matches no ingress
+  peer under `shadow-production`; run it under `shadow-dev` only.
 
-## Roadmap / not yet shipping
+## Production invariants
 
-Helm `.prov` provenance files (cosign signing of OCI charts is the
-current path); NIST RMF / ISO 42001 / SR 11-7 / HIPAA profiles;
-Decision Graph and Telemetry Bridge subcharts. See the chart README
-and spec 008 for current Phase 2 scope.
+`shadow-production` must render only when all of these are true:
 
-The umbrella chart itself **does** publish as a cosign-signed OCI
-artifact at `oci://ghcr.io/singleaxis/charts/fabric` on each release.
-Subcharts are bundled inside it and are not published or installable
-on their own.
+- OTLP receivers require TLS and a verified client certificate;
+- the export endpoint is HTTPS and authenticated;
+- metadata-only protection is enabled;
+- custom allowlist extensions are empty in the named production profile;
+- at least one operator-supplied workload ingress peer is present;
+- the sending queue uses persistent file storage with fsync;
+- volatile batching before the persistent exporter queue is disabled;
+- overflow blocks intake instead of silently discarding accepted audit data;
+- retry has no finite maximum elapsed time for retryable failures;
+- the debug exporter is disabled;
+- the audit path is not sampled;
+- the Collector Service is ClusterIP (no NodePort/LoadBalancer exposure);
+- the Collector image is pinned by digest or explicit non-latest tag;
+- the pod runs as non-root and cannot escalate privileges;
+- every declared network peer is non-empty and non-world;
+- default-deny network policy and explicit workload ingress and destination
+  egress are enabled.
+
+Helm validation proves configuration shape and required references. Pod
+readiness proves that referenced Secrets and storage are actually available.
+
+## Delivery semantics
+
+Fabric Node uses at-least-once delivery. Destinations must deduplicate using
+preserved trace/span identity or an event/batch identity supplied by an upstream
+or destination adapter. A restart or retry can produce a duplicate; losing an
+accepted audit record to avoid duplication would be the wrong tradeoff.
+
+Delivery states remain distinct:
+
+```text
+accepted by Node -> queued -> transmitted -> destination accepted
+                                           -> durably persisted (only with destination proof)
+```
+
+An OTLP success response establishes destination acceptance, not arbitrary
+backend retention or WORM persistence.
+
+The production pipeline hands acknowledged OTLP directly to the persistent
+exporter queue. It disables the optional in-memory batch processor because a
+pod failure during that pre-queue batching window could otherwise lose recently
+acknowledged telemetry. This favors audit reliability over maximum throughput.
+
+Recorder v1 defines the delivery receipt contract but Fabric Node does not
+automatically emit a receipt document for each exported OTLP batch.
+
+## Other deployment models
+
+- **Existing collector:** add Fabric Node as a protected OTLP destination or
+  route compatible telemetry through its processor chain.
+- **Customer backend:** export to an OTLP service operated entirely by the
+  customer.
+- **Private SingleAxis:** export to SingleAxis Platform deployed inside the
+  customer's environment.
+- **SingleAxis SaaS:** export only protected records over the approved endpoint.
+
+All models use the same public contracts. No management-plane connection is
+required to start or continue local capture.
+
+## Not deployed
+
+The recorder chart does not package Relay, Presidio, NeMo, Prompt Guard,
+Langfuse, red-team runners, judge workers, update agents, assurance profiles,
+or enterprise management services. Their older source directories are not
+Helm dependencies or recorder release images.

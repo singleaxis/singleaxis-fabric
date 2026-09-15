@@ -8,17 +8,17 @@
   "artifacts": [
     {
       "path": "manifests/python-sdk.json",
-      "sha256": "b056a022eaa528572fad14c5dfa4efa81d1de9e28b9799a65fa22d0a6115ec89",
+      "sha256": "00e6f2b2e90db5dca74dc4eb70f2062a726a8e43448ebc7a9dc60a3bdb23b621",
       "expectation": "valid"
     },
     {
       "path": "manifests/typescript-capture-sdk.json",
-      "sha256": "3c9441bac7ccec36413ea5e659a51bb31060da054c676200f0ae5fa73d5dd5a5",
+      "sha256": "890434e5831b364c7761047e715989cfd8cfd44b74b6a042c3db8cc24433f7b0",
       "expectation": "valid"
     },
     {
       "path": "manifests/collector-otlp-receiver.json",
-      "sha256": "2ec38225c59e3d86d474ce1857a2c7a892b4d83e6426cbabe28f189753b46bfd",
+      "sha256": "d48ebdbb8b13543f19c9adb12ca4b6e75fb1c5fa4b73ccf60cf64a770d1187ab",
       "expectation": "valid"
     },
     {

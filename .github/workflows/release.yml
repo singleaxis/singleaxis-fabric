@@ -222,91 +222,6 @@ jobs:
           print(delim)
           PY
 
-  sbom:
-    name: Generate SBOM
-    runs-on: ubuntu-latest
-    needs: verify-tag
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          path: .
-          format: spdx-json
-          output-file: sbom.spdx.json
-      - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: sbom.cdx.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: sbom
-          path: |
-            sbom.spdx.json
-            sbom.cdx.json
-          retention-days: 90
-
-  source-archive:
-    name: Build signed source archive
-    runs-on: ubuntu-latest
-    needs: [verify-tag, sbom]
-    env:
-      VERSION: ${{ needs.verify-tag.outputs.version }}
-    permissions:
-      contents: read
-      id-token: write       # cosign keyless sign via Fulcio
-      attestations: write   # actions/attest-build-provenance
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: sbom
-          path: .
-      - name: Create source tarball
-        run: |
-          ARCHIVE="singleaxis-fabric-${VERSION}.tar.gz"
-          git archive --format=tar.gz --prefix="singleaxis-fabric-${VERSION}/" -o "${ARCHIVE}" HEAD
-          sha256sum "${ARCHIVE}" sbom.spdx.json sbom.cdx.json > SHA256SUMS
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-      - name: Sign artifacts (keyless via Fulcio)
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-        run: |
-          ARCHIVE="singleaxis-fabric-${VERSION}.tar.gz"
-          cosign sign-blob --yes "${ARCHIVE}" \
-            --output-signature "${ARCHIVE}.sig" \
-            --output-certificate "${ARCHIVE}.pem"
-          cosign sign-blob --yes sbom.spdx.json \
-            --output-signature sbom.spdx.json.sig \
-            --output-certificate sbom.spdx.json.pem
-          cosign sign-blob --yes sbom.cdx.json \
-            --output-signature sbom.cdx.json.sig \
-            --output-certificate sbom.cdx.json.pem
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-path: |
-            singleaxis-fabric-*.tar.gz
-            sbom.spdx.json
-            sbom.cdx.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: release-bundle
-          path: |
-            singleaxis-fabric-*.tar.gz
-            singleaxis-fabric-*.tar.gz.sig
-            singleaxis-fabric-*.tar.gz.pem
-            sbom.spdx.json
-            sbom.spdx.json.sig
-            sbom.spdx.json.pem
-            sbom.cdx.json
-            sbom.cdx.json.sig
-            sbom.cdx.json.pem
-            SHA256SUMS
-
   package-fabricctl:
     name: Package qualified fabricctl binaries
     runs-on: ubuntu-latest
@@ -392,8 +307,6 @@ jobs:
         include:
           - component: otel-collector-fabric
             image: fabric-otelcol
-          - component: fabric-relay
-            image: fabric-relay
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository_owner }}/${{ matrix.image }}
@@ -453,81 +366,6 @@ jobs:
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
-
-  publish-sidecar-images:
-    name: Build and publish sidecar images
-    runs-on: ubuntu-latest
-    needs: [qualify-release, verify-tag]
-    permissions:
-      contents: read
-      id-token: write
-      packages: write
-      attestations: write
-    strategy:
-      fail-fast: false
-      matrix:
-        component:
-          - presidio-sidecar
-          - nemo-sidecar
-          - prompt-guard-sidecar
-          - redteam-runner
-          - update-agent
-          - langfuse-bootstrap
-    env:
-      REGISTRY: ghcr.io
-      VERSION: ${{ needs.verify-tag.outputs.version }}
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/fabric-${{ matrix.component }}
-          tags: |
-            type=raw,value=${{ env.VERSION }}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
-      - name: Build and push (multi-arch)
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: components/${{ matrix.component }}
-          file: components/${{ matrix.component }}/Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: true
-          sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-      - name: Sign image (keyless via Fulcio)
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          # Sign every pushed tag by its immutable digest so the
-          # signature survives tag re-pointing.
-          while IFS= read -r tag; do
-            [ -z "${tag}" ] && continue
-            ref="${tag}@${DIGEST}"
-            echo "cosign sign ${ref}"
-            cosign sign --yes "${ref}"
-          done <<< "${TAGS}"
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/fabric-${{ matrix.component }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
@@ -615,9 +453,6 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: dist
-          # Don't fail the release if we somehow publish the same
-          # version twice — only real failures should block.
-          skip-existing: true
 
   publish-npm:
     name: Publish TypeScript SDK to npm beta
@@ -664,10 +499,8 @@ jobs:
     needs:
       [
         changelog,
-        source-archive,
         package-fabricctl,
         publish-image,
-        publish-sidecar-images,
         publish-chart,
         publish-pypi,
         publish-npm,
@@ -675,10 +508,6 @@ jobs:
     permissions:
       contents: write       # softprops/action-gh-release creates the release
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: release-bundle
-          path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: chart-package

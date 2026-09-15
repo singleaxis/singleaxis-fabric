@@ -1,62 +1,64 @@
-# docs/
+# Fabric documentation
 
-User-facing documentation for Fabric. The authoritative design of
-record lives in [`../specs/`](../specs/); these pages are the
-shorter, action-oriented doors in.
+Fabric OSS is the customer-controlled recorder:
+
+```text
+CAPTURE -> PROTECT -> DELIVER
+```
+
+The accepted scope and release gates are in
+[spec 027](../specs/027-recorder-v1.md). When an older document conflicts with
+that specification, 027 controls the recorder release.
 
 ## Start here
 
-- [**Quickstart**](quickstart.md) — 5-minute walkthrough: install
-  the SDK, wrap one agent turn, see telemetry.
-- [**Architecture**](architecture.md) — the 3-layer mental model
-  (SDK / sidecars / collector) and the "never block the agent
-  request path" principle. Links to the authoritative specs.
-- [**Product planes and packaging**](../specs/025-product-planes-and-packaging.md)
-  — the canonical Connect, Control, Observe, Assurance, Governance,
-  and Management model, including lifecycle and deployment options.
-- [**OpenTelemetry GenAI conventions**](genai-semantic-conventions.md) —
-  standard spans, attributes, metrics, compatibility, and privacy controls.
-- [**Integration models**](integration-models.md) — select and compose SDK,
-  framework, gateway, receiver, vendor, and eBPF discovery integrations without
-  overstating their visibility or control.
-- [**Connect capability contract**](../contracts/connect/v1/README.md) —
-  digest-pinned machine-readable connector claims, evidence, and blind spots.
-- [**Assurance findings**](assurance-findings.md) — one trace-correlated result
-  contract for deterministic tests, judges, red teams, and human review, with
-  clear Observe and Governance boundaries.
-- [**Deployment**](deployment.md) — Helm chart, the
-  `permissive-dev` and `eu-ai-act-high-risk` profiles, and the
-  L1-OSS / L2-control-plane boundary.
-- [**Building Fabric**](building-fabric.md) — engineering rules for
-  rebuilding Fabric as operational infrastructure for autonomous
-  systems.
-- [**Install a pinned release**](install.md) — production installation,
-  artifact pinning, promotion records, and deployment constraints.
-- [**Verify a release**](verify-release.md) — hashes, signatures,
-  provenance, and exact-SHA qualification evidence.
-- [**Decision Graph**](decision-graph.md) — the causal graph primitive
-  that powers replay, audit, governance, and evaluation.
-- [**OSS / Commercial Boundary**](oss-commercial-boundary.md) — what
-  stays open, what moves to the commercial repo, and why.
+- [Quickstart](quickstart.md) — record one agent operation and send it through
+  a local Fabric Node.
+- [Architecture](architecture.md) — how the system works end to end: pipeline
+  diagrams, the protection gate, delivery lifecycle, and deployment
+  topologies.
+- [Deployment](deployment.md) — `shadow-dev` and fail-closed
+  `shadow-production` installation.
+- [Integration models](integration-models.md) — SDK, existing OTLP pipeline,
+  framework adapter, gateway, and vendor integration choices.
+- [Capturing interactions](capturing-interactions.md) — model, tool, retrieval,
+  memory, delegation, side-effect, failure, and retry activity.
+- [Exporting to your backend](exporting-to-your-observability-backend.md) —
+  customer-owned and SingleAxis destinations.
+- [Install a pinned release](install.md) and
+  [verify a release](verify-release.md) — artifact integrity and promotion.
+- [Qualification status](recorder-v1-qualification-status.md) — implemented
+  behavior, contract-only surfaces, required CI, and known boundaries.
+- [API stability](api-stability.md) — compatibility commitments.
 
-## Reference surfaces
+## Public contracts
 
-- [**Operations — Disaster recovery**](operations/dr.md) — DR
-  posture and pointers to the chart + bootstrap Job.
+- [Activity Envelope v2](../contracts/activity/v2/README.md)
+- [Connector capability contract](../contracts/connect/v1/README.md)
+- [Recorder configuration](../contracts/recorder/v1/README.md)
+- [Privacy assertion](../contracts/privacy/v1/README.md)
+- [Delivery batch and receipt](../contracts/delivery/v1/README.md)
 
-Compliance control mappings (Fabric artifact → regulatory control)
-are roadmap; the structure is captured in
-[`specs/009-compliance-mapping.md`](../specs/009-compliance-mapping.md).
+Contract links may appear before a release is published while the release
+candidate is being qualified.
+
+The schema `$id` authorities differ across contract families for historical
+reasons and are stable published identities, not resolvable URLs:
+`schemas.singleaxis.dev` (activity v2, privacy, delivery), `singleaxis.ai`
+(connect, assurance), `singleaxis.dev` (recorder), `fabric.singleaxis.dev`
+(lifecycle, management), and a `github.com` repository address (activity v1).
+They are intentionally not renumbered.
+
+## Historical and optional capability documents
+
+Documents about judges, red teams, prompt-time guardrails, policy enforcement,
+assurance findings, Decision Graph, regulatory profiles, or enterprise
+governance are not the recorder-v1 product guide. They remain in the repository
+as historical design records or optional integration references until they are
+migrated or removed. None of those systems is installed by the recorder default.
 
 ## Status
 
-Beta — v0.7.x. The docs cover the surfaces the OSS code ships today.
-Anything marked "Roadmap / not yet shipping" in the spec or
-component README is called out explicitly in the docs too — we'd
-rather under-document than overclaim.
-
-Longer-form reference material (component READMEs, SDK API docs)
-still lives alongside the code in [`../components/`](../components/)
-and [`../sdk/`](../sdk/). A generated static site (MkDocs + Material)
-is a Phase 2 deliverable; until then, browse the Markdown directly
-on GitHub.
+Recorder v1 is being qualified for enterprise testing. Production claims are
+limited to behavior proven by the qualification evidence published with a
+release.

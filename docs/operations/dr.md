@@ -1,159 +1,118 @@
-# Disaster recovery
+# Fabric Node recovery runbook
 
-This page is the actionable DR runbook for a Fabric deployment. RPO,
-RTO, and concrete restore commands are below; longer-form per-profile
-runbooks (multi-region failover, automated cutover) remain Phase 2.
+This runbook covers the OSS recorder only. The durable state is the Collector's
+persistent sending queue; telemetry already accepted by a destination follows
+that destination's backup and recovery process.
 
-## RPO / RTO targets
+## Recovery objectives
 
-| Component | RPO | RTO | Recovery approach |
-|-----------|-----|-----|-------------------|
-| **OTel Collector** | 0 (stateless) | 5 min | `helm rollout` |
-| **Presidio sidecar** | 0 (stateless) | 5 min | `helm rollout` |
-| **NeMo sidecar** | 0 (stateless) | 5 min | `helm rollout` |
-| **Update-agent webhook** | 0 (config in Git) | 10 min | `helm rollout` + ArgoCD sync |
-| **Langfuse Postgres** | ≤ 30 min (WAL archival) | ≤ 60 min | `pg_basebackup` restore |
-| **Langfuse object store** | ≤ 24 hr (snapshot) | ≤ 60 min | S3/GCS snapshot restore |
-| **Decision-span trail (downstream)** | tenant-owned | tenant-owned | Whatever your trace backend (Langfuse/Tempo/Honeycomb) provides |
+Set customer-specific recovery objectives for:
 
-Stateless components recover by redeploying the Helm chart against
-a fresh cluster. Stateful components require the tenant's standard
-backup channel; Fabric does not bundle backup tooling but the
-chart's Postgres values support pointing at managed Postgres
-(RDS, Cloud SQL, AlloyDB, Crunchy) where backup is the provider's
-responsibility.
+- the maximum acceptable capture interruption;
+- the maximum queue backlog and outage duration;
+- the time required to restore authenticated ingress and egress; and
+- the destination's retention and restore guarantees.
 
-## Pre-incident readiness
+Fabric does not publish universal RPO or RTO numbers because storage class,
+traffic volume, destination behavior, and cluster operations determine them.
 
-Run weekly:
+## Before an incident
 
-```bash
-# 1. Verify Helm release is healthy and reachable from kubectl
-helm -n fabric-system status fabric
-kubectl -n fabric-system get pods,svc,validatingwebhookconfigurations
+1. Pin the released image by digest and preserve its signed chart and SBOM.
+2. Record the approved values digest, Secret references, certificate issuers,
+   NetworkPolicy peers, storage class, destination, and connector manifests.
+3. Size queue PVCs for the tested destination-outage window.
+4. Monitor queue capacity, export failures, rejected spans, restarts, PVC state,
+   certificate expiry, and destination health.
+5. Test node drain, pod restart, destination outage, duplicate delivery, and
+   credential rotation with the exact production configuration.
 
-# 2. Verify Postgres backup is current (managed Postgres example)
-aws rds describe-db-snapshots --db-instance-identifier fabric-langfuse \
-  --query 'DBSnapshots[?Status==`available`].[SnapshotCreateTime,DBSnapshotIdentifier]' \
-  --output table | head -5
+## Destination outage
 
-# 3. Smoke-test the agent path: should produce a span in Langfuse
-python -c "
-from fabric import Fabric, FabricConfig
-f = Fabric(FabricConfig(tenant_id='dr-canary', agent_id='dr-test'))
-with f.decision(session_id='dr', request_id='dr-1') as d:
-    d.set_attribute('dr.canary', 'true')
-    print(d.trace_id)
-"
-# Wait 30s; query Langfuse for the trace_id.
-```
+- Keep Fabric Node running so the persistent queue can absorb the tested
+  backlog.
+- Do not enable debug output or weaken protection as a workaround.
+- Restore the approved destination or approved failover route.
+- Verify backlog drains and reconcile duplicate records at the destination.
+- Preserve timestamps, configuration digest, and operational logs as incident
+  evidence.
 
-A weekly dry-run that fails on any of these three is a leading
-indicator the cluster will not recover cleanly.
+When the queue reaches capacity, the production configuration backpressures
+OTLP senders. Upstream sender behavior then determines whether activity waits,
+spools, or is lost; qualify that behavior explicitly.
 
-## Recovery procedure
+## Fabric Node or cluster failure
 
-### Phase 1 — Provision the recovery cluster
+1. Confirm the StatefulSet PVCs still exist; the chart retains them on delete
+   and scale-down.
+2. Restore cluster access, certificates, export credentials, and network paths.
+3. Redeploy the same image digest and approved configuration against retained
+   PVCs. Never mount one file-storage database into multiple replicas.
+4. Verify readiness, queue recovery, destination delivery, and deduplication.
+5. If a PVC is corrupt, preserve it for investigation before using the
+   customer-approved storage restore procedure.
 
-```bash
-# Pick a recovery region/cluster. Pin the chart version that was
-# running pre-incident — record this in your incident channel.
-export FABRIC_VERSION=0.2.0
-export RECOVERY_NAMESPACE=fabric-system
+## Docker Compose deployments (client VM)
 
-# Provision the cluster (cloud-specific; not Fabric-specific).
-# Confirm CNI is up and storage classes exist before proceeding.
-kubectl get storageclasses
-kubectl get csidrivers
-```
+The same objectives apply to the single-node Compose overlay
+(`deploy/compose/docker-compose.production.yml`). The durable state is the
+`fabric-queue` named volume mounted at `/var/lib/fabric-node/queue`.
 
-### Phase 2 — Restore Postgres
+### Queue volume sizing
 
-```bash
-# Managed Postgres (RDS example). Adjust for your provider.
-aws rds restore-db-instance-from-db-snapshot \
-  --db-instance-identifier fabric-langfuse-recovery \
-  --db-snapshot-identifier <most-recent-snapshot> \
-  --db-instance-class db.r6g.large
+- `sending_queue.queue_size` bounds **items** (queued batches), not bytes.
+  Estimate the worst-case batch size from qualified traffic, multiply by
+  `queue_size`, then add headroom for file-storage overhead and compaction
+  scratch space (the compaction directory lives inside the same volume).
+- Size the volume for the tested destination-outage window: peak ingest rate
+  x outage duration, plus margin. When the queue fills,
+  `block_on_overflow: true` backpressures OTLP senders; qualify what upstream
+  agents do then.
+- `file_storage` compacts on start and on rebound in this profile, so disk
+  use recovers after a backlog drains. It does not impose a byte cap --
+  disk-full is the real bound, so monitor volume utilization.
 
-# Wait for endpoint to come up.
-aws rds wait db-instance-available --db-instance-identifier fabric-langfuse-recovery
+### Backup and restore of the queue volume
 
-# Capture the new DSN.
-export FABRIC_LANGFUSE_DSN=postgresql://<user>:<pass>@<endpoint>:5432/langfuse
-```
-
-### Phase 3 — Reinstall the chart
+Backup (stop the recorder first so the queue is quiescent):
 
 ```bash
-# Install Fabric, pinning the exact pre-incident version. Use your
-# saved values.yaml (kept in Git per spec 008 — never edit live).
-helm install fabric oci://ghcr.io/singleaxis/charts/fabric \
-  --version "${FABRIC_VERSION}" \
-  --namespace "${RECOVERY_NAMESPACE}" \
-  --create-namespace \
-  --values profiles/<your-profile>.yaml \
-  --set tenant.id=<your-tenant-uuid> \
-  --set langfuse.database.dsnSecret.name=fabric-langfuse-db \
-  --set update-agent.config.trustedKeys[0].publicKey=<your-real-key>
+docker compose -f docker-compose.yml -f docker-compose.production.yml stop fabric-node
+docker run --rm -v fabric-node-production_fabric-queue:/queue:ro -v "$PWD":/backup \
+  alpine tar czf /backup/fabric-queue-$(date +%Y%m%d%H%M%S).tgz -C /queue .
+docker compose -f docker-compose.yml -f docker-compose.production.yml start fabric-node
 ```
 
-### Phase 4 — Validate
+Restore onto a rebuilt or replaced VM:
 
 ```bash
-# 1. All pods Ready
-kubectl -n "${RECOVERY_NAMESPACE}" wait --for=condition=Ready pod \
-  --selector=app.kubernetes.io/part-of=fabric --timeout=5m
-
-# 2. Webhook is registered and reachable
-kubectl get validatingwebhookconfiguration | grep fabric
-
-# 3. Smoke-test the agent path (same as the weekly dry-run above)
-
-# 4. Confirm the canary span lands in restored Langfuse — if not,
-#    Postgres restore went wrong; rollback before serving traffic.
+docker volume create fabric-node-production_fabric-queue
+docker run --rm -v fabric-node-production_fabric-queue:/queue -v "$PWD":/backup \
+  alpine tar xzf /backup/<archive>.tgz -C /queue
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
 ```
 
-### Phase 5 — Cut traffic over
+Never mount one queue volume into two running collectors; file-storage
+assumes exclusive access.
 
-This is profile-specific and depends on your tenant DNS / load
-balancer setup. Fabric components don't manage cutover; they're
-ready to receive traffic once the cluster is up.
+### What to alert on
 
-## Common failures and recovery
+- **Queue depth**: scrape the Prometheus endpoint published on
+  `127.0.0.1:8888` (`/metrics`). Alert on `otelcol_exporter_queue_size`
+  sustained growth and on it approaching
+  `otelcol_exporter_queue_capacity`.
+- **Delivery failures**: alert on rising
+  `otelcol_exporter_send_failed_spans` /
+  `otelcol_exporter_send_failed_log_records` and on
+  `otelcol_receiver_refused_*` (rejected or backpressured ingress).
+- **Liveness**: poll the health extension at `127.0.0.1:13133` and alert on
+  container restarts (`docker compose ps`, `restart: unless-stopped` only
+  covers process exits).
+- **Host resources**: `fabric-queue` volume disk utilization, since the
+  queue bounds items, not bytes.
 
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| `helm install` fails: `tenant.id is required` | Missing `--set tenant.id` | Add it; chart fail-renders by design (see CHANGELOG 0.2.0) |
-| Webhook fails: `placeholder publicKey` | Forgot to pass real Ed25519 key | `--set update-agent.config.trustedKeys[0].publicKey=<base64>` |
-| Pods CrashLoopBackOff with "Postgres unreachable" | DSN points at the wrong host or backup hasn't promoted | Verify DSN; verify pg_isready against the new host |
-| Agent code's spans show up in old Langfuse, not new | Agent's `OTEL_EXPORTER_OTLP_ENDPOINT` still points at the dead cluster | Update the agent-side env var to point at the recovery collector |
-| `cosign verify` fails on the published image | You're trying to install an unsigned tag (e.g. `latest` after a roll) | Pin to a specific signed version: `--version 0.2.0` |
+## Evidence boundaries
 
-## Backup schedule recommendations
-
-Tenants own backup; Fabric makes recommendations:
-
-- **Postgres**: daily full backup + WAL archival every 5 minutes.
-  Provider-managed (RDS / Cloud SQL) covers this with `automated-backups`.
-- **Object store** (Langfuse blobs, judge prompt cache): daily
-  snapshot to a different region. 30-day retention minimum.
-- **Helm values + secrets**: stored in Git (encrypted with SOPS or
-  similar); tenant's CI restores them.
-
-## What's NOT covered here (yet)
-
-- **Multi-region active/active failover** — Phase 2.
-- **Automated backup validation tooling** — Phase 2.
-- **Per-profile runbooks** for non-shipped profiles (NIST RMF, ISO
-  42001, SR 11-7, HIPAA) — Phase 2.
-- **Decision Graph and escalation-service recovery** — those are Governance
-  services, not in this OSS distribution.
-
-## Pointers
-
-- Chart and subcharts: [`charts/fabric/`](../../charts/fabric/)
-- Bootstrap Job: [`components/langfuse-bootstrap/`](../../components/langfuse-bootstrap/)
-- Deployment model (source of record):
-  [`specs/008-deployment-model.md`](../../specs/008-deployment-model.md)
-- Deployment doc: [`../deployment.md`](../deployment.md)
+Fabric Node cannot prove that an arbitrary destination durably persisted a
+record. Preserve destination-specific receipts, immutable storage evidence,
+access logs, and retention records in the system responsible for them.

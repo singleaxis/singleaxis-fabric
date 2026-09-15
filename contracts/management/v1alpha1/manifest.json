@@ -4,7 +4,7 @@
   "apiVersion": "fabric.singleaxis.dev/v1alpha1",
   "kind": "FabricDeployment",
   "files": [
-    {"path": "README.md", "role": "documentation", "sha256": "3ad2024b02746c8d893504686ebb3b1c12491c3230ca7a43796a6e11b2e0478b"},
+    {"path": "README.md", "role": "documentation", "sha256": "ef380566807511bf239e7e069263f41a0fda4c445c0c0fbc685b92dbbf7a5738"},
     {"path": "derived/bundle-build-result/invalid/verified-readiness.json", "role": "invalid-bundle-build-result-fixture", "sha256": "0faf1ce28a988f83da89fb17b3c540b8a91a8f58723fdb6e47929b971236d32f"},
     {"path": "derived/bundle-build-result/valid/success.json", "role": "valid-bundle-build-result-fixture", "sha256": "1ab4fef15a35580d7c123c046fc6bdada1593212fae2304297b7d7ab017ba818"},
     {"path": "derived/bundle-manifest/invalid/reordered-files.json", "role": "invalid-bundle-manifest-fixture", "sha256": "991162c2a143ff8e184c17c3e82055d4c0ca0cff27ced35a8c9dd13c7f7648a2"},

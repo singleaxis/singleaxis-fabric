@@ -34,6 +34,22 @@ export const EXPECTED_PACKAGE_FILES = Object.freeze([
     "package.json",
 ]);
 
+export const FORBIDDEN_RECORDER_TOKENS = Object.freeze([
+    "recordGuardrail",
+    "recordBlock",
+    "requestEscalation",
+    "recordEval",
+    "queueJudge",
+    "recordPolicyEvaluation",
+    "recordToolAuthorization",
+    "fabric.guardrail",
+    "fabric.judge",
+    "fabric.eval",
+    "fabric.policy",
+    "fabric.tool.authorization",
+    "fabric.escalation",
+]);
+
 function fail(message) {
     throw new Error(`npm artifact qualification failed: ${message}`);
 }
@@ -123,6 +139,24 @@ function verifyArchiveMembers(artifact, expectedFiles) {
     }
 }
 
+export function validateRecorderPayloads(payloads) {
+    for (const [path, content] of Object.entries(payloads)) {
+        for (const token of FORBIDDEN_RECORDER_TOKENS) {
+            if (content.includes(token)) {
+                fail(`recorder artifact ${path} contains forbidden token ${token}`);
+            }
+        }
+    }
+}
+
+function verifyRecorderBoundary(artifact) {
+    const payloads = {};
+    for (const path of EXPECTED_PACKAGE_FILES.filter((name) => name.startsWith("dist/"))) {
+        payloads[path] = run("tar", ["-xOzf", artifact, `package/${path}`], { capture: true });
+    }
+    validateRecorderPayloads(payloads);
+}
+
 function smokeInstall(artifact) {
     const fixture = mkdtempSync(join(tmpdir(), "singleaxis-fabric-npm-smoke-"));
     try {
@@ -154,19 +188,23 @@ function smokeInstall(artifact) {
         writeFileSync(
             join(fixture, "smoke.mjs"),
             [
-                'import { Fabric, TRACER_NAME, sha256Hex } from "@singleaxis/fabric";',
+                'import { Fabric, TRACER_NAME, attributes, sha256Hex } from "@singleaxis/fabric";',
                 'if (TRACER_NAME !== "@singleaxis/fabric") throw new Error("bad ESM export");',
                 'if (sha256Hex("fabric") !== "ad2a542c84c7060f1f2ec92f6f7d2d675cf1fc8b47e0c75071d86380efabbb53") throw new Error("bad ESM runtime");',
                 'new Fabric({ tenantId: "artifact-smoke", agentId: "artifact-smoke" });',
+                'if (attributes.ATTR_DECISION_ID !== "fabric.decision_id") throw new Error("missing recorder attributes");',
+                'if (Object.keys(attributes).some((name) => /GUARDRAIL|JUDGE|POLICY|TOOL_AUTH|ESCALAT/.test(name) || name.startsWith("ATTR_EVAL") || name === "EVENT_NAME_EVAL")) throw new Error("legacy attributes exported");',
             ].join("\n"),
         );
         writeFileSync(
             join(fixture, "smoke.cjs"),
             [
-                'const { Fabric, TRACER_NAME, sha256Hex } = require("@singleaxis/fabric");',
+                'const { Fabric, TRACER_NAME, attributes, sha256Hex } = require("@singleaxis/fabric");',
                 'if (TRACER_NAME !== "@singleaxis/fabric") throw new Error("bad CJS export");',
                 'if (sha256Hex("fabric") !== "ad2a542c84c7060f1f2ec92f6f7d2d675cf1fc8b47e0c75071d86380efabbb53") throw new Error("bad CJS runtime");',
                 'new Fabric({ tenantId: "artifact-smoke", agentId: "artifact-smoke" });',
+                'if (attributes.ATTR_DECISION_ID !== "fabric.decision_id") throw new Error("missing recorder attributes");',
+                'if (Object.keys(attributes).some((name) => /GUARDRAIL|JUDGE|POLICY|TOOL_AUTH|ESCALAT/.test(name) || name.startsWith("ATTR_EVAL") || name === "EVENT_NAME_EVAL")) throw new Error("legacy attributes exported");',
             ].join("\n"),
         );
         writeFileSync(
@@ -263,6 +301,7 @@ export function main(argv = process.argv.slice(2)) {
     const artifactBytes = readFileSync(artifact);
     const verified = validatePackRecord(record, artifactBytes, options.expectedVersion);
     verifyArchiveMembers(artifact, verified.files);
+    verifyRecorderBoundary(artifact);
     if (options.smoke) smokeInstall(artifact);
 
     const qualification = {

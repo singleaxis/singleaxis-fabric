@@ -8,8 +8,10 @@ import test from "node:test";
 
 import {
     EXPECTED_PACKAGE_FILES,
+    FORBIDDEN_RECORDER_TOKENS,
     PACKAGE_NAME,
     validatePackRecord,
+    validateRecorderPayloads,
 } from "../scripts/package-qualified.mjs";
 
 function metadata(bytes, overrides = {}) {
@@ -49,4 +51,22 @@ test("rejects altered bytes and version drift", () => {
         /SHA-1 does not match/,
     );
     assert.throws(() => validatePackRecord(record, original, "1.2.4"), /expected 1\.2\.4/);
+});
+
+test("rejects hidden control or evaluation code in packed JS and declarations", () => {
+    for (const token of FORBIDDEN_RECORDER_TOKENS) {
+        assert.throws(
+            () => validateRecorderPayloads({ "dist/index.js": `class Decision { ${token}() {} }` }),
+            /contains forbidden token/,
+        );
+    }
+});
+
+test("accepts recorder-only packed payloads", () => {
+    assert.doesNotThrow(() =>
+        validateRecorderPayloads({
+            "dist/index.js": "class Decision { recordRetrieval() {} recordSideEffect() {} }",
+            "dist/index.d.ts": "declare class Decision { recordRetrieval(): void }",
+        }),
+    );
 });

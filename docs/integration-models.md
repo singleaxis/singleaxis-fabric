@@ -3,8 +3,8 @@
 Fabric supports code-first agents, framework-managed agents, off-the-shelf
 products, existing telemetry systems, and discovery of otherwise unknown
 workloads. These integrations are not equivalent. For a regulated deployment,
-choose the least invasive model that produces the assurance evidence required,
-then record the residual blind spots.
+choose the least invasive model that produces the reconstruction evidence
+required, then record the residual blind spots.
 
 The authoritative machine-readable claims live in the
 [`Connect capability contract`](../contracts/connect/v1/README.md). Its
@@ -41,8 +41,8 @@ agent or product
   └─ eBPF discovery ──────── workload inventory and bypass indicators
                   │
                   ▼
-          customer Fabric Collector
-          validate · redact · policy · queue · export
+              customer Fabric Node
+              protect · queue · deliver
                   │
                   ▼
        customer backend or SingleAxis Platform
@@ -92,6 +92,6 @@ protocol mappings, identity behavior, content behavior, or blind spots change.
   identify routes, but label decision reconstruction unavailable until a
   semantic or inline integration is added.
 
-PII redaction in the Collector protects telemetry before export. It is not a
-prompt firewall: preventing PII from reaching a model requires an in-process
-guardrail or an inline gateway before the provider call.
+Fabric Node's metadata allowlist protects telemetry before export. It is not a
+prompt firewall or a legal de-identification claim: preventing PII from reaching
+a model requires a separately governed inline control before the provider call.

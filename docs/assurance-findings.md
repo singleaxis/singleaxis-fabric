@@ -1,11 +1,17 @@
 # Assurance findings across the agent lifecycle
 
+> **Platform design, not recorder v1.** Recorder release artifacts do not
+> include the Assurance Finding contract, judge or red-team engines, campaign
+> workers, or assurance management. This document is retained as downstream
+> SingleAxis Platform design context and must not be used as an OSS runtime
+> capability claim.
+
 Fabric Assurance answers a specific question: **what did a defined test,
 judge, red-team exercise, or human review conclude about an agent or one of its
 recorded actions?** It does not replace runtime enforcement, telemetry
 collection, incident management, or evidence retention.
 
-The public output is the digest-pinned
+The designed interoperability output is the digest-pinned
 [`AssuranceFinding v1 contract`](../contracts/assurance/v1/README.md). The
 contract is shared across assurance methods so clients do not need a different
 result model for every judge or testing vendor.
@@ -78,7 +84,8 @@ prompt, completion, transcript, tool argument, tool result, or free-form review
 field. Those materials belong in a separately authorized evidence store with
 retention, residency, encryption, and access policy appropriate to the client.
 
-Observe may transport the compact finding alongside normal activity telemetry.
+An authorized downstream integration may transport the compact finding
+alongside normal activity telemetry.
 The referenced evidence does not need to leave the customer's boundary. A
 SingleAxis Platform deployment can retain the finding and a resolvable customer
 reference without receiving the referenced sensitive object.

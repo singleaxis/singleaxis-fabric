@@ -1,13 +1,17 @@
 # Decision Graph
 
+> **SingleAxis Platform, not the OSS recorder runtime.** Recorder v1 only
+> captures, protects, and delivers observable activity. It does not ship a
+> graph builder, governance API, replay orchestrator, evidence store, or UI.
+
 The **Decision Graph** is Fabric's commercial system of record for
 autonomous-system operations. It materializes the open telemetry emitted
 by the OSS SDK and collector into a causal graph of executions,
 decisions, steps, tools, memory, policies, humans, evaluations, and side
 effects.
 
-The public repo owns the contract. The commercial repo owns the
-production engine.
+Public recorder contracts provide correlation inputs. The commercial platform
+owns graph materialization and governed operational workflows.
 
 ## Why Decision Graph
 

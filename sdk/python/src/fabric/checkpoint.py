@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from typing import Self
 from uuid import UUID, uuid4
 
+from ._hashes import require_sha256_hex
+
 
 @dataclass(frozen=True, slots=True)
 class CheckpointEvent:
@@ -45,5 +47,7 @@ class CheckpointEvent:
         return cls(
             checkpoint_id=checkpoint_id or uuid4(),
             step_name=step_name.strip(),
-            state_hash=state_hash,
+            state_hash=(
+                require_sha256_hex("state_hash", state_hash) if state_hash is not None else None
+            ),
         )

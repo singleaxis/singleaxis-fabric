@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "singleaxis-fabric"
-description = "Open-source observability and control plane for AI agents — decision-span tracing, fail-loud guardrails, and human-in-the-loop, OpenTelemetry-native."
+description = "Customer-controlled OpenTelemetry capture SDK for reconstructing AI agent activity."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "AI5Labs Research OPC Private Limited", email = "fabric@singleaxis.ai" }]
-keywords = ["singleaxis", "fabric", "llm", "agent", "guardrails", "otel", "compliance"]
+keywords = ["singleaxis", "fabric", "llm", "agent", "observability", "otel", "tracing"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
@@ -25,46 +25,16 @@ dependencies = [
   "opentelemetry-api>=1.41",
   "opentelemetry-sdk>=1.41",
   "pydantic>=2.8,<3.0",
-  # Bounded, safe-load-only parser used by fabricctl for the public
-  # FabricDeployment contract. Duplicate keys and unsafe YAML tags are rejected.
-  "PyYAML>=6.0.2,<7.0",
 ]
-
-[project.scripts]
-fabricctl = "fabric.cli:main"
 
 [project.optional-dependencies]
 otlp = [
   "opentelemetry-exporter-otlp-proto-http>=1.41",
 ]
-# Orchestration-framework adapters. Each extra pulls exactly the
-# upstream package its matching `fabric.adapters.*` module imports —
-# core SDK install stays free of orchestration dependencies.
-langgraph = [
-  "langgraph>=0.2,<2.0",
-]
-agent-framework = [
-  "agent-framework-core>=0.1,<2.0",
-]
-crewai = [
-  "crewai>=0.80,<2.0",
-  # Force-upgrade litellm (transitive via crewai) past CVE-2026-35030
-  # (critical) / CVE-2026-35029 (high) / GHSA-69x8-hrgq-fjj8 (high) /
-  # GHSA-xqmj-j6mv-4862 (high — RCE via /prompts/test, fixed in 1.83.7).
-  # crewai>=0.80 permits litellm>=1.83.7 on resolve; pin explicitly so
-  # Trivy doesn't keep flagging the lockfile.
-  "litellm>=1.83.7",
-  # KNOWN ISSUE: crewai hard-depends on chromadb, and every published
-  # chromadb release is affected by CVE-2026-45829 (critical,
-  # pre-auth code execution; no fixed version upstream yet). Newer
-  # crewai resolutions pull older, still-affected chromadb versions.
-  # Only installs using this extra are exposed; the core SDK does not
-  # depend on chromadb. Revisit when chromadb ships a fix.
-]
 # Auto-instrumentation extras for popular LLM SDK families. Each
 # pulls the upstream `opentelemetry-instrumentation-<lib>` package
 # (Traceloop-authored, jointly maintained with the OTel GenAI WG)
-# alongside Fabric's content-redaction default. The user pip-installs
+# alongside Fabric's metadata-only content default. The user pip-installs
 # the LLM SDK itself separately; the Instrumentor hooks whatever
 # version is present at runtime.
 #
@@ -90,34 +60,6 @@ otel-langchain = [
 cohere = [
   "opentelemetry-instrumentation-cohere>=0.30b0",
 ]
-# Policy engine adapter for OPA (Open Policy Agent). Adds httpx for
-# talking to a sidecar OPA daemon over HTTP. The generic
-# HTTPPolicyAdapter ships in the core install (stdlib urllib).
-opa = [
-  "httpx>=0.27",
-]
-# Optional judge-worker adapter for deepeval evaluators. Pulled in
-# only when operators want DeepEvalJudge; the core SDK stays free of
-# this heavyweight dependency.
-deepeval = [
-  "deepeval>=0.21",
-]
-# Wave-2 adapter extras, pre-declared here so each Wave-2 PR only adds
-# new modules without touching pyproject (avoids merge conflicts on
-# this file). Each pulls exactly the upstream package its matching
-# adapter module imports.
-lakera = [
-  "httpx>=0.27",
-]
-ragas = [
-  "ragas>=0.1",
-  # Ragas leaves this transitive dependency unconstrained; keep it above
-  # the versions affected by the published code-execution advisories.
-  "langchain>=0.3.30",
-]
-cedar = [
-  "cedarpy>=0.4",
-]
 # Optional MCP (Model Context Protocol) tool-call instrumentation. The
 # `fabric.integrations.mcp` module duck-types the client session via a
 # local Protocol, so it imports without this extra; the extra only
@@ -133,15 +75,7 @@ mcp = [
 signing = [
   "cryptography>=42",
 ]
-nats = [
-  "nats-py>=2.6",
-]
-redis = [
-  "redis>=5.0",
-]
-aws = [
-  "boto3>=1.34",
-]
+[dependency-groups]
 dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
@@ -149,11 +83,10 @@ dev = [
   "mypy>=1.11.2",
   "jsonschema>=4.23",
   "types-jsonschema>=4.23",
+  "PyYAML>=6.0.2,<7.0",
   "types-PyYAML>=6.0.12",
-  "opentelemetry-exporter-otlp-proto-http>=1.41",
-  # httpx powers the HTTP-backed adapters (lakera, opa); pulled into
-  # [dev] so their adapter tests can construct and exercise the client.
   "httpx>=0.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.41",
   # cryptography exercises the real ed25519 path in the generic
   # signature-verification tests (spec 023); without it ed25519 degrades
   # to verified=False and those asserts are skipped.
@@ -163,7 +96,7 @@ dev = [
 [project.urls]
 Homepage      = "https://github.com/singleaxis/singleaxis-fabric"
 Repository    = "https://github.com/singleaxis/singleaxis-fabric"
-Documentation = "https://github.com/singleaxis/singleaxis-fabric/blob/main/specs/002-architecture.md"
+Documentation = "https://github.com/singleaxis/singleaxis-fabric/blob/main/specs/027-recorder-v1.md"
 Issues        = "https://github.com/singleaxis/singleaxis-fabric/issues"
 
 [tool.hatch.version]
@@ -177,10 +110,55 @@ path = "src/fabric/_version.py"
 # Conformance goldens are authoritative at the repository-level contracts/
 # path and intentionally do not ship as a stale duplicate under tests/.
 include = ["/src", "/README.md", "/LICENSE"]
-exclude = ["/tests", "**/.gitignore"]
+exclude = [
+  "/tests",
+  "**/.gitignore",
+  "/src/fabric/cli.py",
+  "/src/fabric/deployment.py",
+  "/src/fabric/_chain.py",
+  "/src/fabric/_uds.py",
+  "/src/fabric/escalation.py",
+  "/src/fabric/eval.py",
+  "/src/fabric/guardrails.py",
+  "/src/fabric/judge.py",
+  "/src/fabric/nemo.py",
+  "/src/fabric/policy.py",
+  "/src/fabric/presidio.py",
+  "/src/fabric/stream.py",
+  "/src/fabric/tool_auth.py",
+  "/src/fabric/adapters/agent_framework.py",
+  "/src/fabric/adapters/langgraph.py",
+  "/src/fabric/guardrail_adapters",
+  "/src/fabric/judge_adapters",
+  "/src/fabric/judge_runner.py",
+  "/src/fabric/policy_adapters",
+  "/src/fabric/queue_transports",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fabric"]
+exclude = [
+  "/src/fabric/cli.py",
+  "/src/fabric/deployment.py",
+  "/src/fabric/_chain.py",
+  "/src/fabric/_uds.py",
+  "/src/fabric/escalation.py",
+  "/src/fabric/eval.py",
+  "/src/fabric/guardrails.py",
+  "/src/fabric/judge.py",
+  "/src/fabric/nemo.py",
+  "/src/fabric/policy.py",
+  "/src/fabric/presidio.py",
+  "/src/fabric/stream.py",
+  "/src/fabric/tool_auth.py",
+  "/src/fabric/adapters/agent_framework.py",
+  "/src/fabric/adapters/langgraph.py",
+  "/src/fabric/guardrail_adapters",
+  "/src/fabric/judge_adapters",
+  "/src/fabric/judge_runner.py",
+  "/src/fabric/policy_adapters",
+  "/src/fabric/queue_transports",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

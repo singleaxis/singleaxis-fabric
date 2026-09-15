@@ -1,87 +1,39 @@
-SingleAxis Fabric {{ .Chart.AppVersion }} (Layer 1) is installed.
+Fabric Node {{ .Chart.AppVersion }} is installed.
 
+Purpose: CAPTURE -> PROTECT -> DELIVER
+Mode: passive shadow (never an inline production control)
 Profile: {{ .Values.profile.name }}
-{{- if .Values.profile.regulations }}
-Regulations: {{ join ", " .Values.profile.regulations }}
-{{- end }}
+Tenant: {{ .Values.tenant.id | default "(unset - development only)" }}
 
-Tenant id: {{ .Values.tenant.id | default "(unset — dev only)" }}
+Runtime:
+  - Fabric Collector (OTLP receive, default-deny protect, queued delivery)
 
-Subcharts enabled:
-{{- if .Values.otelCollector.enabled }}
-  - otel-collector        (telemetry ingest + processors)
-{{- end }}
-{{- if .Values.nemoSidecar.enabled }}
-  - nemo-sidecar          (NeMo Colang inline guardrails)
-{{- end }}
-{{- if .Values.presidioSidecar.enabled }}
-  - presidio-sidecar      (Presidio PII redaction over UDS)
-{{- end }}
-{{- if .Values.langfuse.enabled }}
-  - langfuse              (local observability UI)
-{{- end }}
-{{- if .Values.redteamRunner.enabled }}
-  - redteam-runner        (Garak + PyRIT red-team CronJob)
-{{- end }}
-{{- if .Values.updateAgent.enabled }}
-  - update-agent          (manifest-channel admission webhook)
-{{- end }}
-
-{{- if .Values.otelCollector.enabled }}
 {{- $otel := index .Values "otel-collector" }}
+Receiver TLS:  {{ ternary "required" "development/plaintext" $otel.receiver.requireTLS }}
+Client certs:  {{ ternary "required" "not required" $otel.receiver.requireClientCertificate }}
+Sampling:      unavailable in recorder v1 (accepted audit activity is not sampled)
+Debug export:  {{ ternary "ON (development only)" "OFF" $otel.debugExporter.enabled }}
+
 {{- if not $otel.exporter.endpoint }}
 
-=====================================================================
-WARNING: NO TELEMETRY BACKEND IS CONFIGURED.
+WARNING: NO DELIVERY DESTINATION IS CONFIGURED.
+Records go to Collector stdout only. Stdout is not durable, queryable evidence
+and is not an audit trail. This posture is for local evaluation only.
+{{- else }}
 
-`otel-collector.exporter.endpoint` is empty, so the collector exports
-nowhere. Spans and logs are written to the collector pod's stdout via
-the OTel `debug` exporter and nothing else. Read them with:
+Destination:   {{ $otel.exporter.endpoint }}
+Queue:         {{ ternary "persistent" "memory-only" $otel.exporter.sendingQueue.persistence.enabled }}
+Retry limit:   {{ $otel.exporter.retry.maxElapsedTime }}
 
-  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/name=otel-collector -f
-
-Pod stdout is not durable, is not queryable, and is NOT an audit
-trail — it survives only as long as the pod and its log rotation. Do
-not make a retention or compliance claim on this install.
-
-Point the collector at a real OTLP/HTTP backend:
-
-  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} \
-    --set otel-collector.exporter.endpoint=http://your-collector:4318
-
-Backend examples (Datadog, Honeycomb, your own collector chain) are
-in charts/fabric/charts/otel-collector/values.yaml.
-=====================================================================
-{{- end }}
-{{- if not $otel.fabric.sampler.enabled }}
-
-NOTE: the deterministic HMAC sampler is OFF, so every event is kept.
-That is the safe default for an audit trail and the highest telemetry
-volume this chart emits. To downsample, supply a key:
-
-  --set otel-collector.fabric.sampler.enabled=true \
-  --set otel-collector.fabric.sampler.hmacKeySecret.name=<secret>
-{{- end }}
+An OTLP acknowledgement proves destination acceptance, not durable persistence
+by an arbitrary destination. Delivery is at least once; deduplicate by stable
+event ID.
 {{- end }}
 
-What to do next:
+Check health:
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "fabric.collectorFullname" . }} 13133:13133
+  curl http://localhost:13133/
 
-1. Check pod health:
-     kubectl -n {{ .Release.Namespace }} get pods
-
-2. If this is your first install, confirm the profile is intentional.
-   Dev clusters default to `permissive-dev`; regulated deployments:
-
-     --values charts/fabric/profiles/eu-ai-act-high-risk.yaml
-
-   More profiles (NIST AI RMF, ISO-42001, SR-11-7, HIPAA) land
-   profile-by-profile as their rubric sets stabilize.
-
-3. This chart ships the public substrate: OTel Collector
-   distribution, guardrail sidecars, and local observability. For
-   managed operation — judges, escalation service, Decision Graph,
-   Telemetry Bridge — reach out to SingleAxis at
-   https://singleaxis.ai.
-
-4. Read the deployment model before production rollout:
-     specs/008-deployment-model.md
+This release does not install runtime guardrails, prompt-time PII controls,
+judges, red-team runners, governance, or management services.

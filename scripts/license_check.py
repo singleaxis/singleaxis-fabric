@@ -459,7 +459,7 @@ def write_markdown(
     lines.append(
         "<!-- GENERATED FILE — do not edit by hand. Produced by "
         "`scripts/license_check.py` and enforced by "
-        "`.github/workflows/license.yml`. -->"
+        "`.github/workflows/recorder-license.yml`. -->"
     )
     lines.append("")
     lines.append(f"Generated: {now}")

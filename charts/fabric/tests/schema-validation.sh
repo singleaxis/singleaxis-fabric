@@ -1,174 +1,134 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-UMBRELLA="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-COLLECTOR="${UMBRELLA}/charts/otel-collector"
-NEMO="${UMBRELLA}/charts/nemo-sidecar"
-INVALID="${SCRIPT_DIR}/invalid-values"
-
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+chart_dir="$(cd "${script_dir}/.." && pwd)"
 pass_count=0
 
-pass() {
-  pass_count=$((pass_count + 1))
-  printf 'ok %02d - %s\n' "${pass_count}" "$1"
-}
+pass() { pass_count=$((pass_count + 1)); printf 'ok %02d - %s\n' "${pass_count}" "$1"; }
+
+production_args=(
+  "${chart_dir}"
+  --values "${chart_dir}/profiles/shadow-production.yaml"
+  --set tenant.id=customer-production
+  --set otel-collector.exporter.endpoint=https://otlp.example.invalid
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP'
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
+)
 
 render_ok() {
-  local description="$1"
-  shift
-  helm template fabric-schema-test "$@" >/dev/null
+  local description="$1"; shift
+  helm template fabric-test "$@" >/dev/null
   pass "${description}"
 }
 
-lint_ok() {
-  local description="$1"
-  shift
-  helm lint "$@" >/dev/null
-  pass "${description}"
-}
-
-reject_values() {
-  local description="$1"
-  local chart="$2"
-  local fixture="$3"
-  local expected="$4"
+reject() {
+  local description="$1" expected="$2"; shift 2
   local output
-  local fragment
-  local matched=false
-
-  if output="$(helm template fabric-schema-invalid "${chart}" --values "${fixture}" 2>&1)"; then
-    printf 'not ok - %s: Helm unexpectedly accepted %s\n' "${description}" "${fixture}" >&2
+  if output="$(helm template fabric-invalid "$@" 2>&1)"; then
+    printf 'not ok - %s: invalid posture rendered successfully\n' "${description}" >&2
     exit 1
   fi
-  while IFS= read -r fragment; do
-    if grep -Fqi -- "${fragment}" <<<"${output}"; then
-      matched=true
-      break
-    fi
-  done < <(tr '|' '\n' <<<"${expected}")
-  if [[ "${matched}" != true ]]; then
-    printf 'not ok - %s: failure did not contain any of %q\n%s\n' \
-      "${description}" "${expected}" "${output}" >&2
+  if ! grep -Fq -- "${expected}" <<<"${output}"; then
+    printf 'not ok - %s: expected %q\n%s\n' "${description}" "${expected}" "${output}" >&2
     exit 1
   fi
   pass "${description}"
 }
 
-reject_high_risk_override() {
-  local description="$1"
-  local path="$2"
-  local value="$3"
-  local output
-
-  if output="$(helm template fabric-high-risk-adversary "${UMBRELLA}" \
-    --values "${UMBRELLA}/profiles/eu-ai-act-high-risk.yaml" \
-    --set tenant.id=00000000-0000-4000-8000-000000000001 \
-    --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
-    --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
-    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
-    --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' \
-    --set 'update-agent.config.trustedKeys[0].publicKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
-    --set-json 'profile.lockedFields=[]' \
-    --set "${path}=${value}" 2>&1)"; then
-    printf 'not ok - %s: high-risk render accepted %s=%s with an empty lock list\n' \
-      "${description}" "${path}" "${value}" >&2
+reject_any() {
+  local description="$1"; shift
+  if helm template fabric-invalid "$@" >/dev/null 2>&1; then
+    printf 'not ok - %s: invalid posture rendered successfully\n' "${description}" >&2
     exit 1
   fi
-  # A subchart may reject the weakened combination before the parent chart's
-  # immutable high-risk table runs. Either rejection is valid: the supported
-  # baseline rendered above, and this exact weakening did not.
   pass "${description}"
 }
 
-# Safe, supported configurations.
-lint_ok "umbrella defaults lint" "${UMBRELLA}"
-lint_ok "Collector defaults lint" "${COLLECTOR}"
-lint_ok "NeMo defaults lint" "${NEMO}"
-render_ok "umbrella defaults render" "${UMBRELLA}"
-render_ok "permissive-dev profile renders" \
-  "${UMBRELLA}" --values "${UMBRELLA}/profiles/permissive-dev.yaml"
-render_ok "EU high-risk profile renders with deployment-owned references" \
-  "${UMBRELLA}" \
-  --values "${UMBRELLA}/profiles/eu-ai-act-high-risk.yaml" \
-  --set tenant.id=00000000-0000-4000-8000-000000000001 \
+render_ok "default recorder renders" "${chart_dir}"
+render_ok "shadow-dev renders" "${chart_dir}" --values "${chart_dir}/profiles/shadow-dev.yaml"
+render_ok "shadow-production renders with customer-owned references" "${production_args[@]}"
+
+reject "production requires tenant identity" "requires tenant.id" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
   --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
-  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' \
-  --set 'update-agent.config.trustedKeys[0].publicKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
-render_ok "Collector embedded redaction provider renders" \
-  "${COLLECTOR}" \
-  --set fabric.redact.enabled=true \
-  --set fabric.redact.embedded.enabled=true \
-  --set fabric.redact.embedded.tenantKeySecret.name=fabric-redaction-key
-render_ok "Collector policy bundle reference renders" \
-  "${COLLECTOR}" \
-  --set fabric.policy.enabled=true \
-  --set fabric.policy.bundlePath=/etc/fabric/policy \
-  --set fabric.policy.bundleConfigMap=fabric-approved-policy
-render_ok "NeMo custom rails mode renders" \
-  "${NEMO}" \
-  --set railsConfigMap.name=fabric-approved-rails \
-  --set starterRails.enabled=false
-render_ok "NeMo explicit development passthrough renders" \
-  "${NEMO}" \
-  --set starterRails.enabled=false \
-  --set allowPassthrough=true
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
+reject "production requires destination" "exporter.endpoint is empty" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --set tenant.id=test \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+reject "production requires explicit egress peer" "requires an operator-supplied networkPolicy.exporterEgress.to peer" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
+  --set tenant.id=test --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 
-# Closed contracts and cross-field safety invariants.
-reject_values "umbrella rejects misspelled component" \
-  "${UMBRELLA}" "${INVALID}/umbrella-unknown-key.yaml" \
-  "additional properties 'otelColletor' not allowed|additional property otelColletor is not allowed"
-reject_values "umbrella rejects string component toggle" \
-  "${UMBRELLA}" "${INVALID}/umbrella-toggle-type.yaml" \
-  "got string, want boolean|invalid type. expected: boolean, given: string"
-reject_values "Collector rejects misspelled guard field" \
-  "${COLLECTOR}" "${INVALID}/collector-unknown-key.yaml" \
-  "additional properties 'dropUnkownClasses' not allowed|additional property dropUnkownClasses is not allowed"
-reject_values "Collector sampler requires exactly one credential source" \
-  "${COLLECTOR}" "${INVALID}/collector-sampler-credential-missing.yaml" "requires fabric.sampler.hmacKey"
-reject_values "Collector rejects unsafe exporter verbosity" \
-  "${COLLECTOR}" "${INVALID}/collector-unsafe-enum.yaml" \
-  "value must be one of 'basic', 'normal', 'detailed'|must be one of the following: \"basic\", \"normal\", \"detailed\""
-reject_values "NeMo rejects misspelled values" \
-  "${NEMO}" "${INVALID}/nemo-unknown-key.yaml" \
-  "additional properties 'starterRail' not allowed|additional property starterRail is not allowed"
-reject_values "NeMo starter and passthrough modes are exclusive" \
-  "${NEMO}" "${INVALID}/nemo-starter-passthrough.yaml" \
-  "value must be false|does not match: false"
-reject_values "NeMo starter cannot disable its deterministic filter" \
-  "${NEMO}" "${INVALID}/nemo-starter-filter-disabled.yaml" \
-  "value must be true|does not match: true"
-reject_values "NeMo requires rails or explicit passthrough" \
-  "${NEMO}" "${INVALID}/nemo-no-mode.yaml" \
-  "value must be true|does not match: true"
-reject_values "NeMo rejects unsupported image pull policy" \
-  "${NEMO}" "${INVALID}/nemo-unsafe-enum.yaml" \
-  "value must be one of 'Always', 'IfNotPresent', 'Never'|must be one of the following: \"Always\", \"IfNotPresent\", \"Never\""
+reject "production requires explicit ingress peer" "requires an operator-supplied networkPolicy.ingressFrom peer" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
+  --set tenant.id=test --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 
-# The high-risk contract is keyed on profile identity. These attacks clear the
-# user-mutable documentation list before weakening a control; every render must
-# still fail against the chart-owned invariant table.
-reject_high_risk_override "high-risk cannot disable Collector" \
-  "otelCollector.enabled" "false"
-reject_high_risk_override "high-risk cannot disable guard processing" \
-  "otel-collector.fabric.guard.enabled" "false"
-reject_high_risk_override "high-risk cannot retain unknown trace classes" \
-  "otel-collector.fabric.guard.dropUnknownClasses" "false"
-reject_high_risk_override "high-risk cannot disable trace processing" \
-  "otel-collector.fabric.guard.traceProcessingEnabled" "false"
-reject_high_risk_override "high-risk cannot disable PII redaction" \
-  "otel-collector.fabric.redact.enabled" "false"
-reject_high_risk_override "high-risk cannot disable egress policy" \
-  "otel-collector.fabric.policy.enabled" "false"
-reject_high_risk_override "high-risk cannot remove required destination" \
-  "otel-collector.exporter.requireEndpoint" "false"
-reject_high_risk_override "high-risk cannot disable update agent" \
-  "updateAgent.enabled" "false"
-reject_high_risk_override "high-risk cannot fail open in update verifier" \
-  "update-agent.config.failClosed" "false"
-reject_high_risk_override "high-risk cannot ignore webhook failure" \
-  "update-agent.webhook.failurePolicy" "Ignore"
+for case in \
+  'unknown classes:otel-collector.fabric.guard.dropUnknownClasses:false' \
+  'receiver TLS:otel-collector.receiver.requireTLS:false' \
+  'client certificates:otel-collector.receiver.requireClientCertificate:false' \
+  'HTTPS egress:otel-collector.exporter.requireTLS:false' \
+  'authenticated egress:otel-collector.exporter.requireAuth:false' \
+  'durable queue:otel-collector.exporter.requireDurableQueue:false' \
+  'block on overflow:otel-collector.exporter.sendingQueue.blockOnOverflow:false' \
+  'fsync:otel-collector.exporter.sendingQueue.persistence.fsync:false' \
+  'indefinite retry:otel-collector.exporter.retry.maxElapsedTime:5m' \
+  'pre-queue batching:otel-collector.batch.enabled:true' \
+  'removed sampler surface:otel-collector.fabric.sampler.enabled:true' \
+  'debug off:otel-collector.debugExporter.enabled:true' \
+  'explicit ingress:otel-collector.networkPolicy.requireExplicitIngress:false' \
+  'cluster-internal service:otel-collector.service.type:NodePort' \
+  'non-root pod:otel-collector.podSecurityContext.runAsNonRoot:false' \
+  'no privilege escalation:otel-collector.securityContext.allowPrivilegeEscalation:true' \
+  'pinned image tag:otel-collector.image.tag:latest' \
+  'deny-default:networkPolicy.denyDefault:false'; do
+  IFS=: read -r label path value <<<"${case}"
+  reject_any "production pins ${label}" \
+    "${production_args[@]}" --set "${path}=${value}"
+done
 
-printf 'PASS: %d Helm schema checks\n' "${pass_count}"
+reject "production pins the Collector Service to ClusterIP" "otel-collector.service.type" \
+  "${production_args[@]}" --set otel-collector.service.type=LoadBalancer
+reject "production rejects an empty image tag" "pinned Collector image" \
+  "${production_args[@]}" --set otel-collector.image.tag=
+# An empty ingress peer must not merge with the indexed --set used in
+# production_args, so this case passes the full flag set explicitly.
+reject "production rejects an empty ingress peer" "empty peer" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
+  --set tenant.id=customer-production \
+  --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
+  --set-json 'otel-collector.networkPolicy.ingressFrom=[{}]' \
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
+reject "production rejects a world ingress CIDR" "world CIDR" \
+  "${production_args[@]}" --set 'otel-collector.networkPolicy.ingressFrom[0].ipBlock.cidr=0.0.0.0/0'
+reject "production rejects a world exporter egress CIDR" "world CIDR" \
+  "${production_args[@]}" --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=0.0.0.0/0'
+reject "production rejects an empty egressTo peer" "empty peer" \
+  "${production_args[@]}" --set-json 'otel-collector.networkPolicy.egressTo=[{}]'
+reject "production rejects an unscoped health-port selector" "monitoringNamespaceSelector" \
+  "${production_args[@]}" --set-json 'otel-collector.networkPolicy.monitoringNamespaceSelector={"matchLabels":{}}'
+render_ok "a digest pin satisfies image identity" \
+  "${production_args[@]}" --set otel-collector.image.tag= \
+  --set otel-collector.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+reject_any "production rejects custom log-field allowlist extensions" \
+  "${production_args[@]}" \
+  --set 'otel-collector.fabric.guard.extraAllowedFields.activity[0]=customer.region'
+reject_any "production rejects custom trace-field allowlist extensions" \
+  "${production_args[@]}" \
+  --set 'otel-collector.fabric.guard.extraAllowedTraceFields[0]=customer.region'
+
+printf 'PASS: %d Fabric Node profile checks\n' "${pass_count}"
+"${script_dir}/test-package-boundary.sh"

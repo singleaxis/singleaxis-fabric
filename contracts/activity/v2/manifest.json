@@ -1,0 +1,12 @@
+{
+  "contract": "singleaxis.fabric.activity",
+  "version": "2.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "schema/activity-sequence-v2.schema.json", "role": "activity-schema", "sha256": "dcbf9874781668d01322d67347dda65d296c519aa54d6833082d0d6b2238162f", "expectation": "schema"},
+    {"path": "valid/shadow-execution.json", "role": "valid-shadow-sequence", "sha256": "36280babb2ca77ee9a9e771f80dea84a1f81b2ad7bf9da1b064fcba0ab17f55f", "expectation": "valid"},
+    {"path": "invalid/duplicate-event-id.json", "role": "invalid-duplicate-event-id", "sha256": "ecd144cdb4726fd009c23b86e5de017afa18da3dcef2c79b903dba58da4c6c8f", "expectation": "invalid", "expected_error": "activity.event_id.duplicate"},
+    {"path": "invalid/self-causal-reference.json", "role": "invalid-self-causal-reference", "sha256": "87dd6418c708cb4d1ca462280ca3144b6b517ae659bf96be6206cdb15938d5e6", "expectation": "invalid", "expected_error": "activity.causality.self_reference"},
+    {"path": "invalid/source-order-regression.json", "role": "invalid-source-order-regression", "sha256": "d922cd6923dc0dc26231708f2f92819cfd1689750b8804d5d66a8bbb1b14799b", "expectation": "invalid", "expected_error": "activity.source_sequence.not_increasing"}
+  ]
+}

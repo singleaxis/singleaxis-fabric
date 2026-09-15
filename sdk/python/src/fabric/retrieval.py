@@ -24,6 +24,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 
+from ._hashes import require_sha256_hex_values
+
 
 class RetrievalSource(StrEnum):
     """Where the context came from.
@@ -85,7 +87,7 @@ class RetrievalRecord(BaseModel):
             raise ValueError("query must be non-empty")
         if result_count < 0:
             raise ValueError("result_count must be non-negative")
-        hashes = tuple(result_hashes or ())
+        hashes = require_sha256_hex_values("result_hashes", result_hashes or ())
         ids = tuple(source_document_ids or ())
         # If the caller supplied per-result hashes, require 1:1 parity
         # with result_count. Partial supply (e.g. 5 results, 2 hashes)

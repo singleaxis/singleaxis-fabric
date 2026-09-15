@@ -96,9 +96,21 @@ def test_record_interaction_event_shape(span_exporter: InMemorySpanExporter) -> 
     assert dict(span.attributes or {})["fabric.interaction_kinds"] == ("http.request",)
     attrs = _event(span, "fabric.interaction")
     assert attrs["fabric.interaction.kind"] == "http.request"
-    assert attrs["fabric.interaction.target"] == "https://api.example.com/v1"
+    assert attrs["fabric.interaction.target_hash"] == _sha256("https://api.example.com/v1")
     assert attrs["fabric.interaction.direction"] == "outbound"
     assert attrs["fabric.interaction.payload_hash"] == "a" * 64
+    assert attrs["fabric.interaction.target_redacted"] is True
+    assert "fabric.interaction.target" not in attrs
+
+
+def test_record_interaction_target_requires_explicit_raw_opt_out(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_interaction("internal.queue", "orders", redact_target=False)
+    attrs = _event(_decision_span(span_exporter), "fabric.interaction")
+    assert attrs["fabric.interaction.target"] == "orders"
     assert attrs["fabric.interaction.target_redacted"] is False
 
 

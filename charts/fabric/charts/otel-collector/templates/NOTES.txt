@@ -1,96 +1,16 @@
-The Fabric OTel Collector has been deployed to {{ .Release.Namespace }}.
+Fabric Node Collector is running in {{ .Release.Namespace }}.
 
-Service:       {{ include "otel-collector.fullname" . }}
-OTLP/gRPC:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.otlpGrpc }}
-OTLP/HTTP:     {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.otlpHttp }}
-Health check:  {{ include "otel-collector.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.ports.health }}
-Ingress TLS:   {{ ternary "enabled" "disabled" (not (empty .Values.receiver.tls.serverCertificateSecret.name)) }}
-Client certs:  {{ ternary "required" "not required" .Values.receiver.requireClientCertificate }}
-NetworkPolicy: {{ ternary "enabled" "disabled" .Values.networkPolicy.enabled }}
-Exporter rule: {{ ternary "explicit peer + ports" "not required" .Values.networkPolicy.exporterEgress.requireExplicit }}
-
-{{- if not .Values.receiver.tls.serverCertificateSecret.name }}
-
-WARNING: OTLP ingress is plaintext. This is a local-development posture.
-Configure receiver.tls.serverCertificateSecret and set receiver.requireTLS
-before accepting telemetry across a trust boundary.
-{{- end }}
-
-{{- if not .Values.exporter.endpoint }}
-
-=====================================================================
-WARNING: NO TELEMETRY BACKEND IS CONFIGURED.
-
-`otel-collector.exporter.endpoint` is empty, so the collector is NOT
-exporting anywhere. Spans and logs are written to this pod's stdout
-via the OTel `debug` exporter and nothing else. Read them with:
-
-  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "otel-collector.fullname" . }} -f
-
-Pod stdout is not durable, is not queryable, and is NOT an audit
-trail. It survives only as long as the pod and its log rotation. Do
-not make a retention or compliance claim on this install.
-
-Point the collector at a real OTLP/HTTP backend:
-
-  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} \
-    --set otel-collector.exporter.endpoint=http://your-collector:4318
-
-See charts/fabric/charts/otel-collector/values.yaml for backend
-examples (Datadog, Honeycomb, your own collector chain).
-=====================================================================
-{{- else }}
-
-Exporter:      {{ .Values.exporter.endpoint }}
-TLS required:  {{ .Values.exporter.requireTLS }}
-Auth Secret:   {{ .Values.exporter.auth.secret.name | default "not configured" }}
-Queue:         {{ ternary "enabled" "disabled" .Values.exporter.sendingQueue.enabled }}
-Persistence:   {{ ternary "PVC-backed" "in-memory" .Values.exporter.sendingQueue.persistence.enabled }}
+CAPTURE: OTLP/gRPC {{ .Values.service.ports.otlpGrpc }}, OTLP/HTTP {{ .Values.service.ports.otlpHttp }}
+PROTECT: default-deny fabricguard allowlist on logs and traces
+DELIVER: {{ .Values.exporter.endpoint | default "debug stdout (development only)" }}
 
 {{- if .Values.exporter.sendingQueue.persistence.enabled }}
-The exporter queue survives Collector restarts on retained PVC storage.
-This provides bounded at-least-once transport, NOT exactly-once delivery:
-ambiguous acknowledgements can produce duplicates and permanent errors,
-queue/disk exhaustion, storage loss, or pre-queue policy drops can still
-lose telemetry. The queue is not the authoritative evidence store.
+Queue: persistent, fsync={{ .Values.exporter.sendingQueue.persistence.fsync }}
+Delivery is at least once; destination acknowledgement is not proof of durable
+persistence by an arbitrary destination.
 {{- else }}
-WARNING: exporter queue state is memory-only and is lost with the pod.
-Enable exporter.sendingQueue.persistence for restart-safe buffering.
-{{- end }}
-{{- end }}
-{{- if not .Values.fabric.sampler.enabled }}
-
-NOTE: the deterministic HMAC sampler is OFF, so every event is kept.
-That is the safe default for an audit trail but it is the highest
-telemetry volume this chart emits. To downsample, supply a key:
-
-  --set otel-collector.fabric.sampler.enabled=true \
-  --set otel-collector.fabric.sampler.hmacKeySecret.name=<secret>
+Queue: memory-only (not restart durable)
 {{- end }}
 
-Fabric processors active:
-{{- if .Values.fabric.guard.enabled }}  - fabricguard (deny-by-default schema allowlist){{- end }}
-{{- if .Values.fabric.redact.enabled }}  - fabricredact (Presidio sidecar redaction){{- end }}
-{{- if .Values.fabric.policy.enabled }}  - fabricpolicy (OPA policy gate){{- end }}
-{{- if .Values.fabric.sampler.enabled }}  - fabricsampler (HMAC-keyed deterministic sampler){{- end }}
-
-Verify health:
-  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "otel-collector.fullname" . }} 13133:{{ .Values.service.ports.health }}
-  curl http://localhost:13133/
-
-Run the bundled smoke test:
-  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
-
-{{- if and .Values.fabric.policy.enabled (eq .Values.fabric.policy.bundlePath "") }}
-
-WARNING: fabricpolicy is enabled but bundlePath is empty. The
-processor is wired but no Rego is loaded — all records will pass.
-Set .Values.fabric.policy.bundlePath before relying on the gate.
-{{- end }}
-{{- if .Values.fabric.redact.enabled }}
-
-Telemetry redaction uses the pod-local Presidio container over
-{{ .Values.fabric.redact.unixSocket }}. It protects captured telemetry
-before export; it does not redact a prompt before the agent sends it to
-an LLM.
-{{- end }}
+No runtime policy, prompt-time PII sidecar, sampler, judge, or red-team service
+is configured or rendered by this chart.

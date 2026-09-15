@@ -8,6 +8,14 @@ owner: product-architecture
 
 # 026 — `fabricctl` lifecycle and deployment bundle
 
+> **Scope note (partially superseded):** this document describes the full
+> lifecycle and management target for `fabricctl`. For the recorder v1
+> release, [spec 027](027-recorder-v1.md) narrows the shipped CLI surface to
+> `init`, `recorder validate`, `recorder digest`, `version`, and `help`; the
+> lifecycle and management contracts cited below are `legacy` build-tag only
+> and are not the recorder-v1 `fabricctl` surface. Where this document and
+> 027 disagree about recorder scope, 027 controls.
+
 ## Summary
 
 `fabricctl` is the public operator interface for configuring, installing, and

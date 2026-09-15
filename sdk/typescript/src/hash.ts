@@ -14,6 +14,14 @@ export function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf-8").digest("hex");
 }
 
+/** Reject raw content masquerading as hash-labelled recorder metadata. */
+export function assertSha256Hex(fieldName: string, value: string): string {
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`${fieldName} must be exactly 64 lowercase SHA-256 hex characters`);
+  }
+  return value;
+}
+
 /** A random UUID v4 string. Used for SDK-minted event ids. */
 export function randomUuid(): string {
   return nodeRandomUUID();
@@ -140,7 +148,7 @@ function pythonFloatRepr(n: number): string {
 /**
  * Serialize a JSON-able value to match Python's
  * `json.dumps(value, sort_keys=True, default=str)` byte-for-byte, so a
- * SHA-256 over the result equals the Python SDK's policy `input_hash`.
+ * SHA-256 over the result equals a Python recorder's canonical object hash.
  *
  * Reproduces Python's defaults that naive `JSON.stringify` diverges from:
  * - object keys are sorted recursively; separators are `", "` between items
@@ -157,11 +165,7 @@ function pythonFloatRepr(n: number): string {
  * Residual unrepresentable case: JS has a single `number` type, so a Python
  * `float` with a whole value (`50.0`, which Python renders as `"50.0"`) is
  * indistinguishable from a Python `int` (`50` -> `"50"`); both serialize here
- * as `"50"`. Policy inputs that carry whole-valued floats are therefore out of
- * the byte-exact contract — for such payloads the host should pre-compute and
- * supply `inputHash` directly rather than relying on this serializer. The four
- * acceptance cases (non-ASCII Unicode, exponent notation, large floats, and
- * negative zero) ARE handled.
+ * as `"50"`. Whole-valued floats are therefore outside the byte-exact contract.
  */
 export function pythonJsonStringify(value: unknown): string {
   if (value === null) {
@@ -190,9 +194,8 @@ export function pythonJsonStringify(value: unknown): string {
 }
 
 /**
- * SHA-256 of a policy input object, hashed exactly as the Python SDK does
- * (`sha256(json.dumps(input, sort_keys=True, default=str))`).
+ * SHA-256 of a JSON-like object using Fabric's cross-language canonical form.
  */
-export function policyInputHash(input: unknown): string {
-  return sha256Hex(pythonJsonStringify(input));
+export function canonicalObjectHash(value: unknown): string {
+  return sha256Hex(pythonJsonStringify(value));
 }

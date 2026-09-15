@@ -7,7 +7,7 @@ LDFLAGS := -s -w \
 	-X main.commit=$(COMMIT) \
 	-X main.buildDate=$(DATE)
 
-.PHONY: build test vet check clean
+.PHONY: build test race vet check legacy-test clean
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/fabricctl
@@ -15,10 +15,18 @@ build:
 test:
 	go test ./...
 
+race:
+	go test -race ./...
+
 vet:
 	go vet ./...
 
 check: test vet build
+
+# Historical source remains testable for migration work, but this tagged
+# binary is never the release target.
+legacy-test:
+	go test -tags legacy ./cmd/fabricctl
 
 clean:
 	rm -f bin/$(BINARY)

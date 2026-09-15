@@ -1,57 +1,71 @@
-# Wrapper around docker compose for the Fabric integration harness.
-# Explicit targets keep the common flows discoverable; pass extra
-# args through the `ARGS=` variable, e.g. `make logs ARGS="-f otel-collector"`.
-
 COMPOSE ?= docker compose
-PROJECT ?= fabric-harness
 
-.PHONY: up up-bootstrap down reset logs ps build curl-health smoke
+# Production overlay (client VM). `make up-prod` merges it over the base file.
+PROD_FILES := -f docker-compose.yml -f docker-compose.production.yml
 
-up: ## Start core harness (sidecars + collector + Langfuse).
-	mkdir -p run
-	@if [ ! -s run/presidio.key ]; then \
-		openssl rand -base64 32 > run/presidio.key; \
-	fi
-	$(COMPOSE) up -d --build
-	@echo ""
-	@echo "Langfuse UI:  http://localhost:$${FABRIC_LANGFUSE_PORT:-3000}"
-	@echo "OTLP/gRPC:    localhost:$${FABRIC_OTLP_GRPC_PORT:-4317}"
-	@echo "OTLP/HTTP:    localhost:$${FABRIC_OTLP_HTTP_PORT:-4318}"
-	@echo ""
-	@echo "Guardrail sockets live on the 'fabric-run' named volume, not on"
-	@echo "the host. Run your agent as a container to reach them:"
-	@echo "  docker run --rm --network $(PROJECT)_fabric \\"
-	@echo "    -v $(PROJECT)_fabric-run:/run/fabric --user 1000:1000 \\"
-	@echo "    -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 <image>"
-	@echo "  UDS paths inside the container: /run/fabric/{presidio,nemo}.sock"
+# Resolve a service's published host:port, normalizing wildcard binds
+# (0.0.0.0 / [::]) to loopback. Usage: $(call port_for,<service>,<port>)
+port_for = $(shell $(COMPOSE) port $(1) $(2) 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')
 
-up-bootstrap: up ## Start harness AND run the Langfuse bootstrap Job.
-	$(COMPOSE) --profile bootstrap run --rm langfuse-bootstrap
+.PHONY: up down reset logs status build smoke qualify up-prod down-prod logs-prod preflight-prod verify-prod help
 
-down: ## Stop everything; keep Postgres volume.
+up: ## Build and start Fabric Node plus the controlled sink.
+	$(COMPOSE) up -d --build --wait
+	@echo "Fabric Node OTLP/HTTP: http://localhost:$${FABRIC_OTLP_HTTP_PORT:-4318}"
+	@echo "Controlled sink status: http://localhost:$${FABRIC_SINK_PORT:-8080}/count"
+
+down: ## Stop the evaluation setup while keeping durable volumes.
 	$(COMPOSE) down
 
-reset: ## Stop + delete volumes (Langfuse DB, Fabric UDS dir).
+reset: ## Delete this evaluation setup and its queue/sink volumes.
 	$(COMPOSE) down -v
-	rm -rf run
 
-logs: ## Tail logs; pass ARGS="<service>" to filter.
+logs: ## Tail logs; use ARGS="fabric-node" to select a service.
 	$(COMPOSE) logs -f $(ARGS)
 
-ps: ## Show running services.
+status: ## Show containers and the controlled sink's accepted request count.
 	$(COMPOSE) ps
+	@curl -fsS "http://$(call port_for,test-sink,8080)/count"; echo
 
-build: ## Build all local images without starting.
-	$(COMPOSE) build
+build: ## Build the local Fabric Node image.
+	$(COMPOSE) build fabric-node
 
-curl-health: ## Hit each service's healthcheck endpoint.
-	@curl -fsS http://localhost:3000/api/public/health && echo "  <- langfuse OK"
-	@curl -fsS http://localhost:4318/v1/traces -X POST -H 'Content-Type: application/json' -d '{}' \
-		&& echo "  <- otel-collector OK" \
-		|| echo "  <- otel-collector reachable (empty body is expected)"
+smoke: ## Send one protected OTLP trace to Fabric Node.
+	@curl -fsS -X POST "http://$(call port_for,fabric-node,4318)/v1/traces" \
+		-H 'Content-Type: application/json' \
+		--data-binary @fixtures/decision-summary.json >/dev/null
+	@echo "trace accepted by Fabric Node"
 
-smoke: ## Run the Fabric SDK smoke test from the host against the harness.
-	cd ../../examples/harness-smoke && python smoke.py
+qualify: up ## Exercise protection plus destination outage/restart recovery.
+	./qualify.sh
+
+# --- Client-VM production overlay -------------------------------------------
+# Requires .env (see .env.example): FABRIC_EXPORT_ENDPOINT,
+# FABRIC_EXPORT_AUTH_HEADER and FABRIC_INGRESS_TOKEN_FILE are mandatory and the
+# deployment fails closed when they are unset. FABRIC_NODE_IMAGE can point at a
+# signed release image (e.g. ghcr.io/singleaxis/fabric-otelcol:0.8.0-rc.1);
+# pair it with FABRIC_NODE_PULL_POLICY=always so Compose pulls instead of
+# building.
+
+preflight-prod: ## Check env/secrets/TLS readiness before production deploy.
+	@chmod +x preflight-prod.sh 2>/dev/null || true
+	./preflight-prod.sh
+
+up-prod: ## Start the production overlay (token auth + durable queue).
+	$(COMPOSE) $(PROD_FILES) up -d --wait
+	@echo "Fabric Node OTLP/HTTP: http://localhost:$${FABRIC_OTLP_HTTP_PORT:-4318} (bearer token required)"
+	@echo "Internal metrics: http://localhost:$${FABRIC_METRICS_PORT:-8888}/metrics"
+	@echo "Run 'make verify-prod' to prove auth, delivery and queue health."
+
+verify-prod: ## Verify a running production deployment end-to-end.
+	@chmod +x verify-prod.sh 2>/dev/null || true
+	./verify-prod.sh
+
+down-prod: ## Stop the production overlay while keeping the queue volume.
+	$(COMPOSE) $(PROD_FILES) down
+
+logs-prod: ## Tail production overlay logs; use ARGS="fabric-node".
+	$(COMPOSE) $(PROD_FILES) logs -f $(ARGS)
 
 help:
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

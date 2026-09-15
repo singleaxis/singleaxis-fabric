@@ -47,37 +47,15 @@ COMPATIBILITY_RULES: dict[str, Any] = {
         "dependency_rule": "umbrella dependency version must equal subchart version",
         "lock_rule": "Chart.lock dependencies and Helm SHA-256 digest must match Chart.yaml",
         "migration_floors": {
-            # These floors mark the first chart packages with the current
-            # privacy/policy composition and deterministic starter contract.
+            # This is the first recorder-only Fabric Node chart package.
             "otel-collector": "0.4.0",
-            "nemo-sidecar": "0.3.0",
         },
-    },
-    "upstream_app_versions": {
-        "rule": "independent-semver",
-        "charts": ["langfuse"],
-        "reason": "appVersion identifies the wrapped upstream application",
     },
 }
 
-FABRIC_CHARTS = {
-    "fabric-relay",
-    "nemo-sidecar",
-    "otel-collector",
-    "presidio-sidecar",
-    "redteam-runner",
-    "update-agent",
-}
-EXPECTED_RUNTIME_MODULES = {
-    "components/langfuse-bootstrap/src/fabric_langfuse_bootstrap/_version.py",
-    "components/nemo-sidecar/src/fabric_nemo_sidecar/_version.py",
-    "components/presidio-sidecar/src/fabric_presidio_sidecar/_version.py",
-    "components/prompt-guard-sidecar/src/fabric_prompt_guard_sidecar/_version.py",
-    "components/redteam-runner/src/fabric_redteam_runner/_version.py",
-    "components/update-agent/src/fabric_update_agent/_version.py",
-}
+FABRIC_CHARTS = {"otel-collector"}
+EXPECTED_RUNTIME_MODULES: set[str] = set()
 EXPECTED_OCB_MANIFESTS = {
-    "components/fabric-relay/ocb-config.yaml",
     "components/otel-collector-fabric/ocb-config.yaml",
 }
 
@@ -359,7 +337,10 @@ def verify(root: Path, expected: str | None = None) -> Verification:
         )
 
     chart_root = root / "charts/fabric/charts"
-    chart_paths = sorted(chart_root.glob("*/Chart.yaml")) if chart_root.exists() else []
+    # Only declared umbrella dependencies are release artifacts. Historical or
+    # experimental chart source may remain below charts/ during migration, but
+    # it must not silently enter the coordinated release inventory.
+    chart_paths = [chart_root / name / "Chart.yaml" for name in sorted(dependencies)]
     chart_names: set[str] = set()
     for chart_path in chart_paths:
         name, chart_version, app_version = _chart_fields(chart_path, errors)
@@ -527,8 +508,8 @@ def verify(root: Path, expected: str | None = None) -> Verification:
             "release workflow does not consume the verified release version output"
         )
     release_artifact_markers = {
-        "Fabric Relay image publication": (
-            "component: fabric-relay",
+        "Fabric Node image publication": (
+            "component: otel-collector-fabric",
             "components/${{ matrix.component }}/Dockerfile",
         ),
         "fabricctl cross-platform packaging": (
@@ -550,17 +531,19 @@ def verify(root: Path, expected: str | None = None) -> Verification:
                 f"release workflow lacks {capability}; missing markers: {missing}"
             )
 
-    ci_workflow = _read(root / ".github/workflows/ci.yml", errors)
+    ci_workflow = _read(root / ".github/workflows/recorder-ci.yml", errors)
     ci_coverage_markers = {
-        "Chart.lock release-identity filter": ("charts/fabric/Chart.lock",),
-        "Fabric Relay PR image build": (
-            "file: components/fabric-relay/Dockerfile",
-            "tags: fabric-relay:pr",
+        "recorder release-boundary tests": (
+            "scripts/tests",
+            "scripts/verify_release_identity.py --json",
         ),
-        "Fabric Relay PR image scan": (
-            "image: fabric-relay",
-            "dockerfile: components/fabric-relay/Dockerfile",
-            "trivy-${{ matrix.image }}.sarif",
+        "Fabric Node PR image build": (
+            "file: components/otel-collector-fabric/Dockerfile",
+            "tags: fabric-otelcol:pr",
+        ),
+        "Fabric Node PR image scan": (
+            "image-ref: fabric-otelcol:pr",
+            "trivy-fabric-otelcol.sarif",
         ),
     }
     for capability, markers in ci_coverage_markers.items():

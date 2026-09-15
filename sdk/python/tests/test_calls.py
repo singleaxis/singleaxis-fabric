@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from unittest.mock import Mock
 
@@ -1077,3 +1078,110 @@ def test_llm_call_and_tool_call_are_exported_at_top_level() -> None:
     # Sanity: package-level imports work for users following docs.
     assert LLMCall is not None
     assert ToolCall is not None
+
+
+# -- failure visibility: error.type + BaseException exits -----------------
+
+
+def test_llm_call_stamps_error_type_on_exception(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """``error.type`` (GenAI convention) carries the exception class name."""
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(RuntimeError),
+        dec.llm_call(system="anthropic", model="claude"),
+    ):
+        raise RuntimeError("upstream timeout")
+
+    span = _llm_span(span_exporter)
+    attrs = dict(span.attributes or {})
+    assert span.status.status_code == StatusCode.ERROR
+    assert attrs["error.type"] == "RuntimeError"
+
+
+def test_llm_call_cancelled_error_marks_span_error(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """``asyncio.CancelledError`` is a ``BaseException``, not an
+    ``Exception`` — OTel's automatic recording skips it, so the SDK
+    records it explicitly: ERROR status, an exception event, and
+    ``error.type`` on the span."""
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(asyncio.CancelledError),
+        dec.llm_call(system="anthropic", model="claude"),
+    ):
+        raise asyncio.CancelledError()
+
+    span = _llm_span(span_exporter)
+    attrs = dict(span.attributes or {})
+    assert span.status.status_code == StatusCode.ERROR
+    assert attrs["error.type"] == "CancelledError"
+    exception_events = [e for e in span.events if e.name == "exception"]
+    assert exception_events
+    exc_attrs = dict(exception_events[0].attributes or {})
+    assert str(exc_attrs["exception.type"]).endswith("CancelledError")
+
+
+def test_tool_call_cancelled_error_marks_span_error(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(asyncio.CancelledError),
+        dec.tool_call("search"),
+    ):
+        raise asyncio.CancelledError()
+
+    span = _tool_span(span_exporter)
+    attrs = dict(span.attributes or {})
+    assert span.status.status_code == StatusCode.ERROR
+    assert attrs["error.type"] == "CancelledError"
+    exception_events = [e for e in span.events if e.name == "exception"]
+    assert exception_events
+    exc_attrs = dict(exception_events[0].attributes or {})
+    assert str(exc_attrs["exception.type"]).endswith("CancelledError")
+
+
+def test_tool_call_stamps_error_type_on_exception(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        pytest.raises(KeyError),
+        dec.tool_call("search"),
+    ):
+        raise KeyError("missing")
+
+    span = _tool_span(span_exporter)
+    attrs = dict(span.attributes or {})
+    assert span.status.status_code == StatusCode.ERROR
+    assert attrs["error.type"] == "KeyError"
+
+
+# -- reserved attribute namespaces ----------------------------------------
+
+
+def test_llm_call_set_attribute_rejects_reserved_namespace() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.llm_call(system="openai", model="gpt-5") as call,
+        pytest.raises(ValueError, match="reserved namespace"),
+    ):
+        call.set_attribute("gen_ai.request.model", "other-model")
+
+
+def test_tool_call_set_attribute_rejects_reserved_namespace() -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as dec,
+        dec.tool_call("search") as tool,
+        pytest.raises(ValueError, match="reserved namespace"),
+    ):
+        tool.set_attribute("fabric.tool.name", "renamed")

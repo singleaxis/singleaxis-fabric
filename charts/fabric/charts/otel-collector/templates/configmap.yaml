@@ -1,6 +1,3 @@
-{{- include "otel-collector.validateSampler" . -}}
-{{- include "otel-collector.validateRedact" . -}}
-{{- include "otel-collector.validatePolicy" . -}}
 {{- include "otel-collector.validateReceiver" . -}}
 {{- include "otel-collector.validateExporter" . -}}
 {{- include "otel-collector.validateDelivery" . -}}
@@ -53,8 +50,6 @@ data:
       memory_limiter:
         check_interval: {{ .Values.memoryLimiter.checkIntervalSeconds }}s
         limit_mib: {{ .Values.memoryLimiter.limitMib }}
-
-      {{- if .Values.fabric.guard.enabled }}
       fabricguard:
         event_class_attribute: {{ .Values.fabric.guard.eventClassAttribute | quote }}
         drop_unknown_classes: {{ .Values.fabric.guard.dropUnknownClasses }}
@@ -63,44 +58,15 @@ data:
         extra_allowed_fields:
           {{- toYaml . | nindent 10 }}
         {{- end }}
-      {{- end }}
-
-      {{- if .Values.fabric.policy.enabled }}
-      fabricpolicy:
-        bundle_path: {{ .Values.fabric.policy.bundlePath | quote }}
-        query: {{ .Values.fabric.policy.query | quote }}
-        event_class_attribute: {{ .Values.fabric.policy.eventClassAttribute | quote }}
-      {{- end }}
-
-      {{- if .Values.fabric.redact.enabled }}
-      fabricredact:
-        unix_socket: {{ .Values.fabric.redact.unixSocket | quote }}
-        timeout: {{ .Values.fabric.redact.timeoutMs }}ms
-        event_class_attribute: {{ .Values.fabric.redact.eventClassAttribute | quote }}
-        byte_handling: {{ .Values.fabric.redact.byteHandling | quote }}
-        {{- with .Values.fabric.redact.skipAttributes }}
-        skip_attributes:
+        {{- with .Values.fabric.guard.extraAllowedTraceFields }}
+        extra_allowed_trace_fields:
           {{- toYaml . | nindent 10 }}
         {{- end }}
-      {{- end }}
-
-      {{- if .Values.fabric.sampler.enabled }}
-      fabricsampler:
-        {{- if .Values.fabric.sampler.hmacKey }}
-        hmac_key_hex: {{ .Values.fabric.sampler.hmacKey | quote }}
-        {{- else }}
-        hmac_key_file: /etc/fabric/sampler/hmac_key
-        {{- end }}
-        default_rate: {{ .Values.fabric.sampler.defaultRate }}
-        {{- with .Values.fabric.sampler.rates }}
-        rates:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-      {{- end }}
-
+      {{- if .Values.batch.enabled }}
       batch:
         timeout: {{ .Values.batch.timeoutSeconds }}s
         send_batch_size: {{ .Values.batch.sendBatchSize }}
+      {{- end }}
 
     exporters:
       {{- if .Values.exporter.endpoint }}
@@ -156,39 +122,9 @@ data:
       pipelines:
         logs:
           receivers: [otlp]
-          processors:
-            - memory_limiter
-            {{- if .Values.fabric.guard.enabled }}
-            - fabricguard
-            {{- end }}
-            {{- if .Values.fabric.redact.enabled }}
-            - fabricredact
-            {{- end }}
-            {{- if .Values.fabric.policy.enabled }}
-            - fabricpolicy
-            {{- end }}
-            {{- if .Values.fabric.sampler.enabled }}
-            - fabricsampler
-            {{- end }}
-            - batch
+          processors: [memory_limiter, fabricguard{{ if .Values.batch.enabled }}, batch{{ end }}]
           exporters: [{{ $exporters }}]
-        {{- if .Values.fabric.guard.traceProcessingEnabled }}
         traces:
           receivers: [otlp]
-          processors:
-            - memory_limiter
-            {{- if .Values.fabric.guard.enabled }}
-            - fabricguard
-            {{- end }}
-            {{- if .Values.fabric.redact.enabled }}
-            - fabricredact
-            {{- end }}
-            {{- if .Values.fabric.policy.enabled }}
-            - fabricpolicy
-            {{- end }}
-            {{- if .Values.fabric.sampler.enabled }}
-            - fabricsampler
-            {{- end }}
-            - batch
+          processors: [memory_limiter, fabricguard{{ if .Values.batch.enabled }}, batch{{ end }}]
           exporters: [{{ $exporters }}]
-        {{- end }}

@@ -1,10 +1,10 @@
 {
   "schema_version": "fabric.release-policy/v1",
   "required_workflows": [
-    "ci.yml",
-    "security.yml",
+    "recorder-ci.yml",
+    "recorder-security.yml",
     "codeql.yml",
-    "license.yml",
+    "recorder-license.yml",
     "e2e.yml"
   ],
   "python_distribution": {
@@ -17,9 +17,31 @@
     "allowed_wheel_package_roots": [
       "fabric"
     ],
-    "required_console_scripts": {
-      "fabricctl": "fabric.cli:main"
-    },
+    "forbidden_wheel_paths": [
+      "fabric/_chain.py",
+      "fabric/_uds.py",
+      "fabric/adapters/agent_framework.py",
+      "fabric/adapters/langgraph.py",
+      "fabric/cli.py",
+      "fabric/deployment.py",
+      "fabric/escalation.py",
+      "fabric/eval.py",
+      "fabric/guardrails.py",
+      "fabric/judge.py",
+      "fabric/judge_runner.py",
+      "fabric/nemo.py",
+      "fabric/policy.py",
+      "fabric/presidio.py",
+      "fabric/stream.py",
+      "fabric/tool_auth.py"
+    ],
+    "forbidden_wheel_prefixes": [
+      "fabric/guardrail_adapters/",
+      "fabric/judge_adapters/",
+      "fabric/policy_adapters/",
+      "fabric/queue_transports/"
+    ],
+    "required_console_scripts": {},
     "required_sdist_paths": [
       "pyproject.toml",
       "README.md",
@@ -35,32 +57,58 @@
       "LICENSE",
       ".gitignore",
       "PKG-INFO"
+    ],
+    "forbidden_sdist_paths": [
+      "src/fabric/_chain.py",
+      "src/fabric/_uds.py",
+      "src/fabric/adapters/agent_framework.py",
+      "src/fabric/adapters/langgraph.py",
+      "src/fabric/cli.py",
+      "src/fabric/deployment.py",
+      "src/fabric/escalation.py",
+      "src/fabric/eval.py",
+      "src/fabric/guardrails.py",
+      "src/fabric/judge.py",
+      "src/fabric/judge_runner.py",
+      "src/fabric/nemo.py",
+      "src/fabric/policy.py",
+      "src/fabric/presidio.py",
+      "src/fabric/stream.py",
+      "src/fabric/tool_auth.py"
+    ],
+    "forbidden_sdist_prefixes": [
+      "src/fabric/guardrail_adapters/",
+      "src/fabric/judge_adapters/",
+      "src/fabric/policy_adapters/",
+      "src/fabric/queue_transports/"
     ]
   },
   "contracts": {
     "archive_prefix": "singleaxis-fabric-contracts",
     "manifest_name": "manifest.json",
-    "require_sha256_for_json": true
+    "require_sha256_for_json": true,
+    "public_families": [
+      "activity",
+      "connect",
+      "delivery",
+      "privacy",
+      "recorder"
+    ],
+    "public_versions": {
+      "activity": ["v2"],
+      "connect": ["v1"],
+      "delivery": ["v1"],
+      "privacy": ["v1"],
+      "recorder": ["v1"]
+    }
   },
   "helm": {
     "first_party_app_charts": [
-      "otel-collector",
-      "presidio-sidecar",
-      "nemo-sidecar",
-      "redteam-runner",
-      "update-agent"
+      "otel-collector"
     ],
-    "third_party_app_charts": [
-      "langfuse"
-    ]
+    "third_party_app_charts": []
   },
   "images": [
-    "fabric-otelcol",
-    "fabric-presidio-sidecar",
-    "fabric-nemo-sidecar",
-    "fabric-prompt-guard-sidecar",
-    "fabric-redteam-runner",
-    "fabric-update-agent",
-    "fabric-langfuse-bootstrap"
+    "fabric-otelcol"
   ]
 }

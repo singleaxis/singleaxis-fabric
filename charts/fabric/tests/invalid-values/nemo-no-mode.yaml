@@ -1,5 +1,0 @@
-starterRails:
-  enabled: false
-railsConfigMap:
-  name: ""
-allowPassthrough: false

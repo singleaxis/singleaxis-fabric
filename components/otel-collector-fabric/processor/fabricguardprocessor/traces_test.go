@@ -12,400 +12,258 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-// makeTraces builds a ptrace.Traces with a single resource/scope and
-// one span per supplied (name, attributes) entry.
-func makeTraces(spans ...spanFixture) ptrace.Traces {
-	td := ptrace.NewTraces()
-	ss := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
-	for _, sp := range spans {
-		s := ss.Spans().AppendEmpty()
-		s.SetName(sp.name)
-		for k, v := range sp.attrs {
-			switch val := v.(type) {
-			case string:
-				s.Attributes().PutStr(k, val)
-			case int:
-				s.Attributes().PutInt(k, int64(val))
-			case bool:
-				s.Attributes().PutBool(k, val)
-			default:
-				s.Attributes().PutStr(k, "<unsupported>")
-			}
-		}
-	}
-	return td
-}
-
 type spanFixture struct {
 	name  string
 	attrs map[string]any
 }
 
-// makeTracesWithResource builds a ptrace.Traces where the Resource
-// carries the supplied attributes. Used to test resource-level
-// allowlist enforcement separately from span/event attributes.
-func makeTracesWithResource(resAttrs map[string]any, spans ...spanFixture) ptrace.Traces {
-	td := makeTraces(spans...)
-	rs := td.ResourceSpans().At(0)
-	for k, v := range resAttrs {
-		switch val := v.(type) {
-		case string:
-			rs.Resource().Attributes().PutStr(k, val)
-		case int:
-			rs.Resource().Attributes().PutInt(k, int64(val))
-		case bool:
-			rs.Resource().Attributes().PutBool(k, val)
-		}
+func makeTraces(spans ...spanFixture) ptrace.Traces {
+	td := ptrace.NewTraces()
+	ss := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	for _, fixture := range spans {
+		span := ss.Spans().AppendEmpty()
+		span.SetName(fixture.name)
+		putAttrs(span.Attributes(), fixture.attrs)
 	}
 	return td
 }
 
-// addEventToFirstSpan appends an event with the given name + attrs
-// to the first span of the trace. Returns the event index.
-func addEventToFirstSpan(td ptrace.Traces, eventName string, attrs map[string]any) int {
-	sp := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	ev := sp.Events().AppendEmpty()
-	ev.SetName(eventName)
-	for k, v := range attrs {
-		switch val := v.(type) {
+func putAttrs(attrs pcommon.Map, values map[string]any) {
+	for key, raw := range values {
+		switch value := raw.(type) {
 		case string:
-			ev.Attributes().PutStr(k, val)
+			attrs.PutStr(key, value)
 		case int:
-			ev.Attributes().PutInt(k, int64(val))
+			attrs.PutInt(key, int64(value))
+		case bool:
+			attrs.PutBool(key, value)
+		case []string:
+			slice := attrs.PutEmptySlice(key)
+			for _, item := range value {
+				slice.AppendEmpty().SetStr(item)
+			}
+		case []byte:
+			attrs.PutEmptyBytes(key).FromRaw(value)
+		case map[string]any:
+			_ = attrs.PutEmptyMap(key).FromRaw(value)
 		}
 	}
-	return sp.Events().Len() - 1
 }
 
-func enabledTraceConfig() *Config {
-	cfg := createDefaultConfig()
-	cfg.TraceProcessingEnabled = true
-	return cfg
+func firstSpan(td ptrace.Traces) ptrace.Span {
+	return td.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 }
 
-// ---------- toggle behaviour ----------
-
-func TestProcessTraces_DisabledByDefault(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, nil) // default config — traces disabled
-
-	td := makeTraces(spanFixture{
-		name: "fabric.decision",
-		attrs: map[string]any{
-			"fabric.tenant_id": "acme",
-			"random.foreign":   "should-stay-when-disabled",
-		},
-	})
+func TestProcessTraces_ProtectsByDefaultWithExactMetadataAllowlist(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "fabric.llm_call", attrs: map[string]any{
+		"fabric.tenant_id":                  "acme",
+		"fabric.deployment_id":              "prod-7",
+		"gen_ai.request.model":              "model-a",
+		"fabric.llm.usage.input_tokens":     42,
+		"fabric.prompt":                     "patient has ...",
+		"gen_ai.input.messages":             "raw conversation",
+		"tool.arguments":                    "{\"ssn\":\"...\"}",
+		"http.request.header.authorization": "Bearer secret",
+		"fabric.arbitrary":                  "namespace ownership is not trust",
+	}})
 
 	out, err := g.processTraces(context.Background(), td)
 	if err != nil {
-		t.Fatalf("processTraces returned err: %v", err)
+		t.Fatalf("processTraces: %v", err)
 	}
-	span := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	if _, ok := span.Attributes().Get("random.foreign"); !ok {
-		t.Fatalf("trace processing was disabled but attribute was stripped anyway")
-	}
-}
-
-// ---------- allowlist enforcement ----------
-
-func TestProcessTraces_StripsAttributesOutsideAllowlist(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-
-	td := makeTraces(spanFixture{
-		name: "fabric.decision",
-		attrs: map[string]any{
-			"fabric.tenant_id": "acme",
-			"gen_ai.system":    "anthropic",
-			"random.foreign":   "should be stripped",
-			"user.email":       "alice@example.com",
-		},
-	})
-
-	out, _ := g.processTraces(context.Background(), td)
-	span := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	if _, ok := span.Attributes().Get("random.foreign"); ok {
-		t.Errorf("expected `random.foreign` to be stripped")
-	}
-	if _, ok := span.Attributes().Get("user.email"); ok {
-		t.Errorf("expected `user.email` to be stripped (raw PII)")
-	}
-	if _, ok := span.Attributes().Get("fabric.tenant_id"); !ok {
-		t.Errorf("expected `fabric.tenant_id` to survive (fabric.* prefix)")
-	}
-	if _, ok := span.Attributes().Get("gen_ai.system"); !ok {
-		t.Errorf("expected `gen_ai.system` to survive (gen_ai.* prefix)")
-	}
-}
-
-func TestProcessTraces_DropsSpansWithNoSurvivingAttrs(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-
-	td := makeTraces(
-		spanFixture{
-			name: "fabric.decision",
-			attrs: map[string]any{
-				"fabric.tenant_id": "acme",
-			},
-		},
-		spanFixture{
-			name: "third-party.span",
-			attrs: map[string]any{
-				"random.foreign": "everything stripped",
-			},
-		},
-	)
-
-	out, _ := g.processTraces(context.Background(), td)
-	spans := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	if got := spans.Len(); got != 1 {
-		t.Fatalf("expected 1 span survives, got %d", got)
-	}
-	if got := spans.At(0).Name(); got != "fabric.decision" {
-		t.Errorf("expected fabric.decision survives, got %q", got)
-	}
-}
-
-func TestProcessTraces_OversizedStringStripped(t *testing.T) {
-	t.Parallel()
-	cfg := enabledTraceConfig()
-	cfg.MaxFieldBytes = 32
-	g := newTestGuard(t, cfg)
-
-	td := makeTraces(spanFixture{
-		name: "fabric.decision",
-		attrs: map[string]any{
-			"fabric.tenant_id":     "acme",
-			"fabric.note":          strings.Repeat("x", 64), // oversized
-			"fabric.short_message": "ok",
-		},
-	})
-
-	out, _ := g.processTraces(context.Background(), td)
-	span := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	if _, ok := span.Attributes().Get("fabric.note"); ok {
-		t.Errorf("expected `fabric.note` (64 bytes) to be stripped on max=32")
-	}
-	if _, ok := span.Attributes().Get("fabric.short_message"); !ok {
-		t.Errorf("expected `fabric.short_message` (2 bytes) to survive")
-	}
-}
-
-// ---------- prefix override ----------
-
-func TestProcessTraces_OperatorOverridesPrefixes(t *testing.T) {
-	t.Parallel()
-	cfg := enabledTraceConfig()
-	cfg.TraceAttributePrefixes = []string{"app.", "fabric."} // narrower than default
-	g := newTestGuard(t, cfg)
-
-	td := makeTraces(spanFixture{
-		name: "fabric.decision",
-		attrs: map[string]any{
-			"fabric.tenant_id": "acme",
-			"app.region":       "eu-west-1",
-			"gen_ai.system":    "openai", // not in operator's allowlist now
-		},
-	})
-
-	out, _ := g.processTraces(context.Background(), td)
-	span := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	if _, ok := span.Attributes().Get("gen_ai.system"); ok {
-		t.Errorf("expected `gen_ai.system` to be stripped under narrowed allowlist")
-	}
-	if _, ok := span.Attributes().Get("app.region"); !ok {
-		t.Errorf("expected `app.region` to survive")
-	}
-}
-
-// ---------- regression: SDK-emitted trace shape passes through ----------
-
-func TestProcessTraces_SDKShapedSpanSurvivesUnchanged(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-
-	td := makeTraces(spanFixture{
-		name: "fabric.decision",
-		attrs: map[string]any{
-			"fabric.tenant_id":  "acme",
-			"fabric.agent_id":   "bot",
-			"fabric.profile":    "permissive-dev",
-			"fabric.session_id": "s-1",
-			"fabric.request_id": "r-1",
-			"service.name":      "support-bot",
-			"telemetry.sdk.language": "python",
-		},
-	})
-
-	out, _ := g.processTraces(context.Background(), td)
-	span := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	if got := span.Attributes().Len(); got != 7 {
-		t.Errorf("expected all 7 SDK-namespaced attrs to survive, got %d", got)
-	}
-}
-
-// ---------- helper: spanKeyAllowed ----------
-
-func TestSpanKeyAllowed(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-	cases := []struct {
-		key     string
-		allowed bool
-	}{
-		{"fabric.tenant_id", true},
-		{"gen_ai.system", true},
-		{"llm.foo", true},
-		{"tool.name", true},
-		{"service.name", true},
-		{"otel.scope.name", true},
-		{"http.status_code", true},
-		{"user.email", false},
-		{"random", false},
-		{"", false},
-		{"fabricx.spoof", false}, // prefix must be exact (with dot)
-	}
-	for _, tc := range cases {
-		if got := g.spanKeyAllowed(tc.key); got != tc.allowed {
-			t.Errorf("spanKeyAllowed(%q) = %v, want %v", tc.key, got, tc.allowed)
+	attrs := firstSpan(out).Attributes()
+	for _, key := range []string{"fabric.tenant_id", "fabric.deployment_id", "gen_ai.request.model", "fabric.llm.usage.input_tokens"} {
+		if _, ok := attrs.Get(key); !ok {
+			t.Errorf("safe metadata %q was removed", key)
 		}
 	}
+	for _, key := range []string{"fabric.prompt", "gen_ai.input.messages", "tool.arguments", "http.request.header.authorization", "fabric.arbitrary"} {
+		if _, ok := attrs.Get(key); ok {
+			t.Errorf("unsafe or unknown attribute %q survived", key)
+		}
+	}
+	stats := g.stats.snapshot()
+	if stats.SensitiveRemoved != 4 || stats.NotAllowedRemoved != 1 {
+		t.Fatalf("unexpected removal reasons: %+v", stats)
+	}
 }
 
-// ---------- pcommon sanity: span value types ----------
+func TestProcessTraces_FiltersResourcesScopesEventsLinksAndStatus(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "patient Jane Doe bearerToken=secret", attrs: map[string]any{"fabric.tool.name": "ehr_write"}})
+	rs := td.ResourceSpans().At(0)
+	rs.SetSchemaUrl("https://schemas.invalid/patient/Jane-Doe?x-api-key=secret")
+	putAttrs(rs.Resource().Attributes(), map[string]any{
+		"service.name": "agent", "host.name": "private-host", "cloud.account.id": "account-1",
+	})
+	ss := rs.ScopeSpans().At(0)
+	ss.SetSchemaUrl("https://scope.invalid/clientSecret")
+	ss.Scope().SetName("instrumentation-for-patient-Jane-Doe")
+	ss.Scope().SetVersion("secretKey=abc")
+	putAttrs(ss.Scope().Attributes(), map[string]any{
+		"otel.scope.version": "1.2.3", "scope.secret": "do-not-export",
+	})
+	span := ss.Spans().At(0)
+	span.TraceState().FromRaw("vendor=patient-Jane-Doe")
+	span.Status().SetMessage("patient-specific database failure")
+	event := span.Events().AppendEmpty()
+	event.SetName("tool.result patient=Jane-Doe credential=secret")
+	putAttrs(event.Attributes(), map[string]any{
+		"fabric.tool.result_hash": strings.Repeat("a", 64), "fabric.tool.result": "raw result",
+	})
+	link := span.Links().AppendEmpty()
+	link.TraceState().FromRaw("vendor=Bearer-secret")
+	putAttrs(link.Attributes(), map[string]any{
+		"fabric.decision_id": "d-1", "http.request.headers": "Authorization: secret",
+	})
 
-func TestProcessTraces_PreservesNonStringTypes(t *testing.T) {
-	t.Parallel()
-	cfg := enabledTraceConfig()
-	cfg.MaxFieldBytes = 8 // tight, but only applies to strings
+	out, _ := g.processTraces(context.Background(), td)
+	resultRS := out.ResourceSpans().At(0)
+	if resultRS.SchemaUrl() != "" {
+		t.Error("resource schema URL should be cleared")
+	}
+	if _, ok := resultRS.Resource().Attributes().Get("service.name"); !ok {
+		t.Error("service.name should survive")
+	}
+	for _, key := range []string{"host.name", "cloud.account.id"} {
+		if _, ok := resultRS.Resource().Attributes().Get(key); ok {
+			t.Errorf("resource attribute %q survived", key)
+		}
+	}
+	resultSS := resultRS.ScopeSpans().At(0)
+	if resultSS.SchemaUrl() != "" || resultSS.Scope().Name() != "" || resultSS.Scope().Version() != "" {
+		t.Error("scope native text fields should be cleared")
+	}
+	if _, ok := resultSS.Scope().Attributes().Get("otel.scope.version"); !ok {
+		t.Error("safe scope version should survive")
+	}
+	span = resultSS.Spans().At(0)
+	if span.Name() != "fabric.tool_call" {
+		t.Errorf("span name = %q, want fixed tool category", span.Name())
+	}
+	if span.TraceState().AsRaw() != "" {
+		t.Error("span tracestate should be cleared")
+	}
+	if span.Status().Message() != "" {
+		t.Error("span status message should be cleared")
+	}
+	if _, ok := span.Events().At(0).Attributes().Get("fabric.tool.result_hash"); !ok {
+		t.Error("result hash should survive")
+	}
+	if span.Events().At(0).Name() != "fabric.tool_call" {
+		t.Errorf("event name = %q, want fixed tool category", span.Events().At(0).Name())
+	}
+	if _, ok := span.Events().At(0).Attributes().Get("fabric.tool.result"); ok {
+		t.Error("raw tool result survived event filtering")
+	}
+	if _, ok := span.Links().At(0).Attributes().Get("fabric.decision_id"); !ok {
+		t.Error("link correlation identity should survive")
+	}
+	if _, ok := span.Links().At(0).Attributes().Get("http.request.headers"); ok {
+		t.Error("headers survived link filtering")
+	}
+	if span.Links().At(0).TraceState().AsRaw() != "" {
+		t.Error("link tracestate should be cleared")
+	}
+	if g.stats.snapshot().NativeTextNormalized < 8 {
+		t.Fatalf("expected all native text channels to be normalized: %+v", g.stats.snapshot())
+	}
+}
+
+func TestProcessTraces_UnknownNativeNamesBecomeFixedActivityCategory(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "patient@example.com password=hunter2", attrs: map[string]any{"fabric.tenant_id": "acme"}})
+	event := firstSpan(td).Events().AppendEmpty()
+	event.SetName("ASR transcript for John Smith")
+	event.Attributes().PutStr("fabric.decision_id", "d-1")
+
+	out, _ := g.processTraces(context.Background(), td)
+	span := firstSpan(out)
+	if span.Name() != "fabric.activity" || span.Events().At(0).Name() != "fabric.decision" {
+		t.Fatalf("native names were not safely categorized: span=%q event=%q", span.Name(), span.Events().At(0).Name())
+	}
+}
+
+func TestProcessTraces_ExtraFieldsAreExactAndCannotOverrideSensitiveDenial(t *testing.T) {
+	cfg := createDefaultConfig()
+	cfg.ExtraAllowedTraceFields = []string{"customer.region", "customer.prompt"}
 	g := newTestGuard(t, cfg)
-
-	td := makeTraces(spanFixture{
-		name: "fabric.llm_call",
-		attrs: map[string]any{
-			"fabric.llm.usage.input_tokens": 12345, // int, not affected by MaxFieldBytes
-			"fabric.llm.system":             "ai",
-		},
-	})
+	td := makeTraces(spanFixture{name: "fabric.decision", attrs: map[string]any{
+		"fabric.tenant_id": "acme", "customer.region": "eu", "customer.region.name": "private",
+		"customer.prompt": "raw prompt",
+	}})
 
 	out, _ := g.processTraces(context.Background(), td)
-	span := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	v, ok := span.Attributes().Get("fabric.llm.usage.input_tokens")
-	if !ok {
-		t.Fatalf("int attribute was stripped unexpectedly")
+	attrs := firstSpan(out).Attributes()
+	if _, ok := attrs.Get("customer.region"); !ok {
+		t.Error("exact extension should survive")
 	}
-	if v.Type() != pcommon.ValueTypeInt {
-		t.Errorf("expected int type, got %v", v.Type())
+	if _, ok := attrs.Get("customer.region.name"); ok {
+		t.Error("exact extension must not behave as a prefix")
 	}
-	if v.Int() != 12345 {
-		t.Errorf("expected 12345, got %d", v.Int())
+	if _, ok := attrs.Get("customer.prompt"); ok {
+		t.Error("sensitive extension must not override denial")
 	}
 }
 
-// ---------- resource attributes ----------
-
-func TestProcessTraces_StripsResourceAttributesOutsideAllowlist(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-
-	td := makeTracesWithResource(
-		map[string]any{
-			"service.name":            "support-bot",
-			"telemetry.sdk.language":  "python",
-			"deployment.private_name": "internal-cluster-eu-west-1",
-			"company.account_id":      "acme-secret-id",
-		},
-		spanFixture{name: "fabric.decision", attrs: map[string]any{"fabric.tenant_id": "acme"}},
-	)
+func TestProcessTraces_RemovesOversizedAndStructuredValues(t *testing.T) {
+	cfg := createDefaultConfig()
+	cfg.MaxFieldBytes = 8
+	g := newTestGuard(t, cfg)
+	td := makeTraces(spanFixture{name: "fabric.decision", attrs: map[string]any{
+		"fabric.tenant_id":                      "acme",
+		"fabric.deployment_id":                  strings.Repeat("x", 20),
+		"fabric.causal_event_ids":               []string{"one", "two"},
+		"fabric.side_effect.committed":          map[string]any{"raw": "content"},
+		"fabric.side_effect.rollback_supported": []byte("bytes"),
+	}})
 
 	out, _ := g.processTraces(context.Background(), td)
-	resAttrs := out.ResourceSpans().At(0).Resource().Attributes()
-	if _, ok := resAttrs.Get("service.name"); !ok {
-		t.Errorf("expected `service.name` to survive on Resource (in allowlist)")
+	attrs := firstSpan(out).Attributes()
+	if _, ok := attrs.Get("fabric.tenant_id"); !ok {
+		t.Error("safe scalar should survive")
 	}
-	if _, ok := resAttrs.Get("telemetry.sdk.language"); !ok {
-		t.Errorf("expected `telemetry.sdk.language` to survive on Resource")
+	for _, key := range []string{"fabric.deployment_id", "fabric.side_effect.committed", "fabric.side_effect.rollback_supported"} {
+		if _, ok := attrs.Get(key); ok {
+			t.Errorf("unsafe value shape for %q survived", key)
+		}
 	}
-	if _, ok := resAttrs.Get("deployment.private_name"); ok {
-		t.Errorf("expected `deployment.private_name` to be stripped from Resource")
-	}
-	if _, ok := resAttrs.Get("company.account_id"); ok {
-		t.Errorf("expected `company.account_id` to be stripped from Resource")
+	stats := g.stats.snapshot()
+	if stats.OversizedRemoved != 1 || stats.StructuredRemoved != 2 {
+		t.Fatalf("unexpected value-removal counters: %+v", stats)
 	}
 }
 
-// ---------- span events ----------
-
-func TestProcessTraces_FiltersEventAttributes(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-
-	td := makeTraces(spanFixture{
-		name: "fabric.decision",
-		attrs: map[string]any{
-			"fabric.tenant_id": "acme",
-		},
-	})
-	addEventToFirstSpan(td, "fabric.guardrail", map[string]any{
-		"fabric.guardrail.phase": "input",  // should survive
-		"fabric.guardrail.policies": "presidio:pii", // survive
-		"random.foreign_payload":   "should be stripped",
-		"user.email":               "alice@example.com", // strip
-	})
-
+func TestProcessTraces_PreservesMetadataEmptySpanForCausalTopology(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "third-party", attrs: map[string]any{"raw": "content"}})
 	out, _ := g.processTraces(context.Background(), td)
-	ev := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Events().At(0)
-	if _, ok := ev.Attributes().Get("fabric.guardrail.phase"); !ok {
-		t.Errorf("expected `fabric.guardrail.phase` to survive on event")
+	if got := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans().Len(); got != 1 {
+		t.Fatalf("expected privacy-safe topology span to survive, got %d", got)
 	}
-	if _, ok := ev.Attributes().Get("random.foreign_payload"); ok {
-		t.Errorf("expected `random.foreign_payload` to be stripped from event")
-	}
-	if _, ok := ev.Attributes().Get("user.email"); ok {
-		t.Errorf("expected `user.email` to be stripped from event")
+	if got := firstSpan(out).Name(); got != "fabric.activity" {
+		t.Fatalf("expected fixed activity category, got %q", got)
 	}
 }
 
-func TestProcessTraces_KeepsSpanWithEventsButNoSpanAttrs(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-
-	// Span has no allowlisted span-level attributes, but DOES have
-	// an allowlisted event attribute. Should NOT be dropped.
-	td := makeTraces(spanFixture{
-		name: "fabric.decision",
-		attrs: map[string]any{
-			"random.foreign": "stripped",
-		},
-	})
-	addEventToFirstSpan(td, "fabric.guardrail", map[string]any{
-		"fabric.guardrail.phase": "input",
-	})
+func TestProcessTraces_RejectsRawContentMasqueradingAsHash(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "fabric.tool_call", attrs: map[string]any{
+		"fabric.tenant_id":           "acme",
+		"fabric.tool.arguments_hash": "patient Jane Doe has SSN 123-45-6789",
+		"fabric.tool.result_hash":    strings.Repeat("a", 64),
+	}})
 
 	out, _ := g.processTraces(context.Background(), td)
-	spans := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	if got := spans.Len(); got != 1 {
-		t.Fatalf("expected span retained because of allowlisted event attrs, got %d", got)
+	attrs := firstSpan(out).Attributes()
+	if _, ok := attrs.Get("fabric.tool.arguments_hash"); ok {
+		t.Error("invalid hash-shaped content survived")
 	}
-}
-
-func TestProcessTraces_DropsSpanWhenAllAttrsAndEventsStripped(t *testing.T) {
-	t.Parallel()
-	g := newTestGuard(t, enabledTraceConfig())
-
-	td := makeTraces(spanFixture{
-		name:  "third-party.span",
-		attrs: map[string]any{"random.foreign": "v"},
-	})
-	addEventToFirstSpan(td, "third-party.event", map[string]any{
-		"random.payload": "stripped",
-	})
-
-	out, _ := g.processTraces(context.Background(), td)
-	spans := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	if got := spans.Len(); got != 0 {
-		t.Errorf("expected span dropped (no surviving span attrs OR event attrs), got %d", got)
+	if _, ok := attrs.Get("fabric.tool.result_hash"); !ok {
+		t.Error("valid SHA-256 metadata was removed")
+	}
+	if got := g.stats.snapshot().InvalidHashRemoved; got != 1 {
+		t.Fatalf("invalid hash removal count = %d, want 1", got)
 	}
 }

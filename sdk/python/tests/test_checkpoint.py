@@ -50,12 +50,21 @@ def test_multiple_checkpoints_aggregate_count(span_exporter: InMemorySpanExporte
 def test_state_hash_optional(span_exporter: InMemorySpanExporter) -> None:
     fabric = _client()
     with fabric.decision(session_id="s", request_id="r") as d:
-        d.checkpoint("with-hash", state_hash="sha256:abc123")
+        d.checkpoint("with-hash", state_hash="a" * 64)
         d.checkpoint("without-hash")
     span = span_exporter.get_finished_spans()[0]
     events = [e for e in span.events if e.name == "fabric.checkpoint"]
     assert "fabric.checkpoint.state_hash" in dict(events[0].attributes or {})
     assert "fabric.checkpoint.state_hash" not in dict(events[1].attributes or {})
+
+
+def test_state_hash_rejects_non_sha256_metadata() -> None:
+    fabric = _client()
+    with (
+        fabric.decision(session_id="s", request_id="r") as d,
+        pytest.raises(ValueError, match="64 lowercase SHA-256"),
+    ):
+        d.checkpoint("invalid", state_hash="raw patient content")
 
 
 def test_explicit_checkpoint_id_honored() -> None:

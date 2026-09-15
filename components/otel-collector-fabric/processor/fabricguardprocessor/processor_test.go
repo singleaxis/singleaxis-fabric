@@ -134,6 +134,75 @@ func TestAllowlistKeepsUnknownWhenDropDisabled(t *testing.T) {
 	if got := recordCount(out); got != 2 {
 		t.Fatalf("expected 2 records when drop disabled, got %d", got)
 	}
+	second := out.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1)
+	if _, ok := second.Attributes().Get("weird"); ok {
+		t.Error("unknown-class debug mode must still strip non-envelope attributes")
+	}
+}
+
+func TestLogsRemoveBodyAndFilterResourceScopeAndSensitiveExtensions(t *testing.T) {
+	cfg := createDefaultConfig()
+	cfg.ExtraAllowedFields = map[string][]string{
+		"activity": {"customer.region", "customer.prompt", "customer.response", "authorization", "authorization_hash"},
+	}
+	g := newTestGuard(t, cfg)
+	ld := makeLogs(map[string]any{
+		"event_class": "activity", "event_id": "e-1", "customer.region": "eu",
+		"customer.prompt": "raw prompt", "customer.response": "raw response",
+		"authorization": "Bearer secret", "authorization_hash": "sha256:still-credential-shaped",
+		"gen_ai.output.messages": "raw response",
+	})
+	rl := ld.ResourceLogs().At(0)
+	rl.SetSchemaUrl("https://schemas.invalid/patient/Jane-Doe?secretKey=abc")
+	rl.Resource().Attributes().PutStr("service.name", "agent")
+	rl.Resource().Attributes().PutStr("host.name", "private-host")
+	sl := rl.ScopeLogs().At(0)
+	sl.SetSchemaUrl("https://scope.invalid/clientSecret")
+	sl.Scope().SetName("patient-Jane-Doe")
+	sl.Scope().SetVersion("bearerToken=secret")
+	sl.Scope().Attributes().PutStr("otel.scope.version", "1.0")
+	sl.Scope().Attributes().PutStr("scope.secret", "private")
+	sl.LogRecords().At(0).Body().SetStr("raw patient content")
+	sl.LogRecords().At(0).SetSeverityText("ERROR patient=Jane-Doe x-api-key=secret")
+
+	out, err := g.processLogs(context.Background(), ld)
+	if err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	record := firstRecord(t, out)
+	if record.Body().Type() != pcommon.ValueTypeEmpty {
+		t.Error("log body should be cleared")
+	}
+	if record.SeverityText() != "" {
+		t.Error("severity text should be cleared; severity number is the safe channel")
+	}
+	if rl.SchemaUrl() != "" || sl.SchemaUrl() != "" || sl.Scope().Name() != "" || sl.Scope().Version() != "" {
+		t.Error("log resource/scope native text fields should be cleared")
+	}
+	if _, ok := record.Attributes().Get("customer.region"); !ok {
+		t.Error("safe exact extension should survive")
+	}
+	for _, key := range []string{"customer.prompt", "customer.response", "authorization", "authorization_hash", "gen_ai.output.messages"} {
+		if _, ok := record.Attributes().Get(key); ok {
+			t.Errorf("sensitive field %q survived", key)
+		}
+	}
+	if _, ok := rl.Resource().Attributes().Get("service.name"); !ok {
+		t.Error("safe resource identity should survive")
+	}
+	if _, ok := rl.Resource().Attributes().Get("host.name"); ok {
+		t.Error("unknown resource identity should be removed")
+	}
+	if _, ok := sl.Scope().Attributes().Get("otel.scope.version"); !ok {
+		t.Error("safe producer scope should survive")
+	}
+	if _, ok := sl.Scope().Attributes().Get("scope.secret"); ok {
+		t.Error("secret scope attribute should be removed")
+	}
+	stats := g.stats.snapshot()
+	if stats.LogBodyRemoved != 1 || stats.SensitiveRemoved < 5 {
+		t.Fatalf("unexpected removal counters: %+v", stats)
+	}
 }
 
 func TestAllowlistRemovesOversizedStrings(t *testing.T) {
@@ -156,23 +225,59 @@ func TestAllowlistRemovesOversizedStrings(t *testing.T) {
 	}
 }
 
-func TestAllowlistDisableOversizeByZero(t *testing.T) {
+func TestMaxFieldBytesZeroIsRejected(t *testing.T) {
 	cfg := createDefaultConfig()
 	cfg.MaxFieldBytes = 0
-	g := newTestGuard(t, cfg)
-	huge := strings.Repeat("y", 20_000)
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("max_field_bytes=0 must be rejected: it silently disables oversized-value removal")
+	}
+}
+
+func TestLogRecordEventNameIsNormalized(t *testing.T) {
+	g := newTestGuard(t, nil)
+	marker := "patient Jane Doe SSN 123-45-6789"
 	ld := makeLogs(map[string]any{
 		"event_class": "decision_summary",
 		"tenant_id":   "t-1",
-		"model":       huge,
 	})
+	rec := firstRecord(t, ld)
+	rec.SetEventName(marker)
+
 	out, err := g.processLogs(context.Background(), ld)
 	if err != nil {
 		t.Fatalf("processLogs: %v", err)
 	}
-	lr := firstRecord(t, out)
-	if v, ok := lr.Attributes().Get("model"); !ok || v.Str() != huge {
-		t.Error("oversize check should have been disabled")
+	if recordCount(out) != 1 {
+		t.Fatalf("expected 1 record, got %d", recordCount(out))
+	}
+	got := firstRecord(t, out).EventName()
+	if strings.Contains(got, marker) || got == marker {
+		t.Fatalf("caller-controlled event_name %q survived processing", got)
+	}
+	if got != "fabric.activity" {
+		t.Errorf("event_name = %q, want fixed category fabric.activity", got)
+	}
+	if g.stats.snapshot().NativeTextNormalized < 1 {
+		t.Error("event_name normalization should count in nativeTextNormalized")
+	}
+}
+
+func TestLogRecordEventNameKeepsKnownCategory(t *testing.T) {
+	g := newTestGuard(t, nil)
+	ld := makeLogs(map[string]any{
+		"event_class":      "activity",
+		"tenant_id":        "t-1",
+		"fabric.tool.name": "ehr_write",
+	})
+	rec := firstRecord(t, ld)
+	rec.SetEventName("fabric.tool_call")
+
+	out, err := g.processLogs(context.Background(), ld)
+	if err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	if got := firstRecord(t, out).EventName(); got != "fabric.tool_call" {
+		t.Errorf("vocabulary event_name = %q, want fabric.tool_call", got)
 	}
 }
 
@@ -241,9 +346,20 @@ func TestConfigValidate(t *testing.T) {
 		{"default is valid", func(c *Config) {}, ""},
 		{"empty class attr", func(c *Config) { c.EventClassAttribute = "" }, "event_class_attribute"},
 		{"negative max bytes", func(c *Config) { c.MaxFieldBytes = -1 }, "max_field_bytes"},
+		{"zero max bytes", func(c *Config) { c.MaxFieldBytes = 0 }, "max_field_bytes"},
+		{"unknown extras class", func(c *Config) {
+			c.ExtraAllowedFields = map[string][]string{"not_a_class": {"x"}}
+		}, "unknown event class"},
+		{"prefix policies rejected", func(c *Config) { c.TraceAttributePrefixes = []string{"fabric."} }, "no longer supported"},
 		{"empty extras key", func(c *Config) {
 			c.ExtraAllowedFields = map[string][]string{"": {"x"}}
 		}, "empty class key"},
+		{"sensitive log extension", func(c *Config) {
+			c.ExtraAllowedFields = map[string][]string{"activity": {"customer.prompt"}}
+		}, "prohibited sensitive field"},
+		{"sensitive trace extension", func(c *Config) {
+			c.ExtraAllowedTraceFields = []string{"http.request.header.authorization"}
+		}, "prohibited sensitive field"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -290,6 +406,45 @@ func TestMergeAllowedReturnsBaseWhenNoExtras(t *testing.T) {
 func TestMergeAllowedUnknownClass(t *testing.T) {
 	if _, ok := mergeAllowed("nope", nil); ok {
 		t.Error("unknown class should return ok=false")
+	}
+}
+
+func TestBuiltInClassesAreRecorderOnly(t *testing.T) {
+	for _, class := range []string{"red_team_result", "escalation", "judge_result", "assurance_finding"} {
+		if _, ok := BuiltInAllowedFields[class]; ok {
+			t.Errorf("assurance/control class %q must not be enabled by the recorder", class)
+		}
+	}
+	for _, class := range []string{"activity", "audit", "decision_summary"} {
+		if _, ok := BuiltInAllowedFields[class]; !ok {
+			t.Errorf("observed activity class %q should remain supported", class)
+		}
+	}
+}
+
+func TestSensitiveAttributeKey(t *testing.T) {
+	tests := map[string]bool{
+		"prompt":                            true,
+		"customer.response":                 true,
+		"gen_ai.input.messages":             true,
+		"tool.arguments":                    true,
+		"http.request.header.authorization": true,
+		"authorization_hash":                true,
+		"x-api-key":                         true,
+		"XApiKey":                           true,
+		"secretKey":                         true,
+		"clientSecret":                      true,
+		"bearerToken":                       true,
+		"customer.session-token":            true,
+		"fabric.tool.arguments_hash":        false,
+		"fabric.interaction.payload_hash":   false,
+		"gen_ai.response.model":             false,
+		"fabric.llm.usage.input_tokens":     false,
+	}
+	for key, want := range tests {
+		if got := sensitiveAttributeKey(key); got != want {
+			t.Errorf("sensitiveAttributeKey(%q) = %v, want %v", key, got, want)
+		}
 	}
 }
 

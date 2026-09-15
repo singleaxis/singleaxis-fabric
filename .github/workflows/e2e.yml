@@ -1,34 +1,16 @@
 name: E2E kind smoke
 
-# End-to-end smoke test: spin up a kind cluster, install the umbrella
-# chart under the permissive-dev profile, and assert the subset of the
-# stack whose images can actually be built from this repo runs Ready.
-#
-# Scope:
-#   - The otel-collector path plus both guardrail sidecars (nemo-sidecar
-#     and presidio-sidecar) are exercised end-to-end. All three images
-#     are built here from components/* and kind-loaded into the cluster.
-#     We do NOT pull from ghcr.io — sidecar images publish there only on
-#     a release tag, so building locally keeps E2E independent of
-#     releases (the standard kind pattern, mirroring the collector).
-#   - The presidio sidecar runs with --allow-passthrough (set via
-#     presidio-sidecar.allowPassthrough=true) so it starts without the
-#     heavy [presidio] spaCy model. This smoke only asserts the sidecar
-#     starts and serves /healthz; redaction correctness is covered by
-#     the unit tests, not E2E.
-#   - The presidio chart refuses to render without a tenant HMAC key, so
-#     we pre-create the fabric-presidio-tenant-key Secret before install.
-#   - update-agent, redteam-runner, langfuse stay disabled — they need
-#     real signing keys / Postgres / a live target and are out of scope
-#     for a smoke run.
-#   - Each guardrail sidecar is asserted on /healthz over a port-forward,
-#     mirroring the collector's healthcheck assertion.
-#
-# Runtime budget: ~10-15 min. This is why it lives outside ci.yml and
-# only runs on chart/component changes — doc-only PRs skip it.
+# Qualifies the released Fabric Node surface only:
+# OTLP -> default-deny protection -> persistent queue -> controlled test sink.
+# The sink returns 200 after fsync, allowing this workflow to test outage and
+# restart recovery without claiming that arbitrary OTLP destinations have the
+# same persistence semantics.
 
 on:
+  push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -39,17 +21,15 @@ permissions:
   contents: read
 
 jobs:
-  # Branch protection lists "kind cluster install + smoke" as a required
-  # check. If the workflow itself is `paths:`-filtered, GitHub never
-  # reports a status under that name on doc-only PRs and the PR stays
-  # BLOCKED forever even when everything else is green. Instead, the
-  # workflow always triggers, a tiny `detect` job decides whether the
-  # diff touches anything the smoke covers, and `kind-smoke` either
-  # runs the real kind cluster or short-circuits to a no-op SUCCESS
-  # under the same name so the required check is satisfied.
   detect:
     name: detect relevant changes
     runs-on: ubuntu-latest
+    # dorny/paths-filter calls the Pulls listFiles API on pull_request
+    # events, which requires pull-requests:read beyond the workflow-level
+    # contents:read.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       relevant: ${{ steps.filter.outputs.relevant }}
     steps:
@@ -59,8 +39,9 @@ jobs:
         with:
           filters: |
             relevant:
-              - 'charts/**'
-              - 'components/**'
+              - 'charts/fabric/**'
+              - 'components/otel-collector-fabric/**'
+              - 'deploy/compose/**'
               - '.github/workflows/e2e.yml'
 
   kind-smoke:
@@ -72,15 +53,10 @@ jobs:
       KIND_CLUSTER: fabric-e2e
       NAMESPACE: fabric-system
       COLLECTOR_IMAGE: fabric-otelcol:e2e
-      PRESIDIO_IMAGE: fabric-presidio-sidecar:e2e
-      NEMO_IMAGE: fabric-nemo-sidecar:e2e
     steps:
-      - name: Short-circuit if no relevant changes
+      - name: Short-circuit unrelated changes
         if: needs.detect.outputs.relevant != 'true'
-        run: |
-          echo "No charts/, components/, or e2e workflow changes. Skipping kind smoke."
-          echo "This satisfies the required 'kind cluster install + smoke' check"
-          echo "without spending the ~15min on doc-only PRs."
+        run: echo "No Fabric Node runtime or packaging changes; smoke not required."
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         if: needs.detect.outputs.relevant == 'true'
@@ -89,10 +65,8 @@ jobs:
         if: needs.detect.outputs.relevant == 'true'
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - name: Build collector image (no push, load locally)
+      - name: Build Fabric Node Collector image
         if: needs.detect.outputs.relevant == 'true'
-        # Built locally so we can kind-load it. Do NOT push to GHCR
-        # from this workflow — that's the release workflow's job.
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: components/otel-collector-fabric
@@ -103,39 +77,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build presidio-sidecar image (no push, load locally)
-        if: needs.detect.outputs.relevant == 'true'
-        # Same pattern as the collector: build locally + kind-load so
-        # E2E never depends on a ghcr.io release. The [presidio] spaCy
-        # model is baked into the image, but the sidecar runs with
-        # --allow-passthrough in this smoke (see helm install below).
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: components/presidio-sidecar
-          file: components/presidio-sidecar/Dockerfile
-          push: false
-          load: true
-          tags: ${{ env.PRESIDIO_IMAGE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build nemo-sidecar image (no push, load locally)
-        if: needs.detect.outputs.relevant == 'true'
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: components/nemo-sidecar
-          file: components/nemo-sidecar/Dockerfile
-          push: false
-          load: true
-          tags: ${{ env.NEMO_IMAGE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Create kind cluster
         if: needs.detect.outputs.relevant == 'true'
-        # helm/kind-action pins kind v0.23.0 by default; we pin the
-        # node image explicitly so cluster behaviour is stable across
-        # upstream kind releases.
         uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
         with:
           cluster_name: ${{ env.KIND_CLUSTER }}
@@ -143,16 +86,9 @@ jobs:
           version: v0.23.0
           wait: 120s
 
-      - name: Load collector image into kind
+      - name: Load Fabric Node image
         if: needs.detect.outputs.relevant == 'true'
-        run: |
-          kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
-
-      - name: Load sidecar images into kind
-        if: needs.detect.outputs.relevant == 'true'
-        run: |
-          kind load docker-image "${PRESIDIO_IMAGE}" --name "${KIND_CLUSTER}"
-          kind load docker-image "${NEMO_IMAGE}" --name "${KIND_CLUSTER}"
+        run: kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
 
       - name: Set up Helm
         if: needs.detect.outputs.relevant == 'true'
@@ -160,286 +96,178 @@ jobs:
         with:
           version: v3.15.0
 
-      - name: Pre-create namespace + presidio tenant-key secret
+      - name: Install controlled fsync test sink
         if: needs.detect.outputs.relevant == 'true'
-        # The presidio chart refuses to render without a tenant HMAC
-        # key (tenantKey.existingSecret), so the Secret must exist
-        # before `helm install`. We create the namespace here too (so
-        # the Secret has somewhere to live) and therefore drop helm's
-        # `--create-namespace` flag below — the `--dry-run|apply` form
-        # is idempotent, and `--set namespace.create=false` keeps the
-        # chart from also emitting its own Namespace manifest.
         run: |
-          kubectl create namespace "${NAMESPACE}" \
-            --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic fabric-presidio-tenant-key \
+          kubectl create namespace "${NAMESPACE}"
+          kubectl create configmap fabric-test-sink \
             --namespace "${NAMESPACE}" \
-            --from-literal=tenant.key="$(openssl rand -base64 32)"
+            --from-file=otlp_sink.py=deploy/compose/sink/otlp_sink.py
+          kubectl apply --namespace "${NAMESPACE}" -f - <<'YAML'
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: fabric-test-sink
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 1Gi
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: fabric-test-sink
+          spec:
+            replicas: 1
+            selector:
+              matchLabels: {app: fabric-test-sink}
+            template:
+              metadata:
+                labels: {app: fabric-test-sink}
+              spec:
+                containers:
+                  - name: sink
+                    image: python:3.12-alpine
+                    command: [python, /app/otlp_sink.py]
+                    env:
+                      - {name: SINK_DATA_DIR, value: /data}
+                      - {name: SINK_PORT, value: "8080"}
+                    ports:
+                      - {name: http, containerPort: 8080}
+                    readinessProbe:
+                      httpGet: {path: /health, port: http}
+                      periodSeconds: 2
+                    volumeMounts:
+                      - {name: script, mountPath: /app, readOnly: true}
+                      - {name: data, mountPath: /data}
+                volumes:
+                  - name: script
+                    configMap: {name: fabric-test-sink}
+                  - name: data
+                    persistentVolumeClaim: {claimName: fabric-test-sink}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: fabric-test-sink
+          spec:
+            selector: {app: fabric-test-sink}
+            ports:
+              - {name: http, port: 8080, targetPort: http}
+          YAML
+          kubectl rollout status deployment/fabric-test-sink \
+            --namespace "${NAMESPACE}" --timeout=180s
 
-      - name: Install umbrella chart (permissive-dev, collector + sidecars)
+      - name: Install Collector-only Fabric Node
         if: needs.detect.outputs.relevant == 'true'
-        # permissive-dev enables collector + nemo by default; we also
-        # enable presidio and point all three images at the locally-built
-        # :e2e tags (kind-loaded above). Subchart value overrides are
-        # keyed by the dependency name from Chart.yaml — `nemo-sidecar`,
-        # `presidio-sidecar`, `otel-collector` — NOT the camelCase
-        # `*.enabled` condition keys. Using the wrong key silently
-        # no-ops (the tenantKey override in particular fails the render
-        # guard), so these MUST stay dependency-name-keyed.
-        #
-        # presidio-sidecar.allowPassthrough=true runs the sidecar with
-        # --allow-passthrough so it starts without the heavy [presidio]
-        # spaCy model — this smoke only asserts startup + /healthz.
-        #
-        # langfuse/redteam/updateAgent stay off. hmacKey is inline for
-        # this throwaway test cluster — never do this in prod.
-        #
-        # `--set namespace.create=false`: permissive-dev.yaml flips
-        # chart-owned namespace creation on. We pre-create the namespace
-        # in the previous step (needed for the tenant-key Secret), so we
-        # drop helm's `--create-namespace` and keep namespace.create=false
-        # to avoid the chart's own Namespace manifest colliding.
         run: |
-          helm install ci charts/fabric \
+          helm install fabric-node charts/fabric \
             --namespace "${NAMESPACE}" \
-            --values charts/fabric/profiles/permissive-dev.yaml \
+            --values charts/fabric/profiles/shadow-dev.yaml \
             --set namespace.create=false \
-            --set nemoSidecar.enabled=true \
-            --set presidioSidecar.enabled=true \
-            --set langfuse.enabled=false \
-            --set redteamRunner.enabled=false \
-            --set updateAgent.enabled=false \
             --set otel-collector.image.repository=fabric-otelcol \
             --set otel-collector.image.tag=e2e \
             --set otel-collector.image.pullPolicy=IfNotPresent \
-            --set otel-collector.fabric.sampler.hmacKey=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff \
-            --set nemo-sidecar.image.repository=fabric-nemo-sidecar \
-            --set nemo-sidecar.image.tag=e2e \
-            --set nemo-sidecar.image.pullPolicy=IfNotPresent \
-            --set presidio-sidecar.image.repository=fabric-presidio-sidecar \
-            --set presidio-sidecar.image.tag=e2e \
-            --set presidio-sidecar.image.pullPolicy=IfNotPresent \
-            --set presidio-sidecar.tenantKey.existingSecret=fabric-presidio-tenant-key \
-            --set presidio-sidecar.allowPassthrough=true \
-            --set otel-collector.debugExporter.verbosity=detailed \
-            --wait \
-            --timeout 5m
-
-      - name: Wait for pods Ready
-        if: needs.detect.outputs.relevant == 'true'
-        run: |
-          kubectl wait --for=condition=ready pods --all \
+            --set otel-collector.exporter.endpoint=http://fabric-test-sink:8080 \
+            --set otel-collector.exporter.sendingQueue.persistence.enabled=true \
+            --set otel-collector.exporter.sendingQueue.persistence.fsync=true \
+            --set otel-collector.exporter.sendingQueue.persistence.size=1Gi \
+            --set otel-collector.exporter.sendingQueue.blockOnOverflow=true \
+            --set otel-collector.exporter.retry.maxElapsedTime=0s \
+            --set otel-collector.exporter.requireDurableQueue=true \
+            --set otel-collector.batch.enabled=false \
+            --set otel-collector.debugExporter.enabled=false \
+            --wait --timeout 5m
+          kubectl wait --for=condition=ready pods \
             --namespace "${NAMESPACE}" \
-            --timeout=300s
+            -l app.kubernetes.io/name=otel-collector --timeout=300s
 
-      - name: List installed resources
+      - name: Verify capture, protection, and delivery
         if: needs.detect.outputs.relevant == 'true'
         run: |
-          kubectl get all --namespace "${NAMESPACE}"
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-node-otel-collector 14318:4318 &
+          NODE_PF=$!
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-test-sink 18080:8080 &
+          SINK_PF=$!
+          trap 'kill ${NODE_PF} ${SINK_PF} 2>/dev/null || true' EXIT
+          sleep 3
 
-      - name: Assert collector healthcheckextension responds
+          BEFORE=$(curl -fsS http://127.0.0.1:18080/count | jq -r .count)
+          curl -fsS -X POST http://127.0.0.1:14318/v1/traces \
+            -H 'Content-Type: application/json' \
+            --data-binary @deploy/compose/fixtures/decision-summary.json
+
+          for attempt in $(seq 1 30); do
+            echo "delivery poll ${attempt}/30"
+            CURRENT=$(curl -fsS http://127.0.0.1:18080/count | jq -r .count)
+            if [ "${CURRENT}" -gt "${BEFORE}" ]; then break; fi
+            sleep 1
+          done
+          test "${CURRENT}" -gt "${BEFORE}"
+          test "$(curl -fsS 'http://127.0.0.1:18080/contains?needle=MUST_NOT_LEAVE_FABRIC_NODE' | jq -r .found)" = false
+
+      - name: Verify destination outage and Collector restart recovery
         if: needs.detect.outputs.relevant == 'true'
-        # Exec curl from inside the collector pod (distroless has no
-        # shell/curl, so we use kubectl port-forward from the runner
-        # instead — simpler and doesn't require an exec-capable image).
         run: |
-          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-node-otel-collector 14318:4318 &
+          NODE_PF=$!
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-test-sink 18080:8080 &
+          SINK_PF=$!
+          trap 'kill ${NODE_PF} ${SINK_PF} 2>/dev/null || true' EXIT
+          sleep 3
+          BEFORE=$(curl -fsS http://127.0.0.1:18080/count | jq -r .count)
+
+          kubectl scale deployment/fabric-test-sink --namespace "${NAMESPACE}" --replicas=0
+          kubectl wait --for=delete pods --namespace "${NAMESPACE}" -l app=fabric-test-sink --timeout=120s
+          curl -fsS -X POST http://127.0.0.1:14318/v1/traces \
+            -H 'Content-Type: application/json' \
+            --data-binary @deploy/compose/fixtures/decision-summary.json
+          sleep 3
+
+          COLLECTOR=$(kubectl get pod --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector \
             -o jsonpath='{.items[0].metadata.name}')
-          echo "Collector pod: ${POD}"
+          kill "${NODE_PF}" 2>/dev/null || true
+          kubectl delete pod "${COLLECTOR}" --namespace "${NAMESPACE}"
+          kubectl wait --for=condition=ready pods --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector --timeout=300s
+
+          kubectl scale deployment/fabric-test-sink --namespace "${NAMESPACE}" --replicas=1
+          kubectl rollout status deployment/fabric-test-sink \
+            --namespace "${NAMESPACE}" --timeout=180s
+          kill "${SINK_PF}" 2>/dev/null || true
           kubectl port-forward --namespace "${NAMESPACE}" \
-            "pod/${POD}" 13133:13133 &
-          PF_PID=$!
-          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
-          # Give port-forward a moment to bind, then poll.
-          attempts=0
-          while [ "${attempts}" -lt 10 ]; do
-            if curl --silent --show-error --fail --max-time 2 \
-                http://127.0.0.1:13133/; then
-              echo "healthcheck OK"
-              exit 0
-            fi
-            attempts=$((attempts + 1))
+            service/fabric-test-sink 18080:8080 &
+          SINK_PF=$!
+          sleep 3
+
+          CURRENT=0
+          for attempt in $(seq 1 45); do
+            echo "recovery poll ${attempt}/45"
+            CURRENT=$(curl -fsS http://127.0.0.1:18080/count | jq -r .count)
+            if [ "${CURRENT}" -gt "${BEFORE}" ]; then break; fi
             sleep 1
           done
-          echo "collector healthcheck did not respond on :13133" >&2
-          exit 1
+          test "${CURRENT}" -gt "${BEFORE}"
+          echo "At-least-once recovery reached the controlled fsync sink."
+          echo "This does not prove exactly-once delivery or persistence at arbitrary destinations."
 
-      - name: Assert presidio-sidecar /healthz responds
+      - name: Helm test
         if: needs.detect.outputs.relevant == 'true'
-        # Same port-forward pattern as the collector: find the pod by
-        # its chart label, forward the service port (8080), and poll
-        # /healthz. Running with --allow-passthrough, so a 200 just
-        # confirms the sidecar process started and serves the endpoint.
-        run: |
-          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
-            -l app.kubernetes.io/name=presidio-sidecar \
-            -o jsonpath='{.items[0].metadata.name}')
-          echo "Presidio pod: ${POD}"
-          kubectl port-forward --namespace "${NAMESPACE}" \
-            "pod/${POD}" 18080:8080 &
-          PF_PID=$!
-          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
-          attempts=0
-          while [ "${attempts}" -lt 10 ]; do
-            if curl --silent --show-error --fail --max-time 2 \
-                http://127.0.0.1:18080/healthz; then
-              echo "presidio /healthz OK"
-              exit 0
-            fi
-            attempts=$((attempts + 1))
-            sleep 1
-          done
-          echo "presidio /healthz did not respond on :8080" >&2
-          exit 1
+        run: helm test fabric-node --namespace "${NAMESPACE}" --timeout 2m
 
-      - name: Assert nemo-sidecar /healthz responds
-        if: needs.detect.outputs.relevant == 'true'
-        run: |
-          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
-            -l app.kubernetes.io/name=nemo-sidecar \
-            -o jsonpath='{.items[0].metadata.name}')
-          echo "NeMo pod: ${POD}"
-          kubectl port-forward --namespace "${NAMESPACE}" \
-            "pod/${POD}" 18081:8080 &
-          PF_PID=$!
-          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
-          attempts=0
-          while [ "${attempts}" -lt 10 ]; do
-            if curl --silent --show-error --fail --max-time 2 \
-                http://127.0.0.1:18081/healthz; then
-              echo "nemo /healthz OK"
-              exit 0
-            fi
-            attempts=$((attempts + 1))
-            sleep 1
-          done
-          echo "nemo /healthz did not respond on :8080" >&2
-          exit 1
-
-      - name: helm test (chart-provided test-connection Pod)
-        if: needs.detect.outputs.relevant == 'true'
-        run: |
-          helm test ci --namespace "${NAMESPACE}" --timeout 2m
-
-      # --- Live span-landing assertion ---------------------------------
-      # Everything above only proves the collector + sidecars start and
-      # serve /healthz. The steps below close the gap the unit suite
-      # can't: run a REAL SDK Decision on the runner, export it over OTLP
-      # to the in-cluster collector, and assert the fabric.decision span
-      # (plus a child span and a key fabric.* attribute) actually lands.
-      #
-      # The collector runs the `debug` exporter (verbosity: detailed) on
-      # the traces pipeline in this install (permissive-dev sets
-      # debugExporter.enabled=true; we bump verbosity above), so landed
-      # spans print to the collector pod's stdout where `kubectl logs`
-      # can scrape them. No new required job — this lives in the existing
-      # `kind cluster install + smoke` job so the required check covers it.
-
-      - name: Set up Python for the SDK flow
-        if: needs.detect.outputs.relevant == 'true'
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-
-      - name: Install the Fabric SDK (otlp extra) on the runner
-        if: needs.detect.outputs.relevant == 'true'
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e "sdk/python[otlp]"
-
-      - name: Run the SDK Decision flow + assert the span lands
-        if: needs.detect.outputs.relevant == 'true'
-        # Mirror the collector /healthz step's port-forward pattern:
-        # find the collector pod by its chart label, forward the OTLP
-        # HTTP receiver port (4318) to a local port, then run the flow
-        # script pointed at the forward. Afterwards poll the collector
-        # pod's stdout (debug exporter) for the landed span markers.
-        run: |
-          POD=$(kubectl get pods --namespace "${NAMESPACE}" \
-            -l app.kubernetes.io/name=otel-collector \
-            -o jsonpath='{.items[0].metadata.name}')
-          echo "Collector pod: ${POD}"
-
-          kubectl port-forward --namespace "${NAMESPACE}" \
-            "pod/${POD}" 14318:4318 &
-          PF_PID=$!
-          trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
-
-          # Wait for the OTLP/HTTP forward to bind before exporting.
-          attempts=0
-          until curl --silent --output /dev/null --max-time 2 \
-              http://127.0.0.1:14318/ || [ "${attempts}" -ge 10 ]; do
-            attempts=$((attempts + 1))
-            sleep 1
-          done
-
-          FABRIC_OTLP_ENDPOINT=http://127.0.0.1:14318 \
-            python examples/e2e-smoke/flow.py
-
-          # Poll the collector's stdout for the landed span. The debug
-          # exporter + batch flush has latency, so retry with a timeout.
-          # We require the parent span name, a key fabric.* attribute, and
-          # the GenAI operation attribute — all three prove the dynamic
-          # LLM child span arrived intact.
-          echo "Scraping collector logs for the landed fabric.decision span..."
-          attempts=0
-          while [ "${attempts}" -lt 30 ]; do
-            LOGS=$(kubectl logs --namespace "${NAMESPACE}" "pod/${POD}" \
-              --tail=2000 2>/dev/null || true)
-            if echo "${LOGS}" | grep -q "fabric.decision" \
-               && echo "${LOGS}" | grep -q "fabric.tenant_id" \
-               && echo "${LOGS}" | grep -q "gen_ai.operation.name"; then
-              echo "span-landing assertion PASSED: fabric.decision +" \
-                "fabric.tenant_id + gen_ai.operation.name all present in" \
-                "collector stdout"
-              exit 0
-            fi
-            attempts=$((attempts + 1))
-            sleep 2
-          done
-
-          echo "::error::fabric.decision span (or fabric.tenant_id /" \
-            "gen_ai.operation.name) never appeared in the collector stdout" \
-            "after ~60s. Dumping collector logs:" >&2
-          kubectl logs --namespace "${NAMESPACE}" "pod/${POD}" \
-            --tail=2000 || true
-          exit 1
-
-      # --- Failure diagnostics -----------------------------------------
-      # Only run on failure; dump everything useful for debugging a
-      # broken PR without needing to reproduce locally.
-
-      - name: Describe pods (on failure)
-        if: failure() && needs.detect.outputs.relevant == 'true'
-        run: kubectl describe pods --namespace "${NAMESPACE}" || true
-
-      - name: Collector logs (on failure)
+      - name: Diagnostics
         if: failure() && needs.detect.outputs.relevant == 'true'
         run: |
+          kubectl get all,pvc --namespace "${NAMESPACE}" || true
+          kubectl describe pods --namespace "${NAMESPACE}" || true
           kubectl logs --namespace "${NAMESPACE}" \
-            -l app.kubernetes.io/name=otel-collector \
-            --tail=200 --all-containers=true || true
-
-      - name: Presidio sidecar logs (on failure)
-        if: failure() && needs.detect.outputs.relevant == 'true'
-        run: |
+            -l app.kubernetes.io/name=otel-collector --tail=500 || true
           kubectl logs --namespace "${NAMESPACE}" \
-            -l app.kubernetes.io/name=presidio-sidecar \
-            --tail=200 --all-containers=true || true
-
-      - name: NeMo sidecar logs (on failure)
-        if: failure() && needs.detect.outputs.relevant == 'true'
-        run: |
-          kubectl logs --namespace "${NAMESPACE}" \
-            -l app.kubernetes.io/name=nemo-sidecar \
-            --tail=200 --all-containers=true || true
-
-      - name: Events (on failure)
-        if: failure() && needs.detect.outputs.relevant == 'true'
-        run: kubectl get events --namespace "${NAMESPACE}" \
-          --sort-by=.lastTimestamp || true
-
-      - name: Helm status (on failure)
-        if: failure() && needs.detect.outputs.relevant == 'true'
-        run: helm status ci --namespace "${NAMESPACE}" --show-desc || true
+            -l app=fabric-test-sink --tail=500 || true
+          kubectl get events --namespace "${NAMESPACE}" --sort-by=.lastTimestamp || true

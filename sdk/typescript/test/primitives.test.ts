@@ -3,12 +3,8 @@
 
 /**
  * Behavioural unit coverage for the recording primitives ported to the TS
- * Decision (retrieval, memory, side-effect, checkpoint, eval, judge, policy,
- * tool-authorization, escalation). The byte-exact wire shape is covered by
- * the conformance suite against the shared Python goldens; this file pins the
- * behaviours not visible there: rolling counters, distinct-value sets,
- * first-wins escalation + block/escalation status precedence, hash helpers,
- * and the mutually-exclusive payload/hash guards.
+ * Decision: retrieval, memory, side effects, checkpoints, correlations and
+ * content-safe activity hashing.
  */
 
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
@@ -21,7 +17,6 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { Fabric, sha256Hex } from "../src/index.js";
-import { pythonJsonStringify, policyInputHash } from "../src/hash.js";
 
 const exporter = new InMemorySpanExporter();
 let provider: BasicTracerProvider;
@@ -96,36 +91,6 @@ describe("rolling counters + distinct-value sets", () => {
   });
 });
 
-describe("escalation + status precedence", () => {
-  it("escalation alone sets escalation_requested ERROR status", () => {
-    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-      d.requestEscalation({ reason: "low conf", mode: "async" });
-      expect(d.escalation).not.toBeNull();
-    });
-    const span = decisionSpan();
-    expect(span.attributes["fabric.escalated"]).toBe(true);
-    expect(span.status.code).toBe(SpanStatusCode.ERROR);
-    expect(span.status.message).toBe("escalation_requested");
-  });
-
-  it("block + escalation → blocked_and_escalated precedence", () => {
-    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-      d.recordBlock({ phase: "input", blocked: true, latencyMs: 1, policies: ["x:y"] });
-      d.requestEscalation({ reason: "also escalate", mode: "sync" });
-    });
-    expect(decisionSpan().status.message).toBe("blocked_and_escalated");
-  });
-
-  it("requestEscalation is first-wins — second call throws", () => {
-    expect(() =>
-      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-        d.requestEscalation({ reason: "a", mode: "async" });
-        d.requestEscalation({ reason: "b", mode: "async" });
-      }),
-    ).toThrow(/first-wins/);
-  });
-});
-
 describe("local hashing (raw content never emitted)", () => {
   it("retrieval hashes the query, never emits it", () => {
     fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
@@ -140,7 +105,7 @@ describe("local hashing (raw content never emitted)", () => {
     expect(() =>
       fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
         d.recordSideEffect({
-          type: "t",
+          type: "other",
           targetSystem: "sys",
           operation: "o",
           requestPayload: "{}",
@@ -150,27 +115,14 @@ describe("local hashing (raw content never emitted)", () => {
     ).toThrow(/not both/);
   });
 
-  it("policy input hashing matches Python json.dumps(sort_keys=True)", () => {
-    // The space-after-colon + sorted keys is what makes this equal Python's.
-    expect(pythonJsonStringify({ amount: 50 })).toBe('{"amount": 50}');
-    expect(pythonJsonStringify({ b: 1, a: 2 })).toBe('{"a": 2, "b": 1}');
-    expect(policyInputHash({ amount: 50 })).toBe(
-      "76486eecb93e90859a9039a37489b959954ee722a13497353787f5d7f50309d6",
-    );
-  });
-
-  it("policy rejects both input and inputHash", () => {
+  it("rejects raw content masquerading as precomputed hash metadata", () => {
     expect(() =>
       fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-        d.recordPolicyEvaluation({
-          engine: "e",
-          policyId: "p",
-          decision: "allow",
-          input: { a: 1 },
-          inputHash: "abc",
+        d.recordInteraction("http.request", "target", {
+          payloadHash: "raw patient content",
         });
       }),
-    ).toThrow(/not both/);
+    ).toThrow(/64 lowercase SHA-256/);
   });
 
   it("redacts file paths and generic interaction targets by default", () => {
@@ -189,15 +141,17 @@ describe("local hashing (raw content never emitted)", () => {
     expect(interaction["fabric.interaction.target"]).toBeUndefined();
   });
 
-  it("does not emit LLM output messages unless content capture is explicitly enabled", () => {
+  it("rejects LLM output messages unless content capture is explicitly enabled", () => {
     const outputMessages = [{ role: "assistant", content: "patient diagnosis" }];
-    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-      d.llmCall({ system: "test", model: "model" }, (call) => {
-        call.setResponse({ outputMessages });
-      });
-    });
-    const llm = exporter.getFinishedSpans().find((span) => span.name === "chat model")!;
-    expect(llm.attributes["gen_ai.output.messages"]).toBeUndefined();
+    // Without captureContent the messages cannot be safely emitted —
+    // the SDK throws rather than silently dropping them (mirrors Python).
+    expect(() =>
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.llmCall({ system: "test", model: "model" }, (call) => {
+          call.setResponse({ outputMessages });
+        });
+      }),
+    ).toThrow(/requires captureContent/);
 
     exporter.reset();
     fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
@@ -206,24 +160,16 @@ describe("local hashing (raw content never emitted)", () => {
       });
     });
     const optedIn = exporter.getFinishedSpans().find((span) => span.name === "chat model")!;
-    expect(optedIn.attributes["gen_ai.output.messages"]).toBe(JSON.stringify(outputMessages));
+    // Emitted as sorted-key compact JSON, mirroring Python's json.dumps
+    // with sort_keys — parse before comparing so key order does not leak
+    // into the assertion.
+    expect(JSON.parse(String(optedIn.attributes["gen_ai.output.messages"]))).toEqual(
+      outputMessages,
+    );
   });
 });
 
 describe("validation guards", () => {
-  it("queueJudge requires a non-empty rubric and at least one dimension", () => {
-    expect(() =>
-      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-        d.queueJudge({ rubricId: "  ", dimensions: ["x"] });
-      }),
-    ).toThrow(/rubricId/);
-    expect(() =>
-      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-        d.queueJudge({ rubricId: "r1", dimensions: [] });
-      }),
-    ).toThrow(/dimension/);
-  });
-
   it("checkpoint mints a UUID when none supplied + increments count", () => {
     fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
       d.checkpoint("step-a");

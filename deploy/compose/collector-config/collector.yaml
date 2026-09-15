@@ -1,16 +1,6 @@
-# SingleAxis Fabric Collector — integration harness config.
-#
-# Pipeline:
-#   OTLP (grpc+http) → memory_limiter → fabricguard → fabricredact
-#                    → batch → (debug stdout + otlphttp to Langfuse)
-#
-# Redaction talks to the presidio-sidecar over a shared UDS socket
-# bind-mounted into both containers at /run/fabric/presidio.sock.
-#
-# Langfuse accepts OTLP/HTTP at /api/public/otel on port 3000 with
-# Basic auth = base64(PUBLIC_KEY:SECRET_KEY). Credentials come from
-# LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY env vars (defaults in
-# docker-compose.yml match the Langfuse LANGFUSE_INIT_* bootstrap).
+# Fabric Node local evaluation configuration.
+# This profile is plaintext and unauthenticated; use the Helm
+# shadow-production profile across a customer trust boundary.
 
 receivers:
   otlp:
@@ -20,86 +10,53 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage/fabric:
+    directory: /var/lib/fabric-node/queue
+    timeout: 1s
+    create_directory: true
+    fsync: true
+
 processors:
   memory_limiter:
     check_interval: 1s
     limit_mib: 512
-
-  # Deny-by-default schema allowlist. Anything not in the per-class
-  # allowlist is stripped; unknown classes are dropped.
   fabricguard:
     event_class_attribute: event_class
     drop_unknown_classes: true
     max_field_bytes: 8192
-    extra_allowed_fields: {}
-
-  # Redaction over UDS to fabric-presidio-sidecar.
-  fabricredact:
-    unix_socket: /run/fabric/presidio.sock
-    timeout: 500ms
-    event_class_attribute: event_class
-    skip_attributes:
-      - tenant_id
-      - agent_id
-      - decision_id
-
-  batch:
-    send_batch_size: 256
-    timeout: 1s
 
 exporters:
-  # `detailed` dumps every span with its full attribute set. This is the
-  # harness's capture channel: the Fabric distribution is built with only
-  # the debug and otlphttp exporters (see ocb-config.yaml), so there is no
-  # file exporter to write structured captures with. Reading these logs is
-  # how you inspect what actually survived the processor chain.
-  debug:
-    verbosity: detailed
-  # KNOWN BROKEN: /api/public/otel is a Langfuse **v3** endpoint, but this
-  # harness pins langfuse/langfuse:2 above, which does not serve it. Every
-  # export fails with HTTP 404 and the collector drops the batch:
-  #   "not retryable error: Permanent error: ... HTTP Status Code 404"
-  # Spans still reach the collector and pass the Fabric processors — only
-  # the hand-off to the Langfuse UI is lost. Fixing it properly means
-  # moving the harness to Langfuse v3, which additionally requires
-  # ClickHouse, Redis and MinIO. Until then, capture from the debug
-  # exporter above rather than from the Langfuse UI.
-  otlphttp/langfuse:
-    endpoint: http://langfuse:3000/api/public/otel
-    headers:
-      Authorization: "Basic ${env:LANGFUSE_BASIC_AUTH}"
-    compression: gzip
-
-extensions:
-  zpages:
-    endpoint: 0.0.0.0:55679
+  otlp_http/test_sink:
+    endpoint: http://test-sink:8080
+    timeout: 5s
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 1000
+      block_on_overflow: true
+      storage: file_storage/fabric
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 5s
+      max_elapsed_time: 0s
 
 service:
-  extensions: [zpages]
+  extensions: [health_check, file_storage/fabric]
   pipelines:
-    # Only ``fabricguard`` registers a traces factory today
-    # (processor/fabricguardprocessor/factory.go calls WithTraces).
-    # fabricredact, fabricpolicy and fabricsampler are logs-only —
-    # their factories register WithLogs and nothing else — so listing
-    # any of them here aborts collector startup with
-    # "telemetry type is not supported" and the whole harness fails to
-    # come up. charts/fabric/charts/otel-collector gets this right; this
-    # config did not.
-    #
-    # CONSEQUENCE, stated plainly: spans are field-allowlisted by
-    # fabricguard but are NOT Presidio-redacted, HMAC-sampled or
-    # policy-gated at the collector. For traces, redaction happens only
-    # in-process via the SDK's guard_input / guard_output_final calls
-    # against the Presidio sidecar. Collector-side redaction is
-    # defence-in-depth that does not currently exist for traces.
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, batch]
-      exporters: [debug, otlphttp/langfuse]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlp_http/test_sink]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, fabricredact, batch]
-      exporters: [debug, otlphttp/langfuse]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlp_http/test_sink]
   telemetry:
     logs:
       level: info

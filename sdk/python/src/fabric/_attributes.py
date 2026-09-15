@@ -39,6 +39,64 @@ ATTR_EXECUTION_ATTEMPT = "fabric.execution.attempt"
 ATTR_EXECUTION_RETRY_REASON = "fabric.execution.retry.reason"
 ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID = "fabric.execution.retry.previous_attempt_id"
 
+# GenAI error convention: the exception class name stamped on a span
+# alongside ERROR status when a context exits with a failure.
+ATTR_ERROR_TYPE = "error.type"
+
+# --------------------------------------------------------------------------- #
+# Reserved attribute namespaces
+# --------------------------------------------------------------------------- #
+#
+# ``fabric.*`` and ``gen_ai.*`` attributes are SDK-owned: identity
+# (``fabric.tenant_id`` / ``fabric.agent_id`` / ``fabric.session_id`` /
+# ``fabric.decision_id``), correlation and the GenAI semantic conventions
+# are stamped by the recorder itself. A caller-supplied ``attributes=``
+# dict or ``set_attribute`` call that writes into these namespaces can
+# silently clobber the identity every downstream isolation / correlation
+# check relies on, so the convenience entry points reject them. The raw
+# ``.span`` escape hatch remains available for hosts that truly must
+# override.
+RESERVED_ATTRIBUTE_PREFIXES = ("fabric.", "gen_ai.")
+
+
+def check_attribute_key(key: str) -> str:
+    """Return ``key`` unless it sits under a reserved namespace.
+
+    Raises :class:`ValueError` for keys starting ``fabric.`` or
+    ``gen_ai.`` — those are written by the SDK itself and a caller
+    override would silently clobber identity / convention attributes.
+    """
+    if key.startswith(RESERVED_ATTRIBUTE_PREFIXES):
+        raise ValueError(
+            f"attribute key {key!r} is under a reserved namespace "
+            "('fabric.'/'gen_ai.'); identity and GenAI convention "
+            "attributes are SDK-owned. Use a caller namespace such as "
+            "'agent.*' or '<your-org>.*' instead."
+        )
+    return key
+
+
+def check_attribute_keys(attributes: dict[str, str]) -> dict[str, str]:
+    """Validate every key of a caller-supplied attribute dict."""
+    for key in attributes:
+        check_attribute_key(key)
+    return attributes
+
+
+# --------------------------------------------------------------------------- #
+# Governed content references (spec 012, dual content/trace pipelines)
+# --------------------------------------------------------------------------- #
+#
+# When a :class:`~fabric.content_store.ContentStore` is configured on the
+# client, recorder paths that receive raw content write it to the
+# tenant-controlled store and stamp the returned content-addressed URI on
+# the event. The trace stream then carries a governed REFERENCE — the
+# locator an auditor resolves out-of-band — never raw bytes. Stamped only
+# when a store is configured, so events stay byte-identical without one.
+ATTR_CONTENT_REF = "fabric.content.ref"
+ATTR_CONTENT_REQUEST_REF = "fabric.content.request_ref"
+ATTR_CONTENT_RESULT_REF = "fabric.content.result_ref"
+
 # --------------------------------------------------------------------------- #
 # Agent surface logging (spec 022)
 # --------------------------------------------------------------------------- #
@@ -84,7 +142,7 @@ ATTR_HOOK_INPUT_HASH = "fabric.hook.input_hash"
 ATTR_HOOK_OUTPUT_HASH = "fabric.hook.output_hash"
 
 # File access. Contents are NEVER on the span (hash only); the path is
-# readable by default but hashed when ``redact_path=True``.
+# hashed by default and readable only when ``redact_path=False``.
 ATTR_FILE_ACCESS_COUNT = "fabric.file_access_count"
 ATTR_FILE_PATH = "fabric.file.path"
 ATTR_FILE_PATH_HASH = "fabric.file.path_hash"
@@ -109,8 +167,8 @@ ATTR_FILE_SIZE_BYTES = "fabric.file.size_bytes"
 ATTR_INTERACTION_COUNT = "fabric.interaction_count"
 ATTR_INTERACTION_KINDS = "fabric.interaction_kinds"
 
-# The ``fabric.interaction`` span event. ``target`` is readable by default
-# and hashed (``target_hash``) when ``redact_target=True``; ``target_redacted``
+# The ``fabric.interaction`` span event. ``target`` is hashed by default
+# and readable only when ``redact_target=False``; ``target_redacted``
 # records which form was emitted (mirrors the file-path redaction model).
 ATTR_INTERACTION_KIND = "fabric.interaction.kind"
 ATTR_INTERACTION_TARGET = "fabric.interaction.target"

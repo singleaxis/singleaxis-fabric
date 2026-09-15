@@ -31,14 +31,16 @@ spec:
       annotations:
         # Force a pod roll when the config changes.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- if and .Values.fabric.policy.enabled .Values.fabric.policy.referencePolicy.enabled }}
-        checksum/reference-policy: {{ include (print $.Template.BasePath "/policy-configmap.yaml") . | sha256sum }}
-        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
       serviceAccountName: {{ include "otel-collector.serviceAccountName" . }}
+      # Never mount an API token, including when serviceAccount.create=false
+      # selects the namespace default ServiceAccount.
+      automountServiceAccountToken: false
+      enableServiceLinks: {{ .Values.enableServiceLinks }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -80,20 +82,6 @@ spec:
               mountPath: /etc/fabric/receiver-tls
               readOnly: true
             {{- end }}
-            {{- if and .Values.fabric.sampler.enabled .Values.fabric.sampler.hmacKeySecret.name }}
-            - name: sampler-key
-              mountPath: /etc/fabric/sampler
-              readOnly: true
-            {{- end }}
-            {{- if and .Values.fabric.policy.enabled .Values.fabric.policy.bundlePath }}
-            - name: policy-bundle
-              mountPath: {{ .Values.fabric.policy.bundlePath }}
-              readOnly: true
-            {{- end }}
-            {{- if .Values.fabric.redact.enabled }}
-            - name: redaction-socket
-              mountPath: {{ dir .Values.fabric.redact.unixSocket }}
-            {{- end }}
             {{- if .Values.exporter.sendingQueue.persistence.enabled }}
             - name: queue-storage
               mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
@@ -111,51 +99,6 @@ spec:
                   name: {{ .Values.exporter.auth.secret.name }}
                   key: {{ .Values.exporter.auth.secret.key }}
           {{- end }}
-        {{- if and .Values.fabric.redact.enabled .Values.fabric.redact.embedded.enabled }}
-        - name: presidio-redactor
-          image: {{ include "otel-collector.embeddedRedactorImage" . | quote }}
-          imagePullPolicy: {{ .Values.fabric.redact.embedded.image.pullPolicy }}
-          args:
-            - --uds
-            - {{ .Values.fabric.redact.unixSocket | quote }}
-            - --tenant-key-file
-            - /etc/fabric/presidio-key/tenant.key
-            - --redaction-mode
-            - {{ .Values.fabric.redact.embedded.redactionMode | quote }}
-            {{- if .Values.fabric.redact.embedded.allowPassthrough }}
-            - --allow-passthrough
-            {{- end }}
-          securityContext:
-            {{- toYaml .Values.fabric.redact.embedded.securityContext | nindent 12 }}
-          startupProbe:
-            exec:
-              command:
-                - python
-                - -c
-                - {{ printf "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(%q); s.sendall(b'GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n'); assert b' 200 ' in s.recv(128)" .Values.fabric.redact.unixSocket | quote }}
-            periodSeconds: {{ .Values.fabric.redact.embedded.startupProbe.periodSeconds }}
-            failureThreshold: {{ .Values.fabric.redact.embedded.startupProbe.failureThreshold }}
-            timeoutSeconds: {{ .Values.fabric.redact.embedded.startupProbe.timeoutSeconds }}
-          readinessProbe:
-            exec:
-              command:
-                - python
-                - -c
-                - {{ printf "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(%q); s.sendall(b'GET /healthz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n'); assert b' 200 ' in s.recv(128)" .Values.fabric.redact.unixSocket | quote }}
-            periodSeconds: {{ .Values.fabric.redact.embedded.readinessProbe.periodSeconds }}
-            failureThreshold: {{ .Values.fabric.redact.embedded.readinessProbe.failureThreshold }}
-            timeoutSeconds: {{ .Values.fabric.redact.embedded.readinessProbe.timeoutSeconds }}
-          resources:
-            {{- toYaml .Values.fabric.redact.embedded.resources | nindent 12 }}
-          volumeMounts:
-            - name: redaction-socket
-              mountPath: {{ dir .Values.fabric.redact.unixSocket }}
-            - name: presidio-tmp
-              mountPath: /tmp
-            - name: presidio-tenant-key
-              mountPath: /etc/fabric/presidio-key
-              readOnly: true
-        {{- end }}
       volumes:
         - name: config
           configMap:
@@ -183,35 +126,6 @@ spec:
                       path: client-ca.crt
               {{- end }}
         {{- end }}
-        {{- if and .Values.fabric.sampler.enabled .Values.fabric.sampler.hmacKeySecret.name }}
-        - name: sampler-key
-          secret:
-            secretName: {{ .Values.fabric.sampler.hmacKeySecret.name }}
-            items:
-              - key: {{ .Values.fabric.sampler.hmacKeySecret.key | default "hmac_key" }}
-                path: hmac_key
-        {{- end }}
-        {{- if and .Values.fabric.policy.enabled .Values.fabric.policy.bundlePath }}
-        - name: policy-bundle
-          configMap:
-          {{- if .Values.fabric.policy.bundleConfigMap }}
-            name: {{ .Values.fabric.policy.bundleConfigMap }}
-          {{- else }}
-            name: {{ include "otel-collector.referencePolicyConfigMapName" . }}
-          {{- end }}
-        {{- end }}
-        {{- if .Values.fabric.redact.enabled }}
-        - name: redaction-socket
-          emptyDir: {}
-        - name: presidio-tmp
-          emptyDir: {}
-        - name: presidio-tenant-key
-          secret:
-            secretName: {{ .Values.fabric.redact.embedded.tenantKeySecret.name }}
-            items:
-              - key: {{ .Values.fabric.redact.embedded.tenantKeySecret.key }}
-                path: tenant.key
-        {{- end }}
         {{- if and .Values.exporter.sendingQueue.persistence.enabled .Values.exporter.sendingQueue.persistence.existingClaim }}
         - name: queue-storage
           persistentVolumeClaim:
@@ -220,6 +134,7 @@ spec:
         {{- if or .Values.exporter.tls.caSecret.name .Values.exporter.tls.clientCertificateSecret.name }}
         - name: exporter-tls
           projected:
+            defaultMode: 0440
             sources:
               {{- if .Values.exporter.tls.caSecret.name }}
               - secret:

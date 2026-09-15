@@ -1,7 +1,7 @@
 # SingleAxis Fabric — dependency license policy (auditable source of truth)
 # ---------------------------------------------------------------------------
 # This file is the policy consumed by scripts/license_check.py and enforced by
-# the License Compatibility CI gate (.github/workflows/license.yml).
+# the recorder license gate (.github/workflows/recorder-license.yml).
 #
 # The gate is FAIL-CLOSED / ALLOWLIST-based: a dependency license passes ONLY
 # if it resolves to a license on the ALLOW list below. Anything not explicitly

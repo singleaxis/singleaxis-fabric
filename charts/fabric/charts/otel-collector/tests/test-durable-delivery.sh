@@ -6,7 +6,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chart_dir="$(cd "${here}/.." && pwd)"
 umbrella_dir="$(cd "${chart_dir}/../.." && pwd)"
-profile="${umbrella_dir}/profiles/eu-ai-act-high-risk.yaml"
+profile="${umbrella_dir}/profiles/shadow-production.yaml"
 
 passed=0
 failed=0
@@ -59,7 +59,7 @@ expect_contains "in-memory queue is explicit" "${memory_render}" "sending_queue:
 expect_contains "in-memory queue is enabled" "${memory_render}" "enabled: true"
 expect_not_contains "in-memory queue has no storage binding" "${memory_render}" "storage: file_storage/fabric"
 
-printf '\n=== Regulated persistent delivery ===\n'
+printf '\n=== Production persistent delivery ===\n'
 regulated_args=(
   --set exporter.endpoint=https://otlp.example.com
   --set exporter.requireEndpoint=true
@@ -72,6 +72,7 @@ regulated_args=(
   --set exporter.sendingQueue.persistence.fsync=true
   --set exporter.sendingQueue.blockOnOverflow=true
   --set exporter.retry.maxElapsedTime=0s
+  --set batch.enabled=false
   --set replicaCount=2
 )
 regulated_render="$(helm template ci "${chart_dir}" "${regulated_args[@]}")"
@@ -81,8 +82,10 @@ expect_contains "PVCs are retained" "${regulated_render}" "whenDeleted: Retain"
 expect_contains "file storage extension is configured" "${regulated_render}" "file_storage/fabric:"
 expect_contains "file storage requests fsync" "${regulated_render}" "fsync: true"
 expect_contains "queue binds file storage" "${regulated_render}" "storage: file_storage/fabric"
+expect_contains "fsGroup lets the nonroot Collector write the queue PVC" "${regulated_render}" "fsGroup: 65532"
 expect_contains "full queue backpressures senders" "${regulated_render}" "block_on_overflow: true"
 expect_contains "transient retry has no time limit" "${regulated_render}" 'max_elapsed_time: "0s"'
+expect_not_contains "durable path has no volatile pre-queue batch" "${regulated_render}" "batch:"
 expect_contains "TLS verification is enabled" "${regulated_render}" "insecure_skip_verify: false"
 expect_contains "credential comes from Secret" "${regulated_render}" "name: fabric-otel-export-auth"
 expect_contains "ConfigMap references env provider" "${regulated_render}" "\${env:FABRIC_EXPORT_AUTH}"
@@ -132,31 +135,33 @@ expect_fail "durability contract needs fsync" "requires exporter.sendingQueue.pe
   --set exporter.sendingQueue.persistence.enabled=true \
   --set exporter.sendingQueue.blockOnOverflow=true \
   --set exporter.retry.maxElapsedTime=0s
+expect_fail "durability contract rejects volatile pre-queue batching" "requires batch.enabled=false" \
+  "${regulated_args[@]}" --set batch.enabled=true
 
-printf '\n=== EU high-risk profile ===\n'
+printf '\n=== Shadow production profile ===\n'
 profile_render="$(helm template ci "${umbrella_dir}" \
   --values "${profile}" \
   --set tenant.id=11111111-1111-4111-8111-111111111111 \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
-  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' \
-  --set update-agent.config.allowPlaceholderKey=true)"
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443')"
 expect_contains "profile renders a durable StatefulSet" "${profile_render}" "kind: StatefulSet"
 expect_contains "profile renders two replicas" "${profile_render}" "replicas: 2"
-expect_contains "profile references export credential" "${profile_render}" "name: fabric-otel-export-auth"
+expect_contains "profile references export credential" "${profile_render}" "name: fabric-node-export-auth"
 
 if helm template ci "${umbrella_dir}" \
   --values "${profile}" \
   --set tenant.id=11111111-1111-4111-8111-111111111111 \
   --set otel-collector.exporter.endpoint=http://otlp.example.com \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
-  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' \
-  --set update-agent.config.allowPlaceholderKey=true >/dev/null 2>&1; then
-  fail "high-risk profile accepted plaintext export"
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' >/dev/null 2>&1; then
+  fail "shadow-production profile accepted plaintext export"
 else
-  pass "high-risk profile rejects plaintext export"
+  pass "shadow-production profile rejects plaintext export"
 fi
 
 printf '\n--- summary: %d passed, %d failed ---\n' "${passed}" "${failed}"

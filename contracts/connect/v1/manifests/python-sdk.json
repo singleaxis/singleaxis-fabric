@@ -2,11 +2,11 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.python-sdk",
   "display_name": "SingleAxis Fabric Python SDK",
-  "release": {"version": "0.7.0", "maturity": "beta", "distribution": "python-package"},
+  "release": {"version": "0.8.0-rc.1", "maturity": "beta", "distribution": "python-package"},
   "implementation": {"kind": "in_process_sdk", "deployment_modes": ["application"]},
   "compatibility": {
-    "activity_contract": "1.0.0",
-    "fabric_versions": ">=0.7.0,<1.0.0",
+    "activity_contract": null,
+    "fabric_versions": ">=0.8.0-rc.1,<1.0.0",
     "runtimes": ["CPython >=3.11"],
     "protocols": ["OpenTelemetry API", "W3C Trace Context through host OpenTelemetry configuration"]
   },
@@ -18,33 +18,28 @@
       {"surface": "retrieval", "source": "caller_reported"},
       {"surface": "memory", "source": "caller_reported"},
       {"surface": "side_effect", "source": "caller_reported"},
-      {"surface": "policy_verdict", "source": "caller_reported"},
-      {"surface": "guardrail_verdict", "source": "native_hook"},
-      {"surface": "authorization_verdict", "source": "caller_reported"},
-      {"surface": "escalation", "source": "caller_reported"},
-      {"surface": "evaluation", "source": "caller_reported"},
       {"surface": "framework_lifecycle", "source": "native_hook"},
       {"surface": "generic_interaction", "source": "caller_reported"},
       {"surface": "file_access_metadata", "source": "caller_reported"}
     ],
     "decision_semantics": "native",
-    "coverage_basis": "In-process Decision and child-span context managers plus explicit record methods and optional framework adapters."
+    "coverage_basis": "In-process Decision and child-span context managers plus explicit recorder methods and the shipped CrewAI adapter. The SDK emits protected-by-default OpenTelemetry metadata; it does not materialize Activity Envelope v2."
   },
   "control": {
     "interposition": "in_process",
-    "agent_runtime_actions": ["block", "redact", "authorize", "escalate"],
+    "agent_runtime_actions": [],
     "telemetry_pipeline_actions": []
   },
   "content": {
     "raw_content_behavior": "configurable_raw",
     "default_raw_capture": false,
-    "pre_egress_redaction": "operator_configurable",
-    "sensitive_field_allowlist": true
+    "pre_egress_redaction": "none",
+    "sensitive_field_allowlist": false
   },
   "identity": {
     "source": "application_configuration",
     "strength": "asserted",
-    "tenant_partitioning": "validated"
+    "tenant_partitioning": "accepted_unverified"
   },
   "authentication": {
     "ingress_supported": ["in_process_boundary"],
@@ -69,13 +64,14 @@
     "default_destination": null
   },
   "verification_evidence": [
-    {"type": "conformance_test", "path": "sdk/python/tests/test_conformance.py", "claim": "Executes declared public activity-contract scenarios."},
-    {"type": "unit_test", "path": "sdk/python/tests/test_decision.py", "claim": "Exercises decision identity, correlation, event, content, and control behavior."}
+    {"type": "unit_test", "path": "sdk/python/tests/test_recorder_package_surface.py", "claim": "Proves the import surface excludes runtime-control, evaluation, judge, policy, authorization, and escalation modules."},
+    {"type": "unit_test", "path": "sdk/python/tests/test_decision.py", "claim": "Exercises recorder decision identity, correlation, lifecycle, and metadata-only capture behavior."},
+    {"type": "unit_test", "path": "sdk/python/tests/test_recorder_wheel_qualifier.py", "claim": "Qualifies the exact recorder wheel and source distribution against file and API allowlists."}
   ],
   "known_blind_spots": [
     "Uninstrumented application branches, subprocesses, and off-the-shelf agent internals are not visible.",
     "Tenant and agent identifiers are validated assertions, not cryptographically bound workload identity.",
-    "Raw LLM or tool content can be opted into per call and then depends on downstream redaction policy.",
-    "The SDK does not itself prove exporter delivery, backend retention, or evidence immutability."
+    "Raw LLM or tool content can be opted into per call; the SDK has no pre-egress redactor, so protected export requires Fabric Node or an equivalent customer-controlled processor.",
+    "The SDK emits OpenTelemetry and does not materialize Activity Envelope v2, privacy assertions, delivery receipts, durable retention, or immutable evidence."
   ]
 }

@@ -1,0 +1,21 @@
+{
+  "contract": "singleaxis.fabric.activity-sequence",
+  "version": "2.0.0",
+  "sequence_id": "70000000-0000-4000-8000-000000000002",
+  "events": [
+    {
+      "contract": "singleaxis.fabric.activity-envelope", "schema_version": "2.0.0", "event_id": "10000000-0000-4000-8000-000000000010", "event_type": "tool.request",
+      "identity": {"tenant_id": "tenant-example", "system_id": "agent", "agent_id": "agent", "deployment_id": "prod", "environment": "production", "release_id": "r1"},
+      "correlation": {"trace_id": {"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provenance": "observed"}, "span_id": {"value": "bbbbbbbbbbbbbb10", "provenance": "observed"}, "causal_references": []},
+      "source": {"source_id": "50000000-0000-4000-8000-000000000010", "kind": "sdk", "component": "fabric-sdk", "component_version": "0.8.0"},
+      "original_timestamp": "2026-08-31T10:00:00Z", "source_sequence": 1, "capture_semantics": "observed", "content": {"mode": "metadata", "classification": "internal"}, "activity": {"outcome": "requested", "name": "lookup"}
+    },
+    {
+      "contract": "singleaxis.fabric.activity-envelope", "schema_version": "2.0.0", "event_id": "10000000-0000-4000-8000-000000000010", "event_type": "tool.result",
+      "identity": {"tenant_id": "tenant-example", "system_id": "agent", "agent_id": "agent", "deployment_id": "prod", "environment": "production", "release_id": "r1"},
+      "correlation": {"trace_id": {"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provenance": "observed"}, "span_id": {"value": "bbbbbbbbbbbbbb11", "provenance": "observed"}, "causal_references": []},
+      "source": {"source_id": "50000000-0000-4000-8000-000000000010", "kind": "sdk", "component": "fabric-sdk", "component_version": "0.8.0"},
+      "original_timestamp": "2026-08-31T10:00:01Z", "source_sequence": 2, "capture_semantics": "observed", "content": {"mode": "metadata", "classification": "internal"}, "activity": {"outcome": "succeeded", "name": "lookup"}
+    }
+  ]
+}

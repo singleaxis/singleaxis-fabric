@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.singleaxis.dev/fabric/delivery/v1/delivery-evidence-v1.schema.json",
+  "title": "Fabric delivery evidence v1",
+  "type": "object",
+  "required": ["contract", "version", "batch", "stages"],
+  "additionalProperties": false,
+  "properties": {
+    "contract": {"const": "singleaxis.fabric.delivery-evidence"},
+    "version": {"const": "1.0.0"},
+    "batch": {
+      "type": "object",
+      "required": ["batch_id", "stream_class", "destination_id", "created_at", "event_ids", "source_ranges", "payload", "privacy_assertion"],
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {"$ref": "#/$defs/uuid"},
+        "stream_class": {"enum": ["audit", "analytics"]},
+        "destination_id": {"$ref": "#/$defs/uuid"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "event_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/uuid"}},
+        "source_ranges": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "required": ["source_id", "first_sequence", "last_sequence"], "additionalProperties": false,
+            "properties": {"source_id": {"$ref": "#/$defs/uuid"}, "first_sequence": {"type": "integer", "minimum": 0}, "last_sequence": {"type": "integer", "minimum": 0}}
+          }
+        },
+        "payload": {
+          "type": "object", "required": ["artifact", "sha256", "digest_scope"], "additionalProperties": false,
+          "properties": {"artifact": {"$ref": "#/$defs/repositoryPath"}, "sha256": {"$ref": "#/$defs/sha256"}, "digest_scope": {"const": "exact_file_bytes"}}
+        },
+        "privacy_assertion": {
+          "type": "object", "required": ["assertion_id", "artifact", "sha256", "digest_scope"], "additionalProperties": false,
+          "properties": {"assertion_id": {"$ref": "#/$defs/uuid"}, "artifact": {"$ref": "#/$defs/repositoryPath"}, "sha256": {"$ref": "#/$defs/sha256"}, "digest_scope": {"const": "exact_file_bytes"}}
+        }
+      }
+    },
+    "stages": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["stage_event_id", "stage", "recorded_at", "actor"],
+        "additionalProperties": false,
+        "properties": {
+          "stage_event_id": {"$ref": "#/$defs/uuid"},
+          "stage": {"enum": ["queued", "transmitted", "destination.accepted", "destination.durably_persisted"]},
+          "recorded_at": {"type": "string", "format": "date-time"},
+          "actor": {
+            "type": "object", "required": ["role", "actor_id"], "additionalProperties": false,
+            "properties": {"role": {"enum": ["fabric_node", "destination"]}, "actor_id": {"$ref": "#/$defs/uuid"}}
+          },
+          "acknowledgement": {
+            "type": "object", "required": ["acknowledgement_id", "issuer_destination_id", "batch_id", "payload_sha256"], "additionalProperties": false,
+            "properties": {"acknowledgement_id": {"$ref": "#/$defs/safeIdentifier"}, "issuer_destination_id": {"$ref": "#/$defs/uuid"}, "batch_id": {"$ref": "#/$defs/uuid"}, "payload_sha256": {"$ref": "#/$defs/sha256"}}
+          },
+          "destination_proof": {
+            "type": "object",
+            "required": ["proof_id", "issuer_destination_id", "batch_id", "payload_sha256", "issued_at", "key_id", "algorithm", "signature"],
+            "additionalProperties": false,
+            "properties": {
+              "proof_id": {"$ref": "#/$defs/safeIdentifier"},
+              "issuer_destination_id": {"$ref": "#/$defs/uuid"},
+              "batch_id": {"$ref": "#/$defs/uuid"},
+              "payload_sha256": {"$ref": "#/$defs/sha256"},
+              "issued_at": {"type": "string", "format": "date-time"},
+              "key_id": {"$ref": "#/$defs/safeIdentifier"},
+              "algorithm": {"enum": ["ed25519", "ecdsa-p256-sha256", "rsa-pss-sha256"]},
+              "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{32,}$"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "repositoryPath": {"type": "string", "pattern": "^contracts/[a-z0-9._/-]+\\.json$"},
+    "safeIdentifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"}
+  }
+}

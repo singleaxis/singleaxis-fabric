@@ -1,86 +1,44 @@
-# API stability and compatibility
+# Recorder v1 compatibility policy
 
-This document defines what SingleAxis Fabric considers a stable, supported
-interface, and what may change without notice. It is the contract enterprise
-adopters can build against.
+The supported public surface consists of released artifacts, not every source
+file visible in the repository.
 
-Fabric follows [Semantic Versioning](https://semver.org/). The project is
-pre-1.0; see [_Pre-1.0 expectations_](#pre-10-expectations) below.
+## Supported surfaces
 
-## What is public
+- documented imports exported by the Python `fabric` package;
+- documented exports from `@singleaxis/fabric`;
+- recorder-only `fabricctl` commands and machine-readable output;
+- Fabric Node Helm values accepted by the chart schema;
+- the Fabric Node image entry point and documented OTLP receiver/export path;
+- public versioned contracts packaged by the release policy; and
+- released connector capability manifests.
 
-For the Python SDK (`singleaxis-fabric`), the **supported public surface** is:
+Internal modules, tests, examples, historical components, superseded specs,
+and source excluded from release artifacts are not compatibility commitments.
 
-- Every name exported from the top-level `fabric` package — i.e. the names in
-  `fabric.__all__` (e.g. `Fabric`, `FabricConfig`, `Decision`, `LLMCall`,
-  `ToolCall`, the protocol/value types, and the public exceptions).
-- The documented method signatures on those types.
-- The emitted **wire contract**: the `fabric.*` / `gen_ai.*` span and span-event
-  attributes, governed by `fabric.schema_version` (see below).
-- The guardrail-sidecar HTTP contracts and the umbrella Helm chart's documented
-  values.
+## Versioning
 
-Anything else is **internal** and carries no compatibility guarantee:
+- Breaking changes to a stable SDK, CLI, or chart surface require a major
+  version after 1.0, or a clearly documented release-candidate break before it.
+- Additive optional fields and commands may ship in a minor version.
+- Fixes that preserve documented behavior ship in a patch version.
+- Versioned contract schemas are immutable. A breaking wire change receives a
+  new contract version and migration guidance.
 
-- Modules and names prefixed with an underscore (`fabric._calls`,
-  `fabric._chain`, `fabric._uds`, `fabric._id_validators`, `_util`, etc.).
-- Test suites, the conformance harness, the benchmark and soak suites.
-- Behaviour not described in the specs or docstrings.
+Deprecations must identify the replacement, begin warning before removal, and
+remain documented for at least one minor release unless a security issue makes
+that unsafe.
 
-Optional integrations (the `[langgraph]`, `[crewai]`, `[agent-framework]`,
-`[opa]`, `[deepeval]`, `[ragas]`, `[nats]`, `[redis]`, `[aws]`, `[mcp]`,
-`[otlp]` extras) are public but version-tracked against their
-upstream libraries; their adapters may change to follow upstream API shifts
-within a minor release.
+## Artifact boundary
 
-## The schema-version contract
+Release qualification uses explicit allowlists and rejects recorder packages
+containing policy, guardrail, judge, red-team, assurance-tier, governance, or
+management-plane implementations. The package contents and published digests,
+not the source tree alone, define what recorder v1 supports.
 
-Every emitted decision span and span event carries
-`fabric.schema_version` (currently `"1.0"`). This is the contract the
-Telemetry Bridge, replay engine, audit exporters, and any non-Python SDK
-consume.
+## No hidden compatibility promise
 
-- **Additive** changes (a new optional attribute or event, emitted only when a
-  new feature is used) keep the same `schema_version`. Existing events stay
-  byte-identical. These ship in a minor or patch release.
-- **Breaking** changes to the wire shape (renaming/removing an attribute,
-  changing a type, changing when an existing attribute is emitted) bump
-  `schema_version` and are a major-version concern.
-
-The schema is frozen as machine-readable **golden fixtures** under
-`sdk/python/tests/conformance/`. Any change that alters an existing emitted
-event fails the conformance suite, so wire-contract drift cannot land silently.
-A reusable adapter-conformance kit (`tests/conformance/adapters/`) lets
-third-party adapters prove protocol compliance.
-
-## Deprecation policy
-
-When a public API element is to be removed:
-
-1. It is marked deprecated in its docstring and the
-   [CHANGELOG](../CHANGELOG.md), with the replacement named.
-2. It continues to work for at least one subsequent **minor** release
-   (post-1.0), emitting a `DeprecationWarning` where practical.
-3. It is removed no earlier than the next **major** release.
-
-Breaking changes are flagged in commits with a `!` after the type and a
-`BREAKING CHANGE:` footer (see [CONTRIBUTING](../CONTRIBUTING.md)), and called
-out in the CHANGELOG.
-
-## Pre-1.0 expectations
-
-Until `1.0.0`:
-
-- The capture **wire contract** (`schema_version`) is treated as stable and
-  evolved additively — it is the part downstream systems depend on, and it is
-  conformance-locked.
-- The **Python API surface** may still see ergonomic adjustments between minor
-  releases; such changes are documented in the CHANGELOG.
-- Per the [security policy](../SECURITY.md), only the latest minor release
-  receives fixes pre-1.0.
-
-## Supported runtimes
-
-- Python 3.11, 3.12, 3.13 (tested in CI on all three).
-- The collector and sidecars ship as multi-arch (amd64/arm64), cosign-signed
-  container images with SBOMs.
+Fabric preserves accepted trace/span identity for downstream deduplication, but
+does not promise that arbitrary upstream telemetry is complete, correctly
+ordered, or semantically equivalent across connectors. Each connector must
+declare and test those capabilities.

@@ -1,5 +1,5 @@
 # Lychee markdown link checker config.
-# Consumed by `.github/workflows/ci.yml` (`link-check` job).
+# Used for maintainers' optional external-link checks.
 #
 # The CLI args in the workflow (`--verbose --no-progress --exclude-mail`) are
 # preserved; this file adds URL-pattern excludes that can't be expressed inline

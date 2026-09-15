@@ -34,6 +34,17 @@ and file metadata. Kernel discovery can find a workload or an uninstrumented
 dependency, but it cannot claim prompts, policy verdicts, tool meaning, or
 agent decision semantics.
 
+## `compatibility.activity_contract`
+
+This field names the version of the **activity v1 wire contract**
+(`contracts/activity/v1`, manifest version `1.0.0`) whose span and event
+attributes the connector emits, or `null` when the connector does not
+implement that wire contract. It is not an Activity Envelope v2 claim:
+recorder v1 transports protected OTLP and does not materialize the v2 JSON
+envelope on the wire, so every shipped manifest in `manifests/` sets
+`activity_contract: null`. The illustrative `fixtures/valid/` documents show
+`"1.0.0"` for connectors that emit the v1 attribute contract.
+
 ## Validate
 
 From the repository root:
@@ -44,7 +55,9 @@ python scripts/contracts/validate_connector_contract.py
 
 The validator checks JSON Schema, semantic consistency, pinned digests,
 unique connector identities, negative-fixture error codes, and complete
-coverage of every JSON artifact under this version.
+coverage of every JSON artifact under this version. `manifest.json` pins the
+schema and every JSON manifest and fixture by SHA-256; Markdown
+documentation, including this README, is not a pinned artifact.
 
 ## Change control
 

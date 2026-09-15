@@ -1,192 +1,37 @@
-# Default values for the SingleAxis Fabric OSS umbrella chart.
-#
-# Regulatory Profiles in charts/fabric/profiles/ select the safe
-# defaults per regulation — most tenants should install with
-# --values profiles/<name>.yaml and override only tenant-specific
-# fields (tenant.id, Vault/KMS references).
-#
-# Subchart toggles for components not in this repository
-# (judgeWorkers, escalationService, decisionGraph, telemetryBridge,
-# nats) are not included here — those components are maintained by
-# SingleAxis internally.
-#
-# Latency posture (cross-cutting):
-#   Agent request path  — never blocks on a Fabric HTTP call
-#   Guardrails (L5)     — UDS sidecars, <100ms P99 per check
+# Fabric Node is the OSS passive recorder: CAPTURE -> PROTECT -> DELIVER.
+# It is not an inline control, evaluation, red-team, or governance runtime.
 
 tenant:
-  # UUID assigned at tenant registration. Required for production;
-  # smoke installs can leave this unset for local-only dev.
+  # Required by shadow-production; optional for local evaluation.
   id: ""
   name: ""
 
-# Global image pull secrets applied to every subchart pod.
-imagePullSecrets: []
+# NOTE: there is no parent-level imagePullSecrets key — it would not reach
+# the Collector pod. Set otel-collector.imagePullSecrets instead.
 
-# Values under `global:` are merged into every subchart's `.Values.global`.
-# `fabric.version` carries the Fabric release version down to subcharts
-# whose own `.Chart.AppVersion` does NOT track Fabric — notably the
-# third-party Langfuse subchart, whose appVersion is the upstream Langfuse
-# version. The Fabric-built langfuse-bootstrap image is published at THIS
-# version by the release workflow, so its image tag defaults to it.
-# Kept in lockstep with the chart appVersion by the release pipeline.
 global:
   fabric:
     version: "0.8.0-rc.1"
 
-# Cross-cutting namespace creation. When running inside an operator
-# that manages the namespace externally, set this to false.
 namespace:
   create: false
   name: fabric-system
   annotations: {}
   labels: {}
 
-# Default NetworkPolicy: deny all ingress/egress except what each
-# component opens. Tenants with strict egress controls leave this on;
-# dev clusters flip to false.
+# shadow-production pins this on. The Collector subchart then opens only the
+# explicitly configured receiver and destination paths.
 networkPolicy:
   denyDefault: false
 
-# --- Subchart toggles + local overrides ---
-
+# Fabric Node v1 packages only the Fabric Collector.
 otelCollector:
-  enabled: true        # ON by default: a Fabric install with no
-                       # collector captures nothing, so the previous
-                       # default rendered zero resources and looked
-                       # like a successful no-op install.
-                       #
-                       # With no `otel-collector.exporter.endpoint`
-                       # set, the collector still installs and writes
-                       # spans to its own pod stdout via the OTel
-                       # debug exporter, and NOTES.txt prints a loud
-                       # warning. Nothing is silently dropped, but
-                       # stdout is not durable and not an audit trail
-                       # — set a real endpoint before relying on it.
-                       #
-                       # The HMAC sampler ships OFF (no key to
-                       # invent), so a bare install keeps every event.
-# Subchart-specific overrides live under the subchart alias name,
-# matching dependency names in Chart.yaml. Example:
-# otel-collector:
-#   replicaCount: 2
-#   fabric:
-#     sampler:
-#       hmacKeySecret:
-#         name: fabric-otel-sampler-key
+  enabled: true
 
-fabricRelay:
-  enabled: false       # Opt-in until Collector -> Relay -> destination
-                       # integration qualification is complete. Production
-                       # fails closed without an HTTPS allowlisted destination,
-                       # verified TLS, durable storage, and indefinite retries.
-                       # Enabling this does NOT automatically rewire the
-                       # otel-collector exporter to Relay; configure and verify
-                       # that hop explicitly before production use.
-# fabric-relay:
-#   mode: production
-#   receiver:
-#     tls:
-#       serverCertificateSecret: { name: fabric-relay-server-tls }
-#       clientCASecret: { name: fabric-relay-client-ca }
-#   destination:
-#     endpoint: https://otlp.example.com
-#     allowedEndpoints: [https://otlp.example.com]
-#     auth:
-#       secretRef: { name: fabric-relay-auth, key: authorization }
-#   persistence:
-#     enabled: true
-#     storageClass: encrypted-rwo
-#   debugExporter:
-#     enabled: false
-#   networkPolicy:
-#     enabled: true
-#     ingressFrom:
-#       - namespaceSelector:
-#           matchLabels: { kubernetes.io/metadata.name: fabric-system }
-#         podSelector:
-#           matchLabels: { app.kubernetes.io/name: otel-collector }
+# Collector settings live under the dependency name. Bare defaults are for
+# local evaluation only: without a destination records go to debug stdout.
+# Install profiles/shadow-production.yaml for the fail-closed posture.
+otel-collector: {}
 
-nemoSidecar:
-  enabled: false      # image published from v0.2.0; until then, build locally
-                      # from components/nemo-sidecar/Dockerfile and override
-                      # nemo-sidecar.image.repository
-# nemo-sidecar:
-#   rails:
-#     bundlePath: /etc/fabric/rails
-
-presidioSidecar:
-  enabled: false      # opt-in: requires a real tenant HMAC key at install.
-                      # Create the Secret, then set
-                      # presidio-sidecar.tenantKey.existingSecret
-# presidio-sidecar:
-#   tenantKey:
-#     existingSecret: fabric-presidio-tenant-key
-#   redactionMode: hmac
-
-langfuse:
-  enabled: false      # OPT-IN, and deliberately so. This subchart does
-                      # NOT bundle Postgres — it requires an external
-                      # DSN (database.url or database.dsnSecret.name)
-                      # and fail-closes at render time without one.
-                      # Enabling it by default would ship an install
-                      # that cannot come up. It is also not a verified
-                      # OTLP sink; see the chart README before pointing
-                      # otel-collector.exporter.endpoint at it.
-# langfuse:
-#   database:
-#     dsnSecret:
-#       name: fabric-langfuse-db
-#       key: url
-#   nextauthUrl: https://langfuse.internal.example.com
-
-redteamRunner:
-  enabled: false      # CronJob attacks a live endpoint; opt-in by design
-# redteam-runner:
-#   schedule: "0 2 * * *"      # daily, via eu-ai-act-high-risk profile
-#   runConfig:
-#     inline: |
-#       tenant_id: acme-prod
-#       agent_id: support-bot
-#       profile: eu-ai-act-high-risk
-#       target:
-#         url: https://support-bot.acme.example.com/respond
-#         headers:
-#           Authorization: Bearer ${env:AGENT_BEARER}
-#       suites:
-#         - name: garak
-#           probes: [promptinject.HijackHateHumans]
-#         - name: pyrit
-#           scenarios: [jailbreak_fuzzer]
-#   extraEnv:
-#     - name: AGENT_BEARER
-#       valueFrom:
-#         secretKeyRef: { name: fabric-redteam-creds, key: bearer }
-
-updateAgent:
-  enabled: false      # Requires a real signing key at install; opt-in by design
-# update-agent:
-#   config:
-#     trustedKeys:
-#       - id: singleaxis-release
-#         publicKey: "<base64 raw 32-byte Ed25519 pubkey>"
-#     extraTrustedKeys:
-#       - id: tenant-mirror
-#         publicKey: "<base64 raw 32-byte Ed25519 pubkey>"
-#   tls:
-#     mode: certManager
-#     certManager:
-#       issuerRef:
-#         name: fabric-ca-issuer
-#         kind: ClusterIssuer
-#         group: cert-manager.io
-#   webhook:
-#     watchedNamespaces: [fabric-system, fabric-policy]
-
-# Profile metadata (set by --values profiles/<name>.yaml). Used only
-# for observability + NOTES; the profile's values are what actually
-# configure the deployment.
 profile:
-  name: permissive-dev
-  regulations: []
-  lockedFields: []
+  name: shadow-dev

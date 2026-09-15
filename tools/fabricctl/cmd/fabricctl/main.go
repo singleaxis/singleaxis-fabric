@@ -1,3 +1,5 @@
+//go:build legacy
+
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
@@ -5,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +21,7 @@ import (
 	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/doctor"
 	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/initializer"
 	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/installtarget"
+	"github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/recorder"
 	"golang.org/x/term"
 )
 
@@ -71,6 +75,8 @@ func runWithSession(args []string, stdin io.Reader, stdout, stderr io.Writer, in
 		return runConnect(args[1:], stdout, stderr)
 	case "deployment":
 		return runDeployment(args[1:], stdout, stderr)
+	case "recorder":
+		return runRecorder(args[1:], stdout, stderr)
 	case "help", "--help", "-h":
 		printUsage(stdout)
 		return 0
@@ -89,6 +95,7 @@ func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer, interacti
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	outputDir := fs.String("output-dir", ".", "directory for generated desired-state artifacts")
+	legacyManagement := fs.Bool("legacy-management", false, "deprecated: create the superseded management/assurance offline bundle")
 	fs.Usage = func() { printInitUsage(stdout) }
 
 	if err := fs.Parse(args); err != nil {
@@ -104,18 +111,94 @@ func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer, interacti
 		printInitUsage(stderr)
 		return 2
 	}
+	if *legacyManagement && interactive {
+		fmt.Fprintln(stdout, "DEPRECATED: --legacy-management preserves the superseded management/assurance initializer for compatibility only.")
+	}
 	if _, err := initializer.Run(initializer.Options{
-		Input:       stdin,
-		Output:      stdout,
-		OutputDir:   *outputDir,
-		Interactive: interactive,
-		Generator:   generatorIdentity(),
+		Input:            stdin,
+		Output:           stdout,
+		OutputDir:        *outputDir,
+		Interactive:      interactive,
+		Generator:        generatorIdentity(),
+		LegacyManagement: *legacyManagement,
 	}); err != nil {
 		if errors.Is(err, initializer.ErrDeclined) {
 			return 0
 		}
 		fmt.Fprintf(stderr, "initialize Fabric desired state: %v\n", err)
 		return 1
+	}
+	return 0
+}
+
+type recorderCommandEnvelope struct {
+	SchemaVersion string `json:"schema_version"`
+	Status        string `json:"status"`
+	Name          string `json:"name,omitempty"`
+	Digest        string `json:"digest,omitempty"`
+	Diagnostic    string `json:"diagnostic,omitempty"`
+}
+
+func runRecorder(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		printRecorderUsage(stderr)
+		return 2
+	}
+	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		printRecorderUsage(stdout)
+		return 0
+	}
+	command := args[0]
+	if command != "validate" && command != "digest" {
+		fmt.Fprintf(stderr, "unknown recorder command %q\n\n", command)
+		printRecorderUsage(stderr)
+		return 2
+	}
+	fs := flag.NewFlagSet("recorder "+command, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "emit versioned JSON output")
+	commandArgs := args[1:]
+	// The standard flag package stops at the first positional argument. Accept
+	// the documented FILE --json form in addition to --json FILE.
+	if len(commandArgs) == 2 && commandArgs[1] == "--json" {
+		commandArgs = []string{"--json", commandArgs[0]}
+	}
+	if err := fs.Parse(commandArgs); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printRecorderCommandUsage(stdout, command)
+			return 0
+		}
+		printRecorderCommandUsage(stderr, command)
+		return 2
+	}
+	if fs.NArg() != 1 {
+		printRecorderCommandUsage(stderr, command)
+		return 2
+	}
+	resource, err := recorder.ParseFile(fs.Arg(0))
+	if err != nil {
+		if *jsonOutput {
+			_ = json.NewEncoder(stdout).Encode(recorderCommandEnvelope{
+				SchemaVersion: "fabricctl.recorder-command/v1", Status: "fail", Diagnostic: err.Error(),
+			})
+		} else {
+			fmt.Fprintf(stderr, "Recorder configuration validation failed: %v\n", err)
+		}
+		return 1
+	}
+	digest, err := recorder.Digest(resource)
+	if err != nil {
+		fmt.Fprintln(stderr, "Recorder configuration digest failed")
+		return 1
+	}
+	if *jsonOutput {
+		_ = json.NewEncoder(stdout).Encode(recorderCommandEnvelope{
+			SchemaVersion: "fabricctl.recorder-command/v1", Status: "pass", Name: resource.Metadata.Name, Digest: digest,
+		})
+	} else if command == "digest" {
+		fmt.Fprintln(stdout, digest)
+	} else {
+		fmt.Fprintf(stdout, "FabricRecorder validation: pass\nName: %s\nDigest: %s\n", resource.Metadata.Name, digest)
 	}
 	return 0
 }
@@ -533,17 +616,25 @@ func (s *stringList) Set(value string) error {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "fabricctl securely inspects and preflights SingleAxis Fabric deployments.")
+	fmt.Fprintln(w, "fabricctl prepares, installs, connects, and verifies the SingleAxis Fabric OSS recorder.")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "Primary journey:")
 	fmt.Fprintln(w, "  fabricctl init [--output-dir DIR]")
+	fmt.Fprintln(w, "  fabricctl install --bundle DIR --chart FILE --profile FILE --image-locks FILE --plan-digest DIGEST [flags]")
+	fmt.Fprintln(w, "  fabricctl connect --bundle DIR --operation-receipt FILE --platform HTTPS_ORIGIN --trust-store FILE [flags]")
+	fmt.Fprintln(w, "  fabricctl verify --bundle DIR [--receipt FILE] [--output human|json]")
+	fmt.Fprintln(w, "  fabricctl status --bundle DIR [--receipt FILE] [--output human|json]")
+	fmt.Fprintln(w, "  recorder init prepares configuration only; current install/connect commands require a reviewed compatibility bundle")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Recorder configuration:")
+	fmt.Fprintln(w, "  fabricctl recorder validate FILE [--json]")
+	fmt.Fprintln(w, "  fabricctl recorder digest FILE [--json]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Advanced and legacy compatibility:")
+	fmt.Fprintln(w, "  fabricctl init --legacy-management [--output-dir DIR]  (deprecated)")
 	fmt.Fprintln(w, "  fabricctl bundle build --deployment FILE --target FILE [--output-dir DIR] [--json]")
 	fmt.Fprintln(w, "  fabricctl plan --bundle DIR --chart FILE --profile FILE --image-locks FILE [--output human|json]")
-	fmt.Fprintln(w, "  fabricctl install --bundle DIR --chart FILE --profile FILE --image-locks FILE --plan-digest DIGEST [flags]")
-	fmt.Fprintln(w, "  fabricctl status --bundle DIR [--receipt FILE] [--output human|json]")
-	fmt.Fprintln(w, "  fabricctl verify --bundle DIR [--receipt FILE] [--output human|json]")
 	fmt.Fprintln(w, "  fabricctl support --bundle DIR --output-dir DIR [--receipt FILE] [--output human|json]")
-	fmt.Fprintln(w, "  fabricctl connect --bundle DIR --operation-receipt FILE --platform HTTPS_ORIGIN --trust-store FILE [flags]")
 	fmt.Fprintln(w, "  fabricctl doctor --offline --bundle DIR [--output human|json]")
 	fmt.Fprintln(w, "  fabricctl doctor [flags]")
 	fmt.Fprintln(w, "  fabricctl deployment validate FILE [--json]")
@@ -572,15 +663,30 @@ func printBundleBuildUsage(w io.Writer) {
 }
 
 func printInitUsage(w io.Writer) {
-	fmt.Fprintln(w, "Create reviewed FabricDeployment and FabricInstallTarget resources plus a deterministic offline bundle.")
+	fmt.Fprintln(w, "Prepare a reviewed passive FabricRecorder configuration and deterministic local receipt.")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Usage: fabricctl init [--output-dir DIR]")
+	fmt.Fprintln(w, "Usage: fabricctl init [--output-dir DIR] [--legacy-management]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
-	fmt.Fprintln(w, "  --output-dir DIR  directory for generated artifacts (default: current directory)")
+	fmt.Fprintln(w, "  --output-dir DIR      directory for generated artifacts (default: current directory)")
+	fmt.Fprintln(w, "  --legacy-management  deprecated compatibility wizard for the superseded six-file bundle")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "The wizard requires an interactive terminal, is offline, never asks for secret values,")
-	fmt.Fprintln(w, "and refuses to replace any of the six generated artifacts.")
+	fmt.Fprintln(w, "refuses to replace existing artifacts, and does not install or contact a destination.")
+}
+
+func printRecorderUsage(w io.Writer) {
+	fmt.Fprintln(w, "Inspect the small FabricRecorder configuration locally without network or runtime mutation.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  fabricctl recorder validate FILE [--json]")
+	fmt.Fprintln(w, "  fabricctl recorder digest FILE [--json]")
+}
+
+func printRecorderCommandUsage(w io.Writer, command string) {
+	fmt.Fprintf(w, "Usage: fabricctl recorder %s FILE [--json]\n", command)
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "This command operates offline and does not mutate a runtime.")
 }
 
 func printDeploymentUsage(w io.Writer) {

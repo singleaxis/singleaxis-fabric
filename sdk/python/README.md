@@ -1,437 +1,103 @@
-# singleaxis-fabric (Python SDK)
+# SingleAxis Fabric recorder SDK for Python
 
-Native Python SDK that tenant agents import in-process. Provides the
-decision-span contract, guardrail/escalation types, OTel plumbing,
-and optional adapters for LangGraph, Microsoft Agent Framework, and
-CrewAI (installed via extras — the core SDK stays framework-neutral).
+The Python SDK adds passive OpenTelemetry activity capture to an AI agent. It
+records enough identity and causal context to reconstruct model calls, tool
+calls, retrieval, memory activity, side effects, delegation, retries and
+failures. It does not block or alter the agent.
 
-## Authoritative specs
-
-- [`../../specs/002-architecture.md`](../../specs/002-architecture.md)
-- [`../../specs/005-guardrails-inline.md`](../../specs/005-guardrails-inline.md)
-- [`../../specs/003-decision-graph.md`](../../specs/003-decision-graph.md) (retrieval audit)
-- [`../../specs/007-escalation-workflow.md`](../../specs/007-escalation-workflow.md) (pause primitive)
-
-## Status
-
-Beta — v0.7.x.
-
-## `fabricctl`: inspect before you connect
-
-The Python distribution installs `fabricctl`, a read-only-first operations
-CLI. Its MVP never changes host configuration and `verify --local` never
-makes a network request.
-
-```bash
-fabricctl version
-fabricctl doctor
-fabricctl doctor --json
-fabricctl config show
-fabricctl config validate
-fabricctl verify --local
-fabricctl deployment validate fabric-deployment.yaml
-fabricctl deployment digest fabric-deployment.yaml
-fabricctl deployment plan fabric-deployment.yaml
+```text
+CAPTURE -> PROTECT -> DELIVER
+   ^
+   |
+Python SDK (optional instrumentation)
 ```
 
-`doctor` checks the supported Python runtime and installed package identity,
-the required `FABRIC_TENANT_ID` and `FABRIC_AGENT_ID`, OTLP endpoint syntax,
-the privacy-sensitive `FABRIC_CAPTURE_LLM_CONTENT` setting, and any configured
-Presidio or NeMo Unix socket. Check IDs and JSON schemas are stable for
-automation. Output does not include sidecar paths, credentials, URL query
-parameters, or fragments.
-
-Exit codes are designed for deployment gates:
-
-| Code | Meaning |
-| ---: | --- |
-| `0` | All checks passed. |
-| `1` | No failures, but operator attention is recommended. |
-| `2` | One or more checks failed. |
-
-`config show` displays only the effective allowlisted configuration; it does
-not dump the process environment. `verify --local` creates a deterministic
-synthetic decision with one model span and one tool span using an in-memory
-exporter, then verifies identity and parent/child correlation.
-
-`deployment validate` accepts bounded UTF-8 YAML or JSON and validates the
-public
-[`FabricDeployment` v1alpha1 contract](../../contracts/management/v1alpha1/README.md).
-It is strict and fail-closed: duplicate keys, unknown fields, unsupported
-connection or content modes, inline secrets/environment dumps, and missing
-assurance-level references produce stable diagnostics and exit `2`.
-
-`deployment digest` validates first, then prints a SHA-256 digest of canonical
-UTF-8 JSON containing every field supplied by the operator. YAML and JSON with
-the same data produce the same digest. Both commands are local-only: they do
-not resolve references, contact SingleAxis, apply configuration, or claim that
-an approval or rollout occurred. Site Controller reconciliation, signature and
-approval verification, reference authorization, rollout status, and effective
-configuration attestations remain future controller semantics.
-
-`deployment plan` turns a valid resource into a deterministic, non-mutating
-installation/readiness plan. JSON output uses the stable
-`fabricctl.deployment-plan/v1` envelope and includes the selected assurance
-level and integration mode, required OSS roles, opaque desired-state
-references, and unverified operator prerequisites with stable IDs. It does not
-resolve references or expose secret values. It never contacts a network,
-cluster, or platform, and it does not render Helm or imply that apply,
-reconciliation, approval verification, or rollout occurred.
-
-### Shipping now
-
-- `Fabric` client (`Fabric.from_env`, `FabricConfig`, `close()`)
-- `Decision` context manager — opens an OTel span per agent call and
-  tags it with the Fabric-standard attributes:
-  - `fabric.tenant_id`, `fabric.agent_id`, `fabric.profile`
-  - `fabric.session_id`, `fabric.request_id`, `fabric.user_id`
-  - `fabric.blocked`, `fabric.blocked.policies` (on block)
-- Guardrail types: `GuardrailResult`, `EntitySummary`,
-  `GuardrailBlocked`, `GuardrailNotConfiguredError`
-- Presidio rail via UDS sidecar: `UDSPresidioClient`,
-  `RedactionResult`, `RedactionError`. `Decision.guard_input`,
-  `guard_output_chunk`, and `guard_output_final` route through the
-  chain and emit `fabric.guardrail` span events (phase, latency_ms,
-  blocked, entities, policies).
-- NeMo Colang rail via UDS sidecar: `UDSNemoClient`, `NemoResult`,
-  `NemoError`. Wired into the same chain; runs **after** Presidio so
-  the Colang / LLM checks never see raw PII. May block
-  (`action == "block"`), with the canned response surfaced on the
-  `GuardrailResult`.
-- LLM-call instrumentation: `Decision.llm_call(provider=..., model=...)`
-  opens a `{operation} {model}` child span (kind=CLIENT) populated with
-  the OpenTelemetry GenAI semantic conventions
-  (`gen_ai.provider.name`, `gen_ai.operation.name`, `gen_ai.request.model`,
-  `gen_ai.usage.input_tokens`,
-  `gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`)
-  alongside `fabric.llm.*` mirrors. Phoenix LLM views, Langfuse cost
-  dashboards, and any backend keying off either namespace render
-  Fabric traces natively. The returned context manager exposes
-  `set_usage(...)`, `set_response_model(...)`, and `set_attribute(...)`
-  for attaching response data on exit.
-- Tool-call instrumentation: `Decision.tool_call(name, call_id=...)`
-  opens a tool-named `execute_tool` child span with `gen_ai.tool.*` +
-  `fabric.tool.*`
-  conventions. Helpful for instrumenting function/tool invocations
-  that happen inside an agent turn.
-- OTel helpers: `get_tracer`, `install_default_provider`
-- Decision-level block recording (`record_block`, `raise_for_block`)
-- Retrieval recording: `RetrievalSource`, `RetrievalRecord`,
-  `Decision.record_retrieval(source, query=..., result_count=..., ...)`.
-  Hashes the query with SHA-256 locally (raw text never hits the
-  span), emits a `fabric.retrieval` span event with allowlisted
-  attributes, and maintains rolling `fabric.retrieval_count` and
-  `fabric.retrieval_sources` on the decision span so the Telemetry
-  Bridge can fold them into the `DecisionSummary` wire event. Maps
-  onto the Decision Graph's `Retrieval` node (spec 003).
-- Escalation pause primitive: `EscalationSummary`, `EscalationRequested`,
-  `Decision.request_escalation`, `Decision.raise_for_escalation`.
-  `request_escalation` **records** the escalation — it tags the span
-  (`fabric.escalated`, `fabric.escalation.reason/rubric_id/mode/triggering_score`)
-  and emits a `fabric.escalation` span event, but does **not** raise.
-  Pair it with `raise_for_escalation()` for an exception-driven flow
-  that raises `EscalationRequested`. `EscalationSummary.to_payload()`
-  returns the framework-agnostic dict tenants hand to whatever interrupt
-  primitive their orchestrator exposes (LangGraph `interrupt()`,
-  Agent Framework checkpoints, a bespoke queue). OSS emits the
-  *local* signal only; the durable escalation service (SASF reviewer),
-  signed-verdict resume, and pause/resume orchestration are commercial
-  (spec 007).
-- Memory write recording: `MemoryKind`, `MemoryRecord`,
-  `Decision.remember(kind=..., content=..., key=..., tags=...,
-  ttl_seconds=...)`. Tenants perform the actual write against their
-  own memory store; the SDK SHA-256s the content locally (raw text
-  never hits the span) and emits a `fabric.memory` span event with
-  the allowlisted metadata, plus rolling `fabric.memory_write_count`
-  and `fabric.memory_kinds` attributes the Telemetry Bridge folds
-  into the `DecisionSummary` wire event. Symmetric to
-  `record_retrieval` — the Decision Graph materializes the write as
-  a `Retrieval` node with `source=memory` tied to the owning
-  `Decision`.
-
-  ```python
-  from fabric import MemoryKind
-
-  with fabric.decision(session_id=sess, request_id=req) as decision:
-      answer = my_agent.run(user_input)
-      my_memory_store.write(key="last_answer", value=answer)
-      decision.remember(
-          kind=MemoryKind.EPISODIC,
-          key="last_answer",
-          content=answer,
-          tags=("turn", "assistant"),
-      )
-  ```
-
-- Side-effect recording: `SideEffectType`, `ReplayBehavior`,
-  `SideEffectRecord`, `Decision.record_side_effect(...)`. Use this for
-  tool calls that mutate external state, such as CRM updates, ticket
-  creation, email sends, file writes, database writes, or payments. The
-  SDK hashes raw request/result payloads locally, emits a
-  `fabric.side_effect` span event, and keeps rolling
-  `fabric.side_effect_count`, `fabric.side_effect_types`, and
-  `fabric.side_effect_systems` attributes for Decision Graph projection
-  and replay suppression.
-
-  ```python
-  with fabric.decision(session_id=sess, request_id=req) as decision:
-      ticket = zendesk.create_ticket(summary=final)
-      decision.record_side_effect(
-          "ticket_create",
-          target_system="zendesk",
-          operation="ticket.create",
-          request_payload=final,
-          result_payload=ticket.id,
-          idempotency_key=f"ticket:{req}",
-          replay_behavior="suppress",
-      )
-  ```
-
-- Eval + judge primitives: `Decision.record_eval` (`EvalRecord`)
-  attaches a synchronous score to the span; `Decision.queue_judge`
-  (`JudgeRequest`, `JudgeContext`) forwards an async judge request
-  through a `QueueTransport`. OSS ships these
-  recording/queueing primitives, the transport protocol, and a
-  local/reference judge harness — `JudgeRunner` (drains a transport and
-  scores out-of-band), `SimpleLLMJudge` (a minimal reference worker, not
-  commercial quality), and `LocalQueueTransport` (in-process). The
-  production judge *worker* fleet, rubric corpus, calibration, and
-  drift/longitudinal analysis are **commercial**; OSS does not run
-  managed scoring or persist results (the default result sink is a no-op).
-
-- Surface logging — every interaction an agent has, hash-on-span:
-  `Decision.record_skill`, `delegate` / `adelegate` (first-class
-  sub-agent edge), `record_hook`, `record_file_access` (names + content
-  hash, never the data), and MCP inventory capture
-  (`InstrumentedMCPSession.snapshot_inventory`, `record_mcp_inventory` —
-  hashes tool *definitions* to detect shadow/poison drift). The
-  universal `Decision.record_interaction(kind, target, …)` captures
-  *any* interaction (`http.request`, `db.query`, `shell.exec`, …); a
-  one-shot `fabric.coverage` signal reports kinds captured only
-  generically. Three surface-agnostic helpers compose onto any
-  `record_*` call: `Baseline` / `BaselineCheck` (approved-hash
-  comparison), open-vocabulary `tags=` with MITRE ATLAS + OWASP LLM
-  taxonomies as drop-in data (`Taxonomy`, `bundled_taxonomy_names`), and
-  `verify_signature` / `SignatureCheck` (`ed25519` via the `[signing]`
-  extra, `hmac-sha256` via stdlib). See
-  [`docs/capturing-interactions.md`](../../docs/capturing-interactions.md).
-
-When no rails are configured, `guard_input` / `guard_output_*` raise
-`GuardrailNotConfiguredError`. This is a deliberate fail-loud
-posture — a silently passing guardrail is a compliance footgun.
-
-### Async API
-
-`Decision`, `LLMCall`, and `ToolCall` work as `async with` as well as
-the sync `with` — a single instance is usable as one **or** the other,
-not both at once. Opening and closing a span is pure-CPU, so the async
-entry/exit reuse the sync logic; the emitted span is byte-identical
-whichever call style you use.
-
-The methods that perform blocking sidecar / adapter I/O have
-non-blocking `a`-prefixed variants that offload the blocking call to a
-worker thread via `asyncio.to_thread`, so the event loop is never
-blocked:
-
-- `aguard_input`, `aguard_output_chunk`, `aguard_output_final` —
-  guardrail-chain sidecar I/O.
-- `aevaluate_policy` — pluggable `PolicyEngine` (OPA / HTTP adapters do
-  network I/O).
-- `aauthorize_tool_call` — pluggable `ToolAuthorizer`.
-- `aqueue_judge` — pluggable `QueueTransport` (SQS / NATS / Redis
-  transports do network I/O).
-
-The pure-CPU recording methods (`record_retrieval`, `remember`,
-`recall`, `record_side_effect`, `record_eval`, `checkpoint`,
-`snapshot_context`, `set_attribute`) are microsecond-fast and have **no**
-async variant — call them directly inside an `async with` block. The
-LangGraph and Agent Framework adapters use this async surface.
-
-```python
-async with fabric.decision(session_id=sess, request_id=req) as decision:
-    safe_input = await decision.aguard_input(req.body)
-
-    async with decision.llm_call(provider="anthropic", model="claude-opus-4-7") as call:
-        output = await my_async_llm.complete(safe_input)
-        call.set_usage(input_tokens=42, output_tokens=210, finish_reason="stop")
-
-    decision.record_retrieval("rag", query="q", result_count=3)  # sync, pure-CPU
-    safe_output = await decision.aguard_output_final(output)
-```
-
-### Concurrency contract
-
-A `Decision` represents a single agent turn and is **not** safe to share
-across threads or asyncio tasks — open one `Decision` per turn. The
-`Fabric` client itself is shareable. Genuinely overlapping mutating
-calls on the same `Decision` (for example two coroutines fired with
-`asyncio.gather` on one instance) raise `ConcurrentDecisionUseError`
-rather than silently racing the internal record lists and rolling
-span-counter attributes. Sequential calls — including each awaited
-`a`-variant, which completes before the next begins — never trip it.
-Re-entering an already-entered or already-closed `Decision` raises
-`RuntimeError`.
-
-### Framework adapters (optional)
-
-The core SDK is framework-neutral. Adapters live under
-`fabric.adapters.*` and are each gated behind an install extra so the
-core install does not pull in any orchestration package.
-
-- `fabric.adapters.langgraph.escalate(decision, summary)` — records
-  the Fabric escalation on the decision span and calls
-  `langgraph.types.interrupt(payload)`. Returns whatever the host
-  resumes the graph with (typically the signed verdict).
-- `fabric.adapters.agent_framework.request_escalation(ctx, decision,
-  summary, *, response_type=...)` — records on span, then
-  `await ctx.request_info(request_data=..., response_type=...)`. The
-  resumed response is routed to a MAF `@response_handler` method
-  (dispatch-based, per MAF design).
-- `fabric.adapters.crewai.attach_callbacks(decision)` returns
-  `CrewCallbacks` (step + task callbacks that record CrewAI
-  lifecycle events on the decision span).
-  `fabric.adapters.crewai.request_escalation(decision, summary)`
-  records on span and returns the canonical payload — the tenant
-  pairs it with their chosen CrewAI HITL channel (`@human_feedback`
-  Flow, `Task(human_input=True)`, or enterprise `/resume`).
+Protection and delivery happen in the customer-controlled Fabric Node. Raw LLM
+content capture is disabled by default.
 
 ## Install
 
 ```bash
-pip install singleaxis-fabric                         # core
-pip install "singleaxis-fabric[otlp]"                 # + OTLP/HTTP exporter
-pip install "singleaxis-fabric[langgraph]"            # + LangGraph adapter
-pip install "singleaxis-fabric[agent-framework]"      # + MAF adapter
-pip install "singleaxis-fabric[crewai]"               # + CrewAI adapter
+pip install singleaxis-fabric
 ```
 
-## Quick start
-
-```python
-import os
-from fabric import Fabric, install_default_provider
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-# Host chooses how to export — typically an OTLP endpoint pointing at
-# the Fabric OTel Collector. install_default_provider is a convenience
-# for small agents; production hosts wire the provider themselves.
-install_default_provider(
-    service_name="support-bot",
-    exporter=OTLPSpanExporter(endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]),
-)
-
-fabric = Fabric.from_env()
-
-with fabric.decision(
-    session_id=session.id,
-    request_id=req.id,
-    user_id=user.id,
-) as decision:
-    # real work happens here; the decision span wraps it all
-    safe_input = decision.guard_input(req.body)
-    output = llm.complete(prompt=safe_input)
-    final = decision.guard_output_final(output)
-    decision.set_attribute("llm.model", "claude-opus-4-7")
-```
-
-`guard_input` / `guard_output_*` raise `GuardrailNotConfiguredError`
-(fail-loud by design) unless at least one rail is wired: set
-`FABRIC_PRESIDIO_UNIX_SOCKET` for PII redaction and/or
-`FABRIC_NEMO_UNIX_SOCKET` for Colang policy rails — either alone is
-enough (or pass a `PresidioClient` / `NemoClient` to `Fabric(...)`
-directly).
-
-## Environment variables
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `FABRIC_TENANT_ID` | yes | Tenant scope for all emitted events. |
-| `FABRIC_AGENT_ID` | yes | Which agent in the tenant is running. |
-| `FABRIC_PROFILE` | no | Regulatory profile (default `permissive-dev`). |
-| `FABRIC_PRESIDIO_UNIX_SOCKET` | no | Unix socket path to the Presidio sidecar (`/v1/redact`). If unset, the Presidio rail is not installed. |
-| `FABRIC_PRESIDIO_TIMEOUT_SECONDS` | no | Per-call timeout for the sidecar (float, default `0.5`). |
-| `FABRIC_NEMO_UNIX_SOCKET` | no | Unix socket path to the NeMo Colang sidecar (`/v1/check`). If unset, the NeMo rail is not installed. |
-| `FABRIC_NEMO_TIMEOUT_SECONDS` | no | Per-call timeout for the NeMo sidecar (float, default `1.0`). |
-
-## Module layout
-
-The SDK lives under `src/fabric/`. Grouped by role (accuracy over a
-flat dump — read the module docstrings for detail):
-
-**Core**
-
-- `client.py` — `Fabric`, `FabricConfig`, `from_env`
-- `decision.py` — `Decision` context manager (the agent-turn span)
-- `execution.py` — optional outer `execution()` correlation span
-- `guardrails.py` — guardrail result + error types
-- `escalation.py` — `EscalationSummary`, `EscalationRequested`
-- `retrieval.py` — `RetrievalSource`, `RetrievalRecord`
-- `memory.py` — `MemoryKind`, `MemoryRecord`
-- `side_effect.py` — `SideEffectType`, `SideEffectRecord`
-- `eval.py` — `EvalRecord` (synchronous score record)
-- `judge.py` — `JudgeContext`, `JudgeRequest`, `JudgeWorker` +
-  `QueueTransport` protocol
-- `judge_runner.py` — `JudgeRunner` (local/reference judge loop)
-- `policy.py` — `PolicyDecision`, `PolicyEngine` protocol
-- `tool_auth.py` — pre-execution `ToolAuthorizer` protocol + gate
-- `checkpoint.py` — `CheckpointEvent` schema (replay breadcrumb; replay
-  engine is commercial)
-- `stream.py` — `StreamRedactor` (boundary-safe streaming redaction)
-- `propagation.py` — W3C `tracestate` cross-service context carrier
-- `presidio.py`, `nemo.py` — PII / Colang sidecar clients
-- `tracing.py` — OTel helpers (`get_tracer`, `install_default_provider`)
-- `auto_instrument.py` — opt-in `opentelemetry-instrumentation-*` hookup
-- internal leaf modules: `_attributes.py`, `_calls.py`, `_chain.py`,
-  `_crosscut.py`, `_id_validators.py`, `_uds.py`, `_version.py`
-
-**Adapters & extensions** (each extras-gated)
-
-- `adapters/` — framework adapters (`langgraph`, `agent_framework`,
-  `crewai`)
-- `guardrail_adapters/` — `http`, `lakera`
-- `judge_adapters/` — `simple` (`SimpleLLMJudge`), `deepeval`, `ragas`
-- `policy_adapters/` — `opa`, `cedar`, `http`
-- `queue_transports/` — `local` (`LocalQueueTransport`), `sqs`, `nats`,
-  `redis`
-- `content_store/` — `ContentStore` protocol + `local`, `s3` backends
-
-**Integrations**
-
-- `integrations/mcp.py` — MCP `call_tool` instrumentation
-
-Tests, conformance suites, benchmarks, and soak harness live alongside
-under `tests/`, `benchmarks/`, and `soak/`.
-
-## Tests
+Add OTLP export and only the integrations you use:
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -e '.[dev]'
-pytest
+pip install "singleaxis-fabric[otlp,openai]"
 ```
 
-Coverage threshold is 85% at the pyproject level (`--cov-fail-under=85`).
+## Capture one agent decision
 
-Beyond unit tests, the SDK ships:
+```python
+from fabric import Fabric, FabricConfig
 
-- a **schema conformance suite** (`tests/conformance/`) that freezes the
-  emitted `fabric.*` / `gen_ai.*` span and span-event contract against
-  golden fixtures and a JSON Schema at `SCHEMA_VERSION` 1.0, so silent
-  wire-shape drift fails CI;
-- a **reusable adapter-conformance kit** (`tests/conformance/adapters/`)
-  that any implementer of a Fabric extension Protocol (`GuardrailChecker`,
-  `PolicyEngine`, `QueueTransport`, `ToolAuthorizer`, …) can subclass to
-  prove their adapter satisfies the behavioral contract;
-- an opt-in **micro-benchmark suite** (`benchmarks/`) and **soak harness**
-  (`soak/`), both outside `tests/` so they never gate or flake CI. They
-  are informational and machine-dependent — no pass/fail timing
-  threshold.
+fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="support-agent"))
 
-## Versioning
+with fabric.decision(session_id="session-42", request_id="request-7") as decision:
+    with decision.llm_call(provider="provider-example", model="model-example") as call:
+        # Invoke the customer's model client here.
+        call.set_response(model="model-example")
 
-Independent of the Fabric umbrella version pre-1.0.0. Tenant agents
-pin the SDK; the Control Plane advertises compatibility ranges.
+    with decision.tool_call("lookup_order", call_id="tool-1") as tool:
+        tool.set_arguments('{"order_id":"order-123"}')
+        # Invoke the customer's tool here.
+        tool.set_result('{"status":"shipped"}')
+```
 
-## License
+The SDK hashes tool payloads locally. It does not send telemetry by itself;
+configure the OpenTelemetry provider/exporter used by the host application to
+send to Fabric Node. For tests and small agents,
+`fabric.install_default_provider(...)` wires a `TracerProvider` for you — pass
+an exporter, or set `OTEL_EXPORTER_OTLP_ENDPOINT` with the `[otlp]` extra
+installed and an OTLP exporter is constructed from the environment. Calling it
+with neither produces spans that go nowhere (the SDK warns loudly rather than
+dropping them silently).
 
-Apache-2.0. See `LICENSE`.
+`gen_ai.client.*` metrics (token usage, operation duration, time-to-first-token,
+time-per-chunk, tool duration) are recorded on the global OpenTelemetry metrics
+API. Without a `MeterProvider` installed they silently no-op — install an SDK
+`MeterProvider` (for example one wired to an OTLP metric exporter) at process
+level, pass `meter_provider=` to `install_default_provider`, or inject a `Meter`
+via `Fabric(..., meter=...)`.
+
+Use `Fabric.execution(...)` to correlate multiple decisions and the retrieval,
+memory, side-effect, checkpoint, delegation and generic-interaction methods on
+`Decision` to capture consequential activity beyond LLM and tool calls.
+
+When a `ContentStore` (for example `LocalFilesystemContentStore` or
+`S3ContentStore`) is passed to `Fabric`, recorder paths that receive raw
+content — `remember`, `recall` and `record_side_effect` payloads — write it to
+the tenant-controlled store and stamp the returned `fabric.content.*_ref` URI on
+the emitted event. The trace stream then carries a governed reference an
+auditor resolves out-of-band, never the raw bytes.
+
+## Stable recorder-v1 surface
+
+The `fabric` package root exports capture, activity-correlation, governed
+content-reference and integrity primitives only. Framework and provider
+instrumentation remain optional extras.
+
+It does not export or install judges, evaluation workers, guardrail engines,
+prompt-time PII/NeMo controls, policy engines, tool authorization, escalation
+enforcement or management-plane commands.
+
+Recorder-v1 artifacts do not contain the former runtime-control, judge,
+evaluation, policy, authorization or escalation modules. Their former
+`Decision` methods and `Fabric` constructor parameters have also been removed;
+this is an intentional breaking boundary so installing the recorder cannot put
+enforcement behavior in an agent's request path.
+
+See the
+[SDK scope](https://github.com/singleaxis/singleaxis-fabric/blob/main/sdk/python/SCOPE.md)
+and [recorder-v1 spec](https://github.com/singleaxis/singleaxis-fabric/blob/main/specs/027-recorder-v1.md)
+for the authoritative boundary.
+
+## Development
+
+```bash
+uv sync --all-extras --dev
+uv run pytest
+uv run ruff check src tests
+uv run mypy src
+```

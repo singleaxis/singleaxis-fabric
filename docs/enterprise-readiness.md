@@ -1,136 +1,82 @@
 # Enterprise readiness
 
-A single-page trust overview for security, risk, and procurement teams
-evaluating SingleAxis Fabric. Every claim here is verifiable against this
-repository — Fabric is Apache 2.0, so you can audit every line yourself.
+This page describes recorder v1 only. Fabric OSS is a customer-controlled,
+passive data plane:
 
-> **Scope honesty.** This page covers the **OSS substrate**
-> (`singleaxis-fabric`, the SDK + sidecars + collector + Helm chart),
-> which is beta (v0.7.x) and the layer you deploy. The
-> **commercial control plane** (Decision Graph, Evidence Bundles, Judge
-> Workers, Expert Review) is pre-GA and is **not** represented as
-> production-ready here — engage SingleAxis for its current status.
+```text
+CAPTURE -> PROTECT -> DELIVER
+```
 
----
+It does not install SingleAxis evaluation, governance, management, or inline
+enforcement services. A release candidate is suitable for enterprise testing
+only after the tagged commit passes the published release gates. It is not a
+certification or a claim that a particular customer deployment is compliant.
 
-## 1. Security model
+## Trust boundary
 
-| Property | How Fabric enforces it |
-|---|---|
-| **Raw content never on telemetry** | Span attributes carry **hashes only**; raw inputs/outputs go out-of-band to a tenant-controlled content store. A leak of your traces is not a leak of your data. |
-| **Inline PII redaction** | Presidio sidecar over a Unix domain socket redacts EMAIL/PHONE/SSN/CREDIT_CARD + named entities (HMAC or tag mode) **before** content reaches the model or a span. |
-| **Egress allowlist** | The `fabricguard` collector processor strips any attribute outside the configured namespace allowlist before traces leave the cluster. |
-| **Fail-closed guardrails** | Guardrail/redaction failures **block** the turn (do not forward unverified content) — verified by an adversarial fault-injection test suite. |
-| **Tool authorization** | A `ToolAuthorizer` hook re-checks authorization at every tool call (input/tool/output/egress enforcement points), defeating the confused-deputy pattern. |
-| **No phone-home** | The OSS emits only to the OTLP endpoint you configure. No telemetry is sent to SingleAxis. |
+- Fabric Node runs in customer-controlled infrastructure.
+- The customer selects the OTLP destination. A SingleAxis account is optional.
+- Raw prompts, responses, tool payloads, headers, credentials, and tokens are
+  outside the default export allowlist.
+- Metadata values can still be sensitive. Use opaque identifiers and perform
+  customer-specific data classification before production use.
+- Fabric does not receive hidden model reasoning and cannot capture behavior
+  that an SDK, adapter, gateway, or existing telemetry source does not expose.
 
-## 2. Supply-chain integrity
+The allowlist is an export-minimization control, not semantic PII detection and
+not a legal de-identification determination. Prompt-time PII blocking is a
+separate optional enforcement capability and is not shipped in recorder v1.
 
-| Control | Evidence |
-|---|---|
-| **Signed artifacts** | Multi-arch container images + Helm chart + source archive signed with **cosign** (keyless, Sigstore). |
-| **SBOMs** | Both **SPDX** and **CycloneDX** SBOMs generated and signed per release. |
-| **Provenance** | PyPI publish via **OIDC Trusted Publishing** (no long-lived tokens); build provenance attestations attached. |
-| **Reproducible version** | Version is stamped from the signed git tag (`hatch-vcs`); no hand-edited version files. |
-| **OpenSSF Scorecard** | Public scorecard badge tracked in the README. |
-| **License hygiene** | Apache-2.0; all dependencies are Apache/MIT/BSD-class, enforced by a license-compatibility CI gate. |
+## Production deployment posture
 
-## 3. Vulnerability management
+The `shadow-production` Helm profile is passive: it does not block, transform,
+or delay the monitored application. It fails to render unless the operator
+provides:
 
-Every pull request and release runs:
+- a non-empty customer-controlled tenant identifier;
+- TLS server identity and client-certificate verification for OTLP ingress;
+- an explicit NetworkPolicy ingress peer for monitored workloads;
+- an authenticated HTTPS exporter endpoint;
+- explicit exporter egress peers and ports;
+- a persistent, fsync-enabled sending queue with blocking overflow behavior;
+- no volatile batching before that persistent queue;
+- indefinite retry for transient export failures; and
+- no debug exporter or customer extension to the production allowlist.
 
-| Tool | Covers |
-|---|---|
-| **CodeQL** | Code scanning (Python + Go) |
-| **Semgrep** | SAST (static analysis) |
-| **Trivy** | Filesystem + dependency vulnerability scan |
-| **OSV-Scanner** | Known-vulnerability scan against the dependency graph |
-| **gitleaks** | Secret scanning |
+Queue PVCs are retained on deletion and scale-down. At-least-once export can
+produce duplicates, so the destination must deduplicate preserved trace/span
+identities. An OTLP or HTTP success means destination acceptance; it does not
+prove durable persistence unless the destination separately provides that
+evidence.
 
-Findings post to GitHub Code Scanning and **block merge** via required
-status checks + `required_conversation_resolution`. Private vulnerability
-disclosure process is in [`SECURITY.md`](../SECURITY.md), with a
-documented supported-version matrix.
+## Release and supply-chain controls
 
-## 4. Quality & correctness gates (enforced in CI, block merge)
+Recorder release policy permits only these public artifacts:
 
-| Gate | Bar |
-|---|---|
-| Type safety | **`mypy --strict`** on `src` and `tests` |
-| Lint / format | `ruff` check + format |
-| Test suite | **757 tests**, 0 skipped (Python SDK) |
-| Coverage | **≥85% gate; actual ≈95%** |
-| Wire contract | **39 byte-locked conformance goldens** — the emitted schema cannot drift silently (`fabric.schema_version = 1.0`) |
-| Multi-version | Tested on Python 3.11 / 3.12 / 3.13 |
-| API stability | Documented public-surface + deprecation policy ([`api-stability.md`](api-stability.md)) |
+- the Python and TypeScript capture SDKs;
+- the Fabric Node Collector image and Collector-only Helm chart;
+- the recorder-only `fabricctl` binary; and
+- activity, connection, recorder, privacy, and delivery contracts.
 
-## 5. Reliability & operations
+The release workflow verifies the exact tagged commit, required workflow
+evidence, coordinated versions, package contents, artifact digests, SBOMs,
+provenance, and signatures before creating a draft release. Registry
+publication uses short-lived trusted identity where the registry supports it.
 
-| Property | Status |
-|---|---|
-| **Pod security** | `runAsNonRoot`, `runAsUser` 1000/65532, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault` across the chart |
-| **High availability** | Configurable replicas, **PodDisruptionBudgets**, `topologySpreadConstraints`, liveness/readiness probes, resource requests + limits |
-| **Network policy** | Deny-default NetworkPolicy in the production profile; sidecars cannot egress to the public internet |
-| **Performance overhead** | Design budget of ~10–30 ms per decision (UDS-local sidecars, async span export, sub-ms regex pre-filter). The benchmark suite (`sdk/python/benchmarks/`) is opt-in and machine-dependent — this is a target, not a CI-enforced measurement |
-| **Resource safety** | Verified under a 20k+ decision soak: flat memory, no FD/socket leak, bounded backpressure |
-| **Fail-loud config** | The production profile refuses to install without real signing keys, tenant keys, and an exporter endpoint |
+## Enterprise qualification responsibilities
 
-## 6. Data handling & privacy
+Before promotion, the customer and SingleAxis must qualify the exact deployment
+for:
 
-- **Data residency:** Fabric runs entirely in **your** cluster/region; you
-  choose the OTLP backend. No data crosses to SingleAxis in OSS mode.
-- **PII:** redacted at the per-pod boundary before model/telemetry exposure;
-  raw content is hash-referenced and stored only where you configure.
-- **Right to erasure:** content store + graph expose tenant-scoped content deletion primitives.
-- **Multi-tenancy:** every record is tenant-scoped (`tenant_id` on all spans/nodes/edges).
+1. connector coverage and known blind spots;
+2. workload identity, certificate issuance, rotation, and revocation;
+3. opaque identifier policy and metadata classification;
+4. encrypted storage, capacity, retention, backup, and restore;
+5. queue saturation, destination outage, and restart recovery;
+6. destination deduplication and durable-acceptance semantics;
+7. NetworkPolicy and external firewall enforcement;
+8. operational alerting, runbooks, access review, and change approval; and
+9. applicable legal, privacy, residency, and records-management obligations.
 
-## 7. Compliance posture
-
-| Regime | How Fabric helps |
-|---|---|
-| **EU AI Act (high-risk)** | `eu-ai-act-high-risk` Helm profile; per-decision record-keeping (Art. 12); human-oversight escalation hooks (Art. 14) |
-| **HIPAA** | §164.312(b) audit controls — PII never on spans; tenant-scoped audit trail |
-| **SOC 2** | Audit-log substrate + supply-chain controls supporting CC-series criteria |
-| **NIST AI RMF / ISO 42001** | MEASURE/MANAGE telemetry foundation. Per-control mappings are **roadmap** — none ship in this distribution; the structure they will follow is in [`specs/009-compliance-mapping.md`](../specs/009-compliance-mapping.md) |
-
-A full auditor question-by-question mapping is in
-[`docs/auditor-checklist.md`](auditor-checklist.md).
-
-## 8. Governance & support
-
-- **Governance:** [`GOVERNANCE.md`](../GOVERNANCE.md) ·
-  [`MAINTAINERS.md`](../MAINTAINERS.md) ·
-  [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) ·
-  [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-- **Versioning:** Semantic Versioning; schema version is independent and conformance-locked.
-- **Support:** see [`SUPPORT.md`](../SUPPORT.md). Enterprise SLA + CVE-response + LTS available commercially.
-
----
-
-## What we do not claim (known limitations)
-
-Procurement teams should weigh these:
-
-1. **Pre-1.0.** The SDK is v0.7.x; the public API may change before 1.0
-   (policy in `SECURITY.md` / `api-stability.md`). The **wire contract** is
-   conformance-locked and stable.
-2. **No third-party SOC 2 / pen-test report yet.** The controls above are real
-   and verifiable in-repo; an independent attestation is on the roadmap
-   (available to design partners on request).
-3. **TypeScript SDK is emit-surface only, and is not at parity with Python.**
-   It ships 7 modules against Python's 58, and reproduces 19 of the 39 shared
-   conformance goldens. It has **no** framework adapters, no guardrail or
-   policy transports, no MCP instrumentation, and no host-side I/O helpers.
-   It is not published to npm, and its CI job is advisory rather than
-   required. Outstanding work: [`typescript-parity-backlog.md`](typescript-parity-backlog.md).
-4. **The commercial control plane is pre-GA.** Do not deploy Decision Graph /
-   Evidence Bundles / Judge Workers / Expert Review as production-critical
-   until SingleAxis confirms GA status for your use case.
-
-We publish these gaps deliberately — a vendor that hides its gaps is the
-real risk. Everything claimed above is auditable today; everything
-deferred is named here.
-
----
-
-**Questions / a security review call:** bryan@singleaxis.ai
+See [deployment](deployment.md), [auditor checklist](auditor-checklist.md), and
+[qualification status](recorder-v1-qualification-status.md).

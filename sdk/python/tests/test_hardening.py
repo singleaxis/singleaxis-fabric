@@ -9,18 +9,13 @@ contract for well-formed input — the conformance goldens are unaffected.
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass
-from typing import cast
-
 import pytest
 from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from fabric import EngineVerdict, Fabric, FabricConfig
+from fabric import Fabric, FabricConfig
 from fabric.memory import _sha256_hex
-from fabric.policy import PolicyDecision
 from fabric.propagation import FabricContext, inject
 from fabric.tracing import _MAX_ATTR_VALUE_LEN
 
@@ -95,66 +90,6 @@ def test_set_attribute_rejects_non_finite_floats(
         # finite floats and bools (bool is not float) remain accepted
         d.set_attribute("ok", 1.5)
         d.set_attribute("flag", True)
-
-
-# -- Policy: unknown decision vocab fails closed to deny ---------------
-
-
-@dataclass(slots=True)
-class _UnknownVocabEngine:
-    engine_name: str = "bad-vocab"
-
-    def evaluate(
-        self, *, policy_id: str, input: dict[str, object], timeout_seconds: float
-    ) -> EngineVerdict:
-        # A buggy/hostile adapter returns a string outside the 5-value vocab.
-        return EngineVerdict(decision=cast(PolicyDecision, "YOLO_ALLOW"), reason="x")
-
-    def close(self) -> None:
-        pass
-
-
-def test_unknown_policy_decision_fails_closed(
-    span_exporter: InMemorySpanExporter,
-) -> None:
-    fabric = _client()
-    with fabric.decision(session_id="s", request_id="r") as d:
-        evaluation = d.evaluate_policy(_UnknownVocabEngine(), policy_id="p", input={})
-    assert evaluation.decision == "deny"
-    assert evaluation.reason is not None
-    assert "malformed verdict" in evaluation.reason
-
-
-# -- Policy: in-SDK timeout enforcement (no hang on a blocking adapter) -
-
-
-@dataclass(slots=True)
-class _SlowEngine:
-    engine_name: str = "slow"
-
-    def evaluate(
-        self, *, policy_id: str, input: dict[str, object], timeout_seconds: float
-    ) -> EngineVerdict:
-        time.sleep(3.0)  # ignores the deadline entirely
-        return EngineVerdict(decision="allow")
-
-    def close(self) -> None:
-        pass
-
-
-def test_policy_timeout_is_enforced_in_sdk(
-    span_exporter: InMemorySpanExporter,
-) -> None:
-    fabric = _client()
-    started = time.monotonic()
-    with fabric.decision(session_id="s", request_id="r") as d:
-        evaluation = d.evaluate_policy(_SlowEngine(), policy_id="p", input={}, timeout_seconds=0.2)
-    elapsed = time.monotonic() - started
-    assert evaluation.decision == "deny"
-    assert evaluation.reason is not None
-    assert "timeout" in evaluation.reason
-    # Returned promptly — did NOT block for the adapter's full 3s sleep.
-    assert elapsed < 1.5
 
 
 # -- Propagation: W3C per-value 256-char cap ---------------------------

@@ -21,6 +21,8 @@ serviceAccount:
 
 podAnnotations: {}
 podLabels: {}
+enableServiceLinks: false
+terminationGracePeriodSeconds: 60
 
 # Distroless nonroot posture per spec 008.
 podSecurityContext:
@@ -114,155 +116,25 @@ tolerations: []
 affinity: {}
 topologySpreadConstraints: []
 
-# The Fabric-authored processors. Each block maps directly to the
-# processor's own config keys in the rendered Collector config. Set
-# `.enabled: false` to omit the processor from the pipeline entirely.
+# Fabric Node v1 has one protection mechanism: a deny-by-default export
+# allowlist. It is always wired into both traces and logs. Policy enforcement,
+# prompt-time PII processing, redaction sidecars, and sampling are not chart
+# surfaces in the recorder release.
 fabric:
-  # Deny-by-default schema allowlist. Always on in production.
   guard:
-    enabled: true
     eventClassAttribute: event_class
     dropUnknownClasses: true
     maxFieldBytes: 8192
     extraAllowedFields: {}
-    # Render the OTLP `traces` pipeline alongside `logs`. The SDK ships
-    # trace spans; without this the chart silently drops them on the
-    # collector floor. Default true so trace export works out of the
-    # box; set false to opt out (e.g. logs-only deployments).
-
-    traceProcessingEnabled: true
-
-  # OPA policy gate. Bundle is optional — without it the processor is
-  # wired but passes everything through, which lets an operator stage
-  # the pipeline before shipping Rego.
-  policy:
-    enabled: true
-    bundlePath: ""       # e.g. /etc/fabric/policy
-    # Name of a ConfigMap whose .rego file(s) are mounted at
-    # bundlePath. A non-empty path without this setting or the
-    # versioned reference policy below is rejected at render time;
-    # the chart never substitutes an emptyDir for a policy bundle.
-    bundleConfigMap: ""
-    # A deliberately small, chart-owned policy for installations that
-    # need structurally complete wiring before a tenant policy is ready.
-    # v1 only admits the four Fabric event classes known to fabricguard,
-    # and requires a non-empty tenant_id on the event itself. It is NOT
-    # a tenant authorization policy and must be replaced for production
-    # decisions beyond telemetry egress admission.
-    referencePolicy:
-      enabled: false
-      version: v1
-    query: data.fabric.egress.allow
-    eventClassAttribute: event_class
-
-  # Presidio telemetry redaction over a pod-local Unix socket. Enabling
-  # the processor requires the embedded sidecar below: a provider name
-  # is not evidence that a socket is actually mounted into this pod.
-  # This protects captured telemetry before export; it does not inspect
-  # or redact prompts before an LLM call.
-  redact:
-    enabled: false
-    unixSocket: /var/run/fabric/presidio.sock
-    timeoutMs: 500
-    eventClassAttribute: event_class
-    # Secure default: redact valid UTF-8 bytes and fail closed on opaque
-    # bytes. `passthrough` is a legacy exemption and must be selected
-    # deliberately; `reject` drops every non-empty byte value.
-    byteHandling: redact_utf8
-    skipAttributes:
-      - tenant_id
-      - agent_id
-      - decision_id
-    embedded:
-      enabled: false
-      image:
-        repository: ghcr.io/singleaxis/fabric-presidio-sidecar
-        tag: ""          # defaults to this chart's appVersion
-        digest: ""       # production: sha256:...; when set, tag is ignored
-        pullPolicy: IfNotPresent
-      # The sidecar refuses to start without a real tenant HMAC key.
-      # The Secret is customer-created and is never rendered by Helm.
-      tenantKeySecret:
-        name: ""
-        key: tenant.key
-      redactionMode: hmac
-      # Dev-only no-op escape hatch supported by the image. The chart
-      # rejects it by default for all production-shaped installs.
-      allowPassthrough: false
-      securityContext:
-        allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
-        runAsNonRoot: true
-        # Must match the Collector: the UDS is intentionally mode 0600.
-        runAsUser: 65532
-        runAsGroup: 65532
-        capabilities:
-          drop: [ALL]
-      resources:
-        limits:
-          cpu: "1000m"
-          memory: 1Gi
-        requests:
-          cpu: 100m
-          memory: 256Mi
-      startupProbe:
-        periodSeconds: 2
-        failureThreshold: 30
-        timeoutSeconds: 2
-      readinessProbe:
-        periodSeconds: 5
-        failureThreshold: 3
-        timeoutSeconds: 2
-
-  # Deterministic HMAC sampler. Either `hmacKey` (inline, not
-  # recommended outside dev) or `hmacKeySecret` (Secret name + key)
-  # must be set when `.enabled: true`.
-  #
-  # DEFAULT IS OFF. The collector now installs by default (see the
-  # umbrella's `otelCollector.enabled`), and this processor cannot
-  # render without a key an operator has to supply. Auto-generating one
-  # is not an option: a `randAlphaNum` key would rotate on every
-  # `helm upgrade`, silently changing every deterministic sampling
-  # decision. Off is also the conservative choice for an audit trail —
-  # the sampler REDUCES data (`rates.decision_summary: 0.1` drops 90%
-  # of decision summaries), so a default install keeps everything.
-  #
-  # Turn it on with a key once telemetry volume is the problem:
-  #   --set otel-collector.fabric.sampler.enabled=true \
-  #   --set otel-collector.fabric.sampler.hmacKeySecret.name=<secret>
-  #
-  # Both shipped profiles set `enabled` explicitly, so neither is
-  # affected by this default.
-  #
-  # `hmacKey` must be a 64-character lowercase hex string (32 bytes).
-  # Generate one with:
-  #
-  #     openssl rand -hex 32
-  #
-  # The chart fails at render time if the value is not 64-char hex,
-  # so a bad key cannot ship as a running pod. For production, prefer
-  # `hmacKeySecret` referencing a Kubernetes Secret rather than the
-  # inline value (avoids the key landing in rendered manifests, Helm
-  # release storage, and GitOps history).
-  sampler:
-    enabled: false
-    hmacKey: ""
-    hmacKeySecret:
-      name: ""
-      key: hmac_key
-    defaultRate: 1.0
-    rates:
-      decision_summary: 0.1
-      cost_usage_aggregate: 1.0
-      escalation: 1.0
-      red_team_result: 1.0
+    # Optional exact metadata keys for traces. The processor rejects known
+    # credential/content-shaped names; prefix wildcards are not supported.
+    extraAllowedTraceFields: []
 
 # OTLP/HTTP egress target.
 #
-# IMPORTANT: there is no default that works in an L1-only OSS deploy.
-# The historical default `http://fabric-ingest:8080` resolved to the
-# SingleAxis commercial Telemetry Bridge service, which is NOT shipped
-# in this OSS distribution.
+# IMPORTANT: there is no production default destination. The operator chooses
+# a customer-owned OTLP service, a private SingleAxis deployment, or an
+# approved SingleAxis Platform endpoint.
 #
 # WHAT HAPPENS WHEN THIS IS EMPTY: the `otlp_http/fabric` exporter is
 # not rendered at all, and the pipelines fall back to the `debug`
@@ -272,8 +144,7 @@ fabric:
 # audit trail — it is a dev posture only. Set a real endpoint before
 # you rely on any retention or compliance claim.
 #
-# Set this to whichever OTLP/HTTP backend the operator wants to fan
-# out to:
+# Set this to the one approved OTLP/HTTP destination:
 #
 #   --set otel-collector.exporter.endpoint=https://otlp.<datadog>.com:443
 #       (Datadog OTLP intake)
@@ -284,14 +155,8 @@ fabric:
 #   --set otel-collector.exporter.endpoint=http://your-collector:4318
 #       (your own collector chain)
 #
-# The bundled `langfuse` subchart is NOT a drop-in OTLP sink: it is
-# opt-in, needs an external Postgres DSN, and its Service is named
-# `<release>-langfuse` (not `langfuse`). Whether the pinned upstream
-# version accepts OTLP/HTTP on /v1/traces at all is unresolved — see
-# the chart README. Do not point this at it without checking.
-#
-# For partner deployments running the SingleAxis commercial Telemetry
-# Bridge, use the Bridge's ingress endpoint here.
+# Fabric recorder v1 does not install a backend or a second Relay hop. For
+# fan-out, send to a customer-controlled Collector and configure its exporters.
 exporter:
   endpoint: ""
   # Transport security. `insecure=true` is retained as the dev default
@@ -320,10 +185,8 @@ exporter:
   requireAuth: false
   # Fail the render when `endpoint` is empty instead of falling back to
   # the debug exporter. Default false, so a bare install works and is
-  # loudly warned about. Profiles that make a retention or compliance
-  # claim set this true — pod stdout is not an audit trail, and a
-  # regulated deployment should be forced to name its backend rather
-  # than quietly inherit a dev posture. `eu-ai-act-high-risk` sets it.
+  # loudly warned about. shadow-production sets this true because pod
+  # stdout is not an audit trail and production must name its destination.
   requireEndpoint: false
 
   # Exporter helper resilience. An in-memory queue survives short backend
@@ -370,6 +233,10 @@ memoryLimiter:
   limitMib: 512
 
 batch:
+  # Development throughput optimization. Disable whenever the durable queue
+  # contract is required so acknowledged OTLP is handed directly to the
+  # persistent exporter queue instead of waiting in volatile batch memory.
+  enabled: true
   timeoutSeconds: 5
   sendBatchSize: 512
 
@@ -381,24 +248,34 @@ podDisruptionBudget:
   minAvailable: 1
 
 # NetworkPolicy. Default off because not every CNI enforces them and
-# misconfigured policies will silently break the OTLP path. Turn on
-# in regulated profiles (eu-ai-act-high-risk sets denyDefault
-# alongside this).
+# misconfigured policies will silently break the OTLP path.
+# shadow-production enables it alongside namespace deny-default.
 #
-# `ingressFrom` is appended verbatim to the OTLP ingress rule. Empty
-# means "any namespace in the cluster"; tenants typically narrow to
-# specific agent namespaces:
+# `ingressFrom` is appended verbatim to the OTLP ingress rule. An empty
+# LIST means "any namespace in the cluster" (rendered as an explicit
+# namespaceSelector fallback); tenants typically narrow to specific agent
+# namespaces:
 #
 #   ingressFrom:
 #     - namespaceSelector:
 #         matchLabels:
 #           fabric.singleaxis.ai/agent: "true"
 #
+# Every peer entry in ingressFrom, exporterEgress.to, and egressTo must
+# name an explicit restriction: empty peers ({}) and world CIDRs
+# (ipBlock 0.0.0.0/0 or ::/0) are rejected at render time because they are
+# equivalent to no policy.
+#
 # `egressTo` is for the configured exporter endpoint plus any extra
 # destinations the operator declares (e.g. an external OTLP gateway,
-# Tempo, Honeycomb). DNS to kube-system is always allowed.
+# Tempo, Honeycomb, or a non-kube-system DNS service). DNS to kube-system
+# is always allowed.
 networkPolicy:
   enabled: false
+  # When true, rendering fails unless ingressFrom names at least one peer.
+  # Production enables this so a successful install cannot silently expose
+  # the OTLP receiver to every namespace in the cluster.
+  requireExplicitIngress: false
   ingressFrom: []
   # Exporter egress is distinct from additional destinations so regulated
   # profiles can prove that an operator deliberately named both a peer and
@@ -409,5 +286,16 @@ networkPolicy:
     to: []
     ports: []
   # Additional non-exporter peers. This compatibility surface remains for
-  # DNS-independent internal services and operator extensions.
+  # DNS-independent internal services and operator extensions. The same
+  # non-empty, non-world peer rule applies.
   egressTo: []
+  # Optional LabelSelector for the monitoring namespace allowed to reach
+  # the health extension. Empty (default) renders no health ingress rule:
+  # kubelet liveness/readiness probes are node traffic and do not need a
+  # NetworkPolicy from-rule on most CNIs. An empty selector
+  # ({matchLabels: {}}) is rejected because it matches every namespace.
+  #
+  #   monitoringNamespaceSelector:
+  #     matchLabels:
+  #       kubernetes.io/metadata.name: monitoring
+  monitoringNamespaceSelector: {}

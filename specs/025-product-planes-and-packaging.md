@@ -1,12 +1,18 @@
 ---
 title: Product planes, packaging, and deployment model
-status: accepted
+status: superseded
 revision: 1
 last_updated: 2026-08-25
 owner: product-architecture
+superseded_by: 027
 ---
 
 # 025 — Product planes, packaging, and deployment model
+
+> **Superseded. Do not implement recorder v1 from this document.**
+> [Spec 027](027-recorder-v1.md) replaces its six-plane packaging model with
+> the release boundary `CAPTURE -> PROTECT -> DELIVER`. This file is retained
+> only to explain earlier architectural decisions.
 
 ## Summary
 

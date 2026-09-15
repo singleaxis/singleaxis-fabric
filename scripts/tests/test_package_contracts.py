@@ -31,12 +31,55 @@ def _policy(tmp_path: Path) -> Path:
                     "archive_prefix": "singleaxis-fabric-contracts",
                     "manifest_name": "manifest.json",
                     "require_sha256_for_json": True,
+                    "public_families": ["activity", "connect"],
+                    "public_versions": {
+                        "activity": ["v1"],
+                        "connect": ["v2alpha1"],
+                    },
                 }
             }
         ),
         encoding="utf-8",
     )
     return path
+
+
+def _scoped_policy(tmp_path: Path, families: list[str]) -> Path:
+    path = _policy(tmp_path)
+    policy = json.loads(path.read_text(encoding="utf-8"))
+    policy["contracts"]["public_families"] = families
+    policy["contracts"]["public_versions"] = {
+        family: policy["contracts"]["public_versions"][family] for family in families
+    }
+    path.write_text(json.dumps(policy), encoding="utf-8")
+    return path
+
+
+def test_release_policy_requires_explicit_public_family_allowlist(
+    tmp_path: Path,
+) -> None:
+    contracts = tmp_path / "contracts"
+    _family(contracts, "activity", "v1")
+    policy = _policy(tmp_path)
+    value = json.loads(policy.read_text(encoding="utf-8"))
+    del value["contracts"]["public_families"]
+    policy.write_text(json.dumps(value), encoding="utf-8")
+
+    with pytest.raises(QualificationError, match="public_families is required"):
+        packaging.package_contracts(contracts, policy, "v1.2.3", tmp_path / "out")
+
+
+def test_release_policy_requires_exact_public_versions(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    _family(contracts, "activity", "v1")
+    _family(contracts, "connect", "v2alpha1")
+    policy = _policy(tmp_path)
+    value = json.loads(policy.read_text(encoding="utf-8"))
+    del value["contracts"]["public_versions"]
+    policy.write_text(json.dumps(value), encoding="utf-8")
+
+    with pytest.raises(QualificationError, match="public_versions"):
+        packaging.package_contracts(contracts, policy, "v1.2.3", tmp_path / "out")
 
 
 def _family(
@@ -107,6 +150,50 @@ def test_missing_manifest_fails_closed(tmp_path: Path) -> None:
     (version / "schema.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(QualificationError, match="missing manifest.json"):
         packaging.validate_contract_tree(contracts, manifest_name="manifest.json")
+
+
+def test_release_archive_contains_only_configured_public_families(
+    tmp_path: Path,
+) -> None:
+    contracts = tmp_path / "contracts"
+    _family(contracts, "activity", "v1")
+    _family(contracts, "assurance", "v1")
+    policy = _scoped_policy(tmp_path, ["activity"])
+
+    result = packaging.package_contracts(
+        contracts, policy, "v1.2.3", tmp_path / "output"
+    )
+
+    assert result["families"] == [{"name": "activity", "versions": ["v1"]}]
+    assert all(
+        "/contracts/activity/" in member["path"]
+        for member in result["archive"]["members"]
+    )
+
+
+def test_release_archive_contains_only_configured_public_versions(
+    tmp_path: Path,
+) -> None:
+    contracts = tmp_path / "contracts"
+    _family(contracts, "activity", "v1")
+    _family(contracts, "activity", "v2")
+    _family(contracts, "connect", "v2alpha1")
+    policy = _policy(tmp_path)
+    value = json.loads(policy.read_text(encoding="utf-8"))
+    value["contracts"]["public_versions"]["activity"] = ["v2"]
+    policy.write_text(json.dumps(value), encoding="utf-8")
+
+    result = packaging.package_contracts(
+        contracts, policy, "v1.2.3", tmp_path / "output"
+    )
+
+    assert result["families"] == [
+        {"name": "activity", "versions": ["v2"]},
+        {"name": "connect", "versions": ["v2alpha1"]},
+    ]
+    assert not any(
+        "/activity/v1/" in member["path"] for member in result["archive"]["members"]
+    )
 
 
 def test_unpinned_json_fails_closed(tmp_path: Path) -> None:
@@ -203,11 +290,13 @@ def test_release_policy_and_workflow_have_one_build_once_contract_path() -> None
     policy = json.loads(
         (root / "scripts/release/release-policy.json").read_text(encoding="utf-8")
     )
-    assert policy["contracts"] == {
-        "archive_prefix": "singleaxis-fabric-contracts",
-        "manifest_name": "manifest.json",
-        "require_sha256_for_json": True,
-    }
+    assert policy["contracts"]["archive_prefix"] == "singleaxis-fabric-contracts"
+    assert policy["contracts"]["manifest_name"] == "manifest.json"
+    assert policy["contracts"]["require_sha256_for_json"] is True
+    assert "assurance" not in policy["contracts"]["public_families"]
+    assert "management" not in policy["contracts"]["public_families"]
+    assert "lifecycle" not in policy["contracts"]["public_families"]
+    assert policy["contracts"]["public_versions"]["activity"] == ["v2"]
 
     workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
     qualify_start = workflow.index("  qualify-release:\n")

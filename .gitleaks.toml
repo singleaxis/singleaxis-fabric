@@ -1,9 +1,9 @@
 # gitleaks configuration for SingleAxis Fabric.
 #
-# Consumed by `.github/workflows/security.yml` (`Secret scanning` job) and by
-# the `gitleaks` pre-commit hook. We extend the upstream default ruleset
-# rather than redefining it from scratch — the `gitleaks:default` directive
-# pulls in every built-in detector.
+# Consumed by `.github/workflows/recorder-security.yml` (`gitleaks` job)
+# and by the `gitleaks` pre-commit hook. We extend the upstream default
+# ruleset rather than redefining it from scratch — the `gitleaks:default`
+# directive pulls in every built-in detector.
 
 [extend]
 useDefault = true
@@ -32,19 +32,6 @@ paths = [
   # `harness-*-change-me` placeholders). Shipped so operators can copy
   # to `.env` before rotating on a real deployment; never deployed as-is.
   '''deploy/compose/\.env\.example''',
-
-  # The e2e kind-smoke workflow seeds the sampler with the same 32-byte
-  # test fixture defined above so the collector passes its
-  # `hmac key >= 16 bytes` check. Same risk profile as the Go test: it
-  # is a synthetic value used only in CI and kind clusters.
-  '''\.github/workflows/e2e\.yml''',
-
-  # SPEC 016 §4.3 chart-render-time validator test for
-  # `fabric.sampler.hmacKey`. The literal hex values here are inputs
-  # to the validator regex (uppercase rejection, length rejection,
-  # etc.), not credentials. Path-level allowlist also covers any
-  # earlier orphaned commits on this branch.
-  '''charts/fabric/charts/otel-collector/tests/test-hmackey-validation\.sh''',
 ]
 
 # Literal regexes that are safe anywhere in the tree. Keep this list

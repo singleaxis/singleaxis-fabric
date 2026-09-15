@@ -1,0 +1,137 @@
+name: Recorder license compliance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 2"
+
+concurrency:
+  group: recorder-license-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python SDK licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Inventory released SDK dependencies
+        run: |
+          python -m venv /tmp/fabric-license-python
+          . /tmp/fabric-license-python/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install pip-licenses './sdk/python[otlp]'
+          mkdir -p raw
+          pip-licenses --format=json \
+            --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel hatchling hatch-vcs pathspec trove-classifiers \
+            > raw/python-sdk.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: recorder-license-python
+          path: raw/
+          retention-days: 14
+
+  typescript:
+    name: TypeScript SDK licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Inventory production dependencies
+        run: |
+          npm ci --prefix sdk/typescript
+          mkdir -p raw
+          npx --yes license-checker-rseidelsohn --production --json \
+            --start sdk/typescript > raw/npm-typescript.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: recorder-license-typescript
+          path: raw/
+          retention-days: 14
+
+  go:
+    name: Fabric Node and CLI licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Install license and Collector build tools
+        run: |
+          go install github.com/google/go-licenses@v1.6.0
+          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+      - name: Build and inventory the released Collector
+        working-directory: components/otel-collector-fabric
+        run: |
+          "$(go env GOPATH)/bin/builder" --config ocb-config.yaml
+          mkdir -p "${GITHUB_WORKSPACE}/raw"
+          cd dist
+          go mod download
+          "$(go env GOPATH)/bin/go-licenses" report ./... \
+            --ignore github.com/singleaxis/singleaxis-fabric \
+            --ignore go.opentelemetry.io/collector/cmd/builder \
+            > "${GITHUB_WORKSPACE}/raw/go-fabric-node.csv"
+      - name: Inventory the released CLI
+        working-directory: tools/fabricctl
+        run: |
+          "$(go env GOPATH)/bin/go-licenses" report ./cmd/fabricctl \
+            --ignore github.com/singleaxis/singleaxis-fabric \
+            > "${GITHUB_WORKSPACE}/raw/go-fabricctl.csv"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: recorder-license-go
+          path: raw/
+          retention-days: 14
+
+  gate:
+    name: Recorder license gate and procurement report
+    runs-on: ubuntu-latest
+    needs: [python, typescript, go]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: recorder-license-*
+          merge-multiple: true
+          path: raw
+      - name: Enforce allowlist and build procurement report
+        run: |
+          mkdir -p build/recorder-license-report
+          python scripts/license_check.py \
+            --policy .github/license-allowlist.txt \
+            --pip 'sdk/python=raw/python-sdk.json' \
+            --npm 'sdk/typescript=raw/npm-typescript.json' \
+            --go 'fabric-node=raw/go-fabric-node.csv' \
+            --go 'fabricctl=raw/go-fabricctl.csv' \
+            --ignore go.opentelemetry.io/collector/cmd/builder \
+            --ignore @singleaxis/fabric \
+            --ignore singleaxis-fabric \
+            --md build/recorder-license-report/THIRD-PARTY-LICENSES.md \
+            --csv build/recorder-license-report/third-party-licenses.csv \
+            --json build/recorder-license-report/third-party-licenses.json
+      - name: Upload procurement evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: recorder-third-party-license-report
+          path: build/recorder-license-report/
+          retention-days: 90

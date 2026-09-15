@@ -1,0 +1,91 @@
+# Production passive-shadow posture. This profile does not block, transform,
+# or delay the monitored AI system. It protects the exported record with the
+# deny-by-default Fabric allowlist and delivers through a persistent queue.
+#
+# The operator must supply:
+#   tenant.id
+#   otel-collector.exporter.endpoint (https://)
+#   the referenced ingress TLS, client CA, and export-auth Secrets
+#   at least one ingressFrom peer identifying the monitored workload
+#   exporterEgress.to and exporterEgress.ports matching that destination
+#   a suitable encrypted StorageClass (or an existing customer-owned PVC)
+#
+# Delivery is at least once. A successful OTLP acknowledgement proves remote
+# acceptance, not durable persistence by an arbitrary destination.
+profile:
+  name: shadow-production
+
+namespace:
+  create: true
+  name: fabric-system
+
+networkPolicy:
+  denyDefault: true
+
+otelCollector:
+  enabled: true
+
+otel-collector:
+  replicaCount: 2
+  # Pinned image identity is required by this profile. RECOMMENDED: supply
+  # an immutable digest instead —
+  #   --set otel-collector.image.digest=sha256:<64-hex>
+  # An explicit non-latest tag (below) is accepted; "latest" and the empty
+  # appVersion fallback are rejected at render time.
+  image:
+    tag: "0.8.0-rc.1"
+  receiver:
+    requireTLS: true
+    requireClientCertificate: true
+    tls:
+      serverCertificateSecret:
+        name: fabric-node-receiver-tls
+        certKey: tls.crt
+        keyKey: tls.key
+      clientCASecret:
+        name: fabric-node-client-ca
+        key: ca.crt
+  fabric:
+    guard:
+      dropUnknownClasses: true
+  exporter:
+    requireEndpoint: true
+    requireTLS: true
+    requireAuth: true
+    requireDurableQueue: true
+    insecure: false
+    insecureSkipVerify: false
+    auth:
+      headerName: Authorization
+      secret:
+        name: fabric-node-export-auth
+        key: authorization
+    sendingQueue:
+      enabled: true
+      numConsumers: 10
+      queueSize: 10000
+      blockOnOverflow: true
+      persistence:
+        enabled: true
+        directory: /var/lib/otelcol-fabric/storage
+        fsync: true
+        size: 20Gi
+    retry:
+      enabled: true
+      initialInterval: 5s
+      maxInterval: 30s
+      maxElapsedTime: 0s
+  debugExporter:
+    enabled: false
+  batch:
+    enabled: false
+    timeoutSeconds: 5
+    sendBatchSize: 512
+  networkPolicy:
+    enabled: true
+    requireExplicitIngress: true
+    ingressFrom: []
+    exporterEgress:
+      requireExplicit: true
+      to: []
+      ports: []

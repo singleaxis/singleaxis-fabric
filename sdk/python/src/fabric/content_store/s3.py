@@ -1,11 +1,11 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""S3 content store for the dual-pipeline architecture. Behind [aws].
+"""S3 content store for the dual-pipeline architecture. Requires boto3.
 
 boto3 is sync; the client is created lazily on first put and is
-lazy-imported inside the method so the module imports without the [aws]
-extra. boto3 clients hold no resources requiring explicit teardown, so
-``close`` is a no-op.
+lazy-imported inside the method so the module imports without boto3
+installed. boto3 clients hold no resources requiring explicit teardown,
+so ``close`` is a no-op.
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ from typing import Any
 
 from fabric.content_store.base import ContentRef, content_hash
 
-_IMPORT_HINT = "S3ContentStore requires boto3; install with `pip install singleaxis-fabric[aws]`"
+_IMPORT_HINT = "S3ContentStore requires boto3; install with `pip install boto3`"
 
 
 @dataclass(slots=True)
 class S3ContentStore:
-    """Content-addressed store on S3. Behind [aws] (boto3).
+    """Content-addressed store on S3. Requires ``boto3``.
 
     Writes to ``s3://{bucket}/{prefix}{hash}`` and returns an
     ``s3://`` ref. Lazy-imports boto3.

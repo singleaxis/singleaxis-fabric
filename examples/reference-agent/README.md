@@ -1,90 +1,85 @@
 # fabric-reference-agent
 
-A minimal reference agent showing the SingleAxis Fabric SDK's
-end-to-end happy path. Runs in-process with no external dependencies
-so anyone can see what the SDK's surface looks like without standing
-up a cluster.
+A minimal reference agent showing the SingleAxis Fabric recorder SDK's
+end-to-end happy path. Runs in-process with no external dependencies,
+so anyone can see what the recorder-v1 capture surface looks like
+without standing up a cluster.
+
+This is the primary deliverable example for validating a Fabric
+deployment: instrument an agent, export OTLP, watch a protected
+decision record arrive at Fabric Node.
 
 ## What it demonstrates
 
 For one agent turn:
 
 1. Construct a `Fabric` client and open a `Decision` context.
-2. Call `guard_input` (raises `GuardrailNotConfiguredError` unless a
-   guardrail rail is wired — fail-loud by design; the example catches it).
-3. Record a `fabric.retrieval` event (simulating a RAG lookup).
-4. Call a stand-in LLM (swap for your provider).
-5. Call `guard_output_final`.
-6. Record a `fabric.memory` write.
-7. Score the turn via a simulated judge; request escalation if the
-   score is below the instruction-following deep-flag threshold
-   (0.50).
+2. Record a `fabric.retrieval` event (simulating a RAG lookup; the
+   query is hashed locally and never lands on the span).
+3. Call a stand-in LLM inside an `llm_call` child span (OpenTelemetry
+   GenAI semantic conventions; swap for your provider).
+4. Run a stand-in tool inside a `tool_call` child span (arguments and
+   results are hashed locally).
+5. Record a `fabric.memory` write and a committed `fabric.side_effect`.
+6. Mark the turn with `fabric.checkpoint` events.
+
+The SDK is passive: it records what the agent did and never blocks,
+alters, or delays it. Judges, guardrails, policy engines, and
+escalation are deliberately outside the recorder — protection and
+delivery happen in the Fabric Node the spans are exported to.
 
 ## Running
 
 ```bash
 uv sync
 uv run fabric-reference-agent --prompt "Hello"
-uv run fabric-reference-agent --prompt "Hello" --low-score    # triggers escalation
-```
-
-## v0.4 primitives
-
-Pass `--enable-v04-primitives` to exercise every v0.4 SDK primitive
-in one decision: `recall`, `checkpoint`, `record_eval`, `queue_judge`
-- `JudgeContext`, `evaluate_policy`, and `SimpleLLMJudge` draining
-the queued judge request after the decision exits.
-
-```bash
-uv run fabric-reference-agent --prompt Hello --enable-v04-primitives
+uv run fabric-reference-agent --prompt "Hello" --verbose
 ```
 
 Sample output:
 
 ```
-guardrail: input checked → 5 chars
 retrieval: 2 docs from RAG
-checkpoint: after-retrieval
-memory recall: episodic last_query
-policy: custom:demo_allow → allow
 llm_call: model=reference-agent-stub-v1 → 32 chars
+tool_call: respond_to_user → delivered
 memory write: episodic turn
 side_effect: notification committed
-guardrail: output checked
-eval (sync): reference-v1 → 0.85
-judge queued: request_id=<uuid>
 checkpoint: after-output
-judge: simple_llm_judge → 0.87 (overall)
 {
   "response": "Simulated response to: Hello",
   "trace_id": "...",
-  "judge_scores": [0.87],
   "event_counts": {
     "retrieval": 1,
     "memory_write": 1,
-    "memory_read": 1,
     "side_effect": 1,
-    "checkpoint": 2,
-    "eval": 1,
-    "judge_queued": 1,
-    "policy_evaluation": 1
+    "checkpoint": 1
   }
 }
 ```
 
-The demo wires in-process stand-ins for everything external: a
-pass-through Presidio stub so the guardrail chain emits events, an
-always-allow `PolicyEngine`, a `LocalQueueTransport` for the judge
-queue, and a stub chat-completion client for `SimpleLLMJudge`.
+## Exporting real telemetry
+
+The CLI installs a no-export tracer so the demo prints a real
+`trace_id` without a backend. To deliver spans to a Fabric Node, point
+an OTLP exporter at its receiver:
+
+```python
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from fabric import install_default_provider
+
+install_default_provider(
+    service_name="my-agent",
+    exporter=OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces"),
+)
+```
+
+See [`../kind-quickstart`](../kind-quickstart) for a full
+kind-cluster walkthrough and [`../../deploy/compose`](../../deploy/compose)
+for the Docker Compose evaluation harness.
 
 ## What this example deliberately does not do
 
 - Call a real LLM
-- Connect to real Presidio / NeMo sidecars (guardrails no-op)
-- Publish to NATS / the telemetry bridge
-- Persist to the Decision Graph
-
-Point the SDK at real sidecars via `FABRIC_PRESIDIO_UNIX_SOCKET` /
-`FABRIC_NEMO_UNIX_SOCKET`, export OTel traces with
-`opentelemetry-exporter-otlp-proto-http`, and swap `simulated_llm_call`
-for your provider's SDK to make it real.
+- Cross a trust boundary — telemetry export is plaintext OTLP/HTTP
+- Claim durable delivery — that is a property of the configured
+  destination, not of the SDK

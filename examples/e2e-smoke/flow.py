@@ -26,7 +26,6 @@ It prints the hex trace id it emitted on stdout.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import sys
 
@@ -39,7 +38,6 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from fabric import (
     Fabric,
     FabricConfig,
-    GuardrailNotConfiguredError,
     RetrievalSource,
 )
 
@@ -84,15 +82,6 @@ def _run_decision(fabric: Fabric) -> str:
         request_id=REQUEST_ID,
         user_id="e2e-user",
     ) as decision:
-        # Guardrails are optional in this smoke — the assertion is about
-        # observability, not the sidecar. Run guard_input only if a chain
-        # is configured; otherwise the SDK fails loud, which we swallow.
-        # No guardrail chain is wired in this smoke; the subject under
-        # test is observability (span landing), so a missing chain is
-        # expected and benign.
-        with contextlib.suppress(GuardrailNotConfiguredError):
-            decision.guard_input("hello from the e2e smoke")
-
         # Child LLM span with fixed (fake) usage — no network LLM call.
         with decision.llm_call(
             provider="e2e-fake",
@@ -125,12 +114,11 @@ def _run_decision(fabric: Fabric) -> str:
 def main() -> int:
     provider = _build_provider()
     fabric = Fabric(
-        FabricConfig(tenant_id=TENANT_ID, agent_id=AGENT_ID, profile="permissive-dev"),
+        FabricConfig(tenant_id=TENANT_ID, agent_id=AGENT_ID),
     )
     try:
         trace_id = _run_decision(fabric)
     finally:
-        fabric.close()
         # Belt-and-braces: SimpleSpanProcessor exports on span-end, but
         # force_flush guarantees the OTLP request completes before exit.
         provider.force_flush()

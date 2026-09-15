@@ -1,0 +1,234 @@
+name: Recorder CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: recorder-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Verify contributed commits
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for sha in $(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}"); do
+            if ! git log -1 --format=%B "${sha}" | grep -qiE '^Signed-off-by: .+ <.+@.+>'; then
+              echo "::error::Commit ${sha} is missing a DCO Signed-off-by trailer."
+              missing=$((missing + 1))
+            fi
+          done
+          test "${missing}" -eq 0
+      - name: Verify main commit
+        if: github.event_name == 'push'
+        run: |
+          git log -1 --format=%B HEAD | grep -qiE '^Signed-off-by: .+ <.+@.+>'
+
+  source-hygiene:
+    name: Source hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+
+  contracts-and-boundary:
+    name: Contracts, packaging boundary, and release identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install validation dependencies
+        run: python -m pip install pytest==8.4.2 jsonschema==4.25.1 PyYAML==6.0.2
+      - name: Test repository contracts and release boundary
+        run: python -m pytest scripts/tests -q
+      - name: Validate public data-plane contracts
+        run: python scripts/contracts/validate_data_plane_contracts.py
+      - name: Verify coordinated artifact identity
+        run: python scripts/verify_release_identity.py --json
+
+  python-sdk:
+    name: Python SDK ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install SDK and test dependencies
+        working-directory: sdk/python
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest pytest-cov jsonschema PyYAML httpx cryptography opentelemetry-exporter-otlp-proto-http build
+      - name: Test with recorder coverage floor
+        working-directory: sdk/python
+        run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=85
+      - name: Qualify wheel and sdist contents
+        working-directory: sdk/python
+        run: |
+          python -m build
+          for artifact in dist/*; do
+            python scripts/qualify_recorder_wheel.py "${artifact}"
+          done
+
+  python-quality:
+    name: Python formatting, lint, and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install SDK quality dependencies
+        working-directory: sdk/python
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . ruff==0.13.0 mypy jsonschema types-jsonschema PyYAML types-PyYAML httpx cryptography opentelemetry-exporter-otlp-proto-http
+      - name: Ruff
+        working-directory: sdk/python
+        run: |
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+      - name: Mypy
+        working-directory: sdk/python
+        run: mypy src tests
+
+  typescript-sdk:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: Install locked dependencies
+        working-directory: sdk/typescript
+        run: npm ci
+      - name: Lint, typecheck, build, and test
+        working-directory: sdk/typescript
+        run: |
+          npm run format
+          npm run lint
+          npm run typecheck
+          npm run build
+          npm test
+          npm run test:package
+          npm run package:qualified
+
+  fabric-node:
+    name: Fabric Node processor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Test release manifest and privacy guard
+        working-directory: components/otel-collector-fabric
+        run: make test
+      - name: Vet recorder processor
+        working-directory: components/otel-collector-fabric
+        run: make lint
+
+  fabric-node-image:
+    name: Fabric Node image build and vulnerability scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build exact recorder image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: fabric-otelcol:pr
+          cache-from: type=gha,scope=recorder-image
+          cache-to: type=gha,mode=max,scope=recorder-image
+      - name: Qualify image configuration
+        run: >-
+          components/otel-collector-fabric/tests/qualify-distribution-config.sh
+          --image fabric-otelcol:pr
+      - name: Scan released image surface
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: fabric-otelcol:pr
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"
+          format: sarif
+          output: trivy-fabric-otelcol.sarif
+          limit-severities-for-sarif: "true"
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        if: always()
+        with:
+          sarif_file: trivy-fabric-otelcol.sarif
+
+  fabricctl:
+    name: Recorder CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Test, race-test, vet, and reproducibly build
+        working-directory: tools/fabricctl
+        run: |
+          go test ./...
+          go test -tags legacy ./...
+          go test -race ./...
+          go vet ./...
+          make build VERSION=ci COMMIT="${GITHUB_SHA}" DATE=1970-01-01T00:00:00Z
+
+  helm:
+    name: Fabric Node Helm contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.15.0
+      - name: Lint charts
+        run: |
+          helm lint charts/fabric
+          helm lint charts/fabric/charts/otel-collector
+      - name: Run chart boundary, schema, and posture tests
+        run: |
+          for script in charts/fabric/charts/otel-collector/tests/*.sh charts/fabric/tests/*.sh; do
+            bash "${script}"
+          done

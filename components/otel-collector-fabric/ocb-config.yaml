@@ -4,10 +4,8 @@
 #   ocb --config ocb-config.yaml
 #
 # This produces a custom collector binary at ./dist/otelcol-fabric that
-# includes Fabric's policy processors alongside the standard contrib
-# receivers and exporters. The goal is to let operators gate LLM-agent
-# telemetry at the Collector layer with the same allowlist the Bridge
-# enforces in-process.
+# includes only the recorder's metadata protection processor alongside the
+# standard contrib receiver, durable storage, and exporter components.
 
 dist:
   name: otelcol-fabric
@@ -16,7 +14,6 @@ dist:
   version: 0.8.0-rc.1
 
 extensions:
-  - gomod: go.opentelemetry.io/collector/extension/zpagesextension v0.150.0
   # health_check extension ships from the contrib distribution; keep
   # the version pinned to the same v0.150.0 as the rest of the manifest.
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
@@ -25,6 +22,9 @@ extensions:
   # writable persistent volume and `sending_queue.storage` must also be
   # configured (the Helm chart does both when persistence is enabled).
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
+  # Compiled but never wired into a shipped config: lets non-Kubernetes
+  # deployments terminate token-authenticated OTLP ingress without a proxy.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
@@ -32,20 +32,9 @@ receivers:
 processors:
   - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.150.0
   - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.150.0
-  # Fabric's schema-allowlist guard. Replace the local path with a
-  # tagged module path once the first release is cut.
+  # Fabric's exact metadata allowlist and native-field scrubber.
   - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
     path: ./processor/fabricguardprocessor
-  # Fabric's OPA policy gate. Same story — path build until release.
-  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor v0.1.0
-    path: ./processor/fabricpolicyprocessor
-  # Fabric's deterministic HMAC sampler.
-  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor v0.1.0
-    path: ./processor/fabricsamplerprocessor
-  # Fabric's Presidio redaction processor (HTTP over Unix socket to
-  # the fabric-presidio-sidecar). Mirrors the Bridge's redaction stage.
-  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor v0.1.0
-    path: ./processor/fabricredactprocessor
 
 exporters:
   - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.150.0
@@ -56,10 +45,6 @@ providers:
   - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.56.0
   - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.56.0
 
-# Replaces resolve local processor modules to their on-disk source so
-# operators can iterate on the guard without cutting releases.
+# Resolve the recorder processor to its on-disk source for reproducible builds.
 replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
-  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricpolicyprocessor => ./processor/fabricpolicyprocessor
-  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricsamplerprocessor => ./processor/fabricsamplerprocessor
-  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricredactprocessor => ./processor/fabricredactprocessor

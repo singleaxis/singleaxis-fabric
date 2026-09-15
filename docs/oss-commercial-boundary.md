@@ -1,61 +1,68 @@
-# Public distribution boundary
+# OSS and commercial boundary
 
-Fabric keeps the reconstruction path open and backend-neutral:
+The split follows the customer's trust boundary and can be explained in one
+sentence:
 
-- **Public OSS:** Connect, Observe, Relay, local Control building blocks,
-  Assurance contracts/runners, conformance, and deployment packaging.
-- **External implementations:** customer-owned or SingleAxis-provided
-  Management, Governance, retained evidence, and managed Assurance services.
+> Keep capture, export protection, delivery interoperability, and local
+> verification open; commercialize fleet operations, calibrated evaluation,
+> investigations, enterprise workflows, and regulatory content.
 
-## Public repo
+## Product separation
 
-The public `singleaxis-fabric` repo should contain:
+| Product | Responsibilities | Runs where |
+|---|---|---|
+| Fabric OSS | `CAPTURE -> PROTECT -> DELIVER` | Customer-controlled data plane |
+| SingleAxis Platform | `MONITOR -> EVALUATE -> GOVERN` | SingleAxis SaaS, customer private deployment, or hybrid |
+| Optional later Control Runtime | `ENFORCE` customer-approved decisions | Deliberately placed in request/tool path |
 
-| Area | Examples |
-|---|---|
-| SDKs | Python, TypeScript, future Go/Java clients |
-| Framework adapters | LangGraph, CrewAI, OpenAI Agents SDK, Microsoft Agent Framework |
-| OpenTelemetry contracts | `fabric.*` attributes, GenAI mappings, span/event schemas |
-| Collector processors | allowlist, redaction, routing, sampling, policy hooks |
-| Guardrail sidecars | Presidio, NeMo clients and packaging |
-| Local red-team wrapper | Garak, PyRIT, Promptfoo runner normalization |
-| Helm chart | collector/relay, sidecars, local observability, profiles |
-| Reference agents | smoke agents and examples |
-| Conformance tests | fixtures that validate emitted telemetry |
-| Public specs | architecture, schemas, deployment posture |
+Fabric OSS does not require the Platform. The Platform consumes the same public
+record a customer-owned backend can consume.
 
-## Capabilities outside the OSS runtime
+## Open trust-boundary components
 
-The following may be implemented by a customer backend or by the SingleAxis
-Platform. None is a hidden dependency of public capture or export:
+- Activity, connector, recorder, privacy, and delivery contracts;
+- Python and TypeScript capture SDKs;
+- Fabric Node OTLP receiver and exact metadata protection;
+- persistent queue and customer-selected OTLP delivery;
+- `fabricctl` local setup, validation, diagnostics, and receipts;
+- release checksums, provenance, image SBOM attestation, and conformance tests.
 
-| Area | Examples |
-|---|---|
-| Decision Graph engine | graph builder, stores, query APIs, replay indexes |
-| Replay orchestration | checkpoint coordination, side-effect suppression |
-| Runtime evals | judge workers, rubric routing, drift analysis |
-| Governance control plane | policy history, approvals, org-wide controls |
-| Evidence | signed bundles, retention jobs, compliance mappings |
-| HITL workflows | reviewer queues, signed verdicts, SLAs |
-| Enterprise UI | admin, audit, evidence, reviewer surfaces |
-| Enterprise integrations | SIEM, GRC, ticketing, SSO/SCIM, WORM storage |
+These parts remain open because customers must be able to audit what observes
+their systems and what crosses their boundary.
 
-## Boundary rules
+## Commercial capabilities
 
-1. Public code must not import from private code.
-2. Public docs may describe commercial behavior, but must label it as
-   commercial or roadmap.
-3. Commercial egress must be opt-in and inspectable.
-4. The public capture path must never phone home.
-5. Public schemas must be stable enough for third-party tooling.
-6. Commercial code should not live under `_internal/` in the public repo.
-7. Compliance claims must say "technical evidence" unless certification
-   is actually provided.
+- fleet inventory and coverage management;
+- continuous monitoring and alerting at enterprise scale;
+- calibrated judges, evaluation workers, and campaign orchestration;
+- Decision Graph materialization and cross-run analytics;
+- incidents, investigations, evidence workflows, and replay orchestration;
+- approvals, policy authoring, rollout, and reviewer workflows;
+- regulatory mappings, proprietary rubrics, and industry content;
+- enterprise connectors, deployment overlays, support, and managed operations.
 
-## Repository rule
+Commercial services may be deployed by SingleAxis or privately for the
+customer. Commercial logic does not become a hidden dependency of local
+recording.
 
-This repository carries only public contracts, OSS implementations, examples,
-and release qualification. Private implementation topology, credentials,
-customer overlays, commercial planning, and unpublished roadmap detail must
-not be committed here. Public docs may describe compatible platform behavior
-only to explain an integration boundary or an explicitly labeled capability.
+## Optional enforcement
+
+PII blocking, prompt guardrails, policy authorization, human approval, and tool
+blocking become enforcement only when deliberately placed in an agent's model,
+tool, retrieval, or side-effect path. They are not part of passive shadow
+monitoring and are never activated by installing recorder v1.
+
+Fabric can still record outcomes produced by a customer's existing control
+systems. Recording an observed decision is not the same as owning or executing
+that decision.
+
+## Repository migration
+
+This public repository predates the recorder-first boundary. Historical source
+for judges, sidecars, policy, assurance, management, or Relay may remain visible
+while migration is completed. Recorder-v1 qualification must prove that such
+source is not compiled into the Fabric Node, bundled in the Helm chart, exposed
+as a stable SDK API, included in public contract archives, or published as a
+recorder runtime artifact.
+
+The authoritative release scope is [spec 027](../specs/027-recorder-v1.md).

@@ -1,3 +1,5 @@
+//go:build legacy
+
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
@@ -55,7 +57,7 @@ func TestInitWritesReviewedArtifacts(t *testing.T) {
 	code, stdout, stderr := runFabricctlWithInput(
 		t,
 		a0InitAnswers("write"),
-		"init", "--output-dir", directory,
+		"init", "--legacy-management", "--output-dir", directory,
 	)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
@@ -100,7 +102,7 @@ func TestInitDefaultsToCurrentDirectory(t *testing.T) {
 		}
 	})
 
-	code, stdout, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init")
+	code, stdout, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--legacy-management")
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -116,7 +118,7 @@ func TestInitDeclineWritesNothing(t *testing.T) {
 	code, stdout, stderr := runFabricctlWithInput(
 		t,
 		a0InitAnswers("no"),
-		"init", "--output-dir", directory,
+		"init", "--legacy-management", "--output-dir", directory,
 	)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
@@ -153,7 +155,7 @@ func TestInitRetriesInvalidAnswers(t *testing.T) {
 		"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		"write",
 	}, "\n") + "\n"
-	code, stdout, stderr := runFabricctlWithInput(t, input, "init", "--output-dir", directory)
+	code, stdout, stderr := runFabricctlWithInput(t, input, "init", "--legacy-management", "--output-dir", directory)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -178,7 +180,7 @@ func TestInitRejectsExistingTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, stdout, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--output-dir", directory)
+	code, stdout, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--legacy-management", "--output-dir", directory)
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1; stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -242,7 +244,7 @@ func TestInitRejectsPipedInputBeforePrompting(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "output")
 	var stdout, stderr bytes.Buffer
 	code := runWithInput(
-		[]string{"init", "--output-dir", directory},
+		[]string{"init", "--legacy-management", "--output-dir", directory},
 		strings.NewReader(a0InitAnswers("write")), &stdout, &stderr,
 	)
 	if code != 1 {

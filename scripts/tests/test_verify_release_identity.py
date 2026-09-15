@@ -140,7 +140,7 @@ def _materialize(root: Path, case_name: str) -> None:
         workflow = (
             "run: python scripts/verify_release_identity.py --expected v0.7.0\n"
             "env:\n  VERSION: ${{ needs.verify-tag.outputs.version }}\n"
-            "matrix:\n  component: fabric-relay\n"
+            "matrix:\n  component: otel-collector-fabric\n"
             "file: components/${{ matrix.component }}/Dockerfile\n"
             "package-fabricctl:\n"
             'run: GOOS="${goos}" go build\n'
@@ -152,13 +152,14 @@ def _materialize(root: Path, case_name: str) -> None:
     _write(root, ".github/workflows/release.yml", workflow)
     _write(
         root,
-        ".github/workflows/ci.yml",
+        ".github/workflows/recorder-ci.yml",
         "filters:\n  - charts/fabric/Chart.lock\n"
-        "file: components/fabric-relay/Dockerfile\n"
-        "tags: fabric-relay:pr\n"
-        "matrix:\n  image: fabric-relay\n"
-        "  dockerfile: components/fabric-relay/Dockerfile\n"
-        "output: trivy-${{ matrix.image }}.sarif\n",
+        "run: python -m pytest scripts/tests -q\n"
+        "run: python scripts/verify_release_identity.py --json\n"
+        "file: components/otel-collector-fabric/Dockerfile\n"
+        "tags: fabric-otelcol:pr\n"
+        "image-ref: fabric-otelcol:pr\n"
+        "output: trivy-fabric-otelcol.sarif\n",
     )
 
 
@@ -175,7 +176,6 @@ def test_reproduces_pre_contract_version_mismatches(tmp_path: Path) -> None:
     )
     assert "sdk/typescript:package='0.2.0'" in message
     assert "predates required migration floor '0.4.0'" in message
-    assert "predates required migration floor '0.3.0'" in message
     assert "still derives versions ad hoc" in message
     assert "mutates version declarations" in message
 
@@ -273,18 +273,16 @@ def test_chart_lock_digest_must_not_be_stale(tmp_path: Path) -> None:
     assert "expected Helm dependency digest" in "\n".join(result.errors)
 
 
-def test_release_workflows_must_cover_relay_and_fabricctl(tmp_path: Path) -> None:
+def test_release_workflows_must_cover_fabric_node_and_fabricctl(tmp_path: Path) -> None:
     _materialize(tmp_path, "corrected")
     release = tmp_path / ".github/workflows/release.yml"
     release.write_text(
         release.read_text(encoding="utf-8").replace("package-fabricctl:", ""),
         encoding="utf-8",
     )
-    ci = tmp_path / ".github/workflows/ci.yml"
+    ci = tmp_path / ".github/workflows/recorder-ci.yml"
     ci.write_text(
-        ci.read_text(encoding="utf-8").replace(
-            "  dockerfile: components/fabric-relay/Dockerfile\n", ""
-        ),
+        ci.read_text(encoding="utf-8").replace("image-ref: fabric-otelcol:pr\n", ""),
         encoding="utf-8",
     )
 
@@ -293,4 +291,4 @@ def test_release_workflows_must_cover_relay_and_fabricctl(tmp_path: Path) -> Non
     message = "\n".join(result.errors)
     assert not result.ok
     assert "release workflow lacks fabricctl cross-platform packaging" in message
-    assert "CI lacks Fabric Relay PR image scan" in message
+    assert "CI lacks Fabric Node PR image scan" in message

@@ -17,39 +17,6 @@ type targetPaths struct {
 	directory, deployment, target, values, secrets, plan, manifest string
 }
 
-func writeArtifacts(paths targetPaths, deploymentPayload, planPayload []byte) (targetPaths, error) {
-	return writeArtifactsWithCreate(paths, deploymentPayload, planPayload, createFinal)
-}
-
-func writeArtifactsWithCreate(paths targetPaths, deploymentPayload, planPayload []byte, create func(string, []byte) error) (targetPaths, error) {
-	canonicalDirectory, err := canonicalizeDirectory(paths.directory)
-	if err != nil {
-		return targetPaths{}, err
-	}
-	paths = outputPaths(canonicalDirectory)
-	if err := prepareOutputDirectory(paths.directory); err != nil {
-		return targetPaths{}, err
-	}
-
-	// Inspect as late as possible. O_CREATE|O_EXCL below is the authoritative
-	// no-clobber boundary if another process creates either final path after
-	// this human-readable check.
-	if err := inspectTargets(paths); err != nil {
-		return targetPaths{}, err
-	}
-
-	if err := create(paths.deployment, deploymentPayload); err != nil {
-		return targetPaths{}, err
-	}
-	if err := create(paths.plan, planPayload); err != nil {
-		if rollbackErr := os.Remove(paths.deployment); rollbackErr != nil && !errors.Is(rollbackErr, os.ErrNotExist) {
-			return targetPaths{}, errors.Join(err, fmt.Errorf("roll back newly created %s: %w", DeploymentFileName, rollbackErr))
-		}
-		return targetPaths{}, err
-	}
-	return paths, nil
-}
-
 func writeBundleArtifacts(paths targetPaths, artifacts []bundle.Artifact) (targetPaths, error) {
 	return writeBundleArtifactsWithCreate(paths, artifacts, createFinal)
 }

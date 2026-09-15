@@ -4,13 +4,10 @@
 
 from __future__ import annotations
 
-import warnings
-
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import DEFAULT_PROFILE, Fabric, FabricConfig
-from fabric.presidio import RedactionResult, UDSPresidioClient
 
 
 def test_from_env_with_all_fields() -> None:
@@ -18,17 +15,53 @@ def test_from_env_with_all_fields() -> None:
         env={
             "FABRIC_TENANT_ID": "acme",
             "FABRIC_AGENT_ID": "support-bot",
-            "FABRIC_PROFILE": "eu-ai-act-high-risk",
+            "FABRIC_PROFILE": "shadow-production",
+            "FABRIC_AGENT_NAME": "Support Bot",
+            "FABRIC_AGENT_VERSION": "1.4.2",
+            "FABRIC_WORKFLOW_ID": "complaint-resolution-v2",
+            "FABRIC_EXECUTION_ID": "run-2026-05-30-001",
         }
     )
     assert client.tenant_id == "acme"
     assert client.agent_id == "support-bot"
-    assert client.profile == "eu-ai-act-high-risk"
+    assert client.profile == "shadow-production"
+    assert client.config.agent_name == "Support Bot"
+    assert client.config.agent_version == "1.4.2"
+    assert client.config.workflow_id == "complaint-resolution-v2"
+    assert client.config.execution_id == "run-2026-05-30-001"
 
 
 def test_from_env_defaults_profile() -> None:
     client = Fabric.from_env(env={"FABRIC_TENANT_ID": "acme", "FABRIC_AGENT_ID": "support-bot"})
     assert client.profile == DEFAULT_PROFILE
+
+
+def test_from_env_optional_fields_default_none() -> None:
+    client = Fabric.from_env(env={"FABRIC_TENANT_ID": "acme", "FABRIC_AGENT_ID": "support-bot"})
+    assert client.config.agent_name is None
+    assert client.config.agent_version is None
+    assert client.config.workflow_id is None
+    assert client.config.execution_id is None
+
+
+def test_from_env_workflow_and_execution_propagate_to_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Env-supplied workflow/execution ids land on the decision span."""
+    client = Fabric.from_env(
+        env={
+            "FABRIC_TENANT_ID": "acme",
+            "FABRIC_AGENT_ID": "support-bot",
+            "FABRIC_WORKFLOW_ID": "env-wf",
+            "FABRIC_EXECUTION_ID": "env-exec",
+        }
+    )
+    with client.decision(session_id="s", request_id="r"):
+        pass
+    span = span_exporter.get_finished_spans()[0]
+    attrs = dict(span.attributes or {})
+    assert attrs["fabric.workflow_id"] == "env-wf"
+    assert attrs["fabric.execution_id"] == "env-exec"
 
 
 @pytest.mark.parametrize(
@@ -41,26 +74,6 @@ def test_from_env_defaults_profile() -> None:
 def test_from_env_missing_required_var_raises(env: dict[str, str], missing: str) -> None:
     with pytest.raises(ValueError, match=missing):
         Fabric.from_env(env=env)
-
-
-def test_config_redaction_mode_defaults_to_hmac() -> None:
-    config = FabricConfig(tenant_id="t", agent_id="a")
-    assert config.redaction_mode == "hmac"
-
-
-def test_config_redaction_mode_round_trips() -> None:
-    config = FabricConfig(tenant_id="t", agent_id="a", redaction_mode="tag")
-    assert config.redaction_mode == "tag"
-
-
-def test_redaction_mode_threads_onto_presidio_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """FabricConfig.redaction_mode flows onto the env-wired UDS client."""
-    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
-    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")
-    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a", redaction_mode="tag"))
-    presidio = fabric.guardrail_chain._presidio
-    assert isinstance(presidio, UDSPresidioClient)
-    assert presidio.redaction_mode == "tag"
 
 
 def test_config_validates_fields() -> None:
@@ -83,87 +96,6 @@ def test_config_validates_fields() -> None:
 def test_tracer_property_is_reused() -> None:
     client = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
     assert client.tracer is client.tracer
-
-
-# -- Constructor environment-variable detection ----------------------
-
-
-class _StubPresidio:
-    def redact(self, path: str, value: str) -> RedactionResult:
-        return RedactionResult(value=value, hashed=False, pii_category="")
-
-    def close(self) -> None:
-        pass
-
-
-def test_constructor_auto_wires_presidio_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`Fabric(FabricConfig(...))` honors FABRIC_PRESIDIO_UNIX_SOCKET when no client passed."""
-    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
-    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")  # silence warning for this assertion
-    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
-    assert fabric.guardrail_chain.has_rails is True
-
-
-def test_constructor_auto_wires_nemo_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FABRIC_NEMO_UNIX_SOCKET", "/tmp/nemo.sock")
-    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")
-    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
-    assert fabric.guardrail_chain.has_rails is True
-
-
-def test_explicit_presidio_kwarg_wins_over_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Explicit `presidio=` must override FABRIC_PRESIDIO_UNIX_SOCKET."""
-    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
-    stub = _StubPresidio()
-    fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"), presidio=stub)
-    # The chain's presidio reference is the explicit stub, not a UDS client built from env.
-    assert fabric.guardrail_chain._presidio is stub
-
-
-def test_constructor_warns_when_env_set_and_no_client_passed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Env vars set + constructor path + non-empty chain → one-shot warning."""
-    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
-    monkeypatch.delenv("FABRIC_QUIET_ENV_WARN", raising=False)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        Fabric(FabricConfig(tenant_id="t", agent_id="a"))
-    messages = [str(w.message) for w in caught]
-    assert any("FABRIC_PRESIDIO_UNIX_SOCKET" in m for m in messages), messages
-
-
-def test_no_warning_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pure-observability mode (no env vars, no clients) → empty chain, no warning."""
-    monkeypatch.delenv("FABRIC_PRESIDIO_UNIX_SOCKET", raising=False)
-    monkeypatch.delenv("FABRIC_NEMO_UNIX_SOCKET", raising=False)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        fabric = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
-    assert fabric.guardrail_chain.has_rails is False
-    env_warnings = [w for w in caught if "FABRIC_PRESIDIO_UNIX_SOCKET" in str(w.message)]
-    assert env_warnings == []
-
-
-def test_no_warning_when_explicit_client_passed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Explicit kwarg path is intentional — no warning even if env is set."""
-    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
-    monkeypatch.delenv("FABRIC_QUIET_ENV_WARN", raising=False)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        Fabric(FabricConfig(tenant_id="t", agent_id="a"), presidio=_StubPresidio())
-    env_warnings = [w for w in caught if "FABRIC_PRESIDIO_UNIX_SOCKET" in str(w.message)]
-    assert env_warnings == []
-
-
-def test_warning_suppressed_by_quiet_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FABRIC_PRESIDIO_UNIX_SOCKET", "/tmp/presidio.sock")
-    monkeypatch.setenv("FABRIC_QUIET_ENV_WARN", "1")
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        Fabric(FabricConfig(tenant_id="t", agent_id="a"))
-    env_warnings = [w for w in caught if "FABRIC_PRESIDIO_UNIX_SOCKET" in str(w.message)]
-    assert env_warnings == []
 
 
 # -- v0.4: workflow_id / execution_id propagation ---------------------

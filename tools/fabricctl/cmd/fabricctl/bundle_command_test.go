@@ -1,3 +1,5 @@
+//go:build legacy
+
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
@@ -13,7 +15,7 @@ import (
 
 func TestBundleBuildReproducesReviewedInteractiveSources(t *testing.T) {
 	source := t.TempDir()
-	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--output-dir", source)
+	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--legacy-management", "--output-dir", source)
 	if code != 0 {
 		t.Fatalf("init exit=%d stderr=%q", code, stderr)
 	}
@@ -55,7 +57,7 @@ func TestBundleBuildReproducesReviewedInteractiveSources(t *testing.T) {
 
 func TestBundleBuildRefusesNoClobberAndInvalidTarget(t *testing.T) {
 	source := t.TempDir()
-	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--output-dir", source)
+	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--legacy-management", "--output-dir", source)
 	if code != 0 {
 		t.Fatalf("init exit=%d stderr=%q", code, stderr)
 	}
@@ -86,7 +88,7 @@ func TestBundleBuildRefusesNoClobberAndInvalidTarget(t *testing.T) {
 
 func TestBundleBuildJSONReportsCrossResourceFailure(t *testing.T) {
 	source := t.TempDir()
-	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--output-dir", source)
+	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--legacy-management", "--output-dir", source)
 	if code != 0 {
 		t.Fatalf("init exit=%d stderr=%q", code, stderr)
 	}
@@ -115,7 +117,7 @@ func TestBundleHelpAdvertisesPreparationButNoMutation(t *testing.T) {
 
 func TestDoctorVerifiesBundleOffline(t *testing.T) {
 	dir := t.TempDir()
-	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--output-dir", dir)
+	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--legacy-management", "--output-dir", dir)
 	if code != 0 {
 		t.Fatalf("init exit=%d stderr=%q", code, stderr)
 	}
@@ -143,7 +145,7 @@ func TestDoctorVerifiesBundleOffline(t *testing.T) {
 
 func TestDoctorOfflineRejectsCorruptionAndOnlineFlags(t *testing.T) {
 	dir := t.TempDir()
-	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--output-dir", dir)
+	code, _, stderr := runFabricctlWithInput(t, a0InitAnswers("write"), "init", "--legacy-management", "--output-dir", dir)
 	if code != 0 {
 		t.Fatalf("init exit=%d stderr=%q", code, stderr)
 	}

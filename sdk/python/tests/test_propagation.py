@@ -8,6 +8,8 @@ import base64
 import json
 
 import pytest
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import Fabric, FabricConfig, FabricContext, extract, inject, inject_decision
 from fabric.propagation import FABRIC_KEY, MAX_MEMBERS, TRACESTATE_HEADER
@@ -517,3 +519,145 @@ def test_inject_decision_real_decision_without_workflow_execution() -> None:
     assert recovered.execution_id is None
     # A minted decision_id is carried even when no explicit one was given.
     assert recovered.decision_id == decision.decision_id
+
+
+# -- inject: W3C traceparent -------------------------------------------
+
+
+def _traceparent(span: ReadableSpan) -> str:
+    ctx = span.context
+    return f"00-{ctx.trace_id:032x}-{ctx.span_id:016x}-{ctx.trace_flags:02x}"
+
+
+def test_inject_writes_traceparent_for_active_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Inside an active span the carrier must carry a W3C ``traceparent``
+    matching the ambient span context — this is what keeps delegated /
+    cross-service calls inside the same distributed trace."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with fabric.decision(session_id="s", request_id="r"):
+        carrier: dict[str, str] = {}
+        inject(carrier, FabricContext(tenant_id="acme", agent_id="bot"))
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    assert carrier["traceparent"] == _traceparent(span)
+    # The Fabric member still lands alongside the standard header.
+    assert carrier["tracestate"].startswith("singleaxis=")
+
+
+def test_inject_without_active_span_writes_no_traceparent() -> None:
+    """Outside any span the W3C propagator is a no-op: the carrier carries
+    only the Fabric tracestate member, exactly as before."""
+    carrier: dict[str, str] = {}
+    inject(carrier, FabricContext(tenant_id="acme", agent_id="bot"))
+    assert "traceparent" not in carrier
+    assert carrier["tracestate"].startswith("singleaxis=")
+
+
+def test_inject_decision_writes_traceparent(span_exporter: InMemorySpanExporter) -> None:
+    """``inject_decision`` inherits traceparent via ``inject``."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with fabric.decision(session_id="s1", request_id="r1", decision_id="d1") as decision:
+        carrier: dict[str, str] = {}
+        inject_decision(carrier, decision)
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    assert carrier["traceparent"] == _traceparent(span)
+    recovered = extract(carrier)
+    assert recovered is not None
+    assert recovered.decision_id == "d1"
+
+
+def test_delegate_carrier_writes_traceparent(span_exporter: InMemorySpanExporter) -> None:
+    """``delegate()`` carriers carry traceparent + tracestate together."""
+    fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with (
+        fabric.decision(session_id="s", request_id="r") as decision,
+        decision.delegate(to_agent="billing-bot") as delegation,
+    ):
+        carrier = delegation.carrier
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    trace_id = f"{span.context.trace_id:032x}"
+    assert carrier["traceparent"].startswith(f"00-{trace_id}-")
+    assert carrier["tracestate"].startswith("singleaxis=")
+
+
+# -- extract -> decision correlation ------------------------------------
+
+
+def test_decision_accepts_extracted_context_and_stamps_lineage(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """``decision(context=...)`` defaults session/request ids from the
+    propagated context and stamps the delegation lineage attributes."""
+    parent = Fabric(FabricConfig(tenant_id="acme", agent_id="router-bot"))
+    with (
+        parent.decision(session_id="s1", request_id="r1", decision_id="parent-d") as decision,
+        decision.delegate(to_agent="billing-bot") as delegation,
+    ):
+        carrier = delegation.carrier
+    propagated = extract(carrier)
+    assert propagated is not None
+
+    child = Fabric(FabricConfig(tenant_id="acme", agent_id="billing-bot"))
+    with child.decision(context=propagated):
+        pass
+
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if s.name == "fabric.decision"
+        and dict(s.attributes or {}).get("fabric.agent_id") == "billing-bot"
+    )
+    attrs = dict(span.attributes or {})
+    # Ids default from the propagated context.
+    assert attrs["fabric.session_id"] == "s1"
+    assert attrs["fabric.request_id"] == "r1"
+    # Delegation lineage: the delegating agent + parent decision id.
+    assert attrs["fabric.parent_agent_id"] == "router-bot"
+    assert attrs["fabric.parent_decision_id"] == "parent-d"
+    assert attrs["fabric.agent_id"] == "billing-bot"
+
+
+def test_decision_context_explicit_ids_win(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Explicit session_id/request_id kwargs beat the propagated context."""
+    propagated = FabricContext(
+        tenant_id="acme",
+        agent_id="upstream",
+        session_id="prop-s",
+        request_id="prop-r",
+        decision_id="prop-d",
+    )
+    client = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with client.decision(session_id="local-s", request_id="local-r", context=propagated):
+        pass
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    attrs = dict(span.attributes or {})
+    assert attrs["fabric.session_id"] == "local-s"
+    assert attrs["fabric.request_id"] == "local-r"
+    # Plain propagation (no delegation carrier): the upstream agent is
+    # the causal parent, so its agent_id lands as parent_agent_id.
+    assert attrs["fabric.parent_agent_id"] == "upstream"
+    assert attrs["fabric.parent_decision_id"] == "prop-d"
+
+
+def test_decision_without_context_or_ids_still_fails() -> None:
+    client = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with pytest.raises(ValueError, match="session_id is required"):
+        client.decision()
+
+
+def test_decision_without_context_stamps_no_lineage(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
+    with client.decision(session_id="s", request_id="r"):
+        pass
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    attrs = dict(span.attributes or {})
+    assert "fabric.parent_agent_id" not in attrs
+    assert "fabric.parent_decision_id" not in attrs

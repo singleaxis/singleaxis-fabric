@@ -22,9 +22,10 @@
                 { "key": "event_class", "value": { "stringValue": "decision_summary" } },
                 { "key": "fabric.tenant_id", "value": { "stringValue": "harness" } },
                 { "key": "fabric.agent_id", "value": { "stringValue": "curl-smoke" } },
-                { "key": "fabric.profile", "value": { "stringValue": "permissive-dev" } },
+                { "key": "fabric.profile", "value": { "stringValue": "shadow-dev" } },
                 { "key": "fabric.session_id", "value": { "stringValue": "sess-curl" } },
-                { "key": "fabric.request_id", "value": { "stringValue": "req-curl" } }
+                { "key": "fabric.request_id", "value": { "stringValue": "req-curl" } },
+                { "key": "secret.marker", "value": { "stringValue": "MUST_NOT_LEAVE_FABRIC_NODE" } }
               ],
               "status": { "code": 1 }
             }

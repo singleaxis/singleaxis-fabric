@@ -15,7 +15,7 @@ func TestFactory_BuildsLogsAndTraces(t *testing.T) {
 	t.Parallel()
 	f := NewFactory()
 	cfg := f.CreateDefaultConfig()
-	settings := processortest.NewNopSettings()
+	settings := processortest.NewNopSettings(f.Type())
 
 	logs, err := f.CreateLogs(context.Background(), settings, cfg, consumertest.NewNop())
 	if err != nil {
@@ -50,22 +50,12 @@ func TestFactory_DefaultConfigShape(t *testing.T) {
 	if cfg.MaxFieldBytes != 8192 {
 		t.Errorf("MaxFieldBytes default = %d, want %d", cfg.MaxFieldBytes, 8192)
 	}
-	if cfg.TraceProcessingEnabled {
-		t.Errorf("TraceProcessingEnabled default should be false")
+	if len(cfg.TraceAttributePrefixes) != 0 {
+		t.Errorf("TraceAttributePrefixes default must be empty")
 	}
-	if len(cfg.TraceAttributePrefixes) == 0 {
-		t.Errorf("TraceAttributePrefixes default should be non-empty")
-	}
-	// Sanity: defaults include the load-bearing namespaces.
-	want := map[string]bool{"fabric.": false, "gen_ai.": false, "service.": false}
-	for _, p := range cfg.TraceAttributePrefixes {
-		if _, ok := want[p]; ok {
-			want[p] = true
-		}
-	}
-	for prefix, found := range want {
-		if !found {
-			t.Errorf("default prefixes missing %q", prefix)
+	for _, field := range []string{"fabric.tenant_id", "gen_ai.request.model", "service.name"} {
+		if _, ok := TraceAllowedFields[field]; !ok {
+			t.Errorf("exact metadata allowlist missing %q", field)
 		}
 	}
 }

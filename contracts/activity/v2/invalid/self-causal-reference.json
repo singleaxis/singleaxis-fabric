@@ -1,0 +1,12 @@
+{
+  "contract": "singleaxis.fabric.activity-sequence",
+  "version": "2.0.0",
+  "sequence_id": "70000000-0000-4000-8000-000000000003",
+  "events": [{
+    "contract": "singleaxis.fabric.activity-envelope", "schema_version": "2.0.0", "event_id": "10000000-0000-4000-8000-000000000020", "event_type": "retrieval.request",
+    "identity": {"tenant_id": "tenant-example", "system_id": "agent", "agent_id": "agent", "deployment_id": "prod", "environment": "production", "release_id": "r1"},
+    "correlation": {"trace_id": {"value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provenance": "observed"}, "span_id": {"value": "bbbbbbbbbbbbbb20", "provenance": "observed"}, "causal_references": [{"scope": "sequence", "event_id": "10000000-0000-4000-8000-000000000020", "provenance": "observed"}]},
+    "source": {"source_id": "50000000-0000-4000-8000-000000000020", "kind": "gateway", "component": "fabric-gateway", "component_version": "0.8.0"},
+    "original_timestamp": "2026-08-31T10:00:00Z", "source_sequence": 1, "capture_semantics": "observed", "content": {"mode": "metadata", "classification": "confidential"}, "activity": {"outcome": "requested", "name": "clinical-context"}
+  }]
+}

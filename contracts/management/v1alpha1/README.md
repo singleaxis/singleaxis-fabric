@@ -1,5 +1,15 @@
 # Fabric Management contracts v1alpha1
 
+> **Legacy build tag only.** The `fabricctl` commands described in this
+> document (`init --legacy-management`, `deployment validate|digest|plan`,
+> `bundle build`, and `doctor`) compile only with the explicit `legacy` Go
+> build tag and are **absent from the recorder release binary**. The released
+> CLI surface is `init`, `recorder validate`, `recorder digest`, `version`,
+> and `help` — see `contracts/recorder/v1` for the shipped configuration
+> contract. These management contracts remain as published interoperability
+> artifacts and migration source; nothing here is installed or advertised by
+> the recorder release.
+
 This directory defines the public resources and derived machine artifacts for
 Offline Install Bundle v1. The bundle is reviewable without a SingleAxis
 account and does not grant authority to mutate a cluster.

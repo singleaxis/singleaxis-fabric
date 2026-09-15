@@ -188,7 +188,7 @@ def test_s3_satisfies_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_s3_missing_dep_raises_on_put(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "boto3", None)
     store = S3ContentStore(bucket="b")
-    with pytest.raises(ImportError, match=r"singleaxis-fabric\[aws\]"):
+    with pytest.raises(ImportError, match=r"pip install boto3"):
         store.put("x")
 
 
@@ -206,3 +206,118 @@ def test_fabric_exposes_content_store(tmp_path: Path) -> None:
     store = LocalFilesystemContentStore(root=str(tmp_path))
     client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
     assert client.content_store is store
+
+
+# --------------------------------------------------------------------------- #
+# Governed content refs on events (dual-pipeline wiring)
+# --------------------------------------------------------------------------- #
+
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E402
+    InMemorySpanExporter,
+)
+
+
+def _decision_span(exporter: InMemorySpanExporter) -> Any:
+    return next(s for s in exporter.get_finished_spans() if s.name == "fabric.decision")
+
+
+def test_remember_stamps_content_ref_when_store_configured(
+    tmp_path: Path,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """With a store configured, ``remember`` writes content off-trace and
+    the event carries the ``fabric.content.ref`` URI — never raw bytes."""
+    store = LocalFilesystemContentStore(root=str(tmp_path))
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
+    content = "raw memory content worth auditing"
+    with client.decision(session_id="s", request_id="r") as d:
+        d.remember(kind="semantic", key="k", content=content)
+
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
+    attrs = dict(event.attributes or {})
+    ref = store.put(content)  # same digest -> same URI
+    assert attrs["fabric.content.ref"] == ref.uri
+    assert content not in repr(attrs)
+
+
+def test_recall_stamps_content_ref_when_store_configured(
+    tmp_path: Path,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path))
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
+    with client.decision(session_id="s", request_id="r") as d:
+        d.recall(kind="episodic", key="k", content="recalled bytes")
+
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.content.ref"] == store.put("recalled bytes").uri
+
+
+def test_side_effect_stamps_request_and_result_refs(
+    tmp_path: Path,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path))
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_side_effect(
+            "api_mutation",
+            target_system="crm",
+            operation="case.update",
+            request_payload='{"case": "1"}',
+            result_payload='{"ok": true}',
+        )
+
+    event = next(
+        e for e in _decision_span(span_exporter).events if e.name == "fabric.side_effect"
+    )
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.content.request_ref"] == store.put('{"case": "1"}').uri
+    assert attrs["fabric.content.result_ref"] == store.put('{"ok": true}').uri
+
+
+def test_no_content_ref_without_store(span_exporter: InMemorySpanExporter) -> None:
+    """Pure hash-only mode unchanged: no store -> no content ref attrs."""
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
+    with client.decision(session_id="s", request_id="r") as d:
+        d.remember(kind="semantic", key="k", content="c")
+        d.record_side_effect(
+            "api_mutation", target_system="crm", operation="op", request_payload="p"
+        )
+
+    span = _decision_span(span_exporter)
+    for event in span.events:
+        attrs = dict(event.attributes or {})
+        assert "fabric.content.ref" not in attrs
+        assert "fabric.content.request_ref" not in attrs
+        assert "fabric.content.result_ref" not in attrs
+
+
+def test_content_ref_store_failure_warns_but_does_not_raise(
+    span_exporter: InMemorySpanExporter,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A store failure must not break the agent's path: the event still
+    lands (without a ref) and the gap is loud in the logs."""
+
+    class _BrokenStore:
+        def put(self, content: str, *, key_hint: str | None = None) -> ContentRef:
+            raise RuntimeError("store unavailable")
+
+        def get(self, ref: ContentRef) -> str:
+            raise RuntimeError("store unavailable")
+
+    client = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        content_store=_BrokenStore(),  # type: ignore[arg-type]
+    )
+    with (
+        caplog.at_level("WARNING", logger="fabric.decision"),
+        client.decision(session_id="s", request_id="r") as d,
+    ):
+        d.remember(kind="semantic", key="k", content="c")
+
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
+    assert "fabric.content.ref" not in dict(event.attributes or {})
+    assert any("content store" in r.message for r in caplog.records)

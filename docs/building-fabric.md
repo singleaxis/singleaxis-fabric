@@ -1,159 +1,45 @@
-# Building Fabric
+# Building recorder v1
 
-This document is the engineering compass for rebuilding Fabric around
-the new positioning: **operational infrastructure for autonomous
-systems**.
+[Spec 027](../specs/027-recorder-v1.md) is the implementation authority. If an
+older spec or document conflicts with it, recorder v1 follows 027.
 
-The authoritative product planes, artifact forms, lifecycle placement,
-deployment models, and OSS/private boundary are defined in
-[`specs/025-product-planes-and-packaging.md`](../specs/025-product-planes-and-packaging.md).
-New work should start from the public **Implementation slice** issue
-template so each change remains bounded and releasable.
+## Product invariant
 
-## Product spine
+Every released change must fit one of three responsibilities:
 
-Every feature should strengthen at least one of these pillars:
+```text
+CAPTURE -> PROTECT -> DELIVER
+```
 
-1. **Execution telemetry** — what happened?
-2. **Causality lineage** — what caused it?
-3. **Replay metadata** — can we reconstruct or safely replay it?
-4. **Governance** — which policy, human, or system allowed it?
-5. **Side-effect control** — what external state changed?
-6. **Runtime evaluation** — was it good, safe, and compliant over time?
+Monitoring, evaluation, governance, inline enforcement, policy management,
+judges, red teams, assurance tiers, and regulatory content are not recorder
+runtime features.
 
-If a feature does not map to one of these, it probably belongs outside
-Fabric.
+## Small-feature workflow
 
-## Architecture rules
+1. State the observable activity, privacy boundary, or delivery failure being
+   addressed.
+2. Identify the exact released artifact that owns the behavior.
+3. Add the smallest contract or test that makes the claim executable.
+4. Implement without adding an unrelated plane or hidden dependency.
+5. Test failure behavior, packaging, documentation, and upgrade compatibility.
+6. Update capability manifests and qualification evidence when coverage changes.
 
-- Fabric is not an agent framework.
-- Fabric is not a model gateway.
-- Fabric is not a prompt-management system.
-- Fabric should integrate with workflow engines rather than replace
-  them.
-- Fabric should use OpenTelemetry and public schemas on the capture
-  path.
-- Fabric should keep raw content off by default.
-- Fabric should make side effects first-class.
-- Fabric should treat replay as reconstruction-first, orchestration
-  later.
+Prefer adapters and public contracts over embedding vendor engines. New source
+is not automatically a new shipped package; the release policy must explicitly
+permit every public artifact.
 
-## v1 rebuild sequence
+## Required local checks
 
-Build in this order:
+Run the checks for the surface changed, then the repository release-boundary
+tests:
 
-1. **Canonical schemas**
-   - `Execution`
-   - `Decision`
-   - `Step`
-   - `ToolCall`
-   - `MemoryRead`
-   - `MemoryWrite`
-   - `PolicyDecision`
-   - `SideEffect`
-   - `Intervention`
-   - `Checkpoint`
+```bash
+python -m pytest scripts/tests -q
+python scripts/contracts/validate_data_plane_contracts.py
+python scripts/verify_release_identity.py --json
+```
 
-2. **Python SDK hardening**
-   - Keep `Fabric` and `Decision`.
-   - Add execution/workflow correlation.
-   - Add side-effect recording.
-   - Add checkpoint metadata.
-   - Add stricter conformance tests.
-
-3. **Collector contract**
-   - Normalize `fabric.*` events.
-   - Preserve OpenTelemetry GenAI compatibility.
-   - Redact and allowlist attributes.
-   - Emit dropped-field diagnostics.
-
-4. **TypeScript SDK**
-   - Match Python schema.
-   - Support OpenAI Agents SDK, LangGraph JS where applicable, and
-     custom runtimes.
-
-5. **Framework adapters**
-   - LangGraph
-   - CrewAI
-   - OpenAI Agents SDK
-   - Microsoft Agent Framework
-   - Temporal / Restate hooks for workflow correlation
-
-6. **Local debugging flow**
-   - first trace in less than 10 minutes
-   - local collector
-   - local observability backend
-   - conformance check command
-
-7. **External Decision Graph**
-   - materializer in a customer-owned backend or the SingleAxis Platform
-   - replay indexes
-   - side-effect queries
-   - retention and erasure workflows
-
-## Feature quality bar
-
-Every production feature needs:
-
-- a named product plane, lifecycle phase, artifact, and owner
-- schema contract
-- SDK emission path
-- collector handling
-- conformance fixture
-- docs
-- tests
-- privacy posture
-- failure mode
-- migration story
-- released-artifact qualification and operator diagnostics
-
-Not every slice changes every artifact. When a row is not applicable, the
-feature proposal must say why; it must not silently omit the concern.
-
-## Replay standards
-
-Never claim exact deterministic replay unless all dependencies are
-deterministic and side effects are controlled.
-
-Allowed terms:
-
-- reconstruction metadata
-- replay-safe metadata
-- side-effect suppression
-- workflow replay where supported
-- deterministic replay for deterministic runtimes
-
-Avoid broad claims like:
-
-- "replay any agent"
-- "reproduce every output"
-- "deterministic LLM replay"
-
-## Side-effect standards
-
-Any tool call that mutates external state should emit a `SideEffect`.
-
-At minimum capture:
-
-- target system
-- operation name
-- idempotency key, if any
-- request hash
-- result hash
-- commit status
-- rollback support
-- approval requirement
-- replay behavior
-
-## Documentation standard
-
-Docs should always state:
-
-- what ships in OSS today
-- what is commercial
-- what is roadmap
-- what is an architectural contract
-- what is measured versus only budgeted
-
-This keeps the project credible with platform engineers, CISOs, and
-auditors.
+SDK, Go, Helm, and live delivery checks are documented in
+[qualification status](recorder-v1-qualification-status.md). Docker/kind checks
+must run in the tagged CI environment before promotion when unavailable locally.

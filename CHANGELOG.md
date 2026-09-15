@@ -8,43 +8,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.8.0-rc.1] - 2026-08-28
+## [0.8.0-rc.1] - 2026-08-31
 
 ### Added
 
-- Added the public `fabricctl` lifecycle engine and versioned contracts shared
-  by the CLI, GitOps automation, customer-hosted controllers, and the
-  SingleAxis Platform.
-- Added immutable release image locks and digest-aware Helm rendering for all
-  public Fabric workloads.
-- Added Kubernetes mutation-ready planning, explicit approvals, target-scoped
-  operation locking, atomic installation, hash-chained receipts, runtime
-  status, receipt-bound drift detection, and metadata-only ingress proof.
-- Added optional HTTPS management pairing using workload identity, ephemeral
-  device credentials, purpose-separated trust, and signed connection
-  receipts.
-- Added local allowlisted support bundles that exclude raw prompts, tool
-  payloads, environment variables, credentials, Kubernetes Secrets, desired
-  state, and cluster logs.
+- Added Activity Envelope v2, recorder configuration, privacy assertion,
+  delivery receipt, and connector capability contracts as independently
+  verifiable public interoperability artifacts.
+- Added the recorder-only `fabricctl` surface for local initialization,
+  validation, digesting, help, and version reporting.
+- Added `shadow-dev` and fail-closed `shadow-production` Helm postures for the
+  Collector-only Fabric Node.
+- Added persistent at-least-once queueing, restart recovery, blocking overflow,
+  direct-to-persistent-queue production handoff, indefinite transient retry,
+  mTLS ingress, authenticated HTTPS egress, and explicit ingress/exporter
+  NetworkPolicy peers.
+- Added exact Python wheel/sdist, npm package, Helm package, Collector image,
+  CLI binary, and public-contract release qualification.
 
 ### Changed
 
-- Clarified the architecture boundary: Fabric OSS owns portable lifecycle
-  contracts and deployment mechanics; the SingleAxis Platform owns fleet
-  state, approval workflows, rollout orchestration, and operator UI.
-- Runtime verification now reports Collector ingress and downstream
-  destination acknowledgement independently, preventing ingress acceptance
-  from being represented as evidence persistence.
+- Refocused Fabric OSS on the customer-controlled passive recorder pipeline:
+  `CAPTURE -> PROTECT -> DELIVER`.
+- Removed policy, guardrail, prompt-time PII, judge, red-team, assurance-tier,
+  governance, and management implementations from recorder SDKs, binaries,
+  charts, images, installer commands, and packaged contracts.
+- Python now matches TypeScript's safer defaults by hashing generic interaction
+  targets and file paths unless raw metadata is explicitly requested.
+- Recorder CI and license gates now qualify only released recorder surfaces;
+  legacy source cannot define release readiness.
+- Documentation now separates export minimization from PII detection, passive
+  recording from enforcement, and destination acceptance from durable
+  persistence.
 
 ### Security
 
-- A2/A3 and non-interactive mutations require detached Ed25519 approvals bound
-  to the exact operation, bundle, plan, target, and validity window.
-- Management device codes and grants are memory-only, connection origins are
-  HTTPS-only, and management availability is excluded from the agent request
-  path.
-- Mutable, unlisted, or mismatched workload images are rejected before
-  Kubernetes mutation.
+- Fabric Node uses a non-disableable exact metadata allowlist in the named
+  production profile and removes raw bodies, caller-controlled names, native
+  text channels, sensitive keys, structured escape hatches, oversized values,
+  and invalid hash-labelled values before export.
+- Production rejects custom allowlist extensions, plaintext or unauthenticated
+  transport, missing ingress/egress peers, non-durable queues, finite retry,
+  debug export, and audit sampling.
+- Release promotion requires successful exact-commit CI, security, CodeQL,
+  license, and live kind delivery evidence, plus SBOM, provenance, signatures,
+  and coordinated version checks.
+
+### Known limitations
+
+- Fabric captures only activity exposed by the selected SDK, adapter, gateway,
+  vendor API, or existing telemetry source; it cannot infer hidden reasoning.
+- Metadata-only protection is not semantic PII detection or legal
+  de-identification. Customers must use opaque identifiers and qualify their
+  allowed metadata.
+- Delivery is at least once. Destinations must deduplicate and supply separate
+  evidence when durable persistence must be proven.
 
 ## [0.7.1] - 2026-08-25
 

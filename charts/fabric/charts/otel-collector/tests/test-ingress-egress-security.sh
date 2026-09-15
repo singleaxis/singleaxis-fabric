@@ -6,7 +6,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 chart_dir="$(cd "${here}/.." && pwd)"
 umbrella_dir="$(cd "${chart_dir}/../.." && pwd)"
-profile="${umbrella_dir}/profiles/eu-ai-act-high-risk.yaml"
+profile="${umbrella_dir}/profiles/shadow-production.yaml"
 
 passed=0
 failed=0
@@ -89,6 +89,12 @@ expect_fail "client CA cannot enable TLS without server identity" "client-certif
   "${chart_dir}" --set receiver.tls.clientCASecret.name=fabric-test-client-ca
 
 printf '\n=== Explicit exporter egress contract ===\n'
+expect_fail "explicit receiver ingress requires NetworkPolicy" "requires networkPolicy.enabled=true" \
+  "${chart_dir}" --set networkPolicy.requireExplicitIngress=true
+expect_fail "explicit receiver ingress requires a peer" "networkPolicy.ingressFrom peer" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set networkPolicy.requireExplicitIngress=true
+
 expect_fail "explicit exporter egress requires NetworkPolicy" "requires networkPolicy.enabled=true" \
   "${chart_dir}" --set exporter.endpoint=https://otlp.example.com \
   --set networkPolicy.exporterEgress.requireExplicit=true
@@ -113,39 +119,96 @@ egress_render="$(helm template ci "${chart_dir}" "${egress_args[@]}")"
 expect_contains "explicit exporter CIDR renders" "${egress_render}" "cidr: 203.0.113.10/32"
 expect_contains "explicit exporter port renders" "${egress_render}" "port: 443"
 
-printf '\n=== High-risk profile integration and locks ===\n'
-high_risk_args=(
+printf '\n=== Degenerate peer rejection ===\n'
+expect_fail "empty ingress peer is rejected" "empty peer" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.ingressFrom=[{}]'
+expect_fail "world ingress CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.ingressFrom[0].ipBlock.cidr=0.0.0.0/0'
+expect_fail "IPv6 world ingress CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.ingressFrom[0].ipBlock.cidr=::/0'
+expect_fail "empty exporter egress peer is rejected" "empty peer" \
+  "${chart_dir}" --set exporter.endpoint=https://otlp.example.com \
+  --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.exporterEgress.to=[{}]' \
+  --set 'networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'networkPolicy.exporterEgress.ports[0].port=443'
+expect_fail "world exporter egress CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set exporter.endpoint=https://otlp.example.com \
+  --set networkPolicy.enabled=true \
+  --set 'networkPolicy.exporterEgress.to[0].ipBlock.cidr=0.0.0.0/0' \
+  --set 'networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'networkPolicy.exporterEgress.ports[0].port=443'
+expect_fail "empty egressTo peer is rejected" "empty peer" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.egressTo=[{}]'
+expect_fail "world egressTo CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.egressTo[0].ipBlock.cidr=0.0.0.0/0'
+
+printf '\n=== Health-port NetworkPolicy scoping ===\n'
+np_default="$(helm template ci "${chart_dir}" --set networkPolicy.enabled=true \
+  --show-only templates/networkpolicy.yaml)"
+expect_not_contains "health port is not opened by default" "${np_default}" "port: 13133"
+np_monitoring="$(helm template ci "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.monitoringNamespaceSelector.matchLabels.kubernetes\.io/metadata\.name=monitoring' \
+  --show-only templates/networkpolicy.yaml)"
+expect_contains "named monitoring namespace can reach health" "${np_monitoring}" "kubernetes.io/metadata.name: monitoring"
+expect_contains "scoped health rule keeps the health port" "${np_monitoring}" "port: 13133"
+expect_fail "empty monitoring selector is rejected" "monitoringNamespaceSelector" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.monitoringNamespaceSelector={"matchLabels":{}}'
+
+printf '\n=== Pod security ===\n'
+default_workload="$(helm template ci "${chart_dir}" --show-only templates/deployment.yaml)"
+expect_contains "pod never automounts a service-account token" "${default_workload}" "automountServiceAccountToken: false"
+expect_contains "pod runs as the nonroot uid" "${default_workload}" "runAsUser: 65532"
+
+printf '\n=== Shadow-production integration and locks ===\n'
+production_args=(
   --values "${profile}"
   --set tenant.id=11111111-1111-4111-8111-111111111111
   --set otel-collector.exporter.endpoint=https://otlp.example.com
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
-  --set update-agent.config.allowPlaceholderKey=true
 )
 
-expect_fail "high-risk profile requires an operator exporter peer" "exporterEgress.to peer" \
+expect_fail "production profile requires an operator exporter peer" "exporterEgress.to peer" \
   "${umbrella_dir}" --values "${profile}" \
   --set tenant.id=11111111-1111-4111-8111-111111111111 \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
-  --set update-agent.config.allowPlaceholderKey=true
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 
-high_risk_render="$(helm template ci "${umbrella_dir}" "${high_risk_args[@]}")"
-expect_contains "high-risk profile enables receiver mTLS" "${high_risk_render}" "client_ca_file: /etc/fabric/receiver-tls/client-ca.crt"
-expect_contains "high-risk profile names receiver identity Secret" "${high_risk_render}" "name: fabric-otel-receiver-tls"
-expect_contains "high-risk profile names client CA Secret" "${high_risk_render}" "name: fabric-otel-client-ca"
-expect_contains "high-risk profile renders explicit egress peer" "${high_risk_render}" "cidr: 203.0.113.10/32"
+expect_fail "production profile requires an operator ingress peer" "networkPolicy.ingressFrom peer" \
+  "${umbrella_dir}" --values "${profile}" \
+  --set tenant.id=11111111-1111-4111-8111-111111111111 \
+  --set otel-collector.exporter.endpoint=https://otlp.example.com \
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 
-expect_fail "high-risk receiver TLS lock cannot be disabled" "high-risk profile requires" \
-  "${umbrella_dir}" "${high_risk_args[@]}" \
+production_render="$(helm template ci "${umbrella_dir}" "${production_args[@]}")"
+expect_contains "production profile enables receiver mTLS" "${production_render}" "client_ca_file: /etc/fabric/receiver-tls/client-ca.crt"
+expect_contains "production profile names receiver identity Secret" "${production_render}" "name: fabric-node-receiver-tls"
+expect_contains "production profile names client CA Secret" "${production_render}" "name: fabric-node-client-ca"
+expect_contains "production profile renders explicit egress peer" "${production_render}" "cidr: 203.0.113.10/32"
+
+expect_fail "production receiver TLS cannot be disabled" "profile shadow-production requires" \
+  "${umbrella_dir}" "${production_args[@]}" \
   --set otel-collector.receiver.requireTLS=false \
   --set otel-collector.receiver.requireClientCertificate=false
-expect_fail "high-risk client certificate lock cannot be disabled" "high-risk profile requires" \
-  "${umbrella_dir}" "${high_risk_args[@]}" --set otel-collector.receiver.requireClientCertificate=false
-expect_fail "high-risk explicit-egress lock cannot be disabled" "high-risk profile requires" \
-  "${umbrella_dir}" "${high_risk_args[@]}" --set otel-collector.networkPolicy.exporterEgress.requireExplicit=false
-expect_fail "high-risk namespace deny-default lock cannot be disabled" "high-risk profile requires" \
-  "${umbrella_dir}" "${high_risk_args[@]}" --set networkPolicy.denyDefault=false
+expect_fail "production client certificate cannot be disabled" "profile shadow-production requires" \
+  "${umbrella_dir}" "${production_args[@]}" --set otel-collector.receiver.requireClientCertificate=false
+expect_fail "production explicit egress cannot be disabled" "profile shadow-production requires" \
+  "${umbrella_dir}" "${production_args[@]}" --set otel-collector.networkPolicy.exporterEgress.requireExplicit=false
+expect_fail "production explicit ingress cannot be disabled" "profile shadow-production requires" \
+  "${umbrella_dir}" "${production_args[@]}" --set otel-collector.networkPolicy.requireExplicitIngress=false
+expect_fail "production namespace deny-default cannot be disabled" "profile shadow-production requires" \
+  "${umbrella_dir}" "${production_args[@]}" --set networkPolicy.denyDefault=false
 
 printf '\n--- summary: %d passed, %d failed ---\n' "${passed}" "${failed}"
 exit $((failed > 0 ? 1 : 0))

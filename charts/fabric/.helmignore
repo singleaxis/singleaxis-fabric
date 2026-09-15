@@ -8,3 +8,14 @@
 *.bak
 *.orig
 *.log
+tests/
+docs/
+# Historical/optional chart sources retained in the repository but excluded
+# from the Fabric Node v1 package. The released dependency surface is Collector
+# only; these paths must not be auto-discovered as undeclared dependencies.
+charts/fabric-relay
+charts/langfuse
+charts/nemo-sidecar
+charts/presidio-sidecar
+charts/redteam-runner
+charts/update-agent

@@ -42,6 +42,8 @@
     },
     "podAnnotations": {"$ref": "#/definitions/stringMap"},
     "podLabels": {"$ref": "#/definitions/stringMap"},
+    "enableServiceLinks": {"type": "boolean"},
+    "terminationGracePeriodSeconds": {"type": "integer", "minimum": 1, "maximum": 3600},
     "podSecurityContext": {"$ref": "#/definitions/kubernetesObject"},
     "securityContext": {"$ref": "#/definitions/kubernetesObject"},
     "service": {
@@ -91,14 +93,13 @@
     "fabric": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["guard", "policy", "redact", "sampler"],
+      "required": ["guard"],
       "properties": {
         "guard": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "eventClassAttribute", "dropUnknownClasses", "maxFieldBytes", "extraAllowedFields", "traceProcessingEnabled"],
+          "required": ["eventClassAttribute", "dropUnknownClasses", "maxFieldBytes", "extraAllowedFields", "extraAllowedTraceFields"],
           "properties": {
-            "enabled": {"type": "boolean"},
             "eventClassAttribute": {"type": "string", "minLength": 1, "maxLength": 255},
             "dropUnknownClasses": {"type": "boolean"},
             "maxFieldBytes": {"type": "integer", "minimum": 1, "maximum": 16777216},
@@ -111,89 +112,10 @@
                 "uniqueItems": true
               }
             },
-            "traceProcessingEnabled": {"type": "boolean"}
-          }
-        },
-        "policy": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["enabled", "bundlePath", "bundleConfigMap", "referencePolicy", "query", "eventClassAttribute"],
-          "properties": {
-            "enabled": {"type": "boolean"},
-            "bundlePath": {"type": "string", "pattern": "^$|^/"},
-            "bundleConfigMap": {"type": "string", "maxLength": 253},
-            "referencePolicy": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["enabled", "version"],
-              "properties": {
-                "enabled": {"type": "boolean"},
-                "version": {"enum": ["v1"]}
-              }
-            },
-            "query": {"type": "string", "minLength": 1},
-            "eventClassAttribute": {"type": "string", "minLength": 1, "maxLength": 255}
-          }
-        },
-        "redact": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["enabled", "unixSocket", "timeoutMs", "eventClassAttribute", "byteHandling", "skipAttributes", "embedded"],
-          "properties": {
-            "enabled": {"type": "boolean"},
-            "unixSocket": {"type": "string", "pattern": "^/", "minLength": 2},
-            "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 60000},
-            "eventClassAttribute": {"type": "string", "minLength": 1, "maxLength": 255},
-            "byteHandling": {"enum": ["redact_utf8", "reject", "passthrough"]},
-            "skipAttributes": {
+            "extraAllowedTraceFields": {
               "type": "array",
               "items": {"type": "string", "minLength": 1},
               "uniqueItems": true
-            },
-            "embedded": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["enabled", "image", "tenantKeySecret", "redactionMode", "allowPassthrough", "securityContext", "resources", "startupProbe", "readinessProbe"],
-              "properties": {
-                "enabled": {"type": "boolean"},
-                "image": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["repository", "tag", "pullPolicy"],
-                  "properties": {
-                    "repository": {"type": "string", "minLength": 1},
-                    "tag": {"type": "string"},
-                    "digest": {"type": "string", "pattern": "^(?:|sha256:[0-9a-f]{64})$"},
-                    "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
-                  }
-                },
-                "tenantKeySecret": {"$ref": "#/definitions/secretKeyReference"},
-                "redactionMode": {"enum": ["hmac", "tag"]},
-                "allowPassthrough": {"type": "boolean"},
-                "securityContext": {"$ref": "#/definitions/kubernetesObject"},
-                "resources": {"$ref": "#/definitions/kubernetesObject"},
-                "startupProbe": {"$ref": "#/definitions/timingProbe"},
-                "readinessProbe": {"$ref": "#/definitions/timingProbe"}
-              }
-            }
-          }
-        },
-        "sampler": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["enabled", "hmacKey", "hmacKeySecret", "defaultRate", "rates"],
-          "properties": {
-            "enabled": {"type": "boolean"},
-            "hmacKey": {
-              "type": "string",
-              "description": "Validated by the chart template to preserve actionable key-generation guidance."
-            },
-            "hmacKeySecret": {"$ref": "#/definitions/secretKeyReference"},
-            "defaultRate": {"type": "number", "minimum": 0, "maximum": 1},
-            "rates": {
-              "type": "object",
-              "propertyNames": {"minLength": 1},
-              "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
             }
           }
         }
@@ -304,8 +226,9 @@
     "batch": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["timeoutSeconds", "sendBatchSize"],
+      "required": ["enabled", "timeoutSeconds", "sendBatchSize"],
       "properties": {
+        "enabled": {"type": "boolean"},
         "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 3600},
         "sendBatchSize": {"type": "integer", "minimum": 1, "maximum": 1000000}
       }
@@ -327,9 +250,10 @@
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "ingressFrom", "exporterEgress", "egressTo"],
+      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo", "monitoringNamespaceSelector"],
       "properties": {
         "enabled": {"type": "boolean"},
+        "requireExplicitIngress": {"type": "boolean"},
         "ingressFrom": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}},
         "exporterEgress": {
           "type": "object",
@@ -341,13 +265,17 @@
             "ports": {"type": "array", "items": {"$ref": "#/definitions/networkPolicyPort"}}
           }
         },
-        "egressTo": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}}
+        "egressTo": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}},
+        "monitoringNamespaceSelector": {
+          "$ref": "#/definitions/kubernetesObject",
+          "description": "Optional LabelSelector for the monitoring namespace allowed to reach the health port. Empty means no health ingress rule (default deny)."
+        }
       }
     }
   },
   "required": [
     "replicaCount", "image", "imagePullSecrets", "nameOverride", "fullnameOverride",
-    "serviceAccount", "podAnnotations", "podLabels", "podSecurityContext", "securityContext",
+    "serviceAccount", "podAnnotations", "podLabels", "enableServiceLinks", "terminationGracePeriodSeconds", "podSecurityContext", "securityContext",
     "service", "receiver", "resources", "livenessProbe", "readinessProbe", "startupProbe", "nodeSelector",
     "tolerations", "affinity", "topologySpreadConstraints", "fabric", "exporter", "debugExporter",
     "memoryLimiter", "batch", "podDisruptionBudget", "networkPolicy"

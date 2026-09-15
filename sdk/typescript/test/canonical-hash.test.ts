@@ -4,7 +4,7 @@
 /**
  * Locks `pythonJsonStringify` byte-for-byte against CPython's
  * `json.dumps(value, sort_keys=True, default=str)`, so a SHA-256 over the
- * result equals the Python SDK's policy `input_hash`.
+ * result equals the Python recorder's canonical object hash.
  *
  * Every `expected` string below was produced by running the corresponding
  * value through CPython:
@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { policyInputHash, pythonJsonStringify } from "../src/hash.js";
+import { canonicalObjectHash, pythonJsonStringify } from "../src/hash.js";
 
 describe("pythonJsonStringify reproduces CPython json.dumps", () => {
   // [value, exact string CPython emitted]
@@ -74,15 +74,15 @@ describe("pythonJsonStringify reproduces CPython json.dumps", () => {
   });
 });
 
-describe("policyInputHash matches the committed Python goldens", () => {
+describe("canonicalObjectHash matches the committed Python vectors", () => {
   it("hashes {amount:50} to the committed value (no regression)", () => {
-    expect(policyInputHash({ amount: 50 })).toBe(
+    expect(canonicalObjectHash({ amount: 50 })).toBe(
       "76486eecb93e90859a9039a37489b959954ee722a13497353787f5d7f50309d6",
     );
   });
 
   it("hashes {amount:5000} to the committed value (no regression)", () => {
-    expect(policyInputHash({ amount: 5000 })).toBe(
+    expect(canonicalObjectHash({ amount: 5000 })).toBe(
       "40d73b5da3b2c0c2a3a53117df9ce7a4dc137bffcceeb71afc7d23acf9307914",
     );
   });

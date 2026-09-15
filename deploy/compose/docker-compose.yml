@@ -1,281 +1,73 @@
-# SingleAxis Fabric — integration harness (Layer 1).
-#
-# Spins up everything an external agent needs to exercise the Fabric
-# audit stack locally: the two UDS guardrail sidecars, the Fabric
-# OTel Collector distribution, and a Langfuse + Postgres sink.
-#
-# Ports exposed on the host (override any of them in .env if they
-# collide with something already running — e.g. FABRIC_LANGFUSE_PORT=3100):
-#   ${FABRIC_OTLP_GRPC_PORT:-4317}  OTLP/gRPC   agent → collector
-#   ${FABRIC_OTLP_HTTP_PORT:-4318}  OTLP/HTTP   agent → collector
-#   ${FABRIC_LANGFUSE_PORT:-3000}   Langfuse UI
-#
-# UDS sockets live on the ``fabric-run`` NAMED VOLUME, mounted at
-# /run/fabric in every container that needs them:
-#   /run/fabric/presidio.sock   agent → presidio-sidecar (PII redaction)
-#   /run/fabric/nemo.sock       agent → nemo-sidecar     (Colang rails)
-#
-# A named volume rather than a host bind mount is deliberate. Docker
-# Desktop's macOS bind mounts (virtiofs) reject chmod() on a socket, so
-# a bind-mounted socket directory cannot be used at all there. A named
-# volume behaves like a normal filesystem on every platform.
-#
-# The consequence is that host processes cannot reach these sockets —
-# which matches production, where the agent and its guardrail sidecars
-# share a pod. To exercise the UDS path, run your agent as a container
-# on the ``fabric`` network with the volume mounted and uid/gid 1000:
-#
-#   docker run --rm --network fabric-harness_fabric \
-#     -v fabric-harness_fabric-run:/run/fabric --user 1000:1000 \
-#     -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 my-agent
-#
-# If you need to drive the sidecars from the host instead, start them
-# with --port rather than --uds; see README.md. That path does not
-# exercise the UDS transport or its latency budget.
-#
-# See README.md for how to point an agent (Fabric SDK, vanilla OTLP,
-# etc.) at this stack.
-
-name: fabric-harness
+name: fabric-node-evaluation
 
 networks:
-  fabric:
+  fabric-node:
     driver: bridge
 
 volumes:
-  langfuse-db:
-  # Shared socket directory for the UDS guardrail path.
-  fabric-run:
+  fabric-queue:
+  sink-data:
 
 services:
-
-  # ---- Socket directory ownership ---------------------------------
-  #
-  # A fresh named volume is root-owned. The sidecars drop to uid 1000,
-  # so they could not create their sockets in it. This one-shot service
-  # hands the directory to 1000:1000 before anything else starts.
-  # 0770 keeps the socket path reachable only by that uid/gid — any
-  # agent container sharing the volume must run as 1000:1000 too, which
-  # is the same constraint a shared pod imposes in production.
-  run-init:
-    image: busybox:1.36
-    command:
-      [
-        "sh",
-        "-c",
-        "mkdir -p /run/fabric && chown 1000:1000 /run/fabric && chmod 0770 /run/fabric",
-      ]
-    volumes:
-      - fabric-run:/run/fabric
-    restart: "no"
-    networks: [fabric]
-
-  # ---- UDS guardrail sidecars -------------------------------------
-
-  presidio-sidecar:
-    build:
-      context: ../../components/presidio-sidecar
-      dockerfile: Dockerfile
-    image: fabric/presidio-sidecar:harness
-    user: "1000:1000"
-    command:
-      [
-        "--uds",
-        "/run/fabric/presidio.sock",
-        "--tenant-key-file",
-        "/etc/fabric/presidio.key",
-      ]
-    volumes:
-      - fabric-run:/run/fabric
-      # The tenant HMAC key is a secret, not socket state: it stays a
-      # read-only bind mount so `make up` can generate it on the host.
-      - ./run/presidio.key:/etc/fabric/presidio.key:ro
-    depends_on:
-      run-init:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "test", "-S", "/run/fabric/presidio.sock"]
-      interval: 5s
-      timeout: 2s
-      retries: 10
-    networks: [fabric]
-
-  nemo-sidecar:
-    build:
-      context: ../../components/nemo-sidecar
-      dockerfile: Dockerfile
-    image: fabric/nemo-sidecar:harness
-    user: "1000:1000"
-    # --enable-default-literal-filter is REQUIRED with the starter bundle.
-    # rails/starter/config.yml declares no `models:`, so any input that
-    # reaches NeMo's Colang path calls llm_call() with no LLM configured and
-    # the request dies with HTTP 500:
-    #   LLMCallException: LLM Call Exception: No LLM provided to llm_call()
-    # Without this flag every guardrail check fails — and it fails in a way
-    # that looks like a working rail returning "not blocked" to a caller that
-    # does not inspect the status. The starter bundle's own README says the
-    # literal pre-filter is how jailbreak detection is meant to work here.
-    command:
-      [
-        "--uds",
-        "/run/fabric/nemo.sock",
-        "--rails-config",
-        "/etc/fabric/rails",
-        "--enable-default-literal-filter",
-      ]
-    # KNOWN LIMITATION with this configuration: known jailbreak patterns are
-    # blocked by the literal filter (verified), but any input that does NOT
-    # match a pattern falls through to NeMo's Colang path, which calls
-    # llm_call() with no model configured and returns HTTP 500. So benign
-    # traffic fails guard_input. This is fail-CLOSED, which is the correct
-    # posture, but it means the harness cannot serve a normal turn until the
-    # starter bundle gets a `models:` entry.
-    #
-    # Do NOT "fix" this by swapping --rails-config for --allow-passthrough:
-    # _build_engine() in the sidecar discards literal_filter entirely when
-    # rails_config is absent, so that combination silently drops the
-    # jailbreak filter and allows everything (verified — the injection probe
-    # returns rail="passthrough", allowed=true). Failing open is worse.
+  # Controlled evaluation destination. It returns 200 only after writing and
+  # fsyncing the received request. That is a property of this test sink, not a
+  # persistence guarantee Fabric can infer from arbitrary OTLP destinations.
+  test-sink:
+    # Pinned by digest so the evaluation harness is reproducible. Resolve a
+    # newer digest with:
+    #   docker buildx imagetools inspect python:3.12-alpine
+    image: python:3.12-alpine@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a
+    command: ["python", "/app/otlp_sink.py"]
     environment:
-      # NeMo's openai engine resolves a key through the environment even when
-      # one is supplied in config.yml. Ollama ignores its value.
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
-      # ---------------------------------------------------------------
-      # WARNING: this is 150x the guardrail budget spec 005 mandates.
-      #
-      #   spec 005:                  < 200 ms p99 total inline overhead
-      #   sidecar default:             800 ms  (already 4x the spec)
-      #   measured llama3.2:3b CPU:   1022 ms  for ONE round-trip
-      #
-      # NeMo's Colang path makes at least one LLM call per check, so an
-      # LLM-graded rail cannot meet the inline budget — it misses by
-      # roughly 5x on a single call, more under concurrent load. Only the
-      # deterministic literal filter is fast enough to sit inline.
-      #
-      # The value below exists so the harness can exercise the guardrail
-      # path FUNCTIONALLY. It makes this harness useless as a latency
-      # test, and no p99 number measured here means anything. Do not copy
-      # this into a chart, a profile, or any deployment.
-      FABRIC_REQUEST_TIMEOUT_MS: ${FABRIC_NEMO_TIMEOUT_MS:-30000}
-    extra_hosts:
-      # Reach the host's Ollama daemon from inside the container.
-      - "host.docker.internal:host-gateway"
+      SINK_DATA_DIR: /var/lib/fabric-test-sink
+      SINK_PORT: "8080"
     volumes:
-      - fabric-run:/run/fabric
-      # ./rails is the starter bundle plus a local-Ollama `models:` entry.
-      # The shipped starter bundle stays untouched — see ./rails/config.yml.
-      - ./rails:/etc/fabric/rails:ro
-    depends_on:
-      run-init:
-        condition: service_completed_successfully
+      - ./sink/otlp_sink.py:/app/otlp_sink.py:ro
+      - sink-data:/var/lib/fabric-test-sink
+    ports:
+      # Loopback-only: the /contains endpoint is a telemetry-search oracle and
+      # must never be reachable off-host.
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_SINK_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD", "test", "-S", "/run/fabric/nemo.sock"]
-      interval: 5s
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 2s
       timeout: 2s
-      retries: 10
-    networks: [fabric]
+      retries: 20
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [fabric-node]
 
-  # ---- OTel Collector (Fabric distribution) -----------------------
-
-  otel-collector:
+  # Fabric Node v1 is one customer-facing service. The custom Collector is its
+  # current implementation: receive -> allowlist -> persistent queue -> OTLP.
+  fabric-node:
     build:
       context: ../../components/otel-collector-fabric
       dockerfile: Dockerfile
-    image: fabric/otel-collector:harness
-    command: ["--config=/etc/fabric/collector.yaml"]
-    environment:
-      # Pre-computed base64(pk-lf-harness:sk-lf-harness). Override in
-      # .env if you rotate the Langfuse project keys.
-      LANGFUSE_BASIC_AUTH: ${LANGFUSE_BASIC_AUTH:-cGstbGYtaGFybmVzczpzay1sZi1oYXJuZXNz}
+    image: fabric/node:evaluation
+    command: ["--config=/etc/fabric-node/collector.yaml"]
     volumes:
-      - ./collector-config/collector.yaml:/etc/fabric/collector.yaml:ro
-      - fabric-run:/run/fabric
+      - ./collector-config/collector.yaml:/etc/fabric-node/collector.yaml:ro
+      - fabric-queue:/var/lib/fabric-node/queue
     ports:
-      - "${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
-      - "${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
+      # Loopback-only by default. Set FABRIC_BIND_ADDR=0.0.0.0 to accept OTLP
+      # from other hosts; this evaluation profile is plaintext and
+      # unauthenticated, so do that only on a trusted test network.
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_HEALTH_PORT:-13133}:13133"
     depends_on:
-      run-init:
-        condition: service_completed_successfully
-      presidio-sidecar:
+      test-sink:
         condition: service_healthy
-      langfuse:
-        condition: service_healthy
-    networks: [fabric]
-
-  # ---- Langfuse (observability UI) --------------------------------
-
-  langfuse-db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: langfuse
-      POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
-    volumes:
-      - langfuse-db:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    networks: [fabric]
-
-  langfuse:
-    image: langfuse/langfuse:2
-    environment:
-      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
-      NEXTAUTH_URL: http://localhost:${FABRIC_LANGFUSE_PORT:-3000}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-harness-nextauth-secret-change-me}
-      SALT: ${LANGFUSE_SALT:-harness-salt-change-me}
-      TELEMETRY_ENABLED: "false"
-      LANGFUSE_DEFAULT_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-fabric-harness}
-      LANGFUSE_DEFAULT_PROJECT_ROLE: OWNER
-      LANGFUSE_INIT_ORG_ID: fabric
-      LANGFUSE_INIT_ORG_NAME: SingleAxis Fabric Harness
-      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_PROJECT_ID:-fabric-harness}
-      LANGFUSE_INIT_PROJECT_NAME: Fabric Harness
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-harness}
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-harness}
-      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_USER_EMAIL:-admin@fabric.local}
-      LANGFUSE_INIT_USER_NAME: Harness Admin
-      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_USER_PASSWORD:-fabric-admin}
-    ports:
-      - "${FABRIC_LANGFUSE_PORT:-3000}:3000"
-    depends_on:
-      langfuse-db:
-        condition: service_healthy
-    healthcheck:
-      # Langfuse's Next.js server binds the container's routable address
-      # only — never 127.0.0.1 or 0.0.0.0 — so a localhost probe is
-      # refused and the container never reports healthy. Everything that
-      # gates on it (otel-collector) then blocks forever. Probe the
-      # container's own hostname instead. $$ escapes compose interpolation.
-      test:
-        ["CMD-SHELL", "wget -qO- http://$$(hostname):3000/api/public/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-    networks: [fabric]
-
-  # ---- Optional: bootstrap Langfuse with Fabric dashboards --------
-  #
-  # Runs once on `docker compose --profile bootstrap up`. In production
-  # this is the Kubernetes Job shipped by charts/fabric/charts/langfuse/.
-  langfuse-bootstrap:
-    profiles: ["bootstrap"]
-    build:
-      context: ../../components/langfuse-bootstrap
-      dockerfile: Dockerfile
-    image: fabric/langfuse-bootstrap:harness
-    environment:
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-harness}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-harness}
-      FABRIC_PROFILE: ${FABRIC_PROFILE:-permissive-dev}
-    volumes:
-      - ../../components/langfuse-bootstrap/curated:/etc/fabric/curated:ro
-    depends_on:
-      langfuse:
-        condition: service_healthy
-    restart: "no"
-    networks: [fabric]
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [fabric-node]

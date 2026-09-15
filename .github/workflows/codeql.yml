@@ -26,10 +26,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Python: sidecars + SDK + examples.
-        # Go: public collector processors under components/otel-collector-fabric.
-        # CodeQL picks up .go files across the repo by default.
-        language: [python, go]
+        # Released recorder implementations span all three languages.
+        # CodeQL also sees historical source, but release qualification remains
+        # bounded to the SDKs, Fabric Node, and recorder CLI.
+        language: [python, go, javascript-typescript]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -45,6 +45,14 @@ jobs:
         with:
           go-version: "1.25"
           cache: false
+
+      - name: Set up Node
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4

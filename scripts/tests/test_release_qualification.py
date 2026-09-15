@@ -214,6 +214,31 @@ def test_wheel_rejects_unexpected_top_level_content(tmp_path: Path) -> None:
         qualify.inspect_wheel(rewritten, policy, "1.2.3")
 
 
+def test_wheel_rejects_forbidden_capability_path(tmp_path: Path) -> None:
+    _, policy = _policy(tmp_path)
+    python_policy = policy["python_distribution"]
+    assert isinstance(python_policy, dict)
+    python_policy["forbidden_wheel_paths"] = ["fabric/judge.py"]
+    dist = _dist(tmp_path)
+    wheel = next(dist.glob("*.whl"))
+    rewritten = tmp_path / "capability.whl"
+    with zipfile.ZipFile(wheel) as source, zipfile.ZipFile(rewritten, "w") as target:
+        for name in source.namelist():
+            target.writestr(name, source.read(name))
+        target.writestr("fabric/judge.py", "")
+    with pytest.raises(qualify.QualificationError, match="forbidden capability"):
+        qualify.inspect_wheel(rewritten, policy, "1.2.3")
+
+
+def test_wheel_rejects_unexpected_console_script(tmp_path: Path) -> None:
+    _, policy = _policy(tmp_path)
+    python_policy = policy["python_distribution"]
+    assert isinstance(python_policy, dict)
+    python_policy["required_console_scripts"] = {}
+    with pytest.raises(qualify.QualificationError, match="unexpected console scripts"):
+        qualify.inspect_wheel(next(_dist(tmp_path).glob("*.whl")), policy, "1.2.3")
+
+
 def test_sdist_rejects_path_traversal(tmp_path: Path) -> None:
     _, policy = _policy(tmp_path)
     bad = tmp_path / "bad.tar.gz"
@@ -243,6 +268,28 @@ def test_sdist_rejects_tests_and_duplicate_conformance_goldens(tmp_path: Path) -
         info.size = len(content)
         target.addfile(info, io.BytesIO(content))
     with pytest.raises(qualify.QualificationError, match="unexpected sdist content"):
+        qualify.inspect_sdist(rewritten, policy, "1.2.3")
+
+
+def test_sdist_rejects_forbidden_capability_path(tmp_path: Path) -> None:
+    _, policy = _policy(tmp_path)
+    python_policy = policy["python_distribution"]
+    assert isinstance(python_policy, dict)
+    python_policy["forbidden_sdist_paths"] = ["src/fabric/policy.py"]
+    source = next(_dist(tmp_path).glob("*.tar.gz"))
+    rewritten = tmp_path / "capability.tar.gz"
+    with (
+        tarfile.open(source, "r:gz") as source_archive,
+        tarfile.open(rewritten, "w:gz") as target,
+    ):
+        for member in source_archive.getmembers():
+            extracted = source_archive.extractfile(member)
+            target.addfile(member, extracted)
+        content = b""
+        info = tarfile.TarInfo("singleaxis_fabric-1.2.3/src/fabric/policy.py")
+        info.size = len(content)
+        target.addfile(info, io.BytesIO(content))
+    with pytest.raises(qualify.QualificationError, match="forbidden capability"):
         qualify.inspect_sdist(rewritten, policy, "1.2.3")
 
 

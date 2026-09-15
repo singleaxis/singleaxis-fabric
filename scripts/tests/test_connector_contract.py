@@ -60,6 +60,38 @@ def test_released_manifest_set_is_explicit() -> None:
     }
 
 
+def test_shipped_connector_claims_follow_recorder_release_identity() -> None:
+    release_version = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    forbidden_surfaces = {
+        "policy_verdict",
+        "guardrail_verdict",
+        "authorization_verdict",
+        "escalation",
+        "evaluation",
+    }
+
+    for path in sorted((CONTRACT_ROOT / "manifests").glob("*.json")):
+        document = _json(path)
+        if document["release"]["maturity"] == "illustrative":
+            continue
+        assert document["release"]["version"] == release_version, (
+            f"{path.name} release identity drifted from VERSION"
+        )
+        assert document["compatibility"]["activity_contract"] is None, (
+            f"{path.name} must not claim to materialize Activity Envelope v2"
+        )
+
+        if document["implementation"]["kind"] == "in_process_sdk":
+            observed = {
+                record["surface"]
+                for record in document["observation"]["semantic_surfaces"]
+            }
+            assert observed.isdisjoint(forbidden_surfaces), (
+                f"{path.name} advertises a non-recorder product surface"
+            )
+            assert document["control"]["agent_runtime_actions"] == []
+
+
 @pytest.mark.parametrize(
     ("relative", "code"),
     [

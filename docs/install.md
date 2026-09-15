@@ -1,124 +1,125 @@
-# Install a pinned Fabric release
+# Install a pinned Fabric recorder release
 
-Production installations should select one released version, verify its
-qualification evidence, and promote the same bytes through development,
-staging, and production. Do not install `main`, a floating container tag, or
-an unreviewed dependency range into a regulated environment.
+Install one qualified version and promote the same bytes through development,
+staging, and production. Do not deploy `main`, a floating image tag, or an
+unreviewed dependency range in a regulated environment.
 
-This page covers the OSS artifacts. It does not imply that installing Fabric
-alone satisfies a regulation or an organization's control framework.
+Fabric recorder releases contain only:
 
-## Supported release artifacts
+| Artifact | Distribution | Purpose |
+|---|---|---|
+| Python SDK | PyPI and release wheel | Optional in-process capture |
+| TypeScript SDK | npm and release package | Optional in-process capture |
+| Fabric Node | `ghcr.io/singleaxis/fabric-otelcol` | Protect, buffer, and deliver OTLP |
+| Helm chart | GHCR OCI and release package | Install Fabric Node |
+| `fabricctl` | Release archives | Prepare and validate local recorder configuration |
+| Public contracts | Release archive | Activity, connect, privacy, recorder, and delivery interoperability |
 
-| Surface | Distribution | Version authority | Integrity evidence |
-| --- | --- | --- | --- |
-| Python SDK | PyPI and release wheel | Python package metadata | Release qualification manifest and PyPI provenance |
-| Public contracts | GitHub release `.tar.gz` | Release tag plus contract manifests | Exact-member qualification manifest and SHA-256 checksum |
-| Helm deployment | GHCR OCI chart and release `.tgz` | `Chart.yaml` | Qualification manifest; keyless signature on the OCI artifact |
-| Runtime images | GHCR OCI images | Release tag | Keyless signature and GitHub build provenance on the immutable digest |
-| Source | GitHub release archive | Git tag | SHA-256, keyless blob signature, and GitHub provenance |
-
-Python supports the interpreter range declared in the wheel's
-`Requires-Python` metadata. The Helm chart's `kubeVersion` field is the
-authoritative Kubernetes compatibility constraint. Verify both fields for the
-selected release instead of relying on this page to repeat changing version
-numbers.
+Installing Fabric does not certify a system or satisfy a regulation by itself.
 
 ## Before installation
 
-1. Select an exact release such as `v1.2.3`.
-2. Download `release-qualification.json` from that GitHub release.
+1. Select an exact release candidate or stable version.
+2. Read its changelog and `release-qualification.json`.
 3. Follow [Verify a Fabric release](verify-release.md).
-4. Record the tag, Git commit SHA, artifact SHA-256, OCI digest, verifier
-   identity, verification time, and approving change request.
-5. Mirror approved artifacts into the organization's controlled registry or
-   package repository when policy requires it.
+4. Record the release tag, commit, artifact hashes, OCI digests, verifier
+   identity, review decision, and intended environment.
+5. Mirror approved artifacts into controlled registries when company policy
+   requires it.
 
-For schema consumers, mirror
-`singleaxis-fabric-contracts-VERSION.tar.gz` together with
-`contracts-qualification.json` and `SHA256SUMS.contracts`. The archive is the
-qualified distribution boundary for all contract families discovered under
-`contracts/`; do not assemble a substitute archive from a source checkout and
-assume it has the same digest.
+Release candidates are for enterprise testing until their published evidence
+and your own environment qualification support promotion.
 
-## Python SDK
+## SDK installation
 
-For an evaluation environment, download the exact wheel attached to the
-GitHub release and compare its SHA-256 with `release-qualification.json`.
-Install that local file without dependency resolution:
+For normal development, pin the selected package version:
+
+```bash
+python -m pip install "singleaxis-fabric==VERSION"
+npm install --save-exact "@singleaxis/fabric@VERSION"
+```
+
+For a controlled Python installation, download the exact wheel, compare its
+SHA-256 with the qualification report, install approved dependencies from an
+internal index, and install the wheel without resolving new dependencies:
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install --no-deps ./singleaxis_fabric-1.2.3-py3-none-any.whl
+python -m pip install --no-deps ./singleaxis_fabric-VERSION-py3-none-any.whl
 python -m pip check
 ```
 
-`--no-deps` is deliberate: enterprise deployments should resolve and approve
-the SDK's dependency set separately, then install it from a locked internal
-index. For a normal developer installation, pin the public package version:
+The SDK is optional. Existing systems can send compatible OTLP directly to
+Fabric Node.
+
+## Prepare local configuration
+
+Download the `fabricctl` archive for the operator platform, verify it against
+`fabricctl-SHA256SUMS`, and run:
 
 ```bash
-python -m pip install "singleaxis-fabric==1.2.3"
+fabricctl init
+fabricctl recorder validate ./fabric-recorder.yaml
+fabricctl recorder digest ./fabric-recorder.yaml
 ```
 
-Do not use an unbounded requirement in a production application.
+`fabricctl init` writes local configuration with mode `0600`; it does not
+install workloads or contact a management service. Recorder v1 does not expose
+the historical management, plan, approval, rollout, or assurance commands.
 
-## Helm deployment
+## Kubernetes evaluation
 
-Authenticate to the approved registry, pull one exact chart version, verify
-the OCI signature, and retain the resolved digest before installation:
+Pull or download one exact chart version. For a local test:
 
 ```bash
-helm pull oci://ghcr.io/singleaxis/charts/fabric --version 1.2.3
-cosign verify ghcr.io/singleaxis/charts/fabric:1.2.3 \
-  --certificate-identity-regexp='^https://github.com/singleaxis/singleaxis-fabric/' \
-  --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
-helm upgrade --install fabric ./fabric-1.2.3.tgz \
-  --namespace fabric-system --create-namespace \
-  --values organization-reviewed-values.yaml \
+kubectl label namespace monitored-agents fabric.singleaxis.ai/agent=true
+
+helm upgrade --install fabric ./fabric-VERSION.tgz \
+  --namespace fabric-system \
+  --create-namespace \
+  --values charts/fabric/profiles/shadow-dev.yaml
+```
+
+`shadow-dev` may use plaintext input and pod logs. It is not durable and must
+not cross a production trust boundary.
+
+## Production shadow deployment
+
+Start from `shadow-production`. Supply organization-owned TLS certificates,
+client CA, export authorization Secret, HTTPS endpoint, persistent storage,
+tenant identity, and explicit NetworkPolicy ingress and egress. The chart
+refuses an incomplete production posture.
+
+```bash
+helm upgrade --install fabric ./fabric-VERSION.tgz \
+  --namespace fabric-system \
+  --create-namespace \
+  --values charts/fabric/profiles/shadow-production.yaml \
+  --set tenant.id=TENANT_UUID \
+  --set otel-collector.exporter.endpoint=https://approved-otlp.example.com \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' \
   --wait --atomic
 ```
 
-The release chart accepts an optional `image.digest` for every public workload;
-when present it renders `repository@sha256:...` and ignores the tag. The
-canonical lifecycle path uses a strict `fabricctl.image-locks/v1` file and
-rejects a rendered install workload that is mutable, unlisted, or absent from
-the rendered release. Verify image signatures and provenance before admitting
-those digests into the lock file.
-
-For the governed lifecycle, build the six-file bundle first, then resolve the
-exact chart package, profile, and image locks:
-
-```bash
-fabricctl plan --bundle ./bundle --chart ./fabric-1.2.3.tgz \
-  --profile ./profiles/permissive-dev.yaml \
-  --image-locks ./images.lock.json --refresh --output json
-fabricctl install --bundle ./bundle --chart ./fabric-1.2.3.tgz \
-  --profile ./profiles/permissive-dev.yaml \
-  --image-locks ./images.lock.json --plan-digest sha256:... \
-  --actor operator/alice --receipt ./install-receipt.json
-fabricctl status --bundle ./bundle --receipt ./install-receipt.json
-fabricctl verify --bundle ./bundle --receipt ./install-receipt.json
-```
-
-A2/A3 and non-interactive mutation require a detached Ed25519 approval and a
-purpose-limited public trust store. A local source-built chart can exercise the
-workflow but is not a qualified released artifact.
+The CIDR above is documentation-only. Route through an approved egress gateway
+when the destination does not have a stable, reviewable network identity. See
+[Deployment](deployment.md) for required Secrets and invariants.
 
 ## Promotion record
 
-For each environment, retain:
+Retain, for every environment:
 
-- release tag and exact Git commit SHA;
-- qualification manifest SHA-256;
-- wheel, chart, source, and image digests used;
-- signature and provenance verification output;
-- reviewed configuration values and secret references;
-- change approval, installer identity, and installation timestamp;
-- post-install health and trace-delivery verification results;
-- rollback version and rollback test evidence.
+- exact tag, commit, wheel/package/chart hashes, and image digest;
+- signature, provenance, and qualification output;
+- reviewed Fabric values and Secret references, never Secret values;
+- connector capability manifest and accepted blind spots;
+- post-install capture, protection, restart, retry, and delivery test results;
+- destination acknowledgement semantics and deduplication behavior;
+- change approval, installer identity, time, and rollback target.
 
-Rebuilds from source are different artifacts even when they use the same tag.
-If reproducible-build equivalence has not been demonstrated, qualify the
-rebuilt bytes as a separate internal release.
+A source rebuild is a different artifact unless reproducible equivalence has
+been independently established.

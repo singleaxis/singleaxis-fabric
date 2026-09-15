@@ -1,19 +1,18 @@
 apiVersion: v2
 name: fabric
 description: |
-  SingleAxis Fabric — open-source substrate for audit-ready AI agents.
-  Umbrella chart; regulatory profiles select which components run and
-  how they are configured. See specs/008-deployment-model.md for the
-  authoritative shape.
+  SingleAxis Fabric Node — customer-controlled passive recorder for
+  observable AI activity. Capture, protect, and deliver without changing
+  or delaying the monitored system.
 type: application
 version: 0.8.0-rc.1
 appVersion: "0.8.0-rc.1"
 kubeVersion: ">=1.29.0-0"
 keywords:
-  - ai-governance
-  - compliance
+  - ai-observability
   - observability
-  - guardrails
+  - opentelemetry
+  - audit
 home: https://github.com/singleaxis/singleaxis-fabric
 sources:
   - https://github.com/singleaxis/singleaxis-fabric
@@ -25,60 +24,16 @@ annotations:
   category: Compliance
   licenses: Apache-2.0
 
-# Subcharts — everything is optional. The umbrella ships with each
-# subchart gated behind its own ``enabled`` toggle so an operator can
-# start small (just otel-collector) and layer on the guardrail
-# sidecars and local observability as the deployment matures.
-#
-# Components not in this repository (judge-workers, escalation-service,
-# decision-graph, telemetry-bridge, nats) are maintained by SingleAxis
-# internally and are not part of this distribution.
+# Fabric Node v1 deliberately packages one runtime: the Fabric Collector.
+# Other source charts remain in the repository for compatibility and research,
+# but they are not dependencies or customer-facing toggles of this release.
 dependencies:
   - name: otel-collector
     version: 0.4.0
     condition: otelCollector.enabled
+    # Vendored dependency: the subchart source ships under charts/ and is the
+    # only released dependency. Do NOT run `helm dependency update` — an empty
+    # repository must not be resolved or replaced by a remote chart.
     repository: ""
     tags:
       - telemetry
-
-  - name: fabric-relay
-    version: 0.1.0
-    condition: fabricRelay.enabled
-    repository: ""
-    tags:
-      - telemetry
-
-  - name: nemo-sidecar
-    version: 0.3.0
-    condition: nemoSidecar.enabled
-    repository: ""
-    tags:
-      - guardrails
-
-  - name: presidio-sidecar
-    version: 0.2.0
-    condition: presidioSidecar.enabled
-    repository: ""
-    tags:
-      - guardrails
-
-  - name: langfuse
-    version: 0.2.0
-    condition: langfuse.enabled
-    repository: ""
-    tags:
-      - observability
-
-  - name: redteam-runner
-    version: 0.2.0
-    condition: redteamRunner.enabled
-    repository: ""
-    tags:
-      - security
-
-  - name: update-agent
-    version: 0.2.0
-    condition: updateAgent.enabled
-    repository: ""
-    tags:
-      - security
