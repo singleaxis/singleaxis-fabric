@@ -25,17 +25,11 @@
 
 # Security-sensitive areas — require security maintainer approval
 /SECURITY.md                         @jrcks67
-/components/presidio-sidecar/        @jrcks67
-/components/nemo-sidecar/            @jrcks67
-/sdk/python/src/fabric/guardrails.py @jrcks67
+/components/otel-collector-fabric/processor/fabricguardprocessor/ @jrcks67
 
 # Chart / deployment
 /charts/                             @jrcks67
 /deploy/                             @jrcks67
-
-# Specs for Layer 2 / Layer 3 components (code lives in a separate
-# SingleAxis-internal repo; the specs stay public for transparency)
-/specs/003-context-graph.md          @jrcks67
 
 # CI / build
 /.github/                            @jrcks67

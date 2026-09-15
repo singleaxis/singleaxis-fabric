@@ -1,12 +1,20 @@
 ---
 title: Product Vision & Positioning
-status: accepted
-revision: 4
-last_updated: 2026-07-25
+status: superseded
+revision: 5
+last_updated: 2026-09-15
 owner: project-lead
+superseded_by: 027
 ---
 
 # 001 — Product Vision & Positioning
+
+> **Superseded. Do not implement recorder v1 from this document.**
+> [Spec 027](027-recorder-v1.md) replaces the inline-control-plane vision
+> below with the passive recorder promise `CAPTURE -> PROTECT -> DELIVER`.
+> This file is retained only to explain earlier product direction; the
+> guardrail sidecars, policy gates, and escalation primitives it describes
+> were removed from this repository.
 
 ## Summary
 

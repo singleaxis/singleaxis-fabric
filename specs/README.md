@@ -46,7 +46,7 @@ Every spec declares a `Status` in its header:
 | # | Title | Status |
 |---|-------|--------|
 | [000](000-overview.md) | Overview & conventions | accepted |
-| [001](001-product-vision.md) | Product vision & positioning | accepted |
+| [001](001-product-vision.md) | Product vision & positioning | superseded |
 | [010](010-development-standards.md) | Development, testing, and release standards | accepted |
 | [020](020-execution-step-capture.md) | Execution & Step capture — outer correlation + lifecycle primitives | implemented |
 | [021](021-replay-metadata.md) | ReplayMetadata envelope — emit-only reconstruction metadata | implemented |

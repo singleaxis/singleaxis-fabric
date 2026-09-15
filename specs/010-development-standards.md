@@ -105,8 +105,8 @@ Minimum coverage bars on new code:
 
 - **Line coverage:** 80%
 - **Branch coverage:** 70%
-- **Critical paths** (redaction, signing, rubric loading,
-  escalation state machine): 95% line, 90% branch
+- **Critical paths** (metadata allowlist filtering, hashing/signing,
+  persistent queue recovery, ingress auth): 95% line, 90% branch
 
 PRs that drop overall coverage are flagged; drops must be
 justified in the PR description and signed off by a maintainer.
@@ -115,10 +115,10 @@ justified in the PR description and signed off by a maintainer.
 
 Used for:
 
-- Redaction pipelines (`hypothesis` for Python)
+- Allowlist / deny-list filtering (`hypothesis` for Python)
 - Signature / cryptographic code
 - Schema validators
-- State machines (escalation, Update Agent)
+- Queue and retry state machines
 
 Property tests verify invariants over random input rather than
 specific cases. Required for any code that processes adversarial
@@ -139,9 +139,10 @@ Required for:
 
 ### End-to-end tests
 
-Full `fabric-system` stack stood up in a `kind` cluster in CI. A
-synthetic agent exercises the complete decision flow: input,
-guardrails, retrieval, judge, escalation, resume, bundle export.
+A `kind` cluster in CI stands up the shipped chart. A synthetic
+agent exercises the complete recorder flow: SDK emit, authenticated
+ingress, metadata protection, persistent queue, delivery, restart
+recovery.
 
 Required for:
 

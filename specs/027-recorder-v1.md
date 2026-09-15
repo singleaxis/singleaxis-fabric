@@ -4,7 +4,7 @@ status: accepted
 revision: 1
 last_updated: 2026-08-31
 owner: product-architecture
-supersedes: 025
+supersedes: 025, 001
 ---
 
 # 027 — Recorder-first OSS release
