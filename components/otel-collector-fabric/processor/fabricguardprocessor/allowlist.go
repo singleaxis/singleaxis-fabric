@@ -103,6 +103,8 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"fabric.side_effect.committed", "fabric.side_effect.approval_required",
 	"fabric.side_effect.rollback_supported", "fabric.side_effect_types",
 	"fabric.side_effect_systems", "fabric.interaction.direction",
+	// fabric.interaction.kind is the single intentional free-form, bounded
+	// channel: the escape hatch for unanticipated interaction types.
 	"fabric.interaction.kind", "fabric.interaction.metadata_hash",
 	"fabric.interaction.payload_hash", "fabric.interaction.target_hash",
 	"fabric.interaction.target_redacted", "fabric.file.operation", "fabric.file.path_hash",

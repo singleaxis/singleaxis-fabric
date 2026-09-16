@@ -31,6 +31,31 @@ decision.record_interaction(
 The target is represented by a hash unless `redact_target=False` is explicitly
 authorized. The same opt-out principle applies to file paths.
 
+### Bounded free-form metadata
+
+`fabric.interaction.kind` is the intentional open-vocabulary escape hatch for
+interaction types the SDKs do not anticipate. The exact allowlist also permits
+these caller-controlled metadata strings to cross the boundary verbatim:
+
+- `fabric.interaction.kind` and the `fabric.interaction_kinds` summary;
+- tool, skill, hook, and MCP names, including `fabric.tool.name`,
+  `gen_ai.tool.name`, `fabric.skill.name`, `fabric.hook.name`,
+  `fabric.mcp.server`, `fabric.mcp.transport`, and `fabric.mcp.tools`;
+- `fabric.delegation.to_agent`;
+- allowlisted file-operation labels and service names such as `service.name`
+  (raw `fabric.file.path` is not allowlisted; only its hash crosses);
+- `http.route`, `db.system`, `db.namespace`, and `db.operation.name`;
+- `error.type`; and
+- governed-reference URIs in `fabric.content.ref`,
+  `fabric.content.request_ref`, and `fabric.content.result_ref`.
+
+Fabric Node bounds every allowlisted string, including each string in a flat
+list, to 8 KiB with `max_field_bytes`. The Python and TypeScript SDKs also emit
+PII-shape warnings for the highest-risk interaction fields:
+`fabric.interaction.kind` and an unredacted interaction target. These warnings
+are advisory; destinations must treat all free-form values as
+asserted-unverified metadata, not semantic content.
+
 ## First-class recorder surfaces
 
 - model and tool calls, usage, errors, retries, and idempotency metadata;

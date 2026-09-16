@@ -63,7 +63,9 @@ The same objectives apply to the single-node Compose overlay
 - `sending_queue.queue_size` bounds **items** (queued batches), not bytes.
   Estimate the worst-case batch size from qualified traffic, multiply by
   `queue_size`, then add headroom for file-storage overhead and compaction
-  scratch space (the compaction directory lives inside the same volume).
+  scratch space (the compaction directory lives inside the same volume). When
+  the collector train supports `sending_queue.sizer: bytes` for persistent
+  queues, migrate `queue_size` to a byte bound.
 - Size the volume for the tested destination-outage window: peak ingest rate
   x outage duration, plus margin. When the queue fills,
   `block_on_overflow: true` backpressures OTLP senders; qualify what upstream

@@ -98,6 +98,8 @@ exporters:
       # queue_size bounds ITEMS (batches), not bytes -- persistent queues only
       # support request/item sizing at collector v0.150. Size the volume for
       # the tested outage window and alert on otelcol_exporter_queue_size.
+      # When persistent queues support sending_queue.sizer: bytes, migrate
+      # queue_size to a byte bound on that collector train.
       # See docs/operations/dr.md.
       queue_size: 10000
       block_on_overflow: true

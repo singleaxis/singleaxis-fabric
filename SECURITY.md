@@ -88,7 +88,8 @@ Issues that undermine any of these will be treated as critical:
    bodies, severity text, span/link tracestate, status messages, event
    names, resource entity refs) are cleared or normalized to a fixed
    vocabulary; content survives only as SHA-256 hashes or governed
-   references.
+   references. This guarantee is defined on the shipped traces and logs
+   pipeline configuration.
 3. **Durable, authenticated delivery** — ingress is authenticated
    (bearer token in the compose overlay, mTLS in the production Helm
    profile); delivery uses a persistent fsync queue with

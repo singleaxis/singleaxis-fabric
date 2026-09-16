@@ -123,6 +123,9 @@ Design notes:
 
 ## How PROTECT decides what crosses the boundary
 
+The allowlist applies to the shipped traces and logs pipelines, and the
+distribution qualification test enforces that pipeline set.
+
 The `fabricguard` processor applies a per-record, per-attribute decision
 cascade. Every attribute key must survive all four gates:
 

@@ -67,6 +67,8 @@
   "known_blind_spots": [
     "The production chart supports mTLS ingress, but does not bind asserted telemetry identity attributes to a verified workload identity.",
     "The receiver cannot observe agent activity that was never emitted by upstream instrumentation.",
+    "Shipped configurations are limited to traces and logs pipelines; a hand-rolled configuration that exports other signal types would bypass metadata allowlisting because enforcement is the distribution qualification gate, not the processor.",
+    "Bounded free-form caller metadata, including interaction kinds and tool names, crosses the boundary verbatim and is not semantic content; destinations should treat it as asserted-unverified metadata.",
     "The recorder preserves protected OTLP and does not materialize Activity Envelope v2, privacy assertions, or delivery receipts; a downstream adapter or destination must provide those contracts.",
     "The default development exporter is local stdout, not durable evidence storage or a compliance posture; the production profile requires an authenticated TLS destination.",
     "Persistent queues provide bounded at-least-once transport and cannot prove backend retention or exactly-once delivery.",

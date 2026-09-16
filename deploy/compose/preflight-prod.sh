@@ -91,6 +91,43 @@ if [ ! -f "${COLLECTOR_CONFIG}" ]; then
   bad "collector config missing: ${COLLECTOR_CONFIG} (run from deploy/compose)"
 fi
 
+# --- persistent queue disk headroom (warn-only) -----------------------------
+if [ -f "${COLLECTOR_CONFIG}" ]; then
+  queue_size=$(awk '
+    /^[[:space:]]*sending_queue:[[:space:]]*$/ { in_queue = 1; next }
+    in_queue && /^[[:space:]]*queue_size:[[:space:]]*/ {
+      sub(/^[[:space:]]*queue_size:[[:space:]]*/, "")
+      sub(/[[:space:]]*(#.*)?$/, "")
+      print
+      exit
+    }
+  ' "${COLLECTOR_CONFIG}")
+  case "${queue_size}" in
+    ''|*[!0-9]*)
+      warn "could not parse sending_queue.queue_size from ${COLLECTOR_CONFIG}; skipping disk-headroom check"
+      ;;
+    *)
+      # Collector v0.150 persistent queues are item-bounded. One MiB per item
+      # is a conservative metadata-only upper bound; typical records are much
+      # smaller, so insufficient worst-case headroom is advisory only.
+      queue_estimate_mb=$((queue_size * 1))
+      available_mb=$(df -Pm . 2>/dev/null | awk 'NR == 2 { print $4 }')
+      case "${available_mb}" in
+        ''|*[!0-9]*)
+          warn "could not determine free space for compose project; skipping disk-headroom check"
+          ;;
+        *)
+          if [ "${available_mb}" -lt "${queue_estimate_mb}" ]; then
+            warn "queue disk headroom is ${available_mb} MiB; worst-case estimate is ${queue_estimate_mb} MiB (${queue_size} items at 1 MiB/item; typical records are smaller)"
+          else
+            ok "queue disk headroom is ${available_mb} MiB (worst-case estimate ${queue_estimate_mb} MiB at 1 MiB/item)"
+          fi
+          ;;
+      esac
+      ;;
+  esac
+fi
+
 receiver_tls_enabled() {
   [ -f "${COLLECTOR_CONFIG}" ] || return 1
   sed -n '/^receivers:/,/^processors:/p' "${COLLECTOR_CONFIG}" \
