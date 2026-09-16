@@ -44,7 +44,8 @@ extensions:
     # EMPTY entries are kept -- a trailing newline or blank line mints
     # "Bearer " (empty token) as a valid credential on gRPC. The token file
     # must contain only non-blank lines and NO trailing newline;
-    # preflight-prod.sh fails on unsafe files.
+    # preflight-prod.sh fails on unsafe files and the image's fabric-gate
+    # entrypoint refuses to boot on them.
     filename: /run/secrets/fabric_ingress_token
 
 receivers:

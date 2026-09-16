@@ -43,7 +43,7 @@ will ask.
 | Language | Version | Use |
 |----------|---------|-----|
 | Python | 3.11+ | `sdk/python`, `scripts/`, `examples/` |
-| Go | 1.22+ | `tools/fabricctl`, `fabricguardprocessor` |
+| Go | 1.22+ | `tools/fabricctl`, `fabricguardprocessor`, `gate` |
 | TypeScript | 5.5+ | `sdk/typescript` |
 | Rust | — | Not used |
 

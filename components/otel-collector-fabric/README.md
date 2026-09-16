@@ -27,9 +27,18 @@ may remain elsewhere in the repository but are not compiled into this image.
 
 Recorder configurations MUST NOT define `metrics` or `profiles` service
 pipelines: `fabricguard` only protects logs and traces, so any telemetry on
-those pipeline types would cross the boundary unfiltered. The distribution
-qualification script asserts that a qualified config contains only `logs` and
-`traces` pipelines.
+those pipeline types would cross the boundary unfiltered. The shipped image
+enforces this at startup: its `fabric-gate` entrypoint parses the collector
+config and refuses to boot on non-`traces`/`logs` pipelines, and the
+distribution qualification script proves the refusal. Bare `dist/otelcol-fabric`
+binary runs carry no gate; the qualification script is their boundary.
+
+`fabric-gate` also rejects `bearertokenauth` extensions whose token material
+would mint an empty credential under the pinned extension (v0.150.0 keeps
+empty entries after splitting token files on newlines): missing, empty,
+blank-line, or newline-terminated token files, and empty inline `tokens`
+entries. Operators who override the container entrypoint leave the enforced
+path.
 
 ## Build and qualify
 

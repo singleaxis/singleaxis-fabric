@@ -117,14 +117,17 @@ Design notes:
   pauses delivery; it does not delete data.
 - **`memory_limiter` first.** The node sheds load on itself before it can be
   OOM-killed mid-batch.
-- **Two pipelines only: `traces` and `logs`.** The distribution-qualification
-  test (`tests/qualify-distribution-config.sh`) rejects any other pipeline,
-  so new signal types cannot widen the export surface accidentally.
+- **Two pipelines only: `traces` and `logs`.** The image entrypoint
+  (`fabric-gate`) refuses to boot a config defining any other pipeline, and
+  the distribution-qualification test
+  (`tests/qualify-distribution-config.sh`) proves the refusal, so new signal
+  types cannot widen the export surface accidentally.
 
 ## How PROTECT decides what crosses the boundary
 
-The allowlist applies to the shipped traces and logs pipelines, and the
-distribution qualification test enforces that pipeline set.
+The allowlist applies to the shipped traces and logs pipelines; `fabric-gate`
+enforces that pipeline set at container startup inside the image (bare-binary
+builds rely on the qualification test).
 
 The `fabricguard` processor applies a per-record, per-attribute decision
 cascade. Every attribute key must survive all four gates:

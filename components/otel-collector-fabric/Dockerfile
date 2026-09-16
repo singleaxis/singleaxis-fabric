@@ -39,9 +39,11 @@ RUN go install go.opentelemetry.io/collector/cmd/builder@${OCB_VERSION} \
 # The OCB manifest uses a local `replaces:` entry for fabricguard.
 COPY ocb-config.yaml ./
 COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
+COPY gate ./gate
 
 RUN ocb --config ocb-config.yaml \
     && test -x /src/dist/otelcol-fabric \
+    && cd gate && go build -o /src/dist/fabric-gate . && cd .. \
     && mkdir -p /src/fabric-node/queue
 
 # ---------- runtime ---------------------------------------------------------
@@ -49,6 +51,13 @@ RUN ocb --config ocb-config.yaml \
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS runtime
 
 COPY --from=builder /src/dist/otelcol-fabric /otelcol-fabric
+
+# fabric-gate is the image entrypoint: it validates the mounted collector
+# config (traces/logs pipelines only, safe bearertokenauth token material)
+# and refuses to boot on unverifiable or weakening configuration before
+# exec'ing the collector. Operators who override the image entrypoint leave
+# the enforced path; bare-binary builds rely on qualify-distribution-config.sh.
+COPY --from=builder /src/dist/fabric-gate /fabric-gate
 
 # Pre-create the persistent queue directory owned by nonroot so Docker named
 # volumes and emptyDir mounts inherit a writable location.
@@ -66,5 +75,5 @@ EXPOSE 4317 4318 13133
 # Config is mounted by the operator at a path of their choosing.
 USER nonroot:nonroot
 
-ENTRYPOINT ["/otelcol-fabric"]
+ENTRYPOINT ["/fabric-gate"]
 CMD ["--config=/etc/otelcol-fabric/config.yaml"]

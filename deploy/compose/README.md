@@ -90,7 +90,10 @@ no unauthenticated fallback.
 > newline or any blank line mints `Bearer ` (empty token) as a valid
 > credential, which gRPC metadata preserves. Write the file with
 > `printf %s` (no trailing newline) as shown; `make preflight-prod` fails
-> on unsafe token files.
+> on unsafe token files, and the image's `fabric-gate` entrypoint refuses
+> to boot on them as a second layer. Rotating the file while the collector
+> runs requires re-checking the new file (`make preflight-prod`) before
+> swapping it in — the extension re-reads it via fsnotify.
 
 To run the signed release image instead of building locally, verify the
 cosign signature per [`docs/verify-release.md`](../../docs/verify-release.md), then set

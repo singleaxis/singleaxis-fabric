@@ -119,6 +119,21 @@ def test_fabric_node_binary_manifest_contains_no_legacy_processors() -> None:
         assert forbidden not in manifest
 
 
+def test_fabric_node_image_boots_through_the_gate() -> None:
+    """The image entrypoint must be fabric-gate, which refuses configs the
+    recorder cannot protect (non-traces/logs pipelines, unsafe bearer-token
+    files) before exec'ing otelcol-fabric. The gate source ships in the
+    component so the Dockerfile COPY cannot silently drop it."""
+    dockerfile = (ROOT / "components/otel-collector-fabric/Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    assert 'ENTRYPOINT ["/fabric-gate"]' in dockerfile
+    assert "dist/fabric-gate" in dockerfile
+    gate_dir = ROOT / "components/otel-collector-fabric/gate"
+    assert (gate_dir / "go.mod").is_file()
+    assert (gate_dir / "main.go").is_file()
+
+
 def test_umbrella_declares_only_collector_dependency() -> None:
     chart_text = (ROOT / "charts/fabric/Chart.yaml").read_text(encoding="utf-8")
     dependency_text = chart_text.split("\ndependencies:\n", maxsplit=1)[1]

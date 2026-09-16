@@ -8,7 +8,7 @@
 
 OCB ?= $(shell command -v ocb || command -v builder)
 DIST_DIR := dist
-RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor
+RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor gate
 
 .PHONY: all build test lint qualify-config qualify-image clean tidy
 

@@ -258,5 +258,45 @@ for prohibited in fabricredact fabricpolicy fabricsampler; do
   fi
 done
 
+# The shipped image's fabric-gate entrypoint must refuse configurations the
+# recorder cannot protect: non-traces/logs pipelines bypass fabricguard, and
+# a newline-terminated token file mints an empty "Bearer " credential under
+# the pinned bearertokenauth extension. Binary mode cannot exercise this
+# (the gate wraps the image, not the collector artifact).
+if [[ "${mode}" == "image" ]]; then
+  badcfg="${runtime}/gate-reject.yaml"
+  gate_expect_refusal() {
+    local name="$1" why="$2"; shift 2
+    docker run -d --name "${name}" "$@" "${artifact}" \
+      --config=/fabric-config-test/bad.yaml >/dev/null \
+      || fail "could not start gate test container: ${name}"
+    sleep 2
+    local state
+    state="$(docker inspect --format '{{.State.Status}}' "${name}" 2>/dev/null || true)"
+    if [[ "${state}" == "running" ]]; then
+      docker rm -f "${name}" >/dev/null 2>&1 || true
+      fail "image booted despite ${why}; fabric-gate did not refuse"
+    fi
+    docker logs "${name}" 2>&1 | grep -q "fabric-gate" \
+      || { docker rm -f "${name}" >/dev/null 2>&1 || true; fail "rejected ${why} produced no fabric-gate refusal message"; }
+    docker rm -f "${name}" >/dev/null 2>&1 || true
+  }
+
+  sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal "${container_name}-gate" "a metrics pipeline" \
+    --network none \
+    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
+
+  # Unsafe token material: same config plus a newline-terminated token file.
+  printf 'tok3n\n' >"${runtime}/bad.token"
+  sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: /fabric-config-test/bad.token|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal "${container_name}-token" "a trailing-newline token file" \
+    --network none \
+    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
+  printf '%s PASS: image entrypoint refused unprotected pipelines and unsafe token material\n' "${prefix}"
+fi
+
 printf '%s PASS: recorder artifact accepted mTLS ingress, protection, and durable OTLP/HTTP export\n' "${prefix}"
 printf '%s NOTE: configuration compatibility only; no telemetry delivery was attempted\n' "${prefix}"
