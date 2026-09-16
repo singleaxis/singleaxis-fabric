@@ -91,8 +91,11 @@ Restore onto a rebuilt or replaced VM:
 docker volume create fabric-node-production_fabric-queue
 docker run --rm -v fabric-node-production_fabric-queue:/queue -v "$PWD":/backup \
   alpine tar xzf /backup/<archive>.tgz -C /queue
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+make up-prod
 ```
+
+`make up-prod` re-runs the production preflight. A direct
+`docker compose ... up` bypasses its token-file, TLS, and bind-address gates.
 
 Never mount one queue volume into two running collectors; file-storage
 assumes exclusive access.

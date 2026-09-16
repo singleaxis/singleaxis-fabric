@@ -671,9 +671,7 @@ describe("recordInteraction PII-shape warnings", () => {
       fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
         d.recordInteraction("check user bryan@example.test", "input");
       });
-      expect(
-        spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind")),
-      ).toBe(true);
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
     } finally {
       spy.mockRestore();
     }
@@ -688,9 +686,7 @@ describe("recordInteraction PII-shape warnings", () => {
         // Opted into a readable target: a phone-shaped value must warn.
         d.recordInteraction("db.query", "555-010-9999", { redactTarget: false });
       });
-      const targetWarns = spy.mock.calls.filter((c) =>
-        String(c[0]).includes("interaction.target"),
-      );
+      const targetWarns = spy.mock.calls.filter((c) => String(c[0]).includes("interaction.target"));
       expect(targetWarns).toHaveLength(1);
     } finally {
       spy.mockRestore();
@@ -867,15 +863,71 @@ describe("recordInteraction PII scan bounds", () => {
     }
   });
 
+  it("returns fast when an adversarial value passes the @ prescreen", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const start = performance.now();
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.recordInteraction("a".repeat(8180) + "@invalid", "input");
+      });
+      const elapsed = performance.now() - start;
+      expect(elapsed).toBeLessThan(500);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("still warns for PII embedded inside the 8KiB scan window", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
         d.recordInteraction("prefix " + "x".repeat(100) + " bryan@example.test", "input");
       });
-      expect(
-        spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind")),
-      ).toBe(true);
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each(["bryan@example.test", "123-45-6789", "+15550109123", "555.010.9123"])(
+    "keeps the mandatory-character prescreen for %s",
+    (pii) => {
+      const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+          d.recordInteraction(`prefix ${pii} suffix`, "input");
+        });
+        expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  it("detects PII ending at the exact 8192-byte ASCII boundary", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const suffix = " bryan@example.test";
+      const value = "x".repeat(8192 - suffix.length) + suffix;
+      expect(Buffer.byteLength(value, "utf8")).toBe(8192);
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.recordInteraction(value, "input");
+      });
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("counts multibyte characters against the UTF-8 byte window", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const value = "é".repeat(4090) + " a@b.co";
+      expect(Buffer.byteLength(value, "utf8")).toBeLessThan(8192);
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.recordInteraction(value, "input");
+      });
+      expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
     } finally {
       spy.mockRestore();
     }

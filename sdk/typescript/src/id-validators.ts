@@ -55,7 +55,6 @@ const LIKELY_PHONE = /^\+?\d{7,15}$|^\+?\d[\d -]{8,}\d$/;
 // would miss it. Email stays distinctive (requires @ + dotted TLD). SSN
 // and phone require separators or a leading + so plain digit runs like
 // "id.12345678" don't flag.
-const LIKELY_EMAIL_EMBEDDED = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const LIKELY_SSN_EMBEDDED = /\b\d{3}-\d{2}-\d{4}\b/;
 const LIKELY_PHONE_EMBEDDED = /\+\d[\d -]{8,}\d|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/;
 
@@ -68,6 +67,75 @@ const LIKELY_PHONE_EMBEDDED = /\+\d[\d -]{8,}\d|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/;
 // so PII past the cap never ships), and (2) a literal-substring prescreen
 // skips each pattern when its mandatory character is absent.
 const EMBEDDED_SCAN_LIMIT = 8192;
+const EMAIL_LOCAL_CHARS = "._%+-";
+
+function utf8Prefix(value: string, maxBytes: number): string {
+  let used = 0;
+  const chars: string[] = [];
+  for (const char of value) {
+    const codepoint = char.codePointAt(0) ?? 0;
+    const size = codepoint <= 0x7f ? 1 : codepoint <= 0x7ff ? 2 : codepoint <= 0xffff ? 3 : 4;
+    if (used + size > maxBytes) break;
+    chars.push(char);
+    used += size;
+  }
+  return chars.join("");
+}
+
+function isAsciiAlpha(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isAsciiAlnum(code: number): boolean {
+  return isAsciiAlpha(code) || (code >= 48 && code <= 57);
+}
+
+/** Match the embedded-email shape in one pass without regex retries. */
+function containsEmbeddedEmail(value: string): boolean {
+  let localRun = 0;
+  let inDomain = false;
+  let domainLength = 0;
+  let suffixLetters = 0;
+  let suffixActive = false;
+
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    const char = value.charAt(i);
+    const localChar = isAsciiAlnum(code) || EMAIL_LOCAL_CHARS.includes(char);
+    if (char === "@") {
+      inDomain = localRun > 0;
+      domainLength = 0;
+      suffixLetters = 0;
+      suffixActive = false;
+      localRun = 0;
+      continue;
+    }
+
+    if (inDomain) {
+      const domainChar = isAsciiAlnum(code) || char === "." || char === "-";
+      if (!domainChar) {
+        inDomain = false;
+        suffixActive = false;
+      } else {
+        if (char === ".") {
+          suffixActive = domainLength > 0;
+          suffixLetters = 0;
+        } else if (suffixActive) {
+          if (isAsciiAlpha(code)) {
+            suffixLetters += 1;
+            if (suffixLetters >= 2) return true;
+          } else {
+            suffixActive = false;
+          }
+        }
+        domainLength += 1;
+      }
+    }
+
+    localRun = localChar ? localRun + 1 : 0;
+  }
+  return false;
+}
 
 /**
  * Tier A. Stringified absence — never a deliberate identifier. Matched
@@ -216,9 +284,9 @@ export function warnIfPiiShaped(
   }
   let matched: string | null = null;
   if (options.embedded) {
-    const scan = value.slice(0, EMBEDDED_SCAN_LIMIT);
+    const scan = utf8Prefix(value, EMBEDDED_SCAN_LIMIT);
     const hasDigit = /\d/.test(scan);
-    if (scan.includes("@") && LIKELY_EMAIL_EMBEDDED.test(scan)) matched = "an email";
+    if (scan.includes("@") && containsEmbeddedEmail(scan)) matched = "an email";
     else if (hasDigit && scan.includes("-") && LIKELY_SSN_EMBEDDED.test(scan)) matched = "an SSN";
     else if (
       hasDigit &&

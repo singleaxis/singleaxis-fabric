@@ -110,12 +110,22 @@ receivers:
     protocols:
       grpc:
         endpoint: 127.0.0.1:4317
+        max_recv_msg_size_mib: 8
+        max_concurrent_streams: 64
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
         tls:
           cert_file: ${config_root}/server.crt
           key_file: ${config_root}/server.key
           client_ca_file: ${config_root}/ca.crt
       http:
         endpoint: 127.0.0.1:4318
+        read_header_timeout: 5s
+        read_timeout: 30s
+        idle_timeout: 120s
+        max_request_body_size: 8388608
         tls:
           cert_file: ${config_root}/server.crt
           key_file: ${config_root}/server.key
@@ -174,6 +184,20 @@ chmod 0644 "${runtime}/config.yaml"
   || fail "both OTLP receivers must declare key_file"
 [[ "$(grep -c 'client_ca_file:' "${runtime}/config.yaml")" -eq 2 ]] \
   || fail "both OTLP receivers must require client certificates"
+grep -q 'max_recv_msg_size_mib: 8' "${runtime}/config.yaml" \
+  || fail "gRPC receiver must cap messages at 8 MiB"
+grep -q 'max_concurrent_streams: 64' "${runtime}/config.yaml" \
+  || fail "gRPC receiver must cap concurrent streams"
+grep -q 'min_time: 10s' "${runtime}/config.yaml" \
+  || fail "gRPC receiver must enforce keepalive spacing"
+grep -q 'max_request_body_size: 8388608' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must cap request bodies at 8 MiB"
+grep -q 'read_header_timeout: 5s' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must bound header reads"
+grep -q 'read_timeout: 30s' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must bound request reads"
+grep -q 'idle_timeout: 120s' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must bound idle connections"
 grep -q '^  otlp_http/fabric:' "${runtime}/config.yaml" \
   || fail "otlp_http/fabric exporter is missing"
 grep -q '^  file_storage/fabric:' "${runtime}/config.yaml" \
@@ -193,6 +217,7 @@ pipeline_names="$(awk '
   ' "${runtime}/config.yaml" | sort)"
 [[ "${pipeline_names}" == "$(printf 'logs\ntraces')" ]] \
   || fail "qualified config must define only logs and traces pipelines, got: ${pipeline_names}"
+# shellcheck disable=SC2043 # Kept as a loop-shaped inventory assertion.
 for processor in fabricguard; do
   count="$(grep -o "${processor}" "${runtime}/config.yaml" | wc -l | tr -d ' ')"
   [[ "${count}" -ge 3 ]] || fail "${processor} is not configured and wired into both pipelines"

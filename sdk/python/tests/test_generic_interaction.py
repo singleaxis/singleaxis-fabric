@@ -787,6 +787,22 @@ def test_embedded_pii_scan_is_bounded_on_long_input() -> None:
     assert elapsed < 0.5, f"embedded PII scan took {elapsed:.3f}s on 64KiB input"
 
 
+def test_embedded_email_scan_is_linear_when_prescreen_matches() -> None:
+    """An attacker can include @, so the post-prescreen path must stay cheap."""
+    import time
+    import warnings
+
+    from fabric._id_validators import warn_if_pii_shaped
+
+    adversarial = "a" * 8180 + "@invalid"
+    start = time.perf_counter()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        warn_if_pii_shaped("interaction.kind", adversarial, embedded=True)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.5, f"embedded email scan took {elapsed:.3f}s at the cap"
+
+
 def test_embedded_pii_scan_still_detects_within_cap() -> None:
     """The scan cap must not blind detection inside the window."""
     import warnings
@@ -800,4 +816,48 @@ def test_embedded_pii_scan_still_detects_within_cap() -> None:
             "prefix " + "x" * 100 + " bryan@example.test",
             embedded=True,
         )
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)
+
+
+@pytest.mark.parametrize(
+    "pii",
+    ["bryan@example.test", "123-45-6789", "+15550109123", "555.010.9123"],
+)
+def test_embedded_pii_prescreens_keep_every_regex_shape(pii: str) -> None:
+    """Every embedded regex has a corresponding mandatory-character gate."""
+    import warnings
+
+    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped("interaction.kind", f"prefix {pii} suffix", embedded=True)
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)
+
+
+def test_embedded_pii_at_exact_8192_byte_boundary_is_detected() -> None:
+    import warnings
+
+    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
+
+    suffix = " bryan@example.test"
+    value = "x" * (8192 - len(suffix)) + suffix
+    assert len(value.encode("utf-8")) == 8192
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped("interaction.kind", value, embedded=True)
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)
+
+
+def test_embedded_pii_scan_limit_counts_utf8_bytes() -> None:
+    import warnings
+
+    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
+
+    suffix = " a@b.co"
+    value = "é" * 4090 + suffix
+    assert len(value.encode("utf-8")) < 8192
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped("interaction.kind", value, embedded=True)
     assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)

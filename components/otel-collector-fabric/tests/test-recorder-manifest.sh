@@ -5,7 +5,7 @@
 # the explicit expected set.
 set -eu
 
-root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 manifest="${root}/ocb-config.yaml"
 dockerfile="${root}/Dockerfile"
 procgomod="${root}/processor/fabricguardprocessor/go.mod"
@@ -63,6 +63,14 @@ copy_procs="$(grep -E '^[[:space:]]*COPY([[:space:]]|$)' "${dockerfile}" \
               | grep -oE 'processor(/[A-Za-z0-9_.-]*)?' | sort -u)" || true
 [ "${copy_procs}" = "processor/fabricguardprocessor" ] \
   || fail "Dockerfile COPY references non-fabricguard processor sources: ${copy_procs:-<none>}"
+
+# A tag combined with a digest resolves by digest. GO_VERSION therefore must
+# also be checked inside the builder stage so an override cannot silently
+# misstate which pinned toolchain is running.
+[ "$(grep -c '^ARG GO_VERSION' "${dockerfile}")" -eq 2 ] \
+  || fail "Dockerfile must re-declare GO_VERSION inside the builder stage"
+grep -q 'go env GOVERSION' "${dockerfile}" \
+  || fail "Dockerfile must reject GO_VERSION values that mismatch the pinned builder"
 
 # ---- 3. Lockstep: processor go.mod must pin the manifest train -----------
 # Derive the two collector trains from the manifest itself: the v0.x line

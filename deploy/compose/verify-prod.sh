@@ -74,6 +74,15 @@ if [ ! -s "${token_file}" ]; then
   bad "cannot read ingress token file ${token_file}; set FABRIC_INGRESS_TOKEN_FILE"
   exit 1
 fi
+if grep -q '^[[:space:]]*$' "${token_file}"; then
+  bad "ingress token file contains a blank line; an empty 'Bearer ' credential would authenticate"
+  exit 1
+fi
+if [ -z "$(tail -c1 "${token_file}")" ]; then
+  bad "ingress token file ends with a newline; rewrite it without a trailing newline"
+  exit 1
+fi
+ok "ingress token file has no empty-token entries"
 token=$(head -n 1 "${token_file}" | tr -d '[:space:]')
 # The token travels to curl through a stdin config file, never argv — a
 # `-H "Authorization: Bearer $token"` flag would be visible to other users
@@ -95,20 +104,22 @@ if [ -n "${grpc_addr}" ]; then
     grpc_tls_opt="-plaintext"
     [ "${scheme}" = "https" ] && grpc_tls_opt="${curl_tls:+--cacert ${curl_tls#--cacert }}"
     [ "${scheme}" = "https" ] && [ -z "${curl_tls}" ] && grpc_tls_opt="-insecure"
+    # Invoke a known OTLP method from a local descriptor. `grpcurl list`
+    # depends on server reflection, so any reflection-disabled collector would
+    # otherwise look like an authentication rejection regardless of auth.
     # shellcheck disable=SC2086
-    if grpcurl ${grpc_tls_opt} "${grpc_addr}" list >/dev/null 2>&1; then
-      note "WARN" "gRPC reflection succeeded without a token — check the 4317 authenticator"
-    else
+    if grpc_output="$(grpcurl ${grpc_tls_opt} \
+      -import-path fixtures -proto otlp-trace-service.proto -d '{}' \
+      "${grpc_addr}" opentelemetry.proto.collector.trace.v1.TraceService/Export 2>&1)"; then
+      bad "unauthenticated gRPC OTLP export was accepted on ${grpc_addr}"
+    elif printf '%s' "${grpc_output}" | grep -qi 'Code: Unauthenticated'; then
       ok "unauthenticated gRPC rejected on ${grpc_addr}"
-    fi
-    # Empty-token probe: bearertokenauth keeps blank file entries, minting a
-    # valid "Bearer " credential — gRPC metadata preserves the trailing space.
-    # shellcheck disable=SC2086
-    if grpcurl ${grpc_tls_opt} -H 'authorization: Bearer ' "${grpc_addr}" list >/dev/null 2>&1; then
-      bad "empty bearer token ACCEPTED on gRPC — token file has a blank line or trailing newline"
     else
-      ok "empty bearer token rejected on ${grpc_addr}"
+      bad "gRPC probe failed without proving an authentication rejection: ${grpc_output}"
     fi
+    # grpcurl trims header values, so it cannot transmit the exact trailing
+    # space in "Bearer ". The token-file checks above directly reject every
+    # file shape that makes bearertokenauth v0.150.0 mint that credential.
   else
     note "WARN" "grpcurl not installed; gRPC ingress auth not exercised (install grpcurl to cover 4317)"
   fi

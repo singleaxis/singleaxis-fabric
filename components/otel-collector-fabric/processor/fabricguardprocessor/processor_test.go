@@ -347,6 +347,10 @@ func TestConfigValidate(t *testing.T) {
 		{"empty class attr", func(c *Config) { c.EventClassAttribute = "" }, "event_class_attribute"},
 		{"negative max bytes", func(c *Config) { c.MaxFieldBytes = -1 }, "max_field_bytes"},
 		{"zero max bytes", func(c *Config) { c.MaxFieldBytes = 0 }, "max_field_bytes"},
+		{"zero max attributes", func(c *Config) { c.MaxAttributes = 0 }, "max_attributes"},
+		{"zero max events", func(c *Config) { c.MaxEventsPerSpan = 0 }, "max_events_per_span"},
+		{"zero max links", func(c *Config) { c.MaxLinksPerSpan = 0 }, "max_links_per_span"},
+		{"zero max slice elements", func(c *Config) { c.MaxSliceElements = 0 }, "max_slice_elements"},
 		{"unknown extras class", func(c *Config) {
 			c.ExtraAllowedFields = map[string][]string{"not_a_class": {"x"}}
 		}, "unknown event class"},
@@ -388,7 +392,8 @@ func TestFactoryTypeAndDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("default config wrong type: %T", f.CreateDefaultConfig())
 	}
-	if cfg.EventClassAttribute != "event_class" || cfg.MaxFieldBytes != 8192 || !cfg.DropUnknownClasses {
+	if cfg.EventClassAttribute != "event_class" || cfg.MaxFieldBytes != 8192 || !cfg.DropUnknownClasses ||
+		cfg.MaxAttributes != 256 || cfg.MaxEventsPerSpan != 128 || cfg.MaxLinksPerSpan != 64 || cfg.MaxSliceElements != 64 {
 		t.Errorf("unexpected defaults: %+v", cfg)
 	}
 }

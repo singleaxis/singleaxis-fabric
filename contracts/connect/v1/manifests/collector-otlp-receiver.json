@@ -65,7 +65,7 @@
     {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-durable-delivery.sh", "claim": "Verifies persistent queue, retry, TLS, and authentication configuration gates."}
   ],
   "known_blind_spots": [
-    "The pinned bearertokenauth extension (v0.150.0) splits token files on newlines and retains empty entries, so a blank line or trailing newline mints an empty \"Bearer \" credential that gRPC metadata preserves; preflight-prod.sh enforces a newline-free token file and verify-prod.sh probes the empty-token path.",
+    "The pinned bearertokenauth extension (v0.150.0) splits token files on newlines and retains empty entries, so a blank line or trailing newline mints an empty \"Bearer \" credential that gRPC metadata preserves; preflight-prod.sh rejects unsafe formats before deployment and verify-prod.sh re-checks them before authenticated probes.",
     "The production chart supports mTLS ingress, but does not bind asserted telemetry identity attributes to a verified workload identity.",
     "The receiver cannot observe agent activity that was never emitted by upstream instrumentation.",
     "Shipped configurations are limited to traces and logs pipelines; a hand-rolled configuration that exports other signal types would bypass metadata allowlisting because enforcement is the distribution qualification gate, not the processor.",

@@ -1,8 +1,9 @@
 # Production overlay for a single client VM (Docker Engine, no Kubernetes).
 #
-#   docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+#   make up-prod
 #
-# or `make up-prod`. Merge semantics:
+# Direct `docker compose ... up` bypasses preflight-prod.sh and is unsafe for
+# initial startup. Merge semantics:
 #   * test-sink is moved behind a disabled profile -- it is an evaluation
 #     oracle and is never part of a production deployment.
 #   * fabric-node's depends_on / volumes / ports are replaced wholesale with

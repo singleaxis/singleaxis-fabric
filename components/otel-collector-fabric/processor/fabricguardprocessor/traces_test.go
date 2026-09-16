@@ -324,10 +324,16 @@ func TestProcessTraces_AggregateBoundsCapAttributesEventsLinksAndSlices(t *testi
 	td := ptrace.NewTraces()
 	span := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
 	span.SetName("fabric.llm_call")
-	// Six allowlisted attributes; only the cap should survive.
+	// Put the oversized slice first so its removal exercises the slice bound,
+	// not the later per-container attribute cap.
+	big := span.Attributes().PutEmptySlice("fabric.interaction_kinds")
+	for i := 0; i < 5; i++ {
+		big.AppendEmpty().SetStr("kind")
+	}
+	// Six other allowlisted attributes; only the cap should survive.
 	for _, key := range []string{
 		"gen_ai.request.model", "gen_ai.system", "fabric.decision_id",
-		"service.name", "fabric.execution_id", "fabric.interaction_kinds",
+		"service.name", "fabric.execution_id", "fabric.tenant_id",
 	} {
 		span.Attributes().PutStr(key, "v")
 	}
@@ -339,11 +345,6 @@ func TestProcessTraces_AggregateBoundsCapAttributesEventsLinksAndSlices(t *testi
 	for i := 0; i < 2; i++ {
 		span.Links().AppendEmpty()
 	}
-	big := span.Attributes().PutEmptySlice("fabric.interaction_kinds")
-	for i := 0; i < 5; i++ {
-		big.AppendEmpty().SetStr("kind")
-	}
-
 	out, err := g.processTraces(context.Background(), td)
 	if err != nil {
 		t.Fatalf("processTraces: %v", err)
@@ -363,6 +364,29 @@ func TestProcessTraces_AggregateBoundsCapAttributesEventsLinksAndSlices(t *testi
 	}
 	if g.stats.aggregateCapped.Load() == 0 {
 		t.Error("aggregateCapped counter did not record any removals")
+	}
+}
+
+func TestProcessTraces_LogClassSafeFieldIsNotTraceAllowlisted(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{
+		name: "fabric.llm_call",
+		attrs: map[string]any{
+			"fabric.tenant_id": "tenant-a",
+			"input_tokens":     int64(42),
+		},
+	})
+
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	attrs := firstSpan(out).Attributes()
+	if _, ok := attrs.Get("input_tokens"); ok {
+		t.Error("log-class input_tokens must not become allowlisted on spans")
+	}
+	if _, ok := attrs.Get("fabric.tenant_id"); !ok {
+		t.Error("trace allowlisted metadata was unexpectedly removed")
 	}
 }
 

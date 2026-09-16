@@ -48,6 +48,13 @@ expect_fail() {
 printf '\n=== Receiver TLS and Secret projection ===\n'
 default_config="$(helm template ci "${chart_dir}" --show-only templates/configmap.yaml)"
 expect_not_contains "development default does not claim receiver TLS" "${default_config}" "cert_file: /etc/fabric/receiver-tls/tls.crt"
+expect_contains "gRPC request size is bounded" "${default_config}" "max_recv_msg_size_mib: 8"
+expect_contains "gRPC stream concurrency is bounded" "${default_config}" "max_concurrent_streams: 64"
+expect_contains "gRPC keepalive spacing is enforced" "${default_config}" "min_time: 10s"
+expect_contains "HTTP request size is bounded" "${default_config}" "max_request_body_size: 8388608"
+expect_contains "HTTP header reads are bounded" "${default_config}" "read_header_timeout: 5s"
+expect_contains "HTTP request reads are bounded" "${default_config}" "read_timeout: 30s"
+expect_contains "HTTP idle connections are bounded" "${default_config}" "idle_timeout: 120s"
 
 receiver_args=(
   --set receiver.requireTLS=true
@@ -196,6 +203,7 @@ expect_contains "production profile enables receiver mTLS" "${production_render}
 expect_contains "production profile names receiver identity Secret" "${production_render}" "name: fabric-node-receiver-tls"
 expect_contains "production profile names client CA Secret" "${production_render}" "name: fabric-node-client-ca"
 expect_contains "production profile renders explicit egress peer" "${production_render}" "cidr: 203.0.113.10/32"
+expect_contains "production profile always refreshes a mutable image tag" "${production_render}" "imagePullPolicy: Always"
 
 expect_fail "production receiver TLS cannot be disabled" "profile shadow-production requires" \
   "${umbrella_dir}" "${production_args[@]}" \

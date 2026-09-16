@@ -76,6 +76,10 @@ make verify-prod    # proves health, 401 unauthenticated, 200 authenticated (que
 make logs-prod
 ```
 
+Use `make up-prod` for startup: it always runs the preflight first. Invoking
+the expanded `docker compose ... up` command directly bypasses those token,
+TLS, bind-address, and disk-headroom checks.
+
 Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
 `127.0.0.1:4318` (HTTP) with `Authorization: Bearer <contents of
 secrets/ingress.token>`. Requests without a valid token are rejected; there is

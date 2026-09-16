@@ -125,7 +125,9 @@ $(awk '
       max_recv = $0 + 0
     }
     END {
-      http_mb = (max_body > 0) ? int(max_body / 1048576) : 20
+      # Round bytes up: flooring a non-MiB-aligned HTTP limit would
+      # understate the worst-case queue disk estimate.
+      http_mb = (max_body > 0) ? int((max_body + 1048575) / 1048576) : 20
       if (http_mb < 1) http_mb = 1
       grpc_mb = (max_recv > 0) ? max_recv : 4
       item_mb = (http_mb > grpc_mb) ? http_mb : grpc_mb
