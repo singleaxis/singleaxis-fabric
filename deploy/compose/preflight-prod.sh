@@ -86,8 +86,14 @@ fi
 # --- ingress TLS (only if enabled in collector-production.yaml) ---------------
 # Look for an uncommented tls: stanza inside the receivers: block only; the
 # exporter's TLS-verify settings are always on and must not trip this check.
+COLLECTOR_CONFIG=collector-config/collector-production.yaml
+if [ ! -f "${COLLECTOR_CONFIG}" ]; then
+  bad "collector config missing: ${COLLECTOR_CONFIG} (run from deploy/compose)"
+fi
+
 receiver_tls_enabled() {
-  sed -n '/^receivers:/,/^processors:/p' collector-config/collector-production.yaml \
+  [ -f "${COLLECTOR_CONFIG}" ] || return 1
+  sed -n '/^receivers:/,/^processors:/p' "${COLLECTOR_CONFIG}" \
     | grep -q '^[[:space:]]*tls:'
 }
 

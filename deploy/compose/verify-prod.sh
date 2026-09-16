@@ -10,9 +10,38 @@ note() { printf '  %s %s\n' "$1" "$2"; }
 ok()   { note "PASS" "$1"; }
 bad()  { note "FAIL" "$1"; fail=1; }
 
+# envget reads KEY=VALUE lines from .env without executing it.
+envget() {
+  eval "val=\"\${${1}:-}\""
+  if [ -z "${val}" ] && [ -f .env ]; then
+    val=$(sed -n "s/^${1}=//p" .env | tail -n 1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
+  fi
+  printf '%s' "${val}"
+}
+
 printf 'Fabric Node production verification\n'
 
+# --- ingress TLS detection (same rule as preflight-prod.sh) ------------------
+COLLECTOR_CONFIG=collector-config/collector-production.yaml
+scheme=http
+curl_tls=""
+if [ -f "${COLLECTOR_CONFIG}" ] \
+  && sed -n '/^receivers:/,/^processors:/p' "${COLLECTOR_CONFIG}" | grep -q '^[[:space:]]*tls:'; then
+  scheme=https
+  tlsdir="$(envget FABRIC_INGRESS_TLS_DIR)"
+  tlsdir="${tlsdir:-./tls}"
+  # Prefer a dedicated CA bundle; a self-signed server cert is itself the CA.
+  if [ -s "${tlsdir}/ca.crt" ]; then
+    curl_tls="--cacert ${tlsdir}/ca.crt"
+  elif [ -s "${tlsdir}/server.crt" ]; then
+    curl_tls="--cacert ${tlsdir}/server.crt"
+  else
+    note "WARN" "receiver TLS enabled but no ca.crt/server.crt under ${tlsdir}; probes run unverified"
+  fi
+fi
+
 node_addr="$(${compose} port fabric-node 4318 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
+grpc_addr="$(${compose} port fabric-node 4317 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 health_addr="$(${compose} port fabric-node 13133 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 metrics_addr="$(${compose} port fabric-node 8888 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 
@@ -29,7 +58,8 @@ else
 fi
 
 # --- unauthenticated rejection ----------------------------------------------
-code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://${node_addr}/v1/traces" \
+# shellcheck disable=SC2086
+code=$(curl ${curl_tls} -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${node_addr}/v1/traces" \
   -H 'Content-Type: application/json' --data-binary @fixtures/decision-summary.json)
 if [ "${code}" = "401" ] || [ "${code}" = "403" ]; then
   ok "unauthenticated OTLP rejected (${code})"
@@ -38,15 +68,6 @@ else
 fi
 
 # --- authenticated acceptance -------------------------------------------------
-# envget reads KEY=VALUE lines from .env without executing it.
-envget() {
-  eval "val=\"\${${1}:-}\""
-  if [ -z "${val}" ] && [ -f .env ]; then
-    val=$(sed -n "s/^${1}=//p" .env | tail -n 1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
-  fi
-  printf '%s' "${val}"
-}
-
 token_file="$(envget FABRIC_INGRESS_TOKEN_FILE)"
 token_file="${token_file:-./secrets/ingress.token}"
 if [ ! -s "${token_file}" ]; then
@@ -54,13 +75,33 @@ if [ ! -s "${token_file}" ]; then
   exit 1
 fi
 token=$(head -n 1 "${token_file}" | tr -d '[:space:]')
-code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://${node_addr}/v1/traces" \
+# shellcheck disable=SC2086
+code=$(curl ${curl_tls} -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${node_addr}/v1/traces" \
   -H 'Content-Type: application/json' -H "Authorization: Bearer ${token}" \
   --data-binary @fixtures/decision-summary.json)
 if [ "${code}" = "200" ]; then
   ok "authenticated OTLP accepted (200)"
 else
   bad "authenticated OTLP returned ${code}, expected 200"
+fi
+
+# --- gRPC ingress auth (same authenticator, second receiver) ------------------
+if [ -n "${grpc_addr}" ]; then
+  if command -v grpcurl >/dev/null 2>&1; then
+    grpc_tls_opt="-plaintext"
+    [ "${scheme}" = "https" ] && grpc_tls_opt="${curl_tls:+--cacert ${curl_tls#--cacert }}"
+    [ "${scheme}" = "https" ] && [ -z "${curl_tls}" ] && grpc_tls_opt="-insecure"
+    # shellcheck disable=SC2086
+    if grpcurl ${grpc_tls_opt} "${grpc_addr}" list >/dev/null 2>&1; then
+      note "WARN" "gRPC reflection succeeded without a token — check the 4317 authenticator"
+    else
+      ok "unauthenticated gRPC rejected on ${grpc_addr}"
+    fi
+  else
+    note "WARN" "grpcurl not installed; gRPC ingress auth not exercised (install grpcurl to cover 4317)"
+  fi
+else
+  note "SKIP" "gRPC port 4317 not published; HTTP auth checks above cover the shared authenticator"
 fi
 
 # --- persistent queue + metrics ------------------------------------------------

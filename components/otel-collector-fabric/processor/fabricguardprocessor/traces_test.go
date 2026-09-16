@@ -10,6 +10,7 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 )
 
 type spanFixture struct {
@@ -265,5 +266,49 @@ func TestProcessTraces_RejectsRawContentMasqueradingAsHash(t *testing.T) {
 	}
 	if got := g.stats.snapshot().InvalidHashRemoved; got != 1 {
 		t.Fatalf("invalid hash removal count = %d, want 1", got)
+	}
+}
+
+func TestProcessTraces_ClearsResourceEntityRefs(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "fabric.decision", attrs: map[string]any{
+		"fabric.decision_id": "d-1",
+	}})
+	res := td.ResourceSpans().At(0).Resource()
+	refs := entity.ResourceEntityRefs(res)
+	ref := refs.AppendEmpty()
+	ref.IdKeys().FromRaw([]string{"service.name"})
+	ref.DescriptionKeys().FromRaw([]string{"host.name"})
+	if refs.Len() != 1 {
+		t.Fatalf("fixture setup: expected 1 entity ref, got %d", refs.Len())
+	}
+
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if got := entity.ResourceEntityRefs(out.ResourceSpans().At(0).Resource()).Len(); got != 0 {
+		t.Errorf("entity_refs survived processing: %d refs remain", got)
+	}
+}
+
+func TestActivityCategoryVocabularyCoversEmittedNames(t *testing.T) {
+	// Every event name the recorder SDKs emit must be preserved by the
+	// fixed-vocabulary switch — regression coverage for the emitted set.
+	emitted := []string{
+		"fabric.decision", "fabric.execution", "fabric.llm_call", "fabric.model_call",
+		"fabric.tool_call", "fabric.retrieval", "fabric.memory", "fabric.side_effect",
+		"fabric.interaction", "fabric.file_access", "fabric.delegation",
+		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory",
+		"fabric.skill", "fabric.hook", "fabric.coverage",
+		"fabric.crewai.step", "fabric.crewai.task",
+		"fabric.error", "fabric.retry", "fabric.cancellation",
+		"fabric.deployment_change", "fabric.human_action",
+	}
+	empty := pcommon.NewMap()
+	for _, name := range emitted {
+		if got := activityCategory(name, empty); got != name {
+			t.Errorf("emitted event name %q normalized to %q — fidelity lost", name, got)
+		}
 	}
 }

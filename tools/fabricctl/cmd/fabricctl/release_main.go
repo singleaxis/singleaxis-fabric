@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The default fabricctl binary is the small recorder release surface. Older
-// operator capabilities remain in source for migration work, but are compiled
-// only with the explicit non-release "legacy" build tag.
+// operator capabilities were removed from this repository when the recorder
+// scope became authoritative; their history lives in git.
 package main
 
 import (

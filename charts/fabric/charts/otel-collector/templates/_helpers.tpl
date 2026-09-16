@@ -82,7 +82,6 @@ Every NetworkPolicyPeer an operator supplies must name an explicit
 restriction. An empty peer ({}) selects all sources/destinations, and an
 ipBlock of 0.0.0.0/0 or ::/0 is equivalent to no policy; both silently
 bypass the explicit-peers model, so they are rejected at render time.
-Same rule as components/fabric-relay networkPolicy.egressTo.
 */}}
 {{- define "otel-collector.validatePeers" -}}
 {{- range $i, $peer := .peers -}}

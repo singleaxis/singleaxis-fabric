@@ -93,5 +93,18 @@ reusing the subchart's own helper, so nameOverride/fullnameOverride keep
 parent templates (NOTES.txt) correct.
 */}}
 {{- define "fabric.collectorFullname" -}}
-{{- include "otel-collector.fullname" (dict "Values" (index .Values "otel-collector" | default dict) "Chart" (dict "Name" "otel-collector") "Release" .Release) -}}
+{{- $otel := index .Values "otel-collector" | default dict -}}
+{{- $cond := index .Values "otelCollector" | default dict -}}
+{{- if dig "enabled" true $cond -}}
+{{- include "otel-collector.fullname" (dict "Values" $otel "Chart" (dict "Name" "otel-collector") "Release" .Release) -}}
+{{- else -}}
+{{- /* Subchart disabled: its templates are not registered, so compute the
+   name inline (same default the subchart helper would produce). */ -}}
+{{- $name := dig "nameOverride" "otel-collector" $otel -}}
+{{- if (dig "fullnameOverride" "" $otel) -}}
+{{- dig "fullnameOverride" "" $otel | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}

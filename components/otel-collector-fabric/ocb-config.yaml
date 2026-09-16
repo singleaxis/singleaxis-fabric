@@ -22,8 +22,8 @@ extensions:
   # writable persistent volume and `sending_queue.storage` must also be
   # configured (the Helm chart does both when persistence is enabled).
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
-  # Compiled but never wired into a shipped config: lets non-Kubernetes
-  # deployments terminate token-authenticated OTLP ingress without a proxy.
+  # Terminates token-authenticated OTLP ingress for non-Kubernetes
+  # deployments — wired on both receivers by the compose production overlay.
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
 
 receivers:

@@ -72,7 +72,7 @@ cp .env.example .env && chmod 0600 .env
 openssl rand -hex 32 > secrets/ingress.token && chmod 0600 secrets/ingress.token
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
-make verify-prod    # proves health, 401 unauthenticated, 200 authenticated, queue metrics
+make verify-prod    # proves health, 401 unauthenticated, 200 authenticated (queue metrics warn-only)
 make logs-prod
 ```
 

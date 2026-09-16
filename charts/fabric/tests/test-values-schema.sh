@@ -45,5 +45,9 @@ expect_failure "invalid queue size" "queueSize" \
   "${collector_dir}" --set exporter.sendingQueue.queueSize=unbounded
 expect_failure "invalid OTLP port" "otlpHttp" \
   "${collector_dir}" --set service.ports.otlpHttp=0
+expect_failure "non-boolean collector toggle" "otelCollector" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/umbrella-toggle-type.yaml"
+expect_failure "misspelled umbrella key" "otelColletor" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/umbrella-unknown-key.yaml"
 
 printf 'PASS: Fabric Node and Collector values schemas\n'

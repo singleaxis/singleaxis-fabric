@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 	"go.uber.org/zap"
 )
 
@@ -75,9 +76,10 @@ func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) 
 			resourceLog.SetSchemaUrl("")
 			g.stats.nativeTextNormalized.Add(1)
 		}
-		// pcommon.Resource exposes no entity-ref surface at pdata v1.56. If a
-		// future pdata bump adds Resource.EntityRefs(), those refs must be
-		// cleared here as well: entity description/id keys are native text.
+		// entity_refs carry id/description key names as free-form strings on the
+		// wire. pcommon.Resource has no accessor at v1.56, so the experimental
+		// xpdata/entity package reaches the proto field directly.
+		clearEntityRefs(resourceLog.Resource(), g)
 		g.filterAttributes(resourceLog.Resource().Attributes(), TraceAllowedFields, "log-resource")
 		scopeLogs := resourceLog.ScopeLogs()
 		for si := 0; si < scopeLogs.Len(); si++ {
@@ -149,8 +151,7 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 			resourceSpan.SetSchemaUrl("")
 			g.stats.nativeTextNormalized.Add(1)
 		}
-		// See the log path note: no public Resource entity-ref API exists at
-		// pdata v1.56; clear it here too if a future version exposes one.
+		clearEntityRefs(resourceSpan.Resource(), g)
 		g.filterAttributes(resourceSpan.Resource().Attributes(), allowed, "trace-resource")
 		scopeSpans := resourceSpan.ScopeSpans()
 		for si := 0; si < scopeSpans.Len(); si++ {
@@ -164,6 +165,18 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 		}
 	}
 	return td, nil
+}
+
+// clearEntityRefs removes resource entity_refs — an OTLP proto field of
+// free-form id/description key names that pdata v1.56 does not expose through
+// pcommon.Resource. xpdata/entity reaches the proto directly.
+func clearEntityRefs(res pcommon.Resource, g *guard) {
+	refs := entity.ResourceEntityRefs(res)
+	if refs.Len() == 0 {
+		return
+	}
+	refs.RemoveIf(func(entity.EntityRef) bool { return true })
+	g.stats.nativeTextNormalized.Add(1)
 }
 
 func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool {
@@ -260,6 +273,13 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		{"fabric.interaction.kind", "fabric.interaction"},
 		{"fabric.file.operation", "fabric.file_access"},
 		{"fabric.delegation.protocol", "fabric.delegation"},
+		{"fabric.checkpoint.checkpoint_id", "fabric.checkpoint"},
+		{"fabric.replay.execution_id", "fabric.replay"},
+		{"fabric.mcp.server", "fabric.mcp.inventory"},
+		{"fabric.skill.name", "fabric.skill"},
+		{"fabric.hook.phase", "fabric.hook"},
+		{"fabric.coverage.kind", "fabric.coverage"},
+		{"fabric.crewai.event_type", "fabric.crewai"},
 		{"fabric.execution.status", "fabric.execution"},
 		{"fabric.execution_id", "fabric.execution"},
 		{"fabric.decision_id", "fabric.decision"},
@@ -273,7 +293,9 @@ func activityCategory(name string, attrs pcommon.Map) string {
 	case "fabric.execution", "fabric.decision", "fabric.llm_call", "fabric.model_call",
 		"fabric.tool_call", "fabric.retrieval", "fabric.memory", "fabric.side_effect",
 		"fabric.interaction", "fabric.file_access", "fabric.delegation", "fabric.error",
-		"fabric.retry", "fabric.cancellation", "fabric.deployment_change", "fabric.human_action":
+		"fabric.retry", "fabric.cancellation", "fabric.deployment_change", "fabric.human_action",
+		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory", "fabric.skill",
+		"fabric.hook", "fabric.coverage", "fabric.crewai.step", "fabric.crewai.task":
 		return name
 	default:
 		return "fabric.activity"

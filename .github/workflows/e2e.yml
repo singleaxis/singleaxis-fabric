@@ -31,7 +31,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      relevant: ${{ steps.filter.outputs.relevant }}
+      relevant: ${{ steps.decide.outputs.relevant }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - id: filter
@@ -43,6 +43,16 @@ jobs:
               - 'components/otel-collector-fabric/**'
               - 'deploy/compose/**'
               - '.github/workflows/e2e.yml'
+      # Manual dispatch has no diff context for paths-filter — always run the
+      # smoke rather than silently skipping the only end-to-end gate.
+      - id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             || [ "${{ steps.filter.outputs.relevant }}" = "true" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
 
   kind-smoke:
     name: kind cluster install + smoke

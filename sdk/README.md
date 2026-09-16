@@ -33,7 +33,7 @@ boundary.
 ```python
 from fabric import Fabric, MemoryKind, RetrievalSource
 
-fabric = Fabric.from_env()     # reads OTLP endpoint + identity from env
+fabric = Fabric.from_env()     # reads identity (tenant/agent/workflow/execution) from env
 
 with fabric.decision(
     session_id=session.id,
@@ -77,14 +77,14 @@ with fabric.decision(
 
     # Delegation — emits Fabric context into the carrier so the child
     # agent's trace links under this decision.
-    with decision.delegate(agent_id="sub-agent") as ctx:
+    with decision.delegate("sub-agent") as ctx:
         call_sub_agent(headers=ctx.carrier)
 ```
 
 Every SDK method emits OTel spans / span events with allowlisted
-attributes only. The host must call `fabric.force_flush()` /
-`fabric.shutdown()` on clean termination — the SDK does not flush
-implicitly on process exit.
+attributes only. The host must flush the tracer provider
+(`provider.force_flush()` / `provider.shutdown()`) on clean termination —
+the SDK does not flush implicitly on process exit.
 
 See [`python/README.md`](python/README.md) and
 [`typescript/README.md`](typescript/README.md) for the per-language

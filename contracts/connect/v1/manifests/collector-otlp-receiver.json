@@ -38,18 +38,19 @@
     "tenant_partitioning": "accepted_unverified"
   },
   "authentication": {
-    "ingress_supported": ["none", "network_policy_only", "mtls"],
+    "ingress_supported": ["none", "network_policy_only", "bearer_token", "mtls"],
     "ingress_default": "none",
     "egress_supported": ["none", "bearer_token", "mtls"],
     "egress_default": "none",
-    "credential_handling": "Outbound header and TLS credentials can be mounted from operator-created Kubernetes Secrets; OTLP ingress has no application-layer authenticator."
+    "credential_handling": "Outbound header and TLS credentials can be mounted from operator-created Kubernetes Secrets or Compose secrets; bearer-token ingress is wired by the compose production overlay and mTLS by the production Helm profile."
   },
   "context_propagation": {
     "w3c_tracecontext": {"receive": true, "inject": false, "preserve": true},
     "baggage": "pass_through",
     "correlation_limitations": [
       "The receiver preserves correlation present in OTLP but cannot repair absent or incorrectly parented spans.",
-      "Trace identity attributes are asserted by the sender and are not bound to ingress workload identity."
+      "Trace identity attributes are asserted by the sender and are not bound to ingress workload identity.",
+      "Trace identity (trace_id, span_id, parent linkage) is preserved; free-form tracestate payloads on spans and links are cleared at export because they are caller-controlled text."
     ]
   },
   "data_egress": {

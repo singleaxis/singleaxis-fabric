@@ -82,7 +82,7 @@ sleep 2
 step "Running the demo agent"
 cd "$(dirname "$0")"
 python3 -m venv .venv
-./.venv/bin/pip install -q "singleaxis-fabric[anthropic,otlp]==0.8.0rc2"
+./.venv/bin/pip install -q "singleaxis-fabric[anthropic,otlp]==0.8.0rc1"
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318}"
 if [[ $MOCK -eq 1 ]]; then
   FABRIC_DEMO_MOCK=1 ./.venv/bin/python agent.py

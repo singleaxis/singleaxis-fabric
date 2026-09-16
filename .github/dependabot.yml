@@ -46,7 +46,14 @@ updates:
         dependency-type: "development"
 
   - package-ecosystem: "gomod"
-    directory: "/"
+    directory: "/tools/fabricctl"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "go"]
+
+  - package-ecosystem: "gomod"
+    directory: "/components/otel-collector-fabric/processor/fabricguardprocessor"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

@@ -10,13 +10,12 @@ the GenAI schema URL `https://opentelemetry.io/schemas/gen-ai/1.42.0`.
 | --- | --- | --- |
 | `decision(...)` | `fabric.decision` (`INTERNAL`) | agent, workflow, operation, and conversation attributes |
 | `llm_call(...)` | `{operation} {model}` (`CLIENT`) | inference request/response, token usage, cache usage, and streaming |
-| `embeddings(...)` | `embeddings {model}` (`CLIENT`) | provider/model and embedding dimensions |
+| `embeddings(...)` (Python only) | `embeddings {model}` (`CLIENT`) | provider/model and embedding dimensions |
 | `tool_call(...)` | `{tool.name}` (`INTERNAL`) | `execute_tool`, tool identity, call id, arguments, and result |
-| `record_retrieval(...)` | `retrieval` | query/documents/data-source metadata |
-| `remember(...)` | `create_memory` | memory store operation |
-| `recall(...)` | `search_memory` | memory search operation |
-| `forget(...)` | `delete_memory` | memory deletion operation |
-| `record_eval(...)` | `gen_ai.evaluation.result` event | evaluation name, score, label, explanation, and response id |
+| `record_retrieval(...)` | `fabric.retrieval` event | source, query hash, result count/hashes |
+| `remember(...)` | `fabric.memory` event | direction=write, kind, content hash |
+| `recall(...)` | `fabric.memory` event | direction=read, kind, content hash |
+| `forget(...)` | `fabric.memory` event | direction=delete, kind |
 
 The Python SDK also creates the standard histograms
 `gen_ai.client.token.usage`, `gen_ai.client.operation.duration`,

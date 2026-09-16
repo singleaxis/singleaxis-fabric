@@ -110,16 +110,16 @@ Design notes:
   in front of the durable queue would be a silent-loss mode; records are
   persisted per-request.
 - **`block_on_overflow: true`.** A full queue back-pressures the receiver —
-  the agent sees a rejected request rather than the record silently dropping.
-  This is the fail-safe choice for a recorder: backpressure is visible, loss
-  is not.
+  the exporter blocks until space frees rather than the record silently
+  dropping. This is the fail-safe choice for a recorder: backpressure is
+  visible, loss is not.
 - **`max_elapsed_time: 0s`.** Retry never expires. A destination outage
   pauses delivery; it does not delete data.
 - **`memory_limiter` first.** The node sheds load on itself before it can be
   OOM-killed mid-batch.
-- **Two pipelines only: `traces` and `logs`.** The manifest test rejects any
-  other pipeline, so new signal types cannot widen the export surface
-  accidentally.
+- **Two pipelines only: `traces` and `logs`.** The distribution-qualification
+  test (`tests/qualify-distribution-config.sh`) rejects any other pipeline,
+  so new signal types cannot widen the export surface accidentally.
 
 ## How PROTECT decides what crosses the boundary
 
@@ -130,7 +130,7 @@ cascade. Every attribute key must survive all four gates:
 flowchart TD
     IN["Attribute on span / event / log record"]
     G1{"1. sensitive name?<br/>prompt · response · message · body · payload<br/>argument · result · header · cookie · token"}
-    G2{"2. exact allowlist key?<br/>~140 metadata fields<br/>identifiers · enums · counts · hashes"}
+    G2{"2. exact allowlist key?<br/>metadata fields only<br/>identifiers · enums · counts · hashes"}
     G3{"3. *hash key ⇒ valid SHA-256 hex?<br/>no freeform values smuggled in a hash field"}
     G4{"4. scalar / flat slice shape?<br/>maps and byte arrays removed<br/>strings ≤ 8 KiB"}
 
@@ -147,14 +147,17 @@ flowchart TD
 
 Two more rules complete the gate:
 
-- **Log record bodies and severities are cleared.** Only allowlisted
+- **Log record bodies and severity text are cleared.** Only allowlisted
   attributes and a normalized `event_name` survive — a log body is a free-form
   string channel and is always treated as content.
 - **Event names are normalized to a fixed vocabulary** (`fabric.decision`,
-  `fabric.llm_call`, `fabric.tool_call`, `fabric.retrieval`, `fabric.memory`,
-  `fabric.side_effect`, `fabric.interaction`, `fabric.file_access`,
-  `fabric.delegation`, `fabric.checkpoint`, `fabric.error`, `fabric.retry`,
-  …). Unknown names map to `fabric.activity` or are dropped when
+  `fabric.llm_call`/`fabric.model_call`, `fabric.tool_call`,
+  `fabric.retrieval`, `fabric.memory`, `fabric.side_effect`,
+  `fabric.interaction`, `fabric.file_access`, `fabric.delegation`,
+  `fabric.checkpoint`, `fabric.replay`, `fabric.mcp.inventory`,
+  `fabric.skill`, `fabric.hook`, `fabric.coverage`, `fabric.error`,
+  `fabric.retry`, `fabric.cancellation`, `fabric.execution`, …). Unknown
+  names map to `fabric.activity` or are dropped when
   `drop_unknown_classes` is on — a caller-controlled event name can never
   smuggle text out.
 
@@ -289,7 +292,7 @@ flowchart LR
     NS -.-> PROF
 ```
 
-Path: `helm install charts/fabric -f charts/fabric/profiles/shadow-production.yaml`
+Path: `helm install fabric charts/fabric -f charts/fabric/profiles/shadow-production.yaml`
 plus the required secrets. The production profile fails closed on unpinned
 images, missing TLS, and unbounded network peers.
 
