@@ -167,7 +167,7 @@ class Fabric:
         self._config = config
         self._tracer = tracer or get_tracer()
         self._meter = meter or get_meter()
-        # Dual-pipeline content store (spec 012 §Content vs trace pipeline).
+        # Dual-pipeline content store — governed references vs trace metadata.
         # Optional. When set, recorder paths that receive raw content
         # (``remember`` / ``recall`` / ``record_side_effect`` payloads)
         # write it here and stamp the returned ``fabric.content.*_ref``
@@ -324,7 +324,7 @@ class Fabric:
         metadata so any :class:`~fabric.decision.Decision` opened inside it
         inherits it (precedence: explicit kwarg > active Execution >
         config). It does **not** schedule, orchestrate, retry, or
-        reconstruct anything — that is the commercial layer (spec 012).
+        reconstruct anything — that is the downstream platform's job.
 
         The execution span carries all seven correlation fields:
         ``execution_id`` / ``workflow_id`` / status plus the attempt/retry

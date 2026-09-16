@@ -39,9 +39,9 @@
 
 ## Security review needed?
 
-- [ ] This PR touches the Telemetry Bridge, guardrails, escalation
-  service, cryptography, or egress. (If yes, CODEOWNERS will
-  auto-request a security maintainer.)
+- [ ] This PR touches the fabricguard processor, ingress/egress auth
+  wiring, cryptography, the deploy overlay, or release packaging.
+  (If yes, CODEOWNERS will auto-request a security maintainer.)
 
 ## Testing performed
 

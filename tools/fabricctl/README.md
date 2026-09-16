@@ -90,8 +90,8 @@ make build VERSION=0.9.0-rc.1 COMMIT="$(git rev-parse HEAD)" DATE=2026-08-31T00:
 
 The release-boundary test executes allowed commands, rejects all historical
 commands and flags, and checks that selected historical capability markers
-are absent from the executable. An explicitly tagged historical build exists
-only for repository migration testing and is not a release artifact.
+are absent from the executable. The legacy capability sources were removed
+from this repository; the recorder surface is the only build.
 
 ## Security properties
 

@@ -1,6 +1,13 @@
 # Run, Variant, Artifact, and Outcome Capture — Change List
 
-**Status:** proposed implementation plan
+> **Status: SUPERSEDED — historical design document, do not implement.**
+> This plan predates the recorder-v1 scope (`specs/027-recorder-v1.md`).
+> It describes evaluation/judge surfaces, a tenant judge queue, and a
+> Telemetry Bridge projection — these are **not part of recorder v1** and
+> do not belong to the OSS recorder (`CAPTURE -> PROTECT -> DELIVER`).
+> Retained as design history only.
+
+**Status:** superseded (historical design plan)
 **Date:** 2026-07-13
 **Scope:** public `singleaxis-fabric` capture layer, with named internal dependencies
 

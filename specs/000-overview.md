@@ -97,12 +97,17 @@ Shared vocabulary used across specs:
 
 | Term | Definition |
 |------|------------|
-| **Fabric** | This project in its entirety |
-| **Fabric Control Plane** | The `fabric-system` namespace running Fabric's managed components in a tenant VPC |
+| **Fabric** | This project in its entirety — the OSS recorder (`CAPTURE -> PROTECT -> DELIVER`) |
+| **Fabric Node** | The OpenTelemetry Collector distribution that receives, protects, and delivers telemetry — the only runtime in this repository |
 | **Tenant** | An organization running Fabric in their own infrastructure |
-| **Audit Bridge** / **Telemetry Bridge** | The single egress component that sends sanitized data to SingleAxis SaaS |
-| **SASF** | SingleAxis Assessment Framework — the human-in-the-loop evaluation service |
-| **Decision Graph** | The unified per-decision provenance artifact |
-| **Decision** | A single agent turn that produces an observable output |
-| **Rubric** | A versioned, signed judgement specification used by L6 |
-| **Regulatory Profile** | A named `values.yaml` preset that configures Fabric for a specific regulation |
+| **Fabric Node boundary** | The customer-controlled edge inside which protection happens before export |
+| **Destination** | The customer-selected OTLP backend (or SingleAxis Platform) that receives protected records |
+| **SingleAxis Platform** | The separate commercial system that monitors, evaluates, and governs delivered records — out of scope for this repository |
+| **Decision** | A single agent turn that produces an observable output (`fabric.decision` span) |
+| **Recorder release** | The published artifact set: Fabric Node image, SDKs, fabricctl, Helm chart, public contracts |
+| **Activity Envelope** | The public contract vocabulary for downstream normalization; recorder v1 does not materialize envelopes itself |
+
+> Terms from the pre-recorder architecture — Control Plane, Audit/Telemetry
+> Bridge, SASF, Decision Graph, Rubric, Regulatory Profile — describe
+> SingleAxis Platform or removed components. They appear in historical specs
+> only and are not part of recorder-v1.

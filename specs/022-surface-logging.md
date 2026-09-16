@@ -8,7 +8,7 @@ owner: project-lead
 
 # Spec 022 — Agent Surface Logging
 
-**Depends on:** spec 002 (architecture), the existing hash-on-span privacy contract.
+**Depends on:** spec 027 (recorder-v1 scope), the existing hash-on-span privacy contract.
 
 ## Goal
 

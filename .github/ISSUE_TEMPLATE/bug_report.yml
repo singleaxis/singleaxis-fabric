@@ -18,29 +18,26 @@ body:
     validations:
       required: true
 
-  - type: input
-    id: k8s-version
+  - type: dropdown
+    id: deployment
     attributes:
-      label: Kubernetes version
-      description: "`kubectl version --short`"
+      label: Deployment mode
+      options:
+        - Helm — shadow-dev profile
+        - Helm — shadow-production profile
+        - Docker Compose — evaluation stack
+        - Docker Compose — production overlay
+        - SDK only (Python)
+        - SDK only (TypeScript)
+        - Other / custom
     validations:
       required: true
 
-  - type: dropdown
-    id: profile
+  - type: input
+    id: environment
     attributes:
-      label: Regulatory profile in use
-      options:
-        - permissive-dev
-        - eu-ai-act-high-risk
-        - eu-ai-act-limited-risk
-        - nist-ai-rmf
-        - iso-42001
-        - sr-11-7
-        - hipaa
-        - custom / other
-    validations:
-      required: true
+      label: Environment details
+      description: "Kubernetes version (`kubectl version --short`), Docker/Compose version, or runtime where relevant."
 
   - type: textarea
     id: what-happened

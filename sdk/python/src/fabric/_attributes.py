@@ -84,7 +84,7 @@ def check_attribute_keys(attributes: dict[str, str]) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------- #
-# Governed content references (spec 012, dual content/trace pipelines)
+# Governed content references (dual content/trace pipelines)
 # --------------------------------------------------------------------------- #
 #
 # When a :class:`~fabric.content_store.ContentStore` is configured on the

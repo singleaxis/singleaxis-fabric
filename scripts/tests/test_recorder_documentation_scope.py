@@ -12,8 +12,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 PRIMARY_DOCS = (
     "README.md",
+    "SECURITY.md",
+    "GOVERNANCE.md",
+    "CONTRIBUTING.md",
+    "SUPPORT.md",
+    "sdk/README.md",
+    "specs/000-overview.md",
+    "specs/010-development-standards.md",
+    "specs/027-recorder-v1.md",
     "docs/README.md",
     "docs/architecture.md",
+    "docs/run-variant-artifact-outcome-change-list.md",
     "docs/install.md",
     "docs/quickstart.md",
     "docs/deployment.md",
@@ -39,6 +48,8 @@ PRIMARY_DOCS = (
 EXTENDED_DOC_GLOBS = (
     "examples/**/*.md",
     "deploy/**/README.md",
+    ".github/**/*.md",
+    ".github/**/*.yml",
 )
 
 # Directory components that never contain maintained documentation
@@ -93,6 +104,8 @@ def _is_marked_legacy(text: str) -> bool:
 def test_primary_recorder_docs_do_not_restore_legacy_product_claims() -> None:
     for relative in PRIMARY_DOCS:
         text = (ROOT / relative).read_text(encoding="utf-8")
+        if _is_marked_legacy(text):
+            continue
         for stale in STALE_POSITIVE_CLAIMS:
             assert stale not in text, f"{relative} contains stale recorder claim {stale!r}"
 

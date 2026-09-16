@@ -111,7 +111,7 @@ Every PR must include tests appropriate to the change:
 |-------------|-------------------|
 | Bug fix | Regression test that fails on `main`, passes on branch |
 | New feature | Unit tests + integration test if it crosses components |
-| Redaction / guardrail logic | Unit + property-based tests (adversarial inputs) |
+| Allowlist / protection logic | Unit + property-based tests (adversarial inputs) |
 | Schema change | Migration test + backward-compat test |
 | Helm value / config | Chart render test + kubeconform pass |
 

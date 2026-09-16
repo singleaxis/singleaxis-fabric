@@ -4,7 +4,7 @@
 
 An :class:`Execution` is an **optional outer correlation + lifecycle**
 span. It does **not** drive, schedule, or reconstruct anything — that is
-the commercial layer's job (spec 012). All the OSS SDK does is *emit* a
+the downstream platform's job. All the OSS SDK does is *emit* a
 canonical ``fabric.execution`` span and stamp the execution-correlation
 metadata that any :class:`~fabric.decision.Decision` opened inside it
 inherits, so a run of related decisions correlates without the host

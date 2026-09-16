@@ -1,15 +1,14 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Live OTLP span-landing flow for the kind E2E smoke.
+"""Live OTLP span-landing flow for local end-to-end checks.
 
 Runs a deterministic Fabric :class:`Decision` and exports the spans it
-emits over OTLP/HTTP to the in-cluster otel-collector. Paired with the
-``.github/workflows/e2e.yml`` ``kind cluster install + smoke`` job, which
-port-forwards the collector's OTLP receiver to ``FABRIC_OTLP_ENDPOINT``
-and then scrapes the collector pod's stdout (debug exporter, verbosity
-``detailed``) for the ``fabric.decision`` span plus a child span and key
-``fabric.*`` attributes. This is the only test in the repo that proves a
-real SDK Decision flows SDK -> OTLP -> collector and lands intact.
+emits over OTLP/HTTP to a running collector (e.g. the compose stack or a
+port-forwarded kind pod). Set ``FABRIC_OTLP_ENDPOINT`` (including the
+``/v1/traces`` path) to point at the receiver. The CI e2e job
+(``.github/workflows/e2e.yml``) uses its own fixture + fsync sink path
+rather than this script; this is the manual SDK -> OTLP -> collector
+landing check.
 
 Unlike the unit suite (in-memory exporter), this script wires a real
 ``TracerProvider`` with a ``SimpleSpanProcessor`` so each span is

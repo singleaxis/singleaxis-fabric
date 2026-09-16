@@ -199,7 +199,7 @@ ATTR_CHECKPOINT_COUNT = "fabric.checkpoint_count"
 # reconstruct a decision. ``metadata_version`` is the envelope's own
 # version, independent of ``SCHEMA_VERSION``, so the envelope can evolve
 # without bumping the wire schema. Emit-only: the SDK assembles + emits
-# this; it never reconstructs or replays (spec 012/003).
+# this; it never reconstructs or replays — that is downstream's job.
 ATTR_REPLAY_METADATA_VERSION = "fabric.replay.metadata_version"
 ATTR_REPLAY_EXECUTION_ID = "fabric.replay.execution_id"
 ATTR_REPLAY_DECISION_ID = "fabric.replay.decision_id"
@@ -1324,7 +1324,7 @@ class Decision(AbstractContextManager["Decision"]):
           (the decision does not track child tool spans, so the host
           passes these).
 
-        Emit-only boundary (spec 012/003): the SDK assembles and emits
+        Emit-only boundary: the SDK assembles and emits
         this envelope; it never reconstructs, orchestrates, or replays a
         decision — that is the commercial layer.
 

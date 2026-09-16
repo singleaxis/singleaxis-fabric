@@ -4,7 +4,7 @@
 
 The OTel trace stream carries hashes + content_ref URIs only; raw
 content lives in a tenant-controlled ContentStore. These adapters
-let a tenant stand up that store. See spec 012 §Content vs trace
+let a tenant stand up that store.
 pipeline.
 """
 

@@ -24,7 +24,7 @@ podLabels: {}
 enableServiceLinks: false
 terminationGracePeriodSeconds: 60
 
-# Distroless nonroot posture per spec 008.
+# Distroless nonroot posture — the recorder runs unprivileged by default.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532

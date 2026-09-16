@@ -3,15 +3,12 @@
 .env.*
 !.env.example
 
-# --- Layer 2 / Layer 3 staging (SingleAxis-internal, never public) ---
-# See _internal/README.md. Moves to a separate private repo per the
-# documented Phase-1 split; excluded here so the public OSS tree
-# stays Layer-1 only.
+# --- Private/internal staging paths ---
+# SingleAxis-internal directories must never land in the public OSS tree.
 /_internal/
 
-# Layer 2 component that briefly lived at a Layer-1 path. Now maintained
-# in the private repo; ignored here so a stray `git add .` can never
-# re-add it to the public tree.
+# Removed components: defensive ignores so a stray `git add .` can never
+# re-add a path that used to host deleted source.
 /components/telemetry-bridge/
 
 *.pem

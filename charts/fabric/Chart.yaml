@@ -24,9 +24,8 @@ annotations:
   category: Compliance
   licenses: Apache-2.0
 
-# Fabric Node v1 deliberately packages one runtime: the Fabric Collector.
-# Other source charts remain in the repository for compatibility and research,
-# but they are not dependencies or customer-facing toggles of this release.
+# Fabric Node v1 packages exactly one runtime: the Fabric Collector. The
+# vendored otel-collector subchart is the only dependency.
 dependencies:
   - name: otel-collector
     version: 0.4.0
