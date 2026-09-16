@@ -51,7 +51,7 @@ preflight-prod: ## Check env/secrets/TLS readiness before production deploy.
 	@chmod +x preflight-prod.sh 2>/dev/null || true
 	./preflight-prod.sh
 
-up-prod: ## Start the production overlay (token auth + durable queue).
+up-prod: preflight-prod ## Start the production overlay (token auth + durable queue). Runs preflight first.
 	$(COMPOSE) $(PROD_FILES) up -d --wait
 	@echo "Fabric Node OTLP/HTTP: http://localhost:$${FABRIC_OTLP_HTTP_PORT:-4318} (bearer token required)"
 	@echo "Internal metrics: http://localhost:$${FABRIC_METRICS_PORT:-8888}/metrics"

@@ -312,3 +312,81 @@ func TestActivityCategoryVocabularyCoversEmittedNames(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessTraces_AggregateBoundsCapAttributesEventsLinksAndSlices(t *testing.T) {
+	cfg := createDefaultConfig()
+	cfg.MaxAttributes = 4
+	cfg.MaxEventsPerSpan = 2
+	cfg.MaxLinksPerSpan = 1
+	cfg.MaxSliceElements = 2
+	g := newTestGuard(t, cfg)
+
+	td := ptrace.NewTraces()
+	span := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetName("fabric.llm_call")
+	// Six allowlisted attributes; only the cap should survive.
+	for _, key := range []string{
+		"gen_ai.request.model", "gen_ai.system", "fabric.decision_id",
+		"service.name", "fabric.execution_id", "fabric.interaction_kinds",
+	} {
+		span.Attributes().PutStr(key, "v")
+	}
+	// Three events, one link extra, one oversized slice.
+	for i := 0; i < 3; i++ {
+		event := span.Events().AppendEmpty()
+		event.SetName("fabric.decision")
+	}
+	for i := 0; i < 2; i++ {
+		span.Links().AppendEmpty()
+	}
+	big := span.Attributes().PutEmptySlice("fabric.interaction_kinds")
+	for i := 0; i < 5; i++ {
+		big.AppendEmpty().SetStr("kind")
+	}
+
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	got := firstSpan(out)
+	if got.Attributes().Len() > cfg.MaxAttributes {
+		t.Errorf("attributes not capped: %d > %d", got.Attributes().Len(), cfg.MaxAttributes)
+	}
+	if got.Events().Len() != cfg.MaxEventsPerSpan {
+		t.Errorf("events not capped: %d != %d", got.Events().Len(), cfg.MaxEventsPerSpan)
+	}
+	if got.Links().Len() != cfg.MaxLinksPerSpan {
+		t.Errorf("links not capped: %d != %d", got.Links().Len(), cfg.MaxLinksPerSpan)
+	}
+	if _, ok := got.Attributes().Get("fabric.interaction_kinds"); ok {
+		t.Error("oversized slice should have been removed entirely")
+	}
+	if g.stats.aggregateCapped.Load() == 0 {
+		t.Error("aggregateCapped counter did not record any removals")
+	}
+}
+
+func TestSensitiveAttributeKey_GenericContentNamesDenied(t *testing.T) {
+	// Operator-supplied extra keys must not reopen content channels through
+	// generic names; built-in metadata fields stay exempt.
+	for _, key := range []string{
+		"customer.content", "app.text", "vendor.data", "llm.input",
+		"llm.output", "request.context", "file.blob",
+	} {
+		if !sensitiveAttributeKey(key) {
+			t.Errorf("generic content-bearing key %q should be denied for extensions", key)
+		}
+	}
+	for _, key := range []string{
+		// Built-in metadata whose names match a content marker but are
+		// counts, refs or hashes — exempt by membership, not by shape.
+		"gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens",
+		"fabric.content.ref", "fabric.hook.input_hash",
+		"fabric.input_length", "fabric.output_length",
+		"input_length", "output_length", "input_tokens", "output_tokens",
+	} {
+		if sensitiveAttributeKey(key) {
+			t.Errorf("built-in metadata field %q incorrectly denied", key)
+		}
+	}
+}

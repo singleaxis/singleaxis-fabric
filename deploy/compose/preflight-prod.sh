@@ -73,8 +73,17 @@ elif [ ! -f "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
   bad "FABRIC_INGRESS_TOKEN_FILE points at a missing file: ${FABRIC_INGRESS_TOKEN_FILE}"
 elif [ ! -s "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
   bad "ingress token file is empty: ${FABRIC_INGRESS_TOKEN_FILE}"
+elif grep -q '^[[:space:]]*$' "${FABRIC_INGRESS_TOKEN_FILE}"; then
+  # bearertokenauth v0.150.0 splits the file on newlines and keeps EMPTY
+  # entries: a blank line mints "Bearer " (empty token) as a valid
+  # credential, which gRPC metadata preserves verbatim -- auth bypass.
+  bad "ingress token file contains a blank line; an empty 'Bearer ' credential would authenticate -- remove blank lines"
+elif [ -z "$(tail -c1 "${FABRIC_INGRESS_TOKEN_FILE}")" ]; then
+  # Same extension quirk: a trailing newline produces a trailing empty
+  # entry -> "Bearer " authenticates. The only safe file ends mid-line.
+  bad "ingress token file ends with a newline; an empty 'Bearer ' credential would authenticate -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
 else
-  ok "ingress token file present and non-empty"
+  ok "ingress token file present, non-empty, single-entry-safe format"
   # shellcheck disable=SC2012
   tperms=$(ls -l "${FABRIC_INGRESS_TOKEN_FILE}" | awk '{print $1}')
   case "${tperms}" in
@@ -93,24 +102,43 @@ fi
 
 # --- persistent queue disk headroom (warn-only) -----------------------------
 if [ -f "${COLLECTOR_CONFIG}" ]; then
-  queue_size=$(awk '
+  # Worst case = queue_size items x max request size. Read the configured
+  # receiver bound (max_request_body_size bytes / max_recv_msg_size_mib);
+  # fall back to the collector's 20 MiB HTTP default when unset.
+  read -r queue_size max_item_mb <<EOF
+$(awk '
     /^[[:space:]]*sending_queue:[[:space:]]*$/ { in_queue = 1; next }
     in_queue && /^[[:space:]]*queue_size:[[:space:]]*/ {
       sub(/^[[:space:]]*queue_size:[[:space:]]*/, "")
       sub(/[[:space:]]*(#.*)?$/, "")
-      print
-      exit
+      queue_size = $0
+      in_queue = 0
+    }
+    /^[[:space:]]*max_request_body_size:[[:space:]]*/ {
+      sub(/^[[:space:]]*max_request_body_size:[[:space:]]*/, "")
+      sub(/[[:space:]]*(#.*)?$/, "")
+      max_body = $0 + 0
+    }
+    /^[[:space:]]*max_recv_msg_size_mib:[[:space:]]*/ {
+      sub(/^[[:space:]]*max_recv_msg_size_mib:[[:space:]]*/, "")
+      sub(/[[:space:]]*(#.*)?$/, "")
+      max_recv = $0 + 0
+    }
+    END {
+      http_mb = (max_body > 0) ? int(max_body / 1048576) : 20
+      if (http_mb < 1) http_mb = 1
+      grpc_mb = (max_recv > 0) ? max_recv : 4
+      item_mb = (http_mb > grpc_mb) ? http_mb : grpc_mb
+      print queue_size, item_mb
     }
   ' "${COLLECTOR_CONFIG}")
+EOF
   case "${queue_size}" in
     ''|*[!0-9]*)
       warn "could not parse sending_queue.queue_size from ${COLLECTOR_CONFIG}; skipping disk-headroom check"
       ;;
     *)
-      # Collector v0.150 persistent queues are item-bounded. One MiB per item
-      # is a conservative metadata-only upper bound; typical records are much
-      # smaller, so insufficient worst-case headroom is advisory only.
-      queue_estimate_mb=$((queue_size * 1))
+      queue_estimate_mb=$((queue_size * max_item_mb))
       available_mb=$(df -Pm . 2>/dev/null | awk 'NR == 2 { print $4 }')
       case "${available_mb}" in
         ''|*[!0-9]*)
@@ -118,9 +146,9 @@ if [ -f "${COLLECTOR_CONFIG}" ]; then
           ;;
         *)
           if [ "${available_mb}" -lt "${queue_estimate_mb}" ]; then
-            warn "queue disk headroom is ${available_mb} MiB; worst-case estimate is ${queue_estimate_mb} MiB (${queue_size} items at 1 MiB/item; typical records are smaller)"
+            warn "queue disk headroom is ${available_mb} MiB; worst-case estimate is ${queue_estimate_mb} MiB (${queue_size} items at up to ${max_item_mb} MiB/request; typical records are far smaller)"
           else
-            ok "queue disk headroom is ${available_mb} MiB (worst-case estimate ${queue_estimate_mb} MiB at 1 MiB/item)"
+            ok "queue disk headroom is ${available_mb} MiB (worst-case estimate ${queue_estimate_mb} MiB at ${max_item_mb} MiB/request)"
           fi
           ;;
       esac

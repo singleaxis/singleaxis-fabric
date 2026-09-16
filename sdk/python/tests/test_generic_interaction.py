@@ -765,3 +765,39 @@ def test_cross_cutting_absent_is_byte_identical(span_exporter: InMemorySpanExpor
         assert not any(
             k.startswith(("fabric.tags", "fabric.baseline", "fabric.signature")) for k in attrs
         )
+
+
+def test_embedded_pii_scan_is_bounded_on_long_input() -> None:
+    """The unanchored embedded regexes retry from every position, which is
+    quadratic on long no-match strings — an attacker-controlled ``kind``
+    could stall the instrumented agent, breaking the passive guarantee.
+    The scan is capped at the Node's max_field_bytes and prescreened, so a
+    64 KiB adversarial value must return in well under a second."""
+    import time
+    import warnings
+
+    from fabric._id_validators import warn_if_pii_shaped
+
+    adversarial = "a" * 65536
+    start = time.perf_counter()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        warn_if_pii_shaped("interaction.kind", adversarial, embedded=True)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.5, f"embedded PII scan took {elapsed:.3f}s on 64KiB input"
+
+
+def test_embedded_pii_scan_still_detects_within_cap() -> None:
+    """The scan cap must not blind detection inside the window."""
+    import warnings
+
+    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped(
+            "interaction.kind",
+            "prefix " + "x" * 100 + " bryan@example.test",
+            embedded=True,
+        )
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)

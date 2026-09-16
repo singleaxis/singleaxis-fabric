@@ -34,6 +34,9 @@ otel-collector:
   # appVersion fallback are rejected at render time.
   image:
     tag: "0.8.0-rc.1"
+    # A mutable tag must re-resolve on every start; IfNotPresent could keep a
+    # stale (or moved) local image. With image.digest set this is a no-op.
+    pullPolicy: Always
   receiver:
     requireTLS: true
     requireClientCertificate: true

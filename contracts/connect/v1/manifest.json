@@ -18,7 +18,7 @@
     },
     {
       "path": "manifests/collector-otlp-receiver.json",
-      "sha256": "fe0ea7799ea94ac0c7d24609dcb1b57fc0d088954fddc7fb05a3d368dbfc9dd3",
+      "sha256": "083e7cb145dfbdae73f0daada031780d2303f9b1b78f4528da4eb79757498f63",
       "expectation": "valid"
     },
     {

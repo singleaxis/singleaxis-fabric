@@ -851,3 +851,33 @@ describe("installDefaultProvider", () => {
     }
   });
 });
+
+describe("recordInteraction PII scan bounds", () => {
+  it("returns fast on a 64KiB no-match kind (quadratic regex regression)", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const start = performance.now();
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.recordInteraction("a".repeat(65536), "input");
+      });
+      const elapsed = performance.now() - start;
+      expect(elapsed).toBeLessThan(500);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still warns for PII embedded inside the 8KiB scan window", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.recordInteraction("prefix " + "x".repeat(100) + " bryan@example.test", "input");
+      });
+      expect(
+        spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind")),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

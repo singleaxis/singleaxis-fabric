@@ -177,7 +177,8 @@ func runRecorder(args []string, stdout, stderr io.Writer) int {
 	} else if command == "digest" {
 		fmt.Fprintln(stdout, digest)
 	} else {
-		fmt.Fprintf(stdout, "FabricRecorder validation: pass\nName: %s\nDigest: %s\n", resource.Metadata.Name, digest)
+		fmt.Fprintf(stdout, "FabricRecorder validation: pass (structural only)\nName: %s\nDigest: %s\n", resource.Metadata.Name, digest)
+		fmt.Fprintln(stdout, "Note: validate checks shape and digest syntax; it does not resolve or recompute referenced artifacts such as spec.protect.privacyPolicyRef.")
 	}
 	return 0
 }
@@ -216,4 +217,5 @@ func printRecorderCommandUsage(w io.Writer, command string) {
 	fmt.Fprintf(w, "Usage: fabricctl recorder %s FILE [--json]\n", command)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "This command operates offline and does not mutate a runtime.")
+	fmt.Fprintln(w, "validate performs structural validation only; referenced artifact digests are not recomputed.")
 }

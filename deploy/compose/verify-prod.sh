@@ -75,9 +75,13 @@ if [ ! -s "${token_file}" ]; then
   exit 1
 fi
 token=$(head -n 1 "${token_file}" | tr -d '[:space:]')
+# The token travels to curl through a stdin config file, never argv — a
+# `-H "Authorization: Bearer $token"` flag would be visible to other users
+# via process inspection for the duration of the request.
 # shellcheck disable=SC2086
-code=$(curl ${curl_tls} -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${node_addr}/v1/traces" \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer ${token}" \
+code=$(printf 'header = "Authorization: Bearer %s"\n' "${token}" \
+  | curl ${curl_tls} -K - -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${node_addr}/v1/traces" \
+  -H 'Content-Type: application/json' \
   --data-binary @fixtures/decision-summary.json)
 if [ "${code}" = "200" ]; then
   ok "authenticated OTLP accepted (200)"
@@ -96,6 +100,14 @@ if [ -n "${grpc_addr}" ]; then
       note "WARN" "gRPC reflection succeeded without a token — check the 4317 authenticator"
     else
       ok "unauthenticated gRPC rejected on ${grpc_addr}"
+    fi
+    # Empty-token probe: bearertokenauth keeps blank file entries, minting a
+    # valid "Bearer " credential — gRPC metadata preserves the trailing space.
+    # shellcheck disable=SC2086
+    if grpcurl ${grpc_tls_opt} -H 'authorization: Bearer ' "${grpc_addr}" list >/dev/null 2>&1; then
+      bad "empty bearer token ACCEPTED on gRPC — token file has a blank line or trailing newline"
+    else
+      ok "empty bearer token rejected on ${grpc_addr}"
     fi
   else
     note "WARN" "grpcurl not installed; gRPC ingress auth not exercised (install grpcurl to cover 4317)"

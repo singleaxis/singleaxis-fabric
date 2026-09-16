@@ -34,6 +34,7 @@ type guardStats struct {
 	logBodyRemoved       atomic.Uint64
 	statusMessageRemoved atomic.Uint64
 	nativeTextNormalized atomic.Uint64
+	aggregateCapped      atomic.Uint64
 }
 
 type guardStatsSnapshot struct {
@@ -47,6 +48,7 @@ type guardStatsSnapshot struct {
 	LogBodyRemoved       uint64
 	StatusMessageRemoved uint64
 	NativeTextNormalized uint64
+	AggregateCapped      uint64
 }
 
 func (s *guardStats) snapshot() guardStatsSnapshot {
@@ -61,6 +63,7 @@ func (s *guardStats) snapshot() guardStatsSnapshot {
 		LogBodyRemoved:       s.logBodyRemoved.Load(),
 		StatusMessageRemoved: s.statusMessageRemoved.Load(),
 		NativeTextNormalized: s.nativeTextNormalized.Load(),
+		AggregateCapped:      s.aggregateCapped.Load(),
 	}
 }
 
@@ -195,23 +198,39 @@ func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool 
 		g.stats.statusMessageRemoved.Add(1)
 	}
 
+	// Aggregate bounds: excess events/links are removed entirely rather than
+	// scrubbed — an unbounded event list is a count-based memory channel.
 	events := span.Events()
-	for i := 0; i < events.Len(); i++ {
-		g.filterAttributes(events.At(i).Attributes(), allowed, "span-event")
-		normalizedEventName := activityCategory(events.At(i).Name(), events.At(i).Attributes())
-		if events.At(i).Name() != normalizedEventName {
-			events.At(i).SetName(normalizedEventName)
+	keptEvents := 0
+	events.RemoveIf(func(event ptrace.SpanEvent) bool {
+		if keptEvents >= g.cfg.MaxEventsPerSpan {
+			g.stats.aggregateCapped.Add(1)
+			return true
+		}
+		keptEvents++
+		g.filterAttributes(event.Attributes(), allowed, "span-event")
+		normalizedEventName := activityCategory(event.Name(), event.Attributes())
+		if event.Name() != normalizedEventName {
+			event.SetName(normalizedEventName)
 			g.stats.nativeTextNormalized.Add(1)
 		}
-	}
+		return false
+	})
 	links := span.Links()
-	for i := 0; i < links.Len(); i++ {
-		g.filterAttributes(links.At(i).Attributes(), allowed, "span-link")
-		if links.At(i).TraceState().AsRaw() != "" {
-			links.At(i).TraceState().FromRaw("")
+	keptLinks := 0
+	links.RemoveIf(func(link ptrace.SpanLink) bool {
+		if keptLinks >= g.cfg.MaxLinksPerSpan {
+			g.stats.aggregateCapped.Add(1)
+			return true
+		}
+		keptLinks++
+		g.filterAttributes(link.Attributes(), allowed, "span-link")
+		if link.TraceState().AsRaw() != "" {
+			link.TraceState().FromRaw("")
 			g.stats.nativeTextNormalized.Add(1)
 		}
-	}
+		return false
+	})
 
 	// Preserve even metadata-empty spans. Their native names and text channels
 	// have been normalized, while trace/span/parent identity remains necessary
@@ -307,6 +326,7 @@ func activityCategory(name string, attrs pcommon.Map) string {
 // they are common escape hatches for arbitrary content and secrets.
 func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{}, context string) {
 	before := g.stats.snapshot()
+	kept := 0
 	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
 		if sensitiveAttributeKey(key) {
 			g.stats.sensitiveRemoved.Add(1)
@@ -323,6 +343,13 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 		if !g.metadataValueAllowed(value) {
 			return true
 		}
+		// Aggregate bound: attributes that survive every check still count
+		// against the container cap, so junk keys cannot consume the budget.
+		if kept >= g.cfg.MaxAttributes {
+			g.stats.aggregateCapped.Add(1)
+			return true
+		}
+		kept++
 		return false
 	})
 	after := g.stats.snapshot()
@@ -330,7 +357,8 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 		after.SensitiveRemoved != before.SensitiveRemoved ||
 		after.OversizedRemoved != before.OversizedRemoved ||
 		after.StructuredRemoved != before.StructuredRemoved ||
-		after.InvalidHashRemoved != before.InvalidHashRemoved {
+		after.InvalidHashRemoved != before.InvalidHashRemoved ||
+		after.AggregateCapped != before.AggregateCapped {
 		g.logger.Debug("metadata allowlist applied",
 			zap.String("context", context),
 			zap.Uint64("not_allowed", after.NotAllowedRemoved-before.NotAllowedRemoved),
@@ -338,6 +366,7 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 			zap.Uint64("oversized", after.OversizedRemoved-before.OversizedRemoved),
 			zap.Uint64("structured", after.StructuredRemoved-before.StructuredRemoved),
 			zap.Uint64("invalid_hash", after.InvalidHashRemoved-before.InvalidHashRemoved),
+			zap.Uint64("aggregate_capped", after.AggregateCapped-before.AggregateCapped),
 		)
 	}
 }
@@ -397,6 +426,10 @@ func (g *guard) metadataValueAllowed(value pcommon.Value) bool {
 		return true
 	case pcommon.ValueTypeSlice:
 		slice := value.Slice()
+		if slice.Len() > g.cfg.MaxSliceElements {
+			g.stats.aggregateCapped.Add(1)
+			return false
+		}
 		for i := 0; i < slice.Len(); i++ {
 			if !g.metadataValueAllowed(slice.At(i)) {
 				return false

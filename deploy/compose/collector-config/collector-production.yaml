@@ -40,6 +40,11 @@ extensions:
     # Server-side authenticator: every OTLP request must carry
     # "Authorization: Bearer <token>". The token file is a Compose secret;
     # multiple accepted tokens can be listed via `tokens:` instead.
+    # WARNING (upstream v0.150.0 quirk): the file is split on newlines and
+    # EMPTY entries are kept -- a trailing newline or blank line mints
+    # "Bearer " (empty token) as a valid credential on gRPC. The token file
+    # must contain only non-blank lines and NO trailing newline;
+    # preflight-prod.sh fails on unsafe files.
     filename: /run/secrets/fabric_ingress_token
 
 receivers:
@@ -49,6 +54,15 @@ receivers:
         endpoint: 0.0.0.0:4317
         auth:
           authenticator: bearertokenauth
+        # Bound per-request work: metadata-only records are small, so 8 MiB
+        # is generous headroom that also bounds the worst-case queued item.
+        max_recv_msg_size_mib: 8
+        max_concurrent_streams: 64
+        keepalive:
+          enforcement_policy:
+            # Reject ping floods from idle clients (slow-loris-style).
+            min_time: 10s
+            permit_without_stream: false
         # Uncomment to terminate TLS on gRPC ingress (required before binding
         # beyond 127.0.0.1). Paths resolve inside the container; the Compose
         # overlay mounts FABRIC_INGRESS_TLS_DIR at /run/fabric-node/tls.
@@ -60,6 +74,12 @@ receivers:
         endpoint: 0.0.0.0:4318
         auth:
           authenticator: bearertokenauth
+        # The receiver defaults leave these at zero: a client could hold a
+        # connection open mid-headers indefinitely (auth runs after read).
+        read_header_timeout: 5s
+        read_timeout: 30s
+        idle_timeout: 120s
+        max_request_body_size: 8388608 # 8 MiB -- bounds queued-item worst case
         # tls:
         #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
         #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}

@@ -171,6 +171,19 @@ func mergeAllowed(class string, extra map[string][]string) (map[string]struct{},
 	return merged, true
 }
 
+// explicitlySafeFields are built-in allowlist members exempt from the generic
+// content-marker denial: fields like input_tokens, output_length or
+// fabric.content.ref are metadata (counts, refs, hashes) despite matching a
+// content marker. Operator-declared extra keys are never in this set — they
+// face every marker check at config validation and again at runtime.
+var explicitlySafeFields = func() map[string]struct{} {
+	sets := []map[string]struct{}{TraceAllowedFields}
+	for _, classFields := range BuiltInAllowedFields {
+		sets = append(sets, classFields)
+	}
+	return unionSets(sets...)
+}()
+
 // sensitiveAttributeKey prevents configuration extensions from admitting raw
 // content or secrets. Hashes, governed references, counts and status codes are
 // metadata and remain eligible for the exact allowlist.
@@ -194,13 +207,17 @@ func sensitiveAttributeKey(key string) bool {
 	if canonical == "token" || canonical == "tokens" || strings.HasSuffix(canonical, "token") {
 		return true
 	}
-	if _, explicitlySafe := TraceAllowedFields[key]; explicitlySafe {
+	if _, explicitlySafe := explicitlySafeFields[key]; explicitlySafe {
 		return false
 	}
 	for _, marker := range []string{
 		"prompt", "completion", "response", "message", "body", "payload",
 		"argument", "result", "header", "cookie", "instructions", "documents",
 		"records", "query", "key", "tags", "userdata", "memorycontent",
+		// Generic content-bearing names: without these an operator could
+		// extra-allow "customer.content" or "app.text" and re-open a raw
+		// content channel. Explicitly allowlisted keys return above first.
+		"text", "content", "data", "input", "output", "context", "blob",
 	} {
 		if strings.Contains(canonical, marker) {
 			return true

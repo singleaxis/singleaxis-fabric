@@ -59,6 +59,16 @@ const LIKELY_EMAIL_EMBEDDED = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const LIKELY_SSN_EMBEDDED = /\b\d{3}-\d{2}-\d{4}\b/;
 const LIKELY_PHONE_EMBEDDED = /\+\d[\d -]{8,}\d|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/;
 
+// Embedded scanning must stay cheap on adversarial input: an unanchored
+// `[...]+@` regex retries from every start position, which is ~quadratic
+// on long no-match strings and would stall the instrumented agent — the
+// interference this SDK promises never to cause. Two bounds keep it
+// linear-or-small: (1) the scan window is capped at the Node's
+// `max_field_bytes` (anything longer is truncated at the boundary anyway,
+// so PII past the cap never ships), and (2) a literal-substring prescreen
+// skips each pattern when its mandatory character is absent.
+const EMBEDDED_SCAN_LIMIT = 8192;
+
 /**
  * Tier A. Stringified absence — never a deliberate identifier. Matched
  * case-insensitively against the whitespace-stripped value.
@@ -206,9 +216,17 @@ export function warnIfPiiShaped(
   }
   let matched: string | null = null;
   if (options.embedded) {
-    if (LIKELY_EMAIL_EMBEDDED.test(value)) matched = "an email";
-    else if (LIKELY_SSN_EMBEDDED.test(value)) matched = "an SSN";
-    else if (LIKELY_PHONE_EMBEDDED.test(value)) matched = "a phone number";
+    const scan = value.slice(0, EMBEDDED_SCAN_LIMIT);
+    const hasDigit = /\d/.test(scan);
+    if (scan.includes("@") && LIKELY_EMAIL_EMBEDDED.test(scan)) matched = "an email";
+    else if (hasDigit && scan.includes("-") && LIKELY_SSN_EMBEDDED.test(scan)) matched = "an SSN";
+    else if (
+      hasDigit &&
+      (scan.includes("+") || scan.includes("-") || scan.includes(".") || scan.includes(" ")) &&
+      LIKELY_PHONE_EMBEDDED.test(scan)
+    ) {
+      matched = "a phone number";
+    }
   } else if (LIKELY_EMAIL.test(value)) {
     matched = "an email";
   } else if (LIKELY_PHONE.test(value)) {

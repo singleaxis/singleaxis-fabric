@@ -13,7 +13,8 @@ ARG GO_VERSION=1.25
 
 # ---------- builder ---------------------------------------------------------
 
-FROM golang:${GO_VERSION}-bookworm AS builder
+# Pinned by digest: a moved tag must not silently change the builder toolchain.
+FROM golang:${GO_VERSION}-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS builder
 
 ENV CGO_ENABLED=0 \
     GOFLAGS="-trimpath"
@@ -35,7 +36,7 @@ RUN ocb --config ocb-config.yaml \
 
 # ---------- runtime ---------------------------------------------------------
 
-FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS runtime
 
 COPY --from=builder /src/dist/otelcol-fabric /otelcol-fabric
 

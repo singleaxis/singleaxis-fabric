@@ -69,7 +69,7 @@ cp .env.example .env && chmod 0600 .env
 #   FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>
 #   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
 #   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
-openssl rand -hex 32 > secrets/ingress.token && chmod 0600 secrets/ingress.token
+printf %s "$(openssl rand -hex 32)" > secrets/ingress.token && chmod 0600 secrets/ingress.token
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
 make verify-prod    # proves health, 401 unauthenticated, 200 authenticated (queue metrics warn-only)
@@ -80,6 +80,13 @@ Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
 `127.0.0.1:4318` (HTTP) with `Authorization: Bearer <contents of
 secrets/ingress.token>`. Requests without a valid token are rejected; there is
 no unauthenticated fallback.
+
+> **Token file format matters.** The pinned `bearertokenauth` extension
+> splits the token file on newlines and keeps empty entries — a trailing
+> newline or any blank line mints `Bearer ` (empty token) as a valid
+> credential, which gRPC metadata preserves. Write the file with
+> `printf %s` (no trailing newline) as shown; `make preflight-prod` fails
+> on unsafe token files.
 
 To run the signed release image instead of building locally, verify the
 cosign signature per [`docs/verify-release.md`](../../docs/verify-release.md), then set

@@ -94,6 +94,16 @@ _LIKELY_EMAIL_EMBEDDED = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]
 _LIKELY_SSN_EMBEDDED = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 _LIKELY_PHONE_EMBEDDED = re.compile(r"\+\d[\d -]{8,}\d|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b")
 
+# Embedded scanning must stay cheap on adversarial input: an unanchored
+# ``[...]+@`` regex retries from every start position, which is ~quadratic
+# on long no-match strings and would stall the instrumented agent — exactly
+# the interference this SDK promises never to cause. Two bounds keep it
+# linear-or-small: (1) the scan window is capped at ``max_field_bytes``
+# (the Node truncates anything longer anyway, so PII past the cap never
+# crosses the boundary), and (2) a literal-substring prescreen skips each
+# pattern when its mandatory character is absent (the common case).
+_EMBEDDED_SCAN_LIMIT = 8192
+
 
 _SENTINEL_VALUES: frozenset[str] = frozenset(
     {
@@ -265,13 +275,17 @@ def warn_if_pii_shaped(
     if os.environ.get(ENV_QUIET) == "1":
         return
     if embedded:
-        patterns = (
-            (_LIKELY_EMAIL_EMBEDDED, "an email"),
-            (_LIKELY_SSN_EMBEDDED, "an SSN"),
-            (_LIKELY_PHONE_EMBEDDED, "a phone number"),
-        )
+        scan = value[:_EMBEDDED_SCAN_LIMIT]
+        has_digit = any(ch.isdigit() for ch in scan)
+        patterns = []
+        if "@" in scan:
+            patterns.append((_LIKELY_EMAIL_EMBEDDED, "an email"))
+        if has_digit and "-" in scan:
+            patterns.append((_LIKELY_SSN_EMBEDDED, "an SSN"))
+        if has_digit and ("+" in scan or "-" in scan or "." in scan or " " in scan):
+            patterns.append((_LIKELY_PHONE_EMBEDDED, "a phone number"))
         matched = next(
-            (label for pattern, label in patterns if pattern.search(value)), None
+            (label for pattern, label in patterns if pattern.search(scan)), None
         )
     else:
         matched = (
