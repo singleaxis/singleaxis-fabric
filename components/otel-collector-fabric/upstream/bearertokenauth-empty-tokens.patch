@@ -1,0 +1,37 @@
+From: SingleAxis Fabric maintainers
+Subject: [extension/bearertokenauth] drop empty entries from token files
+
+bearertokenauth's refreshToken() splits a token file on newlines and keeps
+every entry after trimming, including empty ones. A blank line or a trailing
+newline therefore mints a "" token, which the gRPC path authenticates as the
+literal header "Bearer " — an empty credential that bypasses authentication
+for any deployment whose token file ends in a newline (the natural output of
+`openssl rand -hex 32 > token` and most editors).
+
+Drop entries that trim to empty and warn when any were removed, so file
+formatting can never mint a credential. An all-empty file now yields zero
+tokens (every request rejected) instead of one empty token (every request
+with a blank credential accepted).
+
+--- a/extension/bearertokenauthextension/bearertokenauth.go
++++ b/extension/bearertokenauthextension/bearertokenauth.go
+@@ -156,10 +156,16 @@ func (b *bearerTokenAuth) refreshToken() {
+ 		return
+ 	}
+ 
+ 	tokens := strings.Split(string(tokenData), "\n")
+-	for i, token := range tokens {
+-		tokens[i] = strings.TrimSpace(token)
++	kept := tokens[:0]
++	for _, token := range tokens {
++		if trimmed := strings.TrimSpace(token); trimmed != "" {
++			kept = append(kept, trimmed)
++		}
++	}
++	if dropped := len(tokens) - len(kept); dropped > 0 {
++		b.logger.Warn("dropped empty token entries from file",
++			zap.String("filename", b.filename), zap.Int("dropped", dropped))
+ 	}
+-	b.setAuthorizationValues(tokens) // Stores new tokens
++	b.setAuthorizationValues(kept) // Stores new tokens
+ }

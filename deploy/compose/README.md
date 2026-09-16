@@ -77,8 +77,10 @@ make logs-prod
 ```
 
 Use `make up-prod` for startup: it always runs the preflight first. Invoking
-the expanded `docker compose ... up` command directly bypasses those token,
-TLS, bind-address, and disk-headroom checks.
+the expanded `docker compose ... up` command directly skips the TLS,
+bind-address, and disk-headroom checks — though the image's `fabric-gate`
+entrypoint still refuses an unsafe token file or a non-traces/logs pipeline
+at container start.
 
 Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
 `127.0.0.1:4318` (HTTP) with `Authorization: Bearer <contents of
@@ -91,9 +93,9 @@ no unauthenticated fallback.
 > credential, which gRPC metadata preserves. Write the file with
 > `printf %s` (no trailing newline) as shown; `make preflight-prod` fails
 > on unsafe token files, and the image's `fabric-gate` entrypoint refuses
-> to boot on them as a second layer. Rotating the file while the collector
-> runs requires re-checking the new file (`make preflight-prod`) before
-> swapping it in — the extension re-reads it via fsnotify.
+> to boot on them and keeps watching while the collector runs — a mid-run
+> rotation to an unsafe file stops the recorder rather than reopening the
+> empty-credential bypass.
 
 To run the signed release image instead of building locally, verify the
 cosign signature per [`docs/verify-release.md`](../../docs/verify-release.md), then set

@@ -11,31 +11,41 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// tokenFile is a bearertokenauth token-file path the gate must keep watching
+// after startup: the pinned extension re-reads its file via fsnotify, so a
+// mid-run rotation to an unsafe format would re-open the empty-credential
+// bypass the boot check closed.
+type tokenFile struct {
+	extension string
+	path      string
+}
+
 // validateArgs resolves every --config source the collector would load,
 // deep-merges them the way confmap does (later files win key-by-key), and
-// enforces the recorder-v1 invariants on the effective configuration.
-func validateArgs(args []string) error {
+// enforces the recorder-v1 invariants on the effective configuration. It
+// returns the token files that must be re-validated while the collector runs.
+func validateArgs(args []string) ([]tokenFile, error) {
 	sources, err := configSources(args)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(sources) == 0 {
-		return fmt.Errorf("no --config supplied; refusing to boot an unverifiable configuration")
+		return nil, fmt.Errorf("no --config supplied; refusing to boot an unverifiable configuration")
 	}
 	merged := map[string]any{}
 	for _, src := range sources {
 		raw, err := readConfigSource(src)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var parsed map[string]any
 		if err := yaml.Unmarshal(raw, &parsed); err != nil {
-			return fmt.Errorf("%s: %w", src, err)
+			return nil, fmt.Errorf("%s: %w", src, err)
 		}
 		deepMerge(merged, parsed)
 	}
 	if err := checkPipelines(merged); err != nil {
-		return err
+		return nil, err
 	}
 	return checkBearerTokenAuth(merged)
 }
@@ -136,7 +146,8 @@ func checkPipelines(cfg map[string]any) error {
 // newline mint an empty "Bearer " credential that gRPC metadata preserves
 // verbatim — an auth bypass. File checks mirror preflight-prod.sh so a
 // format rejected there is also rejected here, inside the image.
-func checkBearerTokenAuth(cfg map[string]any) error {
+func checkBearerTokenAuth(cfg map[string]any) ([]tokenFile, error) {
+	var watched []tokenFile
 	extensions, _ := cfg["extensions"].(map[string]any)
 	for name, node := range extensions {
 		if name != "bearertokenauth" && !strings.HasPrefix(name, "bearertokenauth/") {
@@ -144,26 +155,28 @@ func checkBearerTokenAuth(cfg map[string]any) error {
 		}
 		ext, _ := node.(map[string]any)
 		if ext == nil {
-			return fmt.Errorf("extension %q has no usable configuration", name)
+			return nil, fmt.Errorf("extension %q has no usable configuration", name)
 		}
 		filename, _ := ext["filename"].(string)
 		tokens, _ := ext["tokens"].([]any)
 		if filename == "" && len(tokens) == 0 {
-			return fmt.Errorf("extension %q sets neither filename nor tokens; it would fail collector startup anyway", name)
+			return nil, fmt.Errorf("extension %q sets neither filename nor tokens; it would fail collector startup anyway", name)
 		}
 		if filename != "" {
-			if err := checkTokenFile(name, expandEnvRefs(filename)); err != nil {
-				return err
+			path := expandEnvRefs(filename)
+			if err := checkTokenFile(name, path); err != nil {
+				return nil, err
 			}
+			watched = append(watched, tokenFile{extension: name, path: path})
 		}
 		for i, t := range tokens {
 			s, _ := t.(string)
 			if strings.TrimSpace(expandEnvRefs(s)) == "" {
-				return fmt.Errorf("extension %q tokens[%d] is empty; an empty token mints a \"Bearer \" credential", name, i)
+				return nil, fmt.Errorf("extension %q tokens[%d] is empty; an empty token mints a \"Bearer \" credential", name, i)
 			}
 		}
 	}
-	return nil
+	return watched, nil
 }
 
 // checkTokenFile applies the same format rules as preflight-prod.sh: the

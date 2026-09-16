@@ -13,35 +13,56 @@
 //     newlines and retains empty entries, so a blank line or trailing newline
 //     mints an empty "Bearer " credential that gRPC metadata preserves.
 //
-// After validation the gate replaces itself with otelcol-fabric via exec, so
-// the collector keeps the same PID, signal handling, and argument surface.
-// Operators who build the collector binary directly (ocb-config.yaml) do not
-// get this gate; qualify-distribution-config.sh is their enforcement boundary.
+// When the config carries token files, the gate stays resident as a thin
+// supervisor: it execs the collector as a child, forwards signals, and
+// re-validates the token files on a poll interval because the extension
+// re-reads them via fsnotify — a mid-run rotation to an unsafe file would
+// re-open the bypass. On violation the gate SIGTERMs the collector (letting
+// it drain the persistent queue) and exits non-zero. With no token files
+// configured there is nothing to watch, so the gate replaces itself with the
+// collector via exec and leaves no wrapper process.
+//
+// Operators who build the collector binary directly (ocb-config.yaml) can run
+// the same enforcement with dist/fabric-gate; qualify-distribution-config.sh
+// proves the refusal paths for both image and binary artifacts.
 package main
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 )
 
-// defaultCollectorBin is the collector path inside the shipped image. The
-// override exists so tests and non-image packaging can point the gate at a
-// differently located binary without patching source.
-const defaultCollectorBin = "/otelcol-fabric"
+// collectorBinaryPath prefers an otelcol-fabric sibling of the gate binary
+// (dist/ layout and the image layout both place them together) and falls
+// back to the absolute image path.
+func collectorBinaryPath() string {
+	if exe, err := os.Executable(); err == nil {
+		sibling := filepath.Join(filepath.Dir(exe), "otelcol-fabric")
+		if _, err := os.Stat(sibling); err == nil {
+			return sibling
+		}
+	}
+	return "/otelcol-fabric"
+}
 
 func main() {
 	bin := os.Getenv("FABRIC_GATE_COLLECTOR_BIN")
 	if bin == "" {
-		bin = defaultCollectorBin
+		bin = collectorBinaryPath()
 	}
-	if err := validateArgs(os.Args[1:]); err != nil {
+	watched, err := validateArgs(os.Args[1:])
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "fabric-gate: refusing to start recorder: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "fabric-gate: recorder configuration verified; starting %s\n", bin)
-	if err := syscall.Exec(bin, append([]string{bin}, os.Args[1:]...), os.Environ()); err != nil {
-		fmt.Fprintf(os.Stderr, "fabric-gate: exec %s: %v\n", bin, err)
-		os.Exit(1)
+	if len(watched) == 0 {
+		if err := syscall.Exec(bin, append([]string{bin}, os.Args[1:]...), os.Environ()); err != nil {
+			fmt.Fprintf(os.Stderr, "fabric-gate: exec %s: %v\n", bin, err)
+			os.Exit(1)
+		}
 	}
+	os.Exit(supervise(bin, os.Args[1:], watched))
 }

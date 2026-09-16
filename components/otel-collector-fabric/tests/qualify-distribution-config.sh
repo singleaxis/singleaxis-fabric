@@ -241,7 +241,19 @@ if [[ "${mode}" == "image" ]]; then
     sleep 1
   done
 else
-  "${artifact}" --config="${runtime}/config.yaml" >"${runtime}/collector.log" 2>&1 &
+  # Binary mode still exercises the enforcement path: when dist/ carries
+  # fabric-gate next to the collector, boot through it (the gate resolves
+  # the sibling binary itself). A bare collector without its gate is
+  # qualified but flagged — the runtime invariants are then unenforced.
+  gate_bin="$(dirname "${artifact}")/fabric-gate"
+  launcher="${artifact}"
+  if [[ -x "${gate_bin}" ]]; then
+    launcher="${gate_bin}"
+  else
+    printf '%s WARN: %s not found; qualifying the bare collector without entrypoint enforcement\n' \
+      "${prefix}" "${gate_bin}" >&2
+  fi
+  "${launcher}" --config="${runtime}/config.yaml" >"${runtime}/collector.log" 2>&1 &
   collector_pid="$!"
   for _ in 1 2 3 4 5; do
     if ! kill -0 "${collector_pid}" 2>/dev/null; then
@@ -296,6 +308,25 @@ if [[ "${mode}" == "image" ]]; then
     --network none \
     --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
   printf '%s PASS: image entrypoint refused unprotected pipelines and unsafe token material\n' "${prefix}"
+elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
+  # Binary mode: the same refusal invariants run through dist/fabric-gate,
+  # which resolves the sibling collector and exits non-zero before exec.
+  gate_bin="$(dirname "${artifact}")/fabric-gate"
+  badcfg="${runtime}/gate-reject.yaml"
+  gate_expect_refusal_bin() {
+    local why="$1"
+    if "${gate_bin}" --config="${badcfg}" >/dev/null 2>&1; then
+      fail "fabric-gate accepted ${why}"
+    fi
+  }
+  sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal_bin "a metrics pipeline"
+  printf 'tok3n\n' >"${runtime}/bad.token"
+  sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: '"${runtime}"'/bad.token|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal_bin "a trailing-newline token file"
+  printf '%s PASS: fabric-gate binary refused unprotected pipelines and unsafe token material\n' "${prefix}"
 fi
 
 printf '%s PASS: recorder artifact accepted mTLS ingress, protection, and durable OTLP/HTTP export\n' "${prefix}"

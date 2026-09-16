@@ -121,7 +121,10 @@ Design notes:
   (`fabric-gate`) refuses to boot a config defining any other pipeline, and
   the distribution-qualification test
   (`tests/qualify-distribution-config.sh`) proves the refusal, so new signal
-  types cannot widen the export surface accidentally.
+  types cannot widen the export surface accidentally. `fabric-gate` also
+  supervises bearer-token material while the collector runs — a mid-run
+  rotation to an unsafe token file stops the recorder instead of minting an
+  empty credential.
 
 ## How PROTECT decides what crosses the boundary
 

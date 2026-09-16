@@ -50,6 +50,24 @@ if [ -z "${node_addr}" ] || [ -z "${health_addr}" ]; then
   exit 1
 fi
 
+# --- entrypoint gate ---------------------------------------------------------
+# The image entrypoint must be fabric-gate: it refuses configs with
+# non-traces/logs pipelines or unsafe bearer-token files, and keeps watching
+# token files while the collector runs. An operator who overrode the
+# entrypoint bypasses that enforcement; the check makes such a bypass
+# visible here even though nothing can prevent it technically.
+node_container="$(${compose} ps -q fabric-node 2>/dev/null | head -n 1)"
+if [ -n "${node_container}" ]; then
+  entrypoint="$(docker inspect --format '{{json .Config.Entrypoint}}' "${node_container}" 2>/dev/null || true)"
+  if [ "${entrypoint}" = '["/fabric-gate"]' ]; then
+    ok "container boots through fabric-gate (pipeline + token enforcement active)"
+  else
+    bad "fabric-node entrypoint is ${entrypoint:-<unset>}, expected [\"/fabric-gate\"] — gate enforcement is bypassed"
+  fi
+else
+  note "WARN" "cannot resolve fabric-node container; entrypoint gate not verified"
+fi
+
 # --- health -----------------------------------------------------------------
 if curl -fsS "http://${health_addr}/" >/dev/null 2>&1; then
   ok "collector health endpoint ready"

@@ -30,15 +30,22 @@ pipelines: `fabricguard` only protects logs and traces, so any telemetry on
 those pipeline types would cross the boundary unfiltered. The shipped image
 enforces this at startup: its `fabric-gate` entrypoint parses the collector
 config and refuses to boot on non-`traces`/`logs` pipelines, and the
-distribution qualification script proves the refusal. Bare `dist/otelcol-fabric`
-binary runs carry no gate; the qualification script is their boundary.
+distribution qualification script proves the refusal for both the image and
+the binary artifact. `make build` places `fabric-gate` next to
+`otelcol-fabric` in `dist/` — binary deployments should launch the gate,
+which resolves and execs the sibling collector itself.
 
 `fabric-gate` also rejects `bearertokenauth` extensions whose token material
 would mint an empty credential under the pinned extension (v0.150.0 keeps
 empty entries after splitting token files on newlines): missing, empty,
 blank-line, or newline-terminated token files, and empty inline `tokens`
-entries. Operators who override the container entrypoint leave the enforced
-path.
+entries. When token files are configured the gate stays resident as a thin
+supervisor — the extension re-reads the file via fsnotify, so the gate
+re-validates it on a poll interval and stops the collector (SIGTERM, letting
+the queue drain) if a rotation reintroduces an unsafe file. Operators who
+override the container entrypoint or launch `otelcol-fabric` directly leave
+the enforced path; `verify-prod.sh` surfaces a container-level entrypoint
+override at verification time.
 
 ## Build and qualify
 
