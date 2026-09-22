@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "schema": {
     "path": "schema/connector-capability-v1.schema.json",
-    "sha256": "2ff95bc4406fdc93b7b31deb689bca4633c26d07acf45a85e27da4a307a59161"
+    "sha256": "c0423d1802d5b383f8f87ded90552e452ef8e9cd7c09139760b32a83be769455"
   },
   "artifacts": [
     {
@@ -22,8 +22,13 @@
       "expectation": "valid"
     },
     {
-      "path": "manifests/ebpf-discovery-only.json",
-      "sha256": "822ccfe653c45ffbfb8e27d97fd59ecc4f4879548352be7e3308e265a02e4b19",
+      "path": "manifests/auditd-host-connector.json",
+      "sha256": "f51c7c64075f39c5965774ff9e4a07afe30313900d4bf8e81c11282270809036",
+      "expectation": "valid"
+    },
+    {
+      "path": "manifests/ebpf-host-emitter.json",
+      "sha256": "d0c323cfea883edaf1be3face4df64619b6a214b4a4752da5742e971f5642d38",
       "expectation": "valid"
     },
     {

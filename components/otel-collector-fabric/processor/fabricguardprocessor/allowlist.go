@@ -129,7 +129,17 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 // fields are added by mergeAllowed.
 var BuiltInAllowedFields = map[string]map[string]struct{}{
 	"activity": {},
-	"audit":    {},
+	// Host-layer audit events emitted by the auditreceiver (spec 030) and the
+	// host emitter (spec 031). argv is hash-only; no raw command lines.
+	"audit": toSet(
+		"audit.syscall", "audit.result", "audit.serial", "audit.source",
+		"audit.event", "audit.dedupe_key", "audit.cgroup_id",
+		"process.pid", "process.parent_pid", "process.executable.name",
+		"process.executable.path", "process.command_args_sha256", "process.owner",
+		"network.peer.address", "network.peer.port",
+		"file.path", "file.path_sha256",
+		"fabric.event_count",
+	),
 	"decision_summary": toSet(
 		"model", "cost_usd", "latency_ms", "input_length", "output_length",
 		"retrieval_count", "retrieval_sources", "memory_write_count", "memory_kinds",

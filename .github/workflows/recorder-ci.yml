@@ -214,6 +214,34 @@ jobs:
           go vet ./...
           make build VERSION=ci COMMIT="${GITHUB_SHA}" DATE=1970-01-01T00:00:00Z
 
+  host-emitter:
+    name: Host emitter (eBPF) build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.25"
+          cache: false
+      - name: Install BPF toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+      - name: Generate CO-RE artifacts, test, vet
+        working-directory: components/host-emitter
+        run: |
+          # The generated emit_bpfel.{go,o} exist only after go generate —
+          # the linux-tagged loader needs them to compile.
+          go generate ./...
+          go test ./...
+          go vet ./...
+      - name: Build emitter image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: components/host-emitter
+          file: components/host-emitter/Dockerfile
+          push: false
+          load: true
+          tags: fabric-host-emitter:pr
+
   helm:
     name: Fabric Node Helm contracts
     runs-on: ubuntu-latest

@@ -39,6 +39,7 @@ RUN go install go.opentelemetry.io/collector/cmd/builder@${OCB_VERSION} \
 # The OCB manifest uses a local `replaces:` entry for fabricguard.
 COPY ocb-config.yaml ./
 COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
+COPY receiver/auditreceiver ./receiver/auditreceiver
 COPY gate ./gate
 
 RUN ocb --config ocb-config.yaml \

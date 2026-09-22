@@ -1,0 +1,35 @@
+# Netlink-mode e2e config: proves the audit receiver binds NETLINK_AUDIT,
+# joins the readlog multicast group, and that manage_rules degrades
+# gracefully on kernels that mask CAP_AUDIT_CONTROL (Docker Desktop).
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  audit:
+    source: netlink
+    rule_key: fabric
+    exec: true
+    connect: true
+    file_access: false
+    manage_rules: true
+    max_events_per_sec: 500
+    dedupe_window: 0s
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  fabricguard: {}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    logs:
+      receivers: [audit]
+      processors: [memory_limiter, fabricguard]
+      exporters: [debug]

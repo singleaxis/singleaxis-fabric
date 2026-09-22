@@ -20,7 +20,8 @@ propagates, and exports.
 | Gateway or proxy | Inline for LLM, MCP, HTTP, or tool traffic | Requests crossing known protocols; semantics may be inferred | Can block or transform traffic that must traverse it | Local or bypass traffic is invisible |
 | OTLP receiver | Collector or gateway | Preserves telemetry an existing system already emitted | Telemetry acceptance/redaction/routing only | Cannot prevent an agent action that already occurred |
 | Vendor receiver | Collector plugin or managed integration | Fields and history exposed by the vendor API | Usually telemetry processing only | Vendor sampling, schema, API, and retention constrain replay |
-| eBPF-assisted discovery | Host agent or Kubernetes DaemonSet | Process, socket, network-flow, and file metadata | None in the Fabric discovery contract | Cannot establish prompts, decisions, tools, or policy semantics |
+| auditd host connector | `audit` receiver in the Fabric Node ([spec 030](../specs/030-auditd-host-connector.md)) | Kernel-observed exec/connect/file-access records from the existing audit subsystem | None — read-only consumer | Requires audit rules + `CAP_AUDIT_READ`; no semantic/decision context; correlation is inferred provenance |
+| eBPF host emitter | `fabric-host-emitter` DaemonSet ([spec 031](../specs/031-ebpf-host-emitter.md)) | Process, socket, network-flow, and file metadata via CO-RE tracepoints | None — passive probe, no LSM/packet hooks | Cannot establish prompts, decisions, tools, or policy semantics; needs `CAP_BPF`+`CAP_PERFMON` and kernel >=5.8 with BTF |
 
 For an off-the-shelf agent, start with its supported audit export, OTLP output,
 webhooks, or API. Put a gateway in front of provider and tool endpoints where
@@ -38,7 +39,8 @@ agent or product
   ├─ SDK / framework hook ── native decision and lifecycle spans
   ├─ gateway ─────────────── authenticated provider and tool calls
   ├─ vendor or OTLP export ─ preserved existing telemetry
-  └─ eBPF discovery ──────── workload inventory and bypass indicators
+  ├─ auditd host connector ─ every exec/connect the kernel audited
+  └─ eBPF host emitter ───── workload inventory and bypass indicators
                   │
                   ▼
               customer Fabric Node

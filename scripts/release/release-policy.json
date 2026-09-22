@@ -95,11 +95,21 @@
       "recorder"
     ],
     "public_versions": {
-      "activity": ["v2"],
-      "connect": ["v1"],
-      "delivery": ["v1"],
-      "privacy": ["v1"],
-      "recorder": ["v1"]
+      "activity": [
+        "v2"
+      ],
+      "connect": [
+        "v1"
+      ],
+      "delivery": [
+        "v1"
+      ],
+      "privacy": [
+        "v1"
+      ],
+      "recorder": [
+        "v1"
+      ]
     }
   },
   "helm": {
@@ -109,6 +119,7 @@
     "third_party_app_charts": []
   },
   "images": [
-    "fabric-otelcol"
+    "fabric-otelcol",
+    "fabric-host-emitter"
   ]
 }

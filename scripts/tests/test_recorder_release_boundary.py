@@ -43,7 +43,7 @@ def test_release_policy_is_recorder_only() -> None:
         "first_party_app_charts": ["otel-collector"],
         "third_party_app_charts": [],
     }
-    assert policy["images"] == ["fabric-otelcol"]
+    assert policy["images"] == ["fabric-otelcol", "fabric-host-emitter"]
     assert policy["python_distribution"]["required_console_scripts"] == {}
     forbidden = set(policy["python_distribution"]["forbidden_wheel_paths"])
     assert {
@@ -102,6 +102,7 @@ def test_release_workflow_does_not_publish_legacy_runtime_artifacts() -> None:
     ):
         assert forbidden not in workflow
     assert "component: otel-collector-fabric" in workflow
+    assert "component: host-emitter" in workflow
     assert "sbom: true" in workflow
     assert "provenance: true" in workflow
 

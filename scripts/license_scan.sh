@@ -65,8 +65,15 @@ if command -v go >/dev/null 2>&1; then
       --ignore github.com/singleaxis/singleaxis-fabric \
       > "${FABRIC_RAW_DIR}/go-fabricctl.csv"
   )
+  (
+    cd components/host-emitter
+    "${FABRIC_GO_BIN}/go-licenses" report ./... \
+      --ignore github.com/singleaxis/singleaxis-fabric \
+      > "${FABRIC_RAW_DIR}/go-host-emitter.csv"
+  )
   FABRIC_GATE_ARGS+=(--go "fabric-node=${FABRIC_RAW_DIR}/go-fabric-node.csv")
   FABRIC_GATE_ARGS+=(--go "fabricctl=${FABRIC_RAW_DIR}/go-fabricctl.csv")
+  FABRIC_GATE_ARGS+=(--go "host-emitter=${FABRIC_RAW_DIR}/go-host-emitter.csv")
 else
   printf 'warning: Go unavailable; Go recorder surfaces were not scanned\n' >&2
 fi

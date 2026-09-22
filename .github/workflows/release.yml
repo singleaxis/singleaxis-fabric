@@ -307,6 +307,8 @@ jobs:
         include:
           - component: otel-collector-fabric
             image: fabric-otelcol
+          - component: host-emitter
+            image: fabric-host-emitter
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository_owner }}/${{ matrix.image }}

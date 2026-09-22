@@ -28,6 +28,11 @@ extensions:
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
+  # auditd host connector (spec 030): consumes Linux audit events from the
+  # audit netlink multicast or audit.log and emits them as logs. Config-gated;
+  # only deployments that enable it take CAP_AUDIT_READ or audit-log access.
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver v0.1.0
+    path: ./receiver/auditreceiver
 
 processors:
   - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.150.0
@@ -48,3 +53,4 @@ providers:
 # Resolve the recorder processor to its on-disk source for reproducible builds.
 replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver => ./receiver/auditreceiver
