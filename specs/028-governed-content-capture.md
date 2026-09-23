@@ -1,8 +1,8 @@
 ---
 title: Governed content capture and configuration
 status: draft
-revision: 1
-last_updated: 2026-09-22
+revision: 2
+last_updated: 2026-09-23
 owner: product-architecture
 depends_on: 027
 related: 029, 032, 033, 034
@@ -77,6 +77,32 @@ Configuring `governed-reference` requires all of:
 Missing any of these fails configuration — governed mode does not degrade to
 a partial capture silently; the operator sees an explicit error at client
 construction (SDK) or config validation (contract).
+
+### Contract declaration vs. executable configuration
+
+`spec.content.mode` in the recorder contract is a **declaration**: it tells
+the Fabric Node to expect `fabric.content.*` reference attributes on
+telemetry from governed SDKs in this deployment. It does not, and cannot,
+configure the SDK — store endpoints, spool paths, and durability bounds are
+executable settings that live in `ContentCaptureConfig` (Python) /
+`contentCapture` (TypeScript) at client construction. A recorder YAML that
+says `mode: governed-reference` while no SDK configures governed capture
+produces metadata-only telemetry; the declaration never *enables* capture
+by itself.
+
+Environment variables follow the same rule in the stricter direction:
+`FABRIC_CONTENT_MODE` may only *restrict* (`metadata` force-disables a
+configured governed capture); no environment variable can enable governed
+mode. Activation is always explicit code.
+
+### Tenant identity
+
+The governed store's `tenant_id`/`tenantId` must **exactly equal** the
+`Fabric`/`FabricConfig` client tenant — mismatched store and client tenants
+fail at construction, because refs stamped under one tenant resolving into
+another namespace is a silent cross-tenant leak. Tenant identifiers must be
+safe namespace components per spec 033 §2 (the shared safe-identifier rule);
+store adapters validate them at construction.
 
 ## Content roles (v1)
 

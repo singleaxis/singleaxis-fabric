@@ -1,8 +1,8 @@
 ---
 title: Customer content storage and authorized resolution
 status: draft
-revision: 1
-last_updated: 2026-09-22
+revision: 2
+last_updated: 2026-09-23
 owner: product-architecture
 depends_on: 028, 029, 032
 related: 034
@@ -64,6 +64,43 @@ shared customer-side writer service.
   to the telemetry consumer; they carry no credentials, no signed query,
   no session material.
 
+### 2.1 The safe-identifier rule (shared, both SDKs)
+
+`tenant_id` — and any other value used as a namespace path or key
+component — must satisfy **all** of:
+
+- matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$`;
+- is **not** exactly `.` or `..` (the regex alone admits them);
+- contains no `/`, `\`, NUL, or percent-encoded traversal (the identifier
+  is validated *before* any decoding — `%2e%2e`, `..%2f`, double-encoded
+  variants all fail the pattern outright);
+- on the local adapter, the resolved tenant root (`resolve()`d, symlinks
+  expanded) must be strictly inside the resolved configured root — a
+  sibling path, the root itself, or an absolute identifier all fail.
+
+The rule lives in one shared helper per SDK (`safe_identifier` /
+`assertSafeIdentifier`); the local store, the S3 store, and the client
+tenant check all call it — adapters never invent their own regex.
+
+**Client/store agreement.** The governed store's `tenant_id` must equal the
+`Fabric` client's `tenant_id` exactly (spec 028). The client fails
+construction on mismatch — a store namespaced differently than the
+telemetry tenant is a silent cross-tenant leak.
+
+### 2.2 S3 namespace safety
+
+- `prefix` must be a non-empty relative key prefix ending in `/`, never
+  starting with `/`, and containing no `..` segments — prefix confusion
+  (`fabric/content` vs `fabric/contentx`) is prevented by always joining
+  with the trailing separator, never by raw `startswith` on a boundaryless
+  string.
+- `tenant_id` follows §2.1; the tenant key prefix is
+  `<prefix><tenant_id>/` — ownership checks require the full
+  `<prefix><tenant_id>/` match, so `acme` and `acme2` never share a
+  namespace.
+- `endpoint_url`/`region_name` propagate to the client; they never relax
+  namespace rules.
+
 ### Local adapter
 
 - Root must be an absolute path; the adapter resolves and confines itself
@@ -110,16 +147,48 @@ result = resolver.resolve("s3://acme-evidence/fabric/content/acme/<digest>")
 Resolution algorithm:
 
 1. Parse URI → scheme. Unconfigured scheme → `denied` (`unknown_scheme`).
-2. Match the URI to a configured store's namespace exactly (root path
-   prefix for `file://`; `bucket`+`prefix`+`tenant_id` for `s3://`). No match
-   → `denied` (`outside_configured_store`). A telemetry URI can never widen
-   the configured set — the allowlist is the configured stores, not the URI.
-3. Reject traversal (`..`, symlink escape, bucket/prefix mismatch) → `denied`.
-4. Read bytes. Absent → `pending` when a covering manifest lists the item
-   `pending`/not-yet-settled, else `missing`.
-5. Verify `byte_length` and `digest` against the descriptor/manifest.
-   Mismatch → `corrupted` (never returns the bytes).
-6. Return `available` with bytes + descriptor.
+2. Match the URI to a configured store's namespace exactly — the
+   normalized canonical path inside the resolved tenant root for
+   `file://`; `bucket` + `<prefix><tenant_id>/` for `s3://`. No match →
+   `denied` (`outside_configured_store`). A telemetry URI can never widen
+   the configured set — the allowlist is the configured stores, not the
+   URI.
+3. Reject traversal (`..`, symlink escape, bucket/prefix mismatch,
+   percent-encoded separators) → `denied`.
+4. Read the **descriptor** (sidecar, or the manifest-supplied descriptor).
+   Missing, unreadable, or invalid → `unverified` — *never* `available`:
+   a digest-named path is not proof of integrity.
+5. Check descriptor identity: `tenant_id` must equal the store's tenant
+   (mismatch → `denied`); `role`, `object_id`, `media_type`, `digest`
+   must be internally consistent with what was requested
+   (inconsistency → `corrupted`).
+6. Read bytes. Absent → `missing` — or `pending` only when a covering
+   manifest proves the item is `pending` (manifest-supplied descriptor
+   with `status: pending`). Deleted/expired objects resolve `missing`:
+   retention is store policy, and the manifest's `stored` history already
+   records that the object existed.
+7. Verify `byte_length` then `digest` against the descriptor. Mismatch →
+   `corrupted`; the bytes are **never returned** for `denied`,
+   `corrupted`, or `unverified` results.
+8. Only after every check passes: return `available` with bytes +
+   descriptor.
+
+`available` therefore means exactly one thing: the object was read inside
+an authorized namespace and its byte length and SHA-256 digest verified
+against a valid descriptor. There is no weaker form of success.
+
+| Situation | Result |
+|---|---|
+| URI outside all configured stores / bad scheme | `denied` |
+| Traversal or cross-tenant URI | `denied` |
+| Descriptor tenant ≠ store tenant | `denied` |
+| Descriptor missing / unreadable / wrong shape | `unverified` |
+| Descriptor identity inconsistent | `corrupted` |
+| Bytes absent, manifest proves `pending` | `pending` |
+| Bytes absent otherwise (incl. deleted/expired) | `missing` |
+| `byte_length` mismatch | `corrupted` |
+| Digest mismatch | `corrupted` |
+| All checks pass | `available` + bytes + descriptor |
 
 `resolve_manifest(uri)` does the same for manifest objects (schema-validated
 on read). `export_transcript(manifest_uri)` walks items and emits the

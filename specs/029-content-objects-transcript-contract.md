@@ -1,8 +1,8 @@
 ---
 title: Content object and transcript manifest contracts
 status: draft
-revision: 1
-last_updated: 2026-09-22
+revision: 2
+last_updated: 2026-09-23
 owner: product-architecture
 depends_on: 028
 related: 032, 033, 034
@@ -121,10 +121,21 @@ Each `items[]` entry:
 | `sequence` | Monotonic emission index on the decision (0-based); **the** ordering guarantee — never timestamp-sorted |
 | `role` | Spec-028 role |
 | `status` | §4 status |
-| `descriptor` | The content-object descriptor when `status` is `stored`/`pending` |
-| `ref` | Resolution URI stamped on telemetry when known |
+| `descriptor` | The content-object descriptor — **only** when `status` is `pending`, `stored`, or `truncated` |
+| `ref` | Resolution URI — **only** when `status` is `pending`, `stored`, or `truncated` |
 | `status_reason` | Optional detail |
 | `links` | `{span_id, step_id, step_attempt, tool_call_id, related_object_ids}` |
+
+**Descriptor/ref rule.** An item carries `descriptor` and `ref` exactly when
+a resolvable object exists or may still arrive: `pending`, `stored`,
+`truncated`. Every other status — `failed`, `dropped`, `not_captured`,
+`unsupported`, `redacted` — carries **neither** field: a `failed` or
+`dropped` object was never durably written, so a ref would point at
+nothing (and would resolve `missing`, misrepresenting a delivery failure
+as a retention gap). The item's `role`, `status`, `status_reason`, and
+`links` still identify what was attempted. Emitters must strip
+`descriptor`/`ref` when an item settles to a non-descriptor status;
+validators reject manifests that carry them.
 
 Ordering rules: `sequence` reflects SDK emission order within the decision.
 Cross-decision and concurrent-call ordering is *not* flattened: consumers
@@ -132,27 +143,62 @@ use `trace_id`/parent links; the manifest preserves `related_object_ids`
 edges (model-issued tool call → tool arguments/result objects). Uncorrelated
 concurrent events keep independent sequences — no false causal order.
 
-## 4. Status vocabulary
+## 4. Status vocabulary and item state machine
+
+**Manifest item statuses** — the closed set the contract validates:
 
 | Status | Kind | Meaning |
 |---|---|---|
 | `pending` | lifecycle | Reference published; object not yet confirmed stored |
 | `stored` | lifecycle | Object durably written per the store's own guarantee (spec 033) |
-| `not_captured` | completeness | Role/surface produced nothing (e.g. no instructions supplied) |
+| `not_captured` | completeness | Role/surface produced nothing, or the capture policy filtered it (e.g. no instructions supplied; role outside policy) |
 | `unsupported` | completeness | Role or media type outside v1 scope (e.g. binary input) |
 | `truncated` | completeness | Stored prefix only; `original_byte_length` set |
 | `dropped` | completeness | Queue/bound shed the item (resource limit) |
 | `failed` | lifecycle | Store/retry exhausted (spec 032) |
 | `redacted` | completeness | Transformation applied before storage (v1: only via caller marking) |
-| `expired` | resolution | Object deleted/expired after manifest write (resolution-time state) |
-| `deleted` | resolution | Object deliberately deleted |
-| `corrupted` | resolution | Bytes present but digest/size mismatch on read |
 
-`pending`/`stored`/`failed` are lifecycle; the rest are completeness or
-resolution-time states. A manifest written before all items settle marks
-them `pending`; the writer may update the manifest once (idempotent rewrite
-with same `manifest_id`) after retries settle — consumers treat `pending`
-past the configured settle window as permanently `pending`.
+**Resolution results** — a separate vocabulary returned by the resolver
+(spec 033 §3), never written into manifest items: `available`, `pending`,
+`missing`, `denied`, `corrupted`, `unverified`. Deleted or expired objects
+resolve `missing` (retention is store policy — spec 033 §4); an object that
+fails descriptor or digest verification resolves `corrupted`/`unverified`,
+never `available`.
+
+**Valid item transitions.** An item is registered once, in emission order,
+and settles exactly once:
+
+```text
+pending -> stored | truncated | failed
+stored | truncated | failed | dropped | not_captured | unsupported | redacted  = terminal
+```
+
+`dropped`/`not_captured`/`unsupported`/`redacted` are terminal at capture.
+Only `pending` may transition, and only to a terminal lifecycle status.
+A settlement that arrives for an unregistered or already-terminal item is
+an SDK defect — it must be surfaced (logged/counted), never silently
+absorbed.
+
+**Partial and cancelled output.** An interrupted model output is recorded
+as `model.output.messages` with `representation: assembled` and a
+`status_reason` beginning with `partial` (e.g. `partial_output`,
+`partial_output_cancelled`). Stored partial bytes are real evidence —
+`status` stays `stored`/`truncated` — but consumers must treat a
+`partial*` reason as *not* a complete output: a transcript whose only
+output item is partial is an **incomplete interaction**, not a successful
+model→tool→model exchange. Emitters must not drop the `status_reason`;
+consumers and the export must preserve it verbatim.
+
+**Manifest revision and reconciliation.** `manifest_id` and the manifest
+URI are stable for the life of the decision. The manifest may be rewritten
+after initial publication — idempotently, same `manifest_id`, same path —
+exactly when an item settles after close (`pending -> stored`/`failed`)
+or when a recovered spool delivery lands after process restart. Rewrites
+are serialized per manifest (single-writer or equivalent ordering) so a
+stale snapshot can never overwrite a newer one; the write itself is the
+store's atomic write (spec 033), so a torn manifest never appears.
+A terminal manifest — every item settled, decision closed — must validate
+against the published schema; there is no "failed manifest" escape hatch.
 
 ## 5. Span attributes (allowlist additions)
 

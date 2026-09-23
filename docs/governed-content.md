@@ -99,28 +99,70 @@ const fabric = new Fabric({
 Refs are `file://`/`s3://` URIs — never credentials, signed URLs, or
 session material.
 
+**Tenant rules.** The store's `tenant_id` must exactly equal the `Fabric`
+client tenant — a mismatch fails construction. Tenant identifiers follow
+one shared safe-identifier rule (spec 033 §2.1): they must match
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$`, not be `.`/`..`, and contain no
+separators or encoded traversal; the local adapter additionally verifies
+the resolved tenant root stays inside the configured root. Identical
+content under two tenants writes two objects — no cross-tenant dedup.
+
 ### Durability modes
 
-- **`inline`** — synchronous store write on the capture path. Simplest;
-  requires a synchronous store (local only).
+- **`inline`** — synchronous store write on the capture path.
+  **Development and tests only**: every byte of store latency lands on
+  the monitored call, and it requires a synchronous store (local only).
+  It is never the recommended production mode.
 - **`process`** — bounded in-memory queue drained on the event loop /
   worker thread. **A nonblocking enqueue is not a durable
   acknowledgment**: there is an interval in which process failure can
   lose buffered content. The manifest reports those items `pending` /
   `dropped` — an honest gap, never claimed delivered.
-- **`spooled`** — fsync'd local handoff before enqueue; recovered on
-  restart with idempotent re-delivery. This is the production path when
-  crash loss is unacceptable.
+- **`spooled`** — fsync'd local handoff before the item is accepted as
+  durable; recovered on restart with idempotent re-delivery. **This is
+  the production path.** In spooled mode the durable local handoff
+  completes before acceptance — a remote object-store stall never holds
+  the monitored call.
 
-All modes bound queue depth, payload size (`payload_max_bytes`,
-UTF-8-safe truncation marked `truncated` with the original length),
-retry attempts, and retry wall-clock. `flush_content(timeout_s)` /
-`flushContent(timeoutS)` is an opt-in awaitable flush for tests and
-graceful shutdown; `close()` drains within the shutdown timeout.
-Store outages never change application behavior — failures land as
-explicit manifest statuses (`failed`, `dropped`, `unsupported`,
-`not_captured`), not exceptions into the monitored path and not silent
-omissions.
+All modes bound queue depth (`queue_max_items`, a required positive
+integer), payload size (`payload_max_bytes`, UTF-8-safe truncation marked
+`truncated` with the original length), retry attempts, and retry
+wall-clock. `flush_content(timeout_s)` / `flushContent(timeoutS)` is an
+opt-in awaitable flush for tests and graceful shutdown; `close()` drains
+within the shutdown timeout. Store outages never change application
+behavior — failures land as explicit manifest statuses (`failed`,
+`dropped`, `unsupported`, `not_captured`), not exceptions into the
+monitored path and not silent omissions.
+
+**Passive delivery end to end.** In `process`/`spooled` modes no
+object-store I/O — local *or* network — happens on the monitored path,
+including the transcript manifest: `fabric.content.manifest_ref` is a
+deterministic URI computed without I/O and stamped while the decision
+span is still open; the manifest document is then delivered through the
+same bounded writer (spooled, in spooled mode) and reconciled as items
+settle (`pending → stored`/`failed`, idempotent rewrite, stable
+`manifest_id`). Object delivery outcomes reach the owning manifest
+through a keyed subscriber — a closed decision's callback is removed
+after terminal settlement.
+
+### Durable spooling
+
+In `spooled` mode each pending delivery — content objects *and* the
+transcript manifest — is a `fabric.content-spool/v1` record: schema
+version, tenant, delivery type, object/manifest and decision identity,
+the payload (descriptor + bytes, or the manifest document), the
+deterministic destination ref, retry metadata, and a record checksum.
+The spool directory is `0700` (tightened if it already exists more
+permissively), records `0600`, written atomically with file + directory
+fsync.
+
+On restart, recovery processes **every** valid record — not just the
+first queue-capacity batch — with idempotent re-delivery and manifest
+reconciliation through the by-decision alias. Unreadable or
+checksum-failed records are quarantined under `spool_dir/quarantine/`
+and counted — an explicit operational outcome, never silent loss.
+Successful delivery deletes the record durably; a crash between remote
+write and local delete is safe because re-delivery converges.
 
 ## What telemetry carries
 
@@ -141,17 +183,33 @@ missing content never looks like an empty input or a complete capture.
 
 `ContentResolver` reads only through explicitly configured stores and
 tenant namespaces — a telemetry-provided URI can never grant arbitrary
-filesystem or network access. Every resolved object is verified against
-its descriptor's byte length and SHA-256 digest before content is
-returned; states are explicit (`available`, `pending`, `missing`,
-`denied`, `corrupted`). Digests are integrity checks, not authorization
-and not proof of source truth.
+filesystem or network access, and ownership checks run on normalized
+canonical paths/keys.
+
+**`available` means verified.** Content returns `available` only after
+a valid descriptor is found, its tenant/identity checks pass, and the
+object's byte length and SHA-256 digest verify. A digest-named path is
+never treated as proof of integrity, and bytes are never returned for
+`denied`, `corrupted`, or `unverified` results:
+
+| Situation | Result |
+|---|---|
+| URI outside configured stores / bad scheme / traversal | `denied` |
+| Descriptor tenant ≠ store tenant | `denied` |
+| Descriptor missing, unreadable, or wrong shape | `unverified` |
+| Descriptor identity inconsistent; byte-length or digest mismatch | `corrupted` |
+| Bytes absent, manifest proves `pending` | `pending` |
+| Bytes absent otherwise (incl. deleted/expired) | `missing` |
+| All checks pass | `available` |
 
 `export_transcript` produces `fabric.transcript-export/v1`: ordered
-steps (grouped by child span, preserving emission order — not
-timestamp-sorted inference), materialized or reference-only content,
-completeness counts, and per-object integrity results. The resolver
-does not execute tools, replay side effects, or fetch arbitrary URIs.
+steps, each carrying an `entries` **array** — every manifest item exactly
+once, in sequence order, with its role, status, refs, and materialized
+or reference-only content. Repeated roles (multiple output chunks,
+retried tool attempts, repeated retrieval/context) are preserved, never
+overwritten. Completeness counts and per-object integrity results are
+included. The resolver does not execute tools, replay side effects, or
+fetch arbitrary URIs.
 
 ## Coverage and limits
 

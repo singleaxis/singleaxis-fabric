@@ -8,9 +8,14 @@ status record, not a certification or legal compliance statement.
 
 | Area | Implemented behavior |
 |---|---|
-| Capture | Python and TypeScript SDK surfaces; OTLP trace and log ingestion through Fabric Node; opt-in governed content capture to customer-controlled storage (specs 028/032) |
-| Protect | Non-disableable exact metadata allowlist; raw bodies and unapproved native OTLP strings removed before export; named production profile rejects custom allowlist extensions; governed content never enters OTLP — only `fabric.content.{ref,request_ref,result_ref,manifest_ref}` is admitted |
-| Deliver | OTLP/HTTP export, persistent file queue, no production pre-queue batch window, blocking overflow, restart recovery, and unbounded retry; governed content delivered by bounded SDK writers (`inline`/`process`/`spooled`) with durable local spooling, bounded retries, and explicit gap reporting |
+| Capture | Python and TypeScript SDK surfaces; OTLP trace and log ingestion through Fabric Node |
+| Protect | Non-disableable exact metadata allowlist; raw bodies and unapproved native OTLP strings removed before export; named production profile rejects custom allowlist extensions |
+| Deliver | OTLP/HTTP export, persistent file queue, no production pre-queue batch window, blocking overflow, restart recovery, and unbounded retry |
+
+Governed content capture (specs 028–034, **draft**) is present in the SDK
+source and packages but is **not yet a qualified release capability** — see
+its dedicated section below. The recorder claims above are about the
+metadata-only pipeline.
 | Deployment | Collector-only Helm chart with `shadow-dev` and fail-closed `shadow-production` profiles |
 | Setup | Recorder-only `fabricctl` init, validate, digest, help, and version commands |
 | Packaging | Explicit release allowlists for SDKs, chart, image, CLI, and public contract families |
@@ -27,35 +32,59 @@ that Fabric Node materializes Activity Envelope v2 on its OTLP wire path,
 automatically emits a signed privacy assertion for every batch, or obtains
 durable-persistence proof from arbitrary destinations.
 
-### Governed content (specs 028–034)
+### Governed content (specs 028–034, draft)
 
-Implemented in the SDKs today:
+Status vocabulary used here: **implemented** (code exists and passes unit
+tests), **locally tested** (suite-level evidence in this repository),
+**environment-dependent** (requires a live endpoint/cluster), **deferred**
+(designed, not built), **unsupported** (explicitly out of scope for v1).
+
+Locally tested in the SDKs today:
 
 - versioned `fabric.content-object/v1` descriptors and
-  `fabric.transcript-manifest/v1` / `fabric.transcript-export/v1` contracts,
-  with shared byte/hash fixtures passing in both languages;
-- local filesystem and S3-compatible governed stores (tenant-namespaced,
-  content-addressed, descriptor sidecars, by-decision manifest aliases);
-- bounded writer with `inline`/`process`/`spooled` durability, spool
-  recovery, and exact stored/pending/dropped/failed accounting;
+  `fabric.transcript-manifest/v1` / `fabric.transcript-export/v1`
+  contracts, with shared byte/hash fixtures passing in both languages;
+- local filesystem and S3-compatible governed stores behind a shared
+  safe-identifier tenant rule (tenant namespacing, content-addressed
+  objects, descriptor sidecars, by-decision manifest aliases);
+- bounded writer with `process`/`spooled` durability plus dev-only
+  `inline`, `fabric.content-spool/v1` durable records, full recovery
+  drain with quarantine, and exact stored/pending/dropped/failed
+  accounting — a nonblocking enqueue is never reported as durable;
+- passive delivery end to end: refs and `manifest_ref` are deterministic
+  and stamped before spans end; objects and manifests travel the bounded
+  writer — the monitored path performs no object-store I/O in
+  `process`/`spooled`;
 - governed capture across `llm_call` (request, output, partial output),
   `tool_call` (arguments, result), retrieval, memory, side-effect,
   context, and interaction surfaces in both SDKs;
 - authorized resolution confined to configured stores and tenant
-  namespaces, with digest + byte-length verification and explicit
-  available/pending/missing/denied/corrupted states.
+  namespaces; `available` is returned only after descriptor, byte-length,
+  and SHA-256 verification, with explicit
+  available/pending/missing/denied/corrupted/unverified results.
 
-Not yet qualified:
+Environment-dependent, not yet qualified:
+
+- production S3 delivery against a live endpoint (adapter is
+  contract-tested with fakes; a skippable live gate exists and must pass
+  before S3 is claimed production-ready);
+- governed-content flow through a real Fabric Node build (the allowlist
+  admits `fabric.content.manifest_ref`; the compose qualification must
+  prove refs cross and raw content stays out of OTLP, collector logs,
+  and the queue).
+
+Deferred:
 
 - adapter/framework auto-capture of governed content (manual `llm_call`
-  surfaces only — auto-instrumentation content is not wired);
-- binary or multimodal content (v1 is text/JSON; mark it `unsupported`);
-- production S3 delivery against a live endpoint (adapter is
-  contract-tested with fakes; run environment-dependent gates before
-  relying on it);
-- manifest_ref propagation through a live Fabric Node pipeline (the
-  allowlist admits it; the end-to-end kind gate does not exercise
-  governed mode yet).
+  surfaces only — auto-instrumentation content is not wired).
+
+Unsupported in v1:
+
+- binary or multimodal content (mark it `unsupported`; v1 is text/JSON);
+- immutable-evidence/retention claims (WORM, object lock, and lifecycle
+  are customer bucket/filesystem policies the SDK does not provide);
+- hidden provider context or reasoning (Fabric records the observable
+  boundary only).
 
 An unsigned privacy assertion records what a processor claims it applied. It is
 not independent proof and is not a legal de-identification determination.

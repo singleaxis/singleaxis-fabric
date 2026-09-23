@@ -1,8 +1,8 @@
 ---
 title: External evaluation interoperability and qualification
 status: draft
-revision: 1
-last_updated: 2026-09-22
+revision: 2
+last_updated: 2026-09-23
 owner: product-architecture
 depends_on: 028, 029, 032, 033
 related: 027
@@ -64,18 +64,23 @@ export` / `fabric-content export`) produces:
                "started_at": "…", "closed_at": "…"},
   "steps": [
     {"sequence": 0, "kind": "llm_call", "span_id": "s-llm1",
-     "content": {
-       "model.request.instructions": {"status": "available", "ref": "s3://…",
-         "digest": "sha256:…", "text": "You are a support agent…"},
-       "model.request.messages":     {"status": "available", "…": "…"},
-       "model.request.tool_definitions": {"status": "available", "…": "…"},
-       "model.request.parameters":   {"status": "available", "…": "…"},
-       "model.output.messages":      {"status": "available", "…": "…"}
-     }},
+     "entries": [
+       {"sequence": 0, "role": "model.request.instructions",
+        "status": "available", "ref": "s3://…", "digest": "sha256:…",
+        "text": "You are a support agent…"},
+       {"sequence": 1, "role": "model.request.messages",
+        "status": "available", "…": "…"},
+       {"sequence": 4, "role": "model.output.messages",
+        "status": "available", "…": "…"}
+     ]},
     {"sequence": 1, "kind": "tool_call", "span_id": "s-tool1",
      "tool_call_id": "call_9",
-     "content": {"tool.call.arguments": {"status": "available", "…": "…"},
-                 "tool.call.result":    {"status": "available", "…": "…"}}}
+     "entries": [
+       {"sequence": 2, "role": "tool.call.arguments",
+        "status": "available", "…": "…"},
+       {"sequence": 3, "role": "tool.call.result",
+        "status": "available", "…": "…"}
+     ]}
   ],
   "completeness": {"stored": 7, "pending": 0, "dropped": 0, "failed": 0},
   "integrity": {"verified": true, "objects_checked": 7, "failures": []}
@@ -84,18 +89,28 @@ export` / `fabric-content export`) produces:
 
 Rules:
 
+- **`entries` is an ordered array, not a role-keyed object.** Every
+  manifest item appears exactly once, in manifest `sequence` order,
+  carrying its own `role`, `sequence`, and `status`. A role-keyed object
+  silently overwrites repeated roles — multiple `model.output.messages`
+  chunks, retried tool attempts, repeated retrieval or context items —
+  and is forbidden.
+- Role filtering stays convenient: consumers select `entries` by `role`
+  (e.g. `jq '.steps[].entries[] | select(.role=="tool.call.result")'`);
+  multiplicity and order survive the filter.
 - Items resolve through the configured resolver (spec 033). Unresolved or
-  `denied` items appear with their status — never silently dropped from the
-  export and never replaced with empty text.
+  `denied` items appear with their status — never silently dropped from
+  the export and never replaced with empty text.
 - `integrity.verified` is the conjunction of per-object digest checks;
   failures are enumerated. An export with `verified: false` is still
   produced and marked — consumers decide policy.
 - Text objects inline as `text` (JSON objects inline as parsed JSON under
-  `text` when the consumer asks for materialized form, or stay as refs with
-  `--refs-only`). Size bounds apply to materialization (`export_max_bytes`,
-  default 64 MiB, refused beyond).
+  `text` when the consumer asks for materialized form, or stay as refs
+  with `--refs-only`). Size bounds apply to materialization
+  (`export_max_bytes`, default 64 MiB, refused beyond).
 - Ordering follows manifest `sequence`; the export never invents causal
-  order from timestamps.
+  order from timestamps. `status_reason` (including `partial*` reasons)
+  is preserved verbatim on each entry.
 
 ## 2. Required examples (outside recorder artifacts)
 

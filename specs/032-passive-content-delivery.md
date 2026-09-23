@@ -1,8 +1,8 @@
 ---
 title: Passive asynchronous content recording and durable delivery
 status: draft
-revision: 1
-last_updated: 2026-09-22
+revision: 2
+last_updated: 2026-09-23
 owner: product-architecture
 depends_on: 028, 029
 related: 033, 034
@@ -34,14 +34,22 @@ what can be lost, when, and how a consumer finds out.
 
 | Mode | Write path | Loss window | Use |
 |---|---|---|---|
-| `inline` | `store.put()` on the caller's thread before the event is stamped | None for the put itself; store latency is on the agent path (bounded only by store responsiveness) | Dev; the legacy `content_store=` behavior |
+| `inline` | `store.put()` on the caller's thread before the event is stamped | None for the put itself; store latency is on the agent path (bounded only by store responsiveness) | **Development and tests only** — the legacy `content_store=` behavior |
 | `process` | Enqueue to bounded in-process queue; background worker writes | Process death loses every queued, unwritten object | Local eval, throughput-sensitive dev |
-| `spooled` | Atomic fsync'd spool entry on enqueue, then background worker uploads and deletes the entry | Only a crash *before* the spool fsync returns (single small write) | Production default for governed mode |
+| `spooled` | Atomic fsync'd spool entry on enqueue, then background worker uploads and deletes the entry | Only a crash *before* the spool fsync returns (single small write) | **Production default** for governed mode |
 
-`inline` remains available for backwards compatibility and tiny deployments.
+`inline` exists for development, debugging, and compatibility — it is
+**not** a production durability mode: every byte of store latency
+(including network stalls against S3) lands on the monitored model/tool
+call. `inline` requires a synchronous store; configuring it is an explicit
+acknowledgment that store I/O is on the agent path.
+
 `spooled` requires `spool_dir` on a local filesystem the SDK can fsync
 (network filesystems are accepted but degrade the guarantee to whatever the
-mount provides — documented, not silently stronger).
+mount provides — documented, not silently stronger). In `spooled` mode the
+fsync'd local handoff **is** the durability acknowledgment: "accepted" is
+reported only after the spool write is durable, and a remote object-store
+stall can never hold the caller.
 
 ## 2. Bounded resources (all required, all configurable within caps)
 
@@ -54,6 +62,10 @@ mount provides — documented, not silently stronger).
 | `spool_max_bytes` | 1 GiB | — | spool full → `dropped`, reason `spool_full` |
 | `retry_max_attempts` | 5 | — | per object, exponential backoff w/ jitter |
 | `retry_max_elapsed_s` | 300 | — | terminal → item `failed`, reason recorded |
+
+`queue_max_items` must be a **positive** integer: `0` is rejected at
+configuration (it must never silently mean "unbounded" in one SDK and
+"drop everything" in another — a bounded queue is the contract).
 
 CPU: hashing + serialization happen at capture call time (bounded by
 `payload_max_bytes`); the worker performs store I/O only. No compression in
@@ -72,7 +84,10 @@ capture call ─ snapshot bytes + descriptor ─> enqueue ─┐
                                               v
                               worker: store.put(bytes) → status=stored
                               on retry exhaustion → status=failed
-                              manifest written/updated at decision close
+
+decision close ─ manifest snapshot ─> same bounded writer ─> store
+              (manifest_ref stamped BEFORE the span ends;
+               the manifest URI is deterministic, no I/O)
 ```
 
 - **Snapshot at capture.** Mutable inputs (dicts, lists, buffers) are
@@ -81,11 +96,29 @@ capture call ─ snapshot bytes + descriptor ─> enqueue ─┐
 - **Deterministic ref.** The URI is derived from store config + content
   digest, so the span event can carry the final ref before the object lands.
   Pending resolution is a designed-for state (§5).
-- **Manifest timing.** The manifest is written when the decision closes,
-  after in-flight items settle or are marked `pending`/`failed`. When
-  `spooled` mode has recovered-but-undelivered entries at close, the
-  manifest still publishes and the worker updates item statuses in place
-  when they resolve (single-writer, idempotent manifest rewrite).
+- **Deterministic manifest ref.** The manifest URI is likewise derived from
+  store config + `manifest_id` with **no store I/O** — the decision span can
+  carry `fabric.content.manifest_ref` before the manifest exists. The span
+  attribute is stamped while the span is still open; an asynchronous
+  "stamp after write" can race the span end and silently lose the only
+  link between the record and its transcript.
+- **Passive manifest delivery.** In `process`/`spooled` modes the manifest
+  document is itself submitted through the bounded writer as a manifest
+  delivery — the monitored path never performs local or network
+  object-store I/O. In `spooled` mode the manifest gets a spool record like
+  any object, so a crash between close and upload still reconciles.
+  `inline` mode is the documented exception (it is dev-only, §1): the
+  manifest write is synchronous there because the caller already accepted
+  store I/O on its path.
+- **Manifest registration before submission.** A manifest item is
+  registered (its `pending` slot exists) *before* the writer can settle it —
+  the task submitted to the writer carries manifest/item identity, so a
+  store fast enough to settle inline can never outrun registration and
+  leave a permanent false `pending`.
+- **Settlement is keyed, not global.** Delivery outcomes route to the
+  owning manifest through a keyed subscriber mechanism (object id →
+  manifest); a decision's subscriber is removed after terminal settlement
+  so a shared writer does not accumulate per-decision callbacks forever.
 - **`flush(timeout)` / `close()`.** `flush` blocks until the queue + spool
   drain or the timeout expires, returning `FlushResult{stored, pending,
   dropped, failed}` — the opt-in awaitable for tests and graceful shutdown.
@@ -131,13 +164,67 @@ resolvable:
 - `process` mode: the queue is volatile. Process death loses it; the
   manifest (if written) marks those items `pending` forever unless the
   decision had already closed — this is the documented loss window.
-- `spooled` mode: on startup the writer scans `spool_dir`, re-enqueues
-  surviving entries (idempotent — object identity is the digest), and marks
-  entries whose manifest already closed as resumable orphans. A spool entry
-  is only deleted after the store confirms the write.
+- `spooled` mode: on startup the writer scans `spool_dir` and delivers
+  surviving entries (idempotent — object identity is the digest). A spool
+  entry is only deleted after the store confirms the write.
 - Distinction tests must prove: in-memory-queue loss produces
   `pending`/absent objects with an honest manifest; spool-acknowledged
   content survives a kill -9 between enqueue and upload.
+
+### 6.1 Spool record — `fabric.content-spool/v1`
+
+Each spool file is one JSON document carrying enough identity to reconcile
+its manifest after a restart with no SDK state:
+
+| Field | Meaning |
+|---|---|
+| `schema_version` | `"fabric.content-spool/v1"` — unknown versions fail closed |
+| `delivery_type` | `"object"` or `"manifest"` |
+| `tenant_id` | Owning tenant namespace (safe identifier, spec 033) |
+| `object_id` / `manifest_id` | Identity of the delivery |
+| `decision_id` | Owning decision (for manifest reconciliation) |
+| `descriptor` + `content_b64` | Object deliveries: descriptor and UTF-8/base64 bytes |
+| `manifest` | Manifest deliveries: the full manifest document |
+| `ref` | The deterministic destination URI stamped on telemetry |
+| `attempts`, `first_enqueued` | Retry metadata continued across restarts |
+| `checksum` | `sha256:` hex of the canonical entry body (all fields except `checksum` itself) — the entry's own integrity check |
+
+### 6.2 Spool filesystem rules
+
+- Spool directory is created `0700` — and **tightened** when it already
+  exists more permissively (it will hold raw governed content).
+- Spool files are `0600`, written tmp + file fsync + `rename()` +
+  directory fsync — the same atomic-write discipline as the store.
+- Filenames are `<delivery_id>.json`; tmp files use a dot prefix so a crash
+  mid-write never produces a loadable record.
+
+### 6.3 Recovery
+
+- Startup recovery delivers **every** valid spool record — not merely the
+  first `queue_max_items`. Recovery entries bypass the live-enqueue bound:
+  the bound protects the *agent path* from memory growth, while recovered
+  work is already durable and must drain to completion (or terminal
+  `failed`) rather than be silently re-dropped.
+- A record whose checksum fails, whose JSON is unreadable, or whose
+  `schema_version`/`delivery_type` is unknown is **quarantined** into
+  `spool_dir/quarantine/` (move, same filesystem) and counted/logged —
+  an explicit operational outcome, never silent ignore and never an
+  infinite re-warn loop.
+- Successful delivery deletes the spool entry durably (unlink + directory
+  fsync). Delivery is idempotent: re-delivering a record whose object or
+  manifest already exists converges without error, so a crash between
+  remote write and local delete is safe.
+- Recovered object deliveries reconcile their manifest: the record's
+  `decision_id` locates the manifest via the store's by-decision alias;
+  the item settles `pending -> stored`/`failed` and the manifest is
+  rewritten per spec 029 §4. An object whose manifest cannot be found is
+  still delivered — the store is the content's home; the manifest link
+  degrades to an orphan record visible via `list_object_uris`.
+- Recovered manifest deliveries republish the manifest and its
+  by-decision alias.
+- Stale tmp files (`*.tmp` older than process start) and quarantined
+  entries are retained for operator inspection; the SDK never deletes
+  them silently.
 
 ## 7. Acceptance tests
 
