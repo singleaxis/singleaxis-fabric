@@ -269,9 +269,7 @@ def test_side_effect_stamps_request_and_result_refs(
             result_payload='{"ok": true}',
         )
 
-    event = next(
-        e for e in _decision_span(span_exporter).events if e.name == "fabric.side_effect"
-    )
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.side_effect")
     attrs = dict(event.attributes or {})
     assert attrs["fabric.content.request_ref"] == store.put('{"case": "1"}').uri
     assert attrs["fabric.content.result_ref"] == store.put('{"ok": true}').uri

@@ -16,6 +16,8 @@ import hashlib
 import hmac
 import json
 import sys
+import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,7 @@ from fabric import (
     validate_tag,
     verify_signature,
 )
+from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
 from fabric.decision import reset_coverage_registry
 from fabric.integrations.mcp import record_mcp_inventory
 
@@ -130,12 +133,12 @@ def test_record_interaction_kind_warns_on_pii_shape(
     """``kind`` is free-form and lands verbatim on the allowlisted
     ``fabric.interaction.kind`` attribute, so PII-shaped values must warn
     at emit time — the same contract as ``user_id``/``session_id``."""
-    from fabric._id_validators import PIIShapedIdentifierWarning
-
     client = _client()
-    with pytest.warns(PIIShapedIdentifierWarning, match="interaction.kind"):
-        with client.decision(session_id="s", request_id="r") as d:
-            d.record_interaction("check for user bryan@example.test", "input")
+    with (
+        pytest.warns(PIIShapedIdentifierWarning, match="interaction.kind"),
+        client.decision(session_id="s", request_id="r") as d,
+    ):
+        d.record_interaction("check for user bryan@example.test", "input")
 
 
 def test_record_interaction_raw_target_warns_on_pii_shape(
@@ -143,22 +146,18 @@ def test_record_interaction_raw_target_warns_on_pii_shape(
 ) -> None:
     """``target`` is hashed by default; when ``redact_target=False`` opts
     into a readable value, a PII-shaped target must warn."""
-    from fabric._id_validators import PIIShapedIdentifierWarning
-
     client = _client()
-    with pytest.warns(PIIShapedIdentifierWarning, match="interaction.target"):
-        with client.decision(session_id="s", request_id="r") as d:
-            d.record_interaction(
-                "db.query", "555-010-9999", redact_target=False
-            )
+    with (
+        pytest.warns(PIIShapedIdentifierWarning, match="interaction.target"),
+        client.decision(session_id="s", request_id="r") as d,
+    ):
+        d.record_interaction("db.query", "555-010-9999", redact_target=False)
 
 
 def test_record_interaction_redacted_target_does_not_warn(
     span_exporter: InMemorySpanExporter,
 ) -> None:
     """Hashed targets never carry the raw value, so no warning is needed."""
-    import warnings
-
     client = _client()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -773,11 +772,6 @@ def test_embedded_pii_scan_is_bounded_on_long_input() -> None:
     could stall the instrumented agent, breaking the passive guarantee.
     The scan is capped at the Node's max_field_bytes and prescreened, so a
     64 KiB adversarial value must return in well under a second."""
-    import time
-    import warnings
-
-    from fabric._id_validators import warn_if_pii_shaped
-
     adversarial = "a" * 65536
     start = time.perf_counter()
     with warnings.catch_warnings():
@@ -789,11 +783,6 @@ def test_embedded_pii_scan_is_bounded_on_long_input() -> None:
 
 def test_embedded_email_scan_is_linear_when_prescreen_matches() -> None:
     """An attacker can include @, so the post-prescreen path must stay cheap."""
-    import time
-    import warnings
-
-    from fabric._id_validators import warn_if_pii_shaped
-
     adversarial = "a" * 8180 + "@invalid"
     start = time.perf_counter()
     with warnings.catch_warnings():
@@ -805,10 +794,6 @@ def test_embedded_email_scan_is_linear_when_prescreen_matches() -> None:
 
 def test_embedded_pii_scan_still_detects_within_cap() -> None:
     """The scan cap must not blind detection inside the window."""
-    import warnings
-
-    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
-
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         warn_if_pii_shaped(
@@ -825,10 +810,6 @@ def test_embedded_pii_scan_still_detects_within_cap() -> None:
 )
 def test_embedded_pii_prescreens_keep_every_regex_shape(pii: str) -> None:
     """Every embedded regex has a corresponding mandatory-character gate."""
-    import warnings
-
-    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
-
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         warn_if_pii_shaped("interaction.kind", f"prefix {pii} suffix", embedded=True)
@@ -836,10 +817,6 @@ def test_embedded_pii_prescreens_keep_every_regex_shape(pii: str) -> None:
 
 
 def test_embedded_pii_at_exact_8192_byte_boundary_is_detected() -> None:
-    import warnings
-
-    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
-
     suffix = " bryan@example.test"
     value = "x" * (8192 - len(suffix)) + suffix
     assert len(value.encode("utf-8")) == 8192
@@ -850,10 +827,6 @@ def test_embedded_pii_at_exact_8192_byte_boundary_is_detected() -> None:
 
 
 def test_embedded_pii_scan_limit_counts_utf8_bytes() -> None:
-    import warnings
-
-    from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
-
     suffix = " a@b.co"
     value = "é" * 4090 + suffix
     assert len(value.encode("utf-8")) < 8192

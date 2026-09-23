@@ -25,6 +25,7 @@ export default [
         console: "readonly",
         process: "readonly",
         Buffer: "readonly",
+        performance: "readonly",
       },
     },
     plugins: {

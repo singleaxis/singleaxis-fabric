@@ -1166,9 +1166,7 @@ class Decision(AbstractContextManager["Decision"]):
         request_ref = (
             self._store_content_ref(request_payload) if request_payload is not None else None
         )
-        result_ref = (
-            self._store_content_ref(result_payload) if result_payload is not None else None
-        )
+        result_ref = self._store_content_ref(result_payload) if result_payload is not None else None
         with self._exclusive():
             if request_payload is not None or result_payload is not None:
                 record = SideEffectRecord.from_payloads(

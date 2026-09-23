@@ -138,7 +138,5 @@ def test_install_default_provider_accepts_meter_provider(
 
     calls: list[object] = []
     monkeypatch.setattr(metrics, "set_meter_provider", calls.append)
-    install_default_provider(
-        exporter=InMemorySpanExporter(), meter_provider=MeterProvider()
-    )
+    install_default_provider(exporter=InMemorySpanExporter(), meter_provider=MeterProvider())
     assert len(calls) == 1

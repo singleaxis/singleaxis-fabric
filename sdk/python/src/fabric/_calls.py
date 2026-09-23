@@ -496,9 +496,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 # cancellations. Record + mark ERROR ourselves.
                 if not isinstance(exc, Exception):
                     span.record_exception(exc)
-                    span.set_status(
-                        Status(StatusCode.ERROR, description=type(exc).__name__)
-                    )
+                    span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
         if elapsed is not None and self._duration_histogram is not None:
             self._duration_histogram.record(elapsed, attributes=metric_attrs)
         if self._token_histogram is not None:
@@ -920,9 +918,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 # exception event. Record + mark ERROR ourselves.
                 if not isinstance(exc, Exception):
                     span.record_exception(exc)
-                    span.set_status(
-                        Status(StatusCode.ERROR, description=type(exc).__name__)
-                    )
+                    span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
         if self._duration_histogram is not None and self._started_at is not None:
             attrs: dict[str, str] = {
                 GEN_AI_TOOL_NAME: self._name,

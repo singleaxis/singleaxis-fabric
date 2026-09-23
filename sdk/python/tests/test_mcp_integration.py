@@ -266,9 +266,7 @@ def test_inventory_omits_empty_server_and_transport(
 
     assert inv.server is None
     assert inv.transport is None
-    span = next(
-        s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
-    )
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     event = next(e for e in span.events if e.name == "fabric.mcp.inventory")
     attrs = dict(event.attributes or {})
     assert FABRIC_MCP_SERVER not in attrs
@@ -288,9 +286,7 @@ def test_inventory_stamps_identified_server_and_transport(
             tools=[{"name": "read_file"}],
         )
 
-    span = next(
-        s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision"
-    )
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
     event = next(e for e in span.events if e.name == "fabric.mcp.inventory")
     attrs = dict(event.attributes or {})
     assert attrs[FABRIC_MCP_SERVER] == "fs-mcp"
