@@ -92,6 +92,7 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"fabric.replay.state_hash", "fabric.replay.tool_result_hashes",
 	"error.type",
 	"fabric.content.ref", "fabric.content.request_ref", "fabric.content.result_ref",
+	"fabric.content.manifest_ref",
 	"fabric.memory.content_hash", "fabric.memory.direction", "fabric.memory.kind",
 	"fabric.memory.source", "fabric.memory.tenant_scope", "fabric.memory.ttl_seconds",
 	"fabric.memory.invalidates", "fabric.memory_kinds", "fabric.memory_erase_count",

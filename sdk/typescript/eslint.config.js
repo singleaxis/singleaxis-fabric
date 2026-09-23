@@ -26,6 +26,11 @@ export default [
         process: "readonly",
         Buffer: "readonly",
         performance: "readonly",
+        TextEncoder: "readonly",
+        TextDecoder: "readonly",
+        URL: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
       },
     },
     plugins: {

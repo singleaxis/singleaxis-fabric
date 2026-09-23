@@ -13,6 +13,7 @@ export {
   TRACER_NAME,
   DEFAULT_PROFILE,
   ENV_AGENT,
+  ENV_CONTENT_MODE,
   ENV_PROFILE,
   ENV_TENANT,
   type FabricConfig,
@@ -86,12 +87,54 @@ export {
   LlmCall,
   ToolCall,
   ToolErrorCategory,
+  type GovernedCaptureFn,
   type LlmCacheUsage,
   type LlmCallOptions,
   type LlmUsage,
   type StepOptions,
   type ToolCallOptions,
 } from "./calls.js";
+export {
+  CONTENT_ROLES,
+  ContentRole,
+  ContentStatus,
+  Representation,
+  SCHEMA_CONTENT_OBJECT,
+  SCHEMA_TRANSCRIPT_EXPORT,
+  SCHEMA_TRANSCRIPT_MANIFEST,
+  TranscriptManifest,
+  buildContentDescriptor,
+  canonicalBytes,
+  canonicalJson,
+  rfc3339Now,
+  sha256Prefixed,
+  sortForJson,
+  truncateBytes,
+  type BuildDescriptorOptions,
+  type ContentDescriptor,
+  type ManifestItem,
+} from "./content.js";
+export {
+  CorruptedObjectError,
+  LocalFilesystemContentStore,
+  S3ContentStore,
+  contentHashBytes,
+  type ContentRef,
+  type GovernedStore,
+} from "./content-store.js";
+export {
+  ContentWriter,
+  validateContentCaptureConfig,
+  type ContentCaptureConfig,
+  type FlushResult,
+} from "./content-writer.js";
+export { ContentSink } from "./content-sink.js";
+export {
+  ContentResolver,
+  ResolveStatus,
+  type ExportTranscriptOptions,
+  type ResolveResult,
+} from "./resolver.js";
 export { canonicalObjectHash, sha256Hex } from "./hash.js";
 export * as attributes from "./recorder-attributes.js";
 export * as testing from "./testing.js";

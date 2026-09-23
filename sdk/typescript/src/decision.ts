@@ -39,6 +39,11 @@ import {
 
 import * as A from "./attributes.js";
 import {
+  ATTR_CONTENT_REF,
+  ATTR_CONTENT_REQUEST_REF,
+  ATTR_CONTENT_RESULT_REF,
+} from "./attributes.js";
+import {
   ATTR_AGENT,
   ATTR_DECISION_ID,
   ATTR_EXECUTION,
@@ -80,9 +85,13 @@ import {
   ToolCall,
   startLlmSpan,
   startToolSpan,
+  type GovernedCaptureFn,
   type LlmCallOptions,
   type ToolCallOptions,
 } from "./calls.js";
+import { ContentRole, rfc3339Now, type TranscriptManifest } from "./content.js";
+import { ContentSink } from "./content-sink.js";
+import type { ContentCaptureConfig, ContentWriter } from "./content-writer.js";
 
 /** Identity passed to the {@link Decision} client identity. */
 export interface DecisionClientIdentity {
@@ -104,6 +113,12 @@ export interface DecisionClientIdentity {
    * sit on top (explicit keys win on collision).
    */
   extra?: Record<string, string>;
+  /** Governed content capture config (spec 028); absent = metadata mode. */
+  contentCapture?: ContentCaptureConfig;
+  /** Shared content writer owned by the Fabric client. */
+  contentWriter?: ContentWriter;
+  /** Resolved capture-role policy for this client. */
+  contentRoles?: ReadonlySet<string>;
 }
 
 /** Per-turn identifiers for one {@link Decision}. */
@@ -275,6 +290,14 @@ export interface RetrievalOptions {
   resultHashes?: string[];
   /** Optional caller-supplied source document ids. */
   sourceDocumentIds?: string[];
+  /**
+   * Ordered result content for governed capture (spec 028): the
+   * caller-supplied result objects are stored as one
+   * `retrieval.results` object; the event carries its ref. A recorded
+   * retrieval result proves the caller received it — not that the model
+   * consumed it.
+   */
+  results?: unknown[];
   /** Optional retrieval latency in ms. */
   latencyMs?: number;
 }
@@ -383,7 +406,14 @@ export interface FileAccessOptions extends CrossCuttingOptions {
 
 export interface InteractionOptions extends CrossCuttingOptions {
   direction?: InteractionDirection;
-  /** Caller-supplied hash of the interaction payload; raw payload is never accepted. */
+  /**
+   * Raw interaction payload: hashed locally to `payload_hash` and, under
+   * governed mode, stored verbatim (`interaction.payload` role) with the
+   * event carrying `fabric.content.ref`. Mutually exclusive with
+   * `payloadHash` (mirrors Python).
+   */
+  payload?: string;
+  /** Caller-supplied hash of the interaction payload. */
   payloadHash?: string;
   /** Metadata is canonicalized and hashed locally; it is never emitted in clear. */
   metadata?: Record<string, unknown>;
@@ -679,6 +709,87 @@ export class Decision implements DecisionLike {
     )) {
       span.setAttribute(key, value);
     }
+    // Governed content sink (spec 028): one manifest per decision, built
+    // only when the client configured explicit capture.
+    if (
+      identity.contentCapture !== undefined &&
+      identity.contentWriter !== undefined &&
+      identity.contentRoles !== undefined
+    ) {
+      this.contentSink = new ContentSink(
+        identity.contentCapture,
+        identity.contentWriter,
+        identity.tenantId,
+        identity.agentId,
+        this.decisionIdValue,
+        identity.contentRoles,
+      );
+      const spanContext = span.spanContext();
+      this.contentSink.bind({
+        traceId: spanContext.traceId !== "0".repeat(32) ? spanContext.traceId : undefined,
+        spanId: spanContext.spanId !== "0".repeat(16) ? spanContext.spanId : undefined,
+        executionId: this.resolvedExecutionId,
+        sessionId: ids.sessionId,
+        requestId: ids.requestId,
+        workflowId: this.resolvedWorkflowId,
+        startedAt: rfc3339Now(),
+      });
+    }
+  }
+
+  // -- governed content capture (spec 028) ------------------------------
+
+  private contentSink?: ContentSink;
+
+  /** True when governed content capture is configured on the client. */
+  get governedCapture(): boolean {
+    return this.contentSink !== undefined;
+  }
+
+  /** The in-progress transcript manifest, or `undefined` (metadata mode). */
+  get contentManifest(): TranscriptManifest | undefined {
+    return this.contentSink?.transcript;
+  }
+
+  private governedCaptureContent(
+    role: string,
+    content: unknown,
+    options: {
+      mediaType?: string;
+      bindings?: Record<string, unknown>;
+      links?: Record<string, unknown>;
+      statusReason?: string;
+      representation?: string;
+    } = {},
+  ): string | undefined {
+    const sink = this.contentSink;
+    if (sink === undefined || content === undefined || content === null) {
+      return undefined;
+    }
+    const bindings: Record<string, unknown> = {
+      decision_id: this.decisionIdValue,
+      session_id: this.sessionIdStored,
+      request_id: this.requestIdStored,
+      ...options.bindings,
+    };
+    const traceId = this.span.spanContext().traceId;
+    if (traceId !== "0".repeat(32)) {
+      bindings["trace_id"] = traceId;
+    }
+    if (this.resolvedExecutionId !== undefined) {
+      bindings["execution_id"] = this.resolvedExecutionId;
+    }
+    return sink.capture(role, content, { ...options, bindings });
+  }
+
+  /**
+   * Write the transcript manifest and stamp `fabric.content.manifest_ref`.
+   * Internal lifecycle hook — invoked by {@link Decision.end} and
+   * `runDecision` before the decision span ends; not part of the public
+   * recording surface.
+   */
+  closeContent(): void {
+    this.contentSink?.close({ decisionSpan: this.span, closedAt: rfc3339Now() });
   }
 
   // -- concurrency overlap guard ---------------------------------------
@@ -789,15 +900,106 @@ export class Decision implements DecisionLike {
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
     const span = startLlmSpan(this.tracer, resolved);
+    // Governed request capture (spec 028): exact request components to
+    // customer storage; the span carries only the reference.
+    const requestRef = this.captureLlmRequest(span, options);
+    if (requestRef !== undefined) {
+      span.setAttribute(ATTR_CONTENT_REQUEST_REF, requestRef);
+    }
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
       const call = new LlmCall(
         span,
         options.captureContent ?? false,
         options.emitLegacyAttributes ?? true,
+        this.llmCaptureFn(span, options),
       );
       return runAndEnd(span, () => fn(call));
     });
+  }
+
+  /**
+   * Capture the effective model request under governed mode:
+   * instructions, input messages, tool definitions and parameters —
+   * each as its own content object bound to this call's span.
+   */
+  private captureLlmRequest(span: Span, options: LlmCallOptions): string | undefined {
+    const sink = this.contentSink;
+    if (sink === undefined) {
+      return undefined;
+    }
+    const bindings: Record<string, unknown> = { step_type: "llm_call" };
+    const spanId = span.spanContext().spanId;
+    if (spanId !== "0".repeat(16)) {
+      bindings["span_id"] = spanId;
+    }
+    if (options.stepId !== undefined) bindings["step_id"] = options.stepId;
+    if (options.stepAttempt !== undefined) bindings["step_attempt"] = options.stepAttempt;
+    if (options.stepAttemptId !== undefined) bindings["step_attempt_id"] = options.stepAttemptId;
+    // Instructions take the type default (str → text/plain); structured
+    // request components are canonical JSON (mirrors Python
+    // `_capture_request_content`).
+    this.governedCaptureContent(
+      ContentRole.MODEL_REQUEST_INSTRUCTIONS,
+      options.systemInstructions,
+      { bindings },
+    );
+    // `fabric.content.request_ref` points at the input-messages object —
+    // the canonical "what the model saw" reference (mirrors Python).
+    const requestRef = this.governedCaptureContent(
+      ContentRole.MODEL_REQUEST_MESSAGES,
+      options.inputMessages,
+      { mediaType: "application/json", bindings },
+    );
+    this.governedCaptureContent(
+      ContentRole.MODEL_REQUEST_TOOL_DEFINITIONS,
+      options.toolDefinitions,
+      { mediaType: "application/json", bindings },
+    );
+    const parameters: Record<string, unknown> = {};
+    for (const [key, value] of [
+      ["temperature", options.temperature],
+      ["top_p", options.topP],
+      ["top_k", options.topK],
+      ["max_tokens", options.maxTokens],
+      ["stream", options.stream],
+      ["output_type", options.outputType],
+    ] as const) {
+      if (value !== undefined) {
+        parameters[key] = value;
+      }
+    }
+    if (Object.keys(parameters).length > 0) {
+      this.governedCaptureContent(ContentRole.MODEL_REQUEST_PARAMETERS, parameters, {
+        mediaType: "application/json",
+        bindings,
+      });
+    }
+    return requestRef;
+  }
+
+  /**
+   * The capture callback handed to a child LlmCall: stamps the same
+   * step/span bindings as request capture so output objects join the
+   * request's step in the transcript.
+   */
+  private llmCaptureFn(span: Span, options: LlmCallOptions): GovernedCaptureFn | undefined {
+    if (this.contentSink === undefined) {
+      return undefined;
+    }
+    return (role, content, overrides = {}) => {
+      const bindings: Record<string, unknown> = {
+        step_type: "llm_call",
+        ...overrides.bindings,
+      };
+      const spanId = span.spanContext().spanId;
+      if (spanId !== "0".repeat(16)) {
+        bindings["span_id"] = spanId;
+      }
+      if (options.stepId !== undefined) bindings["step_id"] = options.stepId;
+      if (options.stepAttempt !== undefined) bindings["step_attempt"] = options.stepAttempt;
+      return this.governedCaptureContent(role, content, { ...overrides, bindings });
+    };
   }
 
   /**
@@ -818,9 +1020,42 @@ export class Decision implements DecisionLike {
     const span = startToolSpan(this.tracer, name, resolved);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
-      const tool = new ToolCall(span, options.captureContent ?? false);
+      const tool = new ToolCall(
+        span,
+        options.captureContent ?? false,
+        this.toolCaptureFn(span, name, options),
+      );
       return runAndEnd(span, () => fn(tool));
     });
+  }
+
+  /** The capture callback handed to a child ToolCall. */
+  private toolCaptureFn(
+    span: Span,
+    _name: string,
+    options: ToolCallOptions,
+  ): GovernedCaptureFn | undefined {
+    if (this.contentSink === undefined) {
+      return undefined;
+    }
+    return (role, content, overrides = {}) => {
+      const bindings: Record<string, unknown> = {
+        step_type: "tool_call",
+        ...overrides.bindings,
+      };
+      const spanId = span.spanContext().spanId;
+      if (spanId !== "0".repeat(16)) {
+        bindings["span_id"] = spanId;
+      }
+      if (options.callId !== undefined) bindings["tool_call_id"] = options.callId;
+      if (options.stepId !== undefined) bindings["step_id"] = options.stepId;
+      if (options.stepAttempt !== undefined) bindings["step_attempt"] = options.stepAttempt;
+      const links =
+        options.callId !== undefined
+          ? { tool_call_id: options.callId, ...overrides.links }
+          : overrides.links;
+      return this.governedCaptureContent(role, content, { ...overrides, bindings, links });
+    };
   }
 
   /**
@@ -864,12 +1099,30 @@ export class Decision implements DecisionLike {
       this.span.setAttribute(A.ATTR_RETRIEVAL_COUNT, this.retrievalCount);
       this.span.setAttribute(A.ATTR_RETRIEVAL_SOURCES, sortedSet(this.retrievalSources));
 
+      // Governed capture (spec 028): a recorded result proves the caller
+      // received it — not that the model consumed it.
+      const stepBindings: Record<string, unknown> = { step_type: "retrieval" };
+      const queryRef = this.governedCaptureContent(ContentRole.RETRIEVAL_QUERY, options.query, {
+        bindings: stepBindings,
+      });
+      const resultsRef = this.governedCaptureContent(
+        ContentRole.RETRIEVAL_RESULTS,
+        options.results,
+        { mediaType: "application/json", bindings: stepBindings },
+      );
+
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_RETRIEVAL_SOURCE]: record.source,
         [A.ATTR_RETRIEVAL_QUERY_HASH]: record.queryHash,
         [A.ATTR_RETRIEVAL_RESULT_COUNT]: record.resultCount,
       };
+      if (queryRef !== undefined) {
+        attrs[ATTR_CONTENT_REQUEST_REF] = queryRef;
+      }
+      if (resultsRef !== undefined) {
+        attrs[ATTR_CONTENT_RESULT_REF] = resultsRef;
+      }
       if (record.resultHashes.length > 0) {
         attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...record.resultHashes];
       }
@@ -906,12 +1159,20 @@ export class Decision implements DecisionLike {
       this.memoryWriteCount += 1;
       this.memoryKinds.add(record.kind);
       this.updateMemoryCounters();
+      const contentRef = this.governedCaptureContent(
+        ContentRole.MEMORY_WRITE_CONTENT,
+        options.content,
+        { bindings: { step_type: "memory", direction: "write" } },
+      );
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MEMORY_DIRECTION]: "write",
         [A.ATTR_MEMORY_KIND]: record.kind,
         [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
       };
+      if (contentRef !== undefined) {
+        attrs[ATTR_CONTENT_REF] = contentRef;
+      }
       if (record.key !== undefined) {
         attrs[A.ATTR_MEMORY_KEY] = record.key;
       }
@@ -948,6 +1209,11 @@ export class Decision implements DecisionLike {
       this.memoryReadCount += 1;
       this.memoryKinds.add(record.kind);
       this.updateMemoryCounters();
+      const contentRef = this.governedCaptureContent(
+        ContentRole.MEMORY_READ_CONTENT,
+        options.content,
+        { bindings: { step_type: "memory", direction: "read" } },
+      );
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MEMORY_DIRECTION]: "read",
@@ -955,6 +1221,9 @@ export class Decision implements DecisionLike {
         [A.ATTR_MEMORY_KEY]: options.key,
         [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
       };
+      if (contentRef !== undefined) {
+        attrs[ATTR_CONTENT_REF] = contentRef;
+      }
       if (record.source !== undefined) {
         attrs[A.ATTR_MEMORY_SOURCE] = record.source;
       }
@@ -1071,6 +1340,22 @@ export class Decision implements DecisionLike {
       if (record.replayBehavior === "suppress") {
         this.suppressedSideEffectIds.push(record.sideEffectId);
       }
+      // Governed capture (spec 028): verbatim payloads to customer
+      // storage; the event carries only the references.
+      const seBindings: Record<string, unknown> = {
+        step_type: "side_effect",
+        side_effect_id: record.sideEffectId,
+      };
+      const requestRef = this.governedCaptureContent(
+        ContentRole.SIDE_EFFECT_REQUEST,
+        options.requestPayload,
+        { bindings: seBindings },
+      );
+      const resultRef = this.governedCaptureContent(
+        ContentRole.SIDE_EFFECT_RESULT,
+        options.resultPayload,
+        { bindings: seBindings },
+      );
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_SE_ID]: record.sideEffectId,
@@ -1087,6 +1372,12 @@ export class Decision implements DecisionLike {
       }
       if (record.resultHash !== undefined) {
         attrs[A.ATTR_SE_RESULT_HASH] = record.resultHash;
+      }
+      if (requestRef !== undefined) {
+        attrs[ATTR_CONTENT_REQUEST_REF] = requestRef;
+      }
+      if (resultRef !== undefined) {
+        attrs[ATTR_CONTENT_RESULT_REF] = resultRef;
       }
       if (record.idempotencyKey !== undefined) {
         attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = record.idempotencyKey;
@@ -1432,8 +1723,15 @@ export class Decision implements DecisionLike {
   /**
    * Capture an open-vocabulary interaction. Payloads are hash-only; metadata
    * is canonicalized and hashed; sensitive targets can be locally hashed.
+   *
+   * Under governed mode a raw `payload` is additionally stored verbatim
+   * (`interaction.payload` role) and the event carries `fabric.content.ref`
+   * — the payload itself still never lands on the span.
    */
   recordInteraction(kind: string, target: string, options: InteractionOptions = {}): void {
+    if (options.payload !== undefined && options.payloadHash !== undefined) {
+      throw new Error("pass either payload or payloadHash, not both");
+    }
     this.exclusive(() => {
       assertNonEmpty("recordInteraction: kind", kind);
       assertNonEmpty("recordInteraction: target", target);
@@ -1445,6 +1743,11 @@ export class Decision implements DecisionLike {
       if (options.direction !== undefined) {
         assertOneOf("recordInteraction: direction", options.direction, INTERACTION_DIRECTIONS);
       }
+      const payloadRef = this.governedCaptureContent(
+        ContentRole.INTERACTION_PAYLOAD,
+        options.payload,
+        { bindings: { step_type: "interaction" } },
+      );
       this.interactionCount += 1;
       this.interactionKinds.add(kind);
       this.span.setAttribute(A.ATTR_INTERACTION_COUNT, this.interactionCount);
@@ -1464,6 +1767,11 @@ export class Decision implements DecisionLike {
           "recordInteraction: payloadHash",
           options.payloadHash,
         );
+      } else if (options.payload !== undefined) {
+        attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = sha256Hex(options.payload);
+      }
+      if (payloadRef !== undefined) {
+        attrs[ATTR_CONTENT_REF] = payloadRef;
       }
       if (options.metadata !== undefined) {
         attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
@@ -1486,6 +1794,30 @@ export class Decision implements DecisionLike {
       ) {
         this.recordCoverage(kind, COVERAGE_REASON_UNCLASSIFIED_DEVIATION);
       }
+    });
+  }
+
+  /**
+   * Capture an explicitly supplied context object (file, doc, blob).
+   *
+   * Emits a `fabric.interaction` event with `kind="context.file"`, then
+   * governed-captures `content` under the `context.file` role (text or
+   * JSON in v1 — binary/multimodal is out of scope; mark it unsupported
+   * instead). Returns the content ref URI, or `undefined` when governed
+   * mode is off or the role is outside the capture policy.
+   */
+  recordContext(
+    name: string,
+    content: unknown,
+    options: { mediaType?: string; description?: string } = {},
+  ): string | undefined {
+    if (!name) {
+      throw new Error("recordContext: name is required");
+    }
+    this.recordInteraction("context.file", options.description ?? name, {});
+    return this.governedCaptureContent(ContentRole.CONTEXT_FILE, content, {
+      mediaType: options.mediaType,
+      bindings: { step_type: "context" },
     });
   }
 
@@ -1513,6 +1845,10 @@ export class Decision implements DecisionLike {
 
   /** End the decision span. Used by the explicit start/end form. */
   end(): void {
+    // Governed content: write the transcript manifest and stamp its ref
+    // before the span ends. Pending items stay pending — an honest gap,
+    // never claimed delivered (spec 032 §5).
+    this.closeContent();
     this.span.end();
   }
 }
@@ -1614,7 +1950,33 @@ export function runDecision<T>(
   const ctx = trace.setSpan(otelContext.active(), span);
   return otelContext.with(ctx, () => {
     const decision = new Decision(tracer, span, identity, ids);
-    return runAndEnd(span, () => fn(decision));
+    let result: T;
+    try {
+      result = fn(decision);
+    } catch (err) {
+      recordError(span, err);
+      decision.closeContent();
+      span.end();
+      throw err;
+    }
+    if (isThenable(result)) {
+      return result.then(
+        (value) => {
+          decision.closeContent();
+          span.end();
+          return value;
+        },
+        (err: unknown) => {
+          recordError(span, err);
+          decision.closeContent();
+          span.end();
+          throw err;
+        },
+      ) as T;
+    }
+    decision.closeContent();
+    span.end();
+    return result;
   });
 }
 

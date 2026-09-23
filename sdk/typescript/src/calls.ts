@@ -98,6 +98,7 @@ import {
   GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_LEGACY,
 } from "./attributes.js";
 import { sha256Hex } from "./hash.js";
+import { ATTR_CONTENT_REQUEST_REF, ATTR_CONTENT_RESULT_REF } from "./attributes.js";
 import { type CrossCuttingOptions } from "./crosscut.js";
 import {
   assertIntAtLeast,
@@ -129,6 +130,26 @@ export const ToolErrorCategory = {
   UNKNOWN: "unknown",
 } as const;
 export type ToolErrorCategory = (typeof ToolErrorCategory)[keyof typeof ToolErrorCategory];
+
+/**
+ * Governed-capture callback handed to child call handles by the owning
+ * {@link Decision}. Stores `content` under `role` in the configured
+ * governed store and returns the `file://`/`s3://` reference, or
+ * `undefined` when the role is outside the capture policy (spec 028).
+ * Never throws — capture failures are recorded in the manifest, not
+ * propagated into the monitored call.
+ */
+export type GovernedCaptureFn = (
+  role: string,
+  content: unknown,
+  overrides?: {
+    mediaType?: string;
+    bindings?: Record<string, unknown>;
+    links?: Record<string, unknown>;
+    statusReason?: string;
+    representation?: string;
+  },
+) => string | undefined;
 
 /** Step-taxonomy options shared by both child-span kinds. */
 export interface StepOptions {
@@ -207,6 +228,7 @@ export class LlmCall {
     private readonly span: Span,
     private readonly captureContent = false,
     private readonly emitLegacyAttributes = true,
+    private readonly governedCapture?: GovernedCaptureFn,
   ) {}
 
   /**
@@ -270,10 +292,42 @@ export class LlmCall {
       this.span.setAttribute(FABRIC_LLM_RESPONSE_FINISH_REASONS, reasons);
     }
     if (options.outputMessages !== undefined) {
-      if (!this.captureContent) {
+      if (this.governedCapture !== undefined) {
+        const ref = this.governedCapture("model.output.messages", options.outputMessages, {
+          mediaType: "application/json",
+        });
+        if (ref !== undefined) {
+          this.span.setAttribute(ATTR_CONTENT_RESULT_REF, ref);
+        }
+      } else if (!this.captureContent) {
         throw new Error("outputMessages requires captureContent=true on llmCall");
       }
-      this.span.setAttribute(GEN_AI_OUTPUT_MESSAGES, jsonValue(options.outputMessages));
+      if (this.captureContent) {
+        this.span.setAttribute(GEN_AI_OUTPUT_MESSAGES, jsonValue(options.outputMessages));
+      }
+    }
+  }
+
+  /**
+   * Capture assembled-but-incomplete output from an interrupted stream.
+   *
+   * Stores the assembled prefix as `model.output.messages` with
+   * `representation: assembled` and a `partial output` status reason
+   * (spec 028/029) — distinguishable from final output by
+   * representation, not by role. The bytes are snapshotted at call
+   * time. Requires governed content capture.
+   */
+  recordPartialOutput(content: unknown): void {
+    if (this.governedCapture === undefined) {
+      throw new Error("recordPartialOutput requires governed content capture");
+    }
+    const ref = this.governedCapture("model.output.messages", content, {
+      mediaType: typeof content === "string" ? "text/plain" : "application/json",
+      statusReason: "partial output",
+      representation: "assembled",
+    });
+    if (ref !== undefined) {
+      this.span.setAttribute(ATTR_CONTENT_RESULT_REF, ref);
     }
   }
 
@@ -380,6 +434,7 @@ export class ToolCall {
   constructor(
     private readonly span: Span,
     private readonly captureContent = false,
+    private readonly governedCapture?: GovernedCaptureFn,
   ) {}
 
   /** Record how many results/items the tool returned. */
@@ -399,6 +454,12 @@ export class ToolCall {
   setArguments(payload: string, options: { capture?: boolean } = {}): void {
     assertStringPayload(payload);
     this.span.setAttribute(FABRIC_TOOL_ARGS_HASH, sha256Hex(payload));
+    if (this.governedCapture !== undefined) {
+      const ref = this.governedCapture("tool.call.arguments", payload);
+      if (ref !== undefined) {
+        this.span.setAttribute(ATTR_CONTENT_REQUEST_REF, ref);
+      }
+    }
     const shouldCapture = options.capture ?? this.captureContent;
     if (shouldCapture) this.span.setAttribute(GEN_AI_TOOL_CALL_ARGUMENTS, payload);
   }
@@ -407,6 +468,12 @@ export class ToolCall {
   setResult(payload: string, options: { capture?: boolean } = {}): void {
     assertStringPayload(payload);
     this.span.setAttribute(FABRIC_TOOL_RESULT_HASH, sha256Hex(payload));
+    if (this.governedCapture !== undefined) {
+      const ref = this.governedCapture("tool.call.result", payload);
+      if (ref !== undefined) {
+        this.span.setAttribute(ATTR_CONTENT_RESULT_REF, ref);
+      }
+    }
     const shouldCapture = options.capture ?? this.captureContent;
     if (shouldCapture) this.span.setAttribute(GEN_AI_TOOL_CALL_RESULT, payload);
   }

@@ -220,6 +220,16 @@ export const ATTR_MEMORY_SOURCE = "fabric.memory.source";
 export const ATTR_MEMORY_INVALIDATES = "fabric.memory.invalidates";
 export const ATTR_MEMORY_TENANT_SCOPE = "fabric.memory.tenant_scope";
 
+// -- Governed content references (specs 028/029) -------------------------
+//
+// These carry resolution URIs + manifest pointers only — never raw
+// content. They are the only `fabric.content.*` keys the collector
+// allowlist admits.
+export const ATTR_CONTENT_REF = "fabric.content.ref";
+export const ATTR_CONTENT_REQUEST_REF = "fabric.content.request_ref";
+export const ATTR_CONTENT_RESULT_REF = "fabric.content.result_ref";
+export const ATTR_CONTENT_MANIFEST_REF = "fabric.content.manifest_ref";
+
 // -- Side effect (fabric.side_effect span event) ------------------------
 
 export const EVENT_NAME_SIDE_EFFECT = "fabric.side_effect";

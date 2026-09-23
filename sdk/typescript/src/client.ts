@@ -22,6 +22,13 @@ import {
 } from "./decision.js";
 import { Execution, runExecution, type ExecutionOptions } from "./execution.js";
 import { checkAttributeKeys } from "./attributes.js";
+import { CONTENT_ROLES } from "./content.js";
+import {
+  ContentWriter,
+  validateContentCaptureConfig,
+  type ContentCaptureConfig,
+  type FlushResult,
+} from "./content-writer.js";
 import { checkIdentifier, warnIfPiiShaped } from "./id-validators.js";
 import { TRACER_NAME, getTracer } from "./tracing.js";
 
@@ -38,6 +45,12 @@ export const ENV_TENANT = "FABRIC_TENANT_ID";
 export const ENV_AGENT = "FABRIC_AGENT_ID";
 /** Environment variable naming the profile. */
 export const ENV_PROFILE = "FABRIC_PROFILE";
+/**
+ * Environment variable that can only RESTRICT content capture: set to
+ * `"metadata"` to force-disable a configured governed capture. It can
+ * never enable governed mode by itself (spec 028).
+ */
+export const ENV_CONTENT_MODE = "FABRIC_CONTENT_MODE";
 
 /** Configuration for one {@link Fabric} client. */
 export interface FabricConfig {
@@ -74,6 +87,14 @@ export interface FabricConfig {
   extra?: Record<string, string>;
   /** Optional explicit tracer provider; otherwise the global provider. */
   tracerProvider?: TracerProvider;
+  /**
+   * Governed content capture (spec 028): explicit opt-in. Requires a
+   * tenant-namespaced governed store, a role policy, and a durability
+   * mode — anything missing fails closed at construction. `metadata`
+   * remains the zero-configuration default: omit this field and no
+   * content objects are written.
+   */
+  contentCapture?: ContentCaptureConfig;
 }
 
 /**
@@ -83,6 +104,8 @@ export interface FabricConfig {
 export class Fabric {
   private readonly tracer: Tracer;
   private readonly identity: DecisionClientIdentity;
+  private readonly contentWriter?: ContentWriter;
+  private readonly contentCapture?: ContentCaptureConfig;
 
   constructor(config: FabricConfig) {
     const tenantId = config.tenantId?.trim();
@@ -144,6 +167,23 @@ export class Fabric {
     warnIfPiiShaped("execution_attempt_id", config.executionAttemptId);
     warnIfPiiShaped("execution_retry_previous_attempt_id", config.executionRetryPreviousAttemptId);
     this.tracer = getTracer(config.tracerProvider);
+    // Governed content capture (spec 028): explicit opt-in. The only
+    // environment influence is restrictive — `FABRIC_CONTENT_MODE`
+    // set to `metadata` force-disables a configured capture; it can
+    // never enable one.
+    const env = typeof process !== "undefined" ? process.env : {};
+    let contentCapture = config.contentCapture;
+    if ((env[ENV_CONTENT_MODE] ?? "").toLowerCase() === "metadata") {
+      contentCapture = undefined;
+    }
+    if (contentCapture !== undefined) {
+      const roles = validateContentCaptureConfig(contentCapture, CONTENT_ROLES);
+      this.contentCapture = contentCapture;
+      this.contentWriter = new ContentWriter(contentCapture);
+      this.identity.contentRoles = roles;
+      this.identity.contentCapture = contentCapture;
+      this.identity.contentWriter = this.contentWriter;
+    }
   }
 
   /**
@@ -190,5 +230,29 @@ export class Fabric {
   /** Record one outer unit of work — a task or workflow attempt. See {@link Execution}. */
   execution<T>(ids: ExecutionOptions, fn: (execution: Execution) => T): T {
     return runExecution(this.tracer, this.identity, ids, fn);
+  }
+
+  /** The configured governed-capture config, or `undefined` (metadata mode). */
+  get contentCaptureConfig(): ContentCaptureConfig | undefined {
+    return this.contentCapture;
+  }
+
+  /** The shared governed content writer, or `undefined` (metadata mode). */
+  get writer(): ContentWriter | undefined {
+    return this.contentWriter;
+  }
+
+  /**
+   * Awaitable flush of buffered governed content — for tests and
+   * graceful shutdown. Returns exact per-status counts; a `pending`
+   * remainder is an honest gap. `undefined` in metadata mode.
+   */
+  async flushContent(timeoutS?: number): Promise<FlushResult | undefined> {
+    return this.contentWriter?.flush(timeoutS);
+  }
+
+  /** Flush governed content and stop the writer. Idempotent. */
+  async close(): Promise<void> {
+    await this.contentWriter?.close();
   }
 }
