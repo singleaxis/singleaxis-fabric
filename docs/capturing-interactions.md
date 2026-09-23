@@ -56,6 +56,33 @@ PII-shape warnings for the highest-risk interaction fields:
 are advisory; destinations must treat all free-form values as
 asserted-unverified metadata, not semantic content.
 
+## Content capture postures
+
+Three distinct postures exist for "what happened to the actual bytes"; they
+are not interchangeable:
+
+| Posture | Where content lives | Crosses the boundary? | Use |
+|---|---|---|---|
+| **Metadata-only** (default) | Nowhere — only hashes, counts, and shape are recorded | Hashes and metadata only | Operations, structure, timing, usage, outcomes |
+| **Governed content** | Customer-controlled object store (local FS or S3), content-addressed and tenant-scoped | Opaque reference URI + digest only — never the payload | Content-level review by consumers authorized to read the store |
+| **Harness-owned offline transcripts** | The evaluation harness's own files | Never — no Fabric required | Development and offline eval; the harness owns privacy, access, and retention for those datasets |
+
+Governed content mode is specified in specs
+[028](../specs/028-governed-content-capture.md)–
+[034](../specs/034-eval-interoperability.md) (draft). It is off by default,
+requires an explicitly configured customer store, and changes nothing about
+what crosses the protected boundary — only the reference and digest travel
+on telemetry. Metadata-only export supports structural review (calls,
+timing, usage, retries, relationships, reported outcomes); it cannot support
+content-level judgments about correctness, grounding, instruction following,
+leakage, or tool appropriateness unless authorized consumers can resolve the
+governed references where the content is permitted to be read.
+
+Do not route offline harness transcripts through a content-stripping
+collector or require production infrastructure for local evaluation —
+and do not assume local transcripts carry no security or durability
+obligations.
+
 ## First-class recorder surfaces
 
 - model and tool calls, usage, errors, retries, and idempotency metadata;

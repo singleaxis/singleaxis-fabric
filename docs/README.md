@@ -29,6 +29,9 @@ that specification, 027 controls the recorder release.
   [verify a release](verify-release.md) — artifact integrity and promotion.
 - [Qualification status](recorder-v1-qualification-status.md) — implemented
   behavior, contract-only surfaces, required CI, and known boundaries.
+- [Governed content gap assessment](governed-content-gap-assessment.md) —
+  file-level evidence of what the content-capture path does and does not do
+  today, plus the requirements-to-test matrix (draft specs 028–034).
 - [API stability](api-stability.md) — compatibility commitments.
 
 ## Public contracts

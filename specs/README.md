@@ -11,7 +11,7 @@ the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 028.
+next unused public number is 035.
 
 Spec [027](027-recorder-v1.md) is the authoritative product and release scope
 for the first stable OSS recorder. Specs describing capabilities outside
@@ -54,3 +54,10 @@ Every spec declares a `Status` in its header:
 | [023](023-generic-interaction-capture.md) | Generic interaction capture — universal primitive, baseline, tags, signatures | implemented |
 | [025](025-product-planes-and-packaging.md) | Product planes, packaging, and deployment model | superseded |
 | [027](027-recorder-v1.md) | Recorder-first OSS release | accepted |
+| [028](028-governed-content-capture.md) | Governed content capture and configuration | draft |
+| [029](029-content-objects-transcript-contract.md) | Content object and transcript manifest contracts | draft |
+| [030](030-auditd-host-connector.md) | auditd host connector | draft |
+| [031](031-ebpf-host-emitter.md) | eBPF host emitter | draft |
+| [032](032-passive-content-delivery.md) | Passive asynchronous content recording and durable delivery | draft |
+| [033](033-content-storage-resolution.md) | Customer content storage and authorized resolution | draft |
+| [034](034-eval-interoperability.md) | External evaluation interoperability and qualification | draft |
