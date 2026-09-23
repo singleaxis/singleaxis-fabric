@@ -55,10 +55,14 @@ def run(root: str, tenant: str) -> str:
             "refund-policy.txt",
             "Refunds above $500 require a supervisor approval code.",
         )
+        instructions = [
+            {"role": "system", "content": "You are a refund agent. Check policy before answering."}
+        ]
         # Model turn 1: model sees the request and issues a tool call.
         with decision.llm_call(
             provider="example",
             model="model-a",
+            system_instructions=instructions,
             input_messages=[{"role": "user", "content": "Can I refund $700?"}],
         ) as call:
             call.set_response(
@@ -79,11 +83,33 @@ def run(root: str, tenant: str) -> str:
                 ]
             )
         # Tool execution: serialized args + result, bound to call-1.
+        tool_result = '{"limit": 500, "approver": "supervisor"}'
         with decision.tool_call("lookup_policy", call_id="call-1") as tool:
             tool.set_arguments('{"section": "refunds"}')
-            tool.set_result('{"limit": 500, "approver": "supervisor"}')
-        # Model turn 2: the follow-up answer.
-        with decision.llm_call(provider="example", model="model-a") as call:
+            tool.set_result(tool_result)
+        # Model turn 2: the request carries the tool result the model
+        # observed — the causal link a transcript consumer must verify.
+        with decision.llm_call(
+            provider="example",
+            model="model-a",
+            input_messages=[
+                {"role": "user", "content": "Can I refund $700?"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "function": {
+                                "name": "lookup_policy",
+                                "arguments": '{"section": "refunds"}',
+                            },
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call-1", "content": tool_result},
+            ],
+        ) as call:
             call.set_response(
                 output_messages=[
                     {
