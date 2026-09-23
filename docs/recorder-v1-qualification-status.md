@@ -8,9 +8,9 @@ status record, not a certification or legal compliance statement.
 
 | Area | Implemented behavior |
 |---|---|
-| Capture | Python and TypeScript SDK surfaces; OTLP trace and log ingestion through Fabric Node |
-| Protect | Non-disableable exact metadata allowlist; raw bodies and unapproved native OTLP strings removed before export; named production profile rejects custom allowlist extensions |
-| Deliver | OTLP/HTTP export, persistent file queue, no production pre-queue batch window, blocking overflow, restart recovery, and unbounded retry |
+| Capture | Python and TypeScript SDK surfaces; OTLP trace and log ingestion through Fabric Node; opt-in governed content capture to customer-controlled storage (specs 028/032) |
+| Protect | Non-disableable exact metadata allowlist; raw bodies and unapproved native OTLP strings removed before export; named production profile rejects custom allowlist extensions; governed content never enters OTLP — only `fabric.content.{ref,request_ref,result_ref,manifest_ref}` is admitted |
+| Deliver | OTLP/HTTP export, persistent file queue, no production pre-queue batch window, blocking overflow, restart recovery, and unbounded retry; governed content delivered by bounded SDK writers (`inline`/`process`/`spooled`) with durable local spooling, bounded retries, and explicit gap reporting |
 | Deployment | Collector-only Helm chart with `shadow-dev` and fail-closed `shadow-production` profiles |
 | Setup | Recorder-only `fabricctl` init, validate, digest, help, and version commands |
 | Packaging | Explicit release allowlists for SDKs, chart, image, CLI, and public contract families |
@@ -26,6 +26,36 @@ interoperability shapes and validation rules. Recorder v1 does not yet claim
 that Fabric Node materializes Activity Envelope v2 on its OTLP wire path,
 automatically emits a signed privacy assertion for every batch, or obtains
 durable-persistence proof from arbitrary destinations.
+
+### Governed content (specs 028–034)
+
+Implemented in the SDKs today:
+
+- versioned `fabric.content-object/v1` descriptors and
+  `fabric.transcript-manifest/v1` / `fabric.transcript-export/v1` contracts,
+  with shared byte/hash fixtures passing in both languages;
+- local filesystem and S3-compatible governed stores (tenant-namespaced,
+  content-addressed, descriptor sidecars, by-decision manifest aliases);
+- bounded writer with `inline`/`process`/`spooled` durability, spool
+  recovery, and exact stored/pending/dropped/failed accounting;
+- governed capture across `llm_call` (request, output, partial output),
+  `tool_call` (arguments, result), retrieval, memory, side-effect,
+  context, and interaction surfaces in both SDKs;
+- authorized resolution confined to configured stores and tenant
+  namespaces, with digest + byte-length verification and explicit
+  available/pending/missing/denied/corrupted states.
+
+Not yet qualified:
+
+- adapter/framework auto-capture of governed content (manual `llm_call`
+  surfaces only — auto-instrumentation content is not wired);
+- binary or multimodal content (v1 is text/JSON; mark it `unsupported`);
+- production S3 delivery against a live endpoint (adapter is
+  contract-tested with fakes; run environment-dependent gates before
+  relying on it);
+- manifest_ref propagation through a live Fabric Node pipeline (the
+  allowlist admits it; the end-to-end kind gate does not exercise
+  governed mode yet).
 
 An unsigned privacy assertion records what a processor claims it applied. It is
 not independent proof and is not a legal de-identification determination.

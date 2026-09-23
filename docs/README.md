@@ -29,6 +29,9 @@ that specification, 027 controls the recorder release.
   [verify a release](verify-release.md) — artifact integrity and promotion.
 - [Qualification status](recorder-v1-qualification-status.md) — implemented
   behavior, contract-only surfaces, required CI, and known boundaries.
+- [Governed content](governed-content.md) — opt-in capture of actual
+  content to customer-controlled storage: postures, stores, durability,
+  resolution/export, coverage limits, and migration from `capture_content`.
 - [Governed content gap assessment](governed-content-gap-assessment.md) —
   file-level evidence of what the content-capture path does and does not do
   today, plus the requirements-to-test matrix (draft specs 028–034).
@@ -38,6 +41,7 @@ that specification, 027 controls the recorder release.
 
 - [Activity Envelope v2](../contracts/activity/v2/README.md)
 - [Connector capability contract](../contracts/connect/v1/README.md)
+- [Content objects and transcript manifests](../contracts/content/v1/README.md)
 - [Recorder configuration](../contracts/recorder/v1/README.md)
 - [Privacy assertion](../contracts/privacy/v1/README.md)
 - [Delivery batch and receipt](../contracts/delivery/v1/README.md)

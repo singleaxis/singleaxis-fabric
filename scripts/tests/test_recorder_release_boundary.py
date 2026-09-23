@@ -56,6 +56,7 @@ def test_release_policy_is_recorder_only() -> None:
     assert set(policy["contracts"]["public_families"]) == {
         "activity",
         "connect",
+        "content",
         "delivery",
         "privacy",
         "recorder",
@@ -63,6 +64,7 @@ def test_release_policy_is_recorder_only() -> None:
     assert policy["contracts"]["public_versions"] == {
         "activity": ["v2"],
         "connect": ["v1"],
+        "content": ["v1"],
         "delivery": ["v1"],
         "privacy": ["v1"],
         "recorder": ["v1"],

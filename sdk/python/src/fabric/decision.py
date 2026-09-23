@@ -903,6 +903,12 @@ class Decision(AbstractContextManager["Decision"]):
         sink = self._content_sink
         return sink.manifest if sink is not None else None
 
+    @property
+    def content_manifest_uri(self) -> str | None:
+        """The written manifest's store URI, or ``None`` until close (metadata mode: always ``None``)."""
+        sink = self._content_sink
+        return sink.manifest_uri if sink is not None else None
+
     # -- retrieval --------------------------------------------------------
 
     def record_retrieval(
