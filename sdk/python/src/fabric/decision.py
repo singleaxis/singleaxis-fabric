@@ -116,6 +116,12 @@ from ._attributes import (
     check_attribute_keys,
 )
 from ._calls import LLMCall, ToolCall
+from ._content import (
+    ContentRole,
+    TranscriptManifest,
+    _rfc3339_now,
+)
+from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values
 from ._id_validators import warn_if_pii_shaped
@@ -407,6 +413,10 @@ class Decision(AbstractContextManager["Decision"]):
         # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
         # rejection; shared by the sync and async context-manager paths.
         self._state = "new"
+        # Governed content (spec 028/029): lazily built per-decision sink
+        # accumulating manifest items; ``None`` forever in metadata mode.
+        self._content_sink: ContentSink | None = None
+        self._started_at_rfc3339: str | None = None
 
     # -- concurrency overlap guard ---------------------------------------
 
@@ -506,6 +516,7 @@ class Decision(AbstractContextManager["Decision"]):
                 "turn (do not re-enter or reuse the same instance)"
             )
         self._state = "open"
+        self._started_at_rfc3339 = _rfc3339_now()
         tracer = self._client.tracer
         # We own exception recording, so disable the tracer's automatic
         # handler to avoid duplicate exception events.
@@ -602,6 +613,11 @@ class Decision(AbstractContextManager["Decision"]):
             self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
             self._span.record_exception(exc)
+        # Governed content: write the transcript manifest and stamp its
+        # ref before the span ends. Pending items stay pending — honest
+        # gap, never claimed delivered (spec 032 §5).
+        if self._content_sink is not None:
+            self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
         result = self._cm.__exit__(exc_type, exc, tb)
         self._span = None
         self._cm = None
@@ -788,6 +804,105 @@ class Decision(AbstractContextManager["Decision"]):
             )
             return None
 
+    # -- governed content (spec 028/029) -----------------------------------
+    #
+    # When ``content_capture`` is configured on the client, capture calls
+    # serialize content to canonical bytes, hand it to the async writer,
+    # and land an ordered manifest item. The returned ref is deterministic
+    # (store namespace + digest) so spans carry the final URI while
+    # delivery is still pending — the manifest is the reconciliation point.
+
+    def _governed_sink(self) -> ContentSink | None:
+        """Lazily build the per-decision governed-content sink."""
+        if self._content_sink is not None:
+            return self._content_sink
+        writer = self._client.content_writer
+        config = self._client.content_capture
+        if writer is None or config is None:
+            return None
+        sink = ContentSink(
+            config=config,
+            writer=writer,
+            tenant_id=self._client.tenant_id,
+            agent_id=self._client.agent_id,
+            decision_id=self._decision_id,
+            roles_enabled=self._client.content_roles,
+        )
+        span = self._span
+        if span is not None:
+            ctx = span.get_span_context()
+            sink.bind(
+                trace_id=f"{ctx.trace_id:032x}" if ctx.trace_id else None,
+                span_id=f"{ctx.span_id:016x}" if ctx.span_id else None,
+                execution_id=self._resolved_execution_id,
+                session_id=self._session_id,
+                request_id=self._request_id,
+                workflow_id=self._resolved_workflow_id,
+                started_at=self._started_at_rfc3339,
+            )
+        self._content_sink = sink
+        return sink
+
+    def _content_bindings(self, extra: Mapping[str, object] | None) -> dict[str, object]:
+        """Decision-level descriptor bindings + caller-supplied step links."""
+        bindings: dict[str, object] = {"decision_id": self._decision_id}
+        span = self._span
+        if span is not None:
+            trace_id = span.get_span_context().trace_id
+            if trace_id != 0:
+                bindings["trace_id"] = f"{trace_id:032x}"
+        if self._resolved_execution_id is not None:
+            bindings["execution_id"] = self._resolved_execution_id
+        bindings["session_id"] = self._session_id
+        bindings["request_id"] = self._request_id
+        if extra:
+            bindings.update(extra)
+        return bindings
+
+    def _governed_capture(
+        self,
+        role: str | ContentRole,
+        content: object,
+        *,
+        media_type: str | None = None,
+        bindings: Mapping[str, object] | None = None,
+        links: Mapping[str, object] | None = None,
+        status_reason: str | None = None,
+        representation: str | None = None,
+    ) -> str | None:
+        """Capture one governed content object; return its ref or ``None``.
+
+        ``None`` means the role is outside the capture policy, governed
+        mode is off, or ``content`` is ``None`` — the caller emits no ref
+        attribute then. Never raises into the agent path: failures land
+        as explicit manifest statuses.
+        """
+        if content is None:
+            return None
+        sink = self._governed_sink()
+        if sink is None:
+            return None
+        return sink.capture(
+            role,
+            content,
+            media_type=media_type,
+            bindings=self._content_bindings(bindings),
+            links=links,
+            status_reason=status_reason,
+            representation=representation,
+        )
+
+    @property
+    def governed_capture(self) -> bool:
+        """True when governed content capture is configured on the client."""
+        return self._client.content_capture is not None
+
+    @property
+    def content_manifest(self) -> TranscriptManifest | None:
+        """The in-progress transcript manifest, or ``None`` (metadata mode)."""
+        sink = self._content_sink
+        return sink.manifest if sink is not None else None
+
     # -- retrieval --------------------------------------------------------
 
     def record_retrieval(
@@ -798,6 +913,7 @@ class Decision(AbstractContextManager["Decision"]):
         result_count: int,
         result_hashes: Sequence[str] | None = None,
         source_document_ids: Sequence[str] | None = None,
+        results: Sequence[object] | None = None,
         latency_ms: int | None = None,
         data_source_id: str | None = None,
         provider: str | None = None,
@@ -816,9 +932,31 @@ class Decision(AbstractContextManager["Decision"]):
         ``DecisionSummary`` wire event without replaying every event.
 
         Raw query text is hashed locally and is never placed on the
-        span.
+        span. ``results`` supplies the ordered result content for governed
+        capture (spec 028): the caller-supplied result objects are stored
+        as one ``retrieval.results`` object; the event carries its ref.
+        A recorded retrieval result proves the caller received it — not
+        that the model consumed it; the recorded effective request is the
+        evidence for that.
         """
 
+        # Governed captures happen outside the overlap sentinel.
+        retrieval_bindings = {"step_type": "retrieval"}
+        query_ref = None
+        results_ref = None
+        if self.governed_capture:
+            query_ref = self._governed_capture(
+                ContentRole.RETRIEVAL_QUERY,
+                query,
+                bindings=retrieval_bindings,
+            )
+            if results is not None:
+                results_ref = self._governed_capture(
+                    ContentRole.RETRIEVAL_RESULTS,
+                    list(results),
+                    media_type="application/json",
+                    bindings=retrieval_bindings,
+                )
         with self._exclusive():
             record = RetrievalRecord.from_query(
                 source=source,
@@ -846,6 +984,9 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.retrieval.source_document_ids"] = record.source_document_ids
             if record.latency_ms is not None:
                 event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
+            retrieval_ref = results_ref or query_ref
+            if retrieval_ref is not None:
+                event_attrs[ATTR_CONTENT_REF] = retrieval_ref
             span.add_event("fabric.retrieval", attributes=event_attrs)
             semantic_name = f"retrieval {data_source_id}" if data_source_id else "retrieval"
             with self._client.tracer.start_as_current_span(
@@ -912,8 +1053,17 @@ class Decision(AbstractContextManager["Decision"]):
         governed reference, not the raw bytes.
         """
         # The store write happens outside the overlap sentinel — it is
-        # (possibly remote) I/O and touches no per-decision state.
-        content_ref = self._store_content_ref(content, key_hint=key)
+        # (possibly remote) I/O and touches no per-decision state. Under
+        # governed mode the capture enqueues through the async writer and
+        # lands a manifest item; the legacy inline store is used otherwise.
+        if self.governed_capture:
+            content_ref = self._governed_capture(
+                ContentRole.MEMORY_WRITE_CONTENT,
+                content,
+                bindings={"step_type": "memory_write"},
+            )
+        else:
+            content_ref = self._store_content_ref(content, key_hint=key)
         with self._exclusive():
             record = MemoryRecord.from_content(
                 kind=kind,
@@ -998,7 +1148,14 @@ class Decision(AbstractContextManager["Decision"]):
         the event carries the returned ``fabric.content.ref`` URI.
         """
         # Store write outside the overlap sentinel (see ``remember``).
-        content_ref = self._store_content_ref(content, key_hint=key)
+        if self.governed_capture:
+            content_ref = self._governed_capture(
+                ContentRole.MEMORY_READ_CONTENT,
+                content,
+                bindings={"step_type": "memory_read"},
+            )
+        else:
+            content_ref = self._store_content_ref(content, key_hint=key)
         with self._exclusive():
             record = MemoryRecord.from_recall(
                 kind=kind,
@@ -1162,11 +1319,35 @@ class Decision(AbstractContextManager["Decision"]):
         if result_payload is not None and result_hash is not None:
             raise ValueError("pass either result_payload or result_hash, not both")
         # Store writes happen outside the overlap sentinel — they are
-        # (possibly remote) I/O and touch no per-decision state.
-        request_ref = (
-            self._store_content_ref(request_payload) if request_payload is not None else None
-        )
-        result_ref = self._store_content_ref(result_payload) if result_payload is not None else None
+        # (possibly remote) I/O and touch no per-decision state. Under
+        # governed mode captures enqueue through the async writer.
+        side_bindings = {"step_type": "side_effect"}
+        if self.governed_capture:
+            request_ref = (
+                self._governed_capture(
+                    ContentRole.SIDE_EFFECT_REQUEST,
+                    request_payload,
+                    bindings=side_bindings,
+                )
+                if request_payload is not None
+                else None
+            )
+            result_ref = (
+                self._governed_capture(
+                    ContentRole.SIDE_EFFECT_RESULT,
+                    result_payload,
+                    bindings=side_bindings,
+                )
+                if result_payload is not None
+                else None
+            )
+        else:
+            request_ref = (
+                self._store_content_ref(request_payload) if request_payload is not None else None
+            )
+            result_ref = (
+                self._store_content_ref(result_payload) if result_payload is not None else None
+            )
         with self._exclusive():
             if request_payload is not None or result_payload is not None:
                 record = SideEffectRecord.from_payloads(
@@ -1368,6 +1549,7 @@ class Decision(AbstractContextManager["Decision"]):
         target: str,
         *,
         direction: str | None = None,
+        payload: str | None = None,
         payload_hash: str | None = None,
         metadata: Mapping[str, object] | None = None,
         redact_target: bool = True,
@@ -1411,6 +1593,9 @@ class Decision(AbstractContextManager["Decision"]):
             target: what was touched (URL / host / table / path / topic).
             direction: optional ``"inbound"`` / ``"outbound"`` /
                 ``"internal"``. Other values raise :class:`ValueError`.
+            payload: optional raw payload text — governed-captured to the
+                configured store (``interaction.payload`` role) when
+                governed mode is on; never placed on the span.
             payload_hash: optional caller-supplied hash of the payload.
             metadata: optional scalar metadata dict; hashed, never raw.
             redact_target: hash ``target`` instead of recording it readable;
@@ -1423,6 +1608,13 @@ class Decision(AbstractContextManager["Decision"]):
             ValueError: if ``kind`` or ``target`` is empty, or if
                 ``direction`` is not a known value.
         """
+        if payload is not None and payload_hash is not None:
+            raise ValueError("pass either payload or payload_hash, not both")
+        payload_ref = self._governed_capture(
+            ContentRole.INTERACTION_PAYLOAD,
+            payload,
+            bindings={"step_type": "interaction"},
+        )
         with self._exclusive():
             if not kind:
                 raise ValueError("kind is required")
@@ -1457,6 +1649,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = require_sha256_hex(
                     "payload_hash", payload_hash
                 )
+            elif payload is not None:
+                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = _sha256_hex(payload)
+            if payload_ref is not None:
+                event_attrs[ATTR_CONTENT_REF] = payload_ref
             if metadata:
                 # Canonicalize then hash the whole dict — raw metadata
                 # (which may carry secrets) never lands on the span.
@@ -1470,6 +1666,34 @@ class Decision(AbstractContextManager["Decision"]):
 
             # Improvement loop: a one-shot, low-rate coverage signal.
             self._emit_coverage_signals(kind, resolved.baseline_status, resolved.has_tags)
+
+    def record_context(
+        self,
+        name: str,
+        content: str | object,
+        *,
+        media_type: str | None = None,
+        description: str | None = None,
+    ) -> str | None:
+        """Capture an explicitly supplied context object (file, doc, blob).
+
+        Emits a ``fabric.interaction`` event with ``kind="context.file"``
+        and the target hashed by default, then governed-captures the
+        content under the ``context.file`` role (text or JSON in v1).
+        Returns the content ref URI, or ``None`` when governed mode is off
+        or the role is outside the capture policy. Binary/multimodal
+        content is outside v1 scope — pass text/JSON only.
+        """
+        if not name:
+            raise ValueError("name is required")
+        target = description or name
+        self.record_interaction("context.file", target, metadata=None)
+        return self._governed_capture(
+            ContentRole.CONTEXT_FILE,
+            content,
+            media_type=media_type,
+            bindings={"step_type": "context"},
+        )
 
     def _emit_coverage_signals(
         self, kind: str, baseline_status: str | None, has_tags: bool
@@ -1945,6 +2169,7 @@ class Decision(AbstractContextManager["Decision"]):
             input_messages=input_messages,
             tool_definitions=tool_definitions,
             capture_content=capture_content,
+            governed_capture=self._governed_capture,
             step_id=step_id,
             step_type=step_type,
             step_attempt_id=step_attempt_id,
@@ -2026,6 +2251,7 @@ class Decision(AbstractContextManager["Decision"]):
             description=description,
             agent_name=self._client.agent_name,
             capture_content=capture_content,
+            governed_capture=self._governed_capture,
             step_id=step_id,
             step_type=step_type,
             step_attempt_id=step_attempt_id,

@@ -1,0 +1,20 @@
+{
+  "schema_version": "fabric.content-object/v1",
+  "object_id": "8445051a-1ef3-51f2-bcbd-cc74eec9e2d0",
+  "tenant_id": "acme",
+  "role": "model.request.messages",
+  "media_type": "application/json",
+  "encoding": "utf-8",
+  "byte_length": 50,
+  "digest": "sha256:6bc13aa2c2c9891df04c90a98d8e9371fd253888c1d44605b18fb24513334077",
+  "captured_at": "2026-09-22T10:00:00Z",
+  "representation": "canonicalized",
+  "source": "caller",
+  "status": "stored",
+  "bindings": {
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "00f067aa0ba902b7",
+    "decision_id": "d-7",
+    "step_type": "llm_call"
+  }
+}

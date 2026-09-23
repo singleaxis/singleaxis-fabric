@@ -1,0 +1,17 @@
+{
+  "schema_version": "fabric.content-object/v1",
+  "object_id": "244501bc-ebba-5edb-a1a6-18ab56140010",
+  "tenant_id": "acme",
+  "role": "model.request.messages",
+  "media_type": "application/json",
+  "encoding": "utf-8",
+  "byte_length": 42,
+  "digest": "sha256:aa97aaaade8ba2434d8f425b2568ff44673185dedebbb248eede8324edd582a1",
+  "captured_at": "2026-09-22T10:00:00Z",
+  "representation": "truncated",
+  "source": "caller",
+  "status": "truncated",
+  "bindings": {
+    "decision_id": "d-7"
+  }
+}

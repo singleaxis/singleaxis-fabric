@@ -121,11 +121,22 @@ def _fake_boto3(recorder: dict[str, Any]) -> ModuleType:
         recorder["body"] = Body
         return {"ETag": "etag-1"}
 
-    def client(service: str, region_name: str | None = None) -> SimpleNamespace:
+    def client(
+        service: str,
+        region_name: str | None = None,
+        endpoint_url: str | None = None,
+    ) -> SimpleNamespace:
         recorder["service"] = service
         recorder["region_name"] = region_name
+        recorder["endpoint_url"] = endpoint_url
         recorder["clients"] = recorder.get("clients", 0) + 1
-        return SimpleNamespace(put_object=put_object)
+        return SimpleNamespace(
+            put_object=put_object,
+            head_object=lambda Bucket, Key: recorder.setdefault("head", (Bucket, Key)),  # noqa: N803
+            get_object=lambda Bucket, Key: {  # noqa: N803
+                "Body": SimpleNamespace(read=lambda: recorder.get("body", b""))
+            },
+        )
 
     module.client = client  # type: ignore[attr-defined]
     return module
@@ -151,17 +162,17 @@ def test_s3_put_calls_put_object_and_returns_s3_ref(monkeypatch: pytest.MonkeyPa
 def test_s3_custom_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3(recorder))
-    store = S3ContentStore(bucket="b", prefix="custom/path/")
+    store = S3ContentStore(bucket="content-bucket", prefix="custom/path/")
     ref = store.put("hi")
     digest = _sha256("hi")
     assert recorder["key"] == f"custom/path/{digest}"
-    assert ref.uri == f"s3://b/custom/path/{digest}"
+    assert ref.uri == f"s3://content-bucket/custom/path/{digest}"
 
 
 def test_s3_client_is_lazy_and_reused(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3(recorder))
-    store = S3ContentStore(bucket="b")
+    store = S3ContentStore(bucket="content-bucket")
     assert "clients" not in recorder  # no client at construction
     store.put("one")
     store.put("two")
@@ -172,7 +183,7 @@ def test_s3_client_is_lazy_and_reused(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_s3_close_is_noop_and_clears_handle(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3(recorder))
-    store = S3ContentStore(bucket="b")
+    store = S3ContentStore(bucket="content-bucket")
     store.put("x")
     store.close()  # must not raise
     # A subsequent put re-creates the client (close cleared the handle).
@@ -182,12 +193,12 @@ def test_s3_close_is_noop_and_clears_handle(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_s3_satisfies_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3({}))
-    assert isinstance(S3ContentStore(bucket="b"), ContentStore)
+    assert isinstance(S3ContentStore(bucket="content-bucket"), ContentStore)
 
 
 def test_s3_missing_dep_raises_on_put(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "boto3", None)
-    store = S3ContentStore(bucket="b")
+    store = S3ContentStore(bucket="content-bucket")
     with pytest.raises(ImportError, match=r"pip install boto3"):
         store.put("x")
 

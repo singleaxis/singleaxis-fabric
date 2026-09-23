@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ._attributes import check_attribute_keys
+from ._content import CONTENT_ROLES
+from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._id_validators import check_identifier, warn_if_pii_shaped
 from .auto_instrument import enable_auto_instrumentation as _enable_auto_instrumentation
 from .tracing import get_meter, get_tracer
@@ -163,6 +165,7 @@ class Fabric:
         tracer: Tracer | None = None,
         meter: Meter | None = None,
         content_store: ContentStore | None = None,
+        content_capture: ContentCaptureConfig | None = None,
     ) -> None:
         self._config = config
         self._tracer = tracer or get_tracer()
@@ -174,6 +177,30 @@ class Fabric:
         # URI on the event — a governed reference, never raw bytes.
         # Default None keeps pure hash-only observability mode unchanged.
         self._content_store = content_store
+        # Governed content capture (spec 028): explicit opt-in. The only
+        # environment influence is restrictive — ``FABRIC_CONTENT_MODE``
+        # set to ``metadata`` force-disables a configured capture; it can
+        # never enable one.
+        self._content_capture: ContentCaptureConfig | None = None
+        self._content_writer: ContentWriter | None = None
+        self._content_roles: frozenset[str] = frozenset()
+        if os.environ.get("FABRIC_CONTENT_MODE", "").lower() == "metadata":
+            content_capture = None
+        if content_capture is not None:
+            from .content_store.base import GovernedStore  # noqa: PLC0415
+
+            if not isinstance(content_capture.store, GovernedStore) or not getattr(
+                content_capture.store, "tenant_id", None
+            ):
+                raise ValueError(
+                    "content_capture.store must implement the governed store "
+                    "contract with a tenant namespace "
+                    "(LocalFilesystemContentStore/S3ContentStore with "
+                    "tenant_id, or an equivalent GovernedStore)"
+                )
+            self._content_roles = content_capture.resolved_roles(CONTENT_ROLES)
+            self._content_capture = content_capture
+            self._content_writer = ContentWriter(content_capture)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Fabric:
@@ -375,6 +402,42 @@ class Fabric:
         event. ``None`` keeps every event hash-only and unchanged.
         """
         return self._content_store
+
+    @property
+    def content_capture(self) -> ContentCaptureConfig | None:
+        """The governed-content capture configuration, or ``None``.
+
+        ``None`` means metadata-only mode: no content objects are written,
+        no manifests emitted, spans stay byte-identical to the default.
+        """
+        return self._content_capture
+
+    @property
+    def content_writer(self) -> ContentWriter | None:
+        """The async governed-content writer, or ``None`` (metadata mode)."""
+        return self._content_writer
+
+    @property
+    def content_roles(self) -> frozenset[str]:
+        """Capture-policy roles enabled on this client."""
+        return self._content_roles
+
+    def flush_content(self, timeout_s: float | None = None) -> FlushResult | None:
+        """Awaitable content flush for tests and graceful shutdown.
+
+        Returns ``None`` in metadata-only mode. See
+        :meth:`ContentWriter.flush` for the result semantics — a nonzero
+        ``pending`` count is an honest gap, never claimed as delivered.
+        """
+        if self._content_writer is None:
+            return None
+        return self._content_writer.flush(timeout_s=timeout_s)
+
+    def close(self) -> None:
+        """Flush pending governed content within the shutdown bound, then
+        stop the writer. Idempotent; a no-op in metadata-only mode."""
+        if self._content_writer is not None:
+            self._content_writer.close()
 
     def enable_auto_instrumentation(
         self,

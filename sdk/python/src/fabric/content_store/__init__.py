@@ -5,16 +5,22 @@
 The OTel trace stream carries hashes + content_ref URIs only; raw
 content lives in a tenant-controlled ContentStore. These adapters
 let a tenant stand up that store.
-pipeline.
 """
 
-from fabric.content_store.base import ContentRef, ContentStore
+from fabric.content_store.base import (
+    ContentRef,
+    ContentStore,
+    CorruptedObjectError,
+    GovernedStore,
+)
 from fabric.content_store.local import LocalFilesystemContentStore
 from fabric.content_store.s3 import S3ContentStore
 
 __all__ = [
     "ContentRef",
     "ContentStore",
+    "CorruptedObjectError",
+    "GovernedStore",
     "LocalFilesystemContentStore",
     "S3ContentStore",
 ]

@@ -1,0 +1,143 @@
+{
+  "schema_version": "fabric.transcript-manifest/v1",
+  "manifest_id": "d3e5863e-b789-5055-aca3-4a7094b5e3e4",
+  "tenant_id": "acme",
+  "agent_id": "support-bot",
+  "decision_id": "d-9",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "dec999aa0ba902b7",
+  "session_id": "sess-44",
+  "started_at": "2026-09-22T11:00:00Z",
+  "closed_at": "2026-09-22T11:00:02Z",
+  "producer": {
+    "name": "fabric-python",
+    "version": "0.8.0-rc.1",
+    "language": "python"
+  },
+  "items": [
+    {
+      "sequence": 0,
+      "role": "model.request.messages",
+      "status": "stored",
+      "descriptor": {
+        "schema_version": "fabric.content-object/v1",
+        "object_id": "253fb55d-7afd-5966-81ee-35f16d04f64c",
+        "tenant_id": "acme",
+        "role": "model.request.messages",
+        "media_type": "application/json",
+        "encoding": "utf-8",
+        "byte_length": 47,
+        "digest": "sha256:d5bfb62c68d2b59ca3b5a646b0f97423f7b75540c228646ee3a035727b1365e0",
+        "captured_at": "2026-09-22T10:00:00Z",
+        "representation": "canonicalized",
+        "source": "caller",
+        "status": "stored",
+        "bindings": {
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba902b7",
+          "decision_id": "d-9"
+        }
+      },
+      "ref": "s3://acme-evidence/fabric/content/acme/d5bfb62c68d2b59ca3b5a646b0f97423f7b75540c228646ee3a035727b1365e0"
+    },
+    {
+      "sequence": 1,
+      "role": "tool.call.arguments",
+      "status": "stored",
+      "descriptor": {
+        "schema_version": "fabric.content-object/v1",
+        "object_id": "3b548a57-01ee-59af-b640-f9729dc5443c",
+        "tenant_id": "acme",
+        "role": "tool.call.arguments",
+        "media_type": "application/json",
+        "encoding": "utf-8",
+        "byte_length": 20,
+        "digest": "sha256:ec021528e2a080c1d6fe80b43b664ec9ea2580a405d6f8f93111e5de27dea5f2",
+        "captured_at": "2026-09-22T10:00:00Z",
+        "representation": "canonicalized",
+        "source": "caller",
+        "status": "stored",
+        "bindings": {
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "1a2b3c4d5e6f7081",
+          "decision_id": "d-9",
+          "step_type": "tool_call",
+          "tool_call_id": "call_4"
+        }
+      },
+      "ref": "s3://acme-evidence/fabric/content/acme/ec021528e2a080c1d6fe80b43b664ec9ea2580a405d6f8f93111e5de27dea5f2",
+      "links": {
+        "span_id": "1a2b3c4d5e6f7081",
+        "tool_call_id": "call_4"
+      }
+    },
+    {
+      "sequence": 2,
+      "role": "tool.call.result",
+      "status": "dropped",
+      "status_reason": "queue_full",
+      "links": {
+        "tool_call_id": "call_4"
+      }
+    },
+    {
+      "sequence": 3,
+      "role": "retrieval.results",
+      "status": "unsupported",
+      "status_reason": "binary result content (media_type image/png)"
+    },
+    {
+      "sequence": 4,
+      "role": "model.output.messages",
+      "status": "pending",
+      "descriptor": {
+        "schema_version": "fabric.content-object/v1",
+        "object_id": "404f0293-79f5-5e9d-a849-8e2228bc46fe",
+        "tenant_id": "acme",
+        "role": "model.output.messages",
+        "media_type": "application/json",
+        "encoding": "utf-8",
+        "byte_length": 49,
+        "digest": "sha256:36d8bfbb0687e787740398f54ec504bd80b798a4cb0814fb16aec5357216ea0d",
+        "captured_at": "2026-09-22T10:00:00Z",
+        "representation": "assembled",
+        "source": "caller",
+        "status": "pending",
+        "bindings": {
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "9abcdef012345678",
+          "decision_id": "d-9"
+        }
+      },
+      "ref": "s3://acme-evidence/fabric/content/acme/36d8bfbb0687e787740398f54ec504bd80b798a4cb0814fb16aec5357216ea0d"
+    },
+    {
+      "sequence": 5,
+      "role": "model.request.instructions",
+      "status": "not_captured"
+    }
+  ],
+  "completeness": {
+    "stored": 2,
+    "dropped": 1,
+    "unsupported": 1,
+    "pending": 1,
+    "not_captured": 1
+  },
+  "coverage": {
+    "roles_enabled": [
+      "model.output.messages",
+      "model.request.instructions",
+      "model.request.messages",
+      "retrieval.query",
+      "retrieval.results",
+      "tool.call.arguments",
+      "tool.call.result"
+    ],
+    "roles_observed": [
+      "model.output.messages",
+      "model.request.messages",
+      "tool.call.arguments"
+    ]
+  }
+}
