@@ -5,9 +5,32 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
+
+# Spec 033 §2.1 — the shared safe-identifier rule for values used as
+# namespace path/key components (tenant_id and friends). First character
+# must be alphanumeric; separators, traversal, NUL, and percent-encoded
+# variants all fail the pattern. `.`/`..` are rejected explicitly as
+# defense in depth even though the leading-alphanumeric rule already
+# excludes them.
+SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
+
+
+def check_safe_identifier(field_name: str, value: str) -> str:
+    """Return ``value`` when it is a safe namespace component, else raise.
+
+    Shared by the local store, the S3 store, and the client tenant check —
+    adapters never invent their own rule (spec 033 §2.1).
+    """
+    if not isinstance(value, str) or not SAFE_IDENTIFIER_RE.match(value) or value in (".", ".."):
+        raise ValueError(
+            f"{field_name}={value!r} is not a safe namespace identifier: "
+            "must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$ and may not be '.' or '..'"
+        )
+    return value
 
 
 @dataclass(frozen=True, slots=True)

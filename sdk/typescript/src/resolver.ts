@@ -25,8 +25,20 @@ export const ResolveStatus = {
   MISSING: "missing",
   DENIED: "denied",
   CORRUPTED: "corrupted",
+  UNVERIFIED: "unverified",
 } as const;
 export type ResolveStatus = (typeof ResolveStatus)[keyof typeof ResolveStatus];
+
+/** Descriptor fields required before verification can run (spec 033 §3). */
+const DESCRIPTOR_REQUIRED = [
+  "object_id",
+  "tenant_id",
+  "role",
+  "media_type",
+  "byte_length",
+  "digest",
+] as const;
+const HEX64 = new Set("0123456789abcdef");
 
 export interface ResolveResult {
   status: ResolveStatus;
@@ -67,16 +79,6 @@ export class ContentResolver {
     if (store === undefined) {
       return { status: ResolveStatus.DENIED, reason: "outside_configured_store" };
     }
-    let data: Uint8Array;
-    try {
-      data = await store.read(uri);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (/escapes|outside|scheme/i.test(message)) {
-        return { status: ResolveStatus.DENIED, reason: message };
-      }
-      return { status: ResolveStatus.MISSING };
-    }
     let effectiveDescriptor = descriptor;
     if (effectiveDescriptor === undefined) {
       try {
@@ -85,26 +87,58 @@ export class ContentResolver {
         effectiveDescriptor = undefined;
       }
     }
-    if (effectiveDescriptor !== undefined) {
-      const expectedLen = effectiveDescriptor["byte_length"];
-      const expectedDigest = String(effectiveDescriptor["digest"] ?? "");
-      if (typeof expectedLen === "number" && data.length !== expectedLen) {
-        return {
-          status: ResolveStatus.CORRUPTED,
-          descriptor: effectiveDescriptor,
-          reason: "byte_length_mismatch",
-        };
+    let data: Uint8Array;
+    try {
+      data = await store.read(uri);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/escapes|outside|scheme/i.test(message)) {
+        return { status: ResolveStatus.DENIED, reason: message };
       }
-      if (
-        expectedDigest.startsWith("sha256:") &&
-        createHash("sha256").update(data).digest("hex") !== expectedDigest.slice(7)
-      ) {
-        return {
-          status: ResolveStatus.CORRUPTED,
-          descriptor: effectiveDescriptor,
-          reason: "digest_mismatch",
-        };
+      if (effectiveDescriptor?.["status"] === "pending") {
+        return { status: ResolveStatus.PENDING, descriptor: effectiveDescriptor };
       }
+      return { status: ResolveStatus.MISSING, descriptor: effectiveDescriptor };
+    }
+    // Bytes exist — they may only leave as `available` after full
+    // descriptor + integrity verification.
+    if (effectiveDescriptor === undefined) {
+      return { status: ResolveStatus.UNVERIFIED, reason: "descriptor_missing" };
+    }
+    const invalid = descriptorInvalid(effectiveDescriptor);
+    if (invalid !== undefined) {
+      return { status: ResolveStatus.UNVERIFIED, reason: invalid };
+    }
+    if (typeof store.tenantId === "string" && effectiveDescriptor["tenant_id"] !== store.tenantId) {
+      return {
+        status: ResolveStatus.DENIED,
+        descriptor: effectiveDescriptor,
+        reason: "descriptor_tenant_mismatch",
+      };
+    }
+    const identity = descriptorIdentity(uri, effectiveDescriptor);
+    if (identity !== undefined) {
+      return {
+        status: ResolveStatus.CORRUPTED,
+        descriptor: effectiveDescriptor,
+        reason: identity,
+      };
+    }
+    const expectedLen = effectiveDescriptor["byte_length"];
+    if (data.length !== expectedLen) {
+      return {
+        status: ResolveStatus.CORRUPTED,
+        descriptor: effectiveDescriptor,
+        reason: "byte_length_mismatch",
+      };
+    }
+    const expectedDigest = String(effectiveDescriptor["digest"]);
+    if (createHash("sha256").update(data).digest("hex") !== expectedDigest.slice(7)) {
+      return {
+        status: ResolveStatus.CORRUPTED,
+        descriptor: effectiveDescriptor,
+        reason: "digest_mismatch",
+      };
     }
     return {
       status: ResolveStatus.AVAILABLE,
@@ -170,8 +204,7 @@ export class ContentResolver {
     for (const item of manifest["items"] as Record<string, unknown>[]) {
       const links = (item["links"] ?? {}) as Record<string, unknown>;
       const bindings = ((item["descriptor"] ?? {}) as Record<string, unknown>)["bindings"] as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const span =
         (links["span_id"] as string | undefined) ?? (bindings?.["span_id"] as string | undefined);
       const groupKey = span ?? `__item_${item["sequence"]}`;
@@ -272,6 +305,42 @@ export class ContentResolver {
     }
     return entry;
   }
+}
+
+/** Reason a descriptor cannot anchor verification, else `undefined`. */
+function descriptorInvalid(descriptor: Record<string, unknown>): string | undefined {
+  if (typeof descriptor !== "object" || descriptor === null || Array.isArray(descriptor)) {
+    return "descriptor_invalid";
+  }
+  if (!DESCRIPTOR_REQUIRED.every((k) => k in descriptor)) {
+    return "descriptor_incomplete";
+  }
+  if (!String(descriptor["digest"] ?? "").startsWith("sha256:")) {
+    return "descriptor_digest_invalid";
+  }
+  const len = descriptor["byte_length"];
+  if (typeof len !== "number" || !Number.isInteger(len) || len < 0) {
+    return "descriptor_byte_length_invalid";
+  }
+  return undefined;
+}
+
+/**
+ * Check the object address agrees with the descriptor digest. Both
+ * bundled layouts address objects as `<tenant>/<digest>` — a
+ * digest-named basename that disagrees means the sidecar describes
+ * different bytes. Non-digest-shaped basenames are custom layouts and
+ * skip the check.
+ */
+function descriptorIdentity(uri: string, descriptor: Record<string, unknown>): string | undefined {
+  const basename = uri.split("/").pop() ?? "";
+  if (basename.length !== 64 || ![...basename].every((c) => HEX64.has(c))) {
+    return undefined;
+  }
+  if (String(descriptor["digest"]).slice(7) !== basename) {
+    return "descriptor_address_mismatch";
+  }
+  return undefined;
 }
 
 function materializeText(mediaType: string, content: Uint8Array): unknown {

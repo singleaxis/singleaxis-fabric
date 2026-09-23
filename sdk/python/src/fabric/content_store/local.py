@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 from fabric.content_store.base import (
     ContentRef,
     CorruptedObjectError,
+    check_safe_identifier,
     content_hash,
     content_hash_bytes,
 )
@@ -71,6 +72,19 @@ class LocalFilesystemContentStore:
 
     root: str
     tenant_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.tenant_id is None:
+            return
+        check_safe_identifier("tenant_id", self.tenant_id)
+        # Filesystem-level containment: the resolved tenant root must be
+        # strictly inside the resolved configured root.
+        resolved_root = self._root_path()
+        tenant_root = (resolved_root / self.tenant_id).resolve()
+        if not tenant_root.is_relative_to(resolved_root) or tenant_root == resolved_root:
+            raise ValueError(
+                f"tenant root {tenant_root} escapes the configured root {resolved_root}"
+            )
 
     # -- legacy contract -------------------------------------------------
 

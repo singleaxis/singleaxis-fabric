@@ -95,6 +95,30 @@ export function contentHashBytes(data: Uint8Array): string {
 
 const DIGEST_RE = /^[0-9a-f]{64}$/;
 
+/**
+ * Spec 033 §2.1 — the shared safe-identifier rule for values used as
+ * namespace path/key components (tenant ids). Separators, traversal,
+ * NUL, and percent-encoded variants all fail the pattern; `.`/`..` are
+ * rejected explicitly as defense in depth. Mirrors Python
+ * `check_safe_identifier`.
+ */
+export const SAFE_IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
+
+export function assertSafeIdentifier(fieldName: string, value: string): string {
+  if (
+    typeof value !== "string" ||
+    !SAFE_IDENTIFIER_RE.test(value) ||
+    value === "." ||
+    value === ".."
+  ) {
+    throw new Error(
+      `${fieldName}=${JSON.stringify(value)} is not a safe namespace identifier: ` +
+        "must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$ and may not be '.' or '..'",
+    );
+  }
+  return value;
+}
+
 /** Write `data` to `target` atomically: tmp + fsync + rename + dir fsync. */
 function atomicWriteBytes(target: string, data: Uint8Array): void {
   fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
@@ -148,10 +172,14 @@ export class LocalFilesystemContentStore implements GovernedStore {
     root: string,
     readonly tenantId: string,
   ) {
-    if (!tenantId) {
-      throw new Error("governed content requires LocalFilesystemContentStore(tenantId)");
-    }
+    assertSafeIdentifier("tenantId", tenantId);
     this.rootPath = path.resolve(root);
+    // Filesystem-level containment: the resolved tenant root must be
+    // strictly inside the resolved configured root.
+    const tenantRoot = path.resolve(this.tenantRoot());
+    if (tenantRoot !== this.rootPath && !tenantRoot.startsWith(this.rootPath + path.sep)) {
+      throw new Error(`tenant root ${tenantRoot} escapes the configured root ${this.rootPath}`);
+    }
   }
 
   private tenantRoot(): string {
@@ -313,11 +341,12 @@ export class S3ContentStore implements GovernedStore {
     if (!BUCKET_RE.test(bucket)) {
       throw new Error(`invalid S3 bucket name: ${bucket}`);
     }
-    if (!tenantId) {
-      throw new Error("governed content requires S3ContentStore(tenantId)");
+    assertSafeIdentifier("tenantId", tenantId);
+    if (!prefix || !prefix.endsWith("/") || prefix.startsWith("/")) {
+      throw new Error("prefix must be a non-empty relative path ending in '/'");
     }
-    if (prefix && !prefix.endsWith("/")) {
-      throw new Error("prefix must be empty or end in '/'");
+    if (prefix.split("/").includes("..")) {
+      throw new Error("prefix must not contain '..' segments");
     }
   }
 

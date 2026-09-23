@@ -178,6 +178,13 @@ export class Fabric {
     }
     if (contentCapture !== undefined) {
       const roles = validateContentCaptureConfig(contentCapture, CONTENT_ROLES);
+      if (contentCapture.store.tenantId !== tenantId) {
+        throw new Error(
+          `contentCapture.store.tenantId (${JSON.stringify(contentCapture.store.tenantId)}) ` +
+            `must equal the Fabric client tenantId (${JSON.stringify(tenantId)}) — ` +
+            "a mismatched namespace is a silent cross-tenant leak",
+        );
+      }
       this.contentCapture = contentCapture;
       this.contentWriter = new ContentWriter(contentCapture);
       this.identity.contentRoles = roles;

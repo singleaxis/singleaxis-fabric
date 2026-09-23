@@ -32,7 +32,6 @@ def _json(relative: str) -> dict[str, Any]:
 
 
 def _schemas() -> dict[str, Any]:
-    root = REPO_ROOT / "contracts/content/v1/schema"
     return {
         "schema/content-object-v1.schema.json": _json(
             "contracts/content/v1/schema/content-object-v1.schema.json"

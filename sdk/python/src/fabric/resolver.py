@@ -40,6 +40,15 @@ class ResolveStatus(StrEnum):
     MISSING = "missing"
     DENIED = "denied"
     CORRUPTED = "corrupted"
+    UNVERIFIED = "unverified"
+
+
+# Descriptor fields required before any verification can run (spec 033 §3).
+_DESCRIPTOR_REQUIRED = frozenset(
+    {"object_id", "tenant_id", "role", "media_type", "byte_length", "digest"}
+)
+_HEX64 = frozenset("0123456789abcdef")
+_SHA256_HEX_LEN = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,24 +90,33 @@ class ContentResolver:
 
         ``descriptor`` (from a manifest item) supplies expected
         ``byte_length``/``digest``; when omitted, the store's sidecar
-        descriptor is used. A URI outside every configured store is
-        ``denied``; absent bytes are ``missing``; a digest/size mismatch is
-        ``corrupted`` and the bytes are never returned.
+        descriptor is used. ``available`` is returned **only** after a
+        valid descriptor passes tenant/identity checks and the object's
+        byte length and SHA-256 digest verify — a digest-named path is
+        not proof of integrity. Bytes are never returned for ``denied``,
+        ``corrupted``, or ``unverified`` results.
         """
         store = self._store_for(uri)
         if store is None:
             return ResolveResult(status=ResolveStatus.DENIED, reason="outside_configured_store")
+        if descriptor is None:
+            try:
+                descriptor = store.read_descriptor(uri)
+            except Exception:
+                descriptor = None
         try:
             data = store.read(uri)
         except FileNotFoundError:
-            return ResolveResult(status=ResolveStatus.MISSING)
+            if descriptor is not None and descriptor.get("status") == "pending":
+                return ResolveResult(status=ResolveStatus.PENDING, descriptor=descriptor)
+            return ResolveResult(status=ResolveStatus.MISSING, descriptor=descriptor)
         except ValueError as exc:
             return ResolveResult(status=ResolveStatus.DENIED, reason=str(exc))
         except Exception:
             return ResolveResult(status=ResolveStatus.MISSING, reason="read_error")
-        return self._verified(uri, data, store=store, descriptor=descriptor)
+        return self._verify_present(uri, data, store=store, descriptor=descriptor)
 
-    def _verified(
+    def _verify_present(
         self,
         uri: str,
         data: bytes,
@@ -106,28 +124,80 @@ class ContentResolver:
         store: Any,
         descriptor: Mapping[str, Any] | None,
     ) -> ResolveResult:
+        """Verify bytes that exist. ``available`` requires a valid
+        descriptor, tenant agreement, address identity, and byte length +
+        digest — anything less is explicit non-success."""
         if descriptor is None:
-            try:
-                descriptor = store.read_descriptor(uri)
-            except Exception:
-                descriptor = None
-        if descriptor is not None:
-            expected_len = descriptor.get("byte_length")
-            expected_digest = str(descriptor.get("digest", ""))
-            if expected_len is not None and len(data) != expected_len:
-                return ResolveResult(
-                    status=ResolveStatus.CORRUPTED,
-                    descriptor=descriptor,
-                    reason="byte_length_mismatch",
-                )
-            if expected_digest.startswith("sha256:") and (
-                hashlib.sha256(data).hexdigest() != expected_digest.split(":", 1)[1]
-            ):
-                return ResolveResult(
-                    status=ResolveStatus.CORRUPTED,
-                    descriptor=descriptor,
-                    reason="digest_mismatch",
-                )
+            return ResolveResult(status=ResolveStatus.UNVERIFIED, reason="descriptor_missing")
+        invalid = self._descriptor_invalid(descriptor)
+        if invalid is not None:
+            return ResolveResult(status=ResolveStatus.UNVERIFIED, reason=invalid)
+        store_tenant = getattr(store, "tenant_id", None)
+        if store_tenant is not None and descriptor.get("tenant_id") != store_tenant:
+            return ResolveResult(
+                status=ResolveStatus.DENIED,
+                descriptor=descriptor,
+                reason="descriptor_tenant_mismatch",
+            )
+        identity = self._descriptor_identity(uri, descriptor)
+        if identity is not None:
+            return ResolveResult(
+                status=ResolveStatus.CORRUPTED, descriptor=descriptor, reason=identity
+            )
+        return self._verified(uri, data, descriptor=descriptor)
+
+    @staticmethod
+    def _descriptor_invalid(descriptor: Mapping[str, Any]) -> str | None:
+        """Reason a descriptor cannot anchor verification, else ``None``."""
+        if not isinstance(descriptor, Mapping):
+            return "descriptor_invalid"
+        if not _DESCRIPTOR_REQUIRED.issubset(descriptor.keys()):
+            return "descriptor_incomplete"
+        digest = str(descriptor.get("digest", ""))
+        if not digest.startswith("sha256:"):
+            return "descriptor_digest_invalid"
+        if not isinstance(descriptor.get("byte_length"), int) or descriptor["byte_length"] < 0:
+            return "descriptor_byte_length_invalid"
+        return None
+
+    @staticmethod
+    def _descriptor_identity(uri: str, descriptor: Mapping[str, Any]) -> str | None:
+        """Check the object address agrees with the descriptor digest.
+
+        Both bundled layouts address objects as ``<tenant>/<digest>`` —
+        a digest-named basename that disagrees with the descriptor means
+        the sidecar describes different bytes (wrong-address plant).
+        Non-digest-shaped basenames are custom layouts and skip the check.
+        """
+        basename = uri.rsplit("/", 1)[-1]
+        if len(basename) != _SHA256_HEX_LEN or not set(basename) <= _HEX64:
+            return None
+        expected = str(descriptor.get("digest", "")).split(":", 1)[-1]
+        if expected != basename:
+            return "descriptor_address_mismatch"
+        return None
+
+    def _verified(
+        self,
+        uri: str,
+        data: bytes,
+        *,
+        descriptor: Mapping[str, Any],
+    ) -> ResolveResult:
+        expected_len = descriptor.get("byte_length")
+        if len(data) != expected_len:
+            return ResolveResult(
+                status=ResolveStatus.CORRUPTED,
+                descriptor=descriptor,
+                reason="byte_length_mismatch",
+            )
+        expected_digest = str(descriptor.get("digest", ""))
+        if hashlib.sha256(data).hexdigest() != expected_digest.split(":", 1)[1]:
+            return ResolveResult(
+                status=ResolveStatus.CORRUPTED,
+                descriptor=descriptor,
+                reason="digest_mismatch",
+            )
         return ResolveResult(status=ResolveStatus.AVAILABLE, content=data, descriptor=descriptor)
 
     def resolve_manifest(self, uri: str) -> dict[str, Any] | None:

@@ -47,19 +47,51 @@ import {
 import { ContentWriter } from "../src/content-writer.js";
 import type { ContentRef, GovernedStore } from "../src/content-store.js";
 
-/** Store whose puts never settle quickly — keeps the queue occupied. */
-class SlowStore extends LocalFilesystemContentStore {
+/**
+ * Store whose puts never settle quickly — wraps the local store behind a
+ * delayed async `putObject` so `process`/`spooled` paths prove they do
+ * not wait on remote storage.
+ */
+class SlowStore implements GovernedStore {
+  readonly synchronous = false;
+  readonly tenantId = "acme";
+  private readonly inner: LocalFilesystemContentStore;
   constructor(
     root: string,
     private readonly delayMs: number,
   ) {
-    super(root, "acme");
+    this.inner = new LocalFilesystemContentStore(root, "acme");
   }
-  override putObject(descriptor: Record<string, unknown>, _content: string): Promise<ContentRef> {
-    const digest = String(descriptor["digest"] ?? "").slice(7);
-    return new Promise((resolve) =>
-      setTimeout(() => resolve({ uri: this.refFor(digest), contentHash: digest }), this.delayMs),
-    );
+  refFor(digest: string): string {
+    return this.inner.refFor(digest);
+  }
+  async putObject(descriptor: Record<string, unknown>, content: string): Promise<ContentRef> {
+    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    return this.inner.putObject(descriptor, content);
+  }
+  writeManifest(manifest: Record<string, unknown>, decisionId: string, manifestId: string): string {
+    return this.inner.writeManifest(manifest, decisionId, manifestId);
+  }
+  manifestUriForDecision(decisionId: string): string {
+    return this.inner.manifestUriForDecision(decisionId);
+  }
+  ownsUri(uri: string): boolean {
+    return this.inner.ownsUri(uri);
+  }
+  exists(uri: string): boolean {
+    return this.inner.exists(uri);
+  }
+  read(uri: string): Uint8Array {
+    return this.inner.read(uri);
+  }
+  readDescriptor(uri: string): Record<string, unknown> {
+    return this.inner.readDescriptor(uri);
+  }
+  readManifest(uri: string): Record<string, unknown> {
+    return this.inner.readManifest(uri);
+  }
+  listObjectUris(): string[] {
+    return this.inner.listObjectUris();
   }
 }
 
@@ -675,5 +707,145 @@ describe("transcript manifest and export", () => {
     );
     expect(result.status).toBe(ResolveStatus.AVAILABLE);
     expect(new TextDecoder().decode(result.content)).toBe(canonicalJson({ text: "héllo" }));
+  });
+});
+
+// -- spec 033 §2.1 — safe tenant identifiers + client/store agreement --------
+
+describe("tenant isolation", () => {
+  const badTenants = [
+    "../escaped",
+    "..",
+    ".",
+    "/absolute",
+    "a/b",
+    "a\\b",
+    "..%2f..%2fetc",
+    "%2e%2e",
+    "tenant%00x",
+    "",
+    " ",
+    "a b",
+    "a;b",
+    "a$b",
+  ];
+  for (const bad of badTenants) {
+    it(`rejects unsafe tenant ${JSON.stringify(bad)}`, () => {
+      expect(() => new LocalFilesystemContentStore(tmpRoot(), bad)).toThrow();
+    });
+  }
+
+  for (const good of ["acme", "acme-prod", "acme.prod", "tenant_01", "T3nant"]) {
+    it(`accepts safe tenant ${good}`, () => {
+      expect(new LocalFilesystemContentStore(tmpRoot(), good).tenantId).toBe(good);
+    });
+  }
+
+  it("rejects a client whose store tenant differs", () => {
+    expect(
+      () =>
+        new Fabric({
+          tenantId: "acme",
+          agentId: "a",
+          profile: "permissive-dev",
+          contentCapture: {
+            store: store(tmpRoot(), "other"),
+            roles: "all",
+            durability: "inline",
+          },
+        }),
+    ).toThrow(/tenant/);
+  });
+
+  it("rejects unsafe S3 tenant and prefix", async () => {
+    const { S3ContentStore } = await import("../src/index.js");
+    expect(() => new S3ContentStore("acme-evidence", "a/b")).toThrow();
+    expect(() => new S3ContentStore("acme-evidence", "..")).toThrow();
+    expect(() => new S3ContentStore("acme-evidence", "acme", "fabric/../x/")).toThrow();
+  });
+
+  it("keeps identical content in two tenants isolated", async () => {
+    const root = tmpRoot();
+    const a = store(root, "tenant-a");
+    const b = store(root, "tenant-b");
+    const { descriptor } = buildContentDescriptor({
+      tenantId: "tenant-a",
+      role: ContentRole.INTERACTION_PAYLOAD,
+      content: "same-bytes",
+      mediaType: "text/plain",
+      source: "caller",
+      status: ContentStatus.STORED,
+      bindings: {},
+      payloadMaxBytes: 1024,
+    });
+    const ra = a.putObject(
+      descriptor as unknown as Record<string, unknown>,
+      "same-bytes",
+    ) as ContentRef;
+    const rb = b.putObject(
+      { ...(descriptor as unknown as Record<string, unknown>), tenant_id: "tenant-b" },
+      "same-bytes",
+    ) as ContentRef;
+    expect(ra.uri).not.toBe(rb.uri);
+    const resolverA = new ContentResolver([a]);
+    expect((await resolverA.resolve(ra.uri)).status).toBe(ResolveStatus.AVAILABLE);
+    expect((await resolverA.resolve(rb.uri)).status).toBe(ResolveStatus.DENIED);
+  });
+});
+
+// -- spec 033 §3 — verified resolution ----------------------------------------
+
+describe("verified resolution", () => {
+  function plant(root: string, digest: string, bytes: Uint8Array): string {
+    const dir = path.join(root, "acme");
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, digest);
+    fs.writeFileSync(target, bytes);
+    return `file://${target}`;
+  }
+
+  it("returns unverified when the descriptor sidecar is missing", async () => {
+    const root = tmpRoot();
+    const s = store(root);
+    const uri = plant(root, "b".repeat(64), new TextEncoder().encode("payload"));
+    const result = await new ContentResolver([s]).resolve(uri);
+    expect(result.status).not.toBe(ResolveStatus.AVAILABLE);
+    expect(result.content).toBeUndefined();
+  });
+
+  it("returns unverified when the descriptor is unreadable", async () => {
+    const root = tmpRoot();
+    const s = store(root);
+    const digest = "b".repeat(64);
+    const uri = plant(root, digest, new TextEncoder().encode("payload"));
+    const meta = path.join(root, "acme", "meta");
+    fs.mkdirSync(meta, { recursive: true });
+    fs.writeFileSync(path.join(meta, `${digest}.json`), "{ not json");
+    const result = await new ContentResolver([s]).resolve(uri);
+    expect(result.status).not.toBe(ResolveStatus.AVAILABLE);
+    expect(result.content).toBeUndefined();
+  });
+
+  it("denies a descriptor whose tenant differs from the store", async () => {
+    const root = tmpRoot();
+    const s = store(root);
+    const { descriptor, data } = buildContentDescriptor({
+      tenantId: "tenant-b",
+      role: ContentRole.INTERACTION_PAYLOAD,
+      content: "payload",
+      mediaType: "text/plain",
+      source: "caller",
+      status: ContentStatus.STORED,
+      bindings: {},
+      payloadMaxBytes: 1024,
+    });
+    const digest = descriptor.digest.slice(7);
+    const uri = plant(root, digest, data);
+    const meta = path.join(root, "acme", "meta");
+    fs.mkdirSync(meta, { recursive: true });
+    fs.writeFileSync(path.join(meta, `${digest}.json`), JSON.stringify(descriptor, null, 2));
+    const result = await new ContentResolver([s]).resolve(uri);
+    expect([ResolveStatus.DENIED, ResolveStatus.CORRUPTED]).toContain(result.status);
+    expect(result.content).toBeUndefined();
   });
 });

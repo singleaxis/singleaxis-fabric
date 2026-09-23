@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from fabric.content_store.base import (
     ContentRef,
     CorruptedObjectError,
+    check_safe_identifier,
     content_hash,
     content_hash_bytes,
 )
@@ -63,10 +64,10 @@ class S3ContentStore:
             raise ValueError(f"invalid S3 bucket name: {self.bucket!r}")
         if not self.prefix or not self.prefix.endswith("/") or self.prefix.startswith("/"):
             raise ValueError("prefix must be a non-empty relative path ending in '/'")
-        if self.tenant_id is not None and not re.match(
-            r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$", self.tenant_id
-        ):
-            raise ValueError(f"invalid tenant_id: {self.tenant_id!r}")
+        if ".." in self.prefix.split("/"):
+            raise ValueError("prefix must not contain '..' segments")
+        if self.tenant_id is not None:
+            check_safe_identifier("tenant_id", self.tenant_id)
         if self.sse_kms_key_id and not self.sse_algorithm:
             raise ValueError("sse_kms_key_id requires sse_algorithm")
 

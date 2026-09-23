@@ -37,6 +37,7 @@ from fabric._content import (
     TranscriptManifest,
     canonical_bytes,
 )
+from fabric.content_store import S3ContentStore
 
 TENANT = "acme"
 
@@ -636,12 +637,15 @@ def test_pending_ref_resolves_as_missing_then_available(tmp_path: Path) -> None:
     store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id=TENANT)
     writer = ContentWriter(_config(tmp_path, store=store, durability="process"))
     descriptor, content = _task(content="pending payload")
-    assert writer.submit(descriptor, content) == ContentStatus.PENDING
-
     resolver = ContentResolver([store])
     uri = store.ref_for(descriptor.digest.split(":", 1)[1])
+    # Nothing written yet — deterministically absent.
     assert resolver.resolve(uri).status == ResolveStatus.MISSING
+    # A manifest-supplied pending descriptor proves the object is on its way.
+    pending_doc = {**descriptor.to_json(), "status": "pending"}
+    assert resolver.resolve(uri, descriptor=pending_doc).status == ResolveStatus.PENDING
 
+    assert writer.submit(descriptor, content) == ContentStatus.PENDING
     writer.flush(timeout_s=5)
     writer.close()
     assert resolver.resolve(uri).status == ResolveStatus.AVAILABLE
@@ -685,3 +689,144 @@ def test_manifest_role_constant_matches_contract() -> None:
     assert ContentRole.MODEL_REQUEST_MESSAGES == "model.request.messages"
     assert "context.file" in CONTENT_ROLES
     assert "memory.write.content" in CONTENT_ROLES
+
+
+# --------------------------------------------------------------------------- #
+# spec 033 §2.1 — safe tenant identifiers + client/store agreement
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "bad_tenant",
+    [
+        "../escaped",
+        "..",
+        ".",
+        "/absolute",
+        "a/b",
+        "a\\b",
+        "..%2f..%2fetc",
+        "%2e%2e",
+        "tenant%00x",
+        "",
+        " ",
+        "a b",
+        "a;b",
+        "a$b",
+    ],
+)
+def test_unsafe_tenant_id_rejected(tmp_path: Path, bad_tenant: str) -> None:
+    with pytest.raises((ValueError, RuntimeError)):
+        LocalFilesystemContentStore(root=str(tmp_path), tenant_id=bad_tenant)
+
+
+@pytest.mark.parametrize("good_tenant", ["acme", "acme-prod", "acme.prod", "tenant_01", "T3nant"])
+def test_safe_tenant_id_accepted(tmp_path: Path, good_tenant: str) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path), tenant_id=good_tenant)
+    assert store.tenant_id == good_tenant
+
+
+def test_local_tenant_root_stays_inside_configured_root(tmp_path: Path) -> None:
+    """Even a regex-shaped tenant must resolve inside the configured root —
+    the containment check is filesystem-level, not string-level."""
+    store = LocalFilesystemContentStore(root=str(tmp_path / "root"), tenant_id=TENANT)
+    tenant_root = store._tenant_root()
+    assert tenant_root.is_relative_to((tmp_path / "root").resolve())
+
+
+def test_client_rejects_store_tenant_mismatch(tmp_path: Path) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="other")
+    with pytest.raises(ValueError, match="tenant"):
+        Fabric(
+            FabricConfig(tenant_id=TENANT, agent_id="bot"),
+            content_capture=ContentCaptureConfig(store=store, roles="all", durability="inline"),
+        )
+
+
+def test_s3_store_rejects_unsafe_tenant_and_prefix() -> None:
+    with pytest.raises(ValueError):
+        S3ContentStore(bucket="acme-evidence", tenant_id="a/b")
+    with pytest.raises(ValueError):
+        S3ContentStore(bucket="acme-evidence", tenant_id="..")
+    with pytest.raises(ValueError):
+        S3ContentStore(bucket="acme-evidence", prefix="fabric/../x/", tenant_id=TENANT)
+
+
+def test_identical_content_two_tenants_stays_isolated(tmp_path: Path) -> None:
+    a = LocalFilesystemContentStore(root=str(tmp_path), tenant_id="tenant-a")
+    b = LocalFilesystemContentStore(root=str(tmp_path), tenant_id="tenant-b")
+    descriptor, _ = ContentDescriptor.build(
+        tenant_id="tenant-a",
+        role="interaction.payload",
+        content="same-bytes",
+        media_type="text/plain",
+        source="caller",
+        status="pending",
+        bindings={},
+        payload_max_bytes=1024,
+    )
+    ra = a.put_object(descriptor.to_json(), "same-bytes")
+    descriptor_b = ContentDescriptor(
+        **{**descriptor.to_json(), "tenant_id": "tenant-b"}
+    )
+    rb = b.put_object(descriptor_b.to_json(), "same-bytes")
+    assert ra.uri != rb.uri
+    assert ContentResolver([a]).resolve(ra.uri).status == ResolveStatus.AVAILABLE
+    # tenant-b's object is outside tenant-a's namespace even under one root.
+    assert ContentResolver([a]).resolve(rb.uri).status == ResolveStatus.DENIED
+
+
+# --------------------------------------------------------------------------- #
+# spec 033 §3 — verified resolution
+# --------------------------------------------------------------------------- #
+
+
+def test_resolve_missing_descriptor_is_unverified(tmp_path: Path) -> None:
+    """A digest-named file with no descriptor sidecar must NOT resolve as
+    available — the name is not proof of integrity."""
+    store = LocalFilesystemContentStore(root=str(tmp_path), tenant_id=TENANT)
+    digest = "b" * 64
+    target = tmp_path / TENANT / digest
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"payload")
+    result = ContentResolver([store]).resolve(f"file://{target}")
+    assert result.status != ResolveStatus.AVAILABLE
+    assert result.content is None
+
+
+def test_resolve_invalid_descriptor_is_unverified(tmp_path: Path) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path), tenant_id=TENANT)
+    digest = "b" * 64
+    target = tmp_path / TENANT / digest
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"payload")
+    meta = tmp_path / TENANT / "meta"
+    meta.mkdir()
+    (meta / f"{digest}.json").write_text("{ not json")
+    result = ContentResolver([store]).resolve(f"file://{target}")
+    assert result.status != ResolveStatus.AVAILABLE
+    assert result.content is None
+
+
+def test_resolve_descriptor_tenant_mismatch_denied(tmp_path: Path) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path), tenant_id=TENANT)
+    descriptor, data = ContentDescriptor.build(
+        tenant_id="tenant-b",  # descriptor claims a different tenant
+        role="interaction.payload",
+        content="payload",
+        media_type="text/plain",
+        source="caller",
+        status="stored",
+        bindings={},
+        payload_max_bytes=1024,
+    )
+    digest = descriptor.digest.split(":", 1)[1]
+    target = tmp_path / TENANT / digest
+    target.parent.mkdir(parents=True)
+    target.write_bytes(data)
+    meta = tmp_path / TENANT / "meta"
+    meta.mkdir()
+    (meta / f"{digest}.json").write_text(json.dumps(descriptor.to_json()))
+    result = ContentResolver([store]).resolve(f"file://{target}")
+    assert result.status in (ResolveStatus.DENIED, ResolveStatus.CORRUPTED)
+    assert result.content is None

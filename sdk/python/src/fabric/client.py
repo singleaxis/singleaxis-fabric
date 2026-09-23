@@ -198,6 +198,13 @@ class Fabric:
                     "(LocalFilesystemContentStore/S3ContentStore with "
                     "tenant_id, or an equivalent GovernedStore)"
                 )
+            if content_capture.store.tenant_id != self._config.tenant_id:
+                raise ValueError(
+                    f"content_capture.store.tenant_id "
+                    f"({content_capture.store.tenant_id!r}) must equal the "
+                    f"Fabric client tenant_id ({self._config.tenant_id!r}) — "
+                    "a mismatched namespace is a silent cross-tenant leak"
+                )
             self._content_roles = content_capture.resolved_roles(CONTENT_ROLES)
             self._content_capture = content_capture
             self._content_writer = ContentWriter(content_capture)
