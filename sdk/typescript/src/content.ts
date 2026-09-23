@@ -50,6 +50,14 @@ export const ContentStatus = {
 } as const;
 export type ContentStatus = (typeof ContentStatus)[keyof typeof ContentStatus];
 
+/** Item statuses whose manifest entry may carry `descriptor`/`ref`
+ * (spec 029 §4). All other statuses must not. */
+export const DESCRIPTOR_STATUSES: ReadonlySet<string> = new Set([
+  ContentStatus.PENDING,
+  ContentStatus.STORED,
+  ContentStatus.TRUNCATED,
+]);
+
 /** How the stored bytes relate to what the caller supplied. */
 export const Representation = {
   CAPTURED: "captured",
@@ -260,9 +268,10 @@ export class TranscriptManifest {
     this.roles_enabled = options.rolesEnabled;
   }
 
-  add(item: ManifestItem): void {
+  add(item: ManifestItem): ManifestItem {
     item.sequence = this.items.length;
     this.items.push(item);
+    return item;
   }
 
   itemFor(objectId: string): ManifestItem | undefined {

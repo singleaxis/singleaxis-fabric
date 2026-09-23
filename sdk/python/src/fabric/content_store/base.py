@@ -95,6 +95,12 @@ class GovernedStore(Protocol):
         """Store the manifest and a by-decision alias; return its URI."""
         ...
 
+    def manifest_uri_for(self, manifest_id: str) -> str:
+        """Deterministic URI for ``manifest_id`` — computable with no
+        store I/O so ``manifest_ref`` can be stamped before the manifest
+        bytes are delivered."""
+        ...
+
     def manifest_uri_for_decision(self, decision_id: str) -> str:
         """URI of the by-decision alias document (may not exist yet)."""
         ...

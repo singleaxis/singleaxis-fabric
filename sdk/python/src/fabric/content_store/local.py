@@ -166,6 +166,9 @@ class LocalFilesystemContentStore:
     def _safe_name(value: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]", "_", value)
 
+    def manifest_uri_for(self, manifest_id: str) -> str:
+        return f"file://{self._tenant_root() / 'manifests' / f'{manifest_id}.json'}"
+
     def manifest_uri_for_decision(self, decision_id: str) -> str:
         target = (
             self._tenant_root()

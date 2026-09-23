@@ -37,18 +37,19 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["sequence", "kind", "content"],
+        "required": ["sequence", "kind", "entries"],
         "additionalProperties": false,
         "properties": {
           "sequence": { "type": "integer", "minimum": 0 },
           "kind": { "type": "string" },
           "span_id": { "type": "string" },
           "tool_call_id": { "type": "string" },
-          "content": {
-            "type": "object",
-            "additionalProperties": {
+          "entries": {
+            "type": "array",
+            "description": "Every manifest item for this step, in manifest order. Repeated roles (partial chunks, retries, repeated retrieval/context) each appear exactly once — never keyed or overwritten.",
+            "items": {
               "type": "object",
-              "required": ["status"],
+              "required": ["status", "role"],
               "additionalProperties": false,
               "properties": {
                 "status": { "type": "string" },

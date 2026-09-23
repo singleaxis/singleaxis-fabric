@@ -65,6 +65,10 @@ export interface GovernedStore {
     manifestId: string,
   ): MaybePromise<string>;
 
+  /** Deterministic URI for `manifestId` — computable with no store I/O
+   * so `manifest_ref` can be stamped before the bytes are delivered. */
+  manifestUriFor(manifestId: string): string;
+
   /** URI of the by-decision alias document (may not exist yet). */
   manifestUriForDecision(decisionId: string): string;
 
@@ -227,6 +231,10 @@ export class LocalFilesystemContentStore implements GovernedStore {
       new TextEncoder().encode(JSON.stringify({ manifest_uri: `file://${target}` }) + "\n"),
     );
     return `file://${target}`;
+  }
+
+  manifestUriFor(manifestId: string): string {
+    return `file://${path.join(this.tenantRoot(), "manifests", `${manifestId}.json`)}`;
   }
 
   manifestUriForDecision(decisionId: string): string {
@@ -464,6 +472,11 @@ export class S3ContentStore implements GovernedStore {
         Body: JSON.stringify({ manifest_uri: `s3://${this.bucket}/${key}` }) + "\n",
       }),
     );
+    return `s3://${this.bucket}/${key}`;
+  }
+
+  manifestUriFor(manifestId: string): string {
+    const key = `${this.prefix}${this.tenantId}/manifests/${manifestId}.json`;
     return `s3://${this.bucket}/${key}`;
   }
 

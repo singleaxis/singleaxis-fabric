@@ -34,9 +34,7 @@ function loadFixtures(): ByteFixture[] {
     .readdirSync(fixturesDir)
     .filter((f) => f.endsWith(".json"))
     .sort()
-    .map(
-      (f) => JSON.parse(fs.readFileSync(path.join(fixturesDir, f), "utf-8")) as ByteFixture,
-    );
+    .map((f) => JSON.parse(fs.readFileSync(path.join(fixturesDir, f), "utf-8")) as ByteFixture);
 }
 
 describe("shared content byte/hash fixtures", () => {

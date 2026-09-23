@@ -47,7 +47,7 @@ def _schemas() -> dict[str, Any]:
 
 def test_all_pinned_content_contracts_validate() -> None:
     validated = validate_content_contracts(REPO_ROOT)
-    assert len(validated) == 19
+    assert len(validated) == 20
     assert "content/valid/transcript-manifest-complete.json" in validated
     assert "content/valid/transcript-manifest-incomplete.json" in validated
 
@@ -98,10 +98,14 @@ def test_incomplete_manifest_marks_every_gap_explicitly() -> None:
         ),
         (
             "contracts/content/v1/invalid/transcript-manifest-missing-descriptor.json",
-            "content.manifest.descriptor",
+            "content.schema.invalid",
         ),
         (
             "contracts/content/v1/invalid/transcript-manifest-stray-descriptor.json",
+            "content.schema.invalid",
+        ),
+        (
+            "contracts/content/v1/invalid/transcript-manifest-descriptor-status-mismatch.json",
             "content.manifest.descriptor",
         ),
         (

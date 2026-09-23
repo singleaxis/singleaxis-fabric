@@ -197,14 +197,14 @@ def _validate_manifest_semantics(document: Mapping[str, Any]) -> None:
 def _validate_export_semantics(document: Mapping[str, Any]) -> None:
     checked = 0
     for step_index, step in enumerate(document["steps"]):
-        for role, entry in step["content"].items():
+        for entry_index, entry in enumerate(step["entries"]):
             if entry["status"] == "available":
                 checked += 1
                 for required in ("ref", "digest", "byte_length", "object_id"):
                     if required not in entry:
                         raise ContentContractError(
                             "content.export.integrity",
-                            f"$.steps[{step_index}].content.{role}",
+                            f"$.steps[{step_index}].entries[{entry_index}]",
                             f"available content requires {required!r}",
                         )
     integrity = document["integrity"]

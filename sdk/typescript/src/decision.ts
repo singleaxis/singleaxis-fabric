@@ -751,6 +751,14 @@ export class Decision implements DecisionLike {
     return this.contentSink?.transcript;
   }
 
+  /** The manifest's deterministic store URI (metadata mode:
+   * `undefined`). Computable before close with no store I/O — the bytes
+   * arrive asynchronously; resolve the URI to learn actual delivery
+   * state. */
+  get contentManifestUri(): string | undefined {
+    return this.contentSink?.uri;
+  }
+
   private governedCaptureContent(
     role: string,
     content: unknown,

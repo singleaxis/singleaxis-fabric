@@ -12,13 +12,13 @@
     {
       "path": "schema/transcript-export-v1.schema.json",
       "role": "schema:transcript-export-v1",
-      "sha256": "ee569fcc2bb02bc01f08ff224876c998c25cc6c221628d27183068cc612c2fe8",
+      "sha256": "b699145edc40b07623cc2a3ce12059d40eca9002bd63884d0ce6f5da9e566e85",
       "expectation": "schema"
     },
     {
       "path": "schema/transcript-manifest-v1.schema.json",
       "role": "schema:transcript-manifest-v1",
-      "sha256": "4e9f1053cb76001716fcf9948f49d4c2743fd09a7beca6bace436318214abb90",
+      "sha256": "046ada471085ea0fa2fee3c85c3e33ae5566676d2bc08ec0c47deef2151b9a51",
       "expectation": "schema"
     },
     {
@@ -30,7 +30,7 @@
     {
       "path": "valid/transcript-export-complete.json",
       "role": "valid:transcript-export-complete",
-      "sha256": "aa2cfe5584c045f3d46071d12a97d9d0e6016f595de8848da6492a86a08b9275",
+      "sha256": "c0d1d5dd8de9d50625fe66b715c055dbb2a0cc428a00911273791411b3fb3745",
       "expectation": "valid"
     },
     {
@@ -106,7 +106,7 @@
       "role": "invalid:transcript-manifest-missing-descriptor",
       "sha256": "d341ae24f7f993527f0d72a9dffa39b7a43e87ac0ce5b947238761c996387f50",
       "expectation": "invalid",
-      "expected_error": "content.manifest.descriptor"
+      "expected_error": "content.schema.invalid"
     },
     {
       "path": "invalid/transcript-manifest-sequence-gap.json",
@@ -119,6 +119,13 @@
       "path": "invalid/transcript-manifest-stray-descriptor.json",
       "role": "invalid:transcript-manifest-stray-descriptor",
       "sha256": "9a7983a970a0c0dbf295b38678c970209db836d7c9630e411b396f9de07a5b05",
+      "expectation": "invalid",
+      "expected_error": "content.schema.invalid"
+    },
+    {
+      "path": "invalid/transcript-manifest-descriptor-status-mismatch.json",
+      "role": "invalid:transcript-manifest-descriptor-status-mismatch",
+      "sha256": "43dd0506d39b4f50357309785c4434650996bd3b43481439690f5b70fb94d627",
       "expectation": "invalid",
       "expected_error": "content.manifest.descriptor"
     }

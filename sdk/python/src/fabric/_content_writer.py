@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ import queue
 import tempfile
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,6 +46,8 @@ _DURABILITY_MODES = frozenset({"inline", "process", "spooled"})
 _QUEUE_MAX_CAP = 65536
 _PAYLOAD_MAX_CAP = 16 * 1024 * 1024
 _ENQUEUE_TIMEOUT_CAP_MS = 100
+_SPOOL_VERSION = 1
+_SPOOL_SUFFIX = ".corrupt"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +94,11 @@ class ContentCaptureConfig:
                 raise ValueError(f"ContentCaptureConfig: {name} must be a non-negative int")
             if value > cap:
                 raise ValueError(f"ContentCaptureConfig: {name} exceeds hard cap {cap}")
+        # Zero is rejected outright: an unbounded queue defeats the
+        # documented loss bound and a zero-capacity queue drops
+        # everything — neither is a usable "bounded" mode (spec 032 §3).
+        if self.queue_max_items == 0:
+            raise ValueError("ContentCaptureConfig: queue_max_items must be positive")
 
     def resolved_roles(self, all_roles: frozenset[str]) -> frozenset[str]:
         if self.roles == "all":
@@ -115,8 +124,23 @@ class FlushResult:
 
 @dataclass(slots=True)
 class _Task:
-    descriptor: ContentDescriptor
-    content: str
+    """One unit of store work: an object PUT or a manifest write.
+
+    ``kind`` is ``"object"`` or ``"manifest"``; ``key`` is the
+    pending-map and spool-file identity (``object_id`` for objects,
+    ``manifest:<manifest_id>`` for manifests). Manifest tasks carry the
+    full manifest document plus the identity needed to reconcile after a
+    restart (spec 032 §4).
+    """
+
+    kind: str
+    key: str
+    descriptor: ContentDescriptor | None = None
+    content: str | None = None
+    manifest: dict[str, Any] | None = None
+    manifest_id: str | None = None
+    decision_id: str | None = None
+    tenant_id: str | None = None
     attempts: int = 0
     first_enqueued: float = field(default_factory=time.monotonic)
 
@@ -144,14 +168,24 @@ class ContentWriter:
             "failed": 0,
             "spooled": 0,
             "recovered": 0,
+            "corrupt": 0,
         }
-        self._settled_callbacks: list[Callable[[ContentDescriptor, str], None]] = []
+        # Keyed settlement subscribers: delivery id -> callback. A
+        # subscriber is removed on terminal settlement, so a shared writer
+        # never accumulates per-decision callbacks (spec 032 §3).
+        self._subscribers: dict[str, Callable[[ContentDescriptor, str], None]] = {}
         self._worker: threading.Thread | None = None
         self._wake = threading.Event()
         self._spool_dir: Path | None = None
+        # Recovered-but-not-yet-delivered spool tasks. Kept separate from
+        # the bounded queue so a restart never discards durable records
+        # for capacity reasons (spec 032 §4).
+        self._recovery_backlog: deque[_Task] = deque()
         if config.durability == "spooled":
             self._spool_dir = Path(config.spool_dir or "")
             self._spool_dir.mkdir(parents=True, exist_ok=True)
+            with contextlib.suppress(OSError):
+                os.chmod(self._spool_dir, 0o700)
             self._recover_spool()
         if config.durability in ("process", "spooled"):
             self._worker = threading.Thread(
@@ -161,11 +195,29 @@ class ContentWriter:
 
     # -- submission -------------------------------------------------------
 
-    def on_settled(self, callback: Callable[[ContentDescriptor, str], None]) -> None:
-        """Register a hook fired when a pending item reaches stored/failed."""
-        self._settled_callbacks.append(callback)
+    def subscribe(self, object_id: str, callback: Callable[[ContentDescriptor, str], None]) -> None:
+        """Route ``object_id``'s terminal settlement to ``callback``.
 
-    def submit(self, descriptor: ContentDescriptor, content: str) -> str:
+        Keyed, one-shot: the entry is removed when the delivery settles, so
+        subscriber count returns to baseline instead of growing per
+        decision. Must be registered *before* :meth:`submit` so an inline
+        store cannot settle ahead of registration.
+        """
+        with self._pending_lock:
+            self._subscribers[object_id] = callback
+
+    def unsubscribe(self, object_id: str) -> None:
+        """Remove a subscriber (e.g. a dropped delivery that never settles)."""
+        with self._pending_lock:
+            self._subscribers.pop(object_id, None)
+
+    def submit(
+        self,
+        descriptor: ContentDescriptor,
+        content: str,
+        *,
+        decision_id: str | None = None,
+    ) -> str:
         """Enqueue a content object for delivery; returns its item status.
 
         Caller path ends here: serialization + hashing already happened at
@@ -175,7 +227,45 @@ class ContentWriter:
         if self._closed:
             _LOG.warning("fabric.content_writer: submit after close; marking failed")
             return ContentStatus.FAILED
-        task = _Task(descriptor=descriptor, content=content)
+        task = _Task(
+            kind="object",
+            key=descriptor.object_id,
+            descriptor=descriptor,
+            content=content,
+            decision_id=decision_id,
+            tenant_id=descriptor.tenant_id,
+        )
+        return self._submit_task(task, descriptor.object_id)
+
+    def submit_manifest(
+        self,
+        manifest: Mapping[str, Any],
+        *,
+        decision_id: str,
+        manifest_id: str,
+        tenant_id: str,
+    ) -> str:
+        """Enqueue a manifest write for bounded async/durable delivery.
+
+        The manifest URI is deterministic and already stamped on the
+        decision span — this only delivers the bytes. Rewrites are
+        idempotent: same ``manifest_id``, same destination, last complete
+        document wins (spec 032 §5).
+        """
+        if self._closed:
+            _LOG.warning("fabric.content_writer: manifest submit after close")
+            return ContentStatus.FAILED
+        task = _Task(
+            kind="manifest",
+            key=f"manifest:{manifest_id}",
+            manifest=dict(manifest),
+            manifest_id=manifest_id,
+            decision_id=decision_id,
+            tenant_id=tenant_id,
+        )
+        return self._submit_task(task, task.key)
+
+    def _submit_task(self, task: _Task, identity: str) -> str:
         if self._config.durability == "inline":
             return self._submit_inline(task)
         if self._config.durability == "spooled" and (self._queue.full() or not self._spool(task)):
@@ -189,17 +279,16 @@ class ContentWriter:
         except queue.Full:
             if self._config.durability == "spooled":
                 with contextlib.suppress(OSError):
-                    self._spool_path(descriptor.object_id).unlink(missing_ok=True)
+                    self._spool_path(task).unlink(missing_ok=True)
             self._stats["dropped"] += 1
             _LOG.warning(
-                "fabric.content_writer: queue full (%d); dropping object %s role %s",
+                "fabric.content_writer: queue full (%d); dropping %s",
                 self._config.queue_max_items,
-                descriptor.object_id,
-                descriptor.role,
+                task.key,
             )
             return ContentStatus.DROPPED
         with self._pending_lock:
-            self._pending[descriptor.object_id] = task
+            self._pending[identity] = task
         self._stats["enqueued"] += 1
         self._wake.set()
         return ContentStatus.PENDING
@@ -221,34 +310,58 @@ class ContentWriter:
             raise RuntimeError("spool requested without a spool_dir")
         return self._spool_dir
 
-    def _spool_path(self, object_id: str) -> Path:
-        return self._spool_root() / f"{object_id}.json"
+    def _spool_path(self, task: _Task) -> Path:
+        safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in task.key)
+        return self._spool_root() / f"{safe}.json"
+
+    def _spool_record(self, task: _Task) -> dict[str, Any]:
+        """A self-describing durable record (spec 032 §4): enough identity
+        to reconcile the owning manifest after a restart, plus a checksum
+        so torn/corrupted entries quarantine instead of delivering
+        garbage."""
+        record: dict[str, Any] = {
+            "schema_version": _SPOOL_VERSION,
+            "kind": task.kind,
+            "key": task.key,
+            "tenant_id": task.tenant_id,
+            "decision_id": task.decision_id,
+            "attempts": task.attempts,
+        }
+        if task.kind == "manifest":
+            record["manifest_id"] = task.manifest_id
+            record["manifest"] = task.manifest
+        else:
+            if task.descriptor is None or task.content is None:
+                raise ValueError("object spool task missing descriptor/content")
+            record["descriptor"] = task.descriptor.to_json()
+            record["content_b64"] = base64.b64encode(
+                task.content.encode("utf-8", "surrogatepass")
+            ).decode("ascii")
+        record["checksum"] = hashlib.sha256(
+            json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return record
 
     def _spool(self, task: _Task) -> bool:
         """fsync a spool entry for ``task``. False when the spool bound hit."""
         spool_dir = self._spool_root()
-        entry = json.dumps(
-            {
-                "descriptor": task.descriptor.to_json(),
-                "content_b64": base64.b64encode(
-                    task.content.encode("utf-8", "surrogatepass")
-                ).decode("ascii"),
-            }
-        ).encode("utf-8")
+        entry = json.dumps(self._spool_record(task)).encode("utf-8")
         if self._spool_usage() + len(entry) > self._config.spool_max_bytes:
             _LOG.warning(
                 "fabric.content_writer: spool full; dropping %s",
-                task.descriptor.object_id,
+                task.key,
             )
             return False
-        path = self._spool_path(task.descriptor.object_id)
+        path = self._spool_path(task)
         try:
             fd, tmp = tempfile.mkstemp(dir=str(spool_dir), prefix=".spool-", suffix=".tmp")
+            os.chmod(tmp, 0o600)
             with os.fdopen(fd, "wb") as stream:
                 stream.write(entry)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(tmp, path)
+            os.chmod(path, 0o600)
             dir_fd = os.open(str(spool_dir), os.O_RDONLY)
             try:
                 os.fsync(dir_fd)
@@ -270,31 +383,90 @@ class ContentWriter:
         return total
 
     def _recover_spool(self) -> None:
-        """Re-enqueue spool entries surviving a previous process crash."""
+        """Recover spool entries surviving a previous process.
+
+        Every valid record goes to the recovery backlog — never bounded
+        by the in-memory queue size, so restart never discards durable
+        work. Unreadable or checksum-failed entries quarantine to
+        ``*.corrupt`` with an explicit stat, never silently ignored.
+        """
         for path in sorted(self._spool_root().glob("*.json")):
             try:
-                entry = json.loads(path.read_text(encoding="utf-8"))
-                descriptor = _descriptor_from_json(entry["descriptor"])
-                content = base64.b64decode(entry["content_b64"]).decode("utf-8", "surrogatepass")
-            except (OSError, KeyError, ValueError):
-                _LOG.warning("fabric.content_writer: unreadable spool entry %s", path)
+                record = json.loads(path.read_text(encoding="utf-8"))
+                task = self._task_from_record(record)
+            except (OSError, KeyError, ValueError, TypeError):
+                self._quarantine(path)
                 continue
-            task = _Task(descriptor=descriptor, content=content)
-            try:
-                self._queue.put_nowait(task)
-            except queue.Full:
-                self._stats["dropped"] += 1
-                continue
+            self._recovery_backlog.append(task)
             with self._pending_lock:
-                self._pending[descriptor.object_id] = task
+                self._pending[task.key] = task
             self._stats["recovered"] += 1
+
+    def _task_from_record(self, record: Mapping[str, Any]) -> _Task:
+        checksum = record.get("checksum")
+        expected = hashlib.sha256(
+            json.dumps(
+                {k: v for k, v in record.items() if k != "checksum"},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if checksum != expected:
+            raise ValueError("spool record checksum mismatch")
+        if record.get("schema_version") != _SPOOL_VERSION:
+            raise ValueError(f"unsupported spool schema_version {record.get('schema_version')!r}")
+        kind = record["kind"]
+        if kind == "manifest":
+            task = _Task(
+                kind="manifest",
+                key=str(record["key"]),
+                manifest=dict(record["manifest"]),
+                manifest_id=str(record["manifest_id"]),
+                decision_id=str(record.get("decision_id") or ""),
+                tenant_id=str(record.get("tenant_id") or ""),
+            )
+        elif kind == "object":
+            descriptor = _descriptor_from_json(record["descriptor"])
+            task = _Task(
+                kind="object",
+                key=str(record["key"]),
+                descriptor=descriptor,
+                content=base64.b64decode(record["content_b64"]).decode("utf-8", "surrogatepass"),
+                decision_id=str(record.get("decision_id") or ""),
+                tenant_id=str(record.get("tenant_id") or ""),
+            )
+        else:
+            raise ValueError(f"unknown spool kind {kind!r}")
+        task.attempts = int(record.get("attempts") or 0)
+        return task
+
+    def _quarantine(self, path: Path) -> None:
+        """Move an unreadable record aside; the explicit outcome is a
+        ``corrupt`` stat + ``.corrupt`` marker, never silent loss."""
+        self._stats["corrupt"] += 1
+        _LOG.warning("fabric.content_writer: quarantining corrupt spool entry %s", path)
+        try:
+            os.replace(path, path.with_suffix(path.suffix + _SPOOL_SUFFIX))
+        except OSError:
+            _LOG.warning("fabric.content_writer: corrupt entry %s could not be moved", path)
 
     # -- delivery -----------------------------------------------------------
 
     def _deliver(self, task: _Task) -> str:
         task.attempts += 1
         try:
-            self._store.put_object(task.descriptor.to_json(), task.content)
+            if task.kind == "manifest":
+                if task.manifest is None:
+                    raise ValueError("manifest task missing manifest payload")
+                self._store.write_manifest(
+                    task.manifest,
+                    decision_id=task.decision_id or "",
+                    manifest_id=task.manifest_id or "",
+                )
+            else:
+                if task.descriptor is None or task.content is None:
+                    raise ValueError("object task missing descriptor/content")
+                self._store.put_object(task.descriptor.to_json(), task.content)
         except Exception:
             if (
                 task.attempts < self._config.retry_max_attempts
@@ -303,9 +475,8 @@ class ContentWriter:
                 raise _RetryLaterError from None
             self._stats["failed"] += 1
             _LOG.warning(
-                "fabric.content_writer: delivery failed permanently for %s role %s",
-                task.descriptor.object_id,
-                task.descriptor.role,
+                "fabric.content_writer: delivery failed permanently for %s",
+                task.key,
                 exc_info=True,
             )
             self._settle(task, ContentStatus.FAILED)
@@ -314,22 +485,25 @@ class ContentWriter:
         self._settle(task, ContentStatus.STORED)
         if self._spool_dir is not None:
             try:
-                self._spool_path(task.descriptor.object_id).unlink(missing_ok=True)
+                self._spool_path(task).unlink(missing_ok=True)
             except OSError:
                 _LOG.warning("fabric.content_writer: spool cleanup failed", exc_info=True)
         return ContentStatus.STORED
 
     def _settle(self, task: _Task, status: str) -> None:
         with self._pending_lock:
-            self._pending.pop(task.descriptor.object_id, None)
-        for callback in self._settled_callbacks:
+            self._pending.pop(task.key, None)
+            callback = self._subscribers.pop(task.key, None)
+        # Manifest tasks carry no subscriber — settlement is bookkeeping
+        # only; object tasks route to their manifest item.
+        if callback is not None and task.descriptor is not None:
             try:
                 callback(task.descriptor, status)
             except Exception:
                 _LOG.warning("fabric.content_writer: settled callback failed", exc_info=True)
 
     def _run(self) -> None:
-        """Worker loop: drain the queue, retry with bounded backoff."""
+        """Worker loop: drain queue + recovery backlog, bounded backoff."""
         delay = self._config.worker_flush_interval_ms / 1000.0
         retry_backlog: list[_Task] = []
         while True:
@@ -351,7 +525,20 @@ class ContentWriter:
                     self._deliver(task)
                 except _RetryLaterError:
                     retry_backlog.append(task)
-            if self._closed and self._queue.empty() and not retry_backlog:
+            # Recovered durable work drains after live submissions —
+            # never dropped for queue-capacity reasons (spec 032 §4).
+            while self._recovery_backlog:
+                task = self._recovery_backlog.popleft()
+                try:
+                    self._deliver(task)
+                except _RetryLaterError:
+                    retry_backlog.append(task)
+            if (
+                self._closed
+                and self._queue.empty()
+                and not retry_backlog
+                and not self._recovery_backlog
+            ):
                 return
 
     # -- lifecycle ------------------------------------------------------------

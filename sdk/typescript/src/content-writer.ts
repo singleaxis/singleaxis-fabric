@@ -14,15 +14,24 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { ContentStatus, type ContentDescriptor } from "./content.js";
+import { ContentStatus, canonicalJson, type ContentDescriptor } from "./content.js";
 import type { GovernedStore } from "./content-store.js";
 
 const DURABILITY_MODES = new Set(["inline", "process", "spooled"]);
 
 const QUEUE_MAX_CAP = 1 << 20;
 const PAYLOAD_MAX_CAP = 64 * 1024 * 1024;
+const SPOOL_VERSION = 1;
+const CORRUPT_SUFFIX = ".corrupt";
+
+/** Canonical-JSON bytes for the spool checksum (sorted keys, compact).
+ * Spool records are per-language — recovery only verifies records this
+ * SDK wrote — so cross-language byte equality is not required here. */
+function canonicalJsonBytes(value: unknown): Uint8Array {
+  return new TextEncoder().encode(canonicalJson(value));
+}
 
 /** Explicit governed-capture configuration (spec 028). */
 export interface ContentCaptureConfig {
@@ -60,9 +69,22 @@ export interface FlushResult {
   failed: number;
 }
 
+/**
+ * One unit of store work: an object PUT or a manifest write. `key` is
+ * the pending-map and spool-file identity (`object_id` for objects,
+ * `manifest:<manifest_id>` for manifests). Manifest tasks carry the full
+ * document plus the identity needed to reconcile after a restart
+ * (spec 032 §4).
+ */
 interface Task {
-  descriptor: ContentDescriptor;
-  content: string;
+  kind: "object" | "manifest";
+  key: string;
+  descriptor?: ContentDescriptor;
+  content?: string;
+  manifest?: Record<string, unknown>;
+  manifestId?: string;
+  decisionId?: string;
+  tenantId?: string;
   attempts: number;
   firstEnqueued: number;
 }
@@ -77,6 +99,7 @@ function isGovernedStoreShape(store: unknown): store is GovernedStore {
     typeof s.refFor === "function" &&
     typeof s.putObject === "function" &&
     typeof s.writeManifest === "function" &&
+    typeof s.manifestUriFor === "function" &&
     typeof s.ownsUri === "function" &&
     typeof s.read === "function"
   );
@@ -127,6 +150,12 @@ export function validateContentCaptureConfig(
       throw new Error(`contentCapture.${name} exceeds hard cap ${cap}`);
     }
   }
+  // Zero is rejected outright: an unbounded queue defeats the documented
+  // loss bound and a zero-capacity queue drops everything — neither is a
+  // usable "bounded" mode (spec 032 §3).
+  if ((config.queueMaxItems ?? 1024) === 0) {
+    throw new Error("contentCapture.queueMaxItems must be positive");
+  }
   return config.roles === "all" ? allRoles : config.roles;
 }
 
@@ -147,20 +176,28 @@ export class ContentWriter {
     ContentCaptureConfig;
   private readonly queue: Task[] = [];
   private readonly pending = new Map<string, Task>();
-  private readonly settledCallbacks: ((d: ContentDescriptor, s: string) => void)[] = [];
-  private readonly stats = {
+  /** Keyed settlement subscribers: delivery id -> callback. Removed on
+   * terminal settlement so a shared writer never accumulates
+   * per-decision callbacks (spec 032 §3). */
+  private readonly subscribers = new Map<string, (d: ContentDescriptor, s: string) => void>();
+  private readonly counters = {
     enqueued: 0,
     stored: 0,
     dropped: 0,
     failed: 0,
     spooled: 0,
     recovered: 0,
+    corrupt: 0,
   };
   private closed = false;
   private draining = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private readonly spoolDirPath: string | undefined;
   private retryBacklog: Task[] = [];
+  /** Recovered-but-not-yet-delivered spool tasks. Kept separate from the
+   * bounded queue so a restart never discards durable records for
+   * capacity reasons (spec 032 §4). */
+  private readonly recoveryBacklog: Task[] = [];
 
   constructor(config: ContentCaptureConfig) {
     this.config = {
@@ -177,6 +214,11 @@ export class ContentWriter {
     if (this.config.durability === "spooled") {
       this.spoolDirPath = this.config.spoolDir;
       fs.mkdirSync(this.spoolDirPath as string, { recursive: true, mode: 0o700 });
+      try {
+        fs.chmodSync(this.spoolDirPath as string, 0o700);
+      } catch {
+        // best-effort tightening of a pre-existing directory
+      }
       this.recoverSpool();
     }
     if (this.config.durability !== "inline") {
@@ -184,25 +226,90 @@ export class ContentWriter {
     }
   }
 
-  /** Register a hook fired when a pending item reaches stored/failed. */
-  onSettled(callback: (descriptor: ContentDescriptor, status: string) => void): void {
-    this.settledCallbacks.push(callback);
+  /**
+   * Route `objectId`'s terminal settlement to `callback`. Keyed,
+   * one-shot: the entry is removed when the delivery settles. Must be
+   * registered *before* `submit` so an inline store cannot settle ahead
+   * of registration.
+   */
+  subscribe(
+    objectId: string,
+    callback: (descriptor: ContentDescriptor, status: string) => void,
+  ): void {
+    this.subscribers.set(objectId, callback);
+  }
+
+  /** Remove a subscriber (e.g. a dropped delivery that never settles). */
+  unsubscribe(objectId: string): void {
+    this.subscribers.delete(objectId);
+  }
+
+  /** Exposed for tests: live keyed subscribers. */
+  get subscriberCount(): number {
+    return this.subscribers.size;
+  }
+
+  /** Exact accounting snapshot — mirrors Python `ContentWriter.stats()`. */
+  stats(): Record<string, number> {
+    return {
+      ...this.counters,
+      pending: this.pending.size,
+      queue_depth: this.queue.length,
+    };
   }
 
   /**
    * Enqueue a content object for delivery; returns its item status.
    * Never throws — failures map to `dropped`/`failed` statuses.
    */
-  submit(descriptor: ContentDescriptor, content: string): string {
+  submit(descriptor: ContentDescriptor, content: string, decisionId?: string): string {
     if (this.closed) {
       return ContentStatus.FAILED;
     }
     const task: Task = {
+      kind: "object",
+      key: descriptor.object_id,
       descriptor,
       content,
+      decisionId,
+      tenantId: descriptor.tenant_id,
       attempts: 0,
       firstEnqueued: Date.now() / 1000,
     };
+    return this.submitTask(task);
+  }
+
+  /**
+   * Enqueue a manifest write for bounded async/durable delivery. The
+   * manifest URI is deterministic and already stamped on the decision
+   * span — this only delivers the bytes. Rewrites are idempotent: same
+   * `manifestId`, same destination, last complete document wins
+   * (spec 032 §5).
+   */
+  submitManifest(
+    manifest: Record<string, unknown>,
+    decisionId: string,
+    manifestId: string,
+    tenantId: string,
+  ): string {
+    if (this.closed) {
+      console.warn("fabric.contentWriter: manifest submit after close");
+      return ContentStatus.FAILED;
+    }
+    const task: Task = {
+      kind: "manifest",
+      key: `manifest:${manifestId}`,
+      manifest: { ...manifest },
+      manifestId,
+      decisionId,
+      tenantId,
+      attempts: 0,
+      firstEnqueued: Date.now() / 1000,
+    };
+    return this.submitTask(task);
+  }
+
+  private submitTask(task: Task): string {
     if (this.config.durability === "inline") {
       return this.deliverInline(task);
     }
@@ -210,17 +317,17 @@ export class ContentWriter {
       // Durable handoff first: a queue-full or spool-full drop never
       // leaves a durable-but-unreported entry behind.
       if (this.queue.length >= this.config.queueMaxItems || !this.spool(task)) {
-        this.stats.dropped += 1;
+        this.counters.dropped += 1;
         return ContentStatus.DROPPED;
       }
     }
     if (this.queue.length >= this.config.queueMaxItems) {
-      this.stats.dropped += 1;
+      this.counters.dropped += 1;
       return ContentStatus.DROPPED;
     }
     this.queue.push(task);
-    this.pending.set(descriptor.object_id, task);
-    this.stats.enqueued += 1;
+    this.pending.set(task.key, task);
+    this.counters.enqueued += 1;
     this.scheduleDrain();
     return ContentStatus.PENDING;
   }
@@ -228,19 +335,25 @@ export class ContentWriter {
   private deliverInline(task: Task): string {
     task.attempts += 1;
     try {
-      // A synchronous store resolves immediately.
-      const result = this.config.store.putObject(
-        task.descriptor as unknown as Record<string, unknown>,
-        task.content,
-      );
+      const result =
+        task.kind === "manifest"
+          ? this.config.store.writeManifest(
+              task.manifest as Record<string, unknown>,
+              task.decisionId ?? "",
+              task.manifestId ?? "",
+            )
+          : this.config.store.putObject(
+              task.descriptor as unknown as Record<string, unknown>,
+              task.content as string,
+            );
       if (result instanceof Promise) {
         throw new Error("async store cannot satisfy inline durability");
       }
-      this.stats.stored += 1;
+      this.counters.stored += 1;
       this.settle(task, ContentStatus.STORED);
       return ContentStatus.STORED;
     } catch {
-      this.stats.failed += 1;
+      this.counters.failed += 1;
       this.settle(task, ContentStatus.FAILED);
       return ContentStatus.FAILED;
     }
@@ -255,22 +368,41 @@ export class ContentWriter {
     return this.spoolDirPath;
   }
 
-  private spoolPath(objectId: string): string {
-    return path.join(this.spoolRoot(), `${objectId}.json`);
+  private spoolPath(task: Task): string {
+    const safe = task.key.replace(/[^A-Za-z0-9._-]/g, "_");
+    return path.join(this.spoolRoot(), `${safe}.json`);
+  }
+
+  /** A self-describing durable record (spec 032 §4): enough identity to
+   * reconcile the owning manifest after a restart, plus a checksum so
+   * torn/corrupted entries quarantine instead of delivering garbage. */
+  private spoolRecord(task: Task): Record<string, unknown> {
+    const record: Record<string, unknown> = {
+      schema_version: SPOOL_VERSION,
+      kind: task.kind,
+      key: task.key,
+      tenant_id: task.tenantId,
+      decision_id: task.decisionId,
+      attempts: task.attempts,
+    };
+    if (task.kind === "manifest") {
+      record["manifest_id"] = task.manifestId;
+      record["manifest"] = task.manifest;
+    } else {
+      record["descriptor"] = task.descriptor;
+      record["content_b64"] = Buffer.from(task.content as string, "utf-8").toString("base64");
+    }
+    record["checksum"] = createHash("sha256").update(canonicalJsonBytes(record)).digest("hex");
+    return record;
   }
 
   private spool(task: Task): boolean {
     const dir = this.spoolRoot();
-    const entry = new TextEncoder().encode(
-      JSON.stringify({
-        descriptor: task.descriptor,
-        content_b64: Buffer.from(task.content, "utf-8").toString("base64"),
-      }),
-    );
+    const entry = new TextEncoder().encode(JSON.stringify(this.spoolRecord(task)));
     if (this.spoolUsage() + entry.length > this.config.spoolMaxBytes) {
       return false;
     }
-    const target = this.spoolPath(task.descriptor.object_id);
+    const target = this.spoolPath(task);
     const tmp = path.join(dir, `.spool-${randomUUID()}.tmp`);
     try {
       const fd = fs.openSync(tmp, "w", 0o600);
@@ -281,13 +413,14 @@ export class ContentWriter {
         fs.closeSync(fd);
       }
       fs.renameSync(tmp, target);
+      fs.chmodSync(target, 0o600);
       const dirFd = fs.openSync(dir, "r");
       try {
         fs.fsyncSync(dirFd);
       } finally {
         fs.closeSync(dirFd);
       }
-      this.stats.spooled += 1;
+      this.counters.spooled += 1;
       return true;
     } catch {
       try {
@@ -312,32 +445,80 @@ export class ContentWriter {
     return total;
   }
 
+  /**
+   * Recover spool entries surviving a previous process. Every valid
+   * record goes to the recovery backlog — never bounded by the
+   * in-memory queue size, so restart never discards durable work.
+   * Unreadable or checksum-failed entries quarantine to `*.corrupt`
+   * with an explicit stat, never silently ignored.
+   */
   private recoverSpool(): void {
     for (const name of fs.readdirSync(this.spoolRoot()).sort()) {
       if (!name.endsWith(".json")) continue;
       const file = path.join(this.spoolRoot(), name);
       let task: Task;
       try {
-        const entry = JSON.parse(fs.readFileSync(file, "utf-8")) as {
-          descriptor: ContentDescriptor;
-          content_b64: string;
-        };
-        task = {
-          descriptor: entry.descriptor,
-          content: Buffer.from(entry.content_b64, "base64").toString("utf-8"),
-          attempts: 0,
-          firstEnqueued: Date.now() / 1000,
-        };
+        const record = JSON.parse(fs.readFileSync(file, "utf-8")) as Record<string, unknown>;
+        task = this.taskFromRecord(record);
       } catch {
+        this.quarantine(file);
         continue;
       }
-      if (this.queue.length >= this.config.queueMaxItems) {
-        this.stats.dropped += 1;
-        continue;
-      }
-      this.queue.push(task);
-      this.pending.set(task.descriptor.object_id, task);
-      this.stats.recovered += 1;
+      this.recoveryBacklog.push(task);
+      this.pending.set(task.key, task);
+      this.counters.recovered += 1;
+    }
+  }
+
+  private taskFromRecord(record: Record<string, unknown>): Task {
+    const { checksum, ...body } = record;
+    const expected = createHash("sha256").update(canonicalJsonBytes(body)).digest("hex");
+    if (checksum !== expected) {
+      throw new Error("spool record checksum mismatch");
+    }
+    if (record["schema_version"] !== SPOOL_VERSION) {
+      throw new Error(`unsupported spool schema_version ${String(record["schema_version"])}`);
+    }
+    const kind = record["kind"];
+    let task: Task;
+    if (kind === "manifest") {
+      task = {
+        kind: "manifest",
+        key: String(record["key"]),
+        manifest: record["manifest"] as Record<string, unknown>,
+        manifestId: String(record["manifest_id"]),
+        decisionId: String(record["decision_id"] ?? ""),
+        tenantId: String(record["tenant_id"] ?? ""),
+        attempts: 0,
+        firstEnqueued: Date.now() / 1000,
+      };
+    } else if (kind === "object") {
+      task = {
+        kind: "object",
+        key: String(record["key"]),
+        descriptor: record["descriptor"] as ContentDescriptor,
+        content: Buffer.from(String(record["content_b64"]), "base64").toString("utf-8"),
+        decisionId: String(record["decision_id"] ?? ""),
+        tenantId: String(record["tenant_id"] ?? ""),
+        attempts: 0,
+        firstEnqueued: Date.now() / 1000,
+      };
+    } else {
+      throw new Error(`unknown spool kind ${String(kind)}`);
+    }
+    task.attempts = Number(record["attempts"] ?? 0) || 0;
+    return task;
+  }
+
+  /** Move an unreadable record aside; the explicit outcome is a
+   * `corrupt` stat + `.corrupt` marker, never silent loss. */
+  private quarantine(file: string): void {
+    this.counters.corrupt += 1;
+    console.warn(`fabric.contentWriter: quarantining corrupt spool entry ${file}`);
+    try {
+      fs.renameSync(file, file + CORRUPT_SUFFIX);
+    } catch {
+      // could not move — still reported via the stat
     }
   }
 
@@ -346,11 +527,19 @@ export class ContentWriter {
   private async deliver(task: Task): Promise<void> {
     task.attempts += 1;
     try {
-      await this.config.store.putObject(
-        task.descriptor as unknown as Record<string, unknown>,
-        task.content,
-      );
-      this.stats.stored += 1;
+      if (task.kind === "manifest") {
+        await this.config.store.writeManifest(
+          task.manifest as Record<string, unknown>,
+          task.decisionId ?? "",
+          task.manifestId ?? "",
+        );
+      } else {
+        await this.config.store.putObject(
+          task.descriptor as unknown as Record<string, unknown>,
+          task.content as string,
+        );
+      }
+      this.counters.stored += 1;
       this.settle(task, ContentStatus.STORED);
     } catch {
       const elapsed = Date.now() / 1000 - task.firstEnqueued;
@@ -358,12 +547,12 @@ export class ContentWriter {
         this.retryBacklog.push(task);
         return;
       }
-      this.stats.failed += 1;
+      this.counters.failed += 1;
       this.settle(task, ContentStatus.FAILED);
     }
     if (this.config.durability === "spooled") {
       try {
-        fs.unlinkSync(this.spoolPath(task.descriptor.object_id));
+        fs.unlinkSync(this.spoolPath(task));
       } catch {
         // best-effort spool cleanup
       }
@@ -371,10 +560,14 @@ export class ContentWriter {
   }
 
   private settle(task: Task, status: string): void {
-    this.pending.delete(task.descriptor.object_id);
-    for (const cb of this.settledCallbacks) {
+    this.pending.delete(task.key);
+    const callback = this.subscribers.get(task.key);
+    this.subscribers.delete(task.key);
+    // Manifest tasks carry no subscriber — settlement is bookkeeping
+    // only; object tasks route to their manifest item.
+    if (callback !== undefined && task.descriptor !== undefined) {
       try {
-        cb(task.descriptor, status);
+        callback(task.descriptor, status);
       } catch {
         // a sink hook must never break delivery
       }
@@ -410,10 +603,22 @@ export class ContentWriter {
         }
         await this.deliver(task);
       }
+      // Recovered durable work drains after live submissions — never
+      // dropped for queue-capacity reasons (spec 032 §4).
+      for (;;) {
+        const task = this.recoveryBacklog.shift();
+        if (task === undefined) {
+          break;
+        }
+        await this.deliver(task);
+      }
     } finally {
       this.draining = false;
     }
-    if (!this.closed && (this.queue.length > 0 || this.retryBacklog.length > 0)) {
+    if (
+      !this.closed &&
+      (this.queue.length > 0 || this.retryBacklog.length > 0 || this.recoveryBacklog.length > 0)
+    ) {
       this.scheduleDrain();
     }
   }
@@ -440,7 +645,12 @@ export class ContentWriter {
       } else {
         await draining;
       }
-      if (this.pending.size === 0 && this.queue.length === 0 && this.retryBacklog.length === 0) {
+      if (
+        this.pending.size === 0 &&
+        this.queue.length === 0 &&
+        this.retryBacklog.length === 0 &&
+        this.recoveryBacklog.length === 0
+      ) {
         break;
       }
       if (deadline !== undefined && Date.now() >= deadline) {
@@ -449,10 +659,10 @@ export class ContentWriter {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     return {
-      stored: this.stats.stored,
+      stored: this.counters.stored,
       pending: this.pending.size,
-      dropped: this.stats.dropped,
-      failed: this.stats.failed,
+      dropped: this.counters.dropped,
+      failed: this.counters.failed,
     };
   }
 

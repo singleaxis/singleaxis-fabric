@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from ._content import (
     ATTR_CONTENT_MANIFEST_REF,
+    DESCRIPTOR_STATUSES,
     ContentDescriptor,
     ContentRole,
     ContentStatus,
@@ -68,9 +69,12 @@ class ContentSink:
             },
             roles_enabled=roles_enabled,
         )
-        self._manifest_uri: str | None = None
+        # Deterministic manifest URI — computable immediately with no
+        # store I/O, so ``manifest_ref`` can be stamped before the span
+        # ends even though the bytes arrive asynchronously (spec 032 §5).
+        self._manifest_uri: str = self._store.manifest_uri_for(self._manifest.manifest_id)
+        self._manifest_submitted = False
         self._manifest_lock = threading.Lock()
-        writer.on_settled(self._on_settled)
 
     # -- manifest -------------------------------------------------------
 
@@ -165,37 +169,43 @@ class ContentSink:
             )
         content_text = data.decode("utf-8", "surrogatepass")
         ref = self._store.ref_for(descriptor.digest.split(":", 1)[1])
-        status = self._writer.submit(descriptor, content_text)
-        if status == ContentStatus.DROPPED:
-            self._manifest.add(
+        # Register the manifest item BEFORE the writer can settle it — an
+        # inline store fires its settlement inside submit(), and a queued
+        # store can win the race with the very next statement (spec 029 §4:
+        # pending slot first, then delivery).
+        with self._manifest_lock:
+            item = self._manifest.add(
                 ManifestItem(
                     sequence=-1,
                     role=role_value,
-                    status=ContentStatus.DROPPED,
-                    status_reason="queue_full",
+                    status=ContentStatus.PENDING,
+                    descriptor=ContentDescriptor(
+                        **{**descriptor.to_json(), "status": ContentStatus.PENDING}
+                    ),
+                    ref=ref,
+                    status_reason=status_reason,
                     links=links,
                 )
             )
-            return None
-        # stored | pending | failed | truncated — descriptor-carrying states.
-        item_status = (
-            ContentStatus.TRUNCATED
-            if descriptor.representation == "truncated"
-            and status in (ContentStatus.STORED, ContentStatus.PENDING)
-            else status
+        self._writer.subscribe(descriptor.object_id, self._on_item_settled)
+        status = self._writer.submit(
+            descriptor, content_text, decision_id=self._manifest.decision_id
         )
-        descriptor = ContentDescriptor(**{**descriptor.to_json(), "status": str(item_status)})
-        self._manifest.add(
-            ManifestItem(
-                sequence=-1,
-                role=role_value,
-                status=str(item_status),
-                descriptor=descriptor,
-                ref=ref,
-                links=links,
+        # An inline store has already settled inside submit(); only items
+        # still pending can be dropped (queue full) or failed (closed
+        # writer) by the return value itself.
+        if item.status == ContentStatus.PENDING and status in (
+            ContentStatus.DROPPED,
+            ContentStatus.FAILED,
+        ):
+            self._writer.unsubscribe(descriptor.object_id)
+            self._transition(
+                item,
+                status,
+                reason="queue_full" if status == ContentStatus.DROPPED else None,
             )
-        )
-        return ref
+        # Failed/dropped items expose no ref; pending and stored do.
+        return ref if item.status in DESCRIPTOR_STATUSES else None
 
     def mark(
         self,
@@ -222,29 +232,90 @@ class ContentSink:
 
     # -- lifecycle --------------------------------------------------------
 
-    def _on_settled(self, descriptor: ContentDescriptor, status: str) -> None:
-        """Writer callback: fold settled states into the manifest."""
+    def _on_item_settled(self, descriptor: ContentDescriptor, status: str) -> None:
+        """Keyed writer callback: fold this item's settlement into the manifest."""
         with self._manifest_lock:
             item = self._manifest.item_for(descriptor.object_id)
             if item is None:
+                _LOG.warning(
+                    "fabric.content: settlement for unregistered object %s", descriptor.object_id
+                )
                 return
-            item.status = status
-            item.descriptor = ContentDescriptor(**{**descriptor.to_json(), "status": status})
-            if self._manifest_uri is not None:
-                # Idempotent rewrite: same manifest_id, same path.
-                self._write_manifest()
+            self._transition(item, status, descriptor=descriptor, locked=True)
 
-    def _write_manifest(self) -> str | None:
+    def _transition(
+        self,
+        item: ManifestItem,
+        status: str | ContentStatus,
+        *,
+        reason: str | None = None,
+        descriptor: ContentDescriptor | None = None,
+        locked: bool = False,
+    ) -> None:
+        """Apply the spec-029 state machine to ``item``.
+
+        Only ``pending`` may transition (to ``stored``/``truncated``/
+        ``failed``); terminal statuses are final. Non-descriptor statuses
+        strip ``descriptor``/``ref`` so the manifest stays contract-valid.
+        ``locked=True`` means the caller already holds ``_manifest_lock``.
+        """
+        if not locked:
+            self._manifest_lock.acquire()
         try:
-            self._manifest_uri = self._store.write_manifest(
-                self._manifest.to_json(),
-                decision_id=self._manifest.decision_id,
-                manifest_id=self._manifest.manifest_id,
+            status_value = str(status)
+            if item.status != ContentStatus.PENDING:
+                # A settlement for an already-terminal item is an SDK bug —
+                # surface it, never silently absorb.
+                _LOG.warning(
+                    "fabric.content: late settlement %s for terminal item %s",
+                    status_value,
+                    item.role,
+                )
+                return
+            if (
+                status_value == ContentStatus.STORED
+                and item.descriptor is not None
+                and item.descriptor.representation == "truncated"
+            ):
+                status_value = ContentStatus.TRUNCATED
+            item.status = status_value
+            if reason is not None:
+                item.status_reason = reason
+            if status_value in DESCRIPTOR_STATUSES:
+                if descriptor is not None:
+                    item.descriptor = ContentDescriptor(
+                        **{**descriptor.to_json(), "status": status_value}
+                    )
+            else:
+                item.descriptor = None
+                item.ref = None
+            if self._manifest_submitted:
+                # Idempotent rewrite through the writer: same manifest_id,
+                # same destination, last complete document wins.
+                self._submit_manifest()
+        finally:
+            if not locked:
+                self._manifest_lock.release()
+
+    def _submit_manifest(self) -> None:
+        """Hand the current manifest bytes to the writer's bounded path.
+
+        Never does store I/O inline except in ``inline`` durability —
+        the caller path only ever sees a queue/spool handoff.
+        ``_manifest_lock`` must be held so the serialized document and
+        the submitted document cannot interleave with a settlement.
+        """
+        status = self._writer.submit_manifest(
+            self._manifest.to_json(),
+            decision_id=self._manifest.decision_id,
+            manifest_id=self._manifest.manifest_id,
+            tenant_id=self._manifest.tenant_id,
+        )
+        if status == ContentStatus.DROPPED:
+            _LOG.warning(
+                "fabric.content: manifest %s handoff dropped (queue full)",
+                self._manifest.manifest_id,
             )
-            return self._manifest_uri
-        except Exception:
-            _LOG.warning("fabric.content: manifest write failed", exc_info=True)
-            return None
 
     def close(
         self,
@@ -252,15 +323,20 @@ class ContentSink:
         decision_span: Span | None,
         closed_at: str | None = None,
     ) -> str | None:
-        """Write the manifest and stamp ``fabric.content.manifest_ref``.
+        """Submit the manifest and stamp ``fabric.content.manifest_ref``.
 
-        Called at decision close — before the span ends, so the attribute
-        lands. Pending items stay pending in the manifest; a later settle
-        rewrites it idempotently (spec 032 §5).
+        The stamped URI is deterministic — known before the bytes are
+        delivered. Called at decision close, before the span ends, so the
+        attribute always lands; a resolver reading early sees ``missing``
+        and a later settlement rewrites the document idempotently
+        (spec 032 §5).
         """
-        self._manifest.closed_at = closed_at or self._manifest.closed_at
-        uri = self._write_manifest()
-        if uri is not None and decision_span is not None:
+        with self._manifest_lock:
+            self._manifest.closed_at = closed_at or self._manifest.closed_at
+            self._manifest_submitted = True
+            self._submit_manifest()
+            uri = self._manifest_uri
+        if decision_span is not None:
             try:
                 decision_span.set_attribute(ATTR_CONTENT_MANIFEST_REF, uri)
             except Exception:
@@ -268,5 +344,5 @@ class ContentSink:
         return uri
 
     @property
-    def manifest_uri(self) -> str | None:
+    def manifest_uri(self) -> str:
         return self._manifest_uri

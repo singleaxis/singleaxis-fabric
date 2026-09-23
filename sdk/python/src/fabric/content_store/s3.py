@@ -73,7 +73,7 @@ class S3ContentStore:
 
     def _get_client(self) -> Any:
         try:
-            import boto3  # type: ignore[import-not-found, unused-ignore]  # noqa: PLC0415
+            import boto3  # type: ignore[import-not-found, import-untyped, unused-ignore]  # noqa: PLC0415
         except ImportError as exc:  # pragma: no cover — covered by extras
             raise ImportError(_IMPORT_HINT) from exc
 
@@ -196,6 +196,10 @@ class S3ContentStore:
             Body=(json.dumps({"manifest_uri": f"s3://{self.bucket}/{key}"}) + "\n").encode("utf-8"),
             **self._put_kwargs(),
         )
+        return f"s3://{self.bucket}/{key}"
+
+    def manifest_uri_for(self, manifest_id: str) -> str:
+        key = f"{self.prefix}{self.tenant_id}/manifests/{manifest_id}.json"
         return f"s3://{self.bucket}/{key}"
 
     def manifest_uri_for_decision(self, decision_id: str) -> str:

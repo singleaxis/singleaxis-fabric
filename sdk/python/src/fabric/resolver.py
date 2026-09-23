@@ -268,7 +268,7 @@ class ContentResolver:
                 steps[group_key] = {
                     "sequence": len(step_order),
                     "kind": kind,
-                    "content": {},
+                    "entries": [],
                 }
                 if span:
                     steps[group_key]["span_id"] = span
@@ -284,7 +284,10 @@ class ContentResolver:
                     raise ValueError(f"export exceeds export_max_bytes ({export_max_bytes})")
             elif item.get("ref") and item["status"] in _DESCRIPTOR_STATUSES:
                 failures.append({"ref": item["ref"], "reason": entry["status"]})
-            steps[group_key]["content"][item["role"]] = entry
+            # Ordered entries: every manifest item lands exactly once, in
+            # manifest sequence — repeated roles are preserved, never
+            # overwritten (spec 034 §3).
+            steps[group_key]["entries"].append(entry)
         ordered_steps = [steps[key] for key in step_order]
         export = {
             "schema_version": SCHEMA_TRANSCRIPT_EXPORT,

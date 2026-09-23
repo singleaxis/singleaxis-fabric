@@ -204,7 +204,8 @@ export class ContentResolver {
     for (const item of manifest["items"] as Record<string, unknown>[]) {
       const links = (item["links"] ?? {}) as Record<string, unknown>;
       const bindings = ((item["descriptor"] ?? {}) as Record<string, unknown>)["bindings"] as
-        Record<string, unknown> | undefined;
+        | Record<string, unknown>
+        | undefined;
       const span =
         (links["span_id"] as string | undefined) ?? (bindings?.["span_id"] as string | undefined);
       const groupKey = span ?? `__item_${item["sequence"]}`;
@@ -212,7 +213,7 @@ export class ContentResolver {
       if (step === undefined) {
         const kind =
           (bindings?.["step_type"] as string | undefined) ?? kindForRole(String(item["role"]));
-        step = { sequence: stepOrder.length, kind, content: {} };
+        step = { sequence: stepOrder.length, kind, entries: [] };
         if (span !== undefined) {
           step["span_id"] = span;
         }
@@ -235,7 +236,10 @@ export class ContentResolver {
       } else if (item["ref"] !== undefined && DESCRIPTOR_STATUSES.has(String(item["status"]))) {
         failures.push({ ref: String(item["ref"]), reason: String(entry["status"]) });
       }
-      (step["content"] as Record<string, unknown>)[String(item["role"])] = entry;
+      // Ordered entries: every manifest item lands exactly once, in
+      // manifest sequence — repeated roles are preserved, never
+      // overwritten (spec 034 §3).
+      (step["entries"] as unknown[]).push(entry);
     }
     const manifestHeader: Record<string, unknown> = {
       manifest_id: manifest["manifest_id"],

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 import time
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ from fabric._content import (
     TranscriptManifest,
     canonical_bytes,
 )
+from fabric._content_sink import ContentSink
 from fabric.content_store import S3ContentStore
 
 TENANT = "acme"
@@ -63,7 +65,8 @@ def _read_manifest(store_root: Path) -> dict[str, Any]:
     manifest_dir = store_root / TENANT / "manifests"
     candidates = [p for p in manifest_dir.glob("*.json") if p.parent == manifest_dir]
     assert candidates, "no manifest published"
-    return json.loads(candidates[0].read_text(encoding="utf-8"))
+    doc: dict[str, Any] = json.loads(candidates[0].read_text(encoding="utf-8"))
+    return doc
 
 
 def _roles(manifest: dict[str, Any]) -> dict[str, str]:
@@ -145,7 +148,7 @@ def test_non_governed_store_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="governed store"):
         Fabric(
             FabricConfig(tenant_id=TENANT, agent_id="bot"),
-            content_capture=ContentCaptureConfig(store=legacy, roles="all"),  # type: ignore[arg-type]
+            content_capture=ContentCaptureConfig(store=legacy, roles="all"),
         )
 
 
@@ -182,7 +185,7 @@ def test_canonical_bytes_rejects_binary() -> None:
 
 def _task(
     role: str = "model.request.messages", content: str = "x"
-) -> tuple[ContentDescriptor, bytes]:
+) -> tuple[ContentDescriptor, str]:
     descriptor, _data = ContentDescriptor.build(
         tenant_id=TENANT,
         role=role,
@@ -430,6 +433,7 @@ def test_source_mutation_after_capture_is_frozen(tmp_path: Path) -> None:
     )
     result = resolver.resolve(item["ref"], descriptor=item["descriptor"])
     assert result.ok
+    assert result.content is not None
     stored = json.loads(result.content.decode("utf-8"))
     assert stored == [{"role": "user", "content": "original"}]
 
@@ -594,8 +598,9 @@ def test_export_transcript_verified(tmp_path: Path) -> None:
     assert {"llm_call", "tool_call"} <= kinds
     # Materialized content is present on the tool step.
     tool_steps = [s for s in export["steps"] if s["kind"] == "tool_call"]
+    tool_entries = {e["role"]: e for e in tool_steps[0]["entries"]}
     # Serialized tool args are stored verbatim (text/plain), not re-parsed.
-    assert tool_steps[0]["content"]["tool.call.arguments"]["text"] == '{"order_id":"8811"}'
+    assert tool_entries["tool.call.arguments"]["text"] == '{"order_id":"8811"}'
 
 
 def test_export_survives_deleted_object(tmp_path: Path) -> None:
@@ -611,7 +616,8 @@ def test_export_survives_deleted_object(tmp_path: Path) -> None:
     assert export["integrity"]["verified"] is False
     assert export["integrity"]["failures"]
     tool_step = next(s for s in export["steps"] if s["kind"] == "tool_call")
-    assert tool_step["content"]["tool.call.result"]["status"] == "missing"
+    result_entry = next(e for e in tool_step["entries"] if e["role"] == "tool.call.result")
+    assert result_entry["status"] == "missing"
 
 
 def test_manifest_for_decision_alias(tmp_path: Path) -> None:
@@ -686,7 +692,7 @@ def test_submit_uses_utf8_boundary_safe_truncation() -> None:
 
 
 def test_manifest_role_constant_matches_contract() -> None:
-    assert ContentRole.MODEL_REQUEST_MESSAGES == "model.request.messages"
+    assert ContentRole.MODEL_REQUEST_MESSAGES.value == "model.request.messages"
     assert "context.file" in CONTENT_ROLES
     assert "memory.write.content" in CONTENT_ROLES
 
@@ -766,9 +772,7 @@ def test_identical_content_two_tenants_stays_isolated(tmp_path: Path) -> None:
         payload_max_bytes=1024,
     )
     ra = a.put_object(descriptor.to_json(), "same-bytes")
-    descriptor_b = ContentDescriptor(
-        **{**descriptor.to_json(), "tenant_id": "tenant-b"}
-    )
+    descriptor_b = ContentDescriptor(**{**descriptor.to_json(), "tenant_id": "tenant-b"})
     rb = b.put_object(descriptor_b.to_json(), "same-bytes")
     assert ra.uri != rb.uri
     assert ContentResolver([a]).resolve(ra.uri).status == ResolveStatus.AVAILABLE
@@ -830,3 +834,417 @@ def test_resolve_descriptor_tenant_mismatch_denied(tmp_path: Path) -> None:
     result = ContentResolver([store]).resolve(f"file://{target}")
     assert result.status in (ResolveStatus.DENIED, ResolveStatus.CORRUPTED)
     assert result.content is None
+
+
+# --------------------------------------------------------------------------- #
+# spec 029 §4 — manifest state machine + settlement races
+# --------------------------------------------------------------------------- #
+
+
+def _sink(tmp_path: Path, **overrides: Any) -> tuple[ContentSink, ContentWriter]:
+    cfg = _config(tmp_path, **overrides)
+    writer = ContentWriter(cfg)
+    sink = ContentSink(
+        config=cfg,
+        writer=writer,
+        tenant_id=TENANT,
+        agent_id="bot",
+        decision_id="d-race",
+        roles_enabled=frozenset(CONTENT_ROLES),
+    )
+    return sink, writer
+
+
+def test_fast_store_cannot_settle_before_registration(tmp_path: Path) -> None:
+    """A store that settles inside submit must never leave the item pending:
+    the manifest slot exists before the writer can fire."""
+    sink, writer = _sink(tmp_path, durability="inline")
+    ref = sink.capture("interaction.payload", "data")
+    assert ref is not None
+    item = sink.manifest.items[-1]
+    assert item.status in (ContentStatus.STORED, ContentStatus.TRUNCATED)
+    writer.close()
+
+
+def test_worker_settlement_reaches_the_manifest(tmp_path: Path) -> None:
+    """Even when the worker wins the registration race, the item must not
+    stay pending after the object is durably stored."""
+    sink, writer = _sink(tmp_path, durability="process", worker_flush_interval_ms=1)
+    for i in range(20):
+        sink.capture("interaction.payload", f"payload-{i}")
+    writer.flush(timeout_s=5)
+    writer.close()
+    stale = [i for i in sink.manifest.items if i.status == ContentStatus.PENDING]
+    assert not stale, f"{len(stale)} items pending after flush"
+
+
+def test_subscriber_count_returns_to_baseline(tmp_path: Path) -> None:
+    """Decision sinks must not accumulate callbacks on the shared writer."""
+    _, writer = _sink(tmp_path)
+    baseline = len(getattr(writer, "_subscribers", getattr(writer, "_settled_callbacks", [])))
+    cfg = _config(tmp_path)
+    for i in range(5):
+        s = ContentSink(
+            config=cfg,
+            writer=writer,
+            tenant_id=TENANT,
+            agent_id="bot",
+            decision_id=f"d{i}",
+            roles_enabled=frozenset(CONTENT_ROLES),
+        )
+        s.capture("interaction.payload", f"p{i}")
+    writer.flush(timeout_s=5)
+    writer.close()
+    after = len(getattr(writer, "_subscribers", getattr(writer, "_settled_callbacks", [])))
+    assert after <= baseline + 5  # legacy cap; keyed design drives this to baseline
+    # Keyed subscribers must drain fully once items settle.
+    assert len(getattr(writer, "_subscribers", [])) == 0
+
+
+def test_failed_item_carries_no_descriptor_or_ref(tmp_path: Path) -> None:
+    """A failed item points at nothing: descriptor+ref are stripped so the
+    manifest stays contract-valid."""
+
+    class BrokenStore(LocalFilesystemContentStore):
+        def put_object(self, descriptor: Any, content: str) -> Any:
+            raise OSError("disk full")
+
+    broken = BrokenStore(root=str(tmp_path / "store"), tenant_id=TENANT)
+    sink, _ = _sink(tmp_path / "s", store=broken, durability="inline")
+    sink.capture("interaction.payload", "data")
+    item = sink.manifest.items[-1]
+    assert item.status == ContentStatus.FAILED
+    assert item.descriptor is None
+    assert item.ref is None
+
+
+def test_pending_to_failed_reconciliation(tmp_path: Path) -> None:
+    class FlakyStore(LocalFilesystemContentStore):
+        def put_object(self, descriptor: Any, content: str) -> Any:
+            raise OSError("backend down")
+
+    broken = FlakyStore(root=str(tmp_path / "store"), tenant_id=TENANT)
+    cfg = ContentCaptureConfig(
+        store=broken,
+        roles="all",
+        durability="process",
+        retry_max_attempts=1,
+        worker_flush_interval_ms=1,
+    )
+    writer = ContentWriter(cfg)
+    sink = ContentSink(
+        config=cfg,
+        writer=writer,
+        tenant_id=TENANT,
+        agent_id="bot",
+        decision_id="d-fail",
+        roles_enabled=frozenset(CONTENT_ROLES),
+    )
+    sink.capture("interaction.payload", "data")
+    writer.flush(timeout_s=5)
+    writer.close()
+    item = sink.manifest.items[-1]
+    assert item.status == ContentStatus.FAILED
+    assert item.descriptor is None and item.ref is None
+
+
+def test_partial_output_stays_honest(tmp_path: Path) -> None:
+    """A cancelled/partial model output must not look like a complete one:
+    status_reason marks it partial even though bytes are stored."""
+    client = _client(tmp_path)
+    with (
+        client.decision(session_id="s", request_id="r") as d,
+        d.llm_call(provider="openai", model="gpt-4o") as call,
+    ):
+        call.record_partial_output("partial answer so far")
+    client.flush_content(timeout_s=5)
+    client.close()
+    manifest = _read_manifest(tmp_path / "store")
+    partial = [i for i in manifest["items"] if i["role"] == "model.output.messages"]
+    assert partial, "expected an output item"
+    assert any((i.get("status_reason") or "").startswith("partial") for i in partial), (
+        f"no partial marker on {partial}"
+    )
+
+
+def test_runtime_manifests_validate_against_contract(tmp_path: Path) -> None:
+    """Every runtime-generated manifest shape — stored, pending, failed —
+    must pass the published contract validator."""
+    import jsonschema  # noqa: PLC0415
+
+    schema = json.loads(
+        (REPO_ROOT / "contracts/content/v1/schema/transcript-manifest-v1.schema.json").read_text()
+    )
+
+    # stored manifest
+    client = _client(tmp_path / "a")
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_context("a.txt", "body", media_type="text/plain")
+    client.flush_content(timeout_s=5)
+    client.close()
+    jsonschema.validate(_read_manifest(tmp_path / "a" / "store"), schema)
+
+    # failed manifest
+    class BrokenStore(LocalFilesystemContentStore):
+        def put_object(self, descriptor: Any, content: str) -> Any:
+            raise OSError("down")
+
+    broken = BrokenStore(root=str(tmp_path / "b" / "store"), tenant_id=TENANT)
+    cfg = ContentCaptureConfig(store=broken, roles="all", durability="inline")
+    sink = ContentSink(
+        config=cfg,
+        writer=ContentWriter(cfg),
+        tenant_id=TENANT,
+        agent_id="bot",
+        decision_id="d-f",
+        roles_enabled=frozenset(CONTENT_ROLES),
+    )
+    sink.capture("interaction.payload", "x")
+    sink.close(decision_span=None)
+    manifest_path = next((tmp_path / "b" / "store" / TENANT / "manifests").glob("*.json"))
+    jsonschema.validate(json.loads(manifest_path.read_text()), schema)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+# --------------------------------------------------------------------------- #
+# spec 032 §5 — passive manifest/object delivery
+# --------------------------------------------------------------------------- #
+
+
+class _SlowStore(LocalFilesystemContentStore):
+    """put_object sleeps — proves production durability modes never let
+    remote-store latency reach the monitored decision path."""
+
+    def __init__(self, *args: Any, delay_s: float = 0.4, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._delay = delay_s
+
+    def put_object(self, descriptor: Any, content: str) -> Any:
+        time.sleep(self._delay)
+        return super().put_object(descriptor, content)
+
+
+def test_decision_close_does_not_wait_on_object_delivery(tmp_path: Path) -> None:
+    """spec 032 §5: `process` close returns without waiting on the store."""
+    store = _SlowStore(root=str(tmp_path / "store"), tenant_id=TENANT, delay_s=0.5)
+    client = _client(tmp_path, store=store, durability="process")
+    start = time.monotonic()
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_context("a.txt", "body")
+    elapsed = time.monotonic() - start
+    assert elapsed < 0.4, f"decision close blocked on store: {elapsed:.2f}s"
+    client.flush_content(timeout_s=5)
+    client.close()
+
+
+def test_manifest_ref_stamped_before_bytes_land(tmp_path: Path) -> None:
+    """The decision span carries `fabric.content.manifest_ref` even though
+    the manifest bytes arrive asynchronously."""
+    store = _SlowStore(root=str(tmp_path / "store"), tenant_id=TENANT, delay_s=0.5)
+    client = _client(tmp_path, store=store, durability="process")
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_context("a.txt", "body")
+    assert d.content_manifest_uri is not None
+    assert d.content_manifest_uri.startswith("file://")
+    client.flush_content(timeout_s=5)
+    client.close()
+
+
+def test_manifest_bytes_arrive_via_writer_not_close(tmp_path: Path) -> None:
+    """The manifest document lands through the bounded writer path and is
+    resolvable at the stamped URI after flush."""
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id=TENANT)
+    client = _client(tmp_path, store=store, durability="process")
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_context("a.txt", "body")
+    uri = d.content_manifest_uri
+    client.flush_content(timeout_s=5)
+    client.close()
+    assert uri is not None
+    manifest = store.read_manifest(uri)
+    assert manifest["decision_id"] == d.decision_id
+    assert manifest["items"]
+
+
+# --------------------------------------------------------------------------- #
+# spec 032 §4 — durable spool records and recovery
+# --------------------------------------------------------------------------- #
+
+
+def _spool_config(tmp_path: Path, **overrides: Any) -> ContentCaptureConfig:
+    return _config(
+        tmp_path,
+        durability="spooled",
+        spool_dir=str(tmp_path / "spool"),
+        **overrides,
+    )
+
+
+def _descriptor(role: str = "interaction.payload") -> ContentDescriptor:
+    descriptor, _ = ContentDescriptor.build(
+        tenant_id=TENANT,
+        role=role,
+        content="payload",
+        media_type="text/plain",
+        source="caller",
+        status="pending",
+        bindings={},
+        payload_max_bytes=1024 * 1024,
+    )
+    return descriptor
+
+
+def test_spool_record_carries_full_identity(tmp_path: Path) -> None:
+    """Records must reconcile their manifest after restart: tenant,
+    decision, kind, object id, ref, attempts and a record checksum."""
+    from fabric._content_writer import _Task  # noqa: PLC0415
+
+    cfg = _spool_config(tmp_path)
+    writer = ContentWriter(cfg)
+    descriptor = _descriptor()
+    writer._spool(
+        _Task(
+            kind="object",
+            key=descriptor.object_id,
+            descriptor=descriptor,
+            content="payload",
+            decision_id="d-9",
+            tenant_id=TENANT,
+        )
+    )
+    writer.close()
+    files = list((tmp_path / "spool").glob("*.json"))
+    assert len(files) == 1
+    record = json.loads(files[0].read_text())
+    for key in (
+        "schema_version",
+        "kind",
+        "key",
+        "tenant_id",
+        "decision_id",
+        "descriptor",
+        "content_b64",
+        "attempts",
+        "checksum",
+    ):
+        assert key in record, f"spool record missing {key}"
+    assert record["tenant_id"] == TENANT
+    assert record["decision_id"] == "d-9"
+    assert record["kind"] == "object"
+
+
+def test_spool_permissions(tmp_path: Path) -> None:
+    cfg = _spool_config(tmp_path)
+    writer = ContentWriter(cfg)
+    writer.submit(_descriptor(), "payload", decision_id="d-9")
+    dir_mode = stat.S_IMODE((tmp_path / "spool").stat().st_mode)
+    assert dir_mode == 0o700, f"spool dir mode {oct(dir_mode)}"
+    for spool_file in (tmp_path / "spool").glob("*.json"):
+        mode = stat.S_IMODE(spool_file.stat().st_mode)
+        assert mode == 0o600, f"spool file mode {oct(mode)}"
+    writer.close()
+
+
+def test_recovery_processes_more_records_than_queue_capacity(tmp_path: Path) -> None:
+    """A restart must drain every valid spool record, not just the first
+    queue-sized batch (spec 032 §4)."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir(parents=True)
+    cfg = _spool_config(tmp_path, queue_max_items=2)
+    writer = ContentWriter(cfg)
+    writer.close()  # creates the dir + permissions; no submissions
+    # Plant 5 valid records directly, more than queue capacity 2.
+    from fabric._content_writer import _Task  # noqa: PLC0415
+
+    plant = ContentWriter(cfg)
+    for index in range(5):
+        task_descriptor = _descriptor()
+        task_descriptor = ContentDescriptor(
+            **{**task_descriptor.to_json(), "object_id": f"obj-{index}"}
+        )
+        plant._spool(
+            _Task(
+                kind="object",
+                key=task_descriptor.object_id,
+                descriptor=task_descriptor,
+                content="payload",
+                decision_id="d-r",
+                tenant_id=TENANT,
+            )
+        )
+    plant.close()
+    assert len(list(spool_dir.glob("*.json"))) == 5
+    # New writer over the same spool: all 5 must deliver despite queue=2.
+    recovered = ContentWriter(cfg)
+    result = recovered.flush(timeout_s=10)
+    recovered.close()
+    assert result.stored == 5
+    assert not list(spool_dir.glob("*.json")), "delivered records must be removed"
+
+
+def test_corrupt_spool_entry_quarantined(tmp_path: Path) -> None:
+    """An unreadable/tampered record gets an explicit outcome: `.corrupt`
+    marker + stat — never silently ignored, never delivered."""
+    spool_dir = tmp_path / "spool"
+    spool_dir.mkdir(parents=True)
+    bad = spool_dir / "tampered.json"
+    bad.write_text(json.dumps({"schema_version": 1, "kind": "object", "checksum": "0" * 64}))
+    cfg = _spool_config(tmp_path)
+    writer = ContentWriter(cfg)
+    assert writer.stats()["corrupt"] == 1
+    assert not bad.exists()
+    assert (spool_dir / "tampered.json.corrupt").exists()
+    writer.close()
+
+
+def test_queue_max_items_zero_rejected(tmp_path: Path) -> None:
+    """Zero capacity is ambiguous — unbounded vs drop-everything — so the
+    config fails closed and demands a positive bound (spec 032 §3)."""
+    with pytest.raises(ValueError, match="queue_max_items must be positive"):
+        _config(tmp_path, queue_max_items=0)
+
+
+def test_recovered_manifest_reconciles_after_restart(tmp_path: Path) -> None:
+    """A spooled manifest task delivered post-restart writes the manifest
+    document and its by-decision alias."""
+    cfg = _spool_config(tmp_path)
+    writer = ContentWriter(cfg)
+    manifest_doc = {
+        "schema_version": "fabric.transcript-manifest/v1",
+        "manifest_id": "m-restart",
+        "decision_id": "d-restart",
+        "tenant_id": TENANT,
+    }
+    writer.submit_manifest(
+        manifest_doc, decision_id="d-restart", manifest_id="m-restart", tenant_id=TENANT
+    )
+    writer.close()  # flush bound may leave it spooled — that is the point
+    if not list((tmp_path / "spool").glob("*.json")):
+        # Fast path already delivered — still a valid outcome.
+        assert (tmp_path / "store" / TENANT / "manifests" / "m-restart.json").exists()
+        return
+    recovered = ContentWriter(cfg)
+    recovered.flush(timeout_s=10)
+    recovered.close()
+    manifest_path = tmp_path / "store" / TENANT / "manifests" / "m-restart.json"
+    assert json.loads(manifest_path.read_text())["manifest_id"] == "m-restart"
+
+
+def test_duplicate_recovery_is_idempotent(tmp_path: Path) -> None:
+    """A crash between delivery and spool-delete must not corrupt state on
+    re-delivery — the store write is idempotent by digest."""
+    cfg = _spool_config(tmp_path)
+    writer = ContentWriter(cfg)
+    descriptor = _descriptor()
+    writer.submit(descriptor, "payload", decision_id="d-dup")
+    writer.flush(timeout_s=10)
+    writer.close()
+    # Simulate: delivered but spool file survived (crash before unlink).
+    writer2 = ContentWriter(cfg)
+    writer2.submit(descriptor, "payload", decision_id="d-dup")
+    writer2.flush(timeout_s=10)
+    writer2.close()
+    uris = cfg.store.list_object_uris()
+    assert len(uris) == 1

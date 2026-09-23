@@ -20,8 +20,8 @@
       "sequence": 0,
       "kind": "llm_call",
       "span_id": "00f067aa0ba902b7",
-      "content": {
-        "model.request.instructions": {
+      "entries": [
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/2dbe382db23e2e1d690fdc49497e7939dcb44e93493cc0799f9751ab0e63c38e",
           "digest": "sha256:2dbe382db23e2e1d690fdc49497e7939dcb44e93493cc0799f9751ab0e63c38e",
@@ -31,7 +31,7 @@
           "object_id": "8372168a-aaaa-5c48-9b43-b989ee0d7b5c",
           "text": "You are a support agent. Resolve the ticket or escalate."
         },
-        "model.request.messages": {
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/6e3cae645b3740644c503091617b93293ba33c4b2ea187eb8e076955f5ad940b",
           "digest": "sha256:6e3cae645b3740644c503091617b93293ba33c4b2ea187eb8e076955f5ad940b",
@@ -46,7 +46,7 @@
             }
           ]
         },
-        "model.request.tool_definitions": {
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/a8b870aa753f0b43c381ff26c06ec36086f52872f731e01e48a5243e4e157afa",
           "digest": "sha256:a8b870aa753f0b43c381ff26c06ec36086f52872f731e01e48a5243e4e157afa",
@@ -64,7 +64,7 @@
             }
           ]
         },
-        "model.request.parameters": {
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/b074aa88ad0a8f67de33c1a3b8ee329436a8c8d71d78acf24725ce15f323c96c",
           "digest": "sha256:b074aa88ad0a8f67de33c1a3b8ee329436a8c8d71d78acf24725ce15f323c96c",
@@ -77,7 +77,7 @@
             "max_tokens": 512
           }
         },
-        "model.output.messages": {
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/7768b06f839dd88f3b9a62cc5fbc2eacf36793accb73bbf86def83b46e037e08",
           "digest": "sha256:7768b06f839dd88f3b9a62cc5fbc2eacf36793accb73bbf86def83b46e037e08",
@@ -101,15 +101,15 @@
             }
           ]
         }
-      }
+      ]
     },
     {
       "sequence": 1,
       "kind": "tool_call",
       "span_id": "1a2b3c4d5e6f7081",
       "tool_call_id": "call_9",
-      "content": {
-        "tool.call.arguments": {
+      "entries": [
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/a034dda31b8e39a28191c9f56246967f786823e0e16a3d4a0046fe2882da768f",
           "digest": "sha256:a034dda31b8e39a28191c9f56246967f786823e0e16a3d4a0046fe2882da768f",
@@ -122,7 +122,7 @@
             "amount_cents": 2599
           }
         },
-        "tool.call.result": {
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/fe6f7a80688056b651eafb69c01d5d9fd399628461c4c6fda8145763e5516bac",
           "digest": "sha256:fe6f7a80688056b651eafb69c01d5d9fd399628461c4c6fda8145763e5516bac",
@@ -135,14 +135,14 @@
             "refund_id": "rf_552"
           }
         }
-      }
+      ]
     },
     {
       "sequence": 2,
       "kind": "llm_call",
       "span_id": "9abcdef012345678",
-      "content": {
-        "model.request.messages": {
+      "entries": [
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/e256b9fdc3ab7d629a99e75bf30440783ce780ce34aa6d1a0504ed4cec53b62a",
           "digest": "sha256:e256b9fdc3ab7d629a99e75bf30440783ce780ce34aa6d1a0504ed4cec53b62a",
@@ -165,7 +165,7 @@
             }
           ]
         },
-        "model.output.messages": {
+        {
           "status": "available",
           "ref": "s3://acme-evidence/fabric/content/acme/508607402b4c6a209e0c79207a5bf76136e201058b5c551895236f3f1b470c60",
           "digest": "sha256:508607402b4c6a209e0c79207a5bf76136e201058b5c551895236f3f1b470c60",
@@ -180,7 +180,7 @@
             }
           ]
         }
-      }
+      ]
     }
   ],
   "completeness": {

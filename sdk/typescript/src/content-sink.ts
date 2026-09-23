@@ -16,6 +16,7 @@ import type { Span } from "@opentelemetry/api";
 import { ATTR_CONTENT_MANIFEST_REF } from "./attributes.js";
 import {
   ContentStatus,
+  DESCRIPTOR_STATUSES,
   Representation,
   TranscriptManifest,
   buildContentDescriptor,
@@ -29,7 +30,11 @@ import { SDK_VERSION } from "./version.js";
 /** One governed-content accumulator per decision. */
 export class ContentSink {
   private readonly manifest: TranscriptManifest;
-  private manifestUri: string | undefined;
+  /** Deterministic manifest URI — computable immediately with no store
+   * I/O, so `manifest_ref` can be stamped before the span ends even
+   * though the bytes arrive asynchronously (spec 032 §5). */
+  private readonly manifestUri: string;
+  private manifestSubmitted = false;
 
   constructor(
     private readonly config: ContentCaptureConfig,
@@ -51,14 +56,14 @@ export class ContentSink {
       },
       rolesEnabled,
     });
-    writer.onSettled((d, s) => this.onSettled(d, s));
+    this.manifestUri = this.store.manifestUriFor(this.manifest.manifest_id);
   }
 
   get transcript(): TranscriptManifest {
     return this.manifest;
   }
 
-  get uri(): string | undefined {
+  get uri(): string {
     return this.manifestUri;
   }
 
@@ -148,30 +153,31 @@ export class ContentSink {
     }
     const contentText = new TextDecoder("utf-8", { fatal: false }).decode(data);
     const ref = this.store.refFor(descriptor.digest.split(":", 2)[1] ?? "");
-    const status = this.writer.submit(descriptor, contentText);
-    if (status === ContentStatus.DROPPED) {
-      this.manifest.add(
-        newItem(role, ContentStatus.DROPPED, {
-          statusReason: "queue_full",
-          links: options.links,
-        }),
-      );
-      return undefined;
-    }
-    const itemStatus =
-      descriptor.representation === Representation.TRUNCATED &&
-      (status === ContentStatus.STORED || status === ContentStatus.PENDING)
-        ? ContentStatus.TRUNCATED
-        : status;
-    descriptor = { ...descriptor, status: itemStatus };
-    this.manifest.add(
-      newItem(role, itemStatus, {
-        descriptor,
+    // Register the manifest item BEFORE the writer can settle it — an
+    // inline store fires its settlement inside submit() (spec 029 §4:
+    // pending slot first, then delivery).
+    const item = this.manifest.add(
+      newItem(role, ContentStatus.PENDING, {
+        descriptor: { ...descriptor, status: ContentStatus.PENDING },
         ref,
+        statusReason: options.statusReason,
         links: options.links,
       }),
     );
-    return ref;
+    this.writer.subscribe(descriptor.object_id, (d, s) => this.onItemSettled(d, s));
+    const status = this.writer.submit(descriptor, contentText);
+    // An inline store has already settled inside submit(); only items
+    // still pending can be dropped (queue full) or failed (closed
+    // writer) by the return value itself.
+    if (
+      item.status === ContentStatus.PENDING &&
+      (status === ContentStatus.DROPPED || status === ContentStatus.FAILED)
+    ) {
+      this.writer.unsubscribe(descriptor.object_id);
+      this.transition(item, status, status === ContentStatus.DROPPED ? "queue_full" : undefined);
+    }
+    // Failed/dropped items expose no ref; pending and stored do.
+    return DESCRIPTOR_STATUSES.has(item.status) ? ref : undefined;
   }
 
   /**
@@ -191,70 +197,99 @@ export class ContentSink {
     );
   }
 
-  private onSettled(descriptor: ContentDescriptor, status: string): void {
+  private onItemSettled(descriptor: ContentDescriptor, status: string): void {
     const item = this.manifest.itemFor(descriptor.object_id);
     if (item === undefined) {
+      // A settlement for an unregistered item is an SDK defect — surface
+      // it, never silently absorb.
+      console.warn(`fabric.content: settlement for unregistered object ${descriptor.object_id}`);
       return;
     }
-    item.status = status;
-    item.descriptor = { ...descriptor, status };
-    if (this.manifestUri !== undefined) {
-      void this.writeManifest();
-    }
+    this.transition(item, status, undefined, descriptor);
   }
 
-  private async writeManifest(): Promise<string | undefined> {
-    try {
-      this.manifestUri = await this.store.writeManifest(
-        this.manifest.toJSON() as Record<string, unknown>,
-        this.manifest.decision_id,
-        this.manifest.manifest_id,
-      );
-      return this.manifestUri;
-    } catch {
-      return undefined;
+  /**
+   * Apply the spec-029 state machine to `item`: only `pending` may
+   * transition (to `stored`/`truncated`/`failed`); terminal statuses are
+   * final. Non-descriptor statuses strip `descriptor`/`ref` so the
+   * manifest stays contract-valid.
+   */
+  private transition(
+    item: ManifestItem,
+    status: string,
+    reason?: string,
+    descriptor?: ContentDescriptor,
+  ): void {
+    if (item.status !== ContentStatus.PENDING) {
+      console.warn(`fabric.content: late settlement ${status} for terminal item ${item.role}`);
+      return;
+    }
+    let statusValue = status;
+    if (
+      statusValue === ContentStatus.STORED &&
+      item.descriptor !== undefined &&
+      item.descriptor.representation === Representation.TRUNCATED
+    ) {
+      statusValue = ContentStatus.TRUNCATED;
+    }
+    item.status = statusValue;
+    if (reason !== undefined) {
+      item.status_reason = reason;
+    }
+    if (DESCRIPTOR_STATUSES.has(statusValue)) {
+      if (descriptor !== undefined) {
+        item.descriptor = { ...descriptor, status: statusValue };
+      }
+    } else {
+      delete item.descriptor;
+      delete item.ref;
+    }
+    if (this.manifestSubmitted) {
+      // Idempotent rewrite through the writer: same manifest_id, same
+      // destination, last complete document wins.
+      this.submitManifest();
     }
   }
 
   /**
-   * Write the manifest and stamp `fabric.content.manifest_ref`. Called
-   * at decision close — before the span ends, so the attribute lands.
-   * Pending items stay pending in the manifest; a later settle rewrites
-   * it idempotently (spec 032 §5).
+   * Hand the current manifest bytes to the writer's bounded path. Never
+   * does store I/O inline except in `inline` durability — the caller
+   * path only ever sees a queue/spool handoff.
    */
-  close(options: { decisionSpan?: Span; closedAt?: string } = {}): string | undefined {
-    this.manifest.closed_at = options.closedAt ?? this.manifest.closed_at;
-    const span = options.decisionSpan;
-    if (this.store.synchronous) {
-      // Write + stamp inline so the attribute lands before the span ends.
-      try {
-        const uri = this.store.writeManifest(
-          this.manifest.toJSON() as Record<string, unknown>,
-          this.manifest.decision_id,
-          this.manifest.manifest_id,
-        ) as string;
-        this.manifestUri = uri;
-        if (uri !== undefined && span !== undefined) {
-          try {
-            span.setAttribute(ATTR_CONTENT_MANIFEST_REF, uri);
-          } catch {
-            // stamping must never break the decision path
-          }
-        }
-      } catch {
-        // a failed manifest write lands as an absent ref, not a raised error
-      }
-      return this.manifestUri;
+  private submitManifest(): void {
+    const status = this.writer.submitManifest(
+      this.manifest.toJSON() as Record<string, unknown>,
+      this.manifest.decision_id,
+      this.manifest.manifest_id,
+      this.manifest.tenant_id,
+    );
+    if (status === ContentStatus.DROPPED) {
+      console.warn(
+        `fabric.content: manifest ${this.manifest.manifest_id} handoff dropped (queue full)`,
+      );
     }
-    void this.writeManifest().then((uri) => {
-      if (uri !== undefined && span !== undefined) {
-        try {
-          span.setAttribute(ATTR_CONTENT_MANIFEST_REF, uri);
-        } catch {
-          // stamping must never break the decision path
-        }
+  }
+
+  /**
+   * Submit the manifest and stamp `fabric.content.manifest_ref`. The
+   * stamped URI is deterministic — known before the bytes are
+   * delivered. Called at decision close, before the span ends, so the
+   * attribute always lands; a resolver reading early sees `missing`
+   * and a later settlement rewrites the document idempotently
+   * (spec 032 §5).
+   */
+  close(options: { decisionSpan?: Span; closedAt?: string } = {}): string {
+    this.manifest.closed_at = options.closedAt ?? this.manifest.closed_at;
+    this.manifestSubmitted = true;
+    this.submitManifest();
+    const span = options.decisionSpan;
+    if (span !== undefined) {
+      try {
+        span.setAttribute(ATTR_CONTENT_MANIFEST_REF, this.manifestUri);
+      } catch {
+        // stamping must never break the decision path
       }
-    });
+    }
     return this.manifestUri;
   }
 }

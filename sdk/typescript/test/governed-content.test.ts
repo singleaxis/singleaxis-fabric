@@ -43,6 +43,7 @@ import {
   truncateBytes,
   validateContentCaptureConfig,
   type ContentCaptureConfig,
+  type ContentDescriptor,
 } from "../src/index.js";
 import { ContentWriter } from "../src/content-writer.js";
 import type { ContentRef, GovernedStore } from "../src/content-store.js";
@@ -71,6 +72,9 @@ class SlowStore implements GovernedStore {
   }
   writeManifest(manifest: Record<string, unknown>, decisionId: string, manifestId: string): string {
     return this.inner.writeManifest(manifest, decisionId, manifestId);
+  }
+  manifestUriFor(manifestId: string): string {
+    return this.inner.manifestUriFor(manifestId);
   }
   manifestUriForDecision(decisionId: string): string {
     return this.inner.manifestUriForDecision(decisionId);
@@ -194,6 +198,7 @@ describe("content capture configuration", () => {
       refFor: (d) => `s3://bucket/prefix/acme/${d}`,
       putObject: async () => ({ uri: "s3://x", contentHash: "0".repeat(64) }),
       writeManifest: async () => "s3://bucket/m",
+      manifestUriFor: (id) => `s3://bucket/m/${id}`,
       manifestUriForDecision: () => "s3://bucket/m/d",
       ownsUri: () => true,
       exists: async () => false,
@@ -532,8 +537,9 @@ describe("governed capture surfaces", () => {
     });
     const result = await fabric.flushContent(5);
     // retrieval query+results, memory write+read, side effect req+res,
-    // context file, interaction payload = 8 objects.
-    expect(result?.stored).toBe(8);
+    // context file, interaction payload = 8 objects; the writer's
+    // `stored` counter also includes the manifest delivery = 9.
+    expect(result?.stored).toBe(9);
     const events = spanByName("fabric.decision").events;
     const retrieval = events.find((e) => e.name === "fabric.retrieval");
     expect(retrieval?.attributes?.["fabric.content.request_ref"]).toBeDefined();
@@ -636,12 +642,12 @@ describe("transcript manifest and export", () => {
     const exportDoc = (await resolver.exportTranscript(ref, {
       materialize: true,
     })) as {
-      steps: { content: Record<string, { status: string; text?: unknown }> }[];
+      steps: { entries: { role: string; status: string; text?: unknown }[] }[];
       integrity: { verified: boolean; objects_checked: number; failures: unknown[] };
     };
     expect(exportDoc.integrity.verified).toBe(true);
     expect(exportDoc.integrity.objects_checked).toBeGreaterThanOrEqual(2);
-    const roles = exportDoc.steps.flatMap((s) => Object.keys(s.content));
+    const roles = exportDoc.steps.flatMap((s) => s.entries.map((e) => e.role));
     expect(roles).toContain("model.request.messages");
     expect(roles).toContain("model.output.messages");
   });
@@ -847,5 +853,198 @@ describe("verified resolution", () => {
     const result = await new ContentResolver([s]).resolve(uri);
     expect([ResolveStatus.DENIED, ResolveStatus.CORRUPTED]).toContain(result.status);
     expect(result.content).toBeUndefined();
+  });
+});
+
+// ----------------------------------------------------------------------- //
+// spec 032 §5 — passive manifest/object delivery
+// ----------------------------------------------------------------------- //
+
+describe("passive delivery", () => {
+  it("decision close does not wait on object delivery", async () => {
+    const root = tmpRoot();
+    const slow = new SlowStore(root, 400);
+    const fabric = governedFabric(root, { store: slow, durability: "process" });
+    const start = Date.now();
+    await fabric.decision({ sessionId: "s", requestId: "r" }, async (d) => {
+      d.recordContext("a.txt", "body");
+    });
+    expect(Date.now() - start).toBeLessThan(350);
+    await fabric.flushContent(5);
+    await fabric.close();
+  });
+
+  it("manifest_ref is computable before bytes land", async () => {
+    const root = tmpRoot();
+    const slow = new SlowStore(root, 400);
+    const fabric = governedFabric(root, { store: slow, durability: "process" });
+    let uri: string | undefined;
+    await fabric.decision({ sessionId: "s", requestId: "r" }, async (d) => {
+      d.recordContext("a.txt", "body");
+      uri = d.contentManifestUri;
+    });
+    expect(uri).toMatch(/^file:\/\//);
+    await fabric.flushContent(5);
+    await fabric.close();
+  });
+
+  it("manifest bytes arrive via the writer, resolvable at the stamped URI", async () => {
+    const root = tmpRoot();
+    const s = store(root);
+    const fabric = governedFabric(root, { store: s, durability: "process" });
+    let uri: string | undefined;
+    let decisionId = "";
+    await fabric.decision({ sessionId: "s", requestId: "r" }, async (d) => {
+      d.recordContext("a.txt", "body");
+      uri = d.contentManifestUri;
+      decisionId = d.decisionId;
+    });
+    await fabric.flushContent(5);
+    await fabric.close();
+    const manifest = s.readManifest(uri as string) as {
+      decision_id: string;
+      items: unknown[];
+    };
+    expect(manifest.decision_id).toBe(decisionId);
+    expect(manifest.items.length).toBeGreaterThan(0);
+  });
+});
+
+// ----------------------------------------------------------------------- //
+// spec 032 §4 — durable spool records and recovery
+// ----------------------------------------------------------------------- //
+
+describe("durable spool", () => {
+  function spoolConfig(root: string, overrides: Partial<ContentCaptureConfig> = {}) {
+    return {
+      store: store(root),
+      roles: "all" as const,
+      durability: "spooled" as const,
+      spoolDir: path.join(root, "spool"),
+      ...overrides,
+    };
+  }
+
+  function descriptor(): ContentDescriptor {
+    const { descriptor } = buildContentDescriptor({
+      tenantId: "acme",
+      role: ContentRole.INTERACTION_PAYLOAD,
+      content: "payload",
+      mediaType: "text/plain",
+      source: "caller",
+      status: ContentStatus.PENDING,
+      bindings: {},
+      payloadMaxBytes: 1024 * 1024,
+    });
+    return descriptor;
+  }
+
+  it("spool record carries full identity and a checksum", () => {
+    const root = tmpRoot();
+    const writer = new ContentWriter(spoolConfig(root));
+    writer.submit(descriptor(), "payload", "d-9");
+    const files = fs.readdirSync(path.join(root, "spool")).filter((f) => f.endsWith(".json"));
+    // The worker may have drained already; if a record exists, inspect it.
+    if (files.length > 0) {
+      const record = JSON.parse(
+        fs.readFileSync(path.join(root, "spool", files[0] as string), "utf-8"),
+      ) as Record<string, unknown>;
+      for (const key of [
+        "schema_version",
+        "kind",
+        "key",
+        "tenant_id",
+        "decision_id",
+        "descriptor",
+        "content_b64",
+        "attempts",
+        "checksum",
+      ]) {
+        expect(record, `spool record missing ${key}`).toHaveProperty(key);
+      }
+      expect(record["tenant_id"]).toBe("acme");
+      expect(record["decision_id"]).toBe("d-9");
+    }
+    void writer.close();
+  });
+
+  it("recovers more records than the in-memory queue capacity", async () => {
+    const root = tmpRoot();
+    const cfg = spoolConfig(root, { queueMaxItems: 2 });
+    // Plant 5 valid records via a throwaway writer's spool path.
+    const plant = new ContentWriter(cfg);
+    for (let index = 0; index < 5; index += 1) {
+      const d = descriptor();
+      const task = {
+        kind: "object" as const,
+        key: `obj-${index}`,
+        descriptor: { ...d, object_id: `obj-${index}` },
+        content: "payload",
+        decisionId: "d-r",
+        tenantId: "acme",
+        attempts: 0,
+        firstEnqueued: Date.now() / 1000,
+      };
+      (plant as unknown as { spool(t: unknown): boolean }).spool(task);
+    }
+    await plant.close();
+    const planted = fs
+      .readdirSync(path.join(root, "spool"))
+      .filter((f) => f.endsWith(".json")).length;
+    expect(planted).toBe(5);
+    const recovered = new ContentWriter(cfg);
+    const result = await recovered.flush(10);
+    await recovered.close();
+    expect(result.stored).toBe(5);
+    const remaining = fs.readdirSync(path.join(root, "spool")).filter((f) => f.endsWith(".json"));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("quarantines a corrupt spool entry explicitly", async () => {
+    const root = tmpRoot();
+    const spoolDir = path.join(root, "spool");
+    fs.mkdirSync(spoolDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(spoolDir, "tampered.json"),
+      JSON.stringify({ schema_version: 1, kind: "object", checksum: "0".repeat(64) }),
+    );
+    const writer = new ContentWriter(spoolConfig(root));
+    expect(writer.stats()["corrupt"]).toBe(1);
+    expect(fs.existsSync(path.join(spoolDir, "tampered.json"))).toBe(false);
+    expect(fs.existsSync(path.join(spoolDir, "tampered.json.corrupt"))).toBe(true);
+    await writer.close();
+  });
+
+  it("rejects queueMaxItems=0", () => {
+    const root = tmpRoot();
+    expect(() =>
+      validateContentCaptureConfig(
+        { store: store(root), roles: "all", queueMaxItems: 0 },
+        CONTENT_ROLES,
+      ),
+    ).toThrow(/queueMaxItems must be positive/);
+  });
+
+  it("reconciles a recovered manifest after restart", async () => {
+    const root = tmpRoot();
+    const cfg = spoolConfig(root);
+    const writer = new ContentWriter(cfg);
+    const doc = {
+      schema_version: "fabric.transcript-manifest/v1",
+      manifest_id: "m-restart",
+      decision_id: "d-restart",
+      tenant_id: "acme",
+    };
+    writer.submitManifest(doc, "d-restart", "m-restart", "acme");
+    await writer.close();
+    // Delivered or still spooled — a recovered writer converges either way.
+    const recovered = new ContentWriter(cfg);
+    await recovered.flush(10);
+    await recovered.close();
+    const manifestPath = path.join(root, "acme", "manifests", "m-restart.json");
+    const doc2 = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
+      manifest_id: string;
+    };
+    expect(doc2.manifest_id).toBe("m-restart");
   });
 });
