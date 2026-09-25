@@ -34,7 +34,11 @@ sys.path.insert(0, str(REPO / "sdk" / "python" / "src"))
 
 OUT = Path(os.environ.get("FABRIC_DEMO_OUT", HERE / "out"))
 TENANT = "demo-tenant"
-RAW_FORBIDDEN = ["NEW_PRICING_ENGINE report-body", "secret-flag-value"]
+# Fixture tokens that live inside governed content (deploy.log text,
+# report body). Governed bytes must never appear in exported telemetry —
+# spans carry refs only, so any hit in records.jsonl is a redaction
+# breach.
+RAW_FORBIDDEN = ["NEW_PRICING_ENGINE", "oom-kill terminated worker 4"]
 
 # A secret-shaped argv token the demo deliberately execs; it must be
 # hashed by the collector (never exported raw). Expected digest =
@@ -267,6 +271,9 @@ def main() -> int:
     )
     if SECRET_TOKEN in raw:
         failures.append("raw secret argv leaked into exported telemetry")
+    for token in RAW_FORBIDDEN:
+        if token in raw:
+            failures.append(f"governed-content token in exported telemetry: {token!r}")
     if not any(e.get("args_sha256") == expected_hash for e in exec_events):
         failures.append("secret-argv sha256 not observed on any exec event")
 
