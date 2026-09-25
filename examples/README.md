@@ -23,6 +23,9 @@ engines, or management services in this stack.
 | [`kind-quickstart/`](kind-quickstart/) | 10-minute kind install of Fabric Node (`shadow-dev` profile) plus an instrumented agent exporting OTLP to it. |
 | [`harness-smoke/`](harness-smoke/) | Smoke against the Docker Compose evaluation harness in [`deploy/compose`](../deploy/compose): `make up`, `make smoke`, then check the controlled sink's `/count`. |
 | [`e2e-smoke/`](e2e-smoke/) | Live OTLP span-landing flow paired with the `e2e.yml` workflow's kind smoke job. |
+| [`governed-content/`](governed-content/) | Opt-in governed capture: a model → tool → model run where content lands in a customer-controlled store and telemetry carries refs only. |
+| [`offline-transcript/`](offline-transcript/) | Minimal record-and-read harness — SDK + local store only, no Node or services. |
+| [`agent-orchestration/`](agent-orchestration/) | Full UAT demo: orchestrated agent (tools, shell execs, HTTP fetch, file write) traced through the real collector + audit receiver, reconstructed into a journal and rendered by a local viewer. |
 
 Pre-0.8 examples that demonstrated removed APIs (guardrails, policy
 evaluation, tool authorization, escalation, eval/judge capture) were

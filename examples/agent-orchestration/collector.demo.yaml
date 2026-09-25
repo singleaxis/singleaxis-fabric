@@ -1,0 +1,49 @@
+# Demo collector config: real otelcol-fabric build with the audit
+# receiver tailing the demo audit log, plus OTLP receivers for SDK
+# telemetry. fabricguard applies the same allowlisting every record
+# gets in the qualified stack; otlphttp forwards to the demo sink.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  audit:
+    source: logfile
+    log_path: /demo-audit/audit.log
+    rule_key: fabric
+    exec: true
+    connect: true
+    file_access: true
+    hash_file_paths: false
+    manage_rules: false
+    max_events_per_sec: 500
+    dedupe_window: 0s
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  fabricguard: {}
+
+exporters:
+  otlphttp:
+    endpoint: http://host.docker.internal:19200
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlphttp]
+    logs:
+      receivers: [otlp, audit]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlphttp]

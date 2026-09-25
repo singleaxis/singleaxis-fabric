@@ -1,0 +1,9 @@
+{
+  "service": "payments-api",
+  "release": "481",
+  "window": "2026-09-25T09:10/09:16Z",
+  "memory_mib": [128, 144, 161, 187, 226, 288, 356, 421, 503, 519],
+  "http_5xx": [0, 0, 0, 0, 1, 3, 9, 17, 17, 0],
+  "gc_pause_ms_p95": [12, 14, 18, 31, 62, 140, 310, 480, 610, 0],
+  "feature_flags": {"NEW_PRICING_ENGINE": true, "LEGACY_ROUTING": false}
+}

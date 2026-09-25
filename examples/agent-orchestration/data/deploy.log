@@ -1,0 +1,13 @@
+2026-09-25T09:14:02Z deploy[881]: starting release 481 (image registry.internal/payments:481)
+2026-09-25T09:14:05Z deploy[881]: pulling image layers: 14/14 complete
+2026-09-25T09:14:09Z deploy[881]: container payments-api-481 created on node-eu-3
+2026-09-25T09:14:11Z systemd[1]: Started payments-api-481.service
+2026-09-25T09:14:19Z payments-api[1290]: listening on :8443, worker pool=8
+2026-09-25T09:14:44Z payments-api[1290]: WARN memory usage 82% of cgroup limit (512MiB)
+2026-09-25T09:15:01Z payments-api[1290]: ERROR worker 4 OOM-killed; inflight requests dropped: 17
+2026-09-25T09:15:01Z payments-api[1290]: ERROR heap grew 391MiB in 47s after enabling feature flag NEW_PRICING_ENGINE
+2026-09-25T09:15:02Z kernel: oom-kill: task=payments-api pid=1294 score=912
+2026-09-25T09:15:05Z systemd[1]: payments-api-481.service: main process exited, code=killed, status=9/KILL
+2026-09-25T09:15:05Z systemd[1]: Unit entered failed state
+2026-09-25T09:15:10Z deploy[881]: health check failed after 3 retries; rolling back to release 480
+2026-09-25T09:15:22Z deploy[881]: rollback complete; payments-api-480 healthy
