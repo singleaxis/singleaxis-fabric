@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,7 @@ def _root(tmp_path: Path) -> Path:
     return root
 
 
-def _event(record_id: str, epoch: int, sequence: int) -> dict:
+def _event(record_id: str, epoch: int, sequence: int) -> dict[str, Any]:
     return {
         "record_id": record_id,
         "tenant_id": "synthetic-tenant",
@@ -39,8 +40,16 @@ def _event(record_id: str, epoch: int, sequence: int) -> dict:
     }
 
 
-def _open(root: Path, **kwargs: object) -> SyntheticSourceSpool:
-    return SyntheticSourceSpool(str(root), tenant_id="synthetic-tenant", run_id="run-1", **kwargs)
+def _open(
+    root: Path, *, max_bytes: int = 16 * 1024 * 1024, queue_max_items: int = 64
+) -> SyntheticSourceSpool:
+    return SyntheticSourceSpool(
+        str(root),
+        tenant_id="synthetic-tenant",
+        run_id="run-1",
+        max_bytes=max_bytes,
+        queue_max_items=queue_max_items,
+    )
 
 
 def test_source_spool_fsync_recovery_and_new_epoch(tmp_path: Path) -> None:
@@ -113,7 +122,7 @@ def test_source_spool_overflow_is_explicit_and_nonblocking(
     entered = threading.Event()
     real_write = spool._write_event
 
-    def blocked(event: dict) -> int:
+    def blocked(event: dict[str, Any]) -> int:
         entered.set()
         gate.wait(timeout=3)
         return real_write(event)

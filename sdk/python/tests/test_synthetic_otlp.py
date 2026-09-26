@@ -7,13 +7,14 @@ from __future__ import annotations
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 import pytest
 
 from fabric.synthetic_otlp import export_synthetic_snapshot, project_synthetic_snapshot
 
 
-def _snapshot() -> dict:
+def _snapshot() -> dict[str, Any]:
     digest = "sha256:" + "a" * 64
     return {
         "schema_version": "fabric.synthetic-capture/v1",

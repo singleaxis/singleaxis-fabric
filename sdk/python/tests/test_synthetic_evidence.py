@@ -12,6 +12,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import pytest
@@ -62,13 +63,15 @@ def _session(
     ), store
 
 
-def _events(session: SyntheticCaptureSession) -> list[dict]:
+def _events(session: SyntheticCaptureSession) -> list[dict[str, Any]]:
     snapshot = session.snapshot()
     assert snapshot["writer_settled"]
-    return snapshot["events"]
+    return cast(list[dict[str, Any]], snapshot["events"])
 
 
-def _bytes_for(store: LocalFilesystemContentStore, events: list[dict], role: str) -> list[bytes]:
+def _bytes_for(
+    store: LocalFilesystemContentStore, events: list[dict[str, Any]], role: str
+) -> list[bytes]:
     return [
         store.read(item["descriptor"]["ref"])
         for item in events

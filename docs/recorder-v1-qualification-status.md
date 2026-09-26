@@ -65,6 +65,21 @@ worktree has no clean tagged artifact identity, and these tests are not
 target-Linux BPF, target-storage or live-customer-destination proofs.
 A complete-run or critical-enterprise claim remains **NO-GO**.
 
+Isolated Linux qualification has now started in draft PR
+[#164](https://github.com/singleaxis/singleaxis-fabric/pull/164). The first
+Ubuntu/kind smoke run on commit `75afeb1` passed Collector install, the
+controlled fsync sink, protection/delivery, destination outage and restart
+recovery. It did **not** run the synthetic model/terminal/artifact byte
+reconciliation, scoped BPF, or target storage/retention tests. The same
+commit's security and recorder CI runs failed: dependency scans found
+`google.golang.org/grpc` 1.82.1 and AnyIO 4.13.0; the history-wide secret
+scan reported seven findings in older commits; clean Python installation
+exposed an S3 fake-client test failure; CI typing and repository-test setup
+were incomplete. Dependency and test-environment fixes are being qualified
+on the PR branch, not yet accepted as a passing release gate. The seven
+history findings need security-owner classification before any suppression
+or release decision.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model

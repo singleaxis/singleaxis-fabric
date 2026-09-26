@@ -72,15 +72,16 @@ class S3ContentStore:
             raise ValueError("sse_kms_key_id requires sse_algorithm")
 
     def _get_client(self) -> Any:
+        if self._client is not None:
+            return self._client
         try:
             import boto3  # type: ignore[import-not-found, import-untyped, unused-ignore]  # noqa: PLC0415
         except ImportError as exc:  # pragma: no cover — covered by extras
             raise ImportError(_IMPORT_HINT) from exc
 
-        if self._client is None:
-            self._client = boto3.client(
-                "s3", region_name=self.region_name, endpoint_url=self.endpoint_url
-            )
+        self._client = boto3.client(
+            "s3", region_name=self.region_name, endpoint_url=self.endpoint_url
+        )
         return self._client
 
     # -- legacy contract ---------------------------------------------------

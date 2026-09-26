@@ -173,7 +173,10 @@ class ByteEvidenceRecorder:
     @property
     def tenant_id(self) -> str:
         """Tenant bound to the configured content store."""
-        return self._config.store.tenant_id
+        tenant_id = self._config.store.tenant_id
+        if tenant_id is None:
+            raise ValueError("byte evidence store lost its tenant binding")
+        return tenant_id
 
     def capture(
         self,
