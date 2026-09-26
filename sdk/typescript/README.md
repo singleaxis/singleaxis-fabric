@@ -22,12 +22,50 @@ recorder SDK's default activity surface.
 npm install @singleaxis/fabric @opentelemetry/api
 ```
 
+## OpenTelemetry wiring
+
+The SDK emits through the OpenTelemetry provider configured by the host
+application — it never installs one silently. With no real provider configured,
+the SDK warns once that telemetry is being dropped.
+
+A working Node setup needs **two** pieces:
+
+```ts
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+
+const provider = new NodeTracerProvider({
+  spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())],
+});
+
+// register() sets the global tracer provider AND a context manager. Passing
+// AsyncLocalStorageContextManager explicitly is required — without it, spans
+// opened after an `await` lose their parent.
+provider.register({ contextManager: new AsyncLocalStorageContextManager() });
+```
+
+Equivalently, `installDefaultProvider({ provider, contextManager })` from this
+package performs the same registration and warns if a provider is already
+installed or no context manager is supplied.
+
+`OTLPTraceExporter` honours the standard environment variables
+(`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`), so an OTLP
+endpoint such as a Fabric Node collector can be selected entirely by
+environment.
+
+The same wiring requirement applies to metrics: Fabric surfaces do not emit
+metrics in this version, but if a future version adds them they require a
+`MeterProvider` — `NodeTracerProvider.register` does not install one.
+
 ## Capture one agent decision
 
 ```ts
 import { Fabric } from "@singleaxis/fabric";
 
 const fabric = new Fabric({ tenantId: "acme", agentId: "support-agent" });
+// or: const fabric = Fabric.fromEnv();  // FABRIC_TENANT_ID / FABRIC_AGENT_ID / FABRIC_PROFILE
 
 await fabric.decision({ sessionId: "session-42", requestId: "request-7" }, async (decision) => {
   await decision.llmCall(
@@ -46,12 +84,83 @@ await fabric.decision({ sessionId: "session-42", requestId: "request-7" }, async
 });
 ```
 
-Tool payload setters record hashes, not the raw payload. The SDK emits through
-the OpenTelemetry provider configured by the host application.
+Tool payload setters record hashes, not the raw payload — **by default**. The
+opt-in `captureContent` flag (and per-call `{ capture: true }` overrides on
+`setArguments` / `setResult`) writes the raw payloads onto the span for hosts
+that explicitly want that.
 
 Use `fabric.execution(...)` to correlate multiple decisions. `Decision` also
 captures retrieval, memory, side effects, checkpoints, delegation, MCP
 inventory, skills, hooks, file access and generic interactions.
+
+## Opt-in exact-byte evidence (draft)
+
+The separate content-v2 `ByteEvidenceRecorder` stores **only bytes explicitly
+passed by the caller**. It preserves binary data without UTF-8 conversion,
+keeps distinct observations separate even when their bytes match, and records
+`caller_reported` provenance. It is not an automatic terminal, SSH, database,
+or provider interceptor.
+
+```ts
+import { ByteEvidenceRecorder, LocalFilesystemContentStore } from "@singleaxis/fabric";
+
+const evidence = new ByteEvidenceRecorder({
+  store: new LocalFilesystemContentStore("/customer-controlled/evidence", "acme"),
+  roles: new Set(["terminal.stdout"]),
+});
+const descriptor = evidence.capture(stdoutBytes, {
+  role: "terminal.stdout",
+  boundary: "terminal",
+  sourceId: "instrumented-terminal-1",
+  sourceEpoch: 0,
+  sourceSequence: 1,
+  runId: "run-42",
+  operationId: "command-7",
+});
+const counts = await evidence.flush();
+const settled = evidence.drainSettled(); // persist these descriptors in your own manifest
+await evidence.close();
+// Inspect `descriptor.status`, `settled`, and `counts` (including unretained_drops).
+// Pending/dropped/failed is not stored.
+```
+
+The handoff is bounded and asynchronous but **process-memory-only**. It does
+not issue durable source or destination receipts, emit OTLP evidence events,
+build a run manifest, or prove run completeness. A process crash can lose
+pending content. Configure customer-controlled storage permissions, encryption,
+retention, and authorized resolution separately before production use.
+
+## Propagation across services
+
+When one instrumented service calls another, inject the decision's Fabric
+context into the outbound carrier. The carrier gets both `traceparent` (so the
+downstream span continues the same trace) and a `singleaxis` `tracestate`
+member carrying the tenant/agent/session/request/decision identity:
+
+```ts
+import { injectDecision, extract } from "@singleaxis/fabric";
+
+await fabric.decision(ids, async (decision) => {
+  const headers: Record<string, string> = {};
+  injectDecision(headers, decision);
+  // attach `headers` to the outbound HTTP request
+});
+```
+
+Sub-agent delegation produces a ready-made carrier:
+
+```ts
+await fabric.decision(ids, async (decision) => {
+  await decision.delegate("research-agent", "a2a", async (sub) => {
+    // `sub.carrier` carries traceparent + the singleaxis tracestate member,
+    // with parentAgentId set to the delegating agent.
+    await callSubAgent({ headers: sub.carrier });
+  });
+});
+```
+
+On the receiving side, `extract(carrier)` recovers the `FabricContext` (or
+`undefined` on malformed input).
 
 ## Stable recorder-v1 surface
 

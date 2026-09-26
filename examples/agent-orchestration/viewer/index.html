@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fabric — agent run reconstruction</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --edge:#30363d; --text:#e6edf3;
+    --dim:#8b949e; --accent:#58a6ff; --ok:#3fb950; --warn:#d29922;
+    --bad:#f85149; --chip:#21262d; --in:#a371f7; --out:#3fb950;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.5 -apple-system,"SF Mono",Menlo,monospace;
+         background:var(--bg); color:var(--text); }
+  header { padding:12px 18px; border-bottom:1px solid var(--edge);
+           display:flex; gap:18px; flex-wrap:wrap; align-items:center; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  .meta { color:var(--dim); font-size:12px; }
+  .meta b { color:var(--text); font-weight:600; }
+  .badge { padding:2px 8px; border-radius:10px; font-size:11px;
+           background:var(--chip); border:1px solid var(--edge); }
+  .badge.ok { color:var(--ok); border-color:var(--ok); }
+  .badge.bad { color:var(--bad); border-color:var(--bad); }
+  .layout { display:grid; grid-template-columns: 340px 1fr; height:calc(100vh - 45px); }
+  #tree { overflow-y:auto; border-right:1px solid var(--edge); padding:10px 0; }
+  .node { padding:5px 12px; cursor:pointer; border-left:2px solid transparent; }
+  .node:hover { background:#1c2129; }
+  .node.sel { background:#1f2a3a; border-left-color:var(--accent); }
+  .node .nm { font-weight:600; }
+  .node .nm .kind { color:var(--dim); font-weight:400; font-size:11px; }
+  .node .bar { height:3px; background:var(--accent); border-radius:2px; margin-top:3px; opacity:.5; }
+  .node .sub { color:var(--dim); font-size:11px; }
+  #detail { overflow-y:auto; padding:16px 20px; }
+  h2 { font-size:13px; margin:18px 0 8px; color:var(--accent);
+       text-transform:uppercase; letter-spacing:.5px; }
+  h3 { font-size:12px; margin:14px 0 6px; color:var(--text); }
+  .io-in  { border-left:3px solid var(--in); }
+  .io-out { border-left:3px solid var(--out); }
+  .io-doc { border-left:3px solid var(--accent); }
+  table.attrs { border-collapse:collapse; width:100%; }
+  table.attrs td { padding:3px 8px; border-bottom:1px solid #21262d;
+                   vertical-align:top; word-break:break-all; }
+  table.attrs td:first-child { color:var(--dim); white-space:nowrap; width:230px; }
+  .entry { background:var(--panel); border:1px solid var(--edge);
+           border-radius:6px; margin:8px 0; }
+  .entry .hd { padding:6px 10px; display:flex; gap:8px; align-items:center; }
+  .entry pre { margin:0; padding:10px; border-top:1px solid var(--edge);
+               white-space:pre-wrap; word-break:break-word; max-height:400px;
+               overflow-y:auto; font-size:12px; color:#c9d1d9; }
+  .role { color:var(--accent); font-size:11px; }
+  .status { font-size:10px; padding:1px 6px; border-radius:8px; background:var(--chip); }
+  .status.stored, .status.available { color:var(--ok); }
+  .status.failed, .status.dropped { color:var(--bad); }
+  .status.pending, .status.unverified { color:var(--warn); }
+  .dir { font-size:10px; padding:1px 6px; border-radius:8px; margin-left:auto; }
+  .dir.in  { color:var(--in);  border:1px solid var(--in); }
+  .dir.out { color:var(--out); border:1px solid var(--out); }
+  .dir.doc { color:var(--accent); border:1px solid var(--accent); }
+  .ev { padding:5px 10px; border-bottom:1px solid #21262d; font-size:12px; }
+  .ev .sys { color:var(--warn); }
+  .ev .res-ok { color:var(--ok); } .ev .res-bad { color:var(--bad); }
+  .empty { color:var(--dim); padding:20px; }
+  .turn { border:1px solid var(--edge); border-radius:8px; margin:12px 0;
+          padding:10px 12px; background:#0f141b; }
+  .turn .ttl { font-weight:600; margin-bottom:4px; }
+  #hostbar { border-top:1px solid var(--edge); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fabric · agent run reconstruction</h1>
+  <span class="meta">decision <b id="d-id"></b></span>
+  <span class="meta">session <b id="d-sess"></b></span>
+  <span class="badge ok" id="b-verified"></span>
+  <span class="badge" id="b-manifest"></span>
+  <span class="badge" id="b-host"></span>
+</header>
+<div class="layout">
+  <div id="tree"></div>
+  <div id="detail"></div>
+</div>
+<script src="../out/journal.js"></script>
+<script>
+const J = window.JOURNAL;
+if (!J) document.body.innerHTML = '<div class="empty">run.sh first — journal.js missing</div>';
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+$('d-id').textContent = J.decision.decision_id.slice(0,18)+'…';
+$('d-sess').textContent = J.decision.session_id;
+const iv = J.integrity;
+$('b-verified').textContent = `verified ${iv.items_resolved_verified}/${iv.items_total}`;
+if (iv.items_resolved_verified !== iv.items_total) $('b-verified').className='badge bad';
+$('b-manifest').textContent = 'manifest ' + J.manifest.manifest_id.slice(0,12) + '…';
+$('b-host').textContent = `host: ${J.layers.host.events} audit events`;
+if (J.uat_failures.length) {
+  const f = document.createElement('span');
+  f.className='badge bad'; f.textContent = `UAT: ${J.uat_failures.length} failures`;
+  document.querySelector('header').appendChild(f);
+}
+
+// ---- role → direction of flow ----
+const IN  = r => r.startsWith('model.request') || r==='tool.call.arguments'
+              || r==='retrieval.query' || r==='side_effect.request';
+const OUT = r => r.startsWith('model.output') || r==='tool.call.result'
+              || r==='retrieval.results' || r==='side_effect.result';
+const DOC = r => r.startsWith('context.') || r.startsWith('memory.');
+const dirOf = e => IN(e.role) ? ['in','INPUT'] : OUT(e.role) ? ['out','OUTPUT'] : ['doc','DOC'];
+const isModelCall = n => n.attributes['gen_ai.operation.name'] === 'chat';
+const isToolCall  = n => n.attributes['gen_ai.operation.name'] === 'execute_tool';
+const nodeLabel = n => {
+  const a = n.attributes;
+  if (a['fabric.decision_id']) return 'decision';
+  if (a['fabric.tool.name']) return a['fabric.tool.name'];
+  if (a['fabric.step.id']) return a['fabric.step.id'];
+  if (a['fabric.llm.request.model']) return a['fabric.llm.request.model'];
+  return n.name;
+};
+
+function entryHtml(e) {
+  const [cls, tag] = dirOf(e);
+  const text = e.text ?? `(no content — ${e.resolve_status || e.status})`;
+  return `<div class="entry io-${cls}">
+    <div class="hd"><span class="role">#${e.sequence} ${esc(e.role)}</span>
+    <span class="status ${e.status}">${esc(e.status)}</span>
+    ${e.verified ? '<span class="status stored">digest✓</span>' : ''}
+    ${e.status_reason ? `<span class="sub">${esc(e.status_reason)}</span>` : ''}
+    <span class="dir ${cls}">${tag}</span></div>
+    <pre>${esc(pretty(text))}</pre></div>`;
+}
+function pretty(t) {
+  try { const o = JSON.parse(t); return JSON.stringify(o, null, 2); }
+  catch { return t; }
+}
+
+// ---- span tree ----
+const nodes = J.timeline;
+const children = {};
+nodes.forEach(n => { (children[n.parent] = children[n.parent] || []).push(n); });
+const t0 = Math.min(...nodes.map(n => n.start_s));
+const span = Math.max(Math.max(...nodes.map(n => n.end_s)) - t0, 0.001);
+const tree = $('tree');
+
+function renderNode(n, depth) {
+  const el = document.createElement('div');
+  el.className = 'node'; el.dataset.sid = n.span_id;
+  el.style.paddingLeft = (12 + depth*14) + 'px';
+  const off = ((n.start_s - t0) / span * 100).toFixed(1);
+  const w = Math.max((n.duration_ms / 1e3) / span * 100, 1.5);
+  const host = n.host && n.host.length ? ` · ${n.host.length} host` : '';
+  el.innerHTML = `<div class="nm">${esc(nodeLabel(n))}
+    <span class="kind">${esc(n.name)}</span></div>
+    <div class="sub">${n.duration_ms.toFixed(0)}ms · ${n.content.length} content${host}</div>
+    <div class="bar" style="margin-left:${off}%;width:${w}%"></div>`;
+  el.onclick = () => select(n.span_id);
+  tree.appendChild(el);
+  (children[n.span_id] || []).forEach(c => renderNode(c, depth+1));
+}
+nodes.filter(n => !n.parent || !nodes.find(m => m.span_id === n.parent))
+     .forEach(n => renderNode(n, 0));
+
+// ---- detail pane ----
+function evHtml(e) {
+  const bits = [e.comm||'', e.exe||'', e.peer ? `→ ${e.peer}:${e.peer_port}` : '',
+    e.path||'', e.args_sha256 ? 'argv='+e.args_sha256.slice(0,12)+'…' : ''].filter(Boolean).join(' · ');
+  return `<div class="ev"><span class="sys">${e.syscall}</span>
+    <span class="${e.result==='success'?'res-ok':'res-bad'}">${e.result||''}</span>
+    pid=${e.pid} ppid=${e.ppid} — ${esc(bits)}
+    <span class="sub">${e.id}${e.link?' · '+e.link:''}</span></div>`;
+}
+
+function spanDetail(n) {
+  let h = `<h2>${esc(nodeLabel(n))} <span class="meta">${esc(n.name)}</span></h2>`;
+  const inn = n.content.filter(e => IN(e.role));
+  const out = n.content.filter(e => OUT(e.role));
+  const doc = n.content.filter(e => DOC(e.role));
+  const rest = n.content.filter(e => !IN(e.role) && !OUT(e.role) && !DOC(e.role));
+  if (inn.length)  h += `<h3>▼ input — what went in</h3>`  + inn.map(entryHtml).join('');
+  if (out.length)  h += `<h3>▲ output — what came out</h3>` + out.map(entryHtml).join('');
+  if (doc.length)  h += `<h3>◆ documents / context</h3>`  + doc.map(entryHtml).join('');
+  if (rest.length) h += `<h3>other captured</h3>`          + rest.map(entryHtml).join('');
+  const linked = J.host_events.filter(e => e.linked_span === n.span_id);
+  if (linked.length) h += '<h3>host events (inferred provenance)</h3>' + linked.map(evHtml).join('');
+  h += '<h3>attributes</h3><table class="attrs">';
+  for (const [k,v] of Object.entries(n.attributes))
+    h += `<tr><td>${esc(k)}</td><td>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</td></tr>`;
+  h += '</table>';
+  return h;
+}
+
+// ---- default summary view: answers the four questions directly ----
+function summaryView() {
+  let h = '<h2>run summary</h2>';
+  const modelCalls = nodes.filter(isModelCall);
+  const tools = nodes.filter(isToolCall);
+  h += `<table class="attrs">
+    <tr><td>decision</td><td>${esc(J.decision.decision_id)}</td></tr>
+    <tr><td>manifest</td><td>${esc(J.decision.manifest_uri)}</td></tr>
+    <tr><td>content items</td><td>${iv.items_resolved_verified}/${iv.items_total} verified · ${esc(JSON.stringify(J.manifest.completeness))}</td></tr>
+    <tr><td>host capture</td><td>${esc(J.layers.host.capture)}</td></tr></table>`;
+
+  // Q1: documents the agent had access to
+  const docs = nodes.flatMap(n => n.content)
+    .filter(e => DOC(e.role) || e.role === 'retrieval.results');
+  h += `<h2>documents the agent accessed (${docs.length})</h2>`;
+  h += docs.length ? docs.map(entryHtml).join('')
+                   : '<div class="empty">none captured</div>';
+
+  // Q2+Q3+Q4: per turn — aggregated input vs output
+  h += `<h2>model calls — per-turn input / output</h2>`;
+  for (const mc of modelCalls) {
+    const inn = mc.content.filter(e => IN(e.role));
+    const out = mc.content.filter(e => OUT(e.role));
+    h += `<div class="turn"><div class="ttl">${esc(nodeLabel(mc))}
+      <span class="meta">${esc(mc.attributes['gen_ai.request.model']||'')} · ${mc.duration_ms.toFixed(0)}ms</span></div>
+      <h3>▼ aggregated input for this call (${inn.length} objects)</h3>${inn.map(entryHtml).join('')}
+      <h3>▲ output from this call</h3>${out.map(entryHtml).join('')}</div>`;
+  }
+
+  h += `<h2>tool calls — arguments / results</h2>`;
+  for (const t of tools) {
+    h += `<div class="turn"><div class="ttl">${esc(nodeLabel(t))}
+      <span class="meta">call ${esc(t.attributes['fabric.tool.call.id']||'')} · ${t.duration_ms.toFixed(0)}ms</span></div>
+      ${t.content.map(entryHtml).join('')}
+      ${(J.host_events.filter(e=>e.linked_span===t.span_id).map(evHtml).join(''))||''}</div>`;
+  }
+
+  const rest = nodes.flatMap(n => n.content)
+    .filter(e => !IN(e.role) && !OUT(e.role) && !DOC(e.role)
+              && e.role !== 'retrieval.query' && e.role !== 'retrieval.results');
+  if (rest.length) h += '<h2>other captured content</h2>' + rest.map(entryHtml).join('');
+
+  h += '<h2>host layer — audit events</h2>';
+  h += J.host_events.map(evHtml).join('') || '<div class="empty">none</div>';
+  if (J.uat_failures.length)
+    h += '<h2 class="gap">uat failures</h2>' + J.uat_failures.map(f=>`<div class="ev res-bad">${esc(f)}</div>`).join('');
+  return h;
+}
+
+function select(sid) {
+  document.querySelectorAll('.node').forEach(e => e.classList.toggle('sel', e.dataset.sid === sid));
+  const n = nodes.find(x => x.span_id === sid);
+  $('detail').innerHTML = spanDetail(n);
+}
+
+$('detail').innerHTML = summaryView();
+</script>
+</body>
+</html>

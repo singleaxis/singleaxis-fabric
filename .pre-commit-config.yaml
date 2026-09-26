@@ -8,31 +8,38 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=512"]
+        # CO-RE builds require this generated, reviewed kernel type header.
+        exclude: ^components/host-emitter/bpf/vmlinux\.h$
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-symlinks
       - id: check-yaml
         # Helm chart templates contain Go template directives (`{{- if
         # .Values.foo }}`) that are not valid YAML on their own. Exclude
-        # anything under a chart's templates/ directory, plus our helm-
-        # specific test fixtures. `Chart.yaml` / `values.yaml` are still
-        # checked because they are real YAML.
+        # anything under a chart's templates/ directory and its test
+        # fixtures. Compose v2's !override is also not generic YAML.
+        # Chart.yaml / values.yaml remain checked as real YAML.
         exclude: |
           (?x)^(
             charts/.*/templates/.*\.ya?ml|
-            charts/.*/tests/.*/expected\.ya?ml
+            charts/.*/tests/.*/expected\.ya?ml|
+            deploy/compose/docker-compose\.production\.yml
           )$
       - id: check-json
       - id: check-toml
       - id: detect-private-key
       - id: end-of-file-fixer
       - id: trailing-whitespace
+        # Unified diffs intentionally contain leading '+' followed by context
+        # whitespace; rewriting them corrupts the vendored security patch.
+        exclude: \.patch$
       - id: mixed-line-ending
         args: ["--fix=lf"]
 
   # Kept in lockstep with the gitleaks version pinned in
-  # `.github/workflows/recorder-security.yml` (currently v8.30.1) so local-loop
-  # scans and the CI gate run the same detection engine and rule set.
+  # `.github/workflows/recorder-security.yml` (currently v8.30.1) so
+  # local-loop scans and the CI gate run the same detection engine and
+  # rule set.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
@@ -46,7 +53,7 @@ repos:
       - id: ruff-format
 
   # mypy runs per-package in CI (see `.github/workflows/recorder-ci.yml`,
-  # `python-mypy` job) against each package's own strict `[tool.mypy]`
+  # `python-quality` job) against each package's own strict `[tool.mypy]`
   # config and its own dep graph. A repo-root pre-commit mypy with
   # `--ignore-missing-imports` would diverge from CI semantics, so we
   # keep type-checking in CI and keep pre-commit focused on fast
@@ -58,7 +65,7 @@ repos:
   # hook"). We don't want `pre-commit run` in CI to require extra tooling
   # installed on the runner — pre-commit is scoped to fast local-loop
   # hygiene (ruff, gitleaks, markdownlint, file validity). Chart doc drift
-  # is caught by the dedicated `Helm / Kubernetes lint` CI job and by
+  # is caught by the dedicated `helm` CI job in `recorder-ci.yml` and by
   # reviewers; bringing helm-docs back as a pre-commit hook would mean
   # either bundling the binary here or requiring every local contributor
   # to `brew install norwoodj/tap/helm-docs` before their first commit.
@@ -73,7 +80,16 @@ repos:
     hooks:
       - id: markdownlint-cli2
 
-  # Conventional-commit enforcement lives in CI (commitlint-github-action@v6,
-  # see `.github/workflows/ci.yml`). Running gitlint here duplicates
-  # that and drifts (two configs to keep in sync), so we keep the CI
-  # gate as the source of truth.
+  # actionlint lints .github/workflows/*.yml — the same surface the
+  # release-boundary tests scan. The `actionlint` hook id builds the
+  # pinned release from source (Go is present on the CI runner and is
+  # already required for the fabricctl job).
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  # Commit-message policy (DCO sign-off) is enforced in CI — see the
+  # `dco` job in `.github/workflows/recorder-ci.yml`. Running gitlint
+  # here duplicates that gate and drifts (two configs to keep in sync),
+  # so the CI gate stays the source of truth.

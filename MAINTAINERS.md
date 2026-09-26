@@ -37,13 +37,10 @@ honest about who actually reviews.
 | Component                           | Maintainers                           |
 |-------------------------------------|---------------------------------------|
 | `charts/fabric`                     | @jrcks67                              |
-| `components/presidio-sidecar`       | @jrcks67                              |
-| `components/nemo-sidecar`           | @jrcks67                              |
 | `components/otel-collector-fabric`  | @jrcks67                              |
-| `components/langfuse-bootstrap`     | @jrcks67                              |
-| `components/redteam-runner`         | @jrcks67                              |
-| `components/update-agent`           | @jrcks67                              |
 | `sdk/python`                        | @jrcks67                              |
+| `sdk/typescript`                    | @jrcks67                              |
+| `tools/fabricctl`                   | @jrcks67                              |
 | `specs/`                            | Project lead + assigned spec authors  |
 
 Components not in this repository are maintained by SingleAxis

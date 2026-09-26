@@ -93,6 +93,18 @@ jobs:
           "$(go env GOPATH)/bin/go-licenses" report ./cmd/fabricctl \
             --ignore github.com/singleaxis/singleaxis-fabric \
             > "${GITHUB_WORKSPACE}/raw/go-fabricctl.csv"
+      - name: Inventory the image entrypoint gate
+        working-directory: components/otel-collector-fabric/gate
+        run: |
+          "$(go env GOPATH)/bin/go-licenses" report ./... \
+            --ignore github.com/singleaxis/singleaxis-fabric \
+            > "${GITHUB_WORKSPACE}/raw/go-fabric-gate.csv"
+      - name: Inventory the host emitter
+        working-directory: components/host-emitter
+        run: |
+          "$(go env GOPATH)/bin/go-licenses" report ./... \
+            --ignore github.com/singleaxis/singleaxis-fabric \
+            > "${GITHUB_WORKSPACE}/raw/go-host-emitter.csv"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: recorder-license-go

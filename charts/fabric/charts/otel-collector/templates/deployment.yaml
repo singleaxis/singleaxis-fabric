@@ -36,6 +36,9 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "otel-collector.serviceAccountName" . }}
+      # Never mount an API token, including when serviceAccount.create=false
+      # selects the namespace default ServiceAccount.
+      automountServiceAccountToken: false
       enableServiceLinks: {{ .Values.enableServiceLinks }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.imagePullSecrets }}

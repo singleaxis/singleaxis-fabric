@@ -1,0 +1,93 @@
+# Production overlay for a single client VM (Docker Engine, no Kubernetes).
+#
+#   make up-prod
+#
+# Direct `docker compose ... up` bypasses preflight-prod.sh and is unsafe for
+# initial startup. Merge semantics:
+#   * test-sink is moved behind a disabled profile -- it is an evaluation
+#     oracle and is never part of a production deployment.
+#   * fabric-node's depends_on / volumes / ports are replaced wholesale with
+#     the production declarations below.
+#
+# Requires Docker Compose v2.24+ for the !reset / !override merge tags.
+
+name: fabric-node-production
+
+# The ingress bearer token is a file-backed secret so it never appears in the
+# collector's environment, `docker inspect`, or the rendered config. Point
+# FABRIC_INGRESS_TOKEN_FILE at a 0600-permission file containing the token
+# agents must send as "Authorization: Bearer <token>".
+secrets:
+  fabric_ingress_token:
+    file: ${FABRIC_INGRESS_TOKEN_FILE:?set FABRIC_INGRESS_TOKEN_FILE in .env to the ingress token file}
+
+volumes: !override
+  # Durable exporter queue; the eval-only sink-data volume is dropped.
+  fabric-queue:
+
+services:
+  # Eval-only controlled sink. Pinning it behind a profile means the merged
+  # project keeps the definition for `make up` but `up-prod` never starts it.
+  test-sink:
+    profiles: ["test-sink"]
+
+  fabric-node:
+    # Same build as the evaluation harness. To run the signed release image
+    # instead of a local build, set in .env:
+    #   FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol:0.8.0-rc.1
+    #   FABRIC_NODE_PULL_POLICY=always
+    # and verify the cosign signature per docs/verify-release.md first.
+    # Pin to a digest for repeatability: image: ghcr.io/...@sha256:<digest>
+    image: ${FABRIC_NODE_IMAGE:-fabric/node:production}
+    pull_policy: ${FABRIC_NODE_PULL_POLICY:-build}
+    build:
+      context: ../../components/otel-collector-fabric
+      dockerfile: Dockerfile
+    command: ["--config=/etc/fabric-node/collector-production.yaml"]
+    environment:
+      # Egress destination credentials; required, fail closed at compose time.
+      FABRIC_EXPORT_ENDPOINT: ${FABRIC_EXPORT_ENDPOINT:?set FABRIC_EXPORT_ENDPOINT in .env to an https OTLP/HTTP endpoint}
+      FABRIC_EXPORT_AUTH_HEADER: ${FABRIC_EXPORT_AUTH_HEADER:?set FABRIC_EXPORT_AUTH_HEADER in .env to the egress Authorization header value}
+      # Ingress TLS paths, only consulted if the tls: stanzas in
+      # collector-production.yaml are uncommented.
+      FABRIC_INGRESS_TLS_CERT_FILE: ${FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
+      FABRIC_INGRESS_TLS_KEY_FILE: ${FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
+    depends_on: !reset []
+    secrets:
+      - fabric_ingress_token
+    volumes: !override
+      - ./collector-config/collector-production.yaml:/etc/fabric-node/collector-production.yaml:ro
+      - fabric-queue:/var/lib/fabric-node/queue
+      # TLS material for ingress (cert/key) and egress (private CA). The
+      # directory is mounted even while TLS is disabled so enabling it is a
+      # config-only change; keep it empty rather than deleting it.
+      - ${FABRIC_INGRESS_TLS_DIR:-./tls}:/run/fabric-node/tls:ro
+    ports: !override
+      # OTLP ingress binds loopback by default. Setting FABRIC_BIND_ADDR to a
+      # LAN address is the operator's explicit choice -- enable receiver TLS
+      # in collector-production.yaml and open the firewall deliberately first.
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
+      # Health and internal metrics are always loopback-only; use an SSH
+      # tunnel or a host-local scraper for remote access.
+      - "127.0.0.1:${FABRIC_HEALTH_PORT:-13133}:13133"
+      - "127.0.0.1:${FABRIC_METRICS_PORT:-8888}:8888"
+    # The image runs as nonroot; drop everything else the recorder never needs.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    # Graceful drain: let in-flight exports finish and the persistent queue
+    # flush cleanly before SIGKILL. Default 10s can truncate a large backlog.
+    stop_grace_period: 60s
+    # Keep a leak from taking down the host: memory_limiter is 512 MiB, so the
+    # ceiling sits above it; the kernel OOM-kills and restart policy recovers.
+    mem_limit: 1g
+    pids_limit: 256
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [fabric-node]

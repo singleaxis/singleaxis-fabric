@@ -1,0 +1,113 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "singleaxis.fabric.auditd-host-connector",
+  "display_name": "SingleAxis Fabric auditd Host Connector",
+  "release": {
+    "version": "0.8.0-rc.1",
+    "maturity": "beta",
+    "distribution": "container"
+  },
+  "implementation": {
+    "kind": "host_audit_connector",
+    "deployment_modes": [
+      "host_agent",
+      "sidecar"
+    ]
+  },
+  "compatibility": {
+    "activity_contract": null,
+    "fabric_versions": ">=0.8.0-rc.1,<1.0.0",
+    "runtimes": [
+      "Linux kernel >=3.16 (audit netlink multicast)",
+      "Linux host with auditd or audit.rules loaded"
+    ],
+    "protocols": [
+      "audit netlink",
+      "audit.log",
+      "OTLP logs pipeline"
+    ]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {
+        "surface": "process_lifecycle",
+        "source": "kernel_inferred"
+      },
+      {
+        "surface": "network_flow",
+        "source": "kernel_inferred"
+      },
+      {
+        "surface": "file_access_metadata",
+        "source": "kernel_inferred"
+      }
+    ],
+    "decision_semantics": "none",
+    "coverage_basis": "Captures selected syscall-level events the kernel audit subsystem reports (execve, connect, openat per the configured ruleset). Coverage is bounded by the loaded audit rules, kernel/source loss and collector uptime; events outside those limits are invisible. Syscall records are host-level metadata, not agent intent or decisions."
+  },
+  "control": {
+    "interposition": "none",
+    "agent_runtime_actions": [],
+    "telemetry_pipeline_actions": []
+  },
+  "content": {
+    "raw_content_behavior": "excluded",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "built_in",
+    "sensitive_field_allowlist": true
+  },
+  "identity": {
+    "source": "process_network_inference",
+    "strength": "inferred",
+    "tenant_partitioning": "not_available"
+  },
+  "authentication": {
+    "ingress_supported": [
+      "none"
+    ],
+    "ingress_default": "none",
+    "egress_supported": [
+      "delegated_to_exporter"
+    ],
+    "egress_default": "delegated_to_exporter",
+    "credential_handling": "The receiver emits into the local logs pipeline; egress authentication is the pipeline's existing exporter configuration."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {
+      "receive": false,
+      "inject": false,
+      "preserve": false
+    },
+    "baggage": "unsupported",
+    "correlation_limitations": [
+      "Audit events carry kernel identity (pid, ppid, auid, executable-path hash) and timestamps \u2014 they are not span edges. Joining them to agent traces is inferred provenance by pid/host/time, never causal.",
+      "Audit serials are host-local and restart-sensitive; they are dedupe evidence, not durable identity.",
+      "process.command_args_sha256 proves a command line existed without revealing it; replay requires the source host's own records."
+    ]
+  },
+  "data_egress": {
+    "network_egress": false,
+    "protocols": [
+      "collector logs pipeline"
+    ],
+    "transport_security": "delegated",
+    "destinations": "local_only",
+    "default_destination": "local logs pipeline"
+  },
+  "verification_evidence": [
+    {
+      "type": "unit_test",
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
+      "claim": "Covers record parsing, assembly, argv/path hash-only emission, sockaddr decode, rule-key filtering, bounded retry and known-gap reporting. It does not qualify restart durability."
+    }
+  ],
+  "known_blind_spots": [
+    "Coverage is the loaded audit ruleset: auditd emits only what rules request, so an unloaded syscall class records nothing and a hostile operator can clear rules unless audit lock (auditctl -e 2) is set.",
+    "Attribution to a logical agent is inferred by pid/ppid/auid and time \u2014 fork-heavy or namespace-churned workloads degrade it; container-scoped filtering needs the eBPF emitter (spec 031).",
+    "file_access (openat) is high-volume on real systems and disabled by default; enabling it without scoped rules can exceed emit and queue budgets.",
+    "Very short-lived processes and io_uring-driven syscalls can evade the audit pipeline on some kernels; auditd's own blind spots carry through.",
+    "manage_rules writes audit rules only when no daemon holds the control socket; a running auditd wins and its ruleset governs what we see.",
+    "Records are host-level metadata (process, peer, path hash), not agent intent \u2014 the semantic layer still requires SDK or framework instrumentation.",
+    "Failed downstream deliveries use bounded in-memory retry only; collector crash can lose them, logfile mode lacks a persisted cursor, and netlink multicast cannot replay missed kernel events."
+  ]
+}

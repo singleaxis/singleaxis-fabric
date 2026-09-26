@@ -16,6 +16,8 @@ import hashlib
 import hmac
 import json
 import sys
+import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,7 @@ from fabric import (
     validate_tag,
     verify_signature,
 )
+from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
 from fabric.decision import reset_coverage_registry
 from fabric.integrations.mcp import record_mcp_inventory
 
@@ -122,6 +125,44 @@ def test_record_interaction_arbitrary_kind_is_captured(span_exporter: InMemorySp
         d.record_interaction("quantum.teleport", "qubit://node-7")
     attrs = _event(_decision_span(span_exporter), "fabric.interaction")
     assert attrs["fabric.interaction.kind"] == "quantum.teleport"
+
+
+def test_record_interaction_kind_warns_on_pii_shape(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """``kind`` is free-form and lands verbatim on the allowlisted
+    ``fabric.interaction.kind`` attribute, so PII-shaped values must warn
+    at emit time — the same contract as ``user_id``/``session_id``."""
+    client = _client()
+    with (
+        pytest.warns(PIIShapedIdentifierWarning, match="interaction.kind"),
+        client.decision(session_id="s", request_id="r") as d,
+    ):
+        d.record_interaction("check for user bryan@example.test", "input")
+
+
+def test_record_interaction_raw_target_warns_on_pii_shape(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """``target`` is hashed by default; when ``redact_target=False`` opts
+    into a readable value, a PII-shaped target must warn."""
+    client = _client()
+    with (
+        pytest.warns(PIIShapedIdentifierWarning, match="interaction.target"),
+        client.decision(session_id="s", request_id="r") as d,
+    ):
+        d.record_interaction("db.query", "555-010-9999", redact_target=False)
+
+
+def test_record_interaction_redacted_target_does_not_warn(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Hashed targets never carry the raw value, so no warning is needed."""
+    client = _client()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with client.decision(session_id="s", request_id="r") as d:
+            d.record_interaction("db.query", "555-010-9999")
 
 
 def test_record_interaction_optionals_omitted(span_exporter: InMemorySpanExporter) -> None:
@@ -723,3 +764,73 @@ def test_cross_cutting_absent_is_byte_identical(span_exporter: InMemorySpanExpor
         assert not any(
             k.startswith(("fabric.tags", "fabric.baseline", "fabric.signature")) for k in attrs
         )
+
+
+def test_embedded_pii_scan_is_bounded_on_long_input() -> None:
+    """The unanchored embedded regexes retry from every position, which is
+    quadratic on long no-match strings — an attacker-controlled ``kind``
+    could stall the instrumented agent, breaking the passive guarantee.
+    The scan is capped at the Node's max_field_bytes and prescreened, so a
+    64 KiB adversarial value must return in well under a second."""
+    adversarial = "a" * 65536
+    start = time.perf_counter()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        warn_if_pii_shaped("interaction.kind", adversarial, embedded=True)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.5, f"embedded PII scan took {elapsed:.3f}s on 64KiB input"
+
+
+def test_embedded_email_scan_is_linear_when_prescreen_matches() -> None:
+    """An attacker can include @, so the post-prescreen path must stay cheap."""
+    adversarial = "a" * 8180 + "@invalid"
+    start = time.perf_counter()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        warn_if_pii_shaped("interaction.kind", adversarial, embedded=True)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.5, f"embedded email scan took {elapsed:.3f}s at the cap"
+
+
+def test_embedded_pii_scan_still_detects_within_cap() -> None:
+    """The scan cap must not blind detection inside the window."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped(
+            "interaction.kind",
+            "prefix " + "x" * 100 + " bryan@example.test",
+            embedded=True,
+        )
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)
+
+
+@pytest.mark.parametrize(
+    "pii",
+    ["bryan@example.test", "123-45-6789", "+15550109123", "555.010.9123"],
+)
+def test_embedded_pii_prescreens_keep_every_regex_shape(pii: str) -> None:
+    """Every embedded regex has a corresponding mandatory-character gate."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped("interaction.kind", f"prefix {pii} suffix", embedded=True)
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)
+
+
+def test_embedded_pii_at_exact_8192_byte_boundary_is_detected() -> None:
+    suffix = " bryan@example.test"
+    value = "x" * (8192 - len(suffix)) + suffix
+    assert len(value.encode("utf-8")) == 8192
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped("interaction.kind", value, embedded=True)
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)
+
+
+def test_embedded_pii_scan_limit_counts_utf8_bytes() -> None:
+    suffix = " a@b.co"
+    value = "é" * 4090 + suffix
+    assert len(value.encode("utf-8")) < 8192
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warn_if_pii_shaped("interaction.kind", value, embedded=True)
+    assert any(issubclass(w.category, PIIShapedIdentifierWarning) for w in caught)

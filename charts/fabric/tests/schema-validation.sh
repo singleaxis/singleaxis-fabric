@@ -87,11 +87,41 @@ for case in \
   'removed sampler surface:otel-collector.fabric.sampler.enabled:true' \
   'debug off:otel-collector.debugExporter.enabled:true' \
   'explicit ingress:otel-collector.networkPolicy.requireExplicitIngress:false' \
+  'cluster-internal service:otel-collector.service.type:NodePort' \
+  'non-root pod:otel-collector.podSecurityContext.runAsNonRoot:false' \
+  'no privilege escalation:otel-collector.securityContext.allowPrivilegeEscalation:true' \
+  'pinned image tag:otel-collector.image.tag:latest' \
   'deny-default:networkPolicy.denyDefault:false'; do
   IFS=: read -r label path value <<<"${case}"
   reject_any "production pins ${label}" \
     "${production_args[@]}" --set "${path}=${value}"
 done
+
+reject "production pins the Collector Service to ClusterIP" "otel-collector.service.type" \
+  "${production_args[@]}" --set otel-collector.service.type=LoadBalancer
+reject "production rejects an empty image tag" "pinned Collector image" \
+  "${production_args[@]}" --set otel-collector.image.tag=
+# An empty ingress peer must not merge with the indexed --set used in
+# production_args, so this case passes the full flag set explicitly.
+reject "production rejects an empty ingress peer" "empty peer" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
+  --set tenant.id=customer-production \
+  --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
+  --set-json 'otel-collector.networkPolicy.ingressFrom=[{}]' \
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
+reject "production rejects a world ingress CIDR" "world CIDR" \
+  "${production_args[@]}" --set 'otel-collector.networkPolicy.ingressFrom[0].ipBlock.cidr=0.0.0.0/0'
+reject "production rejects a world exporter egress CIDR" "world CIDR" \
+  "${production_args[@]}" --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=0.0.0.0/0'
+reject "production rejects an empty egressTo peer" "empty peer" \
+  "${production_args[@]}" --set-json 'otel-collector.networkPolicy.egressTo=[{}]'
+reject "production rejects an unscoped health-port selector" "monitoringNamespaceSelector" \
+  "${production_args[@]}" --set-json 'otel-collector.networkPolicy.monitoringNamespaceSelector={"matchLabels":{}}'
+render_ok "a digest pin satisfies image identity" \
+  "${production_args[@]}" --set otel-collector.image.tag= \
+  --set otel-collector.image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 reject_any "production rejects custom log-field allowlist extensions" \
   "${production_args[@]}" \

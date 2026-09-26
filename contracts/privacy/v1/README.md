@@ -14,3 +14,5 @@ metadata, hashes, and governed references; it cannot claim raw content export.
 
 All SHA-256 values cover the exact bytes of the named pinned UTF-8 file. JSON
 reserialization changes the digest; RFC 8785 canonicalization is not claimed.
+`manifest.json` pins the schema and every JSON fixture; Markdown
+documentation, including this README, is not a pinned artifact.

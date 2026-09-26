@@ -11,8 +11,16 @@
     "name": "singleaxis-fabric",
     "required_wheel_paths": [
       "fabric/__init__.py",
+      "fabric/_content.py",
+      "fabric/_content_sink.py",
+      "fabric/_content_writer.py",
       "fabric/_version.py",
-      "fabric/py.typed"
+      "fabric/content_store/__init__.py",
+      "fabric/content_store/base.py",
+      "fabric/content_store/local.py",
+      "fabric/content_store/s3.py",
+      "fabric/py.typed",
+      "fabric/resolver.py"
     ],
     "allowed_wheel_package_roots": [
       "fabric"
@@ -47,8 +55,16 @@
       "README.md",
       "LICENSE",
       "src/fabric/__init__.py",
+      "src/fabric/_content.py",
+      "src/fabric/_content_sink.py",
+      "src/fabric/_content_writer.py",
       "src/fabric/_version.py",
-      "src/fabric/py.typed"
+      "src/fabric/content_store/__init__.py",
+      "src/fabric/content_store/base.py",
+      "src/fabric/content_store/local.py",
+      "src/fabric/content_store/s3.py",
+      "src/fabric/py.typed",
+      "src/fabric/resolver.py"
     ],
     "allowed_sdist_top_level": [
       "src",
@@ -90,16 +106,30 @@
     "public_families": [
       "activity",
       "connect",
+      "content",
       "delivery",
       "privacy",
       "recorder"
     ],
     "public_versions": {
-      "activity": ["v2"],
-      "connect": ["v1"],
-      "delivery": ["v1"],
-      "privacy": ["v1"],
-      "recorder": ["v1"]
+      "activity": [
+        "v2"
+      ],
+      "connect": [
+        "v1"
+      ],
+      "content": [
+        "v1"
+      ],
+      "delivery": [
+        "v1"
+      ],
+      "privacy": [
+        "v1"
+      ],
+      "recorder": [
+        "v1"
+      ]
     }
   },
   "helm": {
@@ -109,6 +139,7 @@
     "third_party_app_charts": []
   },
   "images": [
-    "fabric-otelcol"
+    "fabric-otelcol",
+    "fabric-host-emitter"
   ]
 }

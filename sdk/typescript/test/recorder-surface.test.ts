@@ -42,4 +42,22 @@ describe("recorder-v1 package root", () => {
       expect(methods).not.toContain(forbidden);
     }
   });
+
+  it("keeps test helpers off the package root under the testing namespace", () => {
+    // resetCoverageRegistry is a test hook, not a production API — it is
+    // reachable but deliberately namespaced (mirrors Python, where it is
+    // importable from fabric.decision but not the package root).
+    expect("resetCoverageRegistry" in recorder).toBe(false);
+    expect(typeof recorder.testing.resetCoverageRegistry).toBe("function");
+    // Public constants exported for parity with the Python SDK.
+    expect(recorder.SCHEMA_VERSION).toBe("1.0");
+    expect(recorder.DEFAULT_PROFILE).toBe("shadow");
+    expect(typeof recorder.SDK_VERSION).toBe("string");
+    expect(recorder.ToolErrorCategory.CANCELLED).toBe("cancelled");
+    // Propagation surface.
+    expect(typeof recorder.inject).toBe("function");
+    expect(typeof recorder.extract).toBe("function");
+    expect(typeof recorder.injectDecision).toBe("function");
+    expect(recorder.FABRIC_KEY).toBe("singleaxis");
+  });
 });

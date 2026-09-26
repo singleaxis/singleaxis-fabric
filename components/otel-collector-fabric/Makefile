@@ -8,10 +8,9 @@
 
 OCB ?= $(shell command -v ocb || command -v builder)
 DIST_DIR := dist
-RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor
-HISTORICAL_PROCESSOR_DIRS := processor/fabricpolicyprocessor processor/fabricsamplerprocessor processor/fabricredactprocessor
+RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor receiver/auditreceiver gate
 
-.PHONY: all build test lint historical-test qualify-config qualify-image clean tidy
+.PHONY: all build test lint qualify-config qualify-image clean tidy
 
 COLLECTOR_BINARY ?= $(DIST_DIR)/otelcol-fabric
 COLLECTOR_IMAGE ?= fabric-otelcol:pr
@@ -25,6 +24,7 @@ build:
 		exit 1; \
 	fi
 	$(OCB) --config ocb-config.yaml
+	cd gate && go build -o ../$(DIST_DIR)/fabric-gate .
 
 test:
 	./tests/test-recorder-manifest.sh
@@ -38,14 +38,6 @@ tidy:
 
 lint:
 	@for d in $(RECORDER_PROCESSOR_DIRS); do (cd $$d && go vet ./...) || exit 1; done
-
-# Source retained during migration is deliberately outside recorder release
-# qualification and the OCB manifest. Run this only when changing that source.
-historical-test:
-	@for d in $(HISTORICAL_PROCESSOR_DIRS); do \
-		echo "==> historical test $$d"; \
-		(cd $$d && go test ./...) || exit 1; \
-	done
 
 # Configuration acceptance for the built distribution. This proves that the
 # binary/image recognizes the recorder component graph; it does not send

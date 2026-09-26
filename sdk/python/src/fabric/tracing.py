@@ -8,6 +8,18 @@ a tracer via ``opentelemetry.trace.get_tracer`` and let the host
 configure exporters. ``install_default_provider`` is offered as a
 convenience for tests and small agents that have no provider of their
 own.
+
+Metrics
+-------
+
+``gen_ai.client.*`` instruments (token usage, operation duration, TTFT,
+time-per-chunk, tool duration) are created on the global OTel *metrics*
+API via :func:`get_meter`. Without a real ``MeterProvider`` installed
+they silently no-op — the API returns a proxy meter that discards every
+recording. Hosts that want the metrics must install a
+:class:`opentelemetry.sdk.metrics.MeterProvider` (e.g. wired to an OTLP
+metric exporter) at process level, or pass ``meter_provider=`` to
+:func:`install_default_provider` / a ``Meter`` to :class:`Fabric`.
 """
 
 from __future__ import annotations
@@ -40,12 +52,32 @@ TracerProvider choose their own SpanLimits."""
 _NOOP_PROVIDER_WARNED = False
 
 
+def _provider_has_span_processors(provider: object) -> bool:
+    """Best-effort check that a real ``TracerProvider`` ships spans.
+
+    Reads the SDK's internal ``_active_span_processor._span_processors``
+    tuple. Any deviation in those internals (renames across OTel versions,
+    a non-SDK provider) answers ``True`` — better to under-warn than to
+    false-warn on a provider we cannot inspect.
+    """
+    processor = getattr(provider, "_active_span_processor", None)
+    processors = getattr(processor, "_span_processors", None)
+    if isinstance(processors, tuple):
+        return bool(processors)
+    return True
+
+
 def _warn_if_noop_provider() -> None:
-    """Emit a one-shot WARN if the global tracer provider is the OTel
-    no-op default. Without a real provider, every Fabric span has an
-    all-zero trace_id and disappears — silently. Hosts that copy a
-    minimal ``Fabric(...)`` example without ``install_default_provider``
-    or their own OTel wiring will hit this on day one.
+    """Emit a one-shot WARN if spans would be silently dropped.
+
+    Two silent-drop shapes are caught: the OTel no-op default
+    (``ProxyTracerProvider`` — every span gets an all-zero trace_id and
+    disappears), and a real ``TracerProvider`` with zero span processors
+    (spans are recorded but never exported — the same silent loss one
+    level down). Hosts that copy a minimal ``Fabric(...)`` example without
+    ``install_default_provider`` or their own OTel wiring hit the first;
+    an ``install_default_provider()`` call with no exporter hits the
+    second.
     """
     global _NOOP_PROVIDER_WARNED  # noqa: PLW0603
     if _NOOP_PROVIDER_WARNED:
@@ -57,7 +89,17 @@ def _warn_if_noop_provider() -> None:
             "fabric.tracing: no OpenTelemetry TracerProvider is configured; "
             "Fabric decision spans will have zero trace IDs and be dropped. "
             "Call fabric.install_default_provider(...) or wire OTel yourself "
-            "before opening a Decision. See docs/quickstart.md step 4."
+            "before opening a Decision. See docs/quickstart.md step 2."
+        )
+        _NOOP_PROVIDER_WARNED = True
+        return
+    if isinstance(provider, TracerProvider) and not _provider_has_span_processors(provider):
+        _LOG.warning(
+            "fabric.tracing: the installed TracerProvider has no span "
+            "processors; Fabric spans will be recorded but never exported. "
+            "Add a SpanProcessor/exporter, pass exporter= to "
+            "install_default_provider, or set OTEL_EXPORTER_OTLP_ENDPOINT "
+            "with the [otlp] extra installed."
         )
         _NOOP_PROVIDER_WARNED = True
 
@@ -73,7 +115,14 @@ def get_tracer() -> trace.Tracer:
 
 
 def get_meter() -> metrics.Meter:
-    """Return the meter used for standard GenAI client instruments."""
+    """Return the meter used for standard GenAI client instruments.
+
+    Without a global ``MeterProvider`` installed, the returned meter is
+    the OTel no-op proxy: every ``gen_ai.client.*`` instrument records
+    into the void. See the module docstring — install a MeterProvider (or
+    pass ``meter_provider=`` to :func:`install_default_provider`) to make
+    the metrics live.
+    """
 
     return metrics.get_meter(
         FABRIC_SDK_NAME,
@@ -82,11 +131,43 @@ def get_meter() -> metrics.Meter:
     )
 
 
+def _resolve_default_exporter(exporter: SpanExporter | None) -> SpanExporter | None:
+    """Return ``exporter``, or default-construct an OTLP exporter.
+
+    When ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or the signal-specific
+    ``OTEL_EXPORTER_OTLP_TRACES_ENDPOINT``) is set and no explicit
+    exporter was passed, the standard OTLP env configuration should
+    work: construct ``OTLPSpanExporter`` — it reads the endpoint and
+    headers from the same env vars — when the ``[otlp]`` extra is
+    installed. Returns ``None`` when neither path produces an exporter.
+    """
+    if exporter is not None:
+        return exporter
+    if os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or os.environ.get(
+        "OTEL_EXPORTER_OTLP_ENDPOINT"
+    ):
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: PLC0415
+                OTLPSpanExporter,
+            )
+        except ImportError:
+            _LOG.warning(
+                "fabric.tracing: OTEL_EXPORTER_OTLP_ENDPOINT is set but the OTLP "
+                "exporter package is not installed; spans will not be exported. "
+                "Install `singleaxis-fabric[otlp]` (or "
+                "opentelemetry-exporter-otlp-proto-http)."
+            )
+            return None
+        return OTLPSpanExporter()
+    return None
+
+
 def install_default_provider(
     *,
     service_name: str | None = None,
     exporter: SpanExporter | None = None,
     resource_attributes: dict[str, Any] | None = None,
+    meter_provider: metrics.MeterProvider | None = None,
 ) -> TracerProvider:
     """Install a :class:`TracerProvider` on the global OTel API.
 
@@ -96,6 +177,19 @@ def install_default_provider(
 
     Returns the newly-installed provider so callers can attach
     additional exporters or processors.
+
+    ``exporter`` is optional but recommended: without one the provider
+    has no span processor and every span is silently dropped — a WARN is
+    emitted so the gap is loud. When
+    ``OTEL_EXPORTER_OTLP_ENDPOINT``/``OTEL_EXPORTER_OTLP_TRACES_ENDPOINT``
+    is set and no exporter is given, an ``OTLPSpanExporter`` is
+    default-constructed (reads the same env vars) when the ``[otlp]``
+    extra is installed, so the standard env configuration "just works".
+
+    ``meter_provider``, when given, is installed on the global OTel
+    metrics API via ``metrics.set_meter_provider`` so the
+    ``gen_ai.client.*`` instruments actually record. Without a real
+    ``MeterProvider`` those metrics silently no-op (see module docstring).
 
     If a real ``TracerProvider`` is already installed, a WARN is emitted
     and the existing provider is returned unchanged. Re-install of an
@@ -111,6 +205,7 @@ def install_default_provider(
             "existing provider. Configure OTel once at process startup."
         )
         return existing
+    resolved_exporter = _resolve_default_exporter(exporter)
     attrs: dict[str, Any] = {
         "service.name": service_name or os.environ.get("OTEL_SERVICE_NAME", FABRIC_SDK_NAME),
         "fabric.sdk.version": __version__,
@@ -121,11 +216,22 @@ def install_default_provider(
         resource=Resource.create(attrs),
         span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN),
     )
-    if exporter is not None:
-        provider.add_span_processor(BatchSpanProcessor(exporter))
+    if resolved_exporter is not None:
+        provider.add_span_processor(BatchSpanProcessor(resolved_exporter))
+    else:
+        _LOG.warning(
+            "fabric.tracing: install_default_provider() called without an "
+            "exporter; the provider has no span processor and every Fabric "
+            "span will be recorded then dropped. Pass exporter=..., set "
+            "OTEL_EXPORTER_OTLP_ENDPOINT (with the [otlp] extra), or wire "
+            "your own TracerProvider."
+        )
     trace.set_tracer_provider(provider)
-    # Reset the noop-warning latch so a subsequent get_tracer() doesn't
-    # spuriously warn after a successful install.
+    if meter_provider is not None:
+        metrics.set_meter_provider(meter_provider)
+    # Latch the noop warning only when the install actually ships spans.
+    # A zero-processor provider still loses every span silently, so leave
+    # the latch unset and let _warn_if_noop_provider flag that shape too.
     global _NOOP_PROVIDER_WARNED  # noqa: PLW0603
-    _NOOP_PROVIDER_WARNED = True
+    _NOOP_PROVIDER_WARNED = resolved_exporter is not None
     return provider

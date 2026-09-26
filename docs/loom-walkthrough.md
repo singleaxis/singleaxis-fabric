@@ -21,8 +21,8 @@ agent.
 
 ```bash
 fabricctl init
-fabricctl validate --config fabric-recorder.yaml
-fabricctl digest --config fabric-recorder.yaml
+fabricctl recorder validate fabric-recorder.yaml
+fabricctl recorder digest fabric-recorder.yaml
 ```
 
 Point out that initialization writes no credentials and does not install

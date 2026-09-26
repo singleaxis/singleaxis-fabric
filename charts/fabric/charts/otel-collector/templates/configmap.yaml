@@ -16,6 +16,15 @@ data:
         protocols:
           grpc:
             endpoint: 0.0.0.0:{{ .Values.service.ports.otlpGrpc }}
+            # Bound per-request work: metadata-only records are small, so
+            # 8 MiB is generous headroom that also bounds the worst-case
+            # queued item.
+            max_recv_msg_size_mib: 8
+            max_concurrent_streams: 64
+            keepalive:
+              enforcement_policy:
+                min_time: 10s
+                permit_without_stream: false
             {{- if .Values.receiver.tls.serverCertificateSecret.name }}
             tls:
               cert_file: /etc/fabric/receiver-tls/tls.crt
@@ -26,6 +35,12 @@ data:
             {{- end }}
           http:
             endpoint: 0.0.0.0:{{ .Values.service.ports.otlpHttp }}
+            # Zero-value timeouts let a client hold a connection open
+            # mid-headers indefinitely; auth runs after the read.
+            read_header_timeout: 5s
+            read_timeout: 30s
+            idle_timeout: 120s
+            max_request_body_size: 8388608 # 8 MiB
             {{- if .Values.receiver.tls.serverCertificateSecret.name }}
             tls:
               cert_file: /etc/fabric/receiver-tls/tls.crt

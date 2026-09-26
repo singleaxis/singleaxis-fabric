@@ -26,12 +26,56 @@ export const ATTR_EXECUTION_ATTEMPT = "fabric.execution.attempt";
 export const ATTR_EXECUTION_RETRY_REASON = "fabric.execution.retry.reason";
 export const ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID =
   "fabric.execution.retry.previous_attempt_id";
+
+// GenAI error convention: the exception class name stamped on a span
+// alongside ERROR status when a context exits with a failure (mirrors
+// Python's ATTR_ERROR_TYPE, stamped on decision/llm/tool spans alike).
+export const ATTR_ERROR_TYPE = "error.type";
+
 export const ATTR_SESSION = "fabric.session_id";
 export const ATTR_REQUEST = "fabric.request_id";
 // Lineage anchor for the decision: host-supplied verbatim, or a minted uuid4
 // when absent. Independent of `request_id` (mirrors Python `ATTR_DECISION_ID`).
 export const ATTR_DECISION_ID = "fabric.decision_id";
 export const ATTR_USER = "fabric.user_id";
+
+// Delegation lineage stamped on a decision opened from a propagated
+// FabricContext (see DecisionIds.context): the delegating agent and the
+// upstream decision id so the child's spans link back across the service
+// boundary (mirrors Python's ATTR_PARENT_* keys).
+export const ATTR_PARENT_AGENT_ID = "fabric.parent_agent_id";
+export const ATTR_PARENT_DECISION_ID = "fabric.parent_decision_id";
+
+// -- Caller-supplied attribute guards ------------------------------------
+//
+// The `fabric.` and `gen_ai.` namespaces are written by the SDK itself.
+// A caller override via `FabricConfig.extra` / `decision(attributes)` /
+// `execution(attributes)` would silently clobber the identity every
+// downstream isolation / correlation check relies on, so the convenience
+// entry points reject them. `setAttribute` remains the escape hatch for
+// hosts that truly must override (mirrors Python's check_attribute_key).
+export const RESERVED_ATTRIBUTE_PREFIXES = ["fabric.", "gen_ai."] as const;
+
+/** Return `key` unless it sits under a reserved namespace. */
+export function checkAttributeKey(key: string): string {
+  if (RESERVED_ATTRIBUTE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+    throw new Error(
+      `attribute key ${JSON.stringify(key)} is under a reserved namespace ` +
+        "('fabric.'/'gen_ai.'); identity and GenAI convention " +
+        "attributes are SDK-owned. Use a caller namespace such as " +
+        "'agent.*' or '<your-org>.*' instead.",
+    );
+  }
+  return key;
+}
+
+/** Validate every key of a caller-supplied attribute dict. */
+export function checkAttributeKeys<T extends Record<string, string>>(attributes: T): T {
+  for (const key of Object.keys(attributes)) {
+    checkAttributeKey(key);
+  }
+  return attributes;
+}
 
 // -- Execution span (fabric.execution) ----------------------------------
 //
@@ -63,6 +107,7 @@ export const GEN_AI_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens";
 export const GEN_AI_REQUEST_STREAM = "gen_ai.request.stream";
 export const GEN_AI_REQUEST_REASONING_LEVEL = "gen_ai.request.reasoning.level";
 export const GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID = "gen_ai.request.previous_response.id";
+export const GEN_AI_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats";
 export const GEN_AI_OUTPUT_TYPE = "gen_ai.output.type";
 export const GEN_AI_RESPONSE_ID = "gen_ai.response.id";
 export const GEN_AI_RESPONSE_MODEL = "gen_ai.response.model";
@@ -70,8 +115,16 @@ export const GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons";
 export const GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens";
 export const GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
 export const GEN_AI_USAGE_REASONING_OUTPUT_TOKENS = "gen_ai.usage.reasoning.output_tokens";
-export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read_input_tokens";
-export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation_input_tokens";
+// OTel GenAI prompt-cache token mirrors. The upstream convention names
+// these on the *input* side (cache reads/writes are charged against the
+// prompt), so we mirror Fabric's cache counters onto the current dotted
+// keys; the underscore-separated legacy aliases are emitted only under
+// `emitLegacyAttributes` (mirrors Python `_calls.py`).
+export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens";
+export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation.input_tokens";
+export const GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_LEGACY = "gen_ai.usage.cache_read_input_tokens";
+export const GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS_LEGACY =
+  "gen_ai.usage.cache_creation_input_tokens";
 export const GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK = "gen_ai.response.time_to_first_chunk";
 export const GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id";
 export const GEN_AI_CONVERSATION_COMPACTED = "gen_ai.conversation.compacted";
@@ -81,6 +134,8 @@ export const GEN_AI_OUTPUT_MESSAGES = "gen_ai.output.messages";
 export const GEN_AI_TOOL_DEFINITIONS = "gen_ai.tool.definitions";
 export const GEN_AI_PROMPT_NAME = "gen_ai.prompt.name";
 export const GEN_AI_PROMPT_VERSION = "gen_ai.prompt.version";
+export const GEN_AI_AGENT_NAME = "gen_ai.agent.name";
+export const GEN_AI_EMBEDDINGS_DIMENSION_COUNT = "gen_ai.embeddings.dimension.count";
 
 // Fabric mirrors of the GenAI fields.
 export const FABRIC_LLM_SYSTEM = "fabric.llm.system";
@@ -164,6 +219,16 @@ export const ATTR_MEMORY_TTL_SECONDS = "fabric.memory.ttl_seconds";
 export const ATTR_MEMORY_SOURCE = "fabric.memory.source";
 export const ATTR_MEMORY_INVALIDATES = "fabric.memory.invalidates";
 export const ATTR_MEMORY_TENANT_SCOPE = "fabric.memory.tenant_scope";
+
+// -- Governed content references (specs 028/029) -------------------------
+//
+// These carry resolution URIs + manifest pointers only — never raw
+// content. They are the only `fabric.content.*` keys the collector
+// allowlist admits.
+export const ATTR_CONTENT_REF = "fabric.content.ref";
+export const ATTR_CONTENT_REQUEST_REF = "fabric.content.request_ref";
+export const ATTR_CONTENT_RESULT_REF = "fabric.content.result_ref";
+export const ATTR_CONTENT_MANIFEST_REF = "fabric.content.manifest_ref";
 
 // -- Side effect (fabric.side_effect span event) ------------------------
 

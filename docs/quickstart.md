@@ -34,7 +34,7 @@ boundary.
 Install the SDK with its OTLP exporter:
 
 ```bash
-pip install "singleaxis-fabric[otlp]"
+pip install "singleaxis-fabric[otlp]==0.8.0rc1"
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 
@@ -46,8 +46,10 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 
 install_default_provider(
     service_name="example-agent",
+    # Explicit endpoint must include the signal path — bare host:port
+    # posts to "/" and gets a 404 on some exporter versions.
     exporter=OTLPSpanExporter(
-        endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]
+        endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] + "/v1/traces"
     ),
 )
 

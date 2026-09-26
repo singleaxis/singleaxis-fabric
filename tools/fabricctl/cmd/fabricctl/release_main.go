@@ -1,11 +1,9 @@
-//go:build !legacy
-
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
 // The default fabricctl binary is the small recorder release surface. Older
-// operator capabilities remain in source for migration work, but are compiled
-// only with the explicit non-release "legacy" build tag.
+// operator capabilities were removed from this repository when the recorder
+// scope became authoritative; their history lives in git.
 package main
 
 import (
@@ -179,7 +177,8 @@ func runRecorder(args []string, stdout, stderr io.Writer) int {
 	} else if command == "digest" {
 		fmt.Fprintln(stdout, digest)
 	} else {
-		fmt.Fprintf(stdout, "FabricRecorder validation: pass\nName: %s\nDigest: %s\n", resource.Metadata.Name, digest)
+		fmt.Fprintf(stdout, "FabricRecorder validation: pass (structural only)\nName: %s\nDigest: %s\n", resource.Metadata.Name, digest)
+		fmt.Fprintln(stdout, "Note: validate checks shape and digest syntax; it does not resolve or recompute referenced artifacts such as spec.protect.privacyPolicyRef.")
 	}
 	return 0
 }
@@ -218,4 +217,5 @@ func printRecorderCommandUsage(w io.Writer, command string) {
 	fmt.Fprintf(w, "Usage: fabricctl recorder %s FILE [--json]\n", command)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "This command operates offline and does not mutate a runtime.")
+	fmt.Fprintln(w, "validate performs structural validation only; referenced artifact digests are not recomputed.")
 }

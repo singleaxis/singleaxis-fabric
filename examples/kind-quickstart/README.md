@@ -1,7 +1,10 @@
-# 10-minute Fabric quickstart on `kind`
+# 10-minute Fabric recorder quickstart on `kind`
 
-End-to-end local install of the Fabric OSS stack. From zero to seeing your
-first instrumented decision flow through the collector in one command.
+End-to-end local install of the Fabric OSS recorder — the passive
+CAPTURE -> PROTECT -> DELIVER data plane. From zero to watching a
+recorded agent decision arrive at the Fabric Node collector in one
+command. There are no judges, guardrails, policy engines, or management
+services in this stack; the recorder never modifies the monitored agent.
 
 ## Prereqs
 
@@ -21,29 +24,29 @@ You should see (abridged):
 
 ```
 ==> Creating kind cluster 'fabric-quickstart'
-==> Installing Fabric umbrella chart (permissive-dev profile)
+==> Installing Fabric Node chart (shadow-dev profile)
+==> Port-forwarding collector OTLP/HTTP to localhost:4318
 ==> Tailing collector logs (spans will appear here as the agent runs)
-    SpanData: name=fabric.decision tenant_id=acme-demo agent_id=refund-bot
-    SpanData: name=chat e2e-model-v1 gen_ai.usage.input_tokens=24
-    SpanData: name=e2e_vector_search gen_ai.operation.name=execute_tool
-    SpanEvent: fabric.policy.evaluation decision=deny reason="amount $4200 exceeds $2,000 cap"
+    SpanData: name=fabric.decision fabric.tenant_id=acme-demo agent_id=refund-bot
+    SpanData: name=chat claude-haiku-4-5 gen_ai.usage.input_tokens=24
+    SpanData: name=send_refund gen_ai.operation.name=execute_tool
+    SpanEvent: fabric.retrieval source=rag
+    SpanEvent: fabric.memory direction=write
 ==> Running the demo agent
     llm: Refund of $4,200 exceeds the $2,000 auto-approve cap.
-    tool auth: allow
-    policy: deny (amount $4200 exceeds $2,000 cap)
-    decision complete — spans flushed to collector
+    decision complete — spans exported to Fabric Node
 ```
 
 ## What you just saw
 
-| Layer | What happened |
+| Stage | What happened |
 |---|---|
-| Identity | tenant_id, agent_id, session_id stamped on every span |
-| Retrieval | doc references recorded on the decision span |
-| LLM call | child span with `gen_ai.*` token attributes + Fabric mirrors |
-| Tool auth | `authorize_tool_call` recorded an event with the verdict |
-| Tool call | child span with hashed args / result |
-| Policy | OPA-style adapter denied the refund; reason captured |
+| CAPTURE | The SDK opened a `fabric.decision` span carrying tenant/agent/session identity, a hashed retrieval event, a memory-write event, and `llm_call` / `tool_call` child spans with `gen_ai.*` attributes. |
+| PROTECT | The Fabric Node collector applied its default-deny field allowlist before export — only approved metadata can leave the node. |
+| DELIVER | The `shadow-dev` profile exports to the collector's debug output (visible in `kubectl logs`). No durable destination is configured — that is intentional for local evaluation. |
+
+The agent runs on your host and exports OTLP/HTTP to the collector via
+the port-forward `up.sh` opens on `localhost:4318`.
 
 ## Tear down
 
@@ -53,11 +56,13 @@ You should see (abridged):
 
 ## Where to go next
 
-- **Add a real exporter** — point `OTEL_EXPORTER_OTLP_ENDPOINT` at your
-  backend (Datadog, Phoenix, Langfuse, Honeycomb, Tempo) — spans flow there.
-- **Switch profiles** — try `--values charts/fabric/profiles/eu-ai-act-high-risk.yaml`
-  for the strict, fail-loud production posture (requires a real signing key).
-- **Real PII redaction** — flip on the Presidio sidecar (`--set presidio-sidecar.enabled=true`)
-  with a real recognizer set.
-- **Auditor checklist** — see [`docs/auditor-checklist.md`](../../docs/auditor-checklist.md)
-  for what your auditor will ask and what Fabric already captures for you.
+- **Deliver somewhere real** — set `otel-collector.exporter.endpoint` to
+  your OTLP backend and reinstall; the durable sending queue protects
+  delivery across restarts.
+- **Cross a trust boundary** — use
+  [`charts/fabric/profiles/shadow-production.yaml`](../../charts/fabric/profiles/shadow-production.yaml)
+  for the fail-closed posture (tenant identity, receiver mTLS, explicit
+  peers, authenticated HTTPS export, persistent queue).
+- **Auditor checklist** — see
+  [`docs/auditor-checklist.md`](../../docs/auditor-checklist.md) for what
+  your auditor will ask and what Fabric already captures for you.

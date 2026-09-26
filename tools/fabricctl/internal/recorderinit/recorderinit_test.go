@@ -87,6 +87,34 @@ func TestRunRefusesExistingArtifactWithoutChangingIt(t *testing.T) {
 	}
 }
 
+func TestWizardRejectsCredentialShapedAnswersBeforeRender(t *testing.T) {
+	// Each invalid line must be rejected by the prompt itself, then the retry
+	// value accepted. Previously these shapes passed the prompt and were only
+	// rejected later by recorder.Render, discarding every collected answer.
+	input := strings.Join([]string{
+		strings.Repeat("a", 48), "healthcare-shadow", // opaque-token name, then valid
+		"AKIAIOSFODNN7EXAMPLE", "system/ambient-assistant", // AWS-shaped identity, then valid
+		"deployment/production-v1",
+		"otlp",
+		"metadata",
+		"privacy/metadata-only-v1",
+		"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"sk-1234567890abcdefghij", "destination/customer-monitoring", // token-shaped destination, then valid
+		"installation/hospital-a",
+		"no", // decline so nothing is written
+	}, "\n") + "\n"
+	var output bytes.Buffer
+	_, err := Run(Options{
+		Input: strings.NewReader(input), Output: &output, OutputDir: t.TempDir(), Interactive: true,
+	})
+	if !errors.Is(err, ErrDeclined) {
+		t.Fatalf("Run error = %v, want ErrDeclined", err)
+	}
+	if got := strings.Count(output.String(), "Enter a valid non-secret identifier or digest."); got != 3 {
+		t.Fatalf("wizard rejected credential-shaped answers %d times, want 3:\n%s", got, output.String())
+	}
+}
+
 func TestRunRequiresInteractiveTerminalBeforePrompting(t *testing.T) {
 	var output bytes.Buffer
 	_, err := Run(Options{Input: strings.NewReader(answers("write")), Output: &output, OutputDir: t.TempDir()})

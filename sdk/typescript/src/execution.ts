@@ -61,6 +61,7 @@ import {
   EXECUTION_STATUS_FAILED,
   SCHEMA_VERSION,
   SPAN_NAME_EXECUTION,
+  checkAttributeKeys,
 } from "./attributes.js";
 import type { DecisionClientIdentity } from "./decision.js";
 import { randomUuid } from "./hash.js";
@@ -221,10 +222,14 @@ export function runExecution<T>(
       active.executionRetryPreviousAttemptId,
     );
   }
-  if (options.attributes !== undefined) {
-    for (const [key, value] of Object.entries(options.attributes)) {
-      span.setAttribute(key, value);
-    }
+  // Caller extras sit on top of the client-level `FabricConfig.extra`
+  // defaults (explicit per-execution keys win on collision). Reserved
+  // `fabric.*`/`gen_ai.*` keys are rejected (mirrors Python
+  // `check_attribute_keys`).
+  for (const [key, value] of Object.entries(
+    checkAttributeKeys({ ...identity.extra, ...(options.attributes ?? {}) }),
+  )) {
+    span.setAttribute(key, value);
   }
 
   const execution = new Execution(span, active);

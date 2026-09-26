@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/evidence/v1/run-manifest-v1.schema.json",
+  "title": "AEEP bounded run manifest v1 (draft)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "manifest_id", "tenant_id", "run_id", "revision",
+    "scope", "sources", "items", "receipts", "feeds", "verdict"
+  ],
+  "properties": {
+    "schema_version": {"const": "agent.evidence.run-manifest/v1"},
+    "manifest_id": {"$ref": "#/$defs/id"},
+    "tenant_id": {"$ref": "#/$defs/id"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "revision": {"type": "integer", "minimum": 0},
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boundary_ids", "required_source_ids", "required_roles", "required_feed_ids", "excluded_surfaces", "approval_id", "approval_revision", "approval_sha256", "approval_verification"],
+      "properties": {
+        "approval_id": {"$ref": "#/$defs/id"},
+        "approval_revision": {"type": "integer", "minimum": 1},
+        "approval_sha256": {"$ref": "#/$defs/digest"},
+        "approval_verification": {"$ref": "#/$defs/verification"},
+        "boundary_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "required_source_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "required_roles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 3, "maxLength": 80}},
+        "required_feed_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "excluded_surfaces": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 3, "maxLength": 200}}
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "epoch", "capability_id", "capability_version", "capability_sha256", "identity_verified", "sampling_enabled", "first_sequence", "start_record_id", "start_sequence", "high_water", "observed_sequences", "loss_count", "sampled_count", "rate_limited_count", "overflow_count", "unknown_loss", "started_at", "health"],
+        "properties": {
+          "source_id": {"$ref": "#/$defs/id"},
+          "epoch": {"type": "integer", "minimum": 0},
+          "capability_id": {"$ref": "#/$defs/id"},
+          "capability_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"},
+          "capability_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "identity_verified": {"type": "boolean"},
+          "identity_verification": {"$ref": "#/$defs/verification"},
+          "sampling_enabled": {"type": "boolean"},
+          "first_sequence": {"type": "integer", "minimum": 0},
+          "start_record_id": {"$ref": "#/$defs/id"},
+          "start_sequence": {"type": "integer", "minimum": 0},
+          "high_water": {"type": "integer", "minimum": 0},
+          "observed_sequences": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+          "loss_count": {"type": "integer", "minimum": 0},
+          "sampled_count": {"type": "integer", "minimum": 0},
+          "rate_limited_count": {"type": "integer", "minimum": 0},
+          "overflow_count": {"type": "integer", "minimum": 0},
+          "unknown_loss": {"type": "boolean"},
+          "started_at": {"type": "string", "format": "date-time"},
+          "stopped_at": {"type": "string", "format": "date-time"},
+          "terminal_record_id": {"$ref": "#/$defs/id"},
+          "terminal_sequence": {"type": "integer", "minimum": 0},
+          "health": {"enum": ["complete", "missing", "unknown"]}
+        },
+        "allOf": [
+          {"if": {"properties": {"identity_verified": {"const": true}}}, "then": {"required": ["identity_verification"]}},
+          {"if": {"properties": {"health": {"const": "complete"}}}, "then": {"required": ["stopped_at", "terminal_record_id", "terminal_sequence"]}}
+        ]
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["record_id", "source_id", "source_epoch", "source_sequence", "role", "status", "verified"],
+        "properties": {
+          "record_id": {"$ref": "#/$defs/id"},
+          "source_id": {"$ref": "#/$defs/id"},
+          "source_epoch": {"type": "integer", "minimum": 0},
+          "source_sequence": {"type": "integer", "minimum": 0},
+          "role": {"type": "string", "minLength": 3, "maxLength": 80},
+          "status": {"enum": ["pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed"]},
+          "verified": {"type": "boolean"},
+          "content_object_id": {"$ref": "#/$defs/id"},
+          "content_sha256": {"$ref": "#/$defs/digest"},
+          "representation": {"enum": ["exact", "canonicalized", "assembled", "partial", "truncated", "redacted"]}
+        },
+        "allOf": [
+          {"if": {"properties": {"status": {"const": "stored"}}}, "then": {"required": ["content_object_id", "content_sha256", "representation"]}},
+          {"if": {"properties": {"status": {"enum": ["not_captured", "unsupported", "dropped", "failed"]}}}, "then": {"not": {"anyOf": [{"required": ["content_object_id"]}, {"required": ["content_sha256"]}]}}}
+        ]
+      }
+    },
+    "receipts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["receipt_id", "tenant_id", "run_id", "subject_type", "subject_id", "subject_sha256", "stage", "issuer", "issuer_type", "issued_at", "verified"],
+        "properties": {
+          "receipt_id": {"$ref": "#/$defs/id"},
+          "tenant_id": {"$ref": "#/$defs/id"},
+          "run_id": {"$ref": "#/$defs/id"},
+          "subject_type": {"enum": ["evidence_event", "content_object"]},
+          "subject_id": {"$ref": "#/$defs/id"},
+          "subject_sha256": {"$ref": "#/$defs/digest"},
+          "stage": {"enum": ["source_spooled", "node_accepted", "destination_accepted", "destination_durable"]},
+          "issuer": {"$ref": "#/$defs/id"},
+          "issuer_type": {"enum": ["source", "node", "destination"]},
+          "issued_at": {"type": "string", "format": "date-time"},
+          "verified": {"type": "boolean"},
+          "verification": {"$ref": "#/$defs/verification"}
+        },
+        "allOf": [
+          {"if": {"properties": {"verified": {"const": true}}}, "then": {"required": ["verification"]}}
+        ]
+      }
+    },
+    "feeds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["feed_id", "issuer", "status"],
+        "properties": {
+          "feed_id": {"$ref": "#/$defs/id"},
+          "issuer": {"$ref": "#/$defs/id"},
+          "status": {"enum": ["matched", "mismatch", "unavailable"]},
+          "expected_count": {"type": "integer", "minimum": 0},
+          "observed_count": {"type": "integer", "minimum": 0},
+          "matched_count": {"type": "integer", "minimum": 0},
+          "missing_count": {"type": "integer", "minimum": 0},
+          "extra_count": {"type": "integer", "minimum": 0},
+          "verification": {"$ref": "#/$defs/verification"}
+        },
+        "allOf": [
+          {"if": {"properties": {"status": {"const": "matched"}}}, "then": {"required": ["expected_count", "observed_count", "matched_count", "missing_count", "extra_count", "verification"]}}
+        ]
+      }
+    },
+    "verdict": {"enum": ["verified_complete_for_declared_scope", "partial", "unverified"]}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "verification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verifier_id", "method", "evidence_ref", "evidence_sha256", "checked_at"],
+      "properties": {
+        "verifier_id": {"$ref": "#/$defs/id"},
+        "method": {"enum": ["mtls", "workload_identity", "signature", "store_readback", "destination_api", "independent_audit"]},
+        "evidence_ref": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^(s3|gs|file)://[^@?#]+$"},
+        "evidence_sha256": {"$ref": "#/$defs/digest"},
+        "checked_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

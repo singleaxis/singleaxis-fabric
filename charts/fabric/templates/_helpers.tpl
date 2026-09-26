@@ -46,6 +46,9 @@ regulatory certification and not proof that a destination persisted a batch.
       "otel-collector.networkPolicy.enabled" true
       "otel-collector.networkPolicy.requireExplicitIngress" true
       "otel-collector.networkPolicy.exporterEgress.requireExplicit" true
+      "otel-collector.service.type" "ClusterIP"
+      "otel-collector.podSecurityContext.runAsNonRoot" true
+      "otel-collector.securityContext.allowPrivilegeEscalation" false
 -}}
 {{- range $path, $expected := $required -}}
   {{- $cur := $.Values -}}
@@ -64,6 +67,44 @@ regulatory certification and not proof that a destination persisted a batch.
   {{- if not (deepEqual $cur $expected) -}}
     {{- fail (printf "profile shadow-production requires %q=%v; effective value is %v" $path $expected $cur) -}}
   {{- end -}}
+{{- end -}}
+{{/* Pinned image identity: a mutable tag or the empty tag fallback is not a
+     production identity. A sha256 digest is the recommended pin; an explicit
+     non-latest tag is accepted. */}}
+{{- $collector := index $.Values "otel-collector" | default dict -}}
+{{- $image := dict -}}
+{{- if kindIs "map" $collector -}}
+  {{- $image = index $collector "image" | default dict -}}
+{{- end -}}
+{{- if not (kindIs "map" $image) -}}
+  {{- $image = dict -}}
+{{- end -}}
+{{- $digest := $image.digest | default "" | toString | trim -}}
+{{- $tag := $image.tag | default "" | toString | trim -}}
+{{- if and (not $digest) (or (eq $tag "") (eq $tag "latest")) -}}
+  {{- fail "profile shadow-production requires a pinned Collector image: set otel-collector.image.digest (recommended, sha256:...) or an explicit non-latest otel-collector.image.tag; \"latest\" and the empty appVersion fallback are not a production image identity" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolve the Collector subchart's fullname from the umbrella context by
+reusing the subchart's own helper, so nameOverride/fullnameOverride keep
+parent templates (NOTES.txt) correct.
+*/}}
+{{- define "fabric.collectorFullname" -}}
+{{- $otel := index .Values "otel-collector" | default dict -}}
+{{- $cond := index .Values "otelCollector" | default dict -}}
+{{- if dig "enabled" true $cond -}}
+{{- include "otel-collector.fullname" (dict "Values" $otel "Chart" (dict "Name" "otel-collector") "Release" .Release) -}}
+{{- else -}}
+{{- /* Subchart disabled: its templates are not registered, so compute the
+   name inline (same default the subchart helper would produce). */ -}}
+{{- $name := dig "nameOverride" "otel-collector" $otel -}}
+{{- if (dig "fullnameOverride" "" $otel) -}}
+{{- dig "fullnameOverride" "" $otel | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

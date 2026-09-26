@@ -7,15 +7,11 @@ recorder:
 OTLP -> Fabric Node -> default-deny allowlist -> durable queue -> test sink
 ```
 
-It contains two runtime services:
+It contains only two services:
 
 - `fabric-node`: the current Collector-based recorder implementation;
 - `test-sink`: a controlled OTLP/HTTP destination that stores requests on a
   durable Docker volume and returns success only after fsync.
-
-A short-lived `queue-init` helper gives the non-root Fabric Node ownership of
-its Docker queue volume and exits before the recorder starts. It is not a
-runtime hop and has no network dependency.
 
 There are no guardrails, prompt-time PII sidecars, judges, red-team runners,
 management services, or observability UI.
@@ -29,8 +25,7 @@ make status
 make smoke
 ```
 
-The evaluation ports bind to loopback only. Send OTLP/HTTP to
-`http://localhost:4318`. The controlled sink exposes:
+Send OTLP/HTTP to `http://localhost:4318`. The controlled sink exposes:
 
 - `GET http://localhost:8080/health`
 - `GET http://localhost:8080/count`
@@ -41,31 +36,140 @@ Run the restart/outage qualification:
 make qualify
 ```
 
-The Compose qualifier sends a minimal OTLP smoke fixture. The release CI also
-runs the public Python SDK through a realistic ambient-clinical documentation
-shadow workflow under [`../../tests/e2e/healthcare_shadow/`](../../tests/e2e/healthcare_shadow/).
-All scenario code and controlled test infrastructure live under `tests/e2e`;
-they are not installed or published as Fabric runtime components.
-
-The qualification proves that this configuration:
+It proves that this configuration:
 
 1. accepts a known trace;
 2. strips a non-allowlisted marker before export;
-3. preserves allowlisted reconstruction metadata;
-4. queues a trace while the destination is unavailable;
-5. survives a Fabric Node restart;
-6. delivers the queued request after the sink returns.
+3. queues a trace while the destination is unavailable;
+4. survives a Fabric Node restart;
+5. delivers the queued request after the sink returns.
+
+## Client VM deployment
+
+`docker-compose.production.yml` is an overlay that turns the harness into a
+single-node deployment for a plain Linux VM (Docker Engine, no Kubernetes).
+The same `fabric-node` image receives authenticated OTLP from agents on the
+host, applies the default-deny allowlist, buffers to a durable volume, and
+delivers to the customer's OTLP/HTTP backend over HTTPS.
+
+### Prerequisites
+
+- Docker Engine >= 24 with the Compose plugin (`docker compose`) v2.24+
+  (the overlay uses `!reset` / `!override` merge tags).
+- An OTLP/HTTP `https://` destination operated by the client. Fabric delivers
+  records to it; it does not include a monitoring UI. Point the destination
+  at whatever backend the client already uses to monitor agentic workflows.
+
+### Quick start
+
+```bash
+cd deploy/compose
+cp .env.example .env && chmod 0600 .env
+# Edit .env:
+#   FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>
+#   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
+#   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
+printf %s "$(openssl rand -hex 32)" > secrets/ingress.token && chmod 0600 secrets/ingress.token
+make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
+make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
+make verify-prod    # proves health, 401 unauthenticated, 200 authenticated (queue metrics warn-only)
+make logs-prod
+```
+
+Use `make up-prod` for startup: it always runs the preflight first. Invoking
+the expanded `docker compose ... up` command directly skips the TLS,
+bind-address, and disk-headroom checks — though the image's `fabric-gate`
+entrypoint still refuses an unsafe token file or a non-traces/logs pipeline
+at container start.
+
+Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
+`127.0.0.1:4318` (HTTP) with `Authorization: Bearer <contents of
+secrets/ingress.token>`. Requests without a valid token are rejected; there is
+no unauthenticated fallback.
+
+> **Token file format matters.** The pinned `bearertokenauth` extension
+> splits the token file on newlines and keeps empty entries — a trailing
+> newline or any blank line mints a `Bearer` prefix with an empty token as a valid
+> credential, which gRPC metadata preserves. Write the file with
+> `printf %s` (no trailing newline) as shown; `make preflight-prod` fails
+> on unsafe token files, and the image's `fabric-gate` entrypoint refuses
+> to boot on them and keeps watching while the collector runs — a mid-run
+> rotation to an unsafe file stops the recorder rather than reopening the
+> empty-credential bypass.
+
+To run the signed release image instead of building locally, verify the
+cosign signature per [`docs/verify-release.md`](../../docs/verify-release.md), then set
+`FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol:0.8.0-rc.1` and
+`FABRIC_NODE_PULL_POLICY=always` in `.env`.
+
+### Firewall and exposure
+
+OTLP, health (`13133`), and metrics (`8888`) publish on `127.0.0.1` only.
+Setting `FABRIC_BIND_ADDR` to a LAN address is an explicit operator choice:
+first uncomment the `tls:` stanzas in
+`collector-config/collector-production.yaml`, drop `server.crt`/`server.key`
+into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`), and open only ports
+4317/4318 in the host firewall. Bearer tokens over plaintext must stay on
+loopback.
+
+### Secure defaults and honest limitations
+
+- Ingress requires a bearer token (file-backed Compose secret); receiver TLS
+  is optional-but-supported and required before binding beyond loopback.
+- Egress requires HTTPS with certificate verification and an Authorization
+  header; `insecure_skip_verify` exists only for throwaway dev destinations.
+- The collector runs as nonroot with a read-only root filesystem, all
+  capabilities dropped, and `no-new-privileges`.
+- This deployment proves the same thing `make qualify` proves at a different
+  trust posture: at-least-once delivery through a durable queue to a
+  destination the client controls. It does not prove destination-side durable
+  persistence, exactly-once delivery, or provide dashboards.
+- For plaintext development, keep using the evaluation profile (`make up`) on
+  a trusted host instead of weakening the production overlay.
+
+### Boot persistence
+
+`restart: unless-stopped` plus an enabled Docker daemon covers reboots:
+
+```bash
+sudo systemctl enable docker
+```
+
+Sizing, backup/restore of the `fabric-queue` volume, and alerting are covered
+in [`docs/operations/dr.md`](../../docs/operations/dr.md).
+
+### Agent-side capture reliability
+
+The recorder's queue is durable, but an agent's OTel SDK has its own in-process
+buffer: the default BatchSpanProcessor holds up to 2048 spans and **drops on
+overflow**, silently losing telemetry before it reaches Fabric Node. For
+audit-grade capture on a bursty agent host, raise the buffer via standard
+env vars and always flush on shutdown:
+
+```bash
+OTEL_BSP_MAX_QUEUE_SIZE=8192        # default 2048
+OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512  # default 512
+OTEL_BSP_SCHEDULE_DELAY=2000        # ms; default 5000
+```
+
+The SDK does not flush automatically on exit — the host process must call
+`force_flush`/`shutdown` on the tracer provider during clean shutdown
+(`examples/reference-agent` shows the pattern). Agents that exit hard without
+flushing lose whatever was still buffered. Watch
+`otelcol_processor_dropped_spans` in the agent's metrics for source-side loss,
+and `otelcol_receiver_refused_spans` on the node for admission pressure.
 
 ## Honest limitations
 
-This harness is plaintext and unauthenticated. It is for local evaluation only.
-Use the Helm `shadow-production` profile across a trust boundary.
+This harness is plaintext and unauthenticated. It is for local evaluation
+only. Use the client-VM overlay above or the Helm `shadow-production` profile
+across a trust boundary.
 
 The test sink's `200` response has a deliberately strong, test-specific
-meaning: that request was fsynced to its Docker volume. Fabric cannot infer the
-same meaning from an arbitrary OTLP destination. In production, distinguish
-Collector acceptance, local queueing, destination acknowledgement, and
-destination durable persistence.
+meaning: that request was fsynced to its Docker volume. Fabric cannot infer
+the same meaning from an arbitrary OTLP destination. In production,
+distinguish Collector acceptance, local queueing, destination
+acknowledgement, and destination durable persistence.
 
 The queue is at least once, not exactly once. Duplicate delivery remains
 possible after ambiguous acknowledgements, and the queue is not an

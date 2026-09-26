@@ -409,10 +409,7 @@ and tied to the exact source and workflow evidence.
 
 ## References
 
-- [Spec 003 — Decision Graph](003-decision-graph.md)
-- [Spec 005 — Inline guardrails](005-guardrails-inline.md)
-- [Spec 008 — Deployment model](008-deployment-model.md)
-- [Spec 012 — public distribution architecture](012-oss-commercialization-strategy.md)
 - [Spec 023 — Generic interaction capture](023-generic-interaction-capture.md)
+- [Spec 027 — Recorder v1](027-recorder-v1.md)
 - [OSS / commercial boundary](../docs/oss-commercial-boundary.md)
 - [Building Fabric](../docs/building-fabric.md)

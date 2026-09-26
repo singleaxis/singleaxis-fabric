@@ -8,22 +8,23 @@ Tenant: {{ .Values.tenant.id | default "(unset - development only)" }}
 Runtime:
   - Fabric Collector (OTLP receive, default-deny protect, queued delivery)
 
-{{- $otel := index .Values "otel-collector" }}
-Receiver TLS:  {{ ternary "required" "development/plaintext" $otel.receiver.requireTLS }}
-Client certs:  {{ ternary "required" "not required" $otel.receiver.requireClientCertificate }}
+{{- $otel := index .Values "otel-collector" | default dict }}
+Receiver TLS:  {{ ternary "required" "development/plaintext" (dig "receiver" "requireTLS" false $otel) }}
+Client certs:  {{ ternary "required" "not required" (dig "receiver" "requireClientCertificate" false $otel) }}
 Sampling:      unavailable in recorder v1 (accepted audit activity is not sampled)
-Debug export:  {{ ternary "ON (development only)" "OFF" $otel.debugExporter.enabled }}
+Debug export:  {{ ternary "ON (development only)" "OFF" (dig "debugExporter" "enabled" false $otel) }}
 
-{{- if not $otel.exporter.endpoint }}
+{{- $endpoint := dig "exporter" "endpoint" "" $otel }}
+{{- if not $endpoint }}
 
 WARNING: NO DELIVERY DESTINATION IS CONFIGURED.
 Records go to Collector stdout only. Stdout is not durable, queryable evidence
 and is not an audit trail. This posture is for local evaluation only.
 {{- else }}
 
-Destination:   {{ $otel.exporter.endpoint }}
-Queue:         {{ ternary "persistent" "memory-only" $otel.exporter.sendingQueue.persistence.enabled }}
-Retry limit:   {{ $otel.exporter.retry.maxElapsedTime }}
+Destination:   {{ $endpoint }}
+Queue:         {{ ternary "persistent" "memory-only" (dig "exporter" "sendingQueue" "persistence" "enabled" false $otel) }}
+Retry limit:   {{ dig "exporter" "retry" "maxElapsedTime" "0s" $otel }}
 
 An OTLP acknowledgement proves destination acceptance, not durable persistence
 by an arbitrary destination. Delivery is at least once; deduplicate by stable
@@ -32,7 +33,7 @@ event ID.
 
 Check health:
   kubectl -n {{ .Release.Namespace }} get pods
-  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-otel-collector 13133:13133
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "fabric.collectorFullname" . }} 13133:13133
   curl http://localhost:13133/
 
 This release does not install runtime guardrails, prompt-time PII controls,

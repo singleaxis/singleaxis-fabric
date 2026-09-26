@@ -7,10 +7,12 @@ import (
 	"context"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 	"go.uber.org/zap"
 )
 
@@ -33,6 +35,7 @@ type guardStats struct {
 	logBodyRemoved       atomic.Uint64
 	statusMessageRemoved atomic.Uint64
 	nativeTextNormalized atomic.Uint64
+	aggregateCapped      atomic.Uint64
 }
 
 type guardStatsSnapshot struct {
@@ -46,6 +49,7 @@ type guardStatsSnapshot struct {
 	LogBodyRemoved       uint64
 	StatusMessageRemoved uint64
 	NativeTextNormalized uint64
+	AggregateCapped      uint64
 }
 
 func (s *guardStats) snapshot() guardStatsSnapshot {
@@ -60,6 +64,7 @@ func (s *guardStats) snapshot() guardStatsSnapshot {
 		LogBodyRemoved:       s.logBodyRemoved.Load(),
 		StatusMessageRemoved: s.statusMessageRemoved.Load(),
 		NativeTextNormalized: s.nativeTextNormalized.Load(),
+		AggregateCapped:      s.aggregateCapped.Load(),
 	}
 }
 
@@ -75,12 +80,33 @@ func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) 
 			resourceLog.SetSchemaUrl("")
 			g.stats.nativeTextNormalized.Add(1)
 		}
-		g.filterAttributes(resourceLog.Resource().Attributes(), TraceAllowedFields, "log-resource")
+		// entity_refs carry id/description key names as free-form strings on the
+		// wire. pcommon.Resource has no accessor at v1.56, so the experimental
+		// xpdata/entity package reaches the proto field directly.
+		clearEntityRefs(resourceLog.Resource(), g)
 		scopeLogs := resourceLog.ScopeLogs()
+		resourceContainsEvidence := false
+		for si := 0; si < scopeLogs.Len(); si++ {
+			if scopeContainsEvidence(scopeLogs.At(si), g.cfg.EventClassAttribute) {
+				resourceContainsEvidence = true
+				break
+			}
+		}
+		if resourceContainsEvidence {
+			// Evidence metadata lives on the record itself. The untyped
+			// resource bag could otherwise carry a secret as service.name.
+			resourceLog.Resource().Attributes().Clear()
+		} else {
+			g.filterAttributes(resourceLog.Resource().Attributes(), TraceAllowedFields, "log-resource")
+		}
 		for si := 0; si < scopeLogs.Len(); si++ {
 			scopeLog := scopeLogs.At(si)
 			g.scrubLogScope(scopeLog)
-			g.filterAttributes(scopeLog.Scope().Attributes(), TraceAllowedFields, "log-scope")
+			if scopeContainsEvidence(scopeLog, g.cfg.EventClassAttribute) {
+				scopeLog.Scope().Attributes().Clear()
+			} else {
+				g.filterAttributes(scopeLog.Scope().Attributes(), TraceAllowedFields, "log-scope")
+			}
 			records := scopeLog.LogRecords()
 			records.RemoveIf(func(record plog.LogRecord) bool {
 				return g.applyToRecord(record)
@@ -88,6 +114,17 @@ func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) 
 		}
 	}
 	return ld, nil
+}
+
+func scopeContainsEvidence(scopeLog plog.ScopeLogs, classKey string) bool {
+	records := scopeLog.LogRecords()
+	for i := 0; i < records.Len(); i++ {
+		value, ok := records.At(i).Attributes().Get(classKey)
+		if ok && value.Type() == pcommon.ValueTypeStr && value.Str() == "evidence" {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *guard) applyToRecord(record plog.LogRecord) bool {
@@ -121,11 +158,161 @@ func (g *guard) applyToRecord(record plog.LogRecord) bool {
 	}
 
 	g.filterAttributes(attrs, allowed, "log-record")
+	if class == "evidence" && !validEvidenceRecord(record) {
+		g.stats.notAllowedRemoved.Add(1)
+		return true
+	}
 	if attrs.Len() == 0 {
 		g.stats.emptySignalDropped.Add(1)
 		return true
 	}
+	// event_name is a caller-controlled free-form string on LogRecord. It
+	// receives the same fixed-vocabulary normalization as span and span-event
+	// names, decided only from allowlisted metadata.
+	if name := record.EventName(); name != "" {
+		if class == "evidence" {
+			return false // validEvidenceRecord accepted only fixed AEEP names.
+		}
+		if normalized := activityCategory(name, attrs); normalized != name {
+			record.SetEventName(normalized)
+			g.stats.nativeTextNormalized.Add(1)
+		}
+	}
 	return false
+}
+
+var evidenceNames = toSet("agent.evidence.content", "agent.evidence.artifact", "agent.evidence.coverage", "agent.evidence.loss", "agent.evidence.receipt")
+var evidenceBoundaries = toSet("caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service")
+var evidenceStatuses = toSet("pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed", "observed")
+var evidenceRoles = toSet(
+	"model.request.instructions", "model.request.messages", "model.request.tool_definitions", "model.request.parameters", "model.output.messages",
+	"tool.definition", "tool.call.arguments", "tool.call.result", "retrieval.query", "retrieval.results", "memory.write.content", "memory.read.content",
+	"side_effect.request", "side_effect.result", "context.file", "interaction.payload", "terminal.argv", "terminal.stdin", "terminal.stdout",
+	"terminal.stderr", "remote.request", "remote.result", "remote.stream", "database.query", "database.parameters", "database.rows",
+	"database.mutation", "network.request", "network.response", "network.stream", "sandbox.config", "sandbox.output", "artifact.before",
+	"artifact.after", "service.receipt",
+)
+
+func evidenceID(value pcommon.Value) bool {
+	if value.Type() != pcommon.ValueTypeStr || len(value.Str()) < 1 || len(value.Str()) > 128 {
+		return false
+	}
+	for i, ch := range value.Str() {
+		if ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || i > 0 && (ch == '.' || ch == '_' || ch == ':' || ch == '-') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validEvidenceRecord(record plog.LogRecord) bool {
+	if _, ok := evidenceNames[record.EventName()]; !ok {
+		return false
+	}
+	a := record.Attributes()
+	for _, key := range []string{"record_id", "tenant_id", "source_id", "operation_id", "attempt_id", "run_id", "content_object_id", "receipt_id", "receipt_subject_id"} {
+		if value, ok := a.Get(key); ok {
+			if !evidenceID(value) {
+				return false
+			}
+		} else if key == "record_id" || key == "tenant_id" || key == "source_id" {
+			return false
+		}
+	}
+	for _, key := range []string{"source_epoch", "source_sequence"} {
+		v, ok := a.Get(key)
+		if !ok || v.Type() != pcommon.ValueTypeInt || v.Int() < 0 {
+			return false
+		}
+	}
+	for key, choices := range map[string]map[string]struct{}{
+		"event_class": toSet("evidence"), "schema_version": toSet("agent.evidence.event/v1"),
+		"boundary": evidenceBoundaries, "provenance": toSet("caller_reported", "native", "protocol", "inferred"),
+		"status": evidenceStatuses,
+	} {
+		v, ok := a.Get(key)
+		if !ok || v.Type() != pcommon.ValueTypeStr {
+			return false
+		}
+		if _, valid := choices[v.Str()]; !valid {
+			return false
+		}
+	}
+	if v, ok := a.Get("role"); ok {
+		if v.Type() != pcommon.ValueTypeStr {
+			return false
+		}
+		if _, valid := evidenceRoles[v.Str()]; !valid {
+			return false
+		}
+	} else if record.EventName() == "agent.evidence.content" || record.EventName() == "agent.evidence.artifact" {
+		return false
+	}
+	observed, ok := a.Get("observed_at")
+	if !ok || observed.Type() != pcommon.ValueTypeStr {
+		return false
+	}
+	if _, err := time.Parse(time.RFC3339Nano, observed.Str()); err != nil {
+		return false
+	}
+	if v, ok := a.Get("content_sha256"); ok && !validSHA256Prefixed(v) {
+		return false
+	}
+	status, _ := a.Get("status")
+	switch record.EventName() {
+	case "agent.evidence.loss":
+		count, ok := a.Get("loss_count")
+		if !ok || count.Type() != pcommon.ValueTypeInt || count.Int() < 1 || status.Str() != "dropped" || !evidenceEnum(a, "loss_reason", toSet("rate_limit", "queue_full", "spool_full", "export_failure", "kernel_loss", "unknown")) {
+			return false
+		}
+	case "agent.evidence.coverage":
+		if status.Str() != "observed" || !evidenceEnum(a, "coverage_phase", toSet("start", "stop", "heartbeat", "restart", "scope_changed")) {
+			return false
+		}
+	case "agent.evidence.receipt":
+		if status.Str() != "observed" || !evidenceEnum(a, "receipt_stage", toSet("source_spooled", "node_accepted", "destination_accepted", "destination_durable")) || !evidenceEnum(a, "receipt_subject_type", toSet("evidence_event", "content_object")) {
+			return false
+		}
+		for _, key := range []string{"receipt_id", "receipt_subject_id"} {
+			if _, ok := a.Get(key); !ok {
+				return false
+			}
+		}
+	}
+	if record.EventName() != "agent.evidence.content" && record.EventName() != "agent.evidence.artifact" {
+		for _, key := range []string{"content_object_id", "content_sha256", "role"} {
+			if _, ok := a.Get(key); ok {
+				return false
+			}
+		}
+	}
+	if status.Str() == "stored" {
+		if _, ok := a.Get("content_object_id"); !ok {
+			return false
+		}
+		if _, ok := a.Get("content_sha256"); !ok {
+			return false
+		}
+	} else if status.Str() == "not_captured" || status.Str() == "unsupported" || status.Str() == "dropped" || status.Str() == "failed" {
+		if _, ok := a.Get("content_sha256"); ok {
+			return false
+		}
+	}
+	return true
+}
+
+func evidenceEnum(attrs pcommon.Map, key string, allowed map[string]struct{}) bool {
+	v, ok := attrs.Get(key)
+	if !ok || v.Type() != pcommon.ValueTypeStr {
+		return false
+	}
+	_, accepted := allowed[v.Str()]
+	return accepted
+}
+
+func validSHA256Prefixed(value pcommon.Value) bool {
+	return value.Type() == pcommon.ValueTypeStr && strings.HasPrefix(value.Str(), "sha256:") && validSHA256Hex(strings.TrimPrefix(value.Str(), "sha256:"))
 }
 
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
@@ -137,6 +324,7 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 			resourceSpan.SetSchemaUrl("")
 			g.stats.nativeTextNormalized.Add(1)
 		}
+		clearEntityRefs(resourceSpan.Resource(), g)
 		g.filterAttributes(resourceSpan.Resource().Attributes(), allowed, "trace-resource")
 		scopeSpans := resourceSpan.ScopeSpans()
 		for si := 0; si < scopeSpans.Len(); si++ {
@@ -150,6 +338,18 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 		}
 	}
 	return td, nil
+}
+
+// clearEntityRefs removes resource entity_refs — an OTLP proto field of
+// free-form id/description key names that pdata v1.56 does not expose through
+// pcommon.Resource. xpdata/entity reaches the proto directly.
+func clearEntityRefs(res pcommon.Resource, g *guard) {
+	refs := entity.ResourceEntityRefs(res)
+	if refs.Len() == 0 {
+		return
+	}
+	refs.RemoveIf(func(entity.EntityRef) bool { return true })
+	g.stats.nativeTextNormalized.Add(1)
 }
 
 func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool {
@@ -168,23 +368,39 @@ func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool 
 		g.stats.statusMessageRemoved.Add(1)
 	}
 
+	// Aggregate bounds: excess events/links are removed entirely rather than
+	// scrubbed — an unbounded event list is a count-based memory channel.
 	events := span.Events()
-	for i := 0; i < events.Len(); i++ {
-		g.filterAttributes(events.At(i).Attributes(), allowed, "span-event")
-		normalizedEventName := activityCategory(events.At(i).Name(), events.At(i).Attributes())
-		if events.At(i).Name() != normalizedEventName {
-			events.At(i).SetName(normalizedEventName)
+	keptEvents := 0
+	events.RemoveIf(func(event ptrace.SpanEvent) bool {
+		if keptEvents >= g.cfg.MaxEventsPerSpan {
+			g.stats.aggregateCapped.Add(1)
+			return true
+		}
+		keptEvents++
+		g.filterAttributes(event.Attributes(), allowed, "span-event")
+		normalizedEventName := activityCategory(event.Name(), event.Attributes())
+		if event.Name() != normalizedEventName {
+			event.SetName(normalizedEventName)
 			g.stats.nativeTextNormalized.Add(1)
 		}
-	}
+		return false
+	})
 	links := span.Links()
-	for i := 0; i < links.Len(); i++ {
-		g.filterAttributes(links.At(i).Attributes(), allowed, "span-link")
-		if links.At(i).TraceState().AsRaw() != "" {
-			links.At(i).TraceState().FromRaw("")
+	keptLinks := 0
+	links.RemoveIf(func(link ptrace.SpanLink) bool {
+		if keptLinks >= g.cfg.MaxLinksPerSpan {
+			g.stats.aggregateCapped.Add(1)
+			return true
+		}
+		keptLinks++
+		g.filterAttributes(link.Attributes(), allowed, "span-link")
+		if link.TraceState().AsRaw() != "" {
+			link.TraceState().FromRaw("")
 			g.stats.nativeTextNormalized.Add(1)
 		}
-	}
+		return false
+	})
 
 	// Preserve even metadata-empty spans. Their native names and text channels
 	// have been normalized, while trace/span/parent identity remains necessary
@@ -239,26 +455,23 @@ func activityCategory(name string, attrs pcommon.Map) string {
 			return "fabric.model_call"
 		}
 	}
-	if operation, ok := attrs.Get("gen_ai.operation.name"); ok &&
-		operation.Type() == pcommon.ValueTypeStr && operation.Str() == "retrieval" {
-		return "fabric.retrieval"
-	}
 	ordered := []struct{ key, category string }{
-		{"fabric.checkpoint.checkpoint_id", "fabric.checkpoint"},
-		{"fabric.replay.metadata_version", "fabric.replay"},
-		{"fabric.mcp.tool_count", "fabric.mcp.inventory"},
-		{"fabric.skill.name", "fabric.skill"},
-		{"fabric.hook.name", "fabric.hook"},
-		{"fabric.coverage.kind", "fabric.coverage"},
 		{"fabric.retrieval.source", "fabric.retrieval"},
 		{"fabric.memory.kind", "fabric.memory"},
 		{"fabric.side_effect.type", "fabric.side_effect"},
 		{"fabric.interaction.kind", "fabric.interaction"},
 		{"fabric.file.operation", "fabric.file_access"},
 		{"fabric.delegation.protocol", "fabric.delegation"},
-		{"fabric.decision_id", "fabric.decision"},
+		{"fabric.checkpoint.checkpoint_id", "fabric.checkpoint"},
+		{"fabric.replay.execution_id", "fabric.replay"},
+		{"fabric.mcp.server", "fabric.mcp.inventory"},
+		{"fabric.skill.name", "fabric.skill"},
+		{"fabric.hook.phase", "fabric.hook"},
+		{"fabric.coverage.kind", "fabric.coverage"},
+		{"fabric.crewai.event_type", "fabric.crewai"},
 		{"fabric.execution.status", "fabric.execution"},
 		{"fabric.execution_id", "fabric.execution"},
+		{"fabric.decision_id", "fabric.decision"},
 	}
 	for _, candidate := range ordered {
 		if _, ok := attrs.Get(candidate.key); ok {
@@ -269,9 +482,9 @@ func activityCategory(name string, attrs pcommon.Map) string {
 	case "fabric.execution", "fabric.decision", "fabric.llm_call", "fabric.model_call",
 		"fabric.tool_call", "fabric.retrieval", "fabric.memory", "fabric.side_effect",
 		"fabric.interaction", "fabric.file_access", "fabric.delegation", "fabric.error",
+		"fabric.retry", "fabric.cancellation", "fabric.deployment_change", "fabric.human_action",
 		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory", "fabric.skill",
-		"fabric.hook", "fabric.coverage", "fabric.retry", "fabric.cancellation",
-		"fabric.deployment_change", "fabric.human_action":
+		"fabric.hook", "fabric.coverage", "fabric.crewai.step", "fabric.crewai.task":
 		return name
 	default:
 		return "fabric.activity"
@@ -283,6 +496,7 @@ func activityCategory(name string, attrs pcommon.Map) string {
 // they are common escape hatches for arbitrary content and secrets.
 func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{}, context string) {
 	before := g.stats.snapshot()
+	kept := 0
 	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
 		if sensitiveAttributeKey(key) {
 			g.stats.sensitiveRemoved.Add(1)
@@ -292,13 +506,24 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
-		if hashAttributeKey(key) && !validHashValue(value) {
+		if !validHostAuditValue(key, value) {
+			g.stats.notAllowedRemoved.Add(1)
+			return true
+		}
+		if key == "content_sha256" && !validSHA256Prefixed(value) || key != "content_sha256" && hashAttributeKey(key) && !validHashValue(value) {
 			g.stats.invalidHashRemoved.Add(1)
 			return true
 		}
 		if !g.metadataValueAllowed(value) {
 			return true
 		}
+		// Aggregate bound: attributes that survive every check still count
+		// against the container cap, so junk keys cannot consume the budget.
+		if kept >= g.cfg.MaxAttributes {
+			g.stats.aggregateCapped.Add(1)
+			return true
+		}
+		kept++
 		return false
 	})
 	after := g.stats.snapshot()
@@ -306,7 +531,8 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 		after.SensitiveRemoved != before.SensitiveRemoved ||
 		after.OversizedRemoved != before.OversizedRemoved ||
 		after.StructuredRemoved != before.StructuredRemoved ||
-		after.InvalidHashRemoved != before.InvalidHashRemoved {
+		after.InvalidHashRemoved != before.InvalidHashRemoved ||
+		after.AggregateCapped != before.AggregateCapped {
 		g.logger.Debug("metadata allowlist applied",
 			zap.String("context", context),
 			zap.Uint64("not_allowed", after.NotAllowedRemoved-before.NotAllowedRemoved),
@@ -314,7 +540,62 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 			zap.Uint64("oversized", after.OversizedRemoved-before.OversizedRemoved),
 			zap.Uint64("structured", after.StructuredRemoved-before.StructuredRemoved),
 			zap.Uint64("invalid_hash", after.InvalidHashRemoved-before.InvalidHashRemoved),
+			zap.Uint64("aggregate_capped", after.AggregateCapped-before.AggregateCapped),
 		)
+	}
+}
+
+// These host-emitter fields are intentionally closed vocabularies/identities.
+// Exact key allowlisting alone would otherwise let a compromised or buggy
+// source export arbitrary sensitive strings under a nominal metadata key.
+func validHostAuditValue(key string, value pcommon.Value) bool {
+	switch key {
+	case "audit.event":
+		if value.Type() != pcommon.ValueTypeStr {
+			return false
+		}
+		switch value.Str() {
+		case "capture_loss", "dedupe_collapsed", "delivery_queue_overflow", "rate_limited", "assembly_evicted", "command_args_incomplete", "path_incomplete", "path_and_command_args_incomplete":
+			return true
+		default:
+			return false
+		}
+	case "audit.loss_reason":
+		if value.Type() != pcommon.ValueTypeStr {
+			return false
+		}
+		switch value.Str() {
+		case "ring_buffer_full", "rate_limited", "unknown":
+			return true
+		default:
+			return false
+		}
+	case "audit.dedupe_key":
+		if value.Type() != pcommon.ValueTypeStr || len(value.Str()) != 64 {
+			return false
+		}
+		for _, c := range value.Str() {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				return false
+			}
+		}
+		return true
+	case "log.record.uid":
+		if value.Type() != pcommon.ValueTypeStr {
+			return false
+		}
+		uid := value.Str()
+		if len(uid) != len("host-")+32 || !strings.HasPrefix(uid, "host-") {
+			return false
+		}
+		for _, c := range uid[len("host-"):] {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				return false
+			}
+		}
+		return true
+	default:
+		return true
 	}
 }
 
@@ -373,6 +654,10 @@ func (g *guard) metadataValueAllowed(value pcommon.Value) bool {
 		return true
 	case pcommon.ValueTypeSlice:
 		slice := value.Slice()
+		if slice.Len() > g.cfg.MaxSliceElements {
+			g.stats.aggregateCapped.Add(1)
+			return false
+		}
 		for i := 0; i < slice.Len(); i++ {
 			if !g.metadataValueAllowed(slice.At(i)) {
 				return false
@@ -386,19 +671,4 @@ func (g *guard) metadataValueAllowed(value pcommon.Value) bool {
 		g.stats.structuredRemoved.Add(1)
 		return false
 	}
-}
-
-func (g *guard) spanKeyAllowed(key string) bool {
-	if sensitiveAttributeKey(key) {
-		return false
-	}
-	if _, ok := TraceAllowedFields[key]; ok {
-		return true
-	}
-	for _, extra := range g.cfg.ExtraAllowedTraceFields {
-		if key == extra {
-			return true
-		}
-	}
-	return false
 }

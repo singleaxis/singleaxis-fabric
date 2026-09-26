@@ -4,7 +4,6 @@
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
-  zpages:
   file_storage/fabric:
     directory: /var/lib/otelcol-fabric/storage
     create_directory: true
@@ -49,7 +48,7 @@ exporters:
       max_elapsed_time: 0s
 
 service:
-  extensions: [health_check, zpages, file_storage/fabric]
+  extensions: [health_check, file_storage/fabric]
   pipelines:
     logs:
       receivers: [otlp]

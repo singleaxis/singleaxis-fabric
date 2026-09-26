@@ -21,6 +21,20 @@ def _qualifier() -> ModuleType:
     return module
 
 
+# Governed-content modules the qualifier requires in every artifact —
+# keep this list aligned with `qualify_recorder_wheel.py`'s required set.
+_GOVERNED_MEMBERS = (
+    "fabric/_content.py",
+    "fabric/_content_sink.py",
+    "fabric/_content_writer.py",
+    "fabric/content_store/__init__.py",
+    "fabric/content_store/base.py",
+    "fabric/content_store/local.py",
+    "fabric/content_store/s3.py",
+    "fabric/resolver.py",
+)
+
+
 def _wheel(
     path: Path,
     *,
@@ -35,6 +49,8 @@ def _wheel(
         archive.writestr("fabric/__init__.py", '__all__ = ["Fabric"]\n')
         archive.writestr("fabric/client.py", "")
         archive.writestr("fabric/decision.py", decision)
+        for governed in _GOVERNED_MEMBERS:
+            archive.writestr(governed, "")
         archive.writestr("singleaxis_fabric-1.0.0.dist-info/METADATA", "\n".join(metadata))
         if member:
             archive.writestr(member, "")
@@ -49,6 +65,8 @@ def _sdist(path: Path, *, member: str | None = None, decision: str = "") -> Path
         f"{prefix}/src/fabric/decision.py": decision.encode(),
         f"{prefix}/PKG-INFO": b"Name: singleaxis-fabric\nVersion: 1.0.0\n",
     }
+    for governed in _GOVERNED_MEMBERS:
+        payloads[f"{prefix}/src/{governed}"] = b""
     if member:
         payloads[f"{prefix}/src/{member}"] = b""
     with tarfile.open(path, "w:gz") as archive:

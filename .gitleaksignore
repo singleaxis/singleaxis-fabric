@@ -1,3 +1,0 @@
-# Synthetic credential-shaped rejection fixture. The current source splits the
-# prefix from the body, but this exact false positive remains in public history.
-6e2d51504293d3643f0bee79584026d382a05695:tools/fabricctl/internal/initializer/initializer_test.go:github-pat:325

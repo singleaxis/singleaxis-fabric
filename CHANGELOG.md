@@ -8,44 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.8.0-rc.2] - 2026-08-31
-
-### Added
-
-- Added an isolated end-to-end healthcare shadow workload that uses the public
-  Python SDK to record an ambient-clinical agent execution containing model,
-  retrieval, tool, held EHR side-effect, and checkpoint activity.
-- Added retained CI evidence for causal reconstruction, metadata-only export,
-  destination outage, persistent queue recovery, and Collector recreation.
-
-### Changed
-
-- Release artifacts now contain only the passive recorder product:
-  `CAPTURE -> PROTECT -> DELIVER`. Legacy assurance, management, judge,
-  red-team, runtime-control, and regulatory surfaces are excluded by
-  artifact-content tests.
-- The Collector allowlist and both SDK vocabularies now preserve compatible
-  causal reconstruction fields while continuing to exclude raw content by
-  default.
-
-### Fixed
-
-- Fixed persistent queue volume ownership and restart recovery in the
-  production Helm posture.
-- Fixed release qualification fail-safety, dependency/version drift, the
-  `fabricctl` YAML runtime dependency, and high-severity vulnerabilities in
-  the exact TypeScript and Collector-image release artifacts.
-
-### Security
-
-- The credential-free healthcare workflow proves that synthetic raw clinical
-  content does not reach the destination, reconstructable metadata retains its
-  causal structure, and at-least-once delivery recovers after an outage. It
-  makes no exactly-once or arbitrary-destination persistence claim. Separate
-  chart tests prove that the production recorder exposes no sampling control.
-- Security qualification now scans the exact image and package bytes intended
-  for publication and fails closed on high or critical findings.
-
 ## [0.8.0-rc.1] - 2026-08-31
 
 ### Added
@@ -1666,8 +1628,7 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...HEAD
-[0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...HEAD
 [0.8.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...v0.8.0-rc.1
 [0.7.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...v0.7.0

@@ -16,11 +16,36 @@ destination. SingleAxis Platform is optional.
 - upstream OTLP receiver, memory limiter and optional development batch
   processor;
 - OTLP/HTTP and local debug exporters;
-- health, zPages and persistent file-storage extensions.
+- health-check and persistent file-storage extensions;
+- the bearer-token auth extension is compiled in for non-Kubernetes
+  deployments that terminate token-authenticated OTLP ingress without a
+  proxy; no shipped config wires it up by default.
 
 The recorder binary does not include policy, Presidio, prompt guard, sampling,
 judge, red-team, or management components. Their experimental source modules
 may remain elsewhere in the repository but are not compiled into this image.
+
+Recorder configurations MUST NOT define `metrics` or `profiles` service
+pipelines: `fabricguard` only protects logs and traces, so any telemetry on
+those pipeline types would cross the boundary unfiltered. The shipped image
+enforces this at startup: its `fabric-gate` entrypoint parses the collector
+config and refuses to boot on non-`traces`/`logs` pipelines, and the
+distribution qualification script proves the refusal for both the image and
+the binary artifact. `make build` places `fabric-gate` next to
+`otelcol-fabric` in `dist/` — binary deployments should launch the gate,
+which resolves and execs the sibling collector itself.
+
+`fabric-gate` also rejects `bearertokenauth` extensions whose token material
+would mint an empty credential under the pinned extension (v0.150.0 keeps
+empty entries after splitting token files on newlines): missing, empty,
+blank-line, or newline-terminated token files, and empty inline `tokens`
+entries. When token files are configured the gate stays resident as a thin
+supervisor — the extension re-reads the file via fsnotify, so the gate
+re-validates it on a poll interval and stops the collector (SIGTERM, letting
+the queue drain) if a rotation reintroduces an unsafe file. Operators who
+override the container entrypoint or launch `otelcol-fabric` directly leave
+the enforced path; `verify-prod.sh` surfaces a container-level entrypoint
+override at verification time.
 
 ## Build and qualify
 

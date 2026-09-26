@@ -1,9 +1,0 @@
-name: langfuse-bootstrap
-language: [python]
-owner: fabric-ui
-primary_spec: specs/008-deployment-model.md
-exports:
-  - package: fabric_langfuse_bootstrap
-    kind: python
-    path: components/langfuse-bootstrap
-stability: alpha

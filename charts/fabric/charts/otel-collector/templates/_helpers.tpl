@@ -77,12 +77,47 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/*
+Every NetworkPolicyPeer an operator supplies must name an explicit
+restriction. An empty peer ({}) selects all sources/destinations, and an
+ipBlock of 0.0.0.0/0 or ::/0 is equivalent to no policy; both silently
+bypass the explicit-peers model, so they are rejected at render time.
+*/}}
+{{- define "otel-collector.validatePeers" -}}
+{{- range $i, $peer := .peers -}}
+{{- if or (not (kindIs "map" $peer)) (eq (len $peer) 0) -}}
+{{- fail (printf "%s[%d] is an empty peer, which selects all sources/destinations; name an explicit podSelector, namespaceSelector, or ipBlock" $.field $i) -}}
+{{- end -}}
+{{- if hasKey $peer "ipBlock" -}}
+{{- $block := index $peer "ipBlock" -}}
+{{- if not (kindIs "map" $block) -}}
+{{- fail (printf "%s[%d].ipBlock must be an object with a cidr" $.field $i) -}}
+{{- end -}}
+{{- $cidr := index $block "cidr" | default "" | toString | trim -}}
+{{- if eq $cidr "" -}}
+{{- fail (printf "%s[%d].ipBlock.cidr is required" $.field $i) -}}
+{{- end -}}
+{{- if or (eq $cidr "0.0.0.0/0") (eq $cidr "::/0") -}}
+{{- fail (printf "%s[%d] uses world CIDR %s, which is equivalent to no policy; name a specific CIDR or selector" $.field $i $cidr) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "otel-collector.validateNetworkPolicy" -}}
 {{- $np := .Values.networkPolicy -}}
 {{- $ee := $np.exporterEgress -}}
 {{- $hasIngressPeers := gt (len $np.ingressFrom) 0 -}}
 {{- $hasPeers := gt (len $ee.to) 0 -}}
 {{- $hasPorts := gt (len $ee.ports) 0 -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $np.ingressFrom "field" "networkPolicy.ingressFrom") -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $ee.to "field" "networkPolicy.exporterEgress.to") -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $np.egressTo "field" "networkPolicy.egressTo") -}}
+{{- if and (kindIs "map" $np.monitoringNamespaceSelector) (gt (len $np.monitoringNamespaceSelector) 0) -}}
+{{- if and (empty (index $np.monitoringNamespaceSelector "matchLabels")) (empty (index $np.monitoringNamespaceSelector "matchExpressions")) -}}
+{{- fail "networkPolicy.monitoringNamespaceSelector must name matchLabels or matchExpressions; an empty selector would open the health port to every namespace" -}}
+{{- end -}}
+{{- end -}}
 {{- if $np.requireExplicitIngress -}}
 {{- if not $np.enabled -}}
 {{- fail "networkPolicy.requireExplicitIngress=true requires networkPolicy.enabled=true" -}}

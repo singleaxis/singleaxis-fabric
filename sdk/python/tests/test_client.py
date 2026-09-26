@@ -15,17 +15,53 @@ def test_from_env_with_all_fields() -> None:
         env={
             "FABRIC_TENANT_ID": "acme",
             "FABRIC_AGENT_ID": "support-bot",
-            "FABRIC_PROFILE": "eu-ai-act-high-risk",
+            "FABRIC_PROFILE": "shadow-production",
+            "FABRIC_AGENT_NAME": "Support Bot",
+            "FABRIC_AGENT_VERSION": "1.4.2",
+            "FABRIC_WORKFLOW_ID": "complaint-resolution-v2",
+            "FABRIC_EXECUTION_ID": "run-2026-05-30-001",
         }
     )
     assert client.tenant_id == "acme"
     assert client.agent_id == "support-bot"
-    assert client.profile == "eu-ai-act-high-risk"
+    assert client.profile == "shadow-production"
+    assert client.config.agent_name == "Support Bot"
+    assert client.config.agent_version == "1.4.2"
+    assert client.config.workflow_id == "complaint-resolution-v2"
+    assert client.config.execution_id == "run-2026-05-30-001"
 
 
 def test_from_env_defaults_profile() -> None:
     client = Fabric.from_env(env={"FABRIC_TENANT_ID": "acme", "FABRIC_AGENT_ID": "support-bot"})
     assert client.profile == DEFAULT_PROFILE
+
+
+def test_from_env_optional_fields_default_none() -> None:
+    client = Fabric.from_env(env={"FABRIC_TENANT_ID": "acme", "FABRIC_AGENT_ID": "support-bot"})
+    assert client.config.agent_name is None
+    assert client.config.agent_version is None
+    assert client.config.workflow_id is None
+    assert client.config.execution_id is None
+
+
+def test_from_env_workflow_and_execution_propagate_to_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Env-supplied workflow/execution ids land on the decision span."""
+    client = Fabric.from_env(
+        env={
+            "FABRIC_TENANT_ID": "acme",
+            "FABRIC_AGENT_ID": "support-bot",
+            "FABRIC_WORKFLOW_ID": "env-wf",
+            "FABRIC_EXECUTION_ID": "env-exec",
+        }
+    )
+    with client.decision(session_id="s", request_id="r"):
+        pass
+    span = span_exporter.get_finished_spans()[0]
+    attrs = dict(span.attributes or {})
+    assert attrs["fabric.workflow_id"] == "env-wf"
+    assert attrs["fabric.execution_id"] == "env-exec"
 
 
 @pytest.mark.parametrize(

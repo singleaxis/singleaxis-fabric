@@ -8,7 +8,7 @@
 
 <!-- Link to relevant spec, issue, or discussion. -->
 
-- Spec: <!-- e.g. specs/004-telemetry-bridge.md -->
+- Spec: <!-- e.g. specs/027-recorder-v1.md -->
 - Issue: <!-- e.g. #123 -->
 
 ## Type of change
@@ -39,9 +39,9 @@
 
 ## Security review needed?
 
-- [ ] This PR touches the Telemetry Bridge, guardrails, escalation
-  service, cryptography, or egress. (If yes, CODEOWNERS will
-  auto-request a security maintainer.)
+- [ ] This PR touches the fabricguard processor, ingress/egress auth
+  wiring, cryptography, the deploy overlay, or release packaging.
+  (If yes, CODEOWNERS will auto-request a security maintainer.)
 
 ## Testing performed
 

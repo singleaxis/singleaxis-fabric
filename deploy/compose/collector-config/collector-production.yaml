@@ -1,0 +1,160 @@
+# Fabric Node client-VM production configuration (CAPTURE -> PROTECT -> DELIVER).
+#
+# Secure defaults chosen for this profile:
+#
+#   * OTLP ingress REQUIRES a bearer token. The token is read from
+#     /run/secrets/fabric_ingress_token (a Compose secret backed by
+#     FABRIC_INGRESS_TOKEN_FILE). The collector refuses to start if the file
+#     is absent or empty -- there is no unauthenticated fallback.
+#   * Egress REQUIRES FABRIC_EXPORT_ENDPOINT and FABRIC_EXPORT_AUTH_HEADER;
+#     both resolve through the env provider and fail closed when unset.
+#   * Egress TLS verification stays on (no insecure / insecure_skip_verify).
+#   * OTLP and health ports publish on 127.0.0.1 unless FABRIC_BIND_ADDR is
+#     deliberately widened.
+#
+# Ingress receiver TLS is OPTIONAL-BUT-SUPPORTED: the `tls:` stanzas below are
+# commented out. Uncomment them (and drop cert/key into FABRIC_INGRESS_TLS_DIR,
+# default ./tls) before publishing OTLP ports beyond loopback. Bearer tokens
+# over plaintext are only acceptable on a loopback interface.
+#
+# For plaintext development without tokens or TLS, use the evaluation profile
+# (collector.yaml + docker-compose.yml) on a trusted host instead -- do not
+# weaken this file for production use.
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage/fabric:
+    directory: /var/lib/fabric-node/queue
+    timeout: 1s
+    create_directory: true
+    fsync: true
+    compaction:
+      # Reclaim queue disk on boot after a crash or an oversized backlog.
+      # `directory` defaults to /var/lib/otelcol/file_storage, which does not
+      # exist in this image -- keep compaction work inside the queue volume.
+      directory: /var/lib/fabric-node/queue
+      on_start: true
+      on_rebound: true
+  bearertokenauth:
+    # Server-side authenticator: every OTLP request must carry
+    # "Authorization: Bearer <token>". The token file is a Compose secret;
+    # multiple accepted tokens can be listed via `tokens:` instead.
+    # WARNING (upstream v0.150.0 quirk): the file is split on newlines and
+    # EMPTY entries are kept -- a trailing newline or blank line mints
+    # "Bearer " (empty token) as a valid credential on gRPC. The token file
+    # must contain only non-blank lines and NO trailing newline;
+    # preflight-prod.sh fails on unsafe files and the image's fabric-gate
+    # entrypoint refuses to boot on them.
+    filename: /run/secrets/fabric_ingress_token
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth
+        # Bound per-request work: metadata-only records are small, so 8 MiB
+        # is generous headroom that also bounds the worst-case queued item.
+        max_recv_msg_size_mib: 8
+        max_concurrent_streams: 64
+        keepalive:
+          enforcement_policy:
+            # Reject ping floods from idle clients (slow-loris-style).
+            min_time: 10s
+            permit_without_stream: false
+        # Uncomment to terminate TLS on gRPC ingress (required before binding
+        # beyond 127.0.0.1). Paths resolve inside the container; the Compose
+        # overlay mounts FABRIC_INGRESS_TLS_DIR at /run/fabric-node/tls.
+        # tls:
+        #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
+        #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
+        #   min_version: "1.3"
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth
+        # The receiver defaults leave these at zero: a client could hold a
+        # connection open mid-headers indefinitely (auth runs after read).
+        read_header_timeout: 5s
+        read_timeout: 30s
+        idle_timeout: 120s
+        max_request_body_size: 8388608 # 8 MiB -- bounds queued-item worst case
+        # tls:
+        #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
+        #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
+        #   min_version: "1.3"
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+  fabricguard:
+    event_class_attribute: event_class
+    drop_unknown_classes: true
+    max_field_bytes: 8192
+
+exporters:
+  otlp_http/fabric:
+    # Customer-selected OTLP/HTTP destination. Must be an https:// endpoint;
+    # plaintext egress is not supported in this profile.
+    endpoint: ${env:FABRIC_EXPORT_ENDPOINT}
+    headers:
+      # Full Authorization header value, e.g. "Bearer <token>". Rename the
+      # header if the destination expects a different credential header.
+      Authorization: ${env:FABRIC_EXPORT_AUTH_HEADER}
+    timeout: 10s
+    tls:
+      insecure: false
+      # Certificate verification stays enabled. Set insecure_skip_verify only
+      # for a throwaway dev destination, never for a customer boundary.
+      insecure_skip_verify: false
+      # For a private CA, drop the CA bundle into FABRIC_INGRESS_TLS_DIR and
+      # uncomment:
+      # ca_file: ${env:FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      # queue_size bounds ITEMS (batches), not bytes -- persistent queues only
+      # support request/item sizing at collector v0.150. Size the volume for
+      # the tested outage window and alert on otelcol_exporter_queue_size.
+      # When persistent queues support sending_queue.sizer: bytes, migrate
+      # queue_size to a byte bound on that collector train.
+      # See docs/operations/dr.md.
+      queue_size: 10000
+      block_on_overflow: true
+      storage: file_storage/fabric
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      # Never give up: records outlive destination outages and are delivered
+      # at-least-once when the destination returns.
+      max_elapsed_time: 0s
+
+service:
+  extensions: [health_check, file_storage/fabric, bearertokenauth]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlp_http/fabric]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlp_http/fabric]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: basic
+      # Prometheus pull endpoint, published on 127.0.0.1:8888 by the overlay.
+      # Scrape otelcol_exporter_queue_size / otelcol_exporter_send_failed_*
+      # for queue-depth and delivery-failure alerting.
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888

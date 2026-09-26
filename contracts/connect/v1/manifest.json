@@ -3,27 +3,32 @@
   "version": "1.0.0",
   "schema": {
     "path": "schema/connector-capability-v1.schema.json",
-    "sha256": "2ff95bc4406fdc93b7b31deb689bca4633c26d07acf45a85e27da4a307a59161"
+    "sha256": "c0423d1802d5b383f8f87ded90552e452ef8e9cd7c09139760b32a83be769455"
   },
   "artifacts": [
     {
       "path": "manifests/python-sdk.json",
-      "sha256": "ba83dcc27873557bf9a56da6a2fd4ee7d9eb7b936eecd99468221bf2b7133bb4",
+      "sha256": "00e6f2b2e90db5dca74dc4eb70f2062a726a8e43448ebc7a9dc60a3bdb23b621",
       "expectation": "valid"
     },
     {
       "path": "manifests/typescript-capture-sdk.json",
-      "sha256": "29e0dee3d9e11afa3616021b86d2ef85782cb65c1166c12635718a4545363dc3",
+      "sha256": "890434e5831b364c7761047e715989cfd8cfd44b74b6a042c3db8cc24433f7b0",
       "expectation": "valid"
     },
     {
       "path": "manifests/collector-otlp-receiver.json",
-      "sha256": "b5c4c7b530be565e91832655525513370bd77fe63fe17fb0a3c8573b722e1c63",
+      "sha256": "2c5fa13ce3e8b17e5be643453420add8af0459a667b205271f583644fbbd83b8",
       "expectation": "valid"
     },
     {
-      "path": "manifests/ebpf-discovery-only.json",
-      "sha256": "822ccfe653c45ffbfb8e27d97fd59ecc4f4879548352be7e3308e265a02e4b19",
+      "path": "manifests/auditd-host-connector.json",
+      "sha256": "481e717d8ce54517bc6e30925627b4726fa763f1d0937f79ff7d4f264f2eb718",
+      "expectation": "valid"
+    },
+    {
+      "path": "manifests/ebpf-host-emitter.json",
+      "sha256": "2674fa1f4af527ee23279961a68cd86245ae331146ec463c6429faf70b991ee1",
       "expectation": "valid"
     },
     {

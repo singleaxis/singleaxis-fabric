@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"strings"
 
@@ -132,12 +131,28 @@ func Validate(resource Resource) error {
 	return nil
 }
 
+var errNotRegularFile = errors.New("recorder configuration is not a regular file")
+
+// ValidName reports whether value satisfies the recorder metadata.name
+// contract: a lowercase DNS-style name that is not shaped like a credential.
+func ValidName(value string) bool {
+	return validName(value)
+}
+
+// ValidReference reports whether value satisfies the recorder reference
+// contract: a bounded non-secret identifier that is not shaped like a
+// credential. The prompts in recorderinit use this same check so an answer
+// accepted interactively can never fail Validate during Render.
+func ValidReference(value string) bool {
+	return validReference(value)
+}
+
 func validName(value string) bool {
 	return namePattern.MatchString(value) && !referenceLooksSensitive(value)
 }
 
 func validReference(value string) bool {
-	return referencePattern.MatchString(value) && !referenceLooksSensitive(value) && !strings.Contains(value, "://")
+	return referencePattern.MatchString(value) && !referenceLooksSensitive(value)
 }
 
 // referenceLooksSensitive keeps the release recorder package independent of
@@ -187,13 +202,20 @@ func Parse(payload []byte) (Resource, error) {
 	return resource, nil
 }
 
-// ParseFile refuses symbolic links and non-regular or oversized inputs.
+// ParseFile refuses symbolic links and non-regular or oversized inputs. The
+// checked no-follow open and bounded reader protect against the path being
+// swapped or grown between the initial inspection and the read.
 func ParseFile(path string) (Resource, error) {
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > MaxDocumentBytes {
+	file, err := openRegularFile(path)
+	if err != nil {
 		return Resource{}, errors.New("recorder configuration is not a bounded regular file")
 	}
-	payload, err := os.ReadFile(path)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.Size() <= 0 || info.Size() > MaxDocumentBytes {
+		return Resource{}, errors.New("recorder configuration is not a bounded regular file")
+	}
+	payload, err := io.ReadAll(io.LimitReader(file, MaxDocumentBytes+1))
 	if err != nil {
 		return Resource{}, errors.New("recorder configuration could not be read")
 	}

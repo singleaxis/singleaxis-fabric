@@ -82,6 +82,7 @@ expect_contains "PVCs are retained" "${regulated_render}" "whenDeleted: Retain"
 expect_contains "file storage extension is configured" "${regulated_render}" "file_storage/fabric:"
 expect_contains "file storage requests fsync" "${regulated_render}" "fsync: true"
 expect_contains "queue binds file storage" "${regulated_render}" "storage: file_storage/fabric"
+expect_contains "fsGroup lets the nonroot Collector write the queue PVC" "${regulated_render}" "fsGroup: 65532"
 expect_contains "full queue backpressures senders" "${regulated_render}" "block_on_overflow: true"
 expect_contains "transient retry has no time limit" "${regulated_render}" 'max_elapsed_time: "0s"'
 expect_not_contains "durable path has no volatile pre-queue batch" "${regulated_render}" "batch:"

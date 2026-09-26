@@ -14,6 +14,9 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ._attributes import check_attribute_keys
+from ._content import CONTENT_ROLES
+from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._id_validators import check_identifier, warn_if_pii_shaped
 from .auto_instrument import enable_auto_instrumentation as _enable_auto_instrumentation
 from .tracing import get_meter, get_tracer
@@ -25,11 +28,16 @@ if TYPE_CHECKING:
     from .content_store import ContentStore
     from .decision import Decision
     from .execution import Execution
+    from .propagation import FabricContext
 
 
 ENV_TENANT = "FABRIC_TENANT_ID"
 ENV_AGENT = "FABRIC_AGENT_ID"
 ENV_PROFILE = "FABRIC_PROFILE"
+ENV_AGENT_NAME = "FABRIC_AGENT_NAME"
+ENV_AGENT_VERSION = "FABRIC_AGENT_VERSION"
+ENV_WORKFLOW_ID = "FABRIC_WORKFLOW_ID"
+ENV_EXECUTION_ID = "FABRIC_EXECUTION_ID"
 
 DEFAULT_PROFILE = "shadow"
 """Passive recorder profile; it never enables runtime controls."""
@@ -64,6 +72,9 @@ class FabricConfig:
     execution_attempt: int | None = None
     execution_retry_reason: str | None = None
     execution_retry_previous_attempt_id: str | None = None
+    # Default attributes stamped on every decision / execution span this
+    # client opens (per-call ``attributes=`` wins on key collision).
+    # Reserved ``fabric.*`` / ``gen_ai.*`` keys are rejected at build time.
     extra: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -122,6 +133,11 @@ class FabricConfig:
             "execution_retry_previous_attempt_id",
             self.execution_retry_previous_attempt_id,
         )
+        # ``extra`` keys become default attributes on every decision /
+        # execution span. Reserved ``fabric.*`` / ``gen_ai.*`` keys are
+        # rejected here — fail fast at config build rather than letting a
+        # deployment-level extra silently clobber SDK-owned identity.
+        check_attribute_keys(self.extra)
 
     def _validate_execution_attempt(self) -> None:
         """Validate the optional ``execution_attempt`` (>=1 int when set)."""
@@ -149,16 +165,49 @@ class Fabric:
         tracer: Tracer | None = None,
         meter: Meter | None = None,
         content_store: ContentStore | None = None,
+        content_capture: ContentCaptureConfig | None = None,
     ) -> None:
         self._config = config
         self._tracer = tracer or get_tracer()
         self._meter = meter or get_meter()
-        # Dual-pipeline content store (spec 012 §Content vs trace pipeline).
-        # Optional and not auto-wired onto events yet — a follow-up (Wave 3)
-        # stamps content_ref URIs onto events using this. Exposed here so the
-        # follow-up has a place to reach it. Default None keeps pure
-        # observability mode unchanged.
+        # Dual-pipeline content store — governed references vs trace metadata.
+        # Optional. When set, recorder paths that receive raw content
+        # (``remember`` / ``recall`` / ``record_side_effect`` payloads)
+        # write it here and stamp the returned ``fabric.content.*_ref``
+        # URI on the event — a governed reference, never raw bytes.
+        # Default None keeps pure hash-only observability mode unchanged.
         self._content_store = content_store
+        # Governed content capture (spec 028): explicit opt-in. The only
+        # environment influence is restrictive — ``FABRIC_CONTENT_MODE``
+        # set to ``metadata`` force-disables a configured capture; it can
+        # never enable one.
+        self._content_capture: ContentCaptureConfig | None = None
+        self._content_writer: ContentWriter | None = None
+        self._content_roles: frozenset[str] = frozenset()
+        if os.environ.get("FABRIC_CONTENT_MODE", "").lower() == "metadata":
+            content_capture = None
+        if content_capture is not None:
+            from .content_store.base import GovernedStore  # noqa: PLC0415
+
+            if not isinstance(content_capture.store, GovernedStore) or not getattr(
+                content_capture.store, "tenant_id", None
+            ):
+                raise ValueError(
+                    "content_capture.store must implement the governed store "
+                    "contract with a tenant namespace "
+                    "(LocalFilesystemContentStore/S3ContentStore with "
+                    "tenant_id, or an equivalent GovernedStore)"
+                )
+            if content_capture.store.tenant_id != self._config.tenant_id:
+                raise ValueError(
+                    f"content_capture.store.tenant_id "
+                    f"({content_capture.store.tenant_id!r}) must equal the "
+                    f"Fabric client tenant_id ({self._config.tenant_id!r}) — "
+                    "a mismatched namespace is a silent cross-tenant leak"
+                )
+            self._content_roles = content_capture.resolved_roles(CONTENT_ROLES)
+            self._content_capture = content_capture
+            self._content_writer = ContentWriter(content_capture)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Fabric:
@@ -168,7 +217,9 @@ class Fabric:
           ``FABRIC_TENANT_ID``, ``FABRIC_AGENT_ID``
 
         Optional:
-          ``FABRIC_PROFILE`` (default ``shadow``)
+          ``FABRIC_PROFILE`` (default ``shadow``),
+          ``FABRIC_AGENT_NAME``, ``FABRIC_AGENT_VERSION``,
+          ``FABRIC_WORKFLOW_ID``, ``FABRIC_EXECUTION_ID``
 
         Missing required vars raise :class:`ValueError` with the
         variable name, so a misconfigured deployment fails on startup
@@ -184,7 +235,15 @@ class Fabric:
         except KeyError as err:
             raise ValueError(f"{ENV_AGENT} is not set") from err
         profile = source.get(ENV_PROFILE, DEFAULT_PROFILE)
-        config = FabricConfig(tenant_id=tenant, agent_id=agent, profile=profile)
+        config = FabricConfig(
+            tenant_id=tenant,
+            agent_id=agent,
+            agent_name=source.get(ENV_AGENT_NAME),
+            agent_version=source.get(ENV_AGENT_VERSION),
+            profile=profile,
+            workflow_id=source.get(ENV_WORKFLOW_ID),
+            execution_id=source.get(ENV_EXECUTION_ID),
+        )
         return cls(config)
 
     @property
@@ -218,8 +277,8 @@ class Fabric:
     def decision(
         self,
         *,
-        session_id: str,
-        request_id: str,
+        session_id: str | None = None,
+        request_id: str | None = None,
         user_id: str | None = None,
         attributes: dict[str, str] | None = None,
         decision_id: str | None = None,
@@ -227,6 +286,7 @@ class Fabric:
         workflow_id: str | None = None,
         workflow_name: str | None = None,
         conversation_compacted: bool = False,
+        context: FabricContext | None = None,
     ) -> Decision:
         """Open a new :class:`~fabric.decision.Decision` context.
 
@@ -245,13 +305,30 @@ class Fabric:
         (if any), then falls back to :class:`FabricConfig`. A decision
         opened outside any execution with neither supplied behaves exactly
         as before.
+
+        ``context`` accepts a :class:`~fabric.propagation.FabricContext`
+        recovered via :func:`fabric.extract` on an inbound carrier. When
+        supplied, ``session_id`` / ``request_id`` default to the
+        propagated values (explicit kwargs still win) and the child span
+        is stamped with delegation lineage: ``fabric.parent_agent_id``
+        (the delegating agent) and ``fabric.parent_decision_id`` (the
+        parent decision's canonical id). To also parent the span under
+        the upstream *trace*, run ``opentelemetry.propagate.extract`` on
+        the carrier and attach the returned context before opening the
+        decision — standard OTel practice.
         """
         from .decision import Decision  # noqa: PLC0415  (break import cycle)
 
+        resolved_session_id = (
+            session_id if session_id is not None else (context.session_id if context else None)
+        )
+        resolved_request_id = (
+            request_id if request_id is not None else (context.request_id if context else None)
+        )
         return Decision(
             client=self,
-            session_id=session_id,
-            request_id=request_id,
+            session_id=resolved_session_id,
+            request_id=resolved_request_id,
             user_id=user_id,
             attributes=attributes or {},
             decision_id=decision_id,
@@ -259,6 +336,7 @@ class Fabric:
             workflow_id=workflow_id,
             workflow_name=workflow_name,
             conversation_compacted=conversation_compacted,
+            parent_context=context,
         )
 
     def execution(
@@ -280,7 +358,7 @@ class Fabric:
         metadata so any :class:`~fabric.decision.Decision` opened inside it
         inherits it (precedence: explicit kwarg > active Execution >
         config). It does **not** schedule, orchestrate, retry, or
-        reconstruct anything — that is the commercial layer (spec 012).
+        reconstruct anything — that is the downstream platform's job.
 
         The execution span carries all seven correlation fields:
         ``execution_id`` / ``workflow_id`` / status plus the attempt/retry
@@ -324,11 +402,49 @@ class Fabric:
         """The optional dual-pipeline content store, or ``None``.
 
         Tenants stand up a :class:`~fabric.content_store.ContentStore`
-        to hold raw content referenced by ``content_ref`` URIs on the
-        trace stream. The SDK does not yet auto-stamp refs onto events;
-        this exposes the store for the follow-up that will.
+        to hold raw content referenced by ``fabric.content.*_ref`` URIs
+        on the trace stream. When configured, recorder paths that receive
+        raw content (``remember`` / ``recall`` / ``record_side_effect``)
+        write it to the store and stamp the returned URI on the emitted
+        event. ``None`` keeps every event hash-only and unchanged.
         """
         return self._content_store
+
+    @property
+    def content_capture(self) -> ContentCaptureConfig | None:
+        """The governed-content capture configuration, or ``None``.
+
+        ``None`` means metadata-only mode: no content objects are written,
+        no manifests emitted, spans stay byte-identical to the default.
+        """
+        return self._content_capture
+
+    @property
+    def content_writer(self) -> ContentWriter | None:
+        """The async governed-content writer, or ``None`` (metadata mode)."""
+        return self._content_writer
+
+    @property
+    def content_roles(self) -> frozenset[str]:
+        """Capture-policy roles enabled on this client."""
+        return self._content_roles
+
+    def flush_content(self, timeout_s: float | None = None) -> FlushResult | None:
+        """Awaitable content flush for tests and graceful shutdown.
+
+        Returns ``None`` in metadata-only mode. See
+        :meth:`ContentWriter.flush` for the result semantics — a nonzero
+        ``pending`` count is an honest gap, never claimed as delivered.
+        """
+        if self._content_writer is None:
+            return None
+        return self._content_writer.flush(timeout_s=timeout_s)
+
+    def close(self) -> None:
+        """Flush pending governed content within the shutdown bound, then
+        stop the writer. Idempotent; a no-op in metadata-only mode."""
+        if self._content_writer is not None:
+            self._content_writer.close()
 
     def enable_auto_instrumentation(
         self,

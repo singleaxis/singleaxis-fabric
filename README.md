@@ -93,7 +93,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 install_default_provider(
     service_name="claims-assistant",
     exporter=OTLPSpanExporter(
-        endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]
+        endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] + "/v1/traces"
     ),
 )
 

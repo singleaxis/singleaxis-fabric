@@ -109,20 +109,21 @@ approved by any two maintainers.
 
 AI5Labs Research OPC Private Limited operates commercial offerings around Fabric:
 
-- Deployment into tenant VPCs
+- Deployment into customer environments
 - Ongoing maintenance and upgrades
-- SASF human evaluations (the SingleAxis Assessment Framework)
-- Compliance advisory and evidence bundles
-- Hosted Audit Bridge ingestion
+- SingleAxis Platform subscriptions (downstream monitoring, evaluation,
+  and governance of the records Fabric delivers)
+- Compliance advisory
 
-These services are **not** required to use Fabric. The open-source project
-is fully functional standalone. We commit to:
+These services are **not** required to use Fabric. The open-source recorder
+is fully functional standalone and delivers to any customer-selected OTLP
+destination. We commit to:
 
 - **No feature removal or gating** in the OSS project for commercial
   reasons.
-- **No telemetry, usage tracking, or phone-home** in the OSS build,
-  except the Audit Bridge which is off by default and requires explicit
-  operator opt-in and configuration.
+- **No telemetry, usage tracking, or phone-home** in the OSS build. Fabric
+  Node delivers records only to the destination the operator configures;
+  it has no vendor channel and no optional "report back" component.
 - **No bait-and-switch licensing.** If we ever change the licence on a
   component, the prior commit is always available under Apache-2.0; we
   will not re-license existing code.

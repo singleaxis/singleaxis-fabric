@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.singleaxis.dev/fabric/content/v1/transcript-export-v1.schema.json",
+  "title": "Fabric transcript export v1",
+  "description": "Self-describing export produced by an authorized resolver. Any tool may consume it without a SingleAxis service. Unresolved items keep their explicit status; integrity reports per-object digest verification.",
+  "type": "object",
+  "required": ["schema_version", "manifest", "steps", "completeness", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "fabric.transcript-export/v1" },
+    "manifest": {
+      "type": "object",
+      "required": ["manifest_id", "decision_id", "tenant_id"],
+      "additionalProperties": false,
+      "properties": {
+        "manifest_id": { "type": "string" },
+        "decision_id": { "type": "string" },
+        "tenant_id": { "type": "string" },
+        "agent_id": { "type": "string" },
+        "trace_id": { "type": "string" },
+        "span_id": { "type": "string" },
+        "started_at": { "type": "string" },
+        "closed_at": { "type": "string" },
+        "producer": {
+          "type": "object",
+          "required": ["name", "version", "language"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "language": { "enum": ["python", "typescript"] }
+          }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sequence", "kind", "entries"],
+        "additionalProperties": false,
+        "properties": {
+          "sequence": { "type": "integer", "minimum": 0 },
+          "kind": { "type": "string" },
+          "span_id": { "type": "string" },
+          "tool_call_id": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "description": "Every manifest item for this step, in manifest order. Repeated roles (partial chunks, retries, repeated retrieval/context) each appear exactly once — never keyed or overwritten.",
+            "items": {
+              "type": "object",
+              "required": ["status", "role"],
+              "additionalProperties": false,
+              "properties": {
+                "status": { "type": "string" },
+                "ref": { "type": "string" },
+                "digest": { "type": "string" },
+                "byte_length": { "type": "integer" },
+                "media_type": { "type": "string" },
+                "role": { "type": "string" },
+                "status_reason": { "type": "string" },
+                "text": {},
+                "object_id": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["verified", "objects_checked", "failures"],
+      "additionalProperties": false,
+      "properties": {
+        "verified": { "type": "boolean" },
+        "objects_checked": { "type": "integer", "minimum": 0 },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["ref", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "ref": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

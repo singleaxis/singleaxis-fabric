@@ -11,10 +11,9 @@ dist:
   name: otelcol-fabric
   description: SingleAxis Fabric OpenTelemetry Collector distribution
   output_path: ./dist
-  version: 0.8.0-rc.2
+  version: 0.8.0-rc.1
 
 extensions:
-  - gomod: go.opentelemetry.io/collector/extension/zpagesextension v0.150.0
   # health_check extension ships from the contrib distribution; keep
   # the version pinned to the same v0.150.0 as the rest of the manifest.
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
@@ -23,9 +22,17 @@ extensions:
   # writable persistent volume and `sending_queue.storage` must also be
   # configured (the Helm chart does both when persistence is enabled).
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
+  # Terminates token-authenticated OTLP ingress for non-Kubernetes
+  # deployments — wired on both receivers by the compose production overlay.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
+  # auditd host connector (spec 030): consumes Linux audit events from the
+  # audit netlink multicast or audit.log and emits them as logs. Config-gated;
+  # only deployments that enable it take CAP_AUDIT_READ or audit-log access.
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver v0.1.0
+    path: ./receiver/auditreceiver
 
 processors:
   - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.150.0
@@ -46,10 +53,4 @@ providers:
 # Resolve the recorder processor to its on-disk source for reproducible builds.
 replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
-  # OCB composes a new top-level module, so the processor's standalone
-  # go.mod cannot raise unrelated transitive versions in the final binary.
-  # Keep security-patched floors explicit in the distribution manifest.
-  - golang.org/x/crypto => golang.org/x/crypto v0.53.0
-  - golang.org/x/net => golang.org/x/net v0.56.0
-  - golang.org/x/text => golang.org/x/text v0.39.0
-  - google.golang.org/grpc => google.golang.org/grpc v1.82.1
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver => ./receiver/auditreceiver

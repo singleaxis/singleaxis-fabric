@@ -1,0 +1,194 @@
+{
+  "schema_version": "fabric.transcript-export/v1",
+  "manifest": {
+    "manifest_id": "ecabf934-377d-5a96-8209-0ddf37dd06e5",
+    "decision_id": "d-7",
+    "tenant_id": "acme",
+    "agent_id": "support-bot",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "dec000aa0ba902b7",
+    "started_at": "2026-09-22T10:00:00Z",
+    "closed_at": "2026-09-22T10:00:04Z",
+    "producer": {
+      "name": "fabric-python",
+      "version": "0.8.0-rc.1",
+      "language": "python"
+    }
+  },
+  "steps": [
+    {
+      "sequence": 0,
+      "kind": "llm_call",
+      "span_id": "00f067aa0ba902b7",
+      "entries": [
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/2dbe382db23e2e1d690fdc49497e7939dcb44e93493cc0799f9751ab0e63c38e",
+          "digest": "sha256:2dbe382db23e2e1d690fdc49497e7939dcb44e93493cc0799f9751ab0e63c38e",
+          "byte_length": 56,
+          "media_type": "text/plain",
+          "role": "model.request.instructions",
+          "object_id": "8372168a-aaaa-5c48-9b43-b989ee0d7b5c",
+          "text": "You are a support agent. Resolve the ticket or escalate."
+        },
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/6e3cae645b3740644c503091617b93293ba33c4b2ea187eb8e076955f5ad940b",
+          "digest": "sha256:6e3cae645b3740644c503091617b93293ba33c4b2ea187eb8e076955f5ad940b",
+          "byte_length": 82,
+          "media_type": "application/json",
+          "role": "model.request.messages",
+          "object_id": "15f4125b-5966-58f4-87a2-2e80af0657eb",
+          "text": [
+            {
+              "role": "user",
+              "content": "Ticket 451: customer requests refund for order 8811."
+            }
+          ]
+        },
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/a8b870aa753f0b43c381ff26c06ec36086f52872f731e01e48a5243e4e157afa",
+          "digest": "sha256:a8b870aa753f0b43c381ff26c06ec36086f52872f731e01e48a5243e4e157afa",
+          "byte_length": 85,
+          "media_type": "application/json",
+          "role": "model.request.tool_definitions",
+          "object_id": "9f8ec70b-b4a8-52f9-9ff5-510231a9a77f",
+          "text": [
+            {
+              "name": "issue_refund",
+              "parameters": {
+                "order_id": "string",
+                "amount_cents": "integer"
+              }
+            }
+          ]
+        },
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/b074aa88ad0a8f67de33c1a3b8ee329436a8c8d71d78acf24725ce15f323c96c",
+          "digest": "sha256:b074aa88ad0a8f67de33c1a3b8ee329436a8c8d71d78acf24725ce15f323c96c",
+          "byte_length": 36,
+          "media_type": "application/json",
+          "role": "model.request.parameters",
+          "object_id": "5ae692dd-da51-56ac-841d-d62c7d0eccd9",
+          "text": {
+            "temperature": 0.2,
+            "max_tokens": 512
+          }
+        },
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/7768b06f839dd88f3b9a62cc5fbc2eacf36793accb73bbf86def83b46e037e08",
+          "digest": "sha256:7768b06f839dd88f3b9a62cc5fbc2eacf36793accb73bbf86def83b46e037e08",
+          "byte_length": 127,
+          "media_type": "application/json",
+          "role": "model.output.messages",
+          "object_id": "60b883ea-eb0e-5e36-91f6-9a992661671f",
+          "text": [
+            {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "id": "call_9",
+                  "name": "issue_refund",
+                  "arguments": {
+                    "order_id": "8811",
+                    "amount_cents": 2599
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sequence": 1,
+      "kind": "tool_call",
+      "span_id": "1a2b3c4d5e6f7081",
+      "tool_call_id": "call_9",
+      "entries": [
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/a034dda31b8e39a28191c9f56246967f786823e0e16a3d4a0046fe2882da768f",
+          "digest": "sha256:a034dda31b8e39a28191c9f56246967f786823e0e16a3d4a0046fe2882da768f",
+          "byte_length": 39,
+          "media_type": "application/json",
+          "role": "tool.call.arguments",
+          "object_id": "7a9d00db-8d51-5ec6-930a-321dc3abbc4d",
+          "text": {
+            "order_id": "8811",
+            "amount_cents": 2599
+          }
+        },
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/fe6f7a80688056b651eafb69c01d5d9fd399628461c4c6fda8145763e5516bac",
+          "digest": "sha256:fe6f7a80688056b651eafb69c01d5d9fd399628461c4c6fda8145763e5516bac",
+          "byte_length": 42,
+          "media_type": "application/json",
+          "role": "tool.call.result",
+          "object_id": "37759e01-b891-5324-99f7-c216eccec261",
+          "text": {
+            "status": "refunded",
+            "refund_id": "rf_552"
+          }
+        }
+      ]
+    },
+    {
+      "sequence": 2,
+      "kind": "llm_call",
+      "span_id": "9abcdef012345678",
+      "entries": [
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/e256b9fdc3ab7d629a99e75bf30440783ce780ce34aa6d1a0504ed4cec53b62a",
+          "digest": "sha256:e256b9fdc3ab7d629a99e75bf30440783ce780ce34aa6d1a0504ed4cec53b62a",
+          "byte_length": 175,
+          "media_type": "application/json",
+          "role": "model.request.messages",
+          "object_id": "27e7a248-fdbd-5ed4-b7d1-83dd4970974c",
+          "text": [
+            {
+              "role": "user",
+              "content": "Ticket 451: customer requests refund for order 8811."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "call_9",
+              "content": {
+                "status": "refunded",
+                "refund_id": "rf_552"
+              }
+            }
+          ]
+        },
+        {
+          "status": "available",
+          "ref": "s3://acme-evidence/fabric/content/acme/508607402b4c6a209e0c79207a5bf76136e201058b5c551895236f3f1b470c60",
+          "digest": "sha256:508607402b4c6a209e0c79207a5bf76136e201058b5c551895236f3f1b470c60",
+          "byte_length": 83,
+          "media_type": "application/json",
+          "role": "model.output.messages",
+          "object_id": "5c8ce31c-8989-53b1-bf4a-3aabef9982a2",
+          "text": [
+            {
+              "role": "assistant",
+              "content": "Refund of $25.99 issued for order 8811 (rf_552)."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "completeness": {
+    "stored": 9
+  },
+  "integrity": {
+    "verified": true,
+    "objects_checked": 9,
+    "failures": []
+  }
+}

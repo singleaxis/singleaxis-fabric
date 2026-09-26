@@ -1,100 +1,93 @@
 # SDK
 
-Client libraries that tenants' agents import in-process to interact
-with the Fabric Control Plane on the critical path.
+Client libraries that agents import in-process to emit recorder telemetry
+— OpenTelemetry spans and span events carrying Fabric's metadata-only
+vocabulary — to a Fabric Node or any OTLP endpoint.
 
-The SDK is the contract between the agent (tenant-owned) and
-Fabric's inline layers (guardrails, memory, tracing, escalation
-checkpoints).
+The SDK is passive instrumentation: it records what the agent did without
+blocking, altering, or deciding anything. There are no guardrails, policy
+gates, judges, or escalation primitives in these packages — raw prompts,
+tool payloads, and memory content are reduced to hashes or governed
+references before export.
 
 ## Authoritative specs
 
-- [`../specs/002-architecture.md`](../specs/002-architecture.md) — overall
-- [`../specs/005-guardrails-inline.md`](../specs/005-guardrails-inline.md) — inline guardrails
-- [`../specs/003-decision-graph.md`](../specs/003-decision-graph.md) — memory / retrieval audit
-
-## Status
-
-Beta — Python SDK shipping. TypeScript is now a v1 target under spec 012;
-Go and Java follow once the canonical autonomous-system schemas settle.
+- [`../specs/027-recorder-v1.md`](../specs/027-recorder-v1.md) — recorder scope
+- [`../specs/020-execution-step-capture.md`](../specs/020-execution-step-capture.md) — decision/step capture model
+- [`../specs/022-surface-logging.md`](../specs/022-surface-logging.md) —
+  agent surface logging (delegation, MCP, skills, hooks, file access)
 
 ## Target languages
 
-| Language | Priority | Status | Mechanism |
-|----------|----------|--------|-----------|
-| [`python`](python/) | v1 | Shipping | Native in-process |
-| `typescript` | v1 | Planned | Native SDK + optional local sidecar |
-| `go` | v2 | Planned | Native SDK + optional local sidecar |
-| `java` | v2 | Planned | Native SDK + optional local sidecar |
+| Language | Status | Mechanism |
+|----------|--------|-----------|
+| [`python`](python/) | Shipping | Native in-process, OTLP exporter |
+| [`typescript`](typescript/) | Shipping | Native in-process, OTLP exporter |
 
-Python is the agent ecosystem's home language; it gets the first native
-implementation. Non-Python SDKs emit the same canonical telemetry and
-call guardrail sidecars over local transports when Python-only engines
-such as Presidio or NeMo are needed.
+Both packages emit the identical wire vocabulary — a swarm mixing Python
+and TypeScript agents reconstructs as one trace because delegation
+propagates `traceparent` plus Fabric parent identity across the process
+boundary.
 
 ## API surface (preview)
 
 ```python
-# Preview — authoritative API defined in sdk/python
 from fabric import Fabric, MemoryKind, RetrievalSource
 
-fabric = Fabric.from_env()     # reads Fabric config from env / in-cluster config
+fabric = Fabric.from_env()     # reads identity (tenant/agent/workflow/execution) from env
 
-# wrap the agent's decision with Fabric context. agent_id/tenant_id
-# come from the Fabric client; the decision is scoped per-turn.
 with fabric.decision(
     session_id=session.id,
     request_id=req.id,
-    user_id=user.id,
 ) as decision:
-    # Inline guardrails (raise GuardrailNotConfiguredError if no rails
-    # are wired — silent pass-through is a compliance footgun).
-    input_text = decision.guard_input(raw_input)
-
-    # The agent performs its own retrieval; the SDK captures
-    # allowlisted metadata (source enum, SHA-256 of query, counts,
-    # caller-supplied document ids) as a fabric.retrieval span event.
-    hits = my_rag.search(input_text)
+    # Retrieval — the SDK records source enum, SHA-256 of the query,
+    # result count/hashes. The query text itself is not exported.
+    hits = my_rag.search(query)
     decision.record_retrieval(
         source=RetrievalSource.RAG,
-        query=input_text,
+        query=query,
         result_count=len(hits),
         source_document_ids=tuple(h.doc_id for h in hits),
     )
 
-    # LLM call — streaming example
-    for chunk in llm.stream(prompt=input_text):
-        safe_chunk = decision.guard_output_chunk(chunk)
-        yield safe_chunk
+    # LLM call — model, provider, token counts, finish reason.
+    with decision.llm_call(provider="openai", model="gpt-4o") as call:
+        call.set_usage(
+            input_tokens=120,
+            output_tokens=80,
+            finish_reason="stop",
+        )
 
-    final = decision.guard_output_final(complete_output)
+    # Tool call — tool name, arg/result SHA-256, status.
+    with decision.tool_call("ticket_create", tool_type="api") as tc:
+        tc.set_arguments(payload)          # hashed by default
+        tc.set_result(result)
 
-    # Memory write. The agent performs the actual write; the SDK
-    # captures hash-only metadata (kind, SHA-256 of content,
-    # caller-supplied key/tags/TTL) as a fabric.memory span event.
-    decision.remember(
-        kind=MemoryKind.EPISODIC,
-        key="last_answer",
-        content=final,
-    )
+    # Memory write — kind, direction, content hash, TTL.
+    decision.remember(kind=MemoryKind.EPISODIC, content=final)
 
-    # Side effect. Any external mutation should be explicit so the
-    # Decision Graph can suppress, mock, or manually review it during
-    # replay.
+    # Side effect — target system, operation, committed flag,
+    # replay suppression intent.
     decision.record_side_effect(
         "ticket_create",
         target_system="zendesk",
         operation="ticket.create",
-        request_payload=final,
+        committed=True,
         replay_behavior="suppress",
     )
 
-    # Escalation: pair Decision.request_escalation / raise_for_escalation
-    # with whatever pause primitive the host's orchestrator exposes
-    # (LangGraph interrupt, MAF request_info, CrewAI HITL, ...).
+    # Delegation — emits Fabric context into the carrier so the child
+    # agent's trace links under this decision.
+    with decision.delegate("sub-agent") as ctx:
+        call_sub_agent(headers=ctx.carrier)
 ```
 
 Every SDK method emits OTel spans / span events with allowlisted
-attributes; the Telemetry Bridge folds those into the wire protocol
-and the Decision Graph materializes the provenance nodes. Agents do
-not separately call logging or metrics APIs.
+attributes only. The host must flush the tracer provider
+(`provider.force_flush()` / `provider.shutdown()`) on clean termination —
+the SDK does not flush implicitly on process exit.
+
+See [`python/README.md`](python/README.md) and
+[`typescript/README.md`](typescript/README.md) for the per-language
+surface and [`../docs/capturing-interactions.md`](../docs/capturing-interactions.md)
+for the metadata each call emits.

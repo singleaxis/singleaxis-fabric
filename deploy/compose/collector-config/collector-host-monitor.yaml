@@ -1,0 +1,50 @@
+# Host-monitor variant of the recorder collector config: adds the audit
+# receiver alongside OTLP ingress. Run the collector with CAP_AUDIT_READ
+# (see deploy/auditd/README.md); everything else matches the dev config.
+#
+# This file is for development and qualification. Production host-monitor
+# deployments should derive from collector-production.yaml instead.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  audit:
+    source: netlink          # or logfile + log_path
+    rule_key: fabric          # consume only rules tagged -k fabric
+    exec: true
+    connect: true
+    file_access: false        # high volume — enable only with scoped rules
+    manage_rules: false       # true requires CAP_AUDIT_CONTROL
+    max_events_per_sec: 200
+    dedupe_window: 1s
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  batch:
+    timeout: 200ms
+  fabricguard: {}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, fabricguard]
+      exporters: [debug]
+    logs:
+      receivers: [otlp, audit]
+      processors: [memory_limiter, fabricguard]
+      exporters: [debug]

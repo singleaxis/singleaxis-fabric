@@ -1,0 +1,43 @@
+# E2E variant: logfile source so the flow test works on hosts/VMs where the
+# audit control socket is capability-masked (e.g. Docker Desktop's linuxkit
+# VM, which masks CAP_AUDIT_CONTROL even for privileged containers). On real
+# auditd hosts, source: netlink consumes the same record stream live.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  audit:
+    source: logfile
+    log_path: /var/log/audit/audit.log
+    rule_key: fabric
+    exec: true
+    connect: true
+    file_access: false
+    manage_rules: false
+    max_events_per_sec: 500
+    dedupe_window: 0s       # off for the e2e so each event is independently visible
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  fabricguard: {}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp, audit]
+      processors: [memory_limiter, fabricguard]
+      exporters: [debug]

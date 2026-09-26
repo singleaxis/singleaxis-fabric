@@ -250,7 +250,7 @@
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo"],
+      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo", "monitoringNamespaceSelector"],
       "properties": {
         "enabled": {"type": "boolean"},
         "requireExplicitIngress": {"type": "boolean"},
@@ -265,7 +265,11 @@
             "ports": {"type": "array", "items": {"$ref": "#/definitions/networkPolicyPort"}}
           }
         },
-        "egressTo": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}}
+        "egressTo": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}},
+        "monitoringNamespaceSelector": {
+          "$ref": "#/definitions/kubernetesObject",
+          "description": "Optional LabelSelector for the monitoring namespace allowed to reach the health port. Empty means no health ingress rule (default deny)."
+        }
       }
     }
   },

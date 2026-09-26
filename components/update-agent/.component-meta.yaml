@@ -1,9 +1,0 @@
-name: update-agent
-language: [python]
-owner: fabric-platform
-primary_spec: specs/008-deployment-model.md
-exports:
-  - package: fabric_update_agent
-    kind: python
-    path: components/update-agent
-stability: alpha

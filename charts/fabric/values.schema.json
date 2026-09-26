@@ -18,16 +18,13 @@
         "name": {"type": "string", "maxLength": 253}
       }
     },
-    "imagePullSecrets": {"$ref": "#/definitions/imagePullSecrets"},
     "global": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fabric"],
       "properties": {
         "fabric": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["version"],
           "properties": {
             "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"}
           }
@@ -69,7 +66,6 @@
   },
   "required": [
     "tenant",
-    "imagePullSecrets",
     "global",
     "namespace",
     "networkPolicy",
@@ -86,15 +82,6 @@
     "stringMap": {
       "type": "object",
       "additionalProperties": {"type": "string"}
-    },
-    "imagePullSecrets": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["name"],
-        "properties": {"name": {"type": "string", "minLength": 1}}
-      }
     }
   }
 }

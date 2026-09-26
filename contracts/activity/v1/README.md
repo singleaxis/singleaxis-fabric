@@ -18,6 +18,14 @@ coverage nor undeclared extra coverage is accepted by the conformance suites. A 
 without `typescript` support remains visible in this manifest so partial parity cannot be
 misrepresented as full parity.
 
+A `python-legacy` or `typescript-legacy` entry names the pre-recorder SDK line
+only: the scenario exercises removed control-surface primitives (policy
+verdicts, guardrails, tool authorization, escalation, evaluation, queue
+judging, and the guardrail content-reference stamp) that recorder-v1 SDKs
+deliberately do not emit. Current Python and TypeScript SDKs support the
+scenarios naming `python` or `typescript`; the legacy entries keep the
+historical coverage honest instead of claiming current conformance.
+
 Changing a fixture, schema, support declaration, or digest is a public contract change and
 must be reviewed as such. Consumers must verify digests before trusting these artifacts.
 

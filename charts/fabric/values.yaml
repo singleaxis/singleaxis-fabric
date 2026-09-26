@@ -6,11 +6,12 @@ tenant:
   id: ""
   name: ""
 
-imagePullSecrets: []
+# NOTE: there is no parent-level imagePullSecrets key — it would not reach
+# the Collector pod. Set otel-collector.imagePullSecrets instead.
 
 global:
   fabric:
-    version: "0.8.0-rc.2"
+    version: "0.8.0-rc.1"
 
 namespace:
   create: false

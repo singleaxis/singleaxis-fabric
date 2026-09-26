@@ -9,32 +9,25 @@ volumes:
   sink-data:
 
 services:
-  # Docker named volumes are initially owned by root, while the released
-  # distroless Fabric Node runs as UID/GID 65532. Prepare only the recorder
-  # queue volume before startup so the evaluation harness exercises the same
-  # non-root posture as the production chart.
-  queue-init:
-    image: python:3.12-alpine
-    user: "0:0"
-    command: ["sh", "-c", "chown -R 65532:65532 /queue && chmod 0700 /queue"]
-    volumes:
-      - fabric-queue:/queue
-    restart: "no"
-
   # Controlled evaluation destination. It returns 200 only after writing and
   # fsyncing the received request. That is a property of this test sink, not a
   # persistence guarantee Fabric can infer from arbitrary OTLP destinations.
   test-sink:
-    image: python:3.12-alpine
+    # Pinned by digest so the evaluation harness is reproducible. Resolve a
+    # newer digest with:
+    #   docker buildx imagetools inspect python:3.12-alpine
+    image: python:3.12-alpine@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a
     command: ["python", "/app/otlp_sink.py"]
     environment:
       SINK_DATA_DIR: /var/lib/fabric-test-sink
       SINK_PORT: "8080"
     volumes:
-      - ../../tests/e2e/support/otlp_sink.py:/app/otlp_sink.py:ro
+      - ./sink/otlp_sink.py:/app/otlp_sink.py:ro
       - sink-data:/var/lib/fabric-test-sink
     ports:
-      - "127.0.0.1:${FABRIC_SINK_PORT:-8080}:8080"
+      # Loopback-only: the /contains endpoint is a telemetry-search oracle and
+      # must never be reachable off-host.
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_SINK_PORT:-8080}:8080"
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
@@ -42,6 +35,11 @@ services:
       timeout: 2s
       retries: 20
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks: [fabric-node]
 
   # Fabric Node v1 is one customer-facing service. The custom Collector is its
@@ -50,19 +48,26 @@ services:
     build:
       context: ../../components/otel-collector-fabric
       dockerfile: Dockerfile
-    image: fabric/node:evaluation
+    image: ${FABRIC_NODE_IMAGE:-fabric/node:evaluation}
     command: ["--config=/etc/fabric-node/collector.yaml"]
     volumes:
       - ./collector-config/collector.yaml:/etc/fabric-node/collector.yaml:ro
       - fabric-queue:/var/lib/fabric-node/queue
     ports:
-      - "127.0.0.1:${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
-      - "127.0.0.1:${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
-      - "127.0.0.1:${FABRIC_HEALTH_PORT:-13133}:13133"
+      # Loopback-only by default. Set FABRIC_BIND_ADDR=0.0.0.0 to accept OTLP
+      # from other hosts; this evaluation profile is plaintext and
+      # unauthenticated, so do that only on a trusted test network.
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_HEALTH_PORT:-13133}:13133"
     depends_on:
-      queue-init:
-        condition: service_completed_successfully
       test-sink:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks: [fabric-node]

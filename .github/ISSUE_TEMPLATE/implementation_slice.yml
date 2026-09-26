@@ -7,35 +7,20 @@ body:
     attributes:
       value: |
         Fabric features are delivered as small vertical slices. Read
-        `specs/025-product-planes-and-packaging.md` before completing this
-        form. Do not combine unrelated planes or artifacts into one slice.
+        `specs/027-recorder-v1.md` (authoritative scope) and `AGENTS.md`
+        (boundary rules) before completing this form. The recorder does
+        CAPTURE -> PROTECT -> DELIVER only — do not propose enforcement,
+        judging, policy, or management surfaces here.
 
   - type: dropdown
-    id: plane
+    id: stage
     attributes:
-      label: Product plane
+      label: Pipeline stage
       options:
-        - Connect
-        - Control
-        - Observe
-        - Assurance
-        - Governance contract
-        - Management contract
-    validations:
-      required: true
-
-  - type: dropdown
-    id: lifecycle
-    attributes:
-      label: Primary lifecycle phase
-      options:
-        - Discover and register
-        - Integrate
-        - Pre-deployment
-        - Deploy
-        - Runtime
-        - Continuous assurance
-        - Incident and audit
+        - Capture (SDKs, connectors, ingress)
+        - Protect (allowlist, normalization, privacy)
+        - Deliver (queue, retry, exporter, receipts)
+        - Cross-cutting (contracts, fabricctl, packaging, docs)
     validations:
       required: true
 
@@ -51,7 +36,7 @@ body:
     id: ownership
     attributes:
       label: Artifact and ownership
-      description: Name the SDK, adapter, gateway, collector, relay, sidecar, runner, chart, or contract and the files/components in scope.
+      description: Name the SDK, collector processor, chart, contract family, CLI surface, example, or doc in scope.
     validations:
       required: true
 
@@ -114,6 +99,8 @@ body:
         - label: The slice has one primary outcome and can be reviewed independently.
           required: true
         - label: Raw content is disabled by default or the exception is explicitly justified.
+          required: true
+        - label: The slice does not expand the recorder beyond CAPTURE -> PROTECT -> DELIVER.
           required: true
         - label: Documentation and release-artifact qualification are included in the definition of done.
           required: true

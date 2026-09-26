@@ -1,9 +1,0 @@
-name: redteam-runner
-language: [python]
-owner: fabric-redteam
-primary_spec: specs/002-architecture.md
-exports:
-  - package: fabric_redteam_runner
-    kind: python
-    path: components/redteam-runner
-stability: alpha
