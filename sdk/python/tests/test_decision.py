@@ -223,6 +223,7 @@ def test_recall_content_hash_matches_remember_hash_for_same_input(
     events = [e for e in span.events if e.name == "fabric.memory"]
     h0 = dict(events[0].attributes or {})["fabric.memory.content_hash"]
     h1 = dict(events[1].attributes or {})["fabric.memory.content_hash"]
+    assert isinstance(h0, str) and isinstance(h1, str)
     assert h0 == h1
 
 

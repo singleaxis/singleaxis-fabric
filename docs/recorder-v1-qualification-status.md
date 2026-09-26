@@ -80,6 +80,14 @@ on the PR branch, not yet accepted as a passing release gate. The seven
 history findings need security-owner classification before any suppression
 or release decision.
 
+The second PR run on commit `334c5b8` passed all released lockfile/dependency
+scans, Python SDK tests on 3.11/3.12/3.13, repository contract tests, Node
+image scan, and source hygiene. Its recorder CI still failed on one Python
+test typing assertion, fixed locally for the next run. The history-wide
+secret scan still failed on the same older findings; a separate scan of the
+two PR commits (`gitleaks git --log-opts=main..HEAD`) found no new leaks.
+Neither result classifies the historical matches or authorizes release.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model
