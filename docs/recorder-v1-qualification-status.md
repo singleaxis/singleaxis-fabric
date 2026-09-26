@@ -87,6 +87,12 @@ test typing assertion, fixed locally for the next run. The history-wide
 secret scan still failed on the same older findings; a separate scan of the
 two PR commits (`gitleaks git --log-opts=main..HEAD`) found no new leaks.
 Neither result classifies the historical matches or authorizes release.
+The next run on commit `3073142` passed Recorder CI, CodeQL, license
+compliance, and the Linux/kind smoke, including queue outage/restart recovery.
+Recorder security remained red **only** on the same history-wide secret scan;
+all current released-dependency scans passed. These CI results establish a
+bounded Node smoke on that commit, not a synthetic exact-byte pilot, target
+storage qualification, or enterprise GO.
 
 ### Decision rule for the first bounded GO
 
