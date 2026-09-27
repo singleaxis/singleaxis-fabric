@@ -51,6 +51,9 @@ The first local attempt intentionally exposed this missing allowance: the
 Node stayed healthy and queued records, but the sink stored none. The
 rehearsal must verify that queued records arrive after the allowance; a
 healthy Pod or policy object alone is insufficient.
+The script also restarts its local port-forward after the deliberately
+rejected unauthenticated TLS request; that handshake can end a port-forward
+session without affecting the Collector Pod.
 
 The actors below are **test roles, not people or signatures**:
 

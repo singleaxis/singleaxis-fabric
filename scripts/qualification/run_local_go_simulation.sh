@@ -99,6 +99,13 @@ curl -fsS --cacert "$cert_dir/sink-ca.crt" "https://localhost:$sink_port/health"
 if curl -fsS --cacert "$cert_dir/ingress-ca.crt" -X POST "https://localhost:$node_port/v1/logs" -H 'Content-Type: application/json' -d '{}' > "$evidence_dir/no-client-response.log" 2>&1; then
   echo 'unauthenticated client was accepted' >&2; exit 1
 fi
+# On some kind/kubectl versions a rejected TLS handshake also terminates
+# port-forward. Start a fresh forward before the authorized client probe.
+kill "$node_forward" 2>/dev/null || true
+wait "$node_forward" 2>/dev/null || true
+k -n "$namespace" port-forward "service/fabric-sim-otel-collector" "$node_port:4318" >> "$evidence_dir/node-forward.log" 2>&1 &
+node_forward=$!
+sleep 2
 # A Node HTTP acceptance is not a sink receipt. With the namespace default
 # deny active and no sink-ingress allowance yet, this synthetic audit probe
 # must queue rather than arrive. Its non-evidence ID is ignored by the later
