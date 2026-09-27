@@ -236,6 +236,15 @@ at this documentation revision. The [GO decision packet](../qualification/produc
 lists the exact target evidence and owner approvals still required; neither
 the packet nor a passing CI job grants production approval.
 
+The first new PR-head production-profile job passed on Linux, including the
+exact-image malformed-header refusal. Its separate CodeQL alert check still
+failed: the audit receiver converted a uint64 serial to int64 without an
+upper-bound check; the controlled sink allowed legacy TLS versions by
+default; and a permission-rejection test deliberately sets mode 0777.
+The first two are engineering fixes in the next PR revision. Security must
+classify the intentional test alert; no passing analysis job overrides an
+unresolved alert check.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model

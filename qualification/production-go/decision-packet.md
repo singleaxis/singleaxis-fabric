@@ -36,7 +36,12 @@ pilot. Do not retrofit scope after seeing discrepancies.
 | Delivery and storage | Controlled fsync sink readback; Node persistent queue outage/restart; separate local source spool | Destination/storage owners: authenticated destination durable receipt; target source/content/queue encryption, tenant denial, corruption, disk-full, retention, backup/restore, key rotation and residency proofs |
 | Frozen exact release | PR job records wheel/chart/Node identities and tests installed wheel/packaged chart/built image | Release owner: clean reviewed tag, one immutable artifact set reused across all tests, SBOM/provenance/signatures, target Linux and enforcing-CNI tests; host image only if included |
 | Independent pilot | Controlled synthetic endpoint/tool/filesystem truth: 25 byte objects, 10 operations, 39 parsed sink records, zero clean discrepancies | Customer pilot owner: separately authenticated provider/terminal/filesystem/destination records for the *target* agent; every required object/operation reconciled, loss faults lower verdict, independent reviewer reproduces it |
-| Human decision | CI security dependency/SAST jobs pass; historical secret scan still fails | Security owner classifies seven historical findings; privacy, records, platform, AI-system and independent reviewer sign the exact scope, artifact set, evidence and residual gaps |
+| Human decision | Dependency/SAST jobs complete, but the CodeQL alert check flags an audit-serial overflow, sink TLS default, and intentional unsafe-permission test; historical secret scan still fails | Recorder engineering fixes the two real defects; security owner classifies the intentional test alert and seven historical secret findings; privacy, records, platform, AI-system and independent reviewer sign the exact scope, artifact set, evidence and residual gaps |
+
+The audit-serial repair preserves the full unsigned value as a decimal
+string per [spec 030](../../specs/030-auditd-host-connector.md); the
+controlled HTTPS sink requires TLS 1.2 or newer. Both need the next exact
+artifact CI run before they count as live-tested.
 
 The current [qualification status](../../docs/recorder-v1-qualification-status.md)
 is the technical ledger. A passing synthetic kind job remains `unverified`:

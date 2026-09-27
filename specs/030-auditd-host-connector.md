@@ -74,7 +74,7 @@ EOE 1320). The receiver:
 |---|---|---|
 | `audit.syscall` | SYSCALL.nr → name | `execve`/`connect`/`openat`/… |
 | `audit.result` | SYSCALL success/exit | `success` or `failed:EPERM` |
-| `audit.serial` | event serial | dedupe/debug |
+| `audit.serial` | event serial | unsigned decimal string for exact uint64 dedupe/debug; never narrow to signed int64 |
 | `process.pid` / `process.parent_pid` | SYSCALL pid/ppid | correlation key |
 | `process.executable.name` | SYSCALL comm | basename |
 | `process.executable.path_sha256` | SYSCALL exe | full-path hash; raw path is not emitted |

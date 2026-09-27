@@ -100,6 +100,7 @@ class Handler(BaseHTTPRequestHandler):
 server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
 if TLS_CERT_FILE:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(TLS_CERT_FILE, TLS_KEY_FILE)
     server.socket = context.wrap_socket(server.socket, server_side=True)
 server.serve_forever()

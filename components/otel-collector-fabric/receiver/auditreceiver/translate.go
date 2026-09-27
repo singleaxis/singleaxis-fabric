@@ -49,7 +49,9 @@ func (r *auditReceiver) translate(ev *auditEvent) (plog.LogRecord, string, bool)
 	attrs.PutStr(eventClassAttr, eventClassVal)
 	attrs.PutStr("audit.syscall", name)
 	attrs.PutStr("audit.source", r.cfg.Source)
-	attrs.PutInt("audit.serial", int64(ev.serial))
+	// Audit serials are uint64. A signed OTLP integer would wrap above MaxInt64
+	// and break source correlation, so preserve the exact decimal value.
+	attrs.PutStr("audit.serial", strconv.FormatUint(ev.serial, 10))
 
 	if s := sys.fields["success"]; s != "" {
 		if s == "yes" {

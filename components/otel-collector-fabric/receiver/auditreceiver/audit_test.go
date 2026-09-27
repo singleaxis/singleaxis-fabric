@@ -119,6 +119,21 @@ func TestExecveEventEmitsScrubbed(t *testing.T) {
 	}
 }
 
+func TestAuditSerialPreservesFullUint64(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	r, sink := newTestReceiver(t, cfg)
+	feedLines(t, r, `type=SYSCALL msg=audit(1726000000.001:18446744073709551615): arch=c000003e syscall=59 success=yes exit=0 pid=200 comm="agent" exe="/usr/bin/agent" key="fabric"
+type=EOE msg=audit(1726000000.001:18446744073709551615):`)
+	recs := sink.AllLogs()
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(recs))
+	}
+	attrs := recs[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Attributes()
+	if v, ok := attrs.Get("audit.serial"); !ok || v.Str() != "18446744073709551615" {
+		t.Fatalf("audit serial not preserved: %v", v)
+	}
+}
+
 func TestConnectEventDecodesSockaddr(t *testing.T) {
 	cfg := createDefaultConfig().(*Config)
 	r, sink := newTestReceiver(t, cfg)
