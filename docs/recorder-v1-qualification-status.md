@@ -518,3 +518,27 @@ deduplication, alerting, and operational recovery.
 - Historical and experimental source can remain visible in the public Git
   repository during migration; release tests must prove it is absent from the
   recorder binaries, chart, SDK packages, and installer surface.
+
+## GPT-6 Sol subscription-backed laptop stage — NO-GO
+
+The [bounded synthetic Sol stage](../qualification/sol-local-stage/README.md)
+ran a real `gpt-6-sol` Codex CLI agent through a synthetic policy →
+calculation → local telemetry/DB → Git/file artifact → ticket workflow on the
+laptop. The [observed results](../qualification/sol-local-stage/local-results.md)
+give exact source/artifact hashes, private evidence locations and commands.
+The completed live run reconciled three independently fsynced service
+operations and the two output artifacts with zero local discrepancies; its
+verdict remained `unverified`. An unwrapped direct request and a corrupted
+byte object lower the reconciler verdict to `partial` in targeted tests.
+
+Using the installed local wheel, an offline Fabric projection stored and
+resolved 38/38 observed byte objects and emitted 50 explicit unsupported
+provider-bound/terminal-stream events. The protected metadata traversed
+the disposable kind Node's mTLS ingress, and all 88 projected records were
+parsed from fsynced controlled-sink files with exact ID/name/attribute
+matching. No content canary appeared in OTLP, copied sink bytes or recent
+Node logs. This qualifies **only** local post-run byte storage and synthetic
+metadata delivery. It does not turn Codex JSONL into the final provider
+request/response or raw ordered terminal streams, establish a passive
+source-authenticated adapter, or qualify customer storage and reachable
+routes. The full-workflow and production decision remain **NO-GO**.
