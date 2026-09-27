@@ -133,6 +133,33 @@ since been added and await a new run. Recorder CI's Source hygiene job on
 formats those files. CodeQL and license checks passed; the security workflow
 still fails only on the seven historical secret-scan matches.
 
+The stronger [Linux/kind run
+36298890912](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36298890912)
+on commit `5c2ab7f` passed. It installed the packaged chart and Python wheel,
+ran the three-model/two-tool fixture, reconciled 25 required byte objects and
+10 outcomes with zero clean-run discrepancies, and read back all 39 evidence
+records from the controlled sink's fsynced OTLP files. Each parsed record ID
+was unique and matched its expected event name, role, status,
+source/operation/attempt identity and content digest. The canary was absent
+from sink bytes and current Collector logs. The bypass run had four expected
+discrepancies and the missing-content run one; both were `partial`. The clean
+run remains `unverified`, not complete. The exact CI evidence artifact is
+`synthetic-agent-pilot-36298890912-1`. Artifact identities from that run:
+
+| Artifact | Exact tested identity |
+| --- | --- |
+| Python wheel | SHA-256 `d3ca361f5acb008daf8bb96b392033514393851b5b7f66ce4e127d2797d15561` |
+| Packaged chart | SHA-256 `8d4175030d8246862bc0df2604c838fb27faf286077cd42e9c7bd5c62fde41e1` |
+| Local Node image | image ID `sha256:fd527bb998c1a59e6163a832de18a9be6e43edf29c70d0495219de70eb1c468d` |
+
+Recorder CI, CodeQL and license compliance passed on the same commit.
+Recorder security still fails solely on the seven older whole-history secret
+scan matches; all released dependency and source scans passed. The run did
+not pin a clean release tag or qualify the host-emitter image, source
+authentication, destination receipt, target storage/retention,
+non-interference, scoped BPF, or a customer shadow pilot. It is a bounded
+exact-artifact CI pilot, not a critical-enterprise GO.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model
@@ -145,9 +172,9 @@ on the **same clean, tagged, digest-pinned artifact set**; a unit test, OTLP
 | Approved boundary | Signed route/version/source/role/privacy/capacity record and proof excluded routes are unreachable or explicitly outside the claim | Scope unsigned; direct HTTP/subprocess bypasses are reachable |
 | Capture and loss | Exact bytes, outcomes, order, causal IDs and source high-water for every required operation; crash/overflow/partial-success injection always lowers verdict without altering the action | Wrappers not passive-qualified; source pre-fsync blind window and missing authenticated gap chain |
 | Identity and receipts | Authenticated tenant/source binding; independently checked source-spooled, Node, destination-accepted and destination-durable stages | IDs caller-supplied; no complete trusted receipt chain |
-| Protection and retention | Final image canary-free outbound telemetry/logs/queue/errors/receipts; tenant isolation, encryption, retention, restore and key rotation proved on target stores | Final image live test blocked by shared Docker disk; target controls absent |
-| Exact release | Installed SDKs, chart, Node and any shipped host image by digest; security/package/race/E2E gates on isolated target Linux/Kubernetes; scoped BPF if a host route is included, only with approval | Dirty checkout and no isolated target runner; privileged BPF not authorized |
-| Independent shadow pilot | Every expected operation and required byte object reconciles against separately authenticated endpoint, terminal and filesystem records; zero unexplained discrepancies; reviewer reproduces verdict | Only local fixture, no authenticated feeds or independent sign-off |
+| Protection and retention | Final image canary-free outbound telemetry/logs/queue/errors/receipts; tenant isolation, encryption, retention, restore and key rotation proved on target stores | CI sink/log canary passed; queue/error/receipt paths and target storage controls remain unverified |
+| Exact release | Installed SDKs, chart, Node and any shipped host image by digest; security/package/race/E2E gates on isolated target Linux/Kubernetes; scoped BPF if a host route is included, only with approval | CI wheel/chart/Node digests tested; clean release tag, host image, target environment and authorized BPF absent; historical secret scan red |
+| Independent shadow pilot | Every expected operation and required byte object reconciles against separately authenticated endpoint, terminal and filesystem records; zero unexplained discrepancies; reviewer reproduces verdict | Isolated synthetic CI fixture passed; feeds not authenticated, no customer pilot or independent sign-off |
 
 Engineering can close code and fixture gaps in this repository. Customer
 platform, security, privacy, records and release owners must supply the
@@ -161,10 +188,10 @@ manufacture those proofs. When any gate is unavailable, status remains
 | 1–2 scope and contract | Documented, provisional | Customer platform/security must sign route, identity, privacy and target limits in an isolated deployment record. |
 | 3 boundary adapters | Partly locally tested | Recorder engineering: process crash, partial-stream, backpressure/non-interference and direct-bypass closure in disposable Python 3.11 fixture; replace any intrusive observation before promotion. |
 | 4 loss and receipts | Local source journal, host partial success and offline AEEP Node acceptance tested; slice unverified | Crash-before-fsync test proves a blind window; recorder engineering must reconcile it against authenticated independent truth, publish gaps and qualify distinct source/Node/destination/durable receipts. Audit receiver remains excluded. |
-| 5 resolver/reconciliation | Local partial/unverified only | Customer verifier: authenticate independent feeds and durable receipt proof before enabling `verified_complete_for_declared_scope`. |
-| 6 privacy/storage | Pre-hardening AEEP Node/sink/log/queue canary passed; final resource-attribute guard passed unit/race only | Customer privacy/storage: rerun final image on runner with free disk, then canary across errors/receipts and live encryption, retention, backup/restore, key rotation and disk-full tests for each store. |
-| 7 exact artifacts | Local dirty-checkout wheel/chart/images built and partly smoke-tested; final Node image live test blocked by Docker disk exhaustion | Release engineering: isolated runner with free disk, clean tagged SHA and digest-pinned installed SDKs, chart, Node and host images on Linux/Kubernetes; privileged scoped BPF requires explicit approval. |
-| 8 shadow pilot | Local installed-wheel synthetic fixture passed; Linux/kind Node linkage and customer pilot not yet run | Customer pilot owner: pre-register authenticated endpoint/terminal/filesystem records, run exact artifacts in target environment, reconcile every operation/object and obtain independent review. |
+| 5 resolver/reconciliation | Synthetic Linux/kind byte and parsed-sink reconciliation passed; verdict still unverified | Customer verifier: authenticate independent feeds and durable receipt proof before enabling `verified_complete_for_declared_scope`. |
+| 6 privacy/storage | CI final Node sink/log canary and local source-spool canary passed; target storage unverified | Customer privacy/storage: canary across queue/errors/receipts and live encryption, retention, backup/restore, key rotation and disk-full tests for each store. |
+| 7 exact artifacts | Linux/kind installed-wheel, packaged-chart and built-Node-image pilot passed on `5c2ab7f`; host image, clean tag and target environment unverified | Release engineering: pin a release tag/digest set, qualify any shipped host image and target Linux/Kubernetes; scoped BPF requires explicit approval. |
+| 8 shadow pilot | Isolated synthetic CI fixture passed with parsed sink readback; customer pilot not run | Customer pilot owner: pre-register authenticated endpoint/terminal/filesystem records, run exact artifacts in target environment, reconcile every operation/object and obtain independent review. |
 
 ## Implemented in release artifacts
 
