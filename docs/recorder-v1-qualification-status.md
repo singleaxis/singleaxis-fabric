@@ -245,6 +245,14 @@ The first two are engineering fixes in the next PR revision. Security must
 classify the intentional test alert; no passing analysis job overrides an
 unresolved alert check.
 
+The [local GO simulation](../qualification/local-go-simulation/README.md)
+now has a reproducible laptop-kind runner and a fail-closed, unsigned
+decision summary. It rehearses the scope/target/witness packet against
+synthetic data only; its first live local execution is pending at this
+documentation revision. Even a passing rehearsal remains `NO_GO` for
+production because kindnet, local-path storage, source identity and real
+owner approvals do not satisfy the target-environment gates.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model
