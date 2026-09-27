@@ -281,6 +281,21 @@ commits. A clean PR-range scan does not classify those historical values or
 clear the release gate; the security owner must review and, if any are live,
 rotate/revoke them. This phase remains **NO-GO**.
 
+A read-only Dependabot audit on 2026-09-28 found that default-branch alerts
+include packages outside the recorder release, plus Python SDK lockfile
+`idna` 3.13 and `pydantic-settings` 2.14.0 and TypeScript SDK development
+`vitest`/`@vitest/mocker` 3.2.4. The PR already had the advisory's fixed
+`anyio` 4.14.2; that default-branch alert is stale for this branch. The SDK
+lockfiles now select `idna` 3.20, `pydantic-settings` 2.15.0, `vitest` 4.1.11
+and `esbuild` 0.28.1. The last package is pinned by an npm override because
+the first resolution of Vitest 4 still selected a vulnerable development
+server build. On this branch, locked Python tests passed 692/692; TypeScript
+tests passed 315/315, with typecheck, build, package-content tests (5/5),
+lint and format passing. `npm audit --audit-level=low` reported zero
+vulnerabilities in the resulting graph. The new PR-head Linux/security gates
+and owner classification remain pending; passing tests do not certify a
+customer deployment.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model
