@@ -201,10 +201,22 @@ chart SHA-256
 Node image ID
 `sha256:fd527bb998c1a59e6163a832de18a9be6e43edf29c70d0495219de70eb1c468d`.
 This commit's Recorder CI Source hygiene failed because the test sink YAML
-had multiple documents; it is now split into single-document manifests and
-the full same-commit rerun is pending. A healthy Collector Pod alone did not
-prove delivery. Even a passing rerun remains a synthetic
-transport/protection test, not a customer
+had multiple documents; it was split into single-document manifests. The
+same-code [run
+36324824792](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36324824792)
+on signed commit `da379ec` then passed the production-profile kind gate and
+parsed sink readback again. Its exact artifact is
+`synthetic-production-profile-36324824792-1`: wheel SHA-256
+`cb057a898646ae9c9f9c487360cb062faf64a61eaa7ab91237ce664972b00d50`,
+chart SHA-256
+`6d4bb954f1d199832fcd51f451931089c4665b60eca74b9f5b8319b783cc309b`,
+and Node image ID
+`sha256:fd527bb998c1a59e6163a832de18a9be6e43edf29c70d0495219de70eb1c468d`.
+Recorder CI, the development-profile kind smoke, CodeQL, license and all
+released dependency/SAST jobs passed on `da379ec`; the whole-history secret
+scan remained red on the same seven
+older findings. A healthy Collector Pod alone did not prove delivery. This
+remains a synthetic transport/protection test, not a customer
 storage, identity-binding, retention, NetworkPolicy-enforcement or production
 GO proof.
 
