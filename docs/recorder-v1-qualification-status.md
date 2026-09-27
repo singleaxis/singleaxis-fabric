@@ -117,6 +117,22 @@ The executable check was
 from the PR worktree, after installing that wheel into the disposable venv.
 This local digest is not a clean tagged release identity.
 
+On signed PR commit `038b75c`, [Linux/kind run
+36298189775](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36298189775)
+passed the installed-wheel fixture against the live Node and controlled fsync
+sink. The wheel SHA-256 was the same `d3ca361f…d15561` as the local build.
+The clean case reconciled 25 required byte objects and 10 outcomes with zero
+discrepancies; 39 metadata record IDs and their digests appeared in sink
+storage, and the canary was absent. The bypass and deleted-object faults
+produced four and one discrepancies respectively and `partial` verdicts.
+The exact CI report is the run's `synthetic-agent-pilot-36298189775-1`
+artifact. This run checked record/digest *presence*, not parsed per-record
+association. Parsed OTLP sink readback and Collector-log canary checks have
+since been added and await a new run. Recorder CI's Source hygiene job on
+`038b75c` failed due Ruff formatting of the new fixture; the next revision
+formats those files. CodeQL and license checks passed; the security workflow
+still fails only on the seven historical secret-scan matches.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model

@@ -22,6 +22,8 @@ the comparison oracle, not Fabric's own events or aggregate counts.
 
 1. Build a wheel, install it in a clean virtual environment, and verify the
    imported `fabric` module comes from that environment, not the checkout.
+   Package the chart and install the package, not the source directory. Record
+   wheel/chart SHA-256 and the built Node image content ID with the CI run.
 2. Run the fixture with no real provider credentials or customer data. Assert
    exact request/response bodies, context, argv, cwd, stdin/stdout/stderr,
    exit status, artifact before/after bytes, attempts, source sequence, and
@@ -29,11 +31,13 @@ the comparison oracle, not Fabric's own events or aggregate counts.
    governed object by tenant, byte length, and SHA-256.
 3. Project the settled metadata to AEEP OTLP after the action finishes. Send
    it to the installed Fabric Node in isolated kind. Check the projected
-   per-event role/status/digest mapping before export, and require every
-   record ID and digest to appear in the controlled fsync sink's stored
-   payloads. This is byte-presence verification, not a parsed destination
-   receipt binding each attribute to its record. Confirm secret canaries and
-   local refs are absent from exported bytes.
+   per-event role/status/digest mapping before export. Copy the controlled
+   sink's fsynced OTLP files back from the isolated pod and parse the log
+   requests; require each expected record ID exactly once with its matching
+   role, status, content object and digest. Reject unexpected evidence IDs.
+   This is readback from the controlled test sink, not a general customer
+   destination receipt. Confirm secret canaries and local refs are absent
+   from stored OTLP bytes and Collector logs.
 4. Inject a direct provider bypass and a required-object loss in separate
    runs. Each must produce a discrepancy and `partial`, never a complete
    verdict. A clean match remains `unverified` because source authentication,

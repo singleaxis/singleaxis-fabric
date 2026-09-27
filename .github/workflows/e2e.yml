@@ -46,6 +46,7 @@ jobs:
               - 'sdk/python/**'
               - 'scripts/qualification/run_synthetic_agent_pilot.py'
               - 'scripts/qualification/synthetic_agent_tool.py'
+              - 'scripts/qualification/verify_synthetic_sink_readback.py'
               - 'qualification/synthetic-slice/end-to-end-agent-pilot-plan.md'
               - '.github/workflows/e2e.yml'
       # Manual dispatch has no diff context for paths-filter — always run the
@@ -110,6 +111,16 @@ jobs:
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: v3.15.0
+
+      - name: Package and identify exact chart and Node image
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          mkdir -p "${RUNNER_TEMP}/fabric-chart"
+          helm package charts/fabric --destination "${RUNNER_TEMP}/fabric-chart"
+          sha256sum "${RUNNER_TEMP}"/fabric-chart/fabric-*.tgz \
+            | tee "${RUNNER_TEMP}/fabric-chart.sha256"
+          docker image inspect "${COLLECTOR_IMAGE}" --format '{{.Id}}' \
+            | tee "${RUNNER_TEMP}/fabric-node-image-id.txt"
 
       - name: Install controlled fsync test sink
         if: needs.detect.outputs.relevant == 'true'
@@ -177,7 +188,7 @@ jobs:
       - name: Install Collector-only Fabric Node
         if: needs.detect.outputs.relevant == 'true'
         run: |
-          helm install fabric-node charts/fabric \
+          helm install fabric-node "${RUNNER_TEMP}"/fabric-chart/fabric-*.tgz \
             --namespace "${NAMESPACE}" \
             --values charts/fabric/profiles/shadow-dev.yaml \
             --set namespace.create=false \
@@ -311,6 +322,26 @@ jobs:
             --sink-url http://127.0.0.1:18080 \
             --report-path "${RUNNER_TEMP}/fabric-agent-pilot-report.json"
 
+      - name: Parse fsynced sink records and check Collector logs
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pip install \
+            opentelemetry-proto==1.44.0
+          SINK_POD=$(kubectl get pod --namespace "${NAMESPACE}" \
+            -l app=fabric-test-sink -o jsonpath='{.items[0].metadata.name}')
+          kubectl cp "${NAMESPACE}/${SINK_POD}:/data" \
+            "${RUNNER_TEMP}/fabric-sink-data"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/verify_synthetic_sink_readback.py \
+            --report-path "${RUNNER_TEMP}/fabric-agent-pilot-report.json" \
+            --sink-dir "${RUNNER_TEMP}/fabric-sink-data"
+          if kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector --tail=-1 \
+            | grep -Fq 'PILOT_SECRET_CANARY_do_not_export'; then
+            echo 'Privacy canary appeared in Collector logs' >&2
+            exit 1
+          fi
+
       - name: Publish synthetic pilot evidence
         if: always() && needs.detect.outputs.relevant == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -319,6 +350,8 @@ jobs:
           path: |
             ${{ runner.temp }}/fabric-agent-pilot-report.json
             ${{ runner.temp }}/fabric-wheel.sha256
+            ${{ runner.temp }}/fabric-chart.sha256
+            ${{ runner.temp }}/fabric-node-image-id.txt
           if-no-files-found: warn
           retention-days: 14
 

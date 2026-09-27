@@ -34,7 +34,11 @@ def main() -> int:
         return 65
     if mode == "modify" and before is None:
         return 66
-    after = (before or b"") + stdin + (b"\x00created" if mode == "create" else b"\xffmodified")
+    after = (
+        (before or b"")
+        + stdin
+        + (b"\x00created" if mode == "create" else b"\xffmodified")
+    )
     artifact.write_bytes(after)
     stdout = b"created\x00" if mode == "create" else b"\xffmodified\x00"
     stderr = b"" if mode == "create" else b"warning\x00"
@@ -43,7 +47,9 @@ def main() -> int:
         {
             "mode": mode,
             "stdin_b64": base64.b64encode(stdin).decode(),
-            "before_b64": base64.b64encode(before).decode() if before is not None else "",
+            "before_b64": base64.b64encode(before).decode()
+            if before is not None
+            else "",
             "before_present": int(before is not None),
             "after_b64": base64.b64encode(after).decode(),
             "stdout_b64": base64.b64encode(stdout).decode(),

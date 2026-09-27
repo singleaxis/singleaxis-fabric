@@ -40,9 +40,15 @@ from fabric.synthetic_reconcile import (
 
 ROLES = frozenset(
     {
-        "model.request.messages", "model.output.messages", "interaction.payload",
-        "terminal.argv", "terminal.stdin", "terminal.stdout", "terminal.stderr",
-        "artifact.before", "artifact.after",
+        "model.request.messages",
+        "model.output.messages",
+        "interaction.payload",
+        "terminal.argv",
+        "terminal.stdin",
+        "terminal.stdout",
+        "terminal.stderr",
+        "artifact.before",
+        "artifact.after",
     }
 )
 CANARY = "PILOT_SECRET_CANARY_do_not_export"
@@ -90,12 +96,21 @@ class ProviderFixture:
                 if stage == 1 and attempt == 1:
                     status, response = 503, b"retry-this-attempt"
                 elif stage == 1 and attempt == 2:
-                    status, response = 200, _json_bytes(
-                        {"tool": "create", "stdin_b64": _b64(b"\x00seed\xff")}
+                    status, response = (
+                        200,
+                        _json_bytes(
+                            {"tool": "create", "stdin_b64": _b64(b"\x00seed\xff")}
+                        ),
                     )
                 elif stage == 2 and attempt == 1:
-                    status, response = 200, _json_bytes(
-                        {"tool": "modify", "stdin_b64": _b64(b"PILOT_SECRET_CANARY_\x00")}
+                    status, response = (
+                        200,
+                        _json_bytes(
+                            {
+                                "tool": "modify",
+                                "stdin_b64": _b64(b"PILOT_SECRET_CANARY_\x00"),
+                            }
+                        ),
                     )
                 elif stage == 3 and attempt == 1:
                     status, response = 200, b"synthetic-final-answer\x00"
@@ -104,8 +119,11 @@ class ProviderFixture:
                 _append_truth(
                     journal,
                     {
-                        "request_b64": _b64(body), "response_b64": _b64(response),
-                        "status": status, "stage": stage, "attempt": attempt,
+                        "request_b64": _b64(body),
+                        "response_b64": _b64(response),
+                        "status": status,
+                        "stage": stage,
+                        "attempt": attempt,
                     },
                 )
                 self.send_response(status)
@@ -137,8 +155,12 @@ class ProviderFixture:
 def _provider_context(port: int, body: bytes) -> bytes:
     return _json_bytes(
         {
-            "method": "POST", "scheme": "http", "host": "127.0.0.1",
-            "port": port, "path": "/model", "content_type": "application/octet-stream",
+            "method": "POST",
+            "scheme": "http",
+            "host": "127.0.0.1",
+            "port": port,
+            "path": "/model",
+            "content_type": "application/octet-stream",
             "content_length": len(body),
         }
     )
@@ -151,7 +173,9 @@ def _terminal_context(work: Path) -> bytes:
 def _direct_bypass(port: int) -> None:
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
-        connection.request("POST", "/model", body=_json_bytes({"stage": 4, "attempt": 1}))
+        connection.request(
+            "POST", "/model", body=_json_bytes({"stage": 4, "attempt": 1})
+        )
         response = connection.getresponse()
         response.read()
         assert response.status == 400
@@ -163,7 +187,9 @@ def _sink_get(endpoint: str, path: str) -> dict[str, object]:
     parsed = urlsplit(endpoint)
     if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
         raise ValueError("controlled sink URL must be local HTTP")
-    connection = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=5)
+    connection = http.client.HTTPConnection(
+        parsed.hostname, parsed.port or 80, timeout=5
+    )
     try:
         connection.request("GET", path)
         response = connection.getresponse()
@@ -179,19 +205,24 @@ def _check_sink(endpoint: str, ids: list[str], digests: list[str]) -> None:
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
         missing = [
-            value for value in [*ids, *digests]
+            value
+            for value in [*ids, *digests]
             if not _sink_get(endpoint, "/contains?needle=" + quote(value))["found"]
         ]
         if not missing:
             break
         time.sleep(1)
     else:
-        raise AssertionError(f"controlled sink lacks {len(missing)} required IDs/digests")
+        raise AssertionError(
+            f"controlled sink lacks {len(missing)} required IDs/digests"
+        )
     if _sink_get(endpoint, "/contains?needle=" + quote(CANARY))["found"]:
         raise AssertionError("privacy canary escaped to controlled sink")
 
 
-def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None) -> dict[str, object]:
+def _run_case(
+    root: Path, fault: str, node_url: str | None, sink_url: str | None
+) -> dict[str, object]:
     root.mkdir(mode=0o700)
     work = root / "work"
     work.mkdir(mode=0o700)
@@ -199,24 +230,36 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
     spool_dir.mkdir(mode=0o700)
     endpoint_journal = root / "provider-truth.jsonl"
     tool_journal = work / "tool-truth.jsonl"
-    store = LocalFilesystemContentStore(str(root / "store"), tenant_id="synthetic-tenant")
+    store = LocalFilesystemContentStore(
+        str(root / "store"), tenant_id="synthetic-tenant"
+    )
     recorder = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=ROLES))
     spool = SyntheticSourceSpool(
         str(spool_dir), tenant_id="synthetic-tenant", run_id=f"agent-{fault}"
     )
     session = SyntheticCaptureSession(
-        recorder, tenant_id="synthetic-tenant", run_id=f"agent-{fault}", source_spool=spool
+        recorder,
+        tenant_id="synthetic-tenant",
+        run_id=f"agent-{fault}",
+        source_spool=spool,
     )
     tool = BoundedTerminalAdapter(session, allowed_cwd_root=str(work), chunk_bytes=3)
-    artifact = AllowlistedArtifactObserver(session, root=str(work), relative_paths=["result.bin"])
+    artifact = AllowlistedArtifactObserver(
+        session, root=str(work), relative_paths=["result.bin"]
+    )
     run_order: list[str] = []
     artifact_truth: list[bytes] = []
     tool_argv: list[list[str]] = []
     try:
         with ProviderFixture(endpoint_journal) as provider:
-            model = ControlledHTTPModelAdapter(session, f"http://127.0.0.1:{provider.port}/model")
+            model = ControlledHTTPModelAdapter(
+                session, f"http://127.0.0.1:{provider.port}/model"
+            )
             request_1 = _json_bytes({"stage": 1, "attempt": 1, "canary": CANARY})
-            assert model.post(request_1, operation_id="model-1", attempt_id="try-1")[0] == 503
+            assert (
+                model.post(request_1, operation_id="model-1", attempt_id="try-1")[0]
+                == 503
+            )
             run_order.append("model-1/try-1")
             request_retry = _json_bytes({"stage": 1, "attempt": 2, "canary": CANARY})
             status, response = model.post(
@@ -230,21 +273,29 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
                 assert command["tool"] == mode
                 operation = f"tool-{tool_number}"
                 attempt = "try-1"
-                artifact.observe(phase="before", operation_id=operation, attempt_id=attempt)
+                artifact.observe(
+                    phase="before", operation_id=operation, attempt_id=attempt
+                )
                 argv = [sys.executable, str(TOOL), mode, str(tool_journal)]
                 tool_argv.append(argv)
                 result = tool.run(
-                    argv, cwd=str(work), stdin=_decode(command["stdin_b64"]),
-                    operation_id=operation, attempt_id=attempt,
+                    argv,
+                    cwd=str(work),
+                    stdin=_decode(command["stdin_b64"]),
+                    operation_id=operation,
+                    attempt_id=attempt,
                 )
                 assert result.returncode == 0 and not result.timed_out
-                artifact.observe(phase="after", operation_id=operation, attempt_id=attempt)
+                artifact.observe(
+                    phase="after", operation_id=operation, attempt_id=attempt
+                )
                 artifact_bytes = (work / "result.bin").read_bytes()
                 artifact_truth.append(artifact_bytes)
                 run_order.append(operation)
                 request = _json_bytes(
                     {
-                        "stage": tool_number + 1, "attempt": 1,
+                        "stage": tool_number + 1,
+                        "attempt": 1,
                         "parent_operation_id": operation,
                         "previous_model_response_b64": _b64(response),
                         "terminal_stdout_b64": _b64(result.stdout),
@@ -266,7 +317,8 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
         assert CANARY.encode() not in _json_bytes(snapshot)
         assert all(
             CANARY.encode() not in path.read_bytes()
-            for path in spool_dir.iterdir() if path.is_file()
+            for path in spool_dir.iterdir()
+            if path.is_file()
         )
         endpoint = _read_truth(endpoint_journal)
         tools = _read_truth(tool_journal)
@@ -274,8 +326,12 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
         assert len(tools) == 2
         assert [entry["mode"] for entry in tools] == ["create", "modify"]
         assert run_order == [
-            "model-1/try-1", "model-1/try-2", "tool-1",
-            "model-2/try-1", "tool-2", "model-3/try-1",
+            "model-1/try-1",
+            "model-1/try-2",
+            "tool-1",
+            "model-2/try-1",
+            "tool-2",
+            "model-3/try-1",
         ]
         for index, truth in enumerate(tools):
             assert _decode(str(truth["after_b64"])) == artifact_truth[index]
@@ -301,50 +357,98 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
                 ("model.request.messages", request),
                 ("model.output.messages", response),
             ):
-                expected.append(ExpectedByteObject(
-                    "provider-http-1", "provider_bound", operation, attempt_id, role, data
-                ))
-            expected_operations.append(ExpectedOperation(
-                "provider_bound", operation, attempt_id, {"http_status": int(entry["status"])}
-            ))
+                expected.append(
+                    ExpectedByteObject(
+                        "provider-http-1",
+                        "provider_bound",
+                        operation,
+                        attempt_id,
+                        role,
+                        data,
+                    )
+                )
+            expected_operations.append(
+                ExpectedOperation(
+                    "provider_bound",
+                    operation,
+                    attempt_id,
+                    {"http_status": int(entry["status"])},
+                )
+            )
         for index, truth in enumerate(tools, start=1):
             operation = f"tool-{index}"
             argv = tool_argv[index - 1]
-            before = _decode(str(truth["before_b64"])) if truth["before_present"] else None
+            before = (
+                _decode(str(truth["before_b64"])) if truth["before_present"] else None
+            )
             after = _decode(str(truth["after_b64"]))
             for role, data in (
-                ("terminal.argv", b"\x00".join(os.fsencode(item) for item in argv) + b"\x00"),
+                (
+                    "terminal.argv",
+                    b"\x00".join(os.fsencode(item) for item in argv) + b"\x00",
+                ),
                 ("interaction.payload", _terminal_context(work)),
                 ("terminal.stdin", _decode(str(truth["stdin_b64"]))),
                 ("terminal.stdout", _decode(str(truth["stdout_b64"]))),
                 ("terminal.stderr", _decode(str(truth["stderr_b64"]))),
             ):
-                expected.append(ExpectedByteObject(
-                    "terminal-1", "terminal", operation, "try-1", role, data
-                ))
+                expected.append(
+                    ExpectedByteObject(
+                        "terminal-1", "terminal", operation, "try-1", role, data
+                    )
+                )
             if before is not None:
-                expected.append(ExpectedByteObject(
-                    "artifact-1", "tool", operation, "try-1", "artifact.before", before
-                ))
-            expected.append(ExpectedByteObject(
-                "artifact-1", "tool", operation, "try-1", "artifact.after", after
-            ))
+                expected.append(
+                    ExpectedByteObject(
+                        "artifact-1",
+                        "tool",
+                        operation,
+                        "try-1",
+                        "artifact.before",
+                        before,
+                    )
+                )
+            expected.append(
+                ExpectedByteObject(
+                    "artifact-1", "tool", operation, "try-1", "artifact.after", after
+                )
+            )
             expected_operations.extend(
                 [
-                    ExpectedOperation("tool", operation, "try-1", {
-                        "artifact_phase": "before", "artifact_present": before is not None,
-                    }),
-                    ExpectedOperation("terminal", operation, "try-1", {
-                        "returncode": int(truth["returncode"]), "timed_out": False,
-                    }),
-                    ExpectedOperation("tool", operation, "try-1", {
-                        "artifact_phase": "after", "artifact_present": True,
-                        "artifact_size": len(after),
-                    }),
+                    ExpectedOperation(
+                        "tool",
+                        operation,
+                        "try-1",
+                        {
+                            "artifact_phase": "before",
+                            "artifact_present": before is not None,
+                        },
+                    ),
+                    ExpectedOperation(
+                        "terminal",
+                        operation,
+                        "try-1",
+                        {
+                            "returncode": int(truth["returncode"]),
+                            "timed_out": False,
+                        },
+                    ),
+                    ExpectedOperation(
+                        "tool",
+                        operation,
+                        "try-1",
+                        {
+                            "artifact_phase": "after",
+                            "artifact_present": True,
+                            "artifact_size": len(after),
+                        },
+                    ),
                 ]
             )
         if fault == "missing-object":
-            first = next(event for event in snapshot["events"] if event["status"] == "stored")
+            first = next(
+                event for event in snapshot["events"] if event["status"] == "stored"
+            )
             first_ref = first["descriptor"]["ref"]
             Path(urlsplit(first_ref).path).unlink()
         resolver = SyntheticByteResolver(store, tenant_id="synthetic-tenant")
@@ -356,16 +460,19 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
         assert (not report["discrepancies"]) == (fault == "clean"), report
         assert not report["complete_verdict_available"]
         receipt: dict[str, object] | None = None
+        expected_sink_records: list[dict[str, object]] = []
         if fault == "clean" and node_url is not None:
             assert sink_url is not None
             projected, projected_ids = project_synthetic_snapshot(snapshot)
             assert CANARY.encode() not in projected
             assert str(root).encode() not in projected
-            projected_records = json.loads(projected)["resourceLogs"][0]["scopeLogs"][0][
-                "logRecords"
-            ]
+            projected_records = json.loads(projected)["resourceLogs"][0]["scopeLogs"][
+                0
+            ]["logRecords"]
             assert projected_ids == [event["record_id"] for event in snapshot["events"]]
-            for projected_record, event in zip(projected_records, snapshot["events"], strict=True):
+            for projected_record, event in zip(
+                projected_records, snapshot["events"], strict=True
+            ):
                 attrs = {
                     attr["key"]: next(iter(attr["value"].values()))
                     for attr in projected_record["attributes"]
@@ -374,13 +481,39 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
                 assert attrs["role"] == event["role"]
                 assert attrs["status"] == event["status"]
                 if event["status"] == "stored":
-                    assert attrs["content_sha256"] == event["descriptor"]["stored_sha256"]
+                    assert (
+                        attrs["content_sha256"] == event["descriptor"]["stored_sha256"]
+                    )
+                expected_sink_records.append(
+                    {
+                        "event_name": projected_record["eventName"],
+                        "attributes": {
+                            key: attrs[key]
+                            for key in (
+                                "record_id",
+                                "role",
+                                "status",
+                                "content_object_id",
+                                "content_sha256",
+                                "source_id",
+                                "source_epoch",
+                                "source_sequence",
+                                "operation_id",
+                                "attempt_id",
+                                "tenant_id",
+                                "run_id",
+                            )
+                            if key in attrs
+                        },
+                    }
+                )
             receipt = export_synthetic_snapshot(snapshot, node_url)
             assert receipt["receipt_stage"] == "node_accepted"
             assert receipt["rejected_count"] == 0
             ids = [event["record_id"] for event in snapshot["events"]]
             digests = [
-                event["descriptor"]["stored_sha256"] for event in snapshot["events"]
+                event["descriptor"]["stored_sha256"]
+                for event in snapshot["events"]
                 if event["status"] == "stored"
             ]
             _check_sink(sink_url, ids, digests)
@@ -396,7 +529,8 @@ def _run_case(root: Path, fault: str, node_url: str | None, sink_url: str | None
                 {"sha256:" + hashlib.sha256(item.data).hexdigest() for item in expected}
             ),
             "node_receipt_stage": receipt["receipt_stage"] if receipt else None,
-            "sink_records_checked": len(snapshot["events"]) if receipt else 0,
+            "sink_byte_presence_checked": len(snapshot["events"]) if receipt else 0,
+            "expected_sink_records": expected_sink_records,
         }
     finally:
         recorder.close()
@@ -408,7 +542,9 @@ def main() -> int:
     parser.add_argument("--node-url", help="loopback Fabric Node /v1/logs URL")
     parser.add_argument("--sink-url", help="loopback controlled sink base URL")
     parser.add_argument("--work-dir", type=Path, help="dedicated output directory")
-    parser.add_argument("--report-path", type=Path, help="write full digest/discrepancy report")
+    parser.add_argument(
+        "--report-path", type=Path, help="write full digest/discrepancy report"
+    )
     args = parser.parse_args()
     if bool(args.node_url) != bool(args.sink_url):
         parser.error("--node-url and --sink-url must be supplied together")
@@ -440,21 +576,29 @@ def main() -> int:
     if args.report_path is not None:
         args.report_path.parent.mkdir(parents=True, exist_ok=True)
         args.report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-    print(json.dumps({
-        "schema_version": report["schema_version"],
-        "qualification": report["qualification"],
-        "cases": [
+    print(
+        json.dumps(
             {
-                "fault": case["fault"], "verdict": case["verdict"],
-                "expected_byte_objects": case["expected_byte_objects"],
-                "discrepancy_count": len(case["discrepancies"]),
-                "node_receipt_stage": case["node_receipt_stage"],
-                "sink_records_checked": case["sink_records_checked"],
-            }
-            for case in cases
-        ],
-        "report_path": str(args.report_path) if args.report_path else None,
-    }, sort_keys=True))
+                "schema_version": report["schema_version"],
+                "qualification": report["qualification"],
+                "cases": [
+                    {
+                        "fault": case["fault"],
+                        "verdict": case["verdict"],
+                        "expected_byte_objects": case["expected_byte_objects"],
+                        "discrepancy_count": len(case["discrepancies"]),
+                        "node_receipt_stage": case["node_receipt_stage"],
+                        "sink_byte_presence_checked": case[
+                            "sink_byte_presence_checked"
+                        ],
+                    }
+                    for case in cases
+                ],
+                "report_path": str(args.report_path) if args.report_path else None,
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 
