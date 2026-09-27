@@ -275,7 +275,10 @@ overflow and legacy sink TLS) fixed and tested. The remaining high-severity
 CodeQL annotation was the spool negative-test fixture that deliberately set
 a test directory to mode 0777. The test now exercises the same 0700 rejection
 with mode 0770, and the focused spool and host-manifest suites passed 14/14
-locally. CodeQL still requires a new PR-head run. The history-wide secret scan
+locally. The new CodeQL run still flags group-writable mode, so the negative
+fixture now uses owner-only mode 0500 and restores 0700 on exit;
+the focused spool suite passes 7/7 with that change. CodeQL must still
+be rerun on the new PR head. The history-wide secret scan
 still reports seven findings in older
 commits. A clean PR-range scan does not classify those historical values or
 clear the release gate; the security owner must review and, if any are live,

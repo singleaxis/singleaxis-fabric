@@ -36,15 +36,17 @@ pilot. Do not retrofit scope after seeing discrepancies.
 | Delivery and storage | Controlled fsync sink readback; Node persistent queue outage/restart; separate local source spool | Destination/storage owners: authenticated destination durable receipt; target source/content/queue encryption, tenant denial, corruption, disk-full, retention, backup/restore, key rotation and residency proofs |
 | Frozen exact release | PR job records wheel/chart/Node identities and tests installed wheel/packaged chart/built image | Release owner: clean reviewed tag, one immutable artifact set reused across all tests, SBOM/provenance/signatures, target Linux and enforcing-CNI tests; host image only if included |
 | Independent pilot | Controlled synthetic endpoint/tool/filesystem truth: 25 byte objects, 10 operations, 39 parsed sink records, zero clean discrepancies | Customer pilot owner: separately authenticated provider/terminal/filesystem/destination records for the *target* agent; every required object/operation reconciled, loss faults lower verdict, independent reviewer reproduces it |
-| Human decision | The audit-serial overflow and sink TLS default are fixed and their PR-head checks passed. The last CodeQL alert is addressed by a group-writable negative-test fixture but needs a new PR-head check; the history-wide secret scan reports seven older findings | Security must classify all seven historical findings, including exposure and rotation if any value was real; privacy, records, platform, AI-system and independent reviewer must sign the exact scope, artifact set, evidence and residual gaps |
+| Human decision | The audit-serial overflow and sink TLS default are fixed and their PR-head checks passed. CodeQL still flags the group-writable spool negative-test fixture on the prior commit; the fixture now uses owner-only, unwritable mode 0500 and awaits a new PR-head check. The history-wide secret scan reports seven older findings | Security must classify all seven historical findings, including exposure and rotation if any value was real; privacy, records, platform, AI-system and independent reviewer must sign the exact scope, artifact set, evidence and residual gaps |
 
 The audit-serial repair preserves the full unsigned value as a decimal
 string per [spec 030](../../specs/030-auditd-host-connector.md); the
 controlled HTTPS sink requires TLS 1.2 or newer. Those fixes passed the
 subsequent PR-head checks. The permission test must continue to prove that
-the spool rejects modes other than 0700; replacing its 0777 fixture with
-0770 exercises that invariant without making a test directory world-writable.
-That change is not security-owner classification or a release approval.
+the spool rejects modes other than 0700. Changing its 0777 fixture to 0770
+preserved that invariant but CodeQL still classified group write as overly
+permissive. Mode 0500 exercises refusal of a non-writable, owner-only root
+without creating a permissive directory. That test change is not
+security-owner classification or a release approval.
 
 The current [qualification status](../../docs/recorder-v1-qualification-status.md)
 is the technical ledger. A passing synthetic kind job remains `unverified`:

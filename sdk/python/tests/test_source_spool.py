@@ -193,6 +193,9 @@ def test_source_spool_rejects_unsafe_root_and_identity(tmp_path: Path) -> None:
     assert first.close()
     with pytest.raises(ValueError, match="identity"):
         SyntheticSourceSpool(str(root), tenant_id="other", run_id="run-1")
-    os.chmod(root, 0o770)  # noqa: S103 - deliberately exercise unsafe permissions
-    with pytest.raises(ValueError, match="0700"):
-        _open(root)
+    os.chmod(root, 0o500)
+    try:
+        with pytest.raises(ValueError, match="0700"):
+            _open(root)
+    finally:
+        os.chmod(root, 0o700)
