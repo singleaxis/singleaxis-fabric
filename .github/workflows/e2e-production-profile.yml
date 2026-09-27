@@ -56,7 +56,7 @@ jobs:
             | tee "${RUNNER_TEMP}/fabric-chart-production.sha256"
           sha256sum charts/fabric/profiles/shadow-production.yaml \
             qualification/synthetic-slice/kind-production-values.yaml \
-            qualification/synthetic-slice/kind-production-sink.yaml \
+            qualification/synthetic-slice/kind-production-sink-*.yaml \
             deploy/compose/sink/otlp_sink.py \
             | tee "${RUNNER_TEMP}/fabric-production-config.sha256"
           docker image inspect "${COLLECTOR_IMAGE}" --format '{{.Id}}' \
@@ -124,8 +124,9 @@ jobs:
             --from-file=ca.crt="${CERT_DIR}/sink-ca.crt"
           kubectl create secret generic fabric-node-export-auth --namespace "${NAMESPACE}" \
             --from-file=authorization="${CERT_DIR}/authorization"
-          kubectl apply --namespace "${NAMESPACE}" -f \
-            qualification/synthetic-slice/kind-production-sink.yaml
+          for manifest in qualification/synthetic-slice/kind-production-sink-*.yaml; do
+            kubectl apply --namespace "${NAMESPACE}" -f "${manifest}"
+          done
           kubectl rollout status deployment/fabric-test-sink \
             --namespace "${NAMESPACE}" --timeout=180s
       - name: Install packaged shadow-production profile

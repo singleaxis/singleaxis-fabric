@@ -1,7 +1,8 @@
 # Production-profile synthetic kind qualification plan
 
-Status: test plan implemented in `e2e-production-profile.yml`; Linux result
-pending. This is an isolated, non-sensitive CI deployment proof for the
+Status: test plan implemented in `e2e-production-profile.yml`; second Linux
+run passed, final same-commit hygiene rerun pending. This is an isolated,
+non-sensitive CI deployment proof for the
 `shadow-production` Helm profile, not a customer production GO.
 It extends the bounded model → terminal → artifact → model slice in spec 040.
 
@@ -44,9 +45,12 @@ It extends the bounded model → terminal → artifact → model slice in spec 0
 The first live run (`36324254204`) failed as intended: the generated auth
 Secret included a trailing newline, so Go rejected the `Authorization` header
 and all 78 required sink ID/digest checks failed. The fixture now writes the
-header with no newline. A new Linux run must pass before this gate is marked
-tested. Production Secret provisioning needs the same byte-level check; a
-healthy Collector Pod is not delivery proof.
+header with no newline. [Run 36324523853](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36324523853)
+passed mTLS, authenticated HTTPS export, exact-byte pilot and parsed sink
+readback; its Source hygiene job failed on a multi-document fixture YAML, now
+split into single-document files for the next run. Production Secret
+provisioning needs the same byte-level check; a healthy Collector Pod is not
+delivery proof.
 
 ## Non-claims
 

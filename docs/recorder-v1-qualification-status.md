@@ -185,9 +185,26 @@ rejection of missing export authentication, but its exact-byte delivery gate
 failed: the CI-generated Authorization Secret had a trailing newline, which
 made the Go exporter reject its own header before contacting the sink. All 78
 required sink ID/digest checks failed, correctly preserving NO-GO. The test
-Secret writer has been corrected; the rerun and exact artifact IDs are
-**pending**. A healthy Collector Pod alone did not prove delivery. Even a
-pass would remain a synthetic transport/protection test, not a customer
+Secret writer was corrected. [Run
+36324523853](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36324523853)
+then passed the `shadow-production` kind job: missing and untrusted client
+certificates failed, unauthenticated sink writes returned 401, and the
+installed-wheel pilot reconciled 25 required byte objects, 10 operations and
+39 parsed sink records with zero clean discrepancies. The bypass and
+missing-object cases had four and one discrepancies and stayed `partial`;
+the clean case stayed `unverified`. The canary was absent from the sink files
+and Collector logs. The exact run artifact is
+`synthetic-production-profile-36324523853-1`: wheel SHA-256
+`cb057a898646ae9c9f9c487360cb062faf64a61eaa7ab91237ce664972b00d50`,
+chart SHA-256
+`dcbb93d7091ad580c59fb34811b7d0f16b3175ef07f40132b0b8cf511406a672`,
+Node image ID
+`sha256:fd527bb998c1a59e6163a832de18a9be6e43edf29c70d0495219de70eb1c468d`.
+This commit's Recorder CI Source hygiene failed because the test sink YAML
+had multiple documents; it is now split into single-document manifests and
+the full same-commit rerun is pending. A healthy Collector Pod alone did not
+prove delivery. Even a passing rerun remains a synthetic
+transport/protection test, not a customer
 storage, identity-binding, retention, NetworkPolicy-enforcement or production
 GO proof.
 

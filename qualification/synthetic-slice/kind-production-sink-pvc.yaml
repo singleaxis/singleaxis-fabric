@@ -1,0 +1,10 @@
+# Controlled disposable qualification fixture, not a production backend.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fabric-test-sink
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
