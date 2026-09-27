@@ -41,6 +41,13 @@ It extends the bounded model → terminal → artifact → model slice in spec 0
 5. Publish exact artifact IDs, discrepancy report, commands and skips. A
    failing or unrun gate retains `NO_GO`.
 
+The first live run (`36324254204`) failed as intended: the generated auth
+Secret included a trailing newline, so Go rejected the `Authorization` header
+and all 78 required sink ID/digest checks failed. The fixture now writes the
+header with no newline. A new Linux run must pass before this gate is marked
+tested. Production Secret provisioning needs the same byte-level check; a
+healthy Collector Pod is not delivery proof.
+
 ## Non-claims
 
 The controlled sink's fsync readback is not an arbitrary customer's durable

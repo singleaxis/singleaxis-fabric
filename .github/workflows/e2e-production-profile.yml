@@ -101,7 +101,11 @@ jobs:
           openssl req -x509 -newkey rsa:2048 -noenc -days 1 \
             -subj '/CN=untrusted-test-client' \
             -keyout "${CERT_DIR}/untrusted.key" -out "${CERT_DIR}/untrusted.crt"
-          openssl rand -hex 32 | awk '{print "Bearer " $0}' > "${CERT_DIR}/authorization"
+          # Secret-file bytes become the outbound HTTP header verbatim. A
+          # trailing newline makes Go reject every export before it reaches
+          # the sink; printf deliberately writes no newline.
+          printf 'Bearer %s' "$(openssl rand -hex 32)" \
+            > "${CERT_DIR}/authorization"
       - name: Install authenticated HTTPS controlled sink
         run: |
           set -euo pipefail

@@ -178,7 +178,15 @@ now has a separate CI implementation that installs the packaged
 `shadow-production` profile with an ephemeral client CA, mTLS ingress,
 authenticated HTTPS export and the same installed-wheel byte/record pilot.
 Local chart rendering, Python TLS bridge unit tests, Ruff and workflow lint
-passed. A Linux CI result and exact artifact IDs are **pending**. Even a
+passed. The first [Linux run
+36324254204](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36324254204)
+verified mTLS rejection of missing/untrusted client certificates and sink
+rejection of missing export authentication, but its exact-byte delivery gate
+failed: the CI-generated Authorization Secret had a trailing newline, which
+made the Go exporter reject its own header before contacting the sink. All 78
+required sink ID/digest checks failed, correctly preserving NO-GO. The test
+Secret writer has been corrected; the rerun and exact artifact IDs are
+**pending**. A healthy Collector Pod alone did not prove delivery. Even a
 pass would remain a synthetic transport/protection test, not a customer
 storage, identity-binding, retention, NetworkPolicy-enforcement or production
 GO proof.
