@@ -48,7 +48,8 @@ def _fixture() -> tuple[dict, dict, dict]:
         "wheel_sha256": "b" * 64,
         "chart_sha256": "c" * 64,
         "node_image_id": "sha256:" + "d" * 64,
-        "network_policy_enforced": False,
+        "local_policy_probe_passed": True,
+        "target_network_policy_qualified": False,
         "cluster": "kind-fixture",
         "namespace": "fixture",
     }
@@ -76,7 +77,7 @@ def test_missing_sink_or_fault_downgrade_fails_rehearsal() -> None:
 def test_fake_signature_or_policy_enforcement_claim_fails_closed() -> None:
     scope, pilot, artifacts = _fixture()
     scope["approval_status"] = "signed"
-    artifacts["network_policy_enforced"] = True
+    artifacts["target_network_policy_qualified"] = True
     result = summarize(scope, pilot, artifacts)
     assert result["simulation_result"] == "FAIL"
     assert result["production_verdict"] == "NO_GO"

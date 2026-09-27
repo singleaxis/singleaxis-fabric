@@ -45,6 +45,12 @@ status, source sequence and digest—not counts alone.
 The Node and sink run in Linux/arm64 containers, but this laptop script runs
 the Python 3.11 agent fixture on the macOS host. It therefore cannot qualify
 Linux agent-process behavior or kernel/host capture.
+After the chart's namespace default-deny is installed, the simulation adds a
+narrow sink-ingress policy allowing only the Fabric Node Pods to port 8443.
+The first local attempt intentionally exposed this missing allowance: the
+Node stayed healthy and queued records, but the sink stored none. The
+rehearsal must verify that queued records arrive after the allowance; a
+healthy Pod or policy object alone is insufficient.
 
 The actors below are **test roles, not people or signatures**:
 
@@ -68,8 +74,9 @@ continuity and general durable receipts are absent. Any unexplained
 discrepancy fails the rehearsal. The production decision is always
 `NO_GO`; simulated approvals must never be presented as signatures.
 
-The local kind CNI (`kindnet`) does not enforce NetworkPolicy. Its local-path
-PVC is neither an encrypted customer content store nor a retention/backup
+This local kind release appears to enforce its namespace default-deny, but
+the test does not qualify an intended customer's CNI or all policy routes.
+Its local-path PVC is neither an encrypted customer content store nor a retention/backup
 qualification. A successful rehearsal demonstrates the procedure and
 identifies missing proofs; it does not satisfy spec 037–039 promotion gates.
 

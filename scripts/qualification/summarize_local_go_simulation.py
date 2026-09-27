@@ -56,8 +56,10 @@ def summarize(
         failures.append("exact source and wheel identity are missing")
     if not artifacts.get("chart_sha256") or not artifacts.get("node_image_id"):
         failures.append("exact chart or Node image identity is missing")
-    if artifacts.get("network_policy_enforced") is not False:
-        failures.append("kindnet must not be represented as enforcing policy")
+    if artifacts.get("local_policy_probe_passed") is not True:
+        failures.append("local deny-then-allow policy probe is missing")
+    if artifacts.get("target_network_policy_qualified") is not False:
+        failures.append("local probe must not qualify a customer target CNI")
     return {
         "schema_version": "fabric.local-go-simulation/v1",
         "simulation_result": "PASS" if not failures else "FAIL",
@@ -100,7 +102,7 @@ def summarize(
             "excluded routes are not proven unreachable in a customer workload",
             "tenant/source identity and independent feeds are not authenticated",
             "pre-fsync continuity and passive timing are unqualified",
-            "kindnet does not enforce NetworkPolicy",
+            "local deny-then-allow probe does not qualify a customer target CNI",
             "local-path PVC and local content store lack customer IAM/KMS/retention proof",
             "controlled sink readback is not a general destination durable receipt",
             "no independently witnessed customer shadow pilot",

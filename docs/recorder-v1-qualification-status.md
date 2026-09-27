@@ -247,11 +247,14 @@ unresolved alert check.
 
 The [local GO simulation](../qualification/local-go-simulation/README.md)
 now has a reproducible laptop-kind runner and a fail-closed, unsigned
-decision summary. It rehearses the scope/target/witness packet against
-synthetic data only; its first live local execution is pending at this
-documentation revision. Even a passing rehearsal remains `NO_GO` for
-production because kindnet, local-path storage, source identity and real
-owner approvals do not satisfy the target-environment gates.
+decision summary. Its first live local attempt exposed a missing sink
+ingress allowance: the Node accepted/queued the synthetic record, but the
+sink had zero files and the exact-record check failed. A narrow policy for
+Node → sink port 8443 restored queued delivery without restarting the Pod;
+the script now pre-registers a deny-then-allow probe. A full fresh pilot is
+pending at this documentation revision. Even a passing rehearsal remains
+`NO_GO` for production because local-path storage, target CNI/identity,
+source continuity and real owner approvals remain unqualified.
 
 ### Decision rule for the first bounded GO
 
