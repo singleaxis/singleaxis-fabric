@@ -71,6 +71,13 @@ def test_policy_requires_unique_workflow_files(tmp_path: Path) -> None:
         verifier.load_required_workflows(policy)
 
 
+def test_release_requires_production_profile_on_exact_sha() -> None:
+    policy = Path(__file__).resolve().parents[1] / "release" / "release-policy.json"
+    required = verifier.load_required_workflows(policy)
+    assert "e2e.yml" in required
+    assert "e2e-production-profile.yml" in required
+
+
 def test_verify_queries_every_required_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

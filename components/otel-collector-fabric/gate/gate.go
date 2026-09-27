@@ -47,7 +47,52 @@ func validateArgs(args []string) ([]tokenFile, error) {
 	if err := checkPipelines(merged); err != nil {
 		return nil, err
 	}
+	if err := checkExporterHeaders(merged); err != nil {
+		return nil, err
+	}
 	return checkBearerTokenAuth(merged)
+}
+
+// checkExporterHeaders rejects values the Go HTTP client cannot send, and
+// empty/unresolved Secret references, before the Collector reports healthy.
+// The diagnostic deliberately identifies only the exporter/header, never
+// the credential bytes.
+func checkExporterHeaders(cfg map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	for name, node := range exporters {
+		exporter, _ := node.(map[string]any)
+		if exporter == nil {
+			continue
+		}
+		rawHeaders, present := exporter["headers"]
+		if !present {
+			continue
+		}
+		headers, ok := rawHeaders.(map[string]any)
+		if !ok {
+			return fmt.Errorf("exporter %q headers must be a map of strings", name)
+		}
+		for key, raw := range headers {
+			value, ok := raw.(string)
+			if !ok {
+				return fmt.Errorf("exporter %q header %q must be a string", name, key)
+			}
+			value = expandEnvRefs(value)
+			if value == "" || strings.TrimSpace(value) != value {
+				return fmt.Errorf("exporter %q header %q is empty or has surrounding whitespace", name, key)
+			}
+			for i := 0; i < len(value); i++ {
+				if value[i] < 0x20 || value[i] > 0x7e {
+					return fmt.Errorf("exporter %q header %q contains a control or non-ASCII byte", name, key)
+				}
+			}
+			if strings.EqualFold(key, "Authorization") &&
+				strings.EqualFold(value, "Bearer") {
+				return fmt.Errorf("exporter %q header %q has no credential", name, key)
+			}
+		}
+	}
+	return nil
 }
 
 // configSources collects --config values in both pflag spellings

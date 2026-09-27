@@ -220,6 +220,22 @@ remains a synthetic transport/protection test, not a customer
 storage, identity-binding, retention, NetworkPolicy-enforcement or production
 GO proof.
 
+The next hardening revision adds a Fabric Node startup check for outbound
+Secret-backed HTTP header bytes. It refuses empty, whitespace-surrounded,
+control-byte or non-ASCII header values before reporting healthy, without
+printing credentials. This directly addresses the failed `36324254204`
+test's newline-bearing Authorization Secret. A new exact-image negative CI
+step tests the refusal, and the release policy now requires the
+production-profile workflow on the exact release SHA. A bounded failure
+injection test confirms that a content-recorder write error does not change
+the synthetic provider response or terminal result; it does **not** prove
+timing non-interference. Local gate `go test -race`, 692 Python SDK tests,
+and 197 repository tests passed (12 repository tests skipped for their
+documented environment prerequisites). The new image/CI result is pending
+at this documentation revision. The [GO decision packet](../qualification/production-go/decision-packet.md)
+lists the exact target evidence and owner approvals still required; neither
+the packet nor a passing CI job grants production approval.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model

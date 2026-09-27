@@ -73,6 +73,7 @@ def test_release_policy_is_recorder_only() -> None:
         "codeql.yml",
         "recorder-license.yml",
         "e2e.yml",
+        "e2e-production-profile.yml",
     ]
 
 

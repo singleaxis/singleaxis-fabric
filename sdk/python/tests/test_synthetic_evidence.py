@@ -150,6 +150,68 @@ def test_controlled_provider_records_exact_wire_body_and_direct_bypass_is_not_cl
         session.recorder.close()
 
 
+def test_recorder_write_failure_does_not_change_provider_or_terminal_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session, _store = _session(tmp_path)
+    truth: list[bytes] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            truth.append(body)
+            self.send_response(201)
+            self.end_headers()
+            self.wfile.write(b"provider-result\x00")
+
+        def log_message(self, *_args: object) -> None:
+            pass
+
+    def failed_capture(*_args: object, **_kwargs: object) -> None:
+        raise OSError("synthetic content-store failure")
+
+    monkeypatch.setattr(session.recorder, "capture", failed_capture)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        provider = ControlledHTTPModelAdapter(
+            session, f"http://127.0.0.1:{server.server_port}/model"
+        )
+        assert provider.post(
+            b"request\xff", operation_id="model-fault", attempt_id="attempt-1"
+        ) == (201, b"provider-result\x00")
+        assert truth == [b"request\xff"]
+
+        root = tmp_path / "work"
+        root.mkdir()
+        terminal = BoundedTerminalAdapter(session, allowed_cwd_root=str(root))
+        result = terminal.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stdout.buffer.write(b'output\\x00'); "
+                "sys.stderr.buffer.write(b'error\\xff')",
+            ],
+            cwd=str(root),
+            stdin=b"input\x00",
+            operation_id="terminal-fault",
+            attempt_id="attempt-1",
+        )
+        assert (result.returncode, result.stdout, result.stderr) == (
+            0,
+            b"output\x00",
+            b"error\xff",
+        )
+        snapshot = session.snapshot()
+        assert snapshot["events"]
+        assert all(event["status"] == "failed" for event in snapshot["events"])
+    finally:
+        server.shutdown()
+        server.server_close()
+        session.recorder.close()
+
+
 def test_terminal_and_artifact_exact_binary_bytes_and_empty_stream(tmp_path: Path) -> None:
     session, store = _session(tmp_path)
     root = tmp_path / "work"

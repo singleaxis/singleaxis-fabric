@@ -28,12 +28,21 @@ It extends the bounded model → terminal → artifact → model slice in spec 0
    secrets, receiver TLS/client CA, exporter TLS CA/auth, network-policy
    objects and persistent queue. The default kind CNI does not prove policy
    enforcement, so that remains a target-environment gate.
+   Fabric Node must refuse startup if an outbound HTTP header supplied by a
+   Secret/env reference is empty or contains control bytes (including a
+   trailing newline); a healthy process with an invalid header is not a
+   valid delivery posture. Unit tests cover empty, newline, carriage return,
+   tab, and valid header material without printing the credential.
 2. A valid client certificate can send the fixture. Missing/untrusted client
    certificate attempts fail and do not create a new fsynced sink record.
 3. The deterministic installed-wheel agent fixture reconciles every expected
    provider, terminal and file byte object and outcome against independent
    fixture journals and filesystem inventory. Its offline AEEP projection is
    sent over loopback HTTPS with explicit CA and client certificate.
+   A separate local fault fixture forces content-recorder writes to fail and
+   compares provider response bytes and terminal process results with the
+   uninstrumented action. This proves result invariance for the injected
+   failure, not timing non-interference or passive production capture.
 4. Copy the controlled sink's fsynced OTLP files from its Pod. Parse every
    AEEP log record; match record ID, event name, role, status,
    tenant/run/source/operation/attempt IDs and content digest exactly once.
@@ -42,6 +51,9 @@ It extends the bounded model → terminal → artifact → model slice in spec 0
    `partial`, never complete.
 5. Publish exact artifact IDs, discrepancy report, commands and skips. A
    failing or unrun gate retains `NO_GO`.
+   The release workflow must require a successful production-profile job on
+   the exact release commit in addition to the development smoke. A mutable
+   branch-wide green check is not evidence for a different release SHA.
 
 The first live run (`36324254204`) failed as intended: the generated auth
 Secret included a trailing newline, so Go rejected the `Authorization` header

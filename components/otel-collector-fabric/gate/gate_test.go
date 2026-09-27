@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +43,38 @@ const baseConfig = `service:
 func TestValidConfigPasses(t *testing.T) {
 	if _, err := validateArgs([]string{"--config=" + writeConfig(t, baseConfig)}); err != nil {
 		t.Fatalf("valid recorder config rejected: %v", err)
+	}
+}
+
+func TestExporterHeaderSecretValidation(t *testing.T) {
+	config := `exporters:
+  otlp_http/fabric:
+    headers:
+      Authorization: "${env:FABRIC_EXPORT_AUTH}"
+` + baseConfig
+	for _, tc := range []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "valid", value: "Bearer token-123", valid: true},
+		{name: "empty", value: ""},
+		{name: "trailing newline", value: "Bearer token-123\n"},
+		{name: "carriage return", value: "Bearer token-123\r"},
+		{name: "tab", value: "Bearer\ttoken-123"},
+		{name: "only scheme", value: "Bearer"},
+		{name: "leading space", value: " Bearer token-123"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("FABRIC_EXPORT_AUTH", tc.value)
+			_, err := validateArgs([]string{"--config=" + writeConfig(t, config)})
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, error=%v", tc.valid, err)
+			}
+			if err != nil && strings.Contains(err.Error(), "token-123") {
+				t.Fatal("header credential leaked in error")
+			}
+		})
 	}
 }
 

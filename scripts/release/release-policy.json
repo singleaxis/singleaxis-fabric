@@ -5,7 +5,8 @@
     "recorder-security.yml",
     "codeql.yml",
     "recorder-license.yml",
-    "e2e.yml"
+    "e2e.yml",
+    "e2e-production-profile.yml"
   ],
   "python_distribution": {
     "name": "singleaxis-fabric",

@@ -4,6 +4,8 @@ name: Synthetic production-profile qualification
 # production GO: it does not prove tenant-to-certificate binding, customer
 # storage/retention or independent target-environment operation.
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -147,6 +149,29 @@ jobs:
             -o json | jq '.items | length')" -eq 1
           test "$(kubectl get pvc --namespace "${NAMESPACE}" \
             -o json | jq '.items | length')" -ge 2
+      - name: Exact Node image refuses malformed export-auth Secret
+        run: |
+          set -euo pipefail
+          kubectl get configmap fabric-prod-otel-collector-config \
+            --namespace "${NAMESPACE}" \
+            -o go-template='{{index .data "config.yaml"}}' \
+            > "${RUNNER_TEMP}/fabric-production-collector.yaml"
+          if docker run --rm --entrypoint /fabric-gate \
+            -e "FABRIC_EXPORT_AUTH=Bearer synthetic-invalid"$'\n' \
+            --mount "type=bind,source=${RUNNER_TEMP}/fabric-production-collector.yaml,target=/etc/otelcol-fabric/config.yaml,readonly" \
+            "${COLLECTOR_IMAGE}" \
+            --config=/etc/otelcol-fabric/config.yaml \
+            > "${RUNNER_TEMP}/fabric-invalid-auth.log" 2>&1; then
+            echo 'Node started with invalid outbound Authorization header' >&2
+            exit 1
+          fi
+          grep -Fq 'header "Authorization"' \
+            "${RUNNER_TEMP}/fabric-invalid-auth.log"
+          if grep -Fq 'synthetic-invalid' \
+            "${RUNNER_TEMP}/fabric-invalid-auth.log"; then
+            echo 'Node gate leaked outbound credential in diagnostic' >&2
+            exit 1
+          fi
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'

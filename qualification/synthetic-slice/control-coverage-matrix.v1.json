@@ -3,22 +3,27 @@
   "scope_id": "synthetic-model-terminal-artifact-v1",
   "scope_revision": 1,
   "result": "NO_GO",
+  "last_evidence_commit": "aa03e768fdfc06fdac03c4613b23b9e543a0cb1d",
+  "linux_evidence": [
+    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36325062427",
+    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36325062391"
+  ],
   "controls": [
     {"id": "BD-01", "owner": "customer-platform", "status": "unverified", "required_test": "route-inventory-and-direct-bypass"},
-    {"id": "ID-01", "owner": "recorder-platform", "status": "persisted-local-epoch-source-auth-unimplemented", "required_test": "source-tenant-auth-and-spoof-rejection"},
-    {"id": "CA-01", "owner": "recorder-engineering", "status": "partly-locally-tested", "required_test": "authenticated-independent-byte-and-operation-reconciliation"},
-    {"id": "CA-02", "owner": "recorder-engineering", "status": "source-journal-overflow-recovery-locally-tested", "required_test": "pre-fsync-crash-and-authenticated-gap-export"},
-    {"id": "PR-01", "owner": "customer-privacy", "status": "slice-unverified", "required_test": "all-surface-secret-canary"},
+    {"id": "ID-01", "owner": "recorder-platform", "status": "mtls-ingress-live-tested-payload-source-identity-unbound", "required_test": "source-tenant-auth-and-spoof-rejection"},
+    {"id": "CA-01", "owner": "recorder-engineering", "status": "synthetic-installed-wheel-linux-tested-truth-unauthenticated", "required_test": "authenticated-independent-byte-and-operation-reconciliation"},
+    {"id": "CA-02", "owner": "recorder-engineering", "status": "source-journal-local-and-bypass-loss-linux-tested-pre-fsync-unverified", "required_test": "pre-fsync-crash-and-authenticated-gap-export"},
+    {"id": "PR-01", "owner": "customer-privacy", "status": "sink-and-collector-log-canary-linux-tested-other-surfaces-unverified", "required_test": "all-surface-secret-canary"},
     {"id": "ST-01", "owner": "customer-storage", "status": "local-store-tests-only", "required_test": "tenant-encryption-corruption-readback"},
     {"id": "ST-02", "owner": "customer-records", "status": "unverified", "required_test": "retention-backup-restore-key-rotation"},
-    {"id": "DL-01", "owner": "recorder-and-destination", "status": "host-partial-and-source-fsync-locally-tested-complete-receipts-unverified", "required_test": "distinct-receipt-stages-and-live-partial-otlp"},
+    {"id": "DL-01", "owner": "recorder-and-destination", "status": "controlled-fsync-sink-live-tested-generic-durable-receipt-unverified", "required_test": "distinct-receipt-stages-and-live-partial-otlp"},
     {"id": "OP-01", "owner": "customer-operations", "status": "unverified", "required_test": "alarm-recovery-and-incident-drill"},
-    {"id": "RL-01", "owner": "release-engineering", "status": "unverified", "required_test": "same-sha-installed-artifact-e2e"},
-    {"id": "EV-01", "owner": "customer-evaluator", "status": "locally-tested-unverified-verdict-only", "required_test": "authenticated-feed-and-durable-receipt-reconciliation"}
+    {"id": "RL-01", "owner": "release-engineering", "status": "same-sha-wheel-chart-node-kind-tested-not-one-frozen-release", "required_test": "same-sha-installed-artifact-e2e"},
+    {"id": "EV-01", "owner": "customer-evaluator", "status": "synthetic-byte-reconciliation-linux-tested-clean-unverified", "required_test": "authenticated-feed-and-durable-receipt-reconciliation"}
   ],
   "coverage": [
-    {"source": "provider-http-1", "boundary": "provider_bound", "operations": ["request", "response", "retry", "cancel"], "roles": ["interaction.payload", "model.request.messages", "model.output.messages"], "independent_truth": "controlled-provider-ledger", "status": "request-response-retry-locally-tested-cancel-unverified"},
-    {"source": "terminal-1", "boundary": "terminal", "operations": ["exec", "stdin", "stdout", "stderr", "exit", "signal"], "roles": ["terminal.argv", "terminal.stdin", "terminal.stdout", "terminal.stderr", "interaction.payload"], "independent_truth": "terminal-fixture-ledger", "status": "binary-stream-overflow-cancel-locally-tested-durability-unverified"},
-    {"source": "artifact-1", "boundary": "tool", "operations": ["create", "modify"], "roles": ["artifact.before", "artifact.after"], "independent_truth": "filesystem-pre-post-inventory", "status": "create-modify-absence-binary-symlink-oversize-locally-tested-passivity-unverified"}
+    {"source": "provider-http-1", "boundary": "provider_bound", "operations": ["request", "response", "retry", "cancel"], "roles": ["interaction.payload", "model.request.messages", "model.output.messages"], "independent_truth": "controlled-provider-ledger", "status": "request-response-retry-linux-tested-cancel-and-bypass-unverified"},
+    {"source": "terminal-1", "boundary": "terminal", "operations": ["exec", "stdin", "stdout", "stderr", "exit", "signal"], "roles": ["terminal.argv", "terminal.stdin", "terminal.stdout", "terminal.stderr", "interaction.payload"], "independent_truth": "terminal-fixture-ledger", "status": "binary-stream-linux-tested-overflow-cancel-local-only-passivity-unverified"},
+    {"source": "artifact-1", "boundary": "tool", "operations": ["create", "modify"], "roles": ["artifact.before", "artifact.after"], "independent_truth": "filesystem-pre-post-inventory", "status": "create-modify-binary-linux-tested-symlink-oversize-local-only-passivity-unverified"}
   ]
 }
