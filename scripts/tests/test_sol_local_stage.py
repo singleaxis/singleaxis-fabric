@@ -33,7 +33,9 @@ def _event(command: str, index: int) -> dict:
 
 
 @pytest.fixture
-def observed_run(tmp_path: Path) -> tuple[Path, Path, dict]:
+def observed_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path, dict]:
     workspace, _db_path, _canary = stage.fixture(tmp_path)
     before = stage.inventory(workspace)
     report = b'{"incident_id":"INC-42","action":"human_review"}'
@@ -84,6 +86,14 @@ def observed_run(tmp_path: Path) -> tuple[Path, Path, dict]:
         ("\n".join(json.dumps(event) for event in events) + "\n").encode(),
     )
     stage.write_private(tmp_path / "codex.stderr", b"")
+    original_run_checked = stage.run_checked
+
+    def checked(argv: list[str], cwd: Path) -> bytes:
+        if argv == ["codex", "--version"]:
+            return b"codex-cli synthetic-fixture\n"
+        return original_run_checked(argv, cwd)
+
+    monkeypatch.setattr(stage, "run_checked", checked)
     return tmp_path, workspace, before
 
 
