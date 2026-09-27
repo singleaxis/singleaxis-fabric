@@ -270,6 +270,17 @@ passed (3/3 and 204 passed/8 skipped respectively); environment-only
 missing-dependency failures from earlier invocations were corrected and
 recorded in the observed-run report.
 
+The subsequent PR-head audit shows the two real CodeQL defects (audit serial
+overflow and legacy sink TLS) fixed and tested. The remaining high-severity
+CodeQL annotation was the spool negative-test fixture that deliberately set
+a test directory to mode 0777. The test now exercises the same 0700 rejection
+with mode 0770, and the focused spool and host-manifest suites passed 14/14
+locally. CodeQL still requires a new PR-head run. The history-wide secret scan
+still reports seven findings in older
+commits. A clean PR-range scan does not classify those historical values or
+clear the release gate; the security owner must review and, if any are live,
+rotate/revoke them. This phase remains **NO-GO**.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model

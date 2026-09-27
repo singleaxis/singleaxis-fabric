@@ -159,6 +159,7 @@ def main() -> int:
         "--expected-image", required=True, help="approved image@sha256 digest"
     )
     args = parser.parse_args()
+    documents: list[Any] = []
     try:
         documents = list(
             yaml.load_all(
