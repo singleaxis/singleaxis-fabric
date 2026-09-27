@@ -256,6 +256,20 @@ pending at this documentation revision. Even a passing rehearsal remains
 `NO_GO` for production because local-path storage, target CNI/identity,
 source continuity and real owner approvals remain unqualified.
 
+The fresh local rehearsal on clean commit `b91a9de` subsequently passed:
+the clean fixture reconciled 10 operations, 25 required byte objects and
+39 parsed fsynced sink records without discrepancy; source high-water was
+provider 15, terminal 25 and artifact 6. Direct provider bypass produced
+four discrepancies and `partial`; deletion of one required content object
+produced `partial`. The local deny-then-allow policy probe recovered queued
+delivery after the sink allowance. Its [observed-run report](../qualification/local-go-simulation/observed-run-20260928.md)
+retains exact artifact IDs and limitations. This is an unsigned simulation
+with `unverified` clean verdict and production `NO_GO`, not a customer pilot.
+The local simulation unit tests and broader installed-wheel repository suite
+passed (3/3 and 204 passed/8 skipped respectively); environment-only
+missing-dependency failures from earlier invocations were corrected and
+recorded in the observed-run report.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model
