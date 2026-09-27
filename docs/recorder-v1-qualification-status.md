@@ -160,6 +160,29 @@ authentication, destination receipt, target storage/retention,
 non-interference, scoped BPF, or a customer shadow pilot. It is a bounded
 exact-artifact CI pilot, not a critical-enterprise GO.
 
+The subsequent [Linux/kind run
+36299296091](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36299296091)
+passed the same installed-wheel pilot and parsed fsynced sink readback on
+commit `827fffc`, with 25/25 required byte objects, 10/10 outcomes and 39/39
+metadata records reconciled. Its exact chart SHA-256 was
+`325a635a5d7e9091744f9121aeca3921526bed1d5801f70e2ca007213ac45e6c`
+and local Node image ID was
+`sha256:8de47ac7f40db683d4f81a3d771b8c7c961926eaacf4838a07609949b5a05476`;
+the wheel SHA-256 remained `d3ca361f…d15561`. The difference in chart and
+image IDs between these runs means cross-run reproducibility is **not**
+established. Each run did test its own built artifacts. This was still the
+development chart profile; it did not qualify production-profile TLS.
+
+The [production-profile kind plan](../qualification/synthetic-slice/production-profile-kind-plan.md)
+now has a separate CI implementation that installs the packaged
+`shadow-production` profile with an ephemeral client CA, mTLS ingress,
+authenticated HTTPS export and the same installed-wheel byte/record pilot.
+Local chart rendering, Python TLS bridge unit tests, Ruff and workflow lint
+passed. A Linux CI result and exact artifact IDs are **pending**. Even a
+pass would remain a synthetic transport/protection test, not a customer
+storage, identity-binding, retention, NetworkPolicy-enforcement or production
+GO proof.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model

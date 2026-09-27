@@ -1,0 +1,250 @@
+name: Synthetic production-profile qualification
+
+# Disposable kind + controlled fsync sink only. A pass is NOT a customer
+# production GO: it does not prove tenant-to-certificate binding, customer
+# storage/retention or independent target-environment operation.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-production-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kind-production-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER: fabric-prod-${{ github.run_id }}-${{ github.run_attempt }}
+      NAMESPACE: fabric-system
+      COLLECTOR_IMAGE: fabric-otelcol:e2e-production
+      CERT_DIR: /tmp/fabric-e2e-pki-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build exact Node image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: components/otel-collector-fabric
+          file: components/otel-collector-fabric/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.COLLECTOR_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
+        with:
+          cluster_name: ${{ env.KIND_CLUSTER }}
+          node_image: kindest/node:v1.30.0
+          version: v0.23.0
+          wait: 120s
+      - run: kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.15.0
+      - name: Package exact chart and identify artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/fabric-chart"
+          helm package charts/fabric --destination "${RUNNER_TEMP}/fabric-chart"
+          sha256sum "${RUNNER_TEMP}"/fabric-chart/fabric-*.tgz \
+            | tee "${RUNNER_TEMP}/fabric-chart-production.sha256"
+          sha256sum charts/fabric/profiles/shadow-production.yaml \
+            qualification/synthetic-slice/kind-production-values.yaml \
+            qualification/synthetic-slice/kind-production-sink.yaml \
+            deploy/compose/sink/otlp_sink.py \
+            | tee "${RUNNER_TEMP}/fabric-production-config.sha256"
+          docker image inspect "${COLLECTOR_IMAGE}" --format '{{.Id}}' \
+            | tee "${RUNNER_TEMP}/fabric-node-production-image-id.txt"
+      - name: Generate ephemeral test-only certificates and auth
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "${CERT_DIR}"
+          openssl req -x509 -newkey rsa:2048 -noenc -days 1 \
+            -subj '/CN=Fabric test ingress CA' \
+            -keyout "${CERT_DIR}/ingress-ca.key" -out "${CERT_DIR}/ingress-ca.crt"
+          openssl req -x509 -newkey rsa:2048 -noenc -days 1 \
+            -subj '/CN=Fabric test sink CA' \
+            -keyout "${CERT_DIR}/sink-ca.key" -out "${CERT_DIR}/sink-ca.crt"
+          openssl req -new -newkey rsa:2048 -noenc \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' \
+            -addext 'extendedKeyUsage=serverAuth' \
+            -keyout "${CERT_DIR}/node.key" -out "${CERT_DIR}/node.csr"
+          openssl x509 -req -in "${CERT_DIR}/node.csr" \
+            -CA "${CERT_DIR}/ingress-ca.crt" -CAkey "${CERT_DIR}/ingress-ca.key" \
+            -CAcreateserial -days 1 -sha256 -copy_extensions copy \
+            -out "${CERT_DIR}/node.crt"
+          openssl req -new -newkey rsa:2048 -noenc \
+            -subj '/CN=synthetic-pilot-client' \
+            -addext 'extendedKeyUsage=clientAuth' \
+            -keyout "${CERT_DIR}/client.key" -out "${CERT_DIR}/client.csr"
+          openssl x509 -req -in "${CERT_DIR}/client.csr" \
+            -CA "${CERT_DIR}/ingress-ca.crt" -CAkey "${CERT_DIR}/ingress-ca.key" \
+            -CAcreateserial -days 1 -sha256 -copy_extensions copy \
+            -out "${CERT_DIR}/client.crt"
+          openssl req -new -newkey rsa:2048 -noenc \
+            -subj '/CN=fabric-test-sink' \
+            -addext 'subjectAltName=DNS:fabric-test-sink,DNS:localhost,IP:127.0.0.1' \
+            -addext 'extendedKeyUsage=serverAuth' \
+            -keyout "${CERT_DIR}/sink.key" -out "${CERT_DIR}/sink.csr"
+          openssl x509 -req -in "${CERT_DIR}/sink.csr" \
+            -CA "${CERT_DIR}/sink-ca.crt" -CAkey "${CERT_DIR}/sink-ca.key" \
+            -CAcreateserial -days 1 -sha256 -copy_extensions copy \
+            -out "${CERT_DIR}/sink.crt"
+          openssl req -x509 -newkey rsa:2048 -noenc -days 1 \
+            -subj '/CN=untrusted-test-client' \
+            -keyout "${CERT_DIR}/untrusted.key" -out "${CERT_DIR}/untrusted.crt"
+          openssl rand -hex 32 | awk '{print "Bearer " $0}' > "${CERT_DIR}/authorization"
+      - name: Install authenticated HTTPS controlled sink
+        run: |
+          set -euo pipefail
+          kubectl create namespace "${NAMESPACE}"
+          kubectl create configmap fabric-test-sink --namespace "${NAMESPACE}" \
+            --from-file=otlp_sink.py=deploy/compose/sink/otlp_sink.py
+          kubectl create secret tls fabric-test-sink-tls --namespace "${NAMESPACE}" \
+            --cert="${CERT_DIR}/sink.crt" --key="${CERT_DIR}/sink.key"
+          kubectl create secret generic fabric-test-sink-auth --namespace "${NAMESPACE}" \
+            --from-file=authorization="${CERT_DIR}/authorization"
+          kubectl create secret tls fabric-node-receiver-tls --namespace "${NAMESPACE}" \
+            --cert="${CERT_DIR}/node.crt" --key="${CERT_DIR}/node.key"
+          kubectl create secret generic fabric-node-client-ca --namespace "${NAMESPACE}" \
+            --from-file=ca.crt="${CERT_DIR}/ingress-ca.crt"
+          kubectl create secret generic fabric-test-sink-ca --namespace "${NAMESPACE}" \
+            --from-file=ca.crt="${CERT_DIR}/sink-ca.crt"
+          kubectl create secret generic fabric-node-export-auth --namespace "${NAMESPACE}" \
+            --from-file=authorization="${CERT_DIR}/authorization"
+          kubectl apply --namespace "${NAMESPACE}" -f \
+            qualification/synthetic-slice/kind-production-sink.yaml
+          kubectl rollout status deployment/fabric-test-sink \
+            --namespace "${NAMESPACE}" --timeout=180s
+      - name: Install packaged shadow-production profile
+        run: |
+          set -euo pipefail
+          helm install fabric-prod "${RUNNER_TEMP}"/fabric-chart/fabric-*.tgz \
+            --namespace "${NAMESPACE}" \
+            --values charts/fabric/profiles/shadow-production.yaml \
+            --values qualification/synthetic-slice/kind-production-values.yaml \
+            --set tenant.id=synthetic-tenant \
+            --wait --timeout 5m
+          kubectl wait --for=condition=ready pods --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector --timeout=300s
+          test "$(kubectl get networkpolicy --namespace "${NAMESPACE}" \
+            -o json | jq '.items | length')" -ge 2
+          test "$(kubectl get statefulset --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector \
+            -o json | jq '.items | length')" -eq 1
+          test "$(kubectl get pvc --namespace "${NAMESPACE}" \
+            -o json | jq '.items | length')" -ge 2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - name: Build and install exact Python wheel
+        run: |
+          set -euo pipefail
+          python -m pip install build==1.6.1
+          python -m build --wheel --outdir "${RUNNER_TEMP}/fabric-wheel" sdk/python
+          python -m venv "${RUNNER_TEMP}/fabric-agent-venv"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pip install \
+            "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
+            opentelemetry-proto==1.44.0
+          sha256sum "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
+            | tee "${RUNNER_TEMP}/fabric-wheel-production.sha256"
+      - name: Check TLS failures and reconcile exact agent/sink records
+        run: |
+          set -euo pipefail
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-prod-otel-collector 14319:4318 &
+          NODE_PF=$!
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-test-sink 18443:8443 &
+          SINK_PF=$!
+          trap 'kill ${NODE_PF} ${SINK_PF} 2>/dev/null || true' EXIT
+          sleep 3
+          curl -fsS --cacert "${CERT_DIR}/sink-ca.crt" \
+            https://localhost:18443/health
+          BEFORE=$(curl -fsS --cacert "${CERT_DIR}/sink-ca.crt" \
+            https://localhost:18443/count | jq -r .count)
+          # An unauthenticated client and an untrusted client must not be
+          # accepted. curl failures may be TLS alerts or HTTP 4xx.
+          if curl -fsS --cacert "${CERT_DIR}/ingress-ca.crt" \
+            -X POST https://localhost:14319/v1/logs \
+            -H 'Content-Type: application/json' -d '{}'; then
+            echo 'Collector accepted request without client certificate' >&2
+            exit 1
+          fi
+          if curl -fsS --cacert "${CERT_DIR}/ingress-ca.crt" \
+            --cert "${CERT_DIR}/untrusted.crt" --key "${CERT_DIR}/untrusted.key" \
+            -X POST https://localhost:14319/v1/logs \
+            -H 'Content-Type: application/json' -d '{}'; then
+            echo 'Collector accepted untrusted client certificate' >&2
+            exit 1
+          fi
+          if curl -fsS --cacert "${CERT_DIR}/sink-ca.crt" \
+            -X POST https://localhost:18443/v1/logs \
+            -H 'Content-Type: application/x-protobuf' -d 'forbidden'; then
+            echo 'Sink accepted export without auth header' >&2
+            exit 1
+          fi
+          AFTER=$(curl -fsS --cacert "${CERT_DIR}/sink-ca.crt" \
+            https://localhost:18443/count | jq -r .count)
+          test "${AFTER}" -eq "${BEFORE}"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_synthetic_agent_pilot.py \
+            --node-url https://localhost:14319/v1/logs \
+            --node-ca "${CERT_DIR}/ingress-ca.crt" \
+            --node-cert "${CERT_DIR}/client.crt" \
+            --node-key "${CERT_DIR}/client.key" \
+            --sink-url https://localhost:18443 \
+            --sink-ca "${CERT_DIR}/sink-ca.crt" \
+            --report-path "${RUNNER_TEMP}/fabric-agent-production-report.json"
+      - name: Reconcile fsynced sink readback and privacy
+        run: |
+          set -euo pipefail
+          SINK_POD=$(kubectl get pod --namespace "${NAMESPACE}" \
+            -l app=fabric-test-sink -o jsonpath='{.items[0].metadata.name}')
+          kubectl cp "${NAMESPACE}/${SINK_POD}:/data" \
+            "${RUNNER_TEMP}/fabric-production-sink-data"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/verify_synthetic_sink_readback.py \
+            --report-path "${RUNNER_TEMP}/fabric-agent-production-report.json" \
+            --sink-dir "${RUNNER_TEMP}/fabric-production-sink-data"
+          if kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector --tail=-1 \
+            | grep -Fq 'PILOT_SECRET_CANARY_do_not_export'; then
+            echo 'Privacy canary appeared in Collector logs' >&2
+            exit 1
+          fi
+          if grep -RFq 'PILOT_SECRET_CANARY_do_not_export' \
+            "${RUNNER_TEMP}/fabric-production-sink-data"; then
+            echo 'Privacy canary appeared in sink files' >&2
+            exit 1
+          fi
+      - name: Publish non-secret qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: synthetic-production-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/fabric-agent-production-report.json
+            ${{ runner.temp }}/fabric-wheel-production.sha256
+            ${{ runner.temp }}/fabric-chart-production.sha256
+            ${{ runner.temp }}/fabric-production-config.sha256
+            ${{ runner.temp }}/fabric-node-production-image-id.txt
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Diagnostics without secret values
+        if: failure()
+        run: |
+          kubectl get all,pvc,networkpolicy --namespace "${NAMESPACE}" || true
+          kubectl describe pods --namespace "${NAMESPACE}" || true
+          kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector --tail=300 || true
+          kubectl logs --namespace "${NAMESPACE}" \
+            -l app=fabric-test-sink --tail=300 || true

@@ -13,12 +13,14 @@ import hashlib
 import http.client
 import json
 import os
+import ssl
 import sys
 import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from dataclasses import dataclass
 from urllib.parse import quote, urlsplit
 
 import fabric
@@ -53,6 +55,14 @@ ROLES = frozenset(
 )
 CANARY = "PILOT_SECRET_CANARY_do_not_export"
 TOOL = Path(__file__).with_name("synthetic_agent_tool.py").resolve()
+
+
+@dataclass(frozen=True)
+class PilotTLS:
+    node_ca: str | None = None
+    node_cert: str | None = None
+    node_key: str | None = None
+    sink_ca: str | None = None
 
 
 def _json_bytes(value: object) -> bytes:
@@ -183,13 +193,28 @@ def _direct_bypass(port: int) -> None:
         connection.close()
 
 
-def _sink_get(endpoint: str, path: str) -> dict[str, object]:
+def _sink_get(
+    endpoint: str, path: str, *, ca_cert_path: str | None = None
+) -> dict[str, object]:
     parsed = urlsplit(endpoint)
-    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}:
-        raise ValueError("controlled sink URL must be local HTTP")
-    connection = http.client.HTTPConnection(
-        parsed.hostname, parsed.port or 80, timeout=5
-    )
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
+        "127.0.0.1",
+        "localhost",
+    }:
+        raise ValueError("controlled sink URL must be local HTTP(S)")
+    if parsed.scheme == "https":
+        if not ca_cert_path:
+            raise ValueError("controlled HTTPS sink requires a CA certificate")
+        context = ssl.create_default_context(cafile=ca_cert_path)
+        connection: http.client.HTTPConnection = http.client.HTTPSConnection(
+            parsed.hostname, parsed.port or 443, timeout=5, context=context
+        )
+    else:
+        if ca_cert_path is not None:
+            raise ValueError("controlled HTTP sink cannot accept a CA certificate")
+        connection = http.client.HTTPConnection(
+            parsed.hostname, parsed.port or 80, timeout=5
+        )
     try:
         connection.request("GET", path)
         response = connection.getresponse()
@@ -201,13 +226,21 @@ def _sink_get(endpoint: str, path: str) -> dict[str, object]:
         connection.close()
 
 
-def _check_sink(endpoint: str, ids: list[str], digests: list[str]) -> None:
+def _check_sink(
+    endpoint: str,
+    ids: list[str],
+    digests: list[str],
+    *,
+    ca_cert_path: str | None = None,
+) -> None:
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
         missing = [
             value
             for value in [*ids, *digests]
-            if not _sink_get(endpoint, "/contains?needle=" + quote(value))["found"]
+            if not _sink_get(
+                endpoint, "/contains?needle=" + quote(value), ca_cert_path=ca_cert_path
+            )["found"]
         ]
         if not missing:
             break
@@ -216,12 +249,14 @@ def _check_sink(endpoint: str, ids: list[str], digests: list[str]) -> None:
         raise AssertionError(
             f"controlled sink lacks {len(missing)} required IDs/digests"
         )
-    if _sink_get(endpoint, "/contains?needle=" + quote(CANARY))["found"]:
+    if _sink_get(
+        endpoint, "/contains?needle=" + quote(CANARY), ca_cert_path=ca_cert_path
+    )["found"]:
         raise AssertionError("privacy canary escaped to controlled sink")
 
 
 def _run_case(
-    root: Path, fault: str, node_url: str | None, sink_url: str | None
+    root: Path, fault: str, node_url: str | None, sink_url: str | None, tls: PilotTLS
 ) -> dict[str, object]:
     root.mkdir(mode=0o700)
     work = root / "work"
@@ -507,7 +542,13 @@ def _run_case(
                         },
                     }
                 )
-            receipt = export_synthetic_snapshot(snapshot, node_url)
+            receipt = export_synthetic_snapshot(
+                snapshot,
+                node_url,
+                ca_cert_path=tls.node_ca,
+                client_cert_path=tls.node_cert,
+                client_key_path=tls.node_key,
+            )
             assert receipt["receipt_stage"] == "node_accepted"
             assert receipt["rejected_count"] == 0
             ids = [event["record_id"] for event in snapshot["events"]]
@@ -516,7 +557,7 @@ def _run_case(
                 for event in snapshot["events"]
                 if event["status"] == "stored"
             ]
-            _check_sink(sink_url, ids, digests)
+            _check_sink(sink_url, ids, digests, ca_cert_path=tls.sink_ca)
         return {
             "fault": fault,
             "verdict": report["verdict"],
@@ -541,6 +582,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--node-url", help="loopback Fabric Node /v1/logs URL")
     parser.add_argument("--sink-url", help="loopback controlled sink base URL")
+    parser.add_argument("--node-ca", help="trusted test CA for HTTPS Node")
+    parser.add_argument("--node-cert", help="test client certificate for HTTPS Node")
+    parser.add_argument("--node-key", help="test client key for HTTPS Node")
+    parser.add_argument("--sink-ca", help="trusted test CA for HTTPS sink")
     parser.add_argument("--work-dir", type=Path, help="dedicated output directory")
     parser.add_argument(
         "--report-path", type=Path, help="write full digest/discrepancy report"
@@ -554,16 +599,19 @@ def main() -> int:
         parser.error("pilot must import an installed wheel, not repository source")
     if not TOOL.is_file():
         parser.error("synthetic tool fixture missing")
+    tls = PilotTLS(args.node_ca, args.node_cert, args.node_key, args.sink_ca)
     if args.work_dir is None:
         with tempfile.TemporaryDirectory(prefix="fabric-agent-pilot-") as directory:
             cases = [
-                _run_case(Path(directory) / fault, fault, args.node_url, args.sink_url)
+                _run_case(
+                    Path(directory) / fault, fault, args.node_url, args.sink_url, tls
+                )
                 for fault in ("clean", "bypass", "missing-object")
             ]
     else:
         args.work_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
         cases = [
-            _run_case(args.work_dir / fault, fault, args.node_url, args.sink_url)
+            _run_case(args.work_dir / fault, fault, args.node_url, args.sink_url, tls)
             for fault in ("clean", "bypass", "missing-object")
         ]
     report = {

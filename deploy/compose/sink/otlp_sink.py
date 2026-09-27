@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import gzip
+import hmac
 import json
 import os
+import ssl
 import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,7 +15,12 @@ from urllib.parse import parse_qs, urlparse
 
 DATA_DIR = Path(os.environ.get("SINK_DATA_DIR", "/var/lib/fabric-test-sink"))
 PORT = int(os.environ.get("SINK_PORT", "8080"))
+TLS_CERT_FILE = os.environ.get("SINK_TLS_CERT_FILE", "")
+TLS_KEY_FILE = os.environ.get("SINK_TLS_KEY_FILE", "")
+AUTH_TOKEN = os.environ.get("SINK_AUTH_TOKEN", "")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+if bool(TLS_CERT_FILE) != bool(TLS_KEY_FILE):
+    raise ValueError("test sink TLS certificate and key must be configured together")
 
 
 def records() -> list[Path]:
@@ -52,6 +59,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path not in {"/v1/traces", "/v1/logs", "/v1/metrics"}:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not an OTLP/HTTP path"})
             return
+        if AUTH_TOKEN and not hmac.compare_digest(
+            self.headers.get("Authorization", ""), AUTH_TOKEN
+        ):
+            self.close_connection = True
+            self._json(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+            return
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         if self.headers.get("Content-Encoding", "").lower() == "gzip":
@@ -84,4 +97,9 @@ class Handler(BaseHTTPRequestHandler):
         print(f"test-sink {self.address_string()} {format % args}", flush=True)
 
 
-ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+if TLS_CERT_FILE:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(TLS_CERT_FILE, TLS_KEY_FILE)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+server.serve_forever()

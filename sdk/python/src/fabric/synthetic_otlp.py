@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.client
 import json
 import re
+import ssl
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -167,13 +168,23 @@ def project_synthetic_snapshot(snapshot: dict[str, Any]) -> tuple[bytes, list[st
     return json.dumps(document, separators=(",", ":"), allow_nan=False).encode("utf-8"), record_ids
 
 
-def export_synthetic_snapshot(
-    snapshot: dict[str, Any], endpoint: str, *, timeout_s: float = 10.0
+def export_synthetic_snapshot(  # noqa: PLR0912
+    snapshot: dict[str, Any],
+    endpoint: str,
+    *,
+    timeout_s: float = 10.0,
+    ca_cert_path: str | None = None,
+    client_cert_path: str | None = None,
+    client_key_path: str | None = None,
 ) -> dict[str, Any]:
-    """Post settled metadata to a controlled loopback Node, off the action path."""
+    """Post settled metadata to a controlled loopback Node, off the action path.
+
+    HTTPS requires explicit CA verification and a client certificate/key;
+    insecure verification is never offered by this test-only bridge.
+    """
     parsed = urlsplit(endpoint)
     if (
-        parsed.scheme != "http"
+        parsed.scheme not in {"http", "https"}
         or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
         or parsed.username is not None
         or parsed.password is not None
@@ -184,8 +195,24 @@ def export_synthetic_snapshot(
         raise ValueError("synthetic OTLP endpoint must be loopback /v1/logs")
     if timeout_s <= 0 or timeout_s > _MAX_TIMEOUT_S:
         raise ValueError("invalid OTLP timeout")
+    tls_paths = (ca_cert_path, client_cert_path, client_key_path)
+    if parsed.scheme == "https" and any(not path for path in tls_paths):
+        raise ValueError("HTTPS synthetic OTLP requires CA and client certificate/key")
+    if parsed.scheme == "http" and any(path is not None for path in tls_paths):
+        raise ValueError("HTTP synthetic OTLP cannot accept TLS certificate options")
     payload, ids = project_synthetic_snapshot(snapshot)
-    connection = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=timeout_s)
+    if parsed.scheme == "https":
+        context = ssl.create_default_context(cafile=ca_cert_path)
+        if client_cert_path is None or client_key_path is None:
+            raise ValueError("HTTPS synthetic OTLP requires client certificate/key")
+        context.load_cert_chain(client_cert_path, client_key_path)
+        connection: http.client.HTTPConnection = http.client.HTTPSConnection(
+            parsed.hostname, parsed.port or 443, timeout=timeout_s, context=context
+        )
+    else:
+        connection = http.client.HTTPConnection(
+            parsed.hostname, parsed.port or 80, timeout=timeout_s
+        )
     try:
         connection.request(
             "POST", "/v1/logs", body=payload, headers={"Content-Type": "application/json"}

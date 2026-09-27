@@ -129,3 +129,12 @@ def test_loopback_export_accounts_for_partial_success() -> None:
 def test_export_rejects_nonloopback_destination() -> None:
     with pytest.raises(ValueError):
         export_synthetic_snapshot(_snapshot(), "https://example.test/v1/logs")
+
+
+def test_https_requires_verified_ca_and_client_identity() -> None:
+    with pytest.raises(ValueError, match="requires CA and client"):
+        export_synthetic_snapshot(_snapshot(), "https://127.0.0.1:4318/v1/logs")
+    with pytest.raises(ValueError, match="cannot accept TLS"):
+        export_synthetic_snapshot(
+            _snapshot(), "http://127.0.0.1:4318/v1/logs", ca_cert_path="ca.pem"
+        )

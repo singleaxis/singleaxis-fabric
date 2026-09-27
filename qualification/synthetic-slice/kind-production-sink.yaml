@@ -1,0 +1,62 @@
+# Controlled disposable qualification fixture, not a production backend.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fabric-test-sink
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fabric-test-sink
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: fabric-test-sink}
+  template:
+    metadata:
+      labels: {app: fabric-test-sink}
+    spec:
+      containers:
+        - name: sink
+          image: python:3.12-alpine
+          command: [python, /app/otlp_sink.py]
+          env:
+            - {name: SINK_DATA_DIR, value: /data}
+            - {name: SINK_PORT, value: "8443"}
+            - {name: SINK_TLS_CERT_FILE, value: /cert/tls.crt}
+            - {name: SINK_TLS_KEY_FILE, value: /cert/tls.key}
+            - name: SINK_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fabric-test-sink-auth
+                  key: authorization
+          ports:
+            - {name: https, containerPort: 8443}
+          readinessProbe:
+            httpGet: {path: /health, port: https, scheme: HTTPS}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: script, mountPath: /app, readOnly: true}
+            - {name: cert, mountPath: /cert, readOnly: true}
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: script
+          configMap: {name: fabric-test-sink}
+        - name: cert
+          secret: {secretName: fabric-test-sink-tls}
+        - name: data
+          persistentVolumeClaim: {claimName: fabric-test-sink}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-test-sink
+spec:
+  selector: {app: fabric-test-sink}
+  ports:
+    - {name: https, port: 8443, targetPort: https}
