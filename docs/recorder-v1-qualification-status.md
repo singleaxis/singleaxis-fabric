@@ -299,6 +299,20 @@ vulnerabilities in the resulting graph. The new PR-head Linux/security gates
 and owner classification remain pending; passing tests do not certify a
 customer deployment.
 
+The next Linux Python 3.12 CI run exposed a real asynchronous completion
+race in `ContentWriter`: destination write incremented `stored` and removed
+pending bookkeeping before the durable spool file was unlinked/fsynced, so
+`flush()` could report a drained writer while cleanup was still in flight.
+The restart test also left the original worker alive, so it did not faithfully
+model process death. The implementation acceptance rule is now: successful
+spooled settlement occurs only after the durable spool cleanup; failed
+cleanup retains a pending gap, and a deterministic test pauses cleanup to
+prove `flush()` cannot report completion early. This is an engineering fix,
+not a destination-durable receipt or a passive-capture qualification. The
+implementation and restart-test correction passed the governed-content suite
+(91/91) and full Python SDK suite (694/694) locally. Linux CI on the new
+commit is still required.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model

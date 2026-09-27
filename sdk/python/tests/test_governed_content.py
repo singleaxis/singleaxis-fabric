@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -279,14 +280,76 @@ def test_writer_spooled_survives_restart(tmp_path: Path) -> None:
             break
     assert list(spool_dir.glob("*.json")), "no durable spool entry"
 
-    # Simulate process death: abandon writer, build a fresh one over the
-    # same spool once the store recovers.
+    # Stop the old worker before recovery; this is a restart test, not a
+    # kill -9 proof. Leaving it running races two writers on one spool.
+    writer.close()
     store.fail = False
     recovered = ContentWriter(config)
     result = recovered.flush(timeout_s=5)
     recovered.close()
     assert result.stored == 1
     assert not list(spool_dir.glob("*.json")), "spool entry not cleaned up"
+
+
+def test_spooled_flush_waits_for_durable_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spool_dir = tmp_path / "spool"
+    writer = ContentWriter(_config(tmp_path, durability="spooled", spool_dir=str(spool_dir)))
+    cleanup_started = threading.Event()
+    allow_cleanup = threading.Event()
+    original_remove = writer._remove_spool
+
+    def held_cleanup(task: Any) -> bool:
+        cleanup_started.set()
+        if not allow_cleanup.wait(timeout=5):
+            return False
+        return original_remove(task)
+
+    monkeypatch.setattr(writer, "_remove_spool", held_cleanup)
+    try:
+        descriptor, content = _task(content="cleanup-race")
+        assert writer.submit(descriptor, content) == ContentStatus.PENDING
+        assert cleanup_started.wait(timeout=5)
+        result = writer.flush(timeout_s=0.05)
+        assert result.pending == 1
+        assert result.stored == 0
+        assert list(spool_dir.glob("*.json"))
+    finally:
+        allow_cleanup.set()
+    result = writer.flush(timeout_s=5)
+    writer.close()
+    assert result.pending == 0
+    assert result.stored == 1
+    assert not list(spool_dir.glob("*.json"))
+
+
+def test_spool_cleanup_failure_remains_pending_until_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spool_dir = tmp_path / "spool"
+    config = _config(
+        tmp_path,
+        durability="spooled",
+        spool_dir=str(spool_dir),
+        shutdown_flush_timeout_s=0.05,
+    )
+    writer = ContentWriter(config)
+    monkeypatch.setattr(writer, "_remove_spool", lambda _task: False)
+    descriptor, content = _task(content="cleanup-failure")
+    assert writer.submit(descriptor, content) == ContentStatus.PENDING
+    first = writer.flush(timeout_s=0.2)
+    writer.close()
+    assert first.pending == 1
+    assert first.stored == 0
+    assert list(spool_dir.glob("*.json"))
+
+    recovered = ContentWriter(config)
+    second = recovered.flush(timeout_s=5)
+    recovered.close()
+    assert second.pending == 0
+    assert second.stored == 1
+    assert not list(spool_dir.glob("*.json"))
 
 
 def test_writer_queue_exhaustion_reports_dropped(tmp_path: Path) -> None:

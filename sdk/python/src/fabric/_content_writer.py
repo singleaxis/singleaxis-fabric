@@ -572,10 +572,14 @@ class ContentWriter:
                     self._reconcile_recovered_object(task, ContentStatus.FAILED)
             self._settle(task, ContentStatus.FAILED)
             return ContentStatus.FAILED
+        if self._spool_dir is not None and not self._remove_spool(task):
+            # The destination accepted the write, but source cleanup is not
+            # durably settled. Keep the task pending so flush cannot certify
+            # a drained source; the spool is recoverable on the next start.
+            _LOG.warning("fabric.content_writer: spool cleanup failed; delivery remains pending")
+            return ContentStatus.PENDING
         self._stats["stored"] += 1
         self._settle(task, ContentStatus.STORED)
-        if self._spool_dir is not None and not self._remove_spool(task):
-            _LOG.warning("fabric.content_writer: spool cleanup failed", exc_info=True)
         return ContentStatus.STORED
 
     def _remove_spool(self, task: _Task) -> bool:
@@ -592,8 +596,6 @@ class ContentWriter:
 
     def _settle(self, task: _Task, status: str) -> None:
         with self._pending_lock:
-            if self._pending.get(task.key) is task:
-                self._pending.pop(task.key, None)
             callback = self._subscribers.pop(task.key, None)
         # Manifest tasks carry no subscriber — settlement is bookkeeping
         # only; object tasks route to their manifest item.
@@ -602,6 +604,11 @@ class ContentWriter:
                 callback(task.descriptor, status)
             except Exception:
                 _LOG.warning("fabric.content_writer: settled callback failed", exc_info=True)
+        # A subscriber may submit a manifest rewrite. Do not let flush see
+        # zero pending work until that follow-on publication has finished.
+        with self._pending_lock:
+            if self._pending.get(task.key) is task:
+                self._pending.pop(task.key, None)
 
     def _has_subscriber(self, key: str) -> bool:
         with self._pending_lock:
