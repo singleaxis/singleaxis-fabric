@@ -1,7 +1,8 @@
 name: E2E kind smoke
 
-# Qualifies the released Fabric Node surface only:
-# OTLP -> default-deny protection -> persistent queue -> controlled test sink.
+# Qualifies Fabric Node and an installed-wheel synthetic agent fixture:
+# model -> terminal -> binary artifact -> model, then AEEP metadata through
+# default-deny protection -> persistent queue -> controlled test sink.
 # The sink returns 200 after fsync, allowing this workflow to test outage and
 # restart recovery without claiming that arbitrary OTLP destinations have the
 # same persistence semantics.
@@ -42,6 +43,10 @@ jobs:
               - 'charts/fabric/**'
               - 'components/otel-collector-fabric/**'
               - 'deploy/compose/**'
+              - 'sdk/python/**'
+              - 'scripts/qualification/run_synthetic_agent_pilot.py'
+              - 'scripts/qualification/synthetic_agent_tool.py'
+              - 'qualification/synthetic-slice/end-to-end-agent-pilot-plan.md'
               - '.github/workflows/e2e.yml'
       # Manual dispatch has no diff context for paths-filter — always run the
       # smoke rather than silently skipping the only end-to-end gate.
@@ -60,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      KIND_CLUSTER: fabric-e2e
+      KIND_CLUSTER: fabric-e2e-${{ github.run_id }}-${{ github.run_attempt }}
       NAMESPACE: fabric-system
       COLLECTOR_IMAGE: fabric-otelcol:e2e
     steps:
@@ -270,6 +275,52 @@ jobs:
       - name: Helm test
         if: needs.detect.outputs.relevant == 'true'
         run: helm test fabric-node --namespace "${NAMESPACE}" --timeout 2m
+
+      - name: Set up Python for exact installed-wheel pilot
+        if: needs.detect.outputs.relevant == 'true'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+
+      - name: Build and install exact Python wheel
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          python -m pip install build==1.6.1
+          python -m build --wheel --outdir "${RUNNER_TEMP}/fabric-wheel" sdk/python
+          python -m venv "${RUNNER_TEMP}/fabric-agent-venv"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pip install \
+            "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl
+          sha256sum "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
+            | tee "${RUNNER_TEMP}/fabric-wheel.sha256"
+
+      - name: Reconcile installed-wheel agent run and sink metadata
+        if: needs.detect.outputs.relevant == 'true'
+        run: |
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-node-otel-collector 14318:4318 &
+          NODE_PF=$!
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-test-sink 18080:8080 &
+          SINK_PF=$!
+          trap 'kill ${NODE_PF} ${SINK_PF} 2>/dev/null || true' EXIT
+          sleep 3
+          curl -fsS http://127.0.0.1:18080/health
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_synthetic_agent_pilot.py \
+            --node-url http://127.0.0.1:14318/v1/logs \
+            --sink-url http://127.0.0.1:18080 \
+            --report-path "${RUNNER_TEMP}/fabric-agent-pilot-report.json"
+
+      - name: Publish synthetic pilot evidence
+        if: always() && needs.detect.outputs.relevant == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: synthetic-agent-pilot-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/fabric-agent-pilot-report.json
+            ${{ runner.temp }}/fabric-wheel.sha256
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Diagnostics
         if: failure() && needs.detect.outputs.relevant == 'true'

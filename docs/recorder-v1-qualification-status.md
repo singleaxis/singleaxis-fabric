@@ -94,6 +94,29 @@ all current released-dependency scans passed. These CI results establish a
 bounded Node smoke on that commit, not a synthetic exact-byte pilot, target
 storage qualification, or enterprise GO.
 
+The later PR head `c5ca90f` also passed Recorder CI, Linux/kind smoke,
+CodeQL and license checks. Recorder security still fails solely on seven
+history-wide secret-scan findings in old commits; the current tree and PR
+range scans found no new leaks. The smoke still did not run the synthetic
+agent. The [installed-artifact pilot plan](../qualification/synthetic-slice/end-to-end-agent-pilot-plan.md)
+now defines that missing CI step. A newly built local wheel installed in a
+disposable Python 3.11 environment ran a deterministic three-model/two-tool
+agent fixture: 25 required byte objects and 10 outcomes reconciled with
+fsynced endpoint/tool journals and artifact inventory, with zero discrepancies
+in the clean case. A direct provider bypass produced four discrepancies and
+a deleted required object produced one; both were `partial`. The clean case
+remained `unverified`. The new workflow step will test that same installed
+wheel against the isolated Linux/kind Node and controlled sink; its live result
+is pending. This fixture is not a customer shadow pilot or passive
+non-interference proof.
+
+The local wheel SHA-256 was
+`d3ca361f5acb008daf8bb96b392033514393851b5b7f66ce4e127d2797d15561`.
+The executable check was
+`/private/tmp/fabric-agent-pilot-venv/bin/python scripts/qualification/run_synthetic_agent_pilot.py --report-path /private/tmp/fabric-agent-pilot-report.json`
+from the PR worktree, after installing that wheel into the disposable venv.
+This local digest is not a clean tagged release identity.
+
 ### Decision rule for the first bounded GO
 
 `GO` applies only to the signed synthetic model → terminal → artifact → model
@@ -125,7 +148,7 @@ manufacture those proofs. When any gate is unavailable, status remains
 | 5 resolver/reconciliation | Local partial/unverified only | Customer verifier: authenticate independent feeds and durable receipt proof before enabling `verified_complete_for_declared_scope`. |
 | 6 privacy/storage | Pre-hardening AEEP Node/sink/log/queue canary passed; final resource-attribute guard passed unit/race only | Customer privacy/storage: rerun final image on runner with free disk, then canary across errors/receipts and live encryption, retention, backup/restore, key rotation and disk-full tests for each store. |
 | 7 exact artifacts | Local dirty-checkout wheel/chart/images built and partly smoke-tested; final Node image live test blocked by Docker disk exhaustion | Release engineering: isolated runner with free disk, clean tagged SHA and digest-pinned installed SDKs, chart, Node and host images on Linux/Kubernetes; privileged scoped BPF requires explicit approval. |
-| 8 shadow pilot | Not run | Customer pilot owner: pre-register independent endpoint/terminal/filesystem records, run exact artifacts, reconcile every operation/object and obtain independent review. |
+| 8 shadow pilot | Local installed-wheel synthetic fixture passed; Linux/kind Node linkage and customer pilot not yet run | Customer pilot owner: pre-register authenticated endpoint/terminal/filesystem records, run exact artifacts in target environment, reconcile every operation/object and obtain independent review. |
 
 ## Implemented in release artifacts
 
