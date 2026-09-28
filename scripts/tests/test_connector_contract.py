@@ -63,7 +63,9 @@ def test_released_manifest_set_is_explicit() -> None:
     }
 
 
-def test_byte_boundary_manifest_does_not_claim_automatic_or_authenticated_capture() -> None:
+def test_byte_boundary_manifest_does_not_claim_automatic_or_authenticated_capture() -> (
+    None
+):
     document = _document("manifests/python-byte-boundary.json")
     assert document["release"]["maturity"] == "experimental"
     assert document["identity"]["strength"] == "asserted"

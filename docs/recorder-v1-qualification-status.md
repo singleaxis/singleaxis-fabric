@@ -29,10 +29,18 @@ client adapter smoke: five protected byte objects and two outcomes matched
 independent in-process truth; five metadata
 records contained no secret canary; a direct bypass caused two missing-object
 discrepancies and `partial`. The clean run remained `unverified`. The exact
-wheel passed the package-content qualifier. A Linux CI result must be
-attached before treating this as an exact-artifact qualification. The
-production-profile kind workflow now
-includes that installed-wheel smoke but has not yet run with this change.
+wheel passed the package-content qualifier. The same wheel digest appeared
+in [Linux kind run 36422550081](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36422550081)
+on commit `6fb5ba6`: the new installed-wheel client smoke passed, and the
+existing production-profile fixture reconciled 25 byte objects, 10 outcomes
+and 39 sink metadata records with zero clean-run discrepancies. Bypass and
+missing-object cases remained `partial`; the clean case remained `unverified`.
+The run's non-secret `synthetic-production-profile-36422550081-1` artifact
+contains the exact reports and digests. This is an isolated CI test, not a
+customer environment or complete-run proof. Source hygiene on `6fb5ba6`
+failed only because the connector-contract test needed formatting; the
+formatting fix is pending a new CI run. The history-wide secret scan also
+remains red pending security-owner classification.
 
 [Spec 040](../specs/040-synthetic-agent-evidence-slice.md) records the phase-1
 gap ledger, provisional scope and control/coverage matrix, and documents
