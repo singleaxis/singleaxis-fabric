@@ -52,30 +52,47 @@ def _open(
     )
 
 
+def _append(spool: SyntheticSourceSpool, event: dict[str, Any], expected: str = "pending") -> None:
+    actual = spool.append(event)
+    assert actual == expected
+
+
+def _flush(spool: SyntheticSourceSpool) -> None:
+    settled = spool.flush()
+    assert settled
+
+
+def _close(spool: SyntheticSourceSpool) -> None:
+    closed = spool.close()
+    assert closed
+
+
 def test_source_spool_fsync_recovery_and_new_epoch(tmp_path: Path) -> None:
     root = _root(tmp_path)
     first = _open(root)
     assert first.epoch == 0
     event = _event("evt-one", first.epoch, 0)
-    assert first.append(event) == "pending"
-    assert first.flush()
+    _append(first, event)
+    _flush(first)
     assert first.status("evt-one") == "spooled"
-    assert first.close()
+    _close(first)
     second = _open(root)
     assert second.epoch == 1
     assert second.recovered() == [event]
-    assert second.append(_event("evt-two", second.epoch, 0)) == "pending"
-    assert second.flush() and second.close()
+    _append(second, _event("evt-two", second.epoch, 0))
+    _flush(second)
+    _close(second)
     third = _open(root)
     assert [item["record_id"] for item in third.recovered()] == ["evt-one", "evt-two"]
-    assert third.close()
+    _close(third)
 
 
 def test_source_spool_recovery_exposes_missing_sequence_range(tmp_path: Path) -> None:
     root = _root(tmp_path)
     first = _open(root)
-    assert first.append(_event("evt-second", first.epoch, 1)) == "pending"
-    assert first.flush() and first.close()
+    _append(first, _event("evt-second", first.epoch, 1))
+    _flush(first)
+    _close(first)
     recovered = _open(root)
     assert recovered.recovered_gaps() == [
         {
@@ -84,7 +101,7 @@ def test_source_spool_recovery_exposes_missing_sequence_range(tmp_path: Path) ->
             "missing_ranges": [{"start": 0, "end": 0}],
         }
     ]
-    assert recovered.close()
+    _close(recovered)
 
 
 def test_crash_before_async_fsync_is_not_recoverable_without_external_truth(tmp_path: Path) -> None:
@@ -110,7 +127,7 @@ def test_crash_before_async_fsync_is_not_recoverable_without_external_truth(tmp_
     # The independent fixture knew evt-lost was submitted, while the source
     # journal could not prove it. This is why its pre-spool window forbids a
     # complete-run verdict even after a clean-looking restart.
-    assert recovered.close()
+    _close(recovered)
 
 
 def test_source_spool_overflow_is_explicit_and_nonblocking(
@@ -128,16 +145,17 @@ def test_source_spool_overflow_is_explicit_and_nonblocking(
         return real_write(event)
 
     monkeypatch.setattr(spool, "_write_event", blocked)
-    assert spool.append(_event("evt-one", spool.epoch, 0)) == "pending"
-    assert entered.wait(timeout=2)
-    assert spool.append(_event("evt-two", spool.epoch, 1)) == "pending"
-    assert spool.append(_event("evt-three", spool.epoch, 2)) == "dropped"
+    _append(spool, _event("evt-one", spool.epoch, 0))
+    entered_set = entered.wait(timeout=2)
+    assert entered_set
+    _append(spool, _event("evt-two", spool.epoch, 1))
+    _append(spool, _event("evt-three", spool.epoch, 2), "dropped")
     gate.set()
-    assert spool.flush()
+    _flush(spool)
     assert spool.status("evt-one") == "spooled"
     assert spool.status("evt-two") == "spooled"
     assert spool.status("evt-three") == "dropped"
-    assert spool.close()
+    _close(spool)
 
 
 def test_source_spool_quota_write_failure_and_privacy(
@@ -145,18 +163,18 @@ def test_source_spool_quota_write_failure_and_privacy(
 ) -> None:
     root = _root(tmp_path)
     spool = _open(root, max_bytes=1)
-    assert spool.append(_event("evt-overflow", spool.epoch, 0)) == "pending"
-    assert spool.flush()
+    _append(spool, _event("evt-overflow", spool.epoch, 0))
+    _flush(spool)
     assert spool.status("evt-overflow") == "dropped"
-    assert spool.close()
+    _close(spool)
     failed = _open(root)
     monkeypatch.setattr(
         failed, "_write_event", lambda _event: (_ for _ in ()).throw(OSError("secret-canary"))
     )
-    assert failed.append(_event("evt-failed", failed.epoch, 0)) == "pending"
-    assert failed.flush()
+    _append(failed, _event("evt-failed", failed.epoch, 0))
+    _flush(failed)
     assert failed.status("evt-failed") == "failed"
-    assert failed.close()
+    _close(failed)
     assert b"secret-canary" not in b"".join(
         path.read_bytes() for path in root.iterdir() if path.is_file()
     )
@@ -169,8 +187,9 @@ def test_source_spool_rejects_concurrent_owner_corruption_and_unsafe_entries(
     first = _open(root)
     with pytest.raises(BlockingIOError):
         _open(root)
-    first.append(_event("evt-one", first.epoch, 0))
-    assert first.flush() and first.close()
+    _append(first, _event("evt-one", first.epoch, 0))
+    _flush(first)
+    _close(first)
     event_file = root / "event-evt-one.json"
     data = json.loads(event_file.read_text())
     data["event"]["role"] = "terminal.stderr"
@@ -190,7 +209,7 @@ def test_source_spool_rejects_unsafe_root_and_identity(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="real directory"):
         _open(alias)
     first = _open(root)
-    assert first.close()
+    _close(first)
     with pytest.raises(ValueError, match="identity"):
         SyntheticSourceSpool(str(root), tenant_id="other", run_id="run-1")
     os.chmod(root, 0o500)

@@ -93,7 +93,8 @@ def test_exact_model_and_tool_bytes_retries_and_empty_context(tmp_path: Path) ->
         for event in snapshot["events"]
         if event["role"] == "model.request.messages"
     ] == ["try-1", "try-2"]
-    assert session.recorder.close()
+    closed = session.recorder.close()
+    assert closed
 
 
 def test_delegate_exception_and_unsupported_result_preserve_caller_semantics(
@@ -124,7 +125,8 @@ def test_delegate_exception_and_unsupported_result_preserve_caller_semantics(
         ("model.output.messages", "unsupported"),
     ]
     assert [item["result_status"] for item in snapshot["operations"]] == ["error", "ok"]
-    assert session.recorder.close()
+    closed = session.recorder.close()
+    assert closed
 
 
 def test_deferred_result_is_not_mislabeled_as_completed(tmp_path: Path) -> None:
@@ -157,7 +159,8 @@ def test_deferred_result_is_not_mislabeled_as_completed(tmp_path: Path) -> None:
     )
     assert report["verdict"] == "partial"
     assert any(item["kind"] == "incomplete_operation_outcome" for item in report["discrepancies"])
-    assert session.recorder.close()
+    closed = session.recorder.close()
+    assert closed
 
 
 def test_recorder_failure_does_not_change_delegate_and_bypass_is_partial(
@@ -203,7 +206,8 @@ def test_recorder_failure_does_not_change_delegate_and_bypass_is_partial(
     assert adapter.call(b"fault", send, operation_id="op-3", attempt_id="try-1") == b"reply:fault"
     failed_events = cast(list[dict[str, Any]], session.snapshot()["events"])
     assert all(event["status"] == "failed" for event in failed_events[-2:])
-    assert session.recorder.close()
+    closed = session.recorder.close()
+    assert closed
 
 
 def test_session_capture_exception_falls_back_to_explicit_gaps(
@@ -228,4 +232,5 @@ def test_session_capture_exception_falls_back_to_explicit_gaps(
         ("model.output.messages", "failed"),
     ]
     assert [operation["result_status"] for operation in snapshot["operations"]] == ["ok"]
-    assert session.recorder.close()
+    closed = session.recorder.close()
+    assert closed

@@ -69,6 +69,16 @@ def _events(session: SyntheticCaptureSession) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], snapshot["events"])
 
 
+def _close_recorder(session: SyntheticCaptureSession) -> None:
+    closed = session.recorder.close()
+    assert closed
+
+
+def _close_spool(spool: SyntheticSourceSpool) -> None:
+    closed = spool.close()
+    assert closed
+
+
 def _bytes_for(
     store: LocalFilesystemContentStore, events: list[dict[str, Any]], role: str
 ) -> list[bytes]:
@@ -259,7 +269,7 @@ def test_terminal_and_artifact_exact_binary_bytes_and_empty_stream(tmp_path: Pat
         item["source_sequence"] for item in events if item["source_id"] == "terminal-1"
     ] == list(range(sum(item["source_id"] == "terminal-1" for item in events)))
     assert result.observed_stream_order
-    assert session.recorder.close()
+    _close_recorder(session)
 
 
 def test_terminal_overflow_and_cancel_are_explicit_and_do_not_change_action(tmp_path: Path) -> None:
@@ -294,7 +304,7 @@ def test_terminal_overflow_and_cancel_are_explicit_and_do_not_change_action(tmp_
         cancel=cancel,
     )
     assert cancelled.timed_out and cancelled.returncode != 0
-    assert session.recorder.close()
+    _close_recorder(session)
 
 
 def test_artifact_symlink_and_oversize_are_gaps(tmp_path: Path) -> None:
@@ -317,7 +327,7 @@ def test_artifact_symlink_and_oversize_are_gaps(tmp_path: Path) -> None:
     }
     statuses = [item["status"] for item in _events(session)]
     assert statuses == ["unsupported", "truncated"]
-    assert session.recorder.close()
+    _close_recorder(session)
 
 
 def test_artifact_modification_and_privacy_canary_stay_in_content_store(tmp_path: Path) -> None:
@@ -335,7 +345,7 @@ def test_artifact_modification_and_privacy_canary_stay_in_content_store(tmp_path
     assert _bytes_for(store, snapshot["events"], "artifact.before") == [b"old"]
     assert _bytes_for(store, snapshot["events"], "artifact.after") == [canary]
     assert canary not in json.dumps(snapshot).encode()
-    assert session.recorder.close()
+    _close_recorder(session)
 
 
 def test_rejects_remote_endpoint_and_cwd_escape(tmp_path: Path) -> None:
@@ -353,7 +363,7 @@ def test_rejects_remote_endpoint_and_cwd_escape(tmp_path: Path) -> None:
             operation_id="x",
             attempt_id="x",
         )
-    assert session.recorder.close()
+    _close_recorder(session)
 
 
 def test_authorized_resolution_and_reconciliation_never_false_complete(tmp_path: Path) -> None:
@@ -401,7 +411,7 @@ def test_authorized_resolution_and_reconciliation_never_false_complete(tmp_path:
     Path(urlsplit(uri).path).write_bytes(b"tampered")
     assert resolver.resolve(descriptor).status == "corrupted"
     assert reconcile_synthetic_run(snapshot, expected, resolver)["verdict"] == "partial"
-    assert session.recorder.close()
+    _close_recorder(session)
 
 
 def test_source_spool_stage_recovery_and_quota_loss_lower_verdict(tmp_path: Path) -> None:
@@ -431,14 +441,15 @@ def test_source_spool_stage_recovery_and_quota_loss_lower_verdict(tmp_path: Path
         item["source_spool_status"] for item in [*snapshot["events"], *snapshot["operations"]]
     ] == ["spooled", "spooled"]
     assert snapshot["pre_spool_crash_window_unverified"]
-    assert session.recorder.close() and spool.close()
+    _close_recorder(session)
+    _close_spool(spool)
     recovered = SyntheticSourceSpool(str(root), tenant_id="synthetic-tenant", run_id="run-1")
     assert recovered.epoch == 1
     assert [item["role"] for item in recovered.recovered()] == [
         "model.request.messages",
         "operation.outcome",
     ]
-    assert recovered.close()
+    _close_spool(recovered)
     quota_root = tmp_path / "quota-spool"
     quota_root.mkdir(mode=0o700)
     quota = SyntheticSourceSpool(
@@ -471,7 +482,8 @@ def test_source_spool_stage_recovery_and_quota_loss_lower_verdict(tmp_path: Path
     )
     assert report["verdict"] == "partial"
     assert any(row["kind"] == "source_spool_gap" for row in report["discrepancies"])
-    assert second.recorder.close() and quota.close()
+    _close_recorder(second)
+    _close_spool(quota)
 
 
 def test_unapproved_outcome_field_is_a_gap_not_a_metadata_secret(tmp_path: Path) -> None:
@@ -493,7 +505,8 @@ def test_unapproved_outcome_field_is_a_gap_not_a_metadata_secret(tmp_path: Path)
     assert b"secret-canary" not in b"".join(
         path.read_bytes() for path in root.iterdir() if path.is_file()
     )
-    assert session.recorder.close() and spool.close()
+    _close_recorder(session)
+    _close_spool(spool)
 
 
 def test_local_shadow_pilot_reconciles_two_models_terminal_and_artifact(tmp_path: Path) -> None:

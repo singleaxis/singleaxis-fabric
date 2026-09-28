@@ -43,6 +43,11 @@ def _capture(recorder: ByteEvidenceRecorder, data: bytes, **kwargs: Any) -> dict
     )
 
 
+def _close(recorder: ByteEvidenceRecorder) -> None:
+    closed = recorder.close()
+    assert closed
+
+
 def test_binary_round_trip_and_v2_descriptor(tmp_path: Path) -> None:
     recorder, store = _recorder(tmp_path)
     data = bytes([0, 255, 0, 128])
@@ -59,7 +64,7 @@ def test_binary_round_trip_and_v2_descriptor(tmp_path: Path) -> None:
     assert store.read(settled["ref"]) == data
     assert store.read_descriptor(settled["ref"]) == settled
     assert settled["tenant_id"] in settled["ref"]
-    assert recorder.close()
+    _close(recorder)
 
     # Validate against the checked-in public schema, not just our own fields.
     jsonschema = pytest.importorskip("jsonschema")
@@ -118,7 +123,7 @@ def test_outside_policy_and_oversize_are_explicit_nonstored(tmp_path: Path) -> N
     for item in (denied, oversize):
         jsonschema.Draft202012Validator(schema).validate(item)
     assert not (tmp_path / "store" / "tenant-a" / "evidence").exists()
-    assert recorder.close()
+    _close(recorder)
 
 
 def test_store_failure_never_claims_stored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -220,13 +225,13 @@ def test_record_bound_requires_caller_to_drain(tmp_path: Path) -> None:
         source_sequence=2,
     )
     assert third["status"] == "pending"
-    assert recorder.close()
+    _close(recorder)
     assert recorder.get(third["object_id"])["status"] == "stored"  # type: ignore[index]
 
 
 def test_closed_and_invalid_capture_never_claim_stored(tmp_path: Path) -> None:
     recorder, _store = _recorder(tmp_path)
-    assert recorder.close()
+    _close(recorder)
     closed = _capture(recorder, b"late")
     assert closed["status"] == "failed" and closed["representation"] == "unavailable"
     assert "ref" not in closed

@@ -12,8 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-import fabric
 from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, LocalFilesystemContentStore
+from fabric import __file__ as fabric_package_file
 from fabric.adapters.byte_boundary import ByteBoundaryAdapter
 from fabric.adapters.synthetic_evidence import SyntheticCaptureSession
 from fabric.synthetic_otlp import project_synthetic_snapshot
@@ -37,7 +37,7 @@ ROLES = frozenset(
 
 
 def main() -> int:
-    module_file = Path(fabric.__file__).resolve()
+    module_file = Path(fabric_package_file).resolve()
     if not module_file.is_relative_to(Path(sys.prefix).resolve()):
         raise RuntimeError(
             "client smoke requires an installed wheel in a virtual environment"
