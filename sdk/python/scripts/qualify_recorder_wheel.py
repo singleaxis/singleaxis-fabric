@@ -185,6 +185,7 @@ def qualify(path: Path) -> dict[str, object]:
         "fabric/content_store/local.py",
         "fabric/content_store/s3.py",
         "fabric/resolver.py",
+        "fabric/adapters/byte_boundary.py",
     }
     missing = required.difference(canonical_members)
     if missing:

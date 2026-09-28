@@ -21,7 +21,7 @@ def _qualifier() -> ModuleType:
     return module
 
 
-# Governed-content modules the qualifier requires in every artifact —
+# Recorder and governed-content modules the qualifier requires in every artifact —
 # keep this list aligned with `qualify_recorder_wheel.py`'s required set.
 _GOVERNED_MEMBERS = (
     "fabric/_content.py",
@@ -32,6 +32,7 @@ _GOVERNED_MEMBERS = (
     "fabric/content_store/local.py",
     "fabric/content_store/s3.py",
     "fabric/resolver.py",
+    "fabric/adapters/byte_boundary.py",
 )
 
 
@@ -41,6 +42,7 @@ def _wheel(
     extra: str | None = None,
     member: str | None = None,
     decision: str = "",
+    omit: str | None = None,
 ) -> Path:
     metadata = ["Name: singleaxis-fabric", "Version: 1.0.0"]
     if extra:
@@ -50,7 +52,8 @@ def _wheel(
         archive.writestr("fabric/client.py", "")
         archive.writestr("fabric/decision.py", decision)
         for governed in _GOVERNED_MEMBERS:
-            archive.writestr(governed, "")
+            if governed != omit:
+                archive.writestr(governed, "")
         archive.writestr("singleaxis_fabric-1.0.0.dist-info/METADATA", "\n".join(metadata))
         if member:
             archive.writestr(member, "")
@@ -81,6 +84,12 @@ def test_qualifies_minimal_recorder_wheel(tmp_path: Path) -> None:
     result = _qualifier().qualify(_wheel(tmp_path / "recorder.whl"))
     assert result["qualified"] is True
     assert len(result["sha256"]) == 64
+
+
+def test_missing_byte_boundary_adapter_fails_wheel_qualification(tmp_path: Path) -> None:
+    path = _wheel(tmp_path / "missing-adapter.whl", omit="fabric/adapters/byte_boundary.py")
+    with pytest.raises(ValueError, match="missing recorder modules"):
+        _qualifier().qualify(path)
 
 
 def test_qualifies_minimal_recorder_sdist(tmp_path: Path) -> None:

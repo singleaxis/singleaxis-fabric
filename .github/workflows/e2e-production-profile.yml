@@ -186,6 +186,12 @@ jobs:
             opentelemetry-proto==1.44.0
           sha256sum "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
             | tee "${RUNNER_TEMP}/fabric-wheel-production.sha256"
+      - name: Test installed-wheel client byte boundary
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_client_byte_adapter_smoke.py \
+            | tee "${RUNNER_TEMP}/fabric-client-byte-smoke.json"
       - name: Check TLS failures and reconcile exact agent/sink records
         run: |
           set -euo pipefail
@@ -263,6 +269,7 @@ jobs:
           name: synthetic-production-profile-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/fabric-agent-production-report.json
+            ${{ runner.temp }}/fabric-client-byte-smoke.json
             ${{ runner.temp }}/fabric-wheel-production.sha256
             ${{ runner.temp }}/fabric-chart-production.sha256
             ${{ runner.temp }}/fabric-production-config.sha256

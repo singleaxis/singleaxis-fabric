@@ -76,6 +76,40 @@ auditor resolves out-of-band, never the raw bytes.
 
 The separate `ByteEvidenceRecorder` API captures bytes the caller explicitly
 supplies. It does not intercept terminal, SSH, database or sandbox operations.
+
+For a byte-oriented Python agent that already exposes its final model
+transport or tool-call function, the optional
+`fabric.adapters.byte_boundary.ByteBoundaryAdapter` provides a test-start
+integration without replacing the delegate:
+
+```python
+from fabric.adapters.byte_boundary import ByteBoundaryAdapter
+
+# Configure ByteEvidenceRecorder and SyntheticCaptureSession as in the
+# bounded reference pilot; keep the protected store customer-controlled.
+model = ByteBoundaryAdapter(session, kind="model", source_id="model-client-1")
+response = model.call(
+    final_request_bytes,
+    existing_send_function,
+    operation_id="model-call-1",
+    attempt_id="attempt-1",
+    context=approved_context_bytes,
+)
+```
+
+`existing_send_function` receives the same byte object once; its result or
+exception passes through unchanged. Instrument *after* the framework's last
+serialization step. If that function or a lower client changes the request,
+this is caller-side evidence, not proof of provider-bound bytes. Streaming,
+async calls, unwrapped routes and external side effects are not captured by
+this adapter. Reconcile against an independent endpoint/tool witness before
+claiming coverage. The current session/source identity and receipt chain are
+not production-qualified; see [spec 042](../../../specs/042-client-boundary-integration.md).
+
+This is not a substitute for the terminal/artifact adapter or an installer
+that discovers every route in a client's agent. A customer must declare and
+test each reachable route separately.
+
 An example observation is:
 
 ```python

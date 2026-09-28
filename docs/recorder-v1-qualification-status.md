@@ -6,6 +6,34 @@ status record, not a certification or legal compliance statement.
 
 ## First synthetic evidence slice — NO-GO
 
+### Existing-agent integration test-start (spec 042)
+
+An opt-in Python byte-call adapter now wraps an existing synchronous model or
+tool delegate, observes caller-supplied exact request/context/response bytes,
+records a separate outcome, and returns the delegate result or exception
+unchanged. It does not auto-discover an agent, capture streaming/async calls,
+prove that lower client layers leave the bytes unchanged, or see unwrapped
+routes. The source remains unauthenticated and the full receipt chain is
+missing; this is a test-start integration, **not** production-qualified
+capture. Client-specific capability manifests, route inventories and bypass
+tests are still required before a completeness claim.
+
+Local evidence on 2026-09-28: 24 focused byte-boundary/synthetic tests and
+the full Python SDK suite (700/700 without coverage; the preceding 699-test
+run met the 85% coverage gate at 85.28%) passed. Ruff passed for the changed
+Python files; mypy passed with a writable temporary cache.
+A newly built wheel (SHA-256
+`3a7dac5d868c36cf1d8927611d29c49e0ecab0e6e7770aa3d17e640019b6ae24`)
+was installed into a disposable Python 3.11 environment and ran the new
+client adapter smoke: five protected byte objects and two outcomes matched
+independent in-process truth; five metadata
+records contained no secret canary; a direct bypass caused two missing-object
+discrepancies and `partial`. The clean run remained `unverified`. The exact
+wheel passed the package-content qualifier. A Linux CI result must be
+attached before treating this as an exact-artifact qualification. The
+production-profile kind workflow now
+includes that installed-wheel smoke but has not yet run with this change.
+
 [Spec 040](../specs/040-synthetic-agent-evidence-slice.md) records the phase-1
 gap ledger, provisional scope and control/coverage matrix, and documents
 phases 2–8 before code changes. The declared test workflow is a non-sensitive

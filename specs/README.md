@@ -68,3 +68,4 @@ Every spec declares a `Status` in its header:
 | [039](039-storage-release-and-shadow-pilot.md) | Protected storage, exact-artifact release, and shadow-pilot qualification | draft |
 | [040](040-synthetic-agent-evidence-slice.md) | First bounded synthetic model-terminal-artifact evidence slice | draft; NO-GO |
 | [041](041-follow-on-evidence-adapter-scopes.md) | Separately scoped SSH, DB, browser/cloud, sandbox and other adapters | draft; no coverage claim |
+| [042](042-client-boundary-integration.md) | Opt-in byte-boundary integration for existing Python agents | draft; test-start only |

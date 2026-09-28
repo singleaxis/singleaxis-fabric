@@ -45,6 +45,7 @@ _OUTCOME_FIELDS = frozenset(
         "artifact_present",
         "artifact_size",
         "object_id",
+        "result_status",
     }
 )
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -219,6 +220,8 @@ class SyntheticCaptureSession:
                 if key == "artifact_path_sha256"
                 else value in {"before", "after"}
                 if key == "artifact_phase"
+                else value in {"ok", "error", "cancelled", "deferred"}
+                if key == "result_status"
                 else isinstance(value, str)
                 and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value) is not None
             )

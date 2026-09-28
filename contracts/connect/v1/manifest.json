@@ -12,6 +12,11 @@
       "expectation": "valid"
     },
     {
+      "path": "manifests/python-byte-boundary.json",
+      "sha256": "2059c7d265de4300068776382d28f9ba181d47da4cc300981c1451f7e5c7497b",
+      "expectation": "valid"
+    },
+    {
       "path": "manifests/typescript-capture-sdk.json",
       "sha256": "890434e5831b364c7761047e715989cfd8cfd44b74b6a042c3db8cc24433f7b0",
       "expectation": "valid"

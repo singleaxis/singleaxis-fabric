@@ -159,6 +159,17 @@ def reconcile_synthetic_run(  # noqa: PLR0912, PLR0915 - every evidence failure 
                     "status": event.get("status"),
                 }
             )
+    for operation in operations:
+        if operation.get("result_status") == "deferred":
+            discrepancies.append(
+                {
+                    "kind": "incomplete_operation_outcome",
+                    "record_id": operation.get("record_id"),
+                    "source_id": operation.get("source_id"),
+                    "boundary": operation.get("boundary"),
+                    "operation_id": operation.get("operation_id"),
+                }
+            )
     for event in [*observed, *operations]:
         source = event.get("source_id")
         sequence = event.get("source_sequence")

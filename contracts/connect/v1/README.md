@@ -11,8 +11,9 @@ activity contract.
   manifests, and positive/negative fixtures by SHA-256.
 - [`schema/connector-capability-v1.schema.json`](schema/connector-capability-v1.schema.json)
   defines the closed document shape.
-- [`manifests/`](manifests/) describes the current Python SDK, TypeScript
-  capture SDK, Collector OTLP and audit receivers, and the eBPF host emitter.
+- [`manifests/`](manifests/) describes the current Python SDK, experimental
+  byte-boundary adapter, TypeScript capture SDK, Collector OTLP and audit
+  receivers, and the eBPF host emitter.
 - [`fixtures/valid/`](fixtures/valid/) demonstrates the minimum honest shape
   for framework adapters, gateways, and existing vendor receivers.
 - [`fixtures/invalid/`](fixtures/invalid/) locks rejection of common
