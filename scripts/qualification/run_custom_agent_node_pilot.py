@@ -18,13 +18,17 @@ import time
 import uuid
 from pathlib import Path
 
-from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
+from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
+    ExportLogsServiceRequest,
+)
 
 CANARY = b"CUSTOM_AGENT_PRIVATE_CANARY"
 
 
 def invoke(command: list[str], *, env: dict[str, str] | None = None) -> str:
-    return subprocess.run(command, check=True, capture_output=True, text=True, env=env).stdout.strip()
+    return subprocess.run(
+        command, check=True, capture_output=True, text=True, env=env
+    ).stdout.strip()
 
 
 def expected_records(path: Path) -> dict[str, dict[str, object]]:
@@ -39,11 +43,19 @@ def expected_records(path: Path) -> dict[str, dict[str, object]]:
                 identifier = attributes["record_id"]
                 if identifier in result:
                     raise AssertionError("duplicate expected metadata record")
-                result[identifier] = {"event_name": record["eventName"], "attributes": attributes}
+                result[identifier] = {
+                    "event_name": record["eventName"],
+                    "attributes": attributes,
+                }
     return result
 
 
-def readback(directory: Path, expected: dict[str, dict[str, object]], *, allow_other_runs: bool = False) -> int:
+def readback(
+    directory: Path,
+    expected: dict[str, dict[str, object]],
+    *,
+    allow_other_runs: bool = False,
+) -> int:
     observed: dict[str, list[dict[str, object]]] = {}
     expected_runs = {item["attributes"].get("run_id") for item in expected.values()}
     for path in directory.glob("*.otlp"):
@@ -66,18 +78,26 @@ def readback(directory: Path, expected: dict[str, dict[str, object]], *, allow_o
                             raise AssertionError("unexpected evidence attribute type")
                     identifier = attributes.get("record_id")
                     if identifier not in expected:
-                        if allow_other_runs and attributes.get("run_id") not in expected_runs:
+                        if (
+                            allow_other_runs
+                            and attributes.get("run_id") not in expected_runs
+                        ):
                             continue
                         raise AssertionError("unexpected evidence record at sink")
-                    observed.setdefault(identifier, []).append({
-                        "event_name": record.event_name, "attributes": attributes,
-                    })
+                    observed.setdefault(identifier, []).append(
+                        {
+                            "event_name": record.event_name,
+                            "attributes": attributes,
+                        }
+                    )
     if set(observed) != set(expected):
         raise AssertionError("destination is missing expected evidence records")
     # At-least-once recovery may duplicate records, but every copy must agree.
     for identifier, copies in observed.items():
         if any(item != expected[identifier] for item in copies):
-            raise AssertionError("destination metadata differs from exact source record")
+            raise AssertionError(
+                "destination metadata differs from exact source record"
+            )
     return sum(len(copies) for copies in observed.values())
 
 
@@ -93,16 +113,34 @@ def main() -> int:
     if args.verify_projection is not None:
         if args.sink_dir is None:
             parser.error("--verify-projection requires --sink-dir")
-        count = readback(args.sink_dir, expected_records(args.verify_projection), allow_other_runs=True)
+        count = readback(
+            args.sink_dir,
+            expected_records(args.verify_projection),
+            allow_other_runs=True,
+        )
         print(json.dumps({"custom_call_sink_records": count, "readback": "passed"}))
         return 0
-    if any(value is None for value in (args.node_image, args.installed_python, args.wheel, args.evidence_dir)):
-        parser.error("pilot requires --node-image --installed-python --wheel --evidence-dir")
+    if any(
+        value is None
+        for value in (
+            args.node_image,
+            args.installed_python,
+            args.wheel,
+            args.evidence_dir,
+        )
+    ):
+        parser.error(
+            "pilot requires --node-image --installed-python --wheel --evidence-dir"
+        )
     root = Path(__file__).resolve().parents[2]
     output = args.evidence_dir.resolve()
     output.mkdir(mode=0o700, parents=False, exist_ok=False)
     # Verify installed code matches the supplied wheel, not only its version.
-    invoke([str(args.installed_python), "-c", """
+    invoke(
+        [
+            str(args.installed_python),
+            "-c",
+            """
 import pathlib, sys, zipfile, fabric
 root = pathlib.Path(fabric.__file__).resolve().parent.parent
 with zipfile.ZipFile(sys.argv[1]) as wheel:
@@ -110,14 +148,31 @@ with zipfile.ZipFile(sys.argv[1]) as wheel:
         if name.startswith('fabric/') and not name.endswith('/'):
             if (root / name).read_bytes() != wheel.read(name):
                 raise RuntimeError('installed SDK differs from supplied wheel')
-""", str(args.wheel.resolve())])
+""",
+            str(args.wheel.resolve()),
+        ]
+    )
     project = "fabric-custom-" + uuid.uuid4().hex[:16]
-    image_id = invoke(["docker", "image", "inspect", args.node_image, "--format", "{{.Id}}"])
-    env = dict(os.environ, FABRIC_NODE_IMAGE=image_id, FABRIC_BIND_ADDR="127.0.0.1",
-               FABRIC_SINK_PORT="0", FABRIC_OTLP_GRPC_PORT="0", FABRIC_OTLP_HTTP_PORT="0",
-               FABRIC_HEALTH_PORT="0")
-    compose = ["docker", "compose", "-f", str(root / "deploy/compose/docker-compose.yml"),
-               "-p", project]
+    image_id = invoke(
+        ["docker", "image", "inspect", args.node_image, "--format", "{{.Id}}"]
+    )
+    env = dict(
+        os.environ,
+        FABRIC_NODE_IMAGE=image_id,
+        FABRIC_BIND_ADDR="127.0.0.1",
+        FABRIC_SINK_PORT="0",
+        FABRIC_OTLP_GRPC_PORT="0",
+        FABRIC_OTLP_HTTP_PORT="0",
+        FABRIC_HEALTH_PORT="0",
+    )
+    compose = [
+        "docker",
+        "compose",
+        "-f",
+        str(root / "deploy/compose/docker-compose.yml"),
+        "-p",
+        project,
+    ]
     expected: dict[str, dict[str, object]] = {}
     started = False
     try:
@@ -125,17 +180,29 @@ with zipfile.ZipFile(sys.argv[1]) as wheel:
         if invoke([*compose, "ps", "-aq"], env=env):
             raise RuntimeError("disposable project unexpectedly already exists")
         started = True
-        invoke([*compose, "up", "-d", "--wait", "--wait-timeout", "90", "--no-build"], env=env)
-        address = invoke([*compose, "port", "fabric-node", "4318"], env=env).splitlines()[0]
+        invoke(
+            [*compose, "up", "-d", "--wait", "--wait-timeout", "90", "--no-build"],
+            env=env,
+        )
+        address = invoke(
+            [*compose, "port", "fabric-node", "4318"], env=env
+        ).splitlines()[0]
         for scenario in ("clean", "outage"):
             if scenario == "outage":
                 invoke([*compose, "stop", "test-sink"], env=env)
-            command = [str(args.installed_python), str(root / "scripts/qualification/run_custom_agent_smoke.py"),
-                       "--evidence-dir", str(output / scenario),
-                       "--otlp-endpoint", "http://" + address + "/v1/logs"]
+            command = [
+                str(args.installed_python),
+                str(root / "scripts/qualification/run_custom_agent_smoke.py"),
+                "--evidence-dir",
+                str(output / scenario),
+                "--otlp-endpoint",
+                "http://" + address + "/v1/logs",
+            ]
             invoke(command)
             expected.update(expected_records(output / scenario / "projected.json"))
-            expected.update(expected_records(output / scenario / "privacy-projected.json"))
+            expected.update(
+                expected_records(output / scenario / "privacy-projected.json")
+            )
             if scenario == "outage":
                 invoke([*compose, "restart", "fabric-node"], env=env)
                 invoke([*compose, "start", "test-sink"], env=env)
@@ -143,7 +210,14 @@ with zipfile.ZipFile(sys.argv[1]) as wheel:
         # Copy fresh snapshots into new directories while recovery completes.
         for attempt in range(30):
             destination = output / ("sink-readback-" + str(attempt))
-            invoke(["docker", "cp", sink_id + ":/var/lib/fabric-test-sink", str(destination)])
+            invoke(
+                [
+                    "docker",
+                    "cp",
+                    sink_id + ":/var/lib/fabric-test-sink",
+                    str(destination),
+                ]
+            )
             try:
                 observed = readback(destination, expected)
                 break
@@ -152,15 +226,23 @@ with zipfile.ZipFile(sys.argv[1]) as wheel:
                     raise
                 time.sleep(1)
         else:
-            raise AssertionError("destination recovery did not finish within 30 seconds")
+            raise AssertionError(
+                "destination recovery did not finish within 30 seconds"
+            )
         logs = invoke([*compose, "logs", "--no-color"], env=env)
         if CANARY.decode() in logs:
             raise AssertionError("private bytes escaped into Node/sink logs")
         (output / "node-sink.log").write_text(logs)
         node_id = invoke([*compose, "ps", "-q", "fabric-node"], env=env)
         queue_path = output / "node-queue"
-        invoke(["docker", "cp", node_id + ":/var/lib/fabric-node/queue", str(queue_path)])
-        if any(CANARY in path.read_bytes() for path in queue_path.rglob("*") if path.is_file()):
+        invoke(
+            ["docker", "cp", node_id + ":/var/lib/fabric-node/queue", str(queue_path)]
+        )
+        if any(
+            CANARY in path.read_bytes()
+            for path in queue_path.rglob("*")
+            if path.is_file()
+        ):
             raise AssertionError("private bytes escaped into telemetry queue")
         final_image = invoke(["docker", "inspect", node_id, "--format", "{{.Image}}"])
         if final_image != image_id:
@@ -169,13 +251,18 @@ with zipfile.ZipFile(sys.argv[1]) as wheel:
             "schema_version": "fabric.custom-agent-node-pilot/v1",
             "node_image_id": image_id,
             "wheel_sha256": hashlib.sha256(args.wheel.read_bytes()).hexdigest(),
-            "expected_records": len(expected), "observed_records_with_duplicates": observed,
+            "expected_records": len(expected),
+            "observed_records_with_duplicates": observed,
             "sink_readback": "verified_controlled_fsync_fixture",
-            "outage_restart": "passed", "privacy_canary": "passed",
-            "source_authentication": "unverified", "target_storage": "unverified",
+            "outage_restart": "passed",
+            "privacy_canary": "passed",
+            "source_authentication": "unverified",
+            "target_storage": "unverified",
             "qualification": "NO_GO",
         }
-        (output / "node-pilot-report.json").write_text(json.dumps(report, indent=2) + "\n")
+        (output / "node-pilot-report.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
         print(json.dumps(report, sort_keys=True))
     finally:
         if started:

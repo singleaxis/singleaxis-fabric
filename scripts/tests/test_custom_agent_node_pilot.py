@@ -4,7 +4,9 @@ import importlib.util
 from pathlib import Path
 
 import pytest
-from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
+from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
+    ExportLogsServiceRequest,
+)
 
 MODULE_PATH = Path(__file__).parents[1] / "qualification/run_custom_agent_node_pilot.py"
 spec = importlib.util.spec_from_file_location("custom_agent_pilot", MODULE_PATH)
@@ -13,7 +15,9 @@ pilot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pilot)
 
 
-def record(directory: Path, name: str, *, identifier: str = "record-1", outcome: str = "ok") -> None:
+def record(
+    directory: Path, name: str, *, identifier: str = "record-1", outcome: str = "ok"
+) -> None:
     request = ExportLogsServiceRequest()
     entry = request.resource_logs.add().scope_logs.add().log_records.add()
     entry.event_name = "agent.evidence.coverage"
@@ -25,8 +29,12 @@ def record(directory: Path, name: str, *, identifier: str = "record-1", outcome:
 
 
 def expected():
-    return {"record-1": {"event_name": "agent.evidence.coverage",
-                         "attributes": {"record_id": "record-1", "result_status": "ok"}}}
+    return {
+        "record-1": {
+            "event_name": "agent.evidence.coverage",
+            "attributes": {"record_id": "record-1", "result_status": "ok"},
+        }
+    }
 
 
 def test_replay_deduplicates_only_matching_records(tmp_path):

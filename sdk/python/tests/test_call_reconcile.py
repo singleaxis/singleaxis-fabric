@@ -310,47 +310,59 @@ def test_real_call_recorder_stream_resolves_every_independent_chunk(tmp_path: Pa
         )
     )
     calls = CallRecorder(writer, run_id="run-1", source_id="agent-1", agent_id="agent-1")
-    source = {"request": b"request\x00", "chunks": (b"", b"\xff", b"result")}
-    received = []
+    request = b"request\x00"
+    chunks = (b"", b"\xff", b"result")
+    received: list[bytes] = []
 
     def provider(data: bytes):  # type: ignore[no-untyped-def]
         received.append(data)
-        yield from source["chunks"]
+        yield from chunks
 
     output = list(
-        calls.stream(
-            source["request"], provider, kind="model", operation_id="op-1", attempt_id="attempt-1"
-        )
+        calls.stream(request, provider, kind="model", operation_id="op-1", attempt_id="attempt-1")
     )
-    assert received == [source["request"]]
-    assert output == list(source["chunks"])
-    identity = {
-        "run_id": "run-1",
-        "source_id": "agent-1",
-        "boundary": "provider_bound",
-        "operation_id": "op-1",
-        "attempt_id": "attempt-1",
-    }
+    assert received == [request]
+    assert output == list(chunks)
     witnesses = [
         CallByteWitness(
-            **identity, role="model.request.messages", data=received[0], witness_source="provider"
+            "run-1",
+            "agent-1",
+            "provider_bound",
+            "op-1",
+            "attempt-1",
+            role="model.request.messages",
+            data=received[0],
+            witness_source="provider",
         )
     ]
     witnesses.extend(
         CallByteWitness(
-            **identity,
+            "run-1",
+            "agent-1",
+            "provider_bound",
+            "op-1",
+            "attempt-1",
             role="model.output.messages",
             data=chunk,
             chunk_index=index,
             witness_source="provider",
         )
-        for index, chunk in enumerate(source["chunks"])
+        for index, chunk in enumerate(chunks)
     )
     report = reconcile_call_run(
         calls.snapshot(),
         witnesses,
         SyntheticByteResolver(store, tenant_id="tenant-a"),
-        expected_operations=[CallOperationWitness(**identity, outcome={"result_status": "ok"})],
+        expected_operations=[
+            CallOperationWitness(
+                "run-1",
+                "agent-1",
+                "provider_bound",
+                "op-1",
+                "attempt-1",
+                outcome={"result_status": "ok"},
+            )
+        ],
         routes=[RouteDeclaration("model", "1", "provider_bound")],
     )
     writer.close()

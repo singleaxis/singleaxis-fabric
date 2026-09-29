@@ -77,21 +77,28 @@ def _fixture(path: Path, mode: str = "original_plus_masked") -> dict[str, Any]:
 
 
 def _report(fixture: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-    identity = {
-        "run_id": "run-a",
-        "source_id": "source-a",
-        "boundary": "tool",
-        "operation_id": "op-a",
-        "attempt_id": "attempt-a",
-    }
     return reconcile_call_run(
         fixture["snapshot"],
         [
-            CallByteWitness(**identity, role="tool.call.arguments", data=b"request"),
-            CallByteWitness(**identity, role=_ROLE, data=_RAW),
+            CallByteWitness(
+                "run-a",
+                "source-a",
+                "tool",
+                "op-a",
+                "attempt-a",
+                role="tool.call.arguments",
+                data=b"request",
+            ),
+            CallByteWitness(
+                "run-a", "source-a", "tool", "op-a", "attempt-a", role=_ROLE, data=_RAW
+            ),
         ],
         fixture["resolver"],
-        expected_operations=[CallOperationWitness(**identity, outcome={"result_status": "ok"})],
+        expected_operations=[
+            CallOperationWitness(
+                "run-a", "source-a", "tool", "op-a", "attempt-a", outcome={"result_status": "ok"}
+            )
+        ],
         routes=[RouteDeclaration("dispatcher", "1", "tool")],
         **kwargs,
     )

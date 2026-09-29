@@ -649,6 +649,21 @@ exact-artifact target Kubernetes/BPF, storage-control or customer shadow
 pilot under specs 037–039. Release/platform/storage/customer owners must
 supply those proofs. Critical-enterprise status remains **NO-GO**.
 
+PR #164 Linux CI on head `efffd30` additionally passed the installed-wheel
+custom-agent smoke (5 calls, 12 byte objects, zero fixture discrepancies),
+the isolated kind production-profile job (22 custom-call and 4 privacy-fault
+metadata records read back exactly from its controlled sink), the Fabric Node
+processor/image jobs, and the broader kind smoke. That is a synthetic CI
+environment, not the customer's signed target. The head had Python mypy and
+source-format failures in new tests/scripts; the following commit fixes those
+and requires a fresh run before those gates can be credited. The history-wide
+gitleaks job still reports eight matches in older commits, none introduced by
+this change according to local redacted scan; security must classify them.
+CodeQL reports two module-import-cycle errors on `TYPE_CHECKING`-guarded
+imports and a warning about the new resolver's file-descriptor cleanup; the
+security owner must review those findings rather than treating the check as
+passed. No owner sign-off or production GO is inferred from CI.
+
 ## GPT-6 Sol subscription-backed laptop stage — NO-GO
 
 The [bounded synthetic Sol stage](../qualification/sol-local-stage/README.md)

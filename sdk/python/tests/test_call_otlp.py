@@ -9,7 +9,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -39,7 +39,9 @@ def _snapshot(tmp_path: Path) -> dict[str, Any]:
 
 
 def _records(payload: bytes) -> list[dict[str, Any]]:
-    return json.loads(payload)["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+    return cast(
+        list[dict[str, Any]], json.loads(payload)["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+    )
 
 
 def _attrs(record: dict[str, Any]) -> dict[str, Any]:
