@@ -13,6 +13,7 @@ import json
 import re
 import ssl
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -21,6 +22,10 @@ _MAX_TIMESTAMP_CHARS = 40
 _MAX_TIMEOUT_S = 60
 _MAX_RESPONSE_BYTES = 65536
 _HTTP_OK = 200
+_MAX_BEARER_BYTES = 4096
+_MIN_BEARER_BYTES = 32
+_MIN_TOKEN_CHAR = 33
+_MAX_TOKEN_CHAR = 126
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ROLES = frozenset(
@@ -194,6 +199,25 @@ def export_synthetic_snapshot(
     )
 
 
+def _bearer_headers(token_path: str | None, scheme: str) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if token_path is None:
+        return headers
+    if scheme != "https":
+        raise ValueError("OTLP bearer authentication requires HTTPS")
+    try:
+        with Path(token_path).open("rb") as source:
+            token = source.read(_MAX_BEARER_BYTES + 1)
+        if not _MIN_BEARER_BYTES <= len(token) <= _MAX_BEARER_BYTES or any(
+            byte < _MIN_TOKEN_CHAR or byte > _MAX_TOKEN_CHAR for byte in token
+        ):
+            raise ValueError("invalid token")
+        headers["Authorization"] = "Bearer " + token.decode("ascii")
+    except Exception:
+        raise ValueError("OTLP bearer configuration failed") from None
+    return headers
+
+
 def _export_projected_metadata(  # noqa: PLR0912
     payload: bytes,
     ids: list[str],
@@ -203,6 +227,7 @@ def _export_projected_metadata(  # noqa: PLR0912
     ca_cert_path: str | None = None,
     client_cert_path: str | None = None,
     client_key_path: str | None = None,
+    bearer_token_path: str | None = None,
 ) -> dict[str, Any]:
     """One bounded offline POST shared by the closed metadata projectors."""
     parsed = urlsplit(endpoint)
@@ -218,6 +243,7 @@ def _export_projected_metadata(  # noqa: PLR0912
         raise ValueError("synthetic OTLP endpoint must be loopback /v1/logs")
     if timeout_s <= 0 or timeout_s > _MAX_TIMEOUT_S:
         raise ValueError("invalid OTLP timeout")
+    headers = _bearer_headers(bearer_token_path, parsed.scheme)
     tls_paths = (ca_cert_path, client_cert_path, client_key_path)
     if parsed.scheme == "https" and any(not path for path in tls_paths):
         raise ValueError("HTTPS synthetic OTLP requires CA and client certificate/key")
@@ -239,9 +265,7 @@ def _export_projected_metadata(  # noqa: PLR0912
             parsed.hostname, parsed.port or 80, timeout=timeout_s
         )
     try:
-        connection.request(
-            "POST", "/v1/logs", body=payload, headers={"Content-Type": "application/json"}
-        )
+        connection.request("POST", "/v1/logs", body=payload, headers=headers)
         response = connection.getresponse()
         if response.status != _HTTP_OK:
             raise ValueError("OTLP Node did not accept metadata batch")

@@ -5,10 +5,12 @@ package fabricguardprocessor
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -73,6 +75,9 @@ func newGuard(cfg *Config, logger *zap.Logger) *guard {
 }
 
 func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) {
+	if g.cfg.EvidenceSourceBinding != nil && !g.boundEvidenceBatch(ld) {
+		return ld, consumererror.NewPermanent(errors.New("fabricguard: evidence source binding rejected"))
+	}
 	resourceLogs := ld.ResourceLogs()
 	for ri := 0; ri < resourceLogs.Len(); ri++ {
 		resourceLog := resourceLogs.At(ri)
@@ -194,14 +199,44 @@ var evidenceRoles = toSet(
 )
 
 func evidenceID(value pcommon.Value) bool {
-	if value.Type() != pcommon.ValueTypeStr || len(value.Str()) < 1 || len(value.Str()) > 128 {
+	return value.Type() == pcommon.ValueTypeStr && validEvidenceIDString(value.Str())
+}
+
+func validEvidenceIDString(value string) bool {
+	if len(value) < 1 || len(value) > 128 {
 		return false
 	}
-	for i, ch := range value.Str() {
+	for i, ch := range value {
 		if ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || i > 0 && (ch == '.' || ch == '_' || ch == ':' || ch == '-') {
 			continue
 		}
 		return false
+	}
+	return true
+}
+
+// Check the whole request before mutating or forwarding any record. In the
+// dedicated profile, non-AEEP logs are also refused so a caller cannot choose
+// another class to bypass the bound evidence identity.
+func (g *guard) boundEvidenceBatch(ld plog.Logs) bool {
+	bound := g.cfg.EvidenceSourceBinding
+	for ri := 0; ri < ld.ResourceLogs().Len(); ri++ {
+		rls := ld.ResourceLogs().At(ri).ScopeLogs()
+		for si := 0; si < rls.Len(); si++ {
+			records := rls.At(si).LogRecords()
+			for li := 0; li < records.Len(); li++ {
+				a := records.At(li).Attributes()
+				class, ok := a.Get(g.cfg.EventClassAttribute)
+				if !ok || class.Type() != pcommon.ValueTypeStr || class.Str() != "evidence" {
+					return false
+				}
+				tenant, tenantOK := a.Get("tenant_id")
+				source, sourceOK := a.Get("source_id")
+				if !tenantOK || !sourceOK || tenant.Type() != pcommon.ValueTypeStr || source.Type() != pcommon.ValueTypeStr || tenant.Str() != bound.TenantID || source.Str() != bound.SourceID {
+					return false
+				}
+			}
+		}
 	}
 	return true
 }
@@ -374,6 +409,9 @@ func validSHA256Prefixed(value pcommon.Value) bool {
 }
 
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
+	if g.cfg.EvidenceSourceBinding != nil && td.SpanCount() != 0 {
+		return td, consumererror.NewPermanent(errors.New("fabricguard: evidence source binding rejects traces"))
+	}
 	allowed := unionSets(TraceAllowedFields, toSet(g.cfg.ExtraAllowedTraceFields...))
 	resourceSpans := td.ResourceSpans()
 	for ri := 0; ri < resourceSpans.Len(); ri++ {

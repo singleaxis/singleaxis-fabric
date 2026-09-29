@@ -67,10 +67,21 @@
     "receiver": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requireTLS", "requireClientCertificate", "tls"],
+      "required": ["requireTLS", "requireClientCertificate", "evidenceSourceBinding", "tls"],
       "properties": {
         "requireTLS": {"type": "boolean"},
         "requireClientCertificate": {"type": "boolean"},
+        "evidenceSourceBinding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "tenantId", "sourceId", "tokenSecret"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "tenantId": {"type": "string", "maxLength": 128, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"},
+            "sourceId": {"type": "string", "maxLength": 128, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"},
+            "tokenSecret": {"$ref": "#/definitions/secretKeyReference"}
+          }
+        },
         "tls": {
           "type": "object",
           "additionalProperties": false,

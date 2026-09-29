@@ -13,6 +13,10 @@ type Config struct {
 	EventClassAttribute string `mapstructure:"event_class_attribute"`
 	DropUnknownClasses  bool   `mapstructure:"drop_unknown_classes"`
 	MaxFieldBytes       int    `mapstructure:"max_field_bytes"`
+	// Only a startup-gated, dedicated single-source OTLP ingress may set this.
+	// The processor compares payload identities; authentication itself is
+	// enforced by the receiver and checked by fabric-gate.
+	EvidenceSourceBinding *EvidenceSourceBinding `mapstructure:"evidence_source_binding"`
 
 	// Aggregate bounds cap count-based pressure that max_field_bytes cannot
 	// see: thousands of individually-tiny attributes, events, links or slice
@@ -31,7 +35,15 @@ type Config struct {
 	TraceAttributePrefixes []string `mapstructure:"trace_attribute_prefixes"`
 }
 
+type EvidenceSourceBinding struct {
+	TenantID string `mapstructure:"tenant_id"`
+	SourceID string `mapstructure:"source_id"`
+}
+
 func (c *Config) Validate() error {
+	if c.EvidenceSourceBinding != nil && (!validEvidenceIDString(c.EvidenceSourceBinding.TenantID) || !validEvidenceIDString(c.EvidenceSourceBinding.SourceID)) {
+		return errors.New("fabricguard: evidence_source_binding requires valid tenant_id and source_id")
+	}
 	if c.EventClassAttribute == "" {
 		return errors.New("fabricguard: event_class_attribute must be non-empty")
 	}

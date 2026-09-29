@@ -16,6 +16,10 @@ data:
         protocols:
           grpc:
             endpoint: 0.0.0.0:{{ .Values.service.ports.otlpGrpc }}
+            {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+            auth:
+              authenticator: bearertokenauth/evidence_source
+            {{- end }}
             # Bound per-request work: metadata-only records are small, so
             # 8 MiB is generous headroom that also bounds the worst-case
             # queued item.
@@ -35,6 +39,10 @@ data:
             {{- end }}
           http:
             endpoint: 0.0.0.0:{{ .Values.service.ports.otlpHttp }}
+            {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+            auth:
+              authenticator: bearertokenauth/evidence_source
+            {{- end }}
             # Zero-value timeouts let a client hold a connection open
             # mid-headers indefinitely; auth runs after the read.
             read_header_timeout: 5s
@@ -53,6 +61,11 @@ data:
     extensions:
       health_check:
         endpoint: 0.0.0.0:{{ .Values.service.ports.health }}
+      {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+      bearertokenauth/evidence_source:
+        filename: /etc/fabric/evidence-source/token
+        require_single_token: true
+      {{- end }}
       {{- if .Values.exporter.sendingQueue.persistence.enabled }}
       file_storage/fabric:
         directory: {{ .Values.exporter.sendingQueue.persistence.directory | quote }}
@@ -69,6 +82,11 @@ data:
         event_class_attribute: {{ .Values.fabric.guard.eventClassAttribute | quote }}
         drop_unknown_classes: {{ .Values.fabric.guard.dropUnknownClasses }}
         max_field_bytes: {{ .Values.fabric.guard.maxFieldBytes }}
+        {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+        evidence_source_binding:
+          tenant_id: {{ .Values.receiver.evidenceSourceBinding.tenantId | quote }}
+          source_id: {{ .Values.receiver.evidenceSourceBinding.sourceId | quote }}
+        {{- end }}
         {{- with .Values.fabric.guard.extraAllowedFields }}
         extra_allowed_fields:
           {{- toYaml . | nindent 10 }}
@@ -128,6 +146,9 @@ data:
     service:
       extensions:
         - health_check
+        {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+        - bearertokenauth/evidence_source
+        {{- end }}
         {{- if .Values.exporter.sendingQueue.persistence.enabled }}
         - file_storage/fabric
         {{- end }}

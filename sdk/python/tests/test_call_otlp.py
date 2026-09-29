@@ -17,6 +17,7 @@ from fabric.byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder
 from fabric.call_otlp import export_call_snapshot, project_call_snapshot
 from fabric.call_recorder import CallRecorder
 from fabric.content_store.local import LocalFilesystemContentStore
+from fabric.synthetic_otlp import _bearer_headers
 
 
 def _snapshot(tmp_path: Path) -> dict[str, Any]:
@@ -170,3 +171,35 @@ def test_transport_validation_and_tls_errors_do_not_echo_paths(tmp_path: Path) -
             client_key_path="/CANARY-SECRET",
         )
     assert "CANARY-SECRET" not in str(error.value)
+
+
+def test_bearer_requires_tls_and_never_echoes_missing_path(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+    missing_path = "/CANARY-SECRET"
+    for endpoint, message in (
+        ("http://127.0.0.1/v1/logs", "requires HTTPS"),
+        ("https://127.0.0.1/v1/logs", "bearer configuration failed"),
+    ):
+        with pytest.raises(ValueError, match=message) as error:
+            export_call_snapshot(snapshot, endpoint, bearer_token_path=missing_path)
+        assert "CANARY-SECRET" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "token", [b"", b"x" * 31, b"x" * 4097, b"x" * 32 + b"\n", b"x" * 32 + b"\xff", b"x" * 32 + b" "]
+)
+def test_bearer_rejects_unbounded_or_header_unsafe_tokens(tmp_path: Path, token: bytes) -> None:
+    path = tmp_path / "token"
+    path.write_bytes(token)
+    with pytest.raises(ValueError, match="bearer configuration failed"):
+        _bearer_headers(str(path), "https")
+
+
+@pytest.mark.parametrize("size", [32, 4096])
+def test_bearer_only_enters_authorization_header(tmp_path: Path, size: int) -> None:
+    path = tmp_path / "token"
+    path.write_bytes(b"x" * size)
+    assert _bearer_headers(str(path), "https") == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + "x" * size,
+    }

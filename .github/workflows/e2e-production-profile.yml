@@ -20,7 +20,7 @@ concurrency:
 jobs:
   kind-production-profile:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       KIND_CLUSTER: fabric-prod-${{ github.run_id }}-${{ github.run_attempt }}
       NAMESPACE: fabric-system
@@ -183,9 +183,11 @@ jobs:
           python -m venv "${RUNNER_TEMP}/fabric-agent-venv"
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pip install \
             "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
-            opentelemetry-proto==1.44.0
+            opentelemetry-proto==1.44.0 grpcio==1.76.0 pytest==8.4.2
           sha256sum "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
             | tee "${RUNNER_TEMP}/fabric-wheel-production.sha256"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pytest -q \
+            scripts/tests/test_source_binding_readback.py
       - name: Test installed-wheel client byte boundary
         run: |
           set -euo pipefail
@@ -294,6 +296,183 @@ jobs:
             echo 'Custom-agent privacy canary appeared in sink files' >&2
             exit 1
           fi
+      - name: Install dedicated source-bound profile from same artifacts
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$(openssl rand -hex 32)" \
+            > "${CERT_DIR}/evidence-source-token"
+          kubectl create secret generic fabric-evidence-source-token \
+            --namespace "${NAMESPACE}" \
+            --from-file=token="${CERT_DIR}/evidence-source-token"
+          helm install fabric-auth "${RUNNER_TEMP}"/fabric-chart/fabric-*.tgz \
+            --namespace "${NAMESPACE}" \
+            --values charts/fabric/profiles/shadow-production.yaml \
+            --values qualification/synthetic-slice/kind-production-values.yaml \
+            --set tenant.id=synthetic-tenant \
+            --set otel-collector.receiver.evidenceSourceBinding.enabled=true \
+            --set otel-collector.receiver.evidenceSourceBinding.tenantId=synthetic \
+            --set otel-collector.receiver.evidenceSourceBinding.sourceId=dispatcher \
+            --set otel-collector.receiver.evidenceSourceBinding.tokenSecret.name=fabric-evidence-source-token \
+            --wait --timeout 5m
+          kubectl wait --for=condition=ready pods --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/instance=fabric-auth,app.kubernetes.io/name=otel-collector \
+            --timeout=300s
+          kubectl get pod --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/instance=fabric-auth,app.kubernetes.io/name=otel-collector \
+            -o jsonpath='{.items[0].status.containerStatuses[0].imageID}' \
+            > "${RUNNER_TEMP}/fabric-auth-node-image-id.txt"
+          test -s "${RUNNER_TEMP}/fabric-auth-node-image-id.txt"
+          kubectl get pod --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/instance=fabric-prod,app.kubernetes.io/name=otel-collector \
+            -o jsonpath='{.items[0].status.containerStatuses[0].imageID}' \
+            > "${RUNNER_TEMP}/fabric-prod-node-image-id.txt"
+          cmp "${RUNNER_TEMP}/fabric-auth-node-image-id.txt" \
+            "${RUNNER_TEMP}/fabric-prod-node-image-id.txt"
+      - name: Exercise HTTP and gRPC source authentication and custom-agent export
+        run: |
+          set -euo pipefail
+          kubectl port-forward --namespace "${NAMESPACE}" \
+            service/fabric-auth-otel-collector 14320:4318 14321:4317 &
+          AUTH_PF=$!
+          trap 'kill ${AUTH_PF} 2>/dev/null || true' EXIT
+          sleep 3
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/check_source_binding.py exercise \
+            --http-url https://localhost:14320/v1/logs \
+            --grpc-target localhost:14321 \
+            --ca-cert "${CERT_DIR}/ingress-ca.crt" \
+            --client-cert "${CERT_DIR}/client.crt" \
+            --client-key "${CERT_DIR}/client.key" \
+            --bearer-token-file "${CERT_DIR}/evidence-source-token" \
+            --report "${RUNNER_TEMP}/fabric-source-binding-report.json"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_custom_agent_smoke.py \
+            --evidence-dir "${RUNNER_TEMP}/fabric-auth-custom-agent" \
+            --otlp-endpoint https://localhost:14320/v1/logs \
+            --ca-cert "${CERT_DIR}/ingress-ca.crt" \
+            --client-cert "${CERT_DIR}/client.crt" \
+            --client-key "${CERT_DIR}/client.key" \
+            --bearer-token-file "${CERT_DIR}/evidence-source-token"
+          printf '%s' "$(openssl rand -hex 32)" \
+            > "${CERT_DIR}/evidence-source-token-rotated"
+          kubectl create secret generic fabric-evidence-source-token \
+            --namespace "${NAMESPACE}" \
+            --from-file=token="${CERT_DIR}/evidence-source-token-rotated" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/check_source_binding.py rotation \
+            --http-url https://localhost:14320/v1/logs \
+            --grpc-target localhost:14321 \
+            --ca-cert "${CERT_DIR}/ingress-ca.crt" \
+            --client-cert "${CERT_DIR}/client.crt" \
+            --client-key "${CERT_DIR}/client.key" \
+            --old-token-file "${CERT_DIR}/evidence-source-token" \
+            --new-token-file "${CERT_DIR}/evidence-source-token-rotated" \
+            --timeout-seconds 180 \
+            --report "${RUNNER_TEMP}/fabric-source-binding-report.json"
+      - name: Reconcile source-bound destination readback and privacy
+        run: |
+          set -euo pipefail
+          SINK_POD=$(kubectl get pod --namespace "${NAMESPACE}" \
+            -l app=fabric-test-sink -o jsonpath='{.items[0].metadata.name}')
+          VERIFIED=false
+          for attempt in $(seq 1 12); do
+            READBACK="${RUNNER_TEMP}/fabric-auth-sink-data-${attempt}"
+            kubectl cp "${NAMESPACE}/${SINK_POD}:/data" "${READBACK}"
+            if "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+              scripts/qualification/check_source_binding.py verify \
+              --report "${RUNNER_TEMP}/fabric-source-binding-report.json" \
+              --sink-dir "${READBACK}" \
+              && "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+                scripts/qualification/run_custom_agent_node_pilot.py \
+                --verify-projection "${RUNNER_TEMP}/fabric-auth-custom-agent/projected.json" \
+                --sink-dir "${READBACK}" \
+              && "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+                scripts/qualification/run_custom_agent_node_pilot.py \
+                --verify-projection "${RUNNER_TEMP}/fabric-auth-custom-agent/privacy-projected.json" \
+                --sink-dir "${READBACK}"; then
+              VERIFIED=true
+              break
+            fi
+            sleep 5
+          done
+          test "${VERIFIED}" = true
+          if grep -RFq -f "${CERT_DIR}/evidence-source-token" "${READBACK}" \
+            || grep -RFq -f "${CERT_DIR}/evidence-source-token-rotated" "${READBACK}" \
+            || grep -RFq 'SOURCE_BINDING_PRIVATE_CANARY' "${READBACK}" \
+            || grep -RFq 'CUSTOM_AGENT_PRIVATE_CANARY' "${READBACK}"; then
+            echo 'Bound source credential or private bytes reached sink' >&2
+            exit 1
+          fi
+          kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/instance=fabric-auth,app.kubernetes.io/name=otel-collector \
+            --tail=-1 > "${RUNNER_TEMP}/fabric-auth-collector.log"
+          if grep -Fq -f "${CERT_DIR}/evidence-source-token" \
+            "${RUNNER_TEMP}/fabric-auth-collector.log" \
+            || grep -Fq -f "${CERT_DIR}/evidence-source-token-rotated" \
+              "${RUNNER_TEMP}/fabric-auth-collector.log" \
+            || grep -Fq 'SOURCE_BINDING_PRIVATE_CANARY' \
+              "${RUNNER_TEMP}/fabric-auth-collector.log" \
+            || grep -Fq 'CUSTOM_AGENT_PRIVATE_CANARY' \
+              "${RUNNER_TEMP}/fabric-auth-collector.log"; then
+            echo 'Bound source credential or private bytes reached Collector logs' >&2
+            exit 1
+          fi
+      - name: Inspect dedicated persistent telemetry queue for private bytes
+        run: |
+          set -euo pipefail
+          kubectl create secret generic fabric-evidence-old-token \
+            --namespace "${NAMESPACE}" \
+            --from-file=token="${CERT_DIR}/evidence-source-token"
+          SINK_SCAN_IMAGE=$(kubectl get pod --namespace "${NAMESPACE}" \
+            -l app=fabric-test-sink \
+            -o jsonpath='{.items[0].status.containerStatuses[0].imageID}')
+          SINK_SCAN_IMAGE=${SINK_SCAN_IMAGE#docker-pullable://}
+          [[ "${SINK_SCAN_IMAGE}" == *@sha256:* ]]
+          kubectl apply --namespace "${NAMESPACE}" -f - <<EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: fabric-auth-queue-privacy-scan
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                automountServiceAccountToken: false
+                restartPolicy: Never
+                containers:
+                  - name: scan
+                    image: ${SINK_SCAN_IMAGE}
+                    imagePullPolicy: IfNotPresent
+                    command: [python, -c]
+                    args:
+                      - |
+                        from pathlib import Path
+                        root = Path('/queue')
+                        files = [path for path in root.rglob('*') if path.is_file()]
+                        if not files:
+                            raise SystemExit('persistent queue has no readable files')
+                        needles = [Path('/old/token').read_bytes(), Path('/new/token').read_bytes(), b'SOURCE_BINDING_PRIVATE_CANARY', b'CUSTOM_AGENT_PRIVATE_CANARY']
+                        if any(any(needle in path.read_bytes() for needle in needles) for path in files):
+                            raise SystemExit('private bytes found in persistent telemetry queue')
+                        print('persistent queue privacy scan passed')
+                    volumeMounts:
+                      - {name: queue, mountPath: /queue, readOnly: true}
+                      - {name: old-token, mountPath: /old, readOnly: true}
+                      - {name: new-token, mountPath: /new, readOnly: true}
+                volumes:
+                  - name: queue
+                    persistentVolumeClaim: {claimName: queue-storage-fabric-auth-otel-collector-0, readOnly: true}
+                  - name: old-token
+                    secret: {secretName: fabric-evidence-old-token}
+                  - name: new-token
+                    secret: {secretName: fabric-evidence-source-token}
+          EOF
+          kubectl wait --namespace "${NAMESPACE}" \
+            --for=condition=complete job/fabric-auth-queue-privacy-scan \
+            --timeout=120s
+          kubectl logs --namespace "${NAMESPACE}" job/fabric-auth-queue-privacy-scan
       - name: Publish non-secret qualification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -309,6 +488,11 @@ jobs:
             ${{ runner.temp }}/fabric-chart-production.sha256
             ${{ runner.temp }}/fabric-production-config.sha256
             ${{ runner.temp }}/fabric-node-production-image-id.txt
+            ${{ runner.temp }}/fabric-auth-node-image-id.txt
+            ${{ runner.temp }}/fabric-prod-node-image-id.txt
+            ${{ runner.temp }}/fabric-source-binding-report.json
+            ${{ runner.temp }}/fabric-auth-custom-agent/summary.json
+            ${{ runner.temp }}/fabric-auth-custom-agent/report.json
           if-no-files-found: warn
           retention-days: 14
       - name: Diagnostics without secret values

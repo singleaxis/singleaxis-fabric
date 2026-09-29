@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import copy
+import errno
 import json
 import os
 from pathlib import Path
@@ -283,6 +284,51 @@ def test_hardlinked_content_not_read(tmp_path: Path) -> None:
     target, _ = _paths(descriptor)
     os.link(target, target.with_name("second-link"))
     assert fixture["resolver"].resolve(descriptor).status == "denied"
+
+
+@pytest.mark.parametrize("fault", ["open", "read", "close"])
+def test_safe_read_closes_all_descriptors_after_io_failure(
+    tmp_path: Path, monkeypatch: Any, fault: str
+) -> None:
+    fixture = _fixture(tmp_path, "original")
+    resolver = fixture["resolver"]
+    object_id = fixture["event"]["descriptor"]["object_id"]
+    real_open, real_read, real_close = os.open, os.read, os.close
+    opened: list[int] = []
+    close_calls = 0
+
+    def tracked_open(*args: Any, **kwargs: Any) -> int:
+        if fault == "open" and len(opened) == 3:
+            raise OSError(errno.EIO, "injected open failure")
+        descriptor = real_open(*args, **kwargs)
+        opened.append(descriptor)
+        return descriptor
+
+    def tracked_read(*args: Any, **kwargs: Any) -> bytes:
+        if fault == "read":
+            raise OSError(errno.EIO, "injected read failure")
+        return real_read(*args, **kwargs)
+
+    def tracked_close(descriptor: int) -> None:
+        nonlocal close_calls
+        close_calls += 1
+        real_close(descriptor)
+        if fault == "close" and close_calls == 1:
+            raise OSError(errno.EIO, "injected close failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", tracked_open)
+        patch.setattr(os, "read", tracked_read)
+        patch.setattr(os, "close", tracked_close)
+        with pytest.raises(OSError, match="injected"):
+            resolver._read(object_id, metadata=False)
+
+    assert opened
+    assert close_calls == len(opened)
+    for descriptor in opened:
+        with pytest.raises(OSError) as error:
+            os.fstat(descriptor)
+        assert error.value.errno == errno.EBADF
 
 
 def test_call_recorder_does_not_export_raw_content_with_host_capture_environment(

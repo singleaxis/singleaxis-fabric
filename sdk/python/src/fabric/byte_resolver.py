@@ -14,6 +14,7 @@ import json
 import os
 import re
 import stat
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -140,9 +141,10 @@ class ByteEvidenceResolver:
         if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
             raise OSError("safe local resolution unavailable")
         directory_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
-        descriptors: list[int] = []
-        try:
+        with ExitStack() as opened:
+            descriptors: list[int] = []
             descriptors.append(os.open(self._root.anchor, directory_flags))
+            opened.callback(os.close, descriptors[-1])
             for component in (
                 *self._root.parts[1:],
                 self.tenant_id,
@@ -150,13 +152,14 @@ class ByteEvidenceResolver:
                 *(("meta",) if metadata else ()),
             ):
                 descriptors.append(os.open(component, directory_flags, dir_fd=descriptors[-1]))
+                opened.callback(os.close, descriptors[-1])
             name = f"{object_id}.json" if metadata else object_id
             descriptor = os.open(
                 name,
                 os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                 dir_fd=descriptors[-1],
             )
-            descriptors.append(descriptor)
+            opened.callback(os.close, descriptor)
             info = os.fstat(descriptor)
             limit = _MAX_DESCRIPTOR_BYTES if metadata else self.max_object_bytes
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
@@ -172,9 +175,6 @@ class ByteEvidenceResolver:
             if remaining == 0:
                 raise ValueError("oversized content object")
             return b"".join(chunks)
-        finally:
-            for descriptor in reversed(descriptors):
-                os.close(descriptor)
 
     def read_descriptor(self, object_id: str) -> dict[str, Any]:
         """Read a bounded sidecar by approved object ID; never return arbitrary content."""

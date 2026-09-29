@@ -167,6 +167,7 @@ def export_call_snapshot(
     ca_cert_path: str | None = None,
     client_cert_path: str | None = None,
     client_key_path: str | None = None,
+    bearer_token_path: str | None = None,
 ) -> dict[str, Any]:
     """Send once to a controlled loopback Node, with optional verified mTLS."""
     payload, ids = project_call_snapshot(snapshot)
@@ -178,4 +179,5 @@ def export_call_snapshot(
         ca_cert_path=ca_cert_path,
         client_cert_path=client_cert_path,
         client_key_path=client_key_path,
+        bearer_token_path=bearer_token_path,
     )

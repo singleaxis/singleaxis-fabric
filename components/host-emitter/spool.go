@@ -44,7 +44,7 @@ type diskSpool struct {
 var errSpoolFull = errors.New("host emitter spool capacity exhausted")
 var partialEntryPattern = regexp.MustCompile(`^[0-9]{20}-[0-9a-f]{32}-rejected-([0-9]+)\.partial$`)
 
-func openDiskSpool(dir string, maxBytes int64) (*diskSpool, error) {
+func openDiskSpool(dir string, maxBytes int64) (spool *diskSpool, returnErr error) {
 	if dir == "" || maxBytes <= 0 {
 		return nil, fmt.Errorf("spool directory and positive capacity are required")
 	}
@@ -83,14 +83,15 @@ func openDiskSpool(dir string, maxBytes int64) (*diskSpool, error) {
 		return nil, err
 	}
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		lockFile.Close()
-		return nil, fmt.Errorf("spool directory %q is already owned by another emitter: %w", dir, err)
+		return nil, errors.Join(
+			fmt.Errorf("spool directory %q is already owned by another emitter: %w", dir, err),
+			releaseSpoolLock(lockFile, false),
+		)
 	}
 	ready := false
 	defer func() {
 		if !ready {
-			unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
-			lockFile.Close()
+			returnErr = errors.Join(returnErr, releaseSpoolLock(lockFile, true))
 		}
 	}()
 	s := &diskSpool{dir: dir, maxBytes: maxBytes, wake: make(chan struct{}, 1), lockFile: lockFile}
@@ -132,16 +133,27 @@ func openDiskSpool(dir string, maxBytes int64) (*diskSpool, error) {
 	return s, nil
 }
 
+func releaseSpoolLock(lockFile *os.File, locked bool) error {
+	var unlockErr error
+	if locked {
+		if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_UN); err != nil {
+			unlockErr = fmt.Errorf("unlock spool lock: %w", err)
+		}
+	}
+	var closeErr error
+	if err := lockFile.Close(); err != nil {
+		closeErr = fmt.Errorf("close spool lock: %w", err)
+	}
+	return errors.Join(unlockErr, closeErr)
+}
+
 func (s *diskSpool) close() error {
 	if s.lockFile == nil {
 		return nil
 	}
-	if err := unix.Flock(int(s.lockFile.Fd()), unix.LOCK_UN); err != nil {
-		return err
-	}
-	err := s.lockFile.Close()
+	lockFile := s.lockFile
 	s.lockFile = nil
-	return err
+	return releaseSpoolLock(lockFile, true)
 }
 
 func (s *diskSpool) enqueue(records []plog.LogRecord) error {

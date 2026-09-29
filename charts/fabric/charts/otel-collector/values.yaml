@@ -62,6 +62,17 @@ receiver:
   # Fail the render unless TLS verifies client certificates against an
   # operator-provisioned CA. This implies requireTLS.
   requireClientCertificate: false
+  # Opt-in, dedicated one-source evidence ingress. The referenced Secret
+  # must already exist and contain one approved bearer token; the token is
+  # never supplied as a chart value. This authenticates receipt at Node,
+  # not the agent operation or completeness of the run.
+  evidenceSourceBinding:
+    enabled: false
+    tenantId: ""
+    sourceId: ""
+    tokenSecret:
+      name: ""
+      key: token
   tls:
     serverCertificateSecret:
       name: ""

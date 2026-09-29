@@ -18,6 +18,7 @@ import (
 type tokenFile struct {
 	extension string
 	path      string
+	dedicated bool
 }
 
 // validateArgs resolves every --config source the collector would load,
@@ -50,7 +51,223 @@ func validateArgs(args []string) ([]tokenFile, error) {
 	if err := checkExporterHeaders(merged); err != nil {
 		return nil, err
 	}
-	return checkBearerTokenAuth(merged)
+	knownTokens, err := checkBearerTokenAuth(merged)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkDedicatedEvidenceIngress(merged, knownTokens); err != nil {
+		return nil, err
+	}
+	return knownTokens, nil
+}
+
+// A bound source is supported only behind one authenticated OTLP ingress.
+// The bearer extension authenticates possession but returns no identity in
+// client.Auth, so this gate establishes the one-credential-to-one-source
+// deployment mapping. This does not prove exclusive credential ownership.
+func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) error {
+	processors, _ := cfg["processors"].(map[string]any)
+	bound := false
+	for name, node := range processors {
+		processor, _ := node.(map[string]any)
+		if _, ok := processor["evidence_source_binding"]; ok {
+			if name != "fabricguard" {
+				return fmt.Errorf("dedicated evidence ingress requires the fabricguard processor")
+			}
+			identity, ok := processor["evidence_source_binding"].(map[string]any)
+			if !ok || !safeEvidenceIdentity(identity["tenant_id"]) || !safeEvidenceIdentity(identity["source_id"]) {
+				return fmt.Errorf("dedicated evidence ingress requires valid tenant and source identities")
+			}
+			bound = true
+		}
+	}
+	if !bound {
+		return nil
+	}
+	const authName = "bearertokenauth/evidence_source"
+	extensions, _ := cfg["extensions"].(map[string]any)
+	auth, ok := extensions[authName].(map[string]any)
+	if !ok {
+		return fmt.Errorf("dedicated evidence ingress requires its bearer authenticator")
+	}
+	filename, ok := auth["filename"].(string)
+	if !ok || filename == "" {
+		return fmt.Errorf("dedicated evidence ingress requires a token file")
+	}
+	if _, inline := auth["tokens"]; inline {
+		return fmt.Errorf("dedicated evidence ingress forbids inline or additional tokens")
+	}
+	if auth["require_single_token"] != true {
+		return fmt.Errorf("dedicated evidence ingress requires fail-closed singleton token reload")
+	}
+	path := expandEnvRefs(filename)
+	if err := checkDedicatedTokenFile(path); err != nil {
+		return err
+	}
+	marked := false
+	for i := range watched {
+		if watched[i].extension == authName && watched[i].path == path {
+			watched[i].dedicated = true
+			marked = true
+		}
+	}
+	if !marked {
+		return fmt.Errorf("dedicated evidence ingress token is not watched")
+	}
+	service, _ := cfg["service"].(map[string]any)
+	activeExtensions, _ := service["extensions"].([]any)
+	if !onlyContains(activeExtensions, authName) {
+		return fmt.Errorf("dedicated evidence ingress authenticator is not active")
+	}
+	receivers, _ := cfg["receivers"].(map[string]any)
+	otlp, ok := receivers["otlp"].(map[string]any)
+	if !ok || len(receivers) != 1 {
+		return fmt.Errorf("dedicated evidence ingress requires sole OTLP receiver")
+	}
+	protocols, _ := otlp["protocols"].(map[string]any)
+	if len(protocols) != 2 {
+		return fmt.Errorf("dedicated evidence ingress requires HTTP and gRPC")
+	}
+	for _, protocol := range []string{"grpc", "http"} {
+		settings, ok := protocols[protocol].(map[string]any)
+		if !ok {
+			return fmt.Errorf("dedicated evidence ingress requires authenticated HTTP and gRPC")
+		}
+		authSettings, _ := settings["auth"].(map[string]any)
+		if authSettings["authenticator"] != authName {
+			return fmt.Errorf("dedicated evidence ingress requires bearer authentication on both protocols")
+		}
+		tls, _ := settings["tls"].(map[string]any)
+		cert, certOK := tls["cert_file"].(string)
+		key, keyOK := tls["key_file"].(string)
+		if !certOK || !keyOK || expandEnvRefs(cert) == "" || expandEnvRefs(key) == "" || tls["insecure"] == true {
+			return fmt.Errorf("dedicated evidence ingress requires receiver TLS on both protocols")
+		}
+	}
+	pipelines, _ := service["pipelines"].(map[string]any)
+	if len(pipelines) != 2 {
+		return fmt.Errorf("dedicated evidence ingress requires only logs and traces pipelines")
+	}
+	for _, signal := range []string{"logs", "traces"} {
+		pipeline, ok := pipelines[signal].(map[string]any)
+		if !ok || !exactStringList(pipeline["receivers"], []string{"otlp"}) || !exactStringList(pipeline["exporters"], []string{"otlp_http/fabric"}) {
+			return fmt.Errorf("dedicated evidence ingress has an unapproved pipeline route")
+		}
+		steps, ok := stringList(pipeline["processors"])
+		if !ok || !approvedEvidenceProcessors(steps) {
+			return fmt.Errorf("dedicated evidence ingress requires guard before batching")
+		}
+	}
+	exporters, _ := cfg["exporters"].(map[string]any)
+	exporter, ok := exporters["otlp_http/fabric"].(map[string]any)
+	if !ok || len(exporters) != 1 {
+		return fmt.Errorf("dedicated evidence ingress requires one approved OTLP exporter")
+	}
+	endpoint, _ := exporter["endpoint"].(string)
+	tls, _ := exporter["tls"].(map[string]any)
+	if !strings.HasPrefix(expandEnvRefs(endpoint), "https://") || tls["insecure"] == true || tls["insecure_skip_verify"] == true {
+		return fmt.Errorf("dedicated evidence ingress requires verified HTTPS export")
+	}
+	return nil
+}
+
+func safeEvidenceIdentity(raw any) bool {
+	s, ok := raw.(string)
+	if !ok || len(s) == 0 || len(s) > 128 {
+		return false
+	}
+	for i, r := range s {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || i > 0 && (r == '.' || r == '_' || r == ':' || r == '-') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func stringList(raw any) ([]string, bool) {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, false
+	}
+	result := make([]string, len(items))
+	for i, item := range items {
+		value, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		result[i] = value
+	}
+	return result, true
+}
+
+func exactStringList(raw any, expected []string) bool {
+	actual, ok := stringList(raw)
+	if !ok || len(actual) != len(expected) {
+		return false
+	}
+	for i := range expected {
+		if actual[i] != expected[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func onlyContains(raw []any, wanted string) bool {
+	for _, item := range raw {
+		if item == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func approvedEvidenceProcessors(steps []string) bool {
+	if len(steps) < 1 || len(steps) > 3 {
+		return false
+	}
+	guardIndex := -1
+	for i, step := range steps {
+		switch step {
+		case "memory_limiter":
+			if i != 0 {
+				return false
+			}
+		case "fabricguard":
+			if guardIndex != -1 {
+				return false
+			}
+			guardIndex = i
+		case "batch":
+			if i != len(steps)-1 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return guardIndex >= 0 && (len(steps) == 1 || steps[len(steps)-1] != "batch" || guardIndex < len(steps)-1)
+}
+
+func checkDedicatedTokenFile(path string) error {
+	if err := checkTokenFile("bearertokenauth/evidence_source", path); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o027 != 0 {
+		return fmt.Errorf("dedicated evidence ingress token file permissions are unsafe")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) < 32 || len(data) > 4096 {
+		return fmt.Errorf("dedicated evidence ingress token file length is invalid")
+	}
+	for _, b := range data {
+		if b <= 0x20 || b >= 0x7f {
+			return fmt.Errorf("dedicated evidence ingress token file format is invalid")
+		}
+	}
+	return nil
 }
 
 // checkExporterHeaders rejects values the Go HTTP client cannot send, and

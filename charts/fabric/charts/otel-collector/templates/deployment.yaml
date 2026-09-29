@@ -82,6 +82,11 @@ spec:
               mountPath: /etc/fabric/receiver-tls
               readOnly: true
             {{- end }}
+            {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+            - name: evidence-source-token
+              mountPath: /etc/fabric/evidence-source
+              readOnly: true
+            {{- end }}
             {{- if .Values.exporter.sendingQueue.persistence.enabled }}
             - name: queue-storage
               mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
@@ -125,6 +130,17 @@ spec:
                     - key: {{ .Values.receiver.tls.clientCASecret.key }}
                       path: client-ca.crt
               {{- end }}
+        {{- end }}
+        {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+        - name: evidence-source-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Values.receiver.evidenceSourceBinding.tokenSecret.name | quote }}
+                  items:
+                    - key: {{ .Values.receiver.evidenceSourceBinding.tokenSecret.key | quote }}
+                      path: token
         {{- end }}
         {{- if and .Values.exporter.sendingQueue.persistence.enabled .Values.exporter.sendingQueue.persistence.existingClaim }}
         - name: queue-storage

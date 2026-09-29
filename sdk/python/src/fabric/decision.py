@@ -56,7 +56,7 @@ from contextlib import (
 )
 from dataclasses import dataclass
 from types import TracebackType
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Protocol, Self
 from uuid import UUID, uuid4
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
@@ -136,9 +136,84 @@ from .signing import SignatureCheck
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 
-    from opentelemetry.trace import Span
+    from opentelemetry.metrics import Meter
+    from opentelemetry.trace import Span, Tracer
 
-    from .client import Fabric
+    from ._content_writer import ContentCaptureConfig, ContentWriter
+    from .content_store import ContentStore
+
+
+class _ConfigLike(Protocol):
+    """Configuration fields consumed by a decision, without importing the client."""
+
+    @property
+    def extra(self) -> dict[str, str]: ...
+
+    @property
+    def workflow_id(self) -> str | None: ...
+
+    @property
+    def execution_id(self) -> str | None: ...
+
+    @property
+    def execution_attempt_id(self) -> str | None: ...
+
+    @property
+    def execution_attempt(self) -> int | None: ...
+
+    @property
+    def execution_retry_reason(self) -> str | None: ...
+
+    @property
+    def execution_retry_previous_attempt_id(self) -> str | None: ...
+
+
+class _ClientLike(Protocol):
+    """The exact client surface consumed by a decision.
+
+    ``Fabric`` satisfies this interface structurally. Keeping the dependency
+    one-way lets type checking inspect both modules without an import cycle.
+    """
+
+    @property
+    def config(self) -> _ConfigLike: ...
+
+    @property
+    def tracer(self) -> Tracer: ...
+
+    @property
+    def meter(self) -> Meter: ...
+
+    @property
+    def tenant_id(self) -> str: ...
+
+    @property
+    def agent_id(self) -> str: ...
+
+    @property
+    def profile(self) -> str: ...
+
+    @property
+    def agent_name(self) -> str: ...
+
+    @property
+    def agent_version(self) -> str | None: ...
+
+    @property
+    def agent_description(self) -> str | None: ...
+
+    @property
+    def content_store(self) -> ContentStore | None: ...
+
+    @property
+    def content_capture(self) -> ContentCaptureConfig | None: ...
+
+    @property
+    def content_writer(self) -> ContentWriter | None: ...
+
+    @property
+    def content_roles(self) -> frozenset[str]: ...
+
 
 # Explicitly re-export the shared leaf constants pulled in from
 # ``_attributes`` so ``from fabric.decision import ATTR_*`` / ``SCHEMA_VERSION``
@@ -316,7 +391,7 @@ class Decision(AbstractContextManager["Decision"]):
     def __init__(
         self,
         *,
-        client: Fabric,
+        client: _ClientLike,
         session_id: str | None,
         request_id: str | None,
         user_id: str | None,

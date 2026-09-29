@@ -286,3 +286,24 @@ func TestSpoolRejectsUnsafeOrIncompleteRecovery(t *testing.T) {
 		t.Fatalf("world-writable spool accepted: %v", err)
 	}
 }
+
+func TestSpoolRecoveryFailureReleasesLock(t *testing.T) {
+	dir := testSpoolDir(t)
+	broken := filepath.Join(dir, ".partial.tmp")
+	if err := os.WriteFile(broken, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openDiskSpool(dir, 1<<20); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("expected incomplete recovery error, got %v", err)
+	}
+	if err := os.Remove(broken); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openDiskSpool(dir, 1<<20)
+	if err != nil {
+		t.Fatalf("recovery failure retained spool lock: %v", err)
+	}
+	if err := s.close(); err != nil {
+		t.Fatal(err)
+	}
+}

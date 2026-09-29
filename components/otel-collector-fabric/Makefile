@@ -24,6 +24,7 @@ build:
 		exit 1; \
 	fi
 	$(OCB) --config ocb-config.yaml
+	sh ./upstream/build-patched-bearertokenauth.sh
 	cd gate && go build -o ../$(DIST_DIR)/fabric-gate .
 
 test:

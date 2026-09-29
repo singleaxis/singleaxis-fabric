@@ -8,17 +8,144 @@ literal header "Bearer " — an empty credential that bypasses authentication
 for any deployment whose token file ends in a newline (the natural output of
 `openssl rand -hex 32 > token` and most editors).
 
-Drop entries that trim to empty and warn when any were removed, so file
-formatting can never mint a credential. An all-empty file now yields zero
-tokens (every request rejected) instead of one empty token (every request
-with a blank credential accepted).
+Drop entries that trim to empty for legacy multi-token files. Add an opt-in
+require_single_token profile for dedicated source ingress: every load and
+reload accepts exactly one 32–4096-byte printable ASCII token with no spaces
+or newlines; malformed or unreadable files install zero accepted tokens.
+This prevents an unsafe rotation from creating even a short authentication
+window before the supervisor's next poll.
+
+--- a/extension/bearertokenauthextension/config.go
++++ b/extension/bearertokenauthextension/config.go
+@@ -27,5 +27,8 @@ type Config struct {
+ 	// Filename points to a file that contains the bearer token(s) to use for every RPC.
+ 	Filename string `mapstructure:"filename,omitempty"`
+ 
++	// RequireSingleToken enables strict dedicated-source file authentication.
++	RequireSingleToken bool `mapstructure:"require_single_token,omitempty"`
++
+ 	// prevent unkeyed literal initialization
+ 	_ struct{}
+@@ -41,9 +45,12 @@ func (cfg *Config) Validate() error {
+ func (cfg *Config) Validate() error {
+ 	if cfg.BearerToken == "" && len(cfg.Tokens) == 0 && cfg.Filename == "" {
+ 		return errNoTokenProvided
+ 	}
+ 	if cfg.BearerToken != "" && len(cfg.Tokens) > 0 {
+ 		return errTokensAndTokenProvided
+ 	}
++	if cfg.RequireSingleToken && (cfg.Filename == "" || cfg.BearerToken != "" || len(cfg.Tokens) > 0) {
++		return errors.New("require_single_token requires a filename without inline tokens")
++	}
+ 	return nil
+ }
 
 --- a/extension/bearertokenauthextension/bearertokenauth.go
 +++ b/extension/bearertokenauthextension/bearertokenauth.go
-@@ -156,10 +156,16 @@ func (b *bearerTokenAuth) refreshToken() {
+@@ -12,7 +12,8 @@ import (
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+ 	"sync/atomic"
++	"time"
+ 
+ 	"github.com/fsnotify/fsnotify"
+ 	"go.opentelemetry.io/collector/component"
+@@ -55,7 +55,8 @@ type bearerTokenAuth struct {
+ 	shutdownCH chan struct{}
+ 
+ 	filename string
++	requireSingleToken bool
+ 	logger   *zap.Logger
+ }
+ 
+ func newBearerTokenAuth(cfg *Config, logger *zap.Logger) *bearerTokenAuth {
+@@ -65,7 +66,8 @@ func newBearerTokenAuth(cfg *Config, logger *zap.Logger) *bearerTokenAuth {
+ 	a := &bearerTokenAuth{
+ 		header:   cfg.Header,
+ 		scheme:   cfg.Scheme,
+ 		filename: cfg.Filename,
++		requireSingleToken: cfg.RequireSingleToken,
+ 		logger:   logger,
+ 	}
+ 	switch {
+@@ -116,30 +119,41 @@ func (b *bearerTokenAuth) startWatcher(ctx context.Context, watcher *fsnotify.Watcher) {
+ func (b *bearerTokenAuth) startWatcher(ctx context.Context, watcher *fsnotify.Watcher) {
+ 	defer watcher.Close()
++	var poll <-chan time.Time
++	if b.requireSingleToken {
++		ticker := time.NewTicker(time.Second)
++		defer ticker.Stop()
++		poll = ticker.C
++	}
++
+ 	for {
+ 		select {
+ 		case _, ok := <-b.shutdownCH:
+ 			_ = ok
+ 			return
+ 		case <-ctx.Done():
+ 			return
++		case <-poll:
++			b.refreshToken()
+ 		case event, ok := <-watcher.Events:
+ 			if !ok {
+ 				continue
+ 			}
+ 
+-			// Only process events for our target file by filtering events
+-			// Since we're watching the parent directory, we get events for all files in it
+-			if event.Name != b.filename {
++			// Projected Secrets replace ..data instead of writing the token symlink.
++			// Strict mode observes only changes in the file's immediate parent.
++			watchDir := filepath.Dir(b.filename)
++			if event.Name != b.filename && !(b.requireSingleToken &&
++				(event.Name == watchDir || filepath.Dir(event.Name) == watchDir)) {
+ 				continue
+ 			}
+ 
+-			// Handle file events for our target file
+-			// Since we're watching the directory, we don't need to manage watch add/remove
+-			// The directory watch persists even when files are atomically replaced
++			// The parent watch survives atomic file and symlink replacement.
++			// Rename is included for projected Secret update events.
+ 			if event.Op&fsnotify.Write == fsnotify.Write ||
+ 				event.Op&fsnotify.Create == fsnotify.Create ||
+ 				event.Op&fsnotify.Remove == fsnotify.Remove ||
+-				event.Op&fsnotify.Chmod == fsnotify.Chmod {
++				event.Op&fsnotify.Chmod == fsnotify.Chmod ||
++				event.Op&fsnotify.Rename == fsnotify.Rename {
+ 				b.refreshToken()
+ 			}
+ 		}
+@@ -150,14 +164,39 @@ func (b *bearerTokenAuth) refreshToken() {
+ func (b *bearerTokenAuth) refreshToken() {
+-	b.logger.Info("refresh token", zap.String("filename", b.filename))
++	b.logger.Debug("refresh token", zap.String("filename", b.filename))
+ 	tokenData, err := os.ReadFile(b.filename)
+ 	if err != nil {
++		b.setAuthorizationValues(nil)
+ 		b.logger.Error(err.Error())
  		return
  	}
  
++	if b.requireSingleToken {
++		if len(tokenData) < 32 || len(tokenData) > 4096 {
++			b.setAuthorizationValues(nil)
++			b.logger.Warn("invalid singleton bearer token file length", zap.String("filename", b.filename))
++			return
++		}
++		for _, ch := range tokenData {
++			if ch <= 0x20 || ch >= 0x7f {
++				b.setAuthorizationValues(nil)
++				b.logger.Warn("invalid singleton bearer token file format", zap.String("filename", b.filename))
++				return
++			}
++		}
++		b.setAuthorizationValues([]string{string(tokenData)})
++		return
++	}
++
  	tokens := strings.Split(string(tokenData), "\n")
 -	for i, token := range tokens {
 -		tokens[i] = strings.TrimSpace(token)

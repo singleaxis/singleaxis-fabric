@@ -25,7 +25,13 @@ const shutdownGrace = 30 * time.Second
 // gate must keep holding the line after boot.
 func checkWatched(watched []tokenFile) error {
 	for _, tf := range watched {
-		if err := checkTokenFile(tf.extension, tf.path); err != nil {
+		var err error
+		if tf.dedicated {
+			err = checkDedicatedTokenFile(tf.path)
+		} else {
+			err = checkTokenFile(tf.extension, tf.path)
+		}
+		if err != nil {
 			return err
 		}
 	}

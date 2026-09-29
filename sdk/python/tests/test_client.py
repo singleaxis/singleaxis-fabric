@@ -4,10 +4,28 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import DEFAULT_PROFILE, Fabric, FabricConfig
+
+
+@pytest.mark.parametrize("first,second", [("client", "decision"), ("decision", "client")])
+def test_client_and_decision_import_in_either_order(first: str, second: str) -> None:
+    code = (
+        "import importlib; "
+        f"importlib.import_module('fabric.{first}'); "
+        f"importlib.import_module('fabric.{second}'); "
+        "from fabric import Fabric, FabricConfig; "
+        "from fabric.decision import Decision; "
+        "assert isinstance(Fabric(FabricConfig(tenant_id='t', agent_id='a')).decision("
+        "session_id='s', request_id='r'), Decision)"
+    )
+    # Fixed interpreter and allowlisted module names; no shell or external input.
+    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True)  # noqa: S603
 
 
 def test_from_env_with_all_fields() -> None:

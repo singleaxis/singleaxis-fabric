@@ -41,9 +41,11 @@ COPY ocb-config.yaml ./
 COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
 COPY receiver/auditreceiver ./receiver/auditreceiver
 COPY gate ./gate
+COPY upstream/bearertokenauth-empty-tokens.patch upstream/bearertokenauth_empty_tokens_test.go upstream/build-patched-bearertokenauth.sh ./upstream/
 
 RUN ocb --config ocb-config.yaml \
     && test -x /src/dist/otelcol-fabric \
+    && sh ./upstream/build-patched-bearertokenauth.sh \
     && cd gate && go build -o /src/dist/fabric-gate . && cd .. \
     && mkdir -p /src/fabric-node/queue
 

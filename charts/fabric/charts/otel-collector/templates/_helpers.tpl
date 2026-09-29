@@ -75,6 +75,33 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if and $clientCA.name (not $clientCA.key) -}}
 {{- fail "receiver.tls.clientCASecret.name requires receiver.tls.clientCASecret.key" -}}
 {{- end -}}
+{{- $binding := $r.evidenceSourceBinding -}}
+{{- if $binding.enabled -}}
+{{- if not $r.requireTLS -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires receiver.requireTLS=true" -}}
+{{- end -}}
+{{- if not $server.name -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires receiver.tls.serverCertificateSecret.name" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $binding.tenantId) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid nonempty tenantId" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $binding.sourceId) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid nonempty sourceId" -}}
+{{- end -}}
+{{- if or (gt (len $binding.tokenSecret.name) 63) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $binding.tokenSecret.name)) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid tokenSecret.name for an existing Secret" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9._-]+$" $binding.tokenSecret.key) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid nonempty tokenSecret.key" -}}
+{{- end -}}
+{{- if not .Values.exporter.requireTLS -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires exporter.requireTLS=true for the approved HTTPS destination" -}}
+{{- end -}}
+{{- if .Values.debugExporter.enabled -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires debugExporter.enabled=false" -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

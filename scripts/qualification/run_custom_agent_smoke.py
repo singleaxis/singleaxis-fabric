@@ -65,6 +65,7 @@ def main() -> int:
     parser.add_argument("--ca-cert")
     parser.add_argument("--client-cert")
     parser.add_argument("--client-key")
+    parser.add_argument("--bearer-token-file")
     args = parser.parse_args()
     run_id = "custom-agent-" + uuid.uuid4().hex
     installed = Path(fabric_package_file).resolve()
@@ -428,6 +429,7 @@ def main() -> int:
                 ca_cert_path=args.ca_cert,
                 client_cert_path=args.client_cert,
                 client_key_path=args.client_key,
+                bearer_token_path=args.bearer_token_file,
             )
             if receipt.get("receipt_stage") != "node_accepted":
                 raise AssertionError(
@@ -448,6 +450,7 @@ def main() -> int:
                 ca_cert_path=args.ca_cert,
                 client_cert_path=args.client_cert,
                 client_key_path=args.client_key,
+                bearer_token_path=args.bearer_token_file,
             )
             if privacy_receipt.get("receipt_stage") != "node_accepted":
                 raise AssertionError("Node did not accept privacy-failure metadata")

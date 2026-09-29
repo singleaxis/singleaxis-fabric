@@ -4,6 +4,96 @@ This document distinguishes implemented runtime behavior from public contracts
 and from checks that require the release CI environment. It is a development
 status record, not a certification or legal compliance statement.
 
+## Current closure work — 2026-09-30 — NO-GO
+
+This section supersedes older pending-security descriptions below, which are
+retained as dated test history. [Spec 044](../specs/044-production-evidence-closure.md)
+was written before this implementation. Work is on PR #164, not the user's
+separate dirty checkout. None of the new changes below is yet credited as a
+live-tested release artifact.
+
+| Gate | Implemented / locally tested | Still required |
+| --- | --- | --- |
+| Historical secrets | Eight exact historical fingerprints classified; seven source fixtures and one Basic-auth example confirmed **never used** by the requesting user. Full-history scan with exact baseline and synthetic new-commit rejection probe passed. | Fresh CI history scan; named security-owner acceptance of the release, not just fixture classification. |
+| Security findings | Python import cycle removed with typed protocols; resolver descriptor cleanup uses independent cleanup callbacks; host-spool close/unlock errors preserved. SDK regression and host race tests passed. | Fresh CodeQL and release scans on the committed artifact. |
+| Independent statement verification | Optional offline Ed25519 verifier pins issuer, tenant, run, scope, subject digest, stage, key validity and revocation. It rejects substituted issuers and expired-key backdating; 54 tests passed. | Qualified independent issuers and actual source/Node/destination receipt producers. A signature alone never promotes a run to complete. |
+| Credential-bound ingress | Dedicated one-tenant/one-source guard, strict startup validation, chart opt-in and HTTPS-only file-based bearer export implemented. Go guard/gate race tests, vet and chart tests passed. | Exact installed Node HTTP/gRPC negative tests, credential rotation and readback. Exclusive credential ownership remains a deployment control. |
+| Python regression | Full suite: **895 passed**, **86.58%** coverage on Python 3.12.13; Ruff and mypy passed using SDK configuration. Installed-wheel evidence below. | Fresh Linux CI qualification. |
+
+Installed-package evidence: the freshly built wheel
+`8082f93661ef9417d1f331113ebaa9e8d015265ca92d2b4b758b5c671ac091f0`
+and sdist `f1d2a7da9e590ebfecbe973ec7483f1f88b374f1149acaea53ddb98c0d8fcdf9`
+passed the package-content qualifier. The isolated wheel installation passed
+77 attestation/export tests and the custom-agent smoke: five calls, twelve
+byte objects, zero fixture discrepancies; clean remains `unverified`, and
+bypass, corruption and privacy failures remain `partial`. These are SDK
+artifact checks, not a complete release or approved deployment.
+
+Repository tests: 207 passed, eight skipped and three real-Node setup errors.
+Seven skips were the live S3 tests (approved endpoint/bucket/credentials not
+configured); the eighth requires a case-sensitive filesystem. A rerun excluding
+only the diagnosed Docker module reproduced 207 passed and the same eight
+explicit skips. No live S3 or target-storage control is credited.
+The errors were reproduced in a fresh, uniquely named Compose project:
+Collector startup failed with `no space left on device` opening its queue.
+Only those newly created test resources were cleaned up; no pre-existing
+workload or volume was removed. Local Docker evidence is **not passed**.
+The isolated Linux CI environment must run these exact-artifact tests.
+Local reproducible outputs are under
+`/private/tmp/fabric-security-release-20260930/` (package manifest, installed
+environment and smoke reports); source coverage is
+`/private/tmp/fabric-security-coverage-20260930.xml`.
+
+```sh
+cd sdk/python
+.venv/bin/python -m pytest
+.venv/bin/ruff check src tests
+.venv/bin/mypy src/fabric
+cd ../..
+python3 scripts/qualification/check_secret_scan_baseline.py
+gitleaks detect --source . --redact --exit-code 1
+uv build --out-dir /private/tmp/fabric-security-release-20260930/dist sdk/python
+python3 scripts/release/qualify_release.py --policy scripts/release/release-policy.json --tag v0.8.0-rc.1 --chart-dir charts/fabric --dist-dir /private/tmp/fabric-security-release-20260930/dist --output /private/tmp/fabric-security-release-20260930/package-manifest.json
+/private/tmp/fabric-security-release-20260930/venv/bin/python -m pytest -q -o addopts= sdk/python/tests/test_evidence_attestation.py sdk/python/tests/test_call_otlp.py
+/private/tmp/fabric-security-release-20260930/venv/bin/python scripts/qualification/run_custom_agent_smoke.py --evidence-dir /private/tmp/fabric-security-release-20260930/new-smoke
+```
+
+The venv above was created with `uv venv --python 3.12` and installed only
+the exact wheel with `[otlp,signing]` plus pytest, not the source checkout.
+Adding the isolated probe's `grpcio==1.76.0` test dependency then passed seven
+readback-validator tests: exact match, missing record, duplicate, forged tenant,
+unexpected content, unaccounted operation and rejected record at destination.
+The Linux workflow installs that dependency and explicitly runs this test file;
+general repository environments without it report a skip.
+
+Review found an upstream bearer-token reload race: a malformed rotated file
+could admit an empty token before the gate's periodic check. The release build
+now applies the pinned v0.150.0 receiver patch and tests it before rebuilding
+the final binary; Go build metadata must identify the patched replacement.
+Dedicated-source configuration requires `require_single_token: true` inside
+the receiver, not merely a polling supervisor. Invalid, multiple, empty or
+unreadable token files clear accepted credentials on reload. Kubernetes
+projected-Secret symlink updates are observed, with a one-second strict-mode
+reread fallback for missed filesystem events. This is eventual rotation after
+projection/reload, not instantaneous revocation at Secret update time.
+
+The full patched upstream module passed `go test -race -count=1 ./...`, including
+real filesystem watcher valid→valid→malformed symlink swaps. Chart render and
+lint passed. The isolated Linux workflow now uses the same built image and
+packaged chart for a second dedicated-source deployment, tests both protocols,
+performs live Secret rotation, compares every expected SDK metadata record
+with durable fixture readback, and scans sink/log/queue bytes for credentials
+and content canaries. Those **live tests remain pending** until the frozen
+commit's workflow succeeds. The local Docker setup failure is not waived.
+
+The complete-run decision remains unavailable: pre-fsync source loss and raw
+queued-content crash safety are not closed; the trusted four-stage receipt
+chain and independent complete operation sets are not implemented end to end.
+The customer deployment still needs a signed route/capacity/privacy scope,
+actual storage encryption/isolation/retention/restore/rotation tests, and
+platform, security, records and independent-reviewer acceptance. Passing
+synthetic CI does not substitute for these controls.
+
 ## First synthetic evidence slice — NO-GO
 
 ### Existing-agent integration test-start (spec 042)
