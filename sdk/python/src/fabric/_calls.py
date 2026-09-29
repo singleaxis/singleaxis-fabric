@@ -316,6 +316,8 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             raise ValueError("LLMCall: operation_name is required")
         if prompt_version is not None and prompt_name is None:
             raise ValueError("LLMCall: prompt_version requires prompt_name")
+        if capture_content and governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         _validate_step_metadata(
             step_id=step_id,
             step_type=step_type,
@@ -479,6 +481,18 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             return None
         return f"{span_id:016x}"
 
+    def _governed_llm_bindings(self) -> dict[str, object]:
+        bindings: dict[str, object] = {"step_type": _DEFAULT_LLM_STEP_TYPE}
+        for key, value in (
+            ("span_id", self._span_id()),
+            ("step_id", self._step_id),
+            ("step_attempt", self._step_attempt),
+            ("step_attempt_id", self._step_attempt_id),
+        ):
+            if value is not None:
+                bindings[key] = value
+        return bindings
+
     def _capture_request_content(self) -> None:
         """Governed capture of the effective model request (spec 028).
 
@@ -490,16 +504,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         capture = self._governed_capture
         if capture is None:
             return
-        bindings: dict[str, object] = {"step_type": _DEFAULT_LLM_STEP_TYPE}
-        span_id = self._span_id()
-        if span_id is not None:
-            bindings["span_id"] = span_id
-        if self._step_id is not None:
-            bindings["step_id"] = self._step_id
-        if self._step_attempt is not None:
-            bindings["step_attempt"] = self._step_attempt
-        if self._step_attempt_id is not None:
-            bindings["step_attempt_id"] = self._step_attempt_id
+        bindings = self._governed_llm_bindings()
         request_ref = None
         if self._system_instructions is not None:
             capture(
@@ -708,14 +713,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             self.span.set_attribute(FABRIC_LLM_RESPONSE_FINISH_REASONS, reasons)
         if output_messages is not None:
             if self._governed_capture is not None:
-                bindings: dict[str, object] = {"step_type": _DEFAULT_LLM_STEP_TYPE}
-                span_id = self._span_id()
-                if span_id is not None:
-                    bindings["span_id"] = span_id
-                if self._step_id is not None:
-                    bindings["step_id"] = self._step_id
-                if self._step_attempt is not None:
-                    bindings["step_attempt"] = self._step_attempt
+                bindings = self._governed_llm_bindings()
                 ref = self._governed_capture(
                     "model.output.messages",
                     output_messages,
@@ -740,10 +738,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         """
         if self._governed_capture is None:
             raise ValueError("record_partial_output requires governed content capture")
-        bindings: dict[str, object] = {"step_type": _DEFAULT_LLM_STEP_TYPE}
-        span_id = self._span_id()
-        if span_id is not None:
-            bindings["span_id"] = span_id
+        bindings = self._governed_llm_bindings()
         media = "text/plain" if isinstance(content, str) else "application/json"
         ref = self._governed_capture(
             "model.output.messages",
@@ -938,6 +933,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
+        if capture_content and governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         _validate_step_metadata(
             step_id=step_id,
             step_type=step_type,
@@ -1108,6 +1105,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             bindings["step_id"] = self._step_id
         if self._step_attempt is not None:
             bindings["step_attempt"] = self._step_attempt
+        if self._step_attempt_id is not None:
+            bindings["step_attempt_id"] = self._step_attempt_id
         return bindings
 
     def set_arguments(self, payload: str, *, capture: bool | None = None) -> None:
@@ -1122,6 +1121,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         """
         if not isinstance(payload, str):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
+        if capture and self._governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
         if self._governed_capture is not None:
             ref = self._governed_capture(
@@ -1148,6 +1149,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         """
         if not isinstance(payload, str):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
+        if capture and self._governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
         if self._governed_capture is not None:
             ref = self._governed_capture(

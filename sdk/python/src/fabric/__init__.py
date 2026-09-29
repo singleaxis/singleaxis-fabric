@@ -12,7 +12,9 @@ from ._content import CONTENT_ROLES, ContentRole, ContentStatus
 from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._version import __version__
 from .baseline import Baseline, BaselineCheck
-from .byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder
+from .byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder, BytePrivacyPolicy
+from .byte_resolver import ByteEvidenceResolver, ByteResolution
+from .call_recorder import CallRecorder
 from .checkpoint import CheckpointEvent
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
 from .content_store import (
@@ -69,7 +71,11 @@ __all__ = [
     "BaselineCheck",
     "ByteEvidenceConfig",
     "ByteEvidenceRecorder",
+    "ByteEvidenceResolver",
     "ByteEvidenceStore",
+    "BytePrivacyPolicy",
+    "ByteResolution",
+    "CallRecorder",
     "CheckpointEvent",
     "ConcurrentDecisionUseError",
     "ContentCaptureConfig",

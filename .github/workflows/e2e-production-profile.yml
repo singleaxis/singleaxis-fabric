@@ -192,6 +192,12 @@ jobs:
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
             scripts/qualification/run_client_byte_adapter_smoke.py \
             | tee "${RUNNER_TEMP}/fabric-client-byte-smoke.json"
+      - name: Test installed-wheel custom-agent calls and actual data
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_custom_agent_smoke.py \
+            | tee "${RUNNER_TEMP}/fabric-custom-agent-smoke.json"
       - name: Check TLS failures and reconcile exact agent/sink records
         run: |
           set -euo pipefail
@@ -232,6 +238,13 @@ jobs:
             https://localhost:18443/count | jq -r .count)
           test "${AFTER}" -eq "${BEFORE}"
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_custom_agent_smoke.py \
+            --evidence-dir "${RUNNER_TEMP}/fabric-custom-agent-node" \
+            --otlp-endpoint https://localhost:14319/v1/logs \
+            --ca-cert "${CERT_DIR}/ingress-ca.crt" \
+            --client-cert "${CERT_DIR}/client.crt" \
+            --client-key "${CERT_DIR}/client.key"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
             scripts/qualification/run_synthetic_agent_pilot.py \
             --node-url https://localhost:14319/v1/logs \
             --node-ca "${CERT_DIR}/ingress-ca.crt" \
@@ -251,15 +264,34 @@ jobs:
             scripts/qualification/verify_synthetic_sink_readback.py \
             --report-path "${RUNNER_TEMP}/fabric-agent-production-report.json" \
             --sink-dir "${RUNNER_TEMP}/fabric-production-sink-data"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_custom_agent_node_pilot.py \
+            --verify-projection "${RUNNER_TEMP}/fabric-custom-agent-node/projected.json" \
+            --sink-dir "${RUNNER_TEMP}/fabric-production-sink-data"
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_custom_agent_node_pilot.py \
+            --verify-projection "${RUNNER_TEMP}/fabric-custom-agent-node/privacy-projected.json" \
+            --sink-dir "${RUNNER_TEMP}/fabric-production-sink-data"
           if kubectl logs --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector --tail=-1 \
             | grep -Fq 'PILOT_SECRET_CANARY_do_not_export'; then
             echo 'Privacy canary appeared in Collector logs' >&2
             exit 1
           fi
+          if kubectl logs --namespace "${NAMESPACE}" \
+            -l app.kubernetes.io/name=otel-collector --tail=-1 \
+            | grep -Fq 'CUSTOM_AGENT_PRIVATE_CANARY'; then
+            echo 'Custom-agent privacy canary appeared in Collector logs' >&2
+            exit 1
+          fi
           if grep -RFq 'PILOT_SECRET_CANARY_do_not_export' \
             "${RUNNER_TEMP}/fabric-production-sink-data"; then
             echo 'Privacy canary appeared in sink files' >&2
+            exit 1
+          fi
+          if grep -RFq 'CUSTOM_AGENT_PRIVATE_CANARY' \
+            "${RUNNER_TEMP}/fabric-production-sink-data"; then
+            echo 'Custom-agent privacy canary appeared in sink files' >&2
             exit 1
           fi
       - name: Publish non-secret qualification evidence
@@ -270,6 +302,9 @@ jobs:
           path: |
             ${{ runner.temp }}/fabric-agent-production-report.json
             ${{ runner.temp }}/fabric-client-byte-smoke.json
+            ${{ runner.temp }}/fabric-custom-agent-smoke.json
+            ${{ runner.temp }}/fabric-custom-agent-node/summary.json
+            ${{ runner.temp }}/fabric-custom-agent-node/report.json
             ${{ runner.temp }}/fabric-wheel-production.sha256
             ${{ runner.temp }}/fabric-chart-production.sha256
             ${{ runner.temp }}/fabric-production-config.sha256

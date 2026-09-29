@@ -74,6 +74,49 @@ auditor resolves out-of-band, never the raw bytes.
 
 ### Experimental explicit byte evidence (content v2)
 
+For custom dispatchers, `CallRecorder` joins a call timeline to these protected
+byte objects. It supports sync/async calls and pull-through streams, nested
+calls and parallel agent identities. Install the wheel containing spec 043
+before using this experimental API:
+
+```python
+from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, CallRecorder
+from fabric import LocalFilesystemContentStore
+
+store = LocalFilesystemContentStore("./protected-data", tenant_id="tenant-1")
+writer = ByteEvidenceRecorder(ByteEvidenceConfig(
+    store=store,
+    roles=frozenset({"tool.call.arguments", "tool.call.result"}),
+))
+calls = CallRecorder(writer, run_id="run-1", agent_id="agent-1", source_id="dispatcher-1")
+result = calls.call(
+    b"exact-input", existing_tool_function,
+    kind="tool", operation_id="lookup-1", attempt_id="try-1",
+)
+# Offline, after the monitored work: snapshot waits for local storage settlement.
+record = calls.snapshot()
+writer.close()
+```
+
+Configure your OpenTelemetry tracer as above to retain real trace IDs. Use
+`acall` for async delegates, `stream` for iterators and `astream` for async
+iterators. Close a stream explicitly when stopping early. Within a delegate,
+`calls.record_data(bytes, role="artifact.after")` attaches approved file bytes
+to that call; this helper does not independently observe filesystem changes.
+
+`BytePrivacyPolicy` configures role-specific omission or a customer-supplied
+masking callback. Original and masked review copies require separate store
+namespaces; target access permissions still need deployment verification.
+Masking occurs in the bounded background worker. A failing callback withholds
+content and never falls back to raw export. It is not a built-in PII detector.
+
+The offline `fabric.call_reconcile.reconcile_call_run` compares specific calls
+and bytes against independent witness inputs. Matching local fixtures remain
+`unverified`; missing or corrupt evidence becomes `partial`. The API has no
+authenticated source or durable delivery receipt chain and its in-memory
+timeline is not crash-durable. See [custom-agent recording](../../../docs/custom-agent-recording.md)
+and [spec 043](../../../specs/043-custom-agent-call-recording.md).
+
 The separate `ByteEvidenceRecorder` API captures bytes the caller explicitly
 supplies. It does not intercept terminal, SSH, database or sandbox operations.
 

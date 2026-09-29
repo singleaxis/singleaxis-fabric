@@ -470,4 +470,16 @@ class Fabric:
         Returns the names of instrumentors that were successfully
         enabled. Packages that aren't installed are skipped silently.
         """
+        if self.content_capture is not None:
+            unsafe_environment = any(
+                os.environ.get(name, "false").strip().lower() not in ("", "0", "false", "no", "off")
+                for name in (
+                    "FABRIC_CAPTURE_LLM_CONTENT",
+                    "TRACELOOP_TRACE_CONTENT",
+                    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+                )
+            )
+            if capture_content or unsafe_environment:
+                raise ValueError("raw span capture is incompatible with protected content capture")
+            capture_content = False
         return _enable_auto_instrumentation(only=only, capture_content=capture_content)

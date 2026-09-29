@@ -555,6 +555,100 @@ deduplication, alerting, and operational recovery.
   repository during migration; release tests must prove it is absent from the
   recorder binaries, chart, SDK packages, and installer surface.
 
+## Custom-agent call recorder build — NO-GO (2026-09-29)
+
+The second local build phase (spec 043 F–I) is implemented and locally tested:
+metadata-only custom-call Node publication, asynchronous source-journal
+linkage, authorized masked-review resolution and exact-package/sink tests.
+The artifacts are uncommitted worktree builds, not a signed release candidate.
+
+[Spec 043](../specs/043-custom-agent-call-recording.md) was written before
+implementation. The following evidence was obtained locally on 2026-09-30,
+in the PR worktree based on `efcf36c` with the uncommitted spec-043 changes.
+These are locally tested SDK additions, not a clean tagged release or a
+customer-production approval.
+
+| Area | Implemented and locally tested | Still unverified |
+| --- | --- | --- |
+| Custom call recording | `CallRecorder` joins safe tracing, operation/attempt/agent parents, exact byte content, sync/async calls and streams; 12 focused tests | Final provider-bound placement, deployment route closure, production overhead |
+| Privacy and identity | Per-role original/omit/masked-only/original-plus-masked policies; background customer transform; separate review namespace; no raw fallback; attempt-ID fixes; governed legacy/raw-span conflict checks | Customer PII detector accuracy, actual IAM/KMS isolation, other independently installed instrumentors, hung callback recovery |
+| Offline comparison | Exact bytes, outcomes, sequence/lifecycle links, stream closure, bypass, corruption, SQLite state readback, and separate masked-review resolution | Authenticated independent feeds, target IAM/KMS proof and stage-specific trusted receipts |
+| Source journal | Call events and outcomes use the asynchronous local journal; recovery, overflow, corrupt records and recording-failure behavior are unit tested | Crash gap before fsync, trusted source credentials, durable original-content queue |
+| Metadata delivery | Call records project through the strict Node allowlist; installed-wheel Docker pilot read back all 52 expected records by ID and safe fields from a controlled fsyncing sink after sink outage and Node restart, with no private canary in OTLP, queue or logs | Authenticated target ingress, customer destination durability and four-stage receipts |
+| Installed package | Final wheel smoke: 5 calls, 12 exact objects, zero fixture discrepancies; clean `unverified`, direct DB bypass/corruption/privacy failure `partial`; wheel and sdist package-content checks passed | Exact-image Linux kind/BPF and customer shadow pilot, signed release/customer control review |
+
+Reproduction from repository root (Python environment includes project dev
+dependencies):
+
+```sh
+cd sdk/python
+COVERAGE_FILE=/private/tmp/fabric-custom-agent-branch-coverage .venv/bin/python -m pytest -q -o cache_dir=/private/tmp/fabric-custom-agent-pytest
+cd ../..
+sdk/python/.venv/bin/python scripts/contracts/validate_evidence_contracts.py
+sdk/python/.venv/bin/python -m pytest -q --no-cov scripts/tests/test_release_qualification.py
+uv build --out-dir /path/to/evidence/dist sdk/python
+# Install that exact wheel in a new virtual environment, then:
+/path/to/evidence/venv/bin/python scripts/qualification/run_custom_agent_smoke.py
+```
+
+Results: **767 SDK tests passed**, package-configured branch coverage **86.30%**;
+21 release-qualifier tests passed; 17 pinned evidence/content-v2 artifacts
+validated; Ruff and changed-module strict type checks passed. Four existing
+HTTP tests first failed because sandbox loopback binding was forbidden; the
+full suite passed after approved loopback access. No target test is credited
+from that permission-only retry.
+
+The final locally tested wheel SHA-256 is
+`370de83edb6597ab1274ae7f0adf5860c547a031918247763b88be4c41070774`;
+sdist SHA-256 is
+`737330d53e1b20a3c2d8f547a9de74fc2299e0f9f4721b35b1abf6e4cdc729b3`.
+Package-content/version qualification passed for these artifacts. The Node
+image ID was
+`sha256:c3c140948b672670016fe826243117d0b79adfbbca5b8c6dfbfa085376507d35`.
+The production-profile CI definition now runs the custom smoke against its
+built wheel; that new workflow has **not** been run remotely for these changes.
+
+Second-phase local evidence (macOS host, disposable Linux Docker containers,
+synthetic-only data): **827 SDK tests passed**, package-configured branch
+coverage **86.38%**; 118 focused recorder/pilot tests passed; 21 release
+qualification tests passed; 17 contract artifacts validated; changed-module
+strict mypy, Ruff and guard Go race tests passed. A fresh venv installed the
+final wheel with the `otlp` extra. The installed-file check matched the wheel.
+The final pilot report at
+`/private/tmp/fabric-custom-agent-phase2.wtiRUH/final-pilot/node-pilot-report.json`
+reports 52/52 exact metadata records, controlled-sink fsync readback,
+outage/restart and privacy canary checks passed, and `NO_GO`.
+
+Reproduce the exact local pilot from repository root, using a new empty
+evidence directory and an image built from the same source:
+
+```sh
+uv build --out-dir /private/tmp/fabric-custom-agent-phase2.wtiRUH/final-dist sdk/python
+uv venv /private/tmp/fabric-custom-agent-phase2.wtiRUH/final-venv --python 3.12
+uv pip install --python /private/tmp/fabric-custom-agent-phase2.wtiRUH/final-venv/bin/python '/private/tmp/fabric-custom-agent-phase2.wtiRUH/final-dist/singleaxis_fabric-0.8.0rc1-py3-none-any.whl[otlp]'
+/private/tmp/fabric-custom-agent-phase2.wtiRUH/final-venv/bin/python scripts/qualification/run_custom_agent_node_pilot.py \
+  --node-image local/fabric-custom-agent:qualification-1790707930609 \
+  --installed-python /private/tmp/fabric-custom-agent-phase2.wtiRUH/final-venv/bin/python \
+  --wheel /private/tmp/fabric-custom-agent-phase2.wtiRUH/final-dist/singleaxis_fabric-0.8.0rc1-py3-none-any.whl \
+  --evidence-dir /private/tmp/fabric-custom-agent-phase2.wtiRUH/new-pilot
+```
+
+The exact local image tag is not an immutable distribution reference; the
+pilot resolves and checks its image ID. The controlled sink is a fixture, not
+the customer's OTLP destination or protected content store. No Linux host
+BPF, target Kubernetes network policy, customer encryption/tenant isolation,
+disk-full/retention/restore/key rotation, authenticated provider/DB feed or
+independently witnessed customer run was exercised in this phase.
+
+The smoke's provider is an in-process fixture. SQLite readback demonstrates
+committed state, not a trusted DB audit trail. Source identity is
+caller-reported; the asynchronous metadata journal does not close the
+pre-fsync window, and raw queued content is not crash safe. All four trusted
+receipt stages remain unavailable. The local Node/sink test is not the
+exact-artifact target Kubernetes/BPF, storage-control or customer shadow
+pilot under specs 037–039. Release/platform/storage/customer owners must
+supply those proofs. Critical-enterprise status remains **NO-GO**.
+
 ## GPT-6 Sol subscription-backed laptop stage — NO-GO
 
 The [bounded synthetic Sol stage](../qualification/sol-local-stage/README.md)

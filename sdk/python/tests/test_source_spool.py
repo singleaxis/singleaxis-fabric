@@ -218,3 +218,49 @@ def test_source_spool_rejects_unsafe_root_and_identity(tmp_path: Path) -> None:
             _open(root)
     finally:
         os.chmod(root, 0o700)
+
+
+def test_source_spool_rejects_duplicate_positions_and_bounds_status_index(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    spool = SyntheticSourceSpool(
+        str(root), tenant_id="synthetic-tenant", run_id="run-1", max_records=1
+    )
+    try:
+        _append(spool, _event("first", spool.epoch, 0))
+        with pytest.raises(ValueError, match="duplicate"):
+            spool.append(_event("different-id", spool.epoch, 0))
+        _append(spool, _event("second", spool.epoch, 1), "dropped")
+        _flush(spool)
+        assert spool.health()["unretained_drops"] == 1
+        assert spool.status("second") is None
+    finally:
+        _close(spool)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"role": "PRIVATE text"},
+        {"status": "PRIVATE text"},
+        {"kind": "PRIVATE text"},
+        {"call_id": "PRIVATE text"},
+        {"parent_call_id": "PRIVATE text"},
+        {"streaming": "yes"},
+        {"chunk_index": 1},
+        {"status_reason": "PRIVATE text"},
+        {"observed_at": "PRIVATE text"},
+        {"role": "operation.outcome", "outcome": {"result_status": "PRIVATE text"}},
+        {"role": "operation.outcome", "outcome": {"http_status": "PRIVATE text"}},
+    ],
+)
+def test_source_spool_closed_metadata_rejects_unstructured_content(
+    tmp_path: Path, change: Any
+) -> None:
+    spool = _open(_root(tmp_path))
+    try:
+        event = {**_event("event", spool.epoch, 0), **change}
+        with pytest.raises(ValueError):
+            spool.append(event)
+        assert list(spool.root.glob("event-*.json")) == []
+    finally:
+        _close(spool)

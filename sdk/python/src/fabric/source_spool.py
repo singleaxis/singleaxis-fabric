@@ -23,6 +23,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .byte_evidence import _BOUNDARIES, _ROLES
+
 _EVENT_KEYS = frozenset(
     {
         "record_id",
@@ -40,6 +42,13 @@ _EVENT_KEYS = frozenset(
         "status_reason",
         "observed_at",
         "outcome",
+        "call_id",
+        "parent_call_id",
+        "agent_id",
+        "kind",
+        "streaming",
+        "stream_id",
+        "chunk_index",
     }
 )
 _OUTCOME_KEYS = frozenset(
@@ -53,6 +62,7 @@ _OUTCOME_KEYS = frozenset(
         "artifact_present",
         "artifact_size",
         "object_id",
+        "result_status",
     }
 )
 _REQUIRED_EVENT_KEYS = frozenset(
@@ -74,6 +84,19 @@ _REQUIRED_EVENT_KEYS = frozenset(
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _FILE_MODE = 0o600
 _DIRECTORY_MODE = 0o700
+_STATUSES = frozenset(
+    {
+        "recorded",
+        "pending",
+        "stored",
+        "redacted",
+        "not_captured",
+        "truncated",
+        "unsupported",
+        "dropped",
+        "failed",
+    }
+)
 
 
 def _canonical(value: dict[str, Any]) -> bytes:
@@ -143,6 +166,7 @@ class SyntheticSourceSpool:
         run_id: str,
         max_bytes: int = 16 * 1024 * 1024,
         queue_max_items: int = 64,
+        max_records: int = 4096,
     ) -> None:
         path = Path(root)
         if not path.is_absolute() or path.is_symlink():
@@ -152,12 +176,19 @@ class SyntheticSourceSpool:
             raise ValueError("source spool root must be a mode-0700 directory")
         if info.st_uid != os.geteuid():
             raise ValueError("source spool root owner mismatch")
-        if not tenant_id or not run_id or max_bytes <= 0 or queue_max_items <= 0:
+        if (
+            not _SAFE_ID.fullmatch(tenant_id)
+            or not _SAFE_ID.fullmatch(run_id)
+            or max_bytes <= 0
+            or queue_max_items <= 0
+            or max_records <= 0
+        ):
             raise ValueError("source spool identity and positive bounds are required")
         self.root = path.resolve(strict=True)
         self.tenant_id = tenant_id
         self.run_id = run_id
         self.max_bytes = max_bytes
+        self.max_records = max_records
         self._queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=queue_max_items)
         self._condition = threading.Condition()
         self._pending = 0
@@ -166,6 +197,8 @@ class SyntheticSourceSpool:
         self._recovered: list[dict[str, Any]] = []
         self._recovered_gaps: list[dict[str, Any]] = []
         self._used = 0
+        self._unretained_drops = 0
+        self._positions: set[tuple[str, int, int]] = set()
         self._lock_fd = os.open(
             self.root / ".lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), _FILE_MODE
         )
@@ -174,6 +207,11 @@ class SyntheticSourceSpool:
             fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self._recovered, self._used = self._recover()
             self._recovered_gaps = self._find_recovered_gaps(self._recovered)
+            self._statuses = {event["record_id"]: "spooled" for event in self._recovered}
+            self._positions = {
+                (event["source_id"], event["source_epoch"], event["source_sequence"])
+                for event in self._recovered
+            }
             self.epoch = self._open_epoch()
         except BaseException:
             os.close(self._lock_fd)
@@ -214,6 +252,8 @@ class SyntheticSourceSpool:
             if used > self.max_bytes:
                 raise ValueError("recovered source spool exceeds configured capacity")
             events.append(event)
+            if len(events) > self.max_records:
+                raise ValueError("recovered source spool exceeds record capacity")
         events.sort(
             key=lambda event: (event["source_epoch"], event["source_id"], event["source_sequence"])
         )
@@ -266,7 +306,7 @@ class SyntheticSourceSpool:
         )
         return epoch
 
-    def _validate_event(self, event: dict[str, Any]) -> None:
+    def _validate_event(self, event: dict[str, Any]) -> None:  # noqa: PLR0912 - closed field validators
         if set(event) - _EVENT_KEYS or not set(event) >= _REQUIRED_EVENT_KEYS:
             raise ValueError("source spool event has missing or forbidden fields")
         if event["tenant_id"] != self.tenant_id or event["run_id"] != self.run_id:
@@ -285,6 +325,50 @@ class SyntheticSourceSpool:
                 raise ValueError("source spool event string identity invalid")
         if not _SAFE_ID.fullmatch(event["record_id"]):
             raise ValueError("source spool record ID is unsafe")
+        for key in (
+            "source_id",
+            "operation_id",
+            "attempt_id",
+            "object_id",
+            "call_id",
+            "agent_id",
+            "stream_id",
+        ):
+            if key in event and (
+                not isinstance(event[key], str) or not _SAFE_ID.fullmatch(event[key])
+            ):
+                raise ValueError("source spool identity is unsafe")
+        if event.get("parent_call_id") is not None and (
+            not isinstance(event["parent_call_id"], str)
+            or not _SAFE_ID.fullmatch(event["parent_call_id"])
+        ):
+            raise ValueError("source spool parent identity is unsafe")
+        if (
+            event["boundary"] not in _BOUNDARIES
+            or event["role"] not in _ROLES | {"operation.start", "operation.outcome"}
+            or event["status"] not in _STATUSES
+        ):
+            raise ValueError("source spool boundary/role/status invalid")
+        if "kind" in event and event["kind"] not in {"model", "tool", "database", "agent"}:
+            raise ValueError("source spool call kind invalid")
+        if "streaming" in event and not isinstance(event["streaming"], bool):
+            raise ValueError("source spool streaming flag invalid")
+        if "chunk_index" in event and (
+            "stream_id" not in event
+            or not isinstance(event["chunk_index"], int)
+            or isinstance(event["chunk_index"], bool)
+            or event["chunk_index"] < 0
+        ):
+            raise ValueError("source spool chunk position invalid")
+        if "status_reason" in event and (
+            not isinstance(event["status_reason"], str)
+            or not _SAFE_ID.fullmatch(event["status_reason"])
+        ):
+            raise ValueError("source spool status reason invalid")
+        if not re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", event["observed_at"]
+        ):
+            raise ValueError("source spool observation time invalid")
         for key in ("source_epoch", "source_sequence"):
             value = event[key]
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -297,6 +381,24 @@ class SyntheticSourceSpool:
                 or set(outcome) - _OUTCOME_KEYS
             ):
                 raise ValueError("source spool outcome has forbidden fields")
+            for key, value in outcome.items():
+                valid = (
+                    isinstance(value, bool)
+                    if key in {"timed_out", "artifact_present"}
+                    else isinstance(value, int) and not isinstance(value, bool)
+                    if key in {"http_status", "returncode", "artifact_size"}
+                    else value is None or (isinstance(value, int) and not isinstance(value, bool))
+                    if key == "signal_number"
+                    else isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+                    if key == "artifact_path_sha256"
+                    else value in {"before", "after"}
+                    if key == "artifact_phase"
+                    else value in {"ok", "error", "cancelled", "deferred"}
+                    if key == "result_status"
+                    else isinstance(value, str) and _SAFE_ID.fullmatch(value) is not None
+                )
+                if not valid:
+                    raise ValueError("source spool outcome value invalid")
 
     def append(self, event: dict[str, Any]) -> str:
         """Submit metadata without disk I/O; return pending/dropped/failed."""
@@ -304,9 +406,14 @@ class SyntheticSourceSpool:
         if event["source_epoch"] != self.epoch:
             raise ValueError("source spool event epoch mismatch")
         record_id = event["record_id"]
+        position = (event["source_id"], event["source_epoch"], event["source_sequence"])
         with self._condition:
-            if record_id in self._statuses:
-                raise ValueError("source spool duplicate record ID")
+            if record_id in self._statuses or position in self._positions:
+                raise ValueError("source spool duplicate record ID or position")
+            if len(self._statuses) >= self.max_records:
+                self._unretained_drops += 1
+                return "dropped"
+            self._positions.add(position)
             if self._closed:
                 self._statuses[record_id] = "failed"
                 return "failed"
@@ -379,6 +486,22 @@ class SyntheticSourceSpool:
 
     def recovered_gaps(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self._recovered_gaps)
+
+    def health(self) -> dict[str, Any]:
+        """Local stage counts, never a downstream or complete-source receipt."""
+        with self._condition:
+            statuses = list(self._statuses.values())
+            return {
+                "epoch": self.epoch,
+                "pending": self._pending,
+                "spooled": statuses.count("spooled"),
+                "failed": statuses.count("failed"),
+                "dropped": statuses.count("dropped") + self._unretained_drops,
+                "unretained_drops": self._unretained_drops,
+                "used_bytes": self._used,
+                "closed": self._closed,
+                "pre_fsync_loss_unknown": True,
+            }
 
     def close(self, timeout_s: float = 10.0) -> bool:
         with self._condition:

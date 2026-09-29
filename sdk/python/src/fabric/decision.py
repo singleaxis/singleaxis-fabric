@@ -897,6 +897,10 @@ class Decision(AbstractContextManager["Decision"]):
         """True when governed content capture is configured on the client."""
         return self._client.content_capture is not None
 
+    def _reject_raw_capture(self, capture_content: bool) -> None:
+        if capture_content and self.governed_capture:
+            raise ValueError("raw span capture is incompatible with protected content capture")
+
     @property
     def content_manifest(self) -> TranscriptManifest | None:
         """The in-progress transcript manifest, or ``None`` (metadata mode)."""
@@ -949,6 +953,7 @@ class Decision(AbstractContextManager["Decision"]):
         evidence for that.
         """
 
+        self._reject_raw_capture(capture_content)
         # Governed captures happen outside the overlap sentinel.
         retrieval_bindings = {"step_type": "retrieval"}
         query_ref = None
@@ -1061,6 +1066,7 @@ class Decision(AbstractContextManager["Decision"]):
         the event carries the returned ``fabric.content.ref`` URI — a
         governed reference, not the raw bytes.
         """
+        self._reject_raw_capture(capture_content)
         # The store write happens outside the overlap sentinel — it is
         # (possibly remote) I/O and touches no per-decision state. Under
         # governed mode the capture enqueues through the async writer and
@@ -1156,6 +1162,7 @@ class Decision(AbstractContextManager["Decision"]):
         configured on the client, the content is also written there and
         the event carries the returned ``fabric.content.ref`` URI.
         """
+        self._reject_raw_capture(capture_content)
         # Store write outside the overlap sentinel (see ``remember``).
         if self.governed_capture:
             content_ref = self._governed_capture(

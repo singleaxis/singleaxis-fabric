@@ -139,6 +139,8 @@ var BuiltInAllowedFields = map[string]map[string]struct{}{
 		"content_sha256", "observed_at", "loss_count", "loss_reason",
 		"coverage_phase", "receipt_id", "receipt_stage", "receipt_subject_id",
 		"receipt_subject_type",
+		"call_id", "parent_call_id", "agent_id", "stream_id", "chunk_index",
+		"call_phase", "call_kind", "result_status",
 	),
 	// Host-layer audit events emitted by the auditreceiver (spec 030) and the
 	// host emitter (spec 031). argv is hash-only; no raw command lines.

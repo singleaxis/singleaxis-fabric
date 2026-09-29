@@ -168,7 +168,7 @@ def project_synthetic_snapshot(snapshot: dict[str, Any]) -> tuple[bytes, list[st
     return json.dumps(document, separators=(",", ":"), allow_nan=False).encode("utf-8"), record_ids
 
 
-def export_synthetic_snapshot(  # noqa: PLR0912
+def export_synthetic_snapshot(
     snapshot: dict[str, Any],
     endpoint: str,
     *,
@@ -182,6 +182,29 @@ def export_synthetic_snapshot(  # noqa: PLR0912
     HTTPS requires explicit CA verification and a client certificate/key;
     insecure verification is never offered by this test-only bridge.
     """
+    payload, ids = project_synthetic_snapshot(snapshot)
+    return _export_projected_metadata(
+        payload,
+        ids,
+        endpoint,
+        timeout_s=timeout_s,
+        ca_cert_path=ca_cert_path,
+        client_cert_path=client_cert_path,
+        client_key_path=client_key_path,
+    )
+
+
+def _export_projected_metadata(  # noqa: PLR0912
+    payload: bytes,
+    ids: list[str],
+    endpoint: str,
+    *,
+    timeout_s: float = 10.0,
+    ca_cert_path: str | None = None,
+    client_cert_path: str | None = None,
+    client_key_path: str | None = None,
+) -> dict[str, Any]:
+    """One bounded offline POST shared by the closed metadata projectors."""
     parsed = urlsplit(endpoint)
     if (
         parsed.scheme not in {"http", "https"}
@@ -200,12 +223,14 @@ def export_synthetic_snapshot(  # noqa: PLR0912
         raise ValueError("HTTPS synthetic OTLP requires CA and client certificate/key")
     if parsed.scheme == "http" and any(path is not None for path in tls_paths):
         raise ValueError("HTTP synthetic OTLP cannot accept TLS certificate options")
-    payload, ids = project_synthetic_snapshot(snapshot)
     if parsed.scheme == "https":
-        context = ssl.create_default_context(cafile=ca_cert_path)
         if client_cert_path is None or client_key_path is None:
             raise ValueError("HTTPS synthetic OTLP requires client certificate/key")
-        context.load_cert_chain(client_cert_path, client_key_path)
+        try:
+            context = ssl.create_default_context(cafile=ca_cert_path)
+            context.load_cert_chain(client_cert_path, client_key_path)
+        except Exception:
+            raise ValueError("OTLP TLS configuration failed") from None
         connection: http.client.HTTPConnection = http.client.HTTPSConnection(
             parsed.hostname, parsed.port or 443, timeout=timeout_s, context=context
         )
@@ -230,13 +255,21 @@ def export_synthetic_snapshot(  # noqa: PLR0912
         rejected = partial.get("rejectedLogRecords", 0) if isinstance(partial, dict) else -1
         if isinstance(rejected, str) and re.fullmatch(r"[0-9]+", rejected):
             rejected = int(rejected)
-        if not isinstance(rejected, int) or rejected < 0:
+        if (
+            not isinstance(rejected, int)
+            or isinstance(rejected, bool)
+            or rejected < 0
+            or rejected > len(ids)
+        ):
             raise ValueError("invalid OTLP partial success")
         return {
             "receipt_stage": "node_accepted" if rejected == 0 else "partial",
             "submitted_record_ids": ids,
             "rejected_count": rejected,
             "destination_durable": False,
+            "retry_allowed": False,
         }
+    except Exception:
+        raise ValueError("OTLP metadata export failed") from None
     finally:
         connection.close()

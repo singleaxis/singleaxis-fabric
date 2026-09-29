@@ -26,6 +26,9 @@
     "run_id": {"$ref": "#/$defs/opaqueId"},
     "operation_id": {"$ref": "#/$defs/opaqueId"},
     "attempt_id": {"$ref": "#/$defs/opaqueId"},
+    "privacy_mode": {"enum": ["original", "omit", "masked_only", "original_plus_masked"]},
+    "transformation_id": {"$ref": "#/$defs/opaqueId"},
+    "transformation_version": {"$ref": "#/$defs/opaqueId"},
     "stream_id": {"$ref": "#/$defs/opaqueId"},
     "chunk_index": {"type": "integer", "minimum": 0},
     "role": {

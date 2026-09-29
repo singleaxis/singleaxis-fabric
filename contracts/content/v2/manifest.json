@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
-    {"path": "schema/content-object-v2.schema.json", "sha256": "5bfee18b54f7f155b631b534b35453f450a1a88c10206ca7b13fb2938c19e2f9", "expectation": "schema", "expected_error": null},
+    {"path": "schema/content-object-v2.schema.json", "sha256": "37b39d4a7215e20983e288918348e67fb179d210533adaae65aaf1592b57d598", "expectation": "schema", "expected_error": null},
     {"path": "valid/artifact-after.json", "sha256": "0b6c9f627801547f0c93b50d629cb47ed0a8dcf415c08dd984ddb503a15bb8e6", "expectation": "valid", "expected_error": null},
     {"path": "valid/caller-terminal-chunk.json", "sha256": "5404b61dd83501e0c6cb4e21df97ae1ca2dc623a8dbb98a366d7605cf58b60e6", "expectation": "valid", "expected_error": null},
     {"path": "invalid/artifact-credential-ref.json", "sha256": "e8fdbe704bcf33b06afe96d609096f0f718da3992a16ad5698ba07e9c363a1a5", "expectation": "invalid", "expected_error": "evidence.schema"},

@@ -181,7 +181,7 @@ func (g *guard) applyToRecord(record plog.LogRecord) bool {
 	return false
 }
 
-var evidenceNames = toSet("agent.evidence.content", "agent.evidence.artifact", "agent.evidence.coverage", "agent.evidence.loss", "agent.evidence.receipt")
+var evidenceNames = toSet("agent.evidence.content", "agent.evidence.artifact", "agent.evidence.coverage", "agent.evidence.loss", "agent.evidence.receipt", "agent.evidence.call")
 var evidenceBoundaries = toSet("caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service")
 var evidenceStatuses = toSet("pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed", "observed")
 var evidenceRoles = toSet(
@@ -211,7 +211,7 @@ func validEvidenceRecord(record plog.LogRecord) bool {
 		return false
 	}
 	a := record.Attributes()
-	for _, key := range []string{"record_id", "tenant_id", "source_id", "operation_id", "attempt_id", "run_id", "content_object_id", "receipt_id", "receipt_subject_id"} {
+	for _, key := range []string{"record_id", "tenant_id", "source_id", "operation_id", "attempt_id", "run_id", "content_object_id", "receipt_id", "receipt_subject_id", "call_id", "parent_call_id", "agent_id", "stream_id"} {
 		if value, ok := a.Get(key); ok {
 			if !evidenceID(value) {
 				return false
@@ -260,7 +260,22 @@ func validEvidenceRecord(record plog.LogRecord) bool {
 		return false
 	}
 	status, _ := a.Get("status")
+	if !validCallEvidenceMetadata(record) {
+		return false
+	}
 	switch record.EventName() {
+	case "agent.evidence.call":
+		if status.Str() != "observed" || !evidenceEnum(a, "call_phase", toSet("start", "outcome")) || !evidenceEnum(a, "call_kind", toSet("model", "tool", "database", "agent")) {
+			return false
+		}
+		phase, _ := a.Get("call_phase")
+		if phase.Str() == "outcome" {
+			if !evidenceEnum(a, "result_status", toSet("ok", "error", "cancelled", "deferred")) {
+				return false
+			}
+		} else if _, ok := a.Get("result_status"); ok {
+			return false
+		}
 	case "agent.evidence.loss":
 		count, ok := a.Get("loss_count")
 		if !ok || count.Type() != pcommon.ValueTypeInt || count.Int() < 1 || status.Str() != "dropped" || !evidenceEnum(a, "loss_reason", toSet("rate_limit", "queue_full", "spool_full", "export_failure", "kernel_loss", "unknown")) {
@@ -297,6 +312,49 @@ func validEvidenceRecord(record plog.LogRecord) bool {
 	} else if status.Str() == "not_captured" || status.Str() == "unsupported" || status.Str() == "dropped" || status.Str() == "failed" {
 		if _, ok := a.Get("content_sha256"); ok {
 			return false
+		}
+	}
+	return true
+}
+
+// Call metadata is closed and typed even when it decorates a byte observation.
+// A user extension cannot smuggle arbitrary outcomes or stream data through it.
+func validCallEvidenceMetadata(record plog.LogRecord) bool {
+	a := record.Attributes()
+	callID, hasCall := a.Get("call_id")
+	if record.EventName() == "agent.evidence.call" && !hasCall {
+		return false
+	}
+	if hasCall {
+		for _, key := range []string{"agent_id", "run_id", "operation_id", "attempt_id"} {
+			value, ok := a.Get(key)
+			if !ok || !evidenceID(value) {
+				return false
+			}
+		}
+		if parent, ok := a.Get("parent_call_id"); ok && parent.Str() == callID.Str() {
+			return false
+		}
+	} else {
+		for _, key := range []string{"agent_id", "parent_call_id", "stream_id", "chunk_index"} {
+			if _, ok := a.Get(key); ok {
+				return false
+			}
+		}
+	}
+	_, hasStream := a.Get("stream_id")
+	chunk, hasChunk := a.Get("chunk_index")
+	if hasStream != hasChunk || hasChunk && (chunk.Type() != pcommon.ValueTypeInt || chunk.Int() < 0) {
+		return false
+	}
+	if record.EventName() == "agent.evidence.call" && hasStream {
+		return false
+	}
+	if record.EventName() != "agent.evidence.call" {
+		for _, key := range []string{"call_phase", "call_kind", "result_status"} {
+			if _, ok := a.Get(key); ok {
+				return false
+			}
 		}
 	}
 	return true
