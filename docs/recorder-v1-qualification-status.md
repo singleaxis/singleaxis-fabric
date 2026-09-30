@@ -69,6 +69,13 @@ now checks that the feed module comes from its installed wheel and runs both
 feed suites against that artifact. Its new run is pending, not covered by the
 earlier C2 CI results below.
 
+The first new Recorder CI run (`36704858256`, commit `d144bd9`) found a
+test-fixture typing error: unpacking a heterogeneous dictionary into the typed
+feed expectation. Replace it with independently specified, explicitly typed
+expected fields; no runtime/package code changed. The corrected full
+`mypy src tests` check covers 84 files and passes, as do all 41 feed tests.
+Retest the corrected commit; do not treat the failed quality gate as a pass.
+
 Repository checks excluding the container-dependent module passed **212 tests**
 with **9 explicit skips**: seven live S3 tests have no approved endpoint, one
 case-collision test is unavailable on this filesystem, and one probe module

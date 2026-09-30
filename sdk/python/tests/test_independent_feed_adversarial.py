@@ -94,7 +94,18 @@ def feed() -> tuple[dict[str, Any], Any, _Resolver]:
         "records": rows,
     }
     expected = IndependentFeedExpectation(
-        **{key: value for key, value in doc.items() if key not in {"schema_version", "records"}},
+        feed_id="feed",
+        tenant_id="tenant",
+        run_id="run",
+        scope_sha256=_sha(b"approved scope"),
+        route_id="model-route",
+        route_version="v1",
+        source_id="source",
+        source_epoch=0,
+        boundary="provider_bound",
+        cursor_domain="provider-log",
+        cursor_start=0,
+        cursor_end=2,
         issuer_id="provider",
         attempts=(
             ExpectedAttempt(
