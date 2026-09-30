@@ -6,6 +6,35 @@ status record, not a certification or legal compliance statement.
 
 ## Qualified offline evidence batch — 2026-10-01 — deployment NO-GO
 
+### HTTP transport correction — latest frozen local artifacts
+
+The findings follow-up head `3911f82` cleared GitHub's separate CodeQL check.
+Its updated security scan identified urllib3 2.7.0 in the HTTP OTLP dependency
+chain: CVE-2026-97687 and CVE-2026-97689, fixed in 2.8.0. Spec 046 documented
+the correction before code changes; the OTLP extra and development dependency
+now require urllib3 >=2.8.0, with a narrow lock update and source/lock/installed
+requirement regression tests. The maintainer's
+[release notes](https://github.com/urllib3/urllib3/releases/tag/2.8.0) describe
+the proxy TLS and unbounded chunk-size parsing fixes. No scan was suppressed.
+
+Latest local results: **1,075 SDK tests passed**, **87.13% branch-inclusive
+coverage**, Ruff and strict mypy over 93 files passed; **204 focused tests**
+passed against the newly installed wheel. The new installed-wheel pilot again
+reconciled 4 calls, 15 required byte objects and 23 metadata records, with zero
+unexplained fixture discrepancies, all 24 negative cases preventing complete,
+and metadata canaries absent. Wheel/sdist release-content qualification passed.
+
+Latest wheel SHA-256:
+`3233f673de8722361c6528df6932d870ea16380a808cf71257c0f17c00366a77`;
+sdist SHA-256:
+`e4c48076d4906cfcedee59c30e29cb26e35acc43d79ecb27b7305a95e8aeb1d9`.
+Evidence is in the private `transport-dist/`, `transport-pilot/` and
+`transport-artifact-qualification.json` under
+`/private/tmp/fabric-qualified-run-release.8ELf6P/`; coverage is
+`/private/tmp/fabric-qualified-run-coverage-20261001-transport.xml`.
+The final Linux/security rerun is pending. All previous package digests below
+are historical: they do not qualify this dependency-metadata change.
+
 ### Final Linux evidence and findings-check follow-up
 
 Head `11b2e42` passed all six workflow runs, including exact-artifact kind

@@ -30,6 +30,7 @@ dependencies = [
 [project.optional-dependencies]
 otlp = [
   "opentelemetry-exporter-otlp-proto-http>=1.41",
+  "urllib3>=2.8.0",
 ]
 # Auto-instrumentation extras for popular LLM SDK families. Each
 # pulls the upstream `opentelemetry-instrumentation-<lib>` package
@@ -88,6 +89,7 @@ dev = [
   "types-PyYAML>=6.0.12",
   "httpx>=0.27",
   "opentelemetry-exporter-otlp-proto-http>=1.41",
+  "urllib3>=2.8.0",
   # cryptography exercises the real ed25519 path in the generic
   # signature-verification tests (spec 023); without it ed25519 degrades
   # to verified=False and those asserts are skipped.

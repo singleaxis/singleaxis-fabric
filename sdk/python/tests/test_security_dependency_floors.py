@@ -20,12 +20,20 @@ def test_declared_optional_security_floors() -> None:
     assert "PyJWT>=2.15.0" in extras["mcp"]
     assert "cryptography>=49" in extras["signing"]
     assert "cryptography>=49" in project["dependency-groups"]["dev"]
+    assert "urllib3>=2.8.0" in extras["otlp"]
+    assert "urllib3>=2.8.0" in project["dependency-groups"]["dev"]
 
 
 def test_locked_mcp_authentication_is_patched() -> None:
     lock = tomllib.loads((_ROOT / "uv.lock").read_text())
     versions = [Version(item["version"]) for item in lock["package"] if item["name"] == "pyjwt"]
     assert versions and all(value >= Version("2.15.0") for value in versions)
+
+
+def test_locked_http_transport_is_patched() -> None:
+    lock = tomllib.loads((_ROOT / "uv.lock").read_text())
+    versions = [Version(item["version"]) for item in lock["package"] if item["name"] == "urllib3"]
+    assert versions and all(value >= Version("2.8.0") for value in versions)
 
 
 def test_installed_requirements_reject_old_crypto_and_jwt() -> None:
@@ -35,6 +43,7 @@ def test_installed_requirements_reject_old_crypto_and_jwt() -> None:
     for package, extra, old, floor in (
         ("pyjwt", "mcp", "2.13.0", "2.15.0"),
         ("cryptography", "signing", "48.0.0", "49.0.0"),
+        ("urllib3", "otlp", "2.7.0", "2.8.0"),
     ):
         matches = [
             item

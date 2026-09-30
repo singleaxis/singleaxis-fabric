@@ -200,3 +200,13 @@ permission tests. Do not suppress security rules or dismiss runtime findings.
 ExitStack-managed descriptor warnings must be reviewed against cleanup tests,
 not silently counted as proved leaks or ignored findings. Repeat focused tests,
 format/type checks and Linux findings qualification after this change.
+
+The follow-up security database identified urllib3 2.7.0 in the HTTP OTLP
+dependency chain (CVE-2026-97687 and CVE-2026-97689). Before implementation,
+require urllib3 >=2.8.0 in the OTLP extra and development transport dependencies,
+update only that lock resolution and its dependency metadata, and extend
+source/lock/installed-package floor tests. The maintainer's
+[2.8.0 release](https://github.com/urllib3/urllib3/releases/tag/2.8.0) documents
+patched proxy TLS handling and bounded chunk-size parsing. Rebuild and test the
+new wheel: the previous digest does not cover dependency metadata changes.
+Do not bypass the findings gate or credit an old vulnerability database pass.
