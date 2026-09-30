@@ -1,10 +1,13 @@
 # Governed content capture — gap assessment and requirements matrix
 
-Evidence basis: checkout at `d397fc2` (branch `feat/governed-content`),
-verified 2026-09-22 against the implementation brief
-[`governed-content-implementation-brief.md`](governed-content-implementation-brief.md).
+**Historical assessment, not current implementation status.** Evidence basis:
+checkout at `d397fc2` (branch `feat/governed-content`), verified 2026-09-22.
+The superseded agent-task brief was removed from the working tree; its history
+remains in Git. For current behavior and unresolved gates, use
+[`recorder-v1-qualification-status.md`](recorder-v1-qualification-status.md)
+and the active governed-content specs 028, 029, and 032–034.
 
-This document is the Phase 1 gap assessment required by the brief. It maps
+This document records the Phase 1 gap assessment. It maps
 every existing foundation to its file/function evidence, states the gap, and
 cross-references the specification that closes it (specs 028, 029, 032–034;
 numbers 030/031 are the auditd/eBPF host specs). Every claim below names a
@@ -79,9 +82,7 @@ a proposal accepted.
 - Spec 027 `Protect` already anticipates this: "deny raw prompts ... **unless
   a later explicit governed mode is configured**" (027 §Protect). These specs
   define that mode without changing the default.
-- The internal product-direction document was located:
-  `docs/governed-content-implementation-brief.md` (this task's brief). No
-  unresolved product conflict remains; the three-mode positioning
-  (metadata-only default, governed content, harness-owned offline
-  transcripts) is adopted verbatim in spec 028 and
-  `docs/capturing-interactions.md`.
+- The three-mode positioning (metadata-only default, governed content,
+  harness-owned offline transcripts) is documented in spec 028 and
+  `docs/capturing-interactions.md`. This historical review does not supersede
+  current qualification findings.

@@ -36,6 +36,14 @@ that specification, 027 controls the recorder release.
   and [storage/release/shadow-pilot gates](../specs/039-storage-release-and-shadow-pilot.md).
 - [Capturing interactions](capturing-interactions.md) — model, tool, retrieval,
   memory, delegation, side-effect, failure, and retry activity.
+- [Recording a custom agent](custom-agent-recording.md) — wrap an existing
+  dispatcher, retain actual permitted bytes and reconstruct linked calls;
+  [privacy choices](custom-agent-recording-privacy.md) distinguish exact
+  originals from omitted or masked content.
+- [Offline evidence statements](evidence-attestation-verification.md) —
+  verify approved issuer signatures without claiming that a signature alone
+  proves a complete run; [independent feed contract](../specs/045-independent-evidence-feeds.md)
+  specifies the separate operation and byte records required from witnesses.
 - [Exporting to your backend](exporting-to-your-observability-backend.md) —
   customer-owned and SingleAxis destinations.
 - [Install a pinned release](install.md) and
@@ -45,9 +53,9 @@ that specification, 027 controls the recorder release.
 - [Governed content](governed-content.md) — opt-in capture of actual
   content to customer-controlled storage: postures, stores, durability,
   resolution/export, coverage limits, and migration from `capture_content`.
-- [Governed content gap assessment](governed-content-gap-assessment.md) —
-  file-level evidence of what the content-capture path does and does not do
-  today, plus the requirements-to-test matrix (draft specs 028–034).
+- [Historical governed-content gap assessment](governed-content-gap-assessment.md)
+  — the dated September 22 baseline for specs 028–034, not current capability
+  status. Use the qualification status above for current test evidence.
 - [API stability](api-stability.md) — compatibility commitments.
 
 ## Public contracts

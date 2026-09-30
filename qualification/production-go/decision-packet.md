@@ -32,11 +32,11 @@ pilot. Do not retrofit scope after seeing discrepancies.
 | Gate | Current evidence | Exact missing proof and owner |
 | --- | --- | --- |
 | Signed scope and reachability | Provisional spec 040 scope; direct bypass fixture correctly becomes `partial` | Platform and AI-system owners: target route/process/mount inventory, exclusions backed by denied direct calls, measured capacity; security/privacy/records approve data policy |
-| Capture, identity and passivity | Installed-wheel synthetic byte reconciliation; source spool and gap tests; Node mTLS rejects missing/untrusted certs | Recorder/platform: certificate-to-tenant/source binding, authenticated high-water and independent pre-fsync continuity, target timing/outcome non-interference and bypass tests |
+| Capture, identity and passivity | Installed-wheel synthetic byte reconciliation; source spool and gap tests; dedicated single-source credential binding, HTTP/gRPC spoof rejection and live rotation passed; source metadata finalization, restart and missing-tail detection passed on `f70fa8b` installed-wheel Linux CI | Recorder/platform: apply and qualify credentials for every scoped source, authenticated high-water and independent pre-fsync continuity, target timing/outcome non-interference and bypass tests |
 | Delivery and storage | Controlled fsync sink readback; Node persistent queue outage/restart; separate local source spool | Destination/storage owners: authenticated destination durable receipt; target source/content/queue encryption, tenant denial, corruption, disk-full, retention, backup/restore, key rotation and residency proofs |
 | Frozen exact release | PR job records wheel/chart/Node identities and tests installed wheel/packaged chart/built image | Release owner: clean reviewed tag, one immutable artifact set reused across all tests, SBOM/provenance/signatures, target Linux and enforcing-CNI tests; host image only if included |
 | Independent pilot | Controlled synthetic endpoint/tool/filesystem truth: 25 byte objects, 10 operations, 39 parsed sink records, zero clean discrepancies | Customer pilot owner: separately authenticated provider/terminal/filesystem/destination records for the *target* agent; every required object/operation reconciled, loss faults lower verdict, independent reviewer reproduces it |
-| Human decision | The audit-serial overflow and sink TLS default are fixed and their PR-head checks passed. CodeQL still flags the group-writable spool negative-test fixture on the prior commit; the fixture now uses owner-only, unwritable mode 0500 and awaits a new PR-head check. The history-wide secret scan reports seven older findings | Security must classify all seven historical findings, including exposure and rotation if any value was real; privacy, records, platform, AI-system and independent reviewer must sign the exact scope, artifact set, evidence and residual gaps |
+| Human decision | CodeQL, history scanning and release image scans passed on `fcb618d`. Nine exact historical fingerprints are classified: eight test-fixture matches and one Basic-auth example the requesting user confirmed was never used; new-credential detection remains enabled | Security must accept the classification and release; privacy, records, platform, AI-system and independent reviewer must sign the exact scope, artifact set, evidence and residual gaps. Named signatories remain unassigned |
 
 The audit-serial repair preserves the full unsigned value as a decimal
 string per [spec 030](../../specs/030-auditd-host-connector.md); the
@@ -47,6 +47,12 @@ preserved that invariant but CodeQL still classified group write as overly
 permissive. Mode 0500 exercises refusal of a non-writable, owner-only root
 without creating a permissive directory. That test change is not
 security-owner classification or a release approval.
+
+The latest classifications and exact baseline are documented in
+[historical secret triage](../../docs/security-history-triage.md). Earlier
+seven/eight-finding counts are superseded by that ledger. Passing scans do
+not establish that historical public test fixtures were never copied into
+an unrelated deployment.
 
 The current [qualification status](../../docs/recorder-v1-qualification-status.md)
 is the technical ledger. A passing synthetic kind job remains `unverified`:

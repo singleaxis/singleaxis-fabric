@@ -9,12 +9,87 @@ status record, not a certification or legal compliance statement.
 This section supersedes older pending-security descriptions below, which are
 retained as dated test history. [Spec 044](../specs/044-production-evidence-closure.md)
 was written before this implementation. Work is on PR #164, not the user's
-separate dirty checkout. None of the new changes below is yet credited as a
-fully qualified release artifact.
+separate dirty checkout. The exact tested artifacts below have bounded test
+evidence; none is approved for a critical production deployment.
 
-### Published candidate results and corrections
+### Deployment documentation cleanup scope
 
-### Source metadata finalization local qualification
+Before editing, the cleanup inventory identified two obsolete task/design
+documents for removal: `docs/run-variant-artifact-outcome-change-list.md`
+(superseded, includes removed judge/bridge scope) and
+`docs/governed-content-implementation-brief.md` (old agent task prompt,
+replaced by specs 028, 029 and 032–034). Preserve their history in Git; remove
+live references and retain the dated gap assessment as explicitly historical
+evidence. Keep numbered superseded specifications per spec-index policy,
+active qualification evidence, public contracts and all user-uncommitted work.
+
+Correct customer-facing claims in the root/example/deployment documentation:
+scripted demonstrations are not complete-agent or production proofs. Make
+the orchestration demo allocate its own output directory and container,
+preserve prior output and refuse broad host-audit changes. The demo now uses a
+unique run directory and owned container ID, read-only audit mount and
+explicit isolated-synthetic acknowledgement. Its helper no longer changes
+host audit rules. Five script-safety tests pass, including preserving previous
+output, refusal without acknowledgement, and no auditctl invocation. This is
+not a live Docker run of the changed example; that remains blocked locally by
+Docker disk capacity. Do not remove an unfinished gate merely to present a
+cleaner release story.
+
+### Independent-feed checker — local artifact qualification
+
+[Spec 045](../specs/045-independent-evidence-feeds.md) preceded the optional
+offline `fabric.independent_feed` implementation. It checks separately pinned
+native cursor bounds, exact operations/attempts/outcomes and required ordered
+byte roles; verifies an approved issuer's signature before object reads; then
+checks every resolved object's byte length and SHA-256. No raw evidence or
+private callback error text enters its result. Wrong tenant/issuer, tampering,
+missing/extra records, reordering and unreadable objects cannot verify.
+
+This is a feed checker, **not** the completed independent-witness integration
+or a production GO. It does not supply qualified service-side producers,
+tenant IAM, route closure, complete delivery receipts or an authenticated
+comparison with Fabric's record. The reconciler still cannot promote a run
+to `verified_complete_for_declared_scope`.
+
+Local source verification: **976 tests passed**, **86.79% coverage**, Ruff and
+strict mypy passed. The new feed suites contain **41 tests**. A fresh isolated
+wheel installation passed **102 tests** covering feeds, signatures and source
+binding readback; the custom-agent smoke matched five calls and twelve byte
+objects, with zero discrepancies before/after journal recovery. Injected
+bypass, corruption and privacy loss stayed `partial`; the clean run stayed
+`unverified`. Wheel/sdist recorder-content qualification passed.
+
+Frozen local wheel SHA-256:
+`0375740539d13c4c68f61c539302507662d27621949db96bc2cd7d74d279acb3`;
+sdist SHA-256:
+`a797260f6248fedc5569571ddcac115bf3098578b66e2c7a6d53db3587de58cf`.
+Local evidence: `/private/tmp/fabric-independent-feed-release.C2wjA5/` and
+`/private/tmp/fabric-independent-feed-coverage-20260930.xml`. The Linux workflow
+now checks that the feed module comes from its installed wheel and runs both
+feed suites against that artifact. Its new run is pending, not covered by the
+earlier C2 CI results below.
+
+Repository checks excluding the container-dependent module passed **212 tests**
+with **9 explicit skips**: seven live S3 tests have no approved endpoint, one
+case-collision test is unavailable on this filesystem, and one probe module
+requires the isolated grpcio extra (covered by the installed-wheel run).
+The attempted local Compose run hit Docker **no space left on device**, so
+its three live tests did not run successfully. No existing Docker resources
+were pruned; repeat those gates on the isolated Linux runner. A documentation
+test briefly encountered a file being removed during parallel cleanup; its
+post-cleanup-reference rerun passed. These are not production-storage proofs.
+
+```sh
+cd sdk/python
+.venv/bin/python -m pytest
+.venv/bin/ruff check src tests
+.venv/bin/mypy src/fabric
+cd ../..
+/private/tmp/fabric-independent-feed-release.C2wjA5/venv/bin/python -m pytest -q -o addopts= sdk/python/tests/test_independent_feed.py sdk/python/tests/test_independent_feed_adversarial.py sdk/python/tests/test_evidence_attestation.py scripts/tests/test_source_binding_readback.py
+/private/tmp/fabric-independent-feed-release.C2wjA5/venv/bin/python scripts/qualification/run_custom_agent_smoke.py --evidence-dir /private/tmp/fabric-independent-feed-release.C2wjA5/reproduction-smoke
+```
+
+### Source metadata finalization qualification
 
 C2 adds an explicit offline `CallRecorder.seal_source()` and a persisted
 epoch seal. It checks assigned sequence bounds and admission-time record
@@ -40,7 +115,19 @@ deleted-tail recovery. All expected faults remain `partial`; clean and
 recovered runs remain `unverified`. Local artifact evidence is under
 `/private/tmp/fabric-c2-final.4W8Osf/`; full coverage is in
 `/private/tmp/fabric-source-seal-coverage-final-20260930.xml`.
-The newer SDK still requires its committed Linux CI run.
+The frozen commit `f70fa8b51a57fa3147294e178ff35c6f2d6e8bae` also passed
+[Recorder CI](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36700082237),
+CodeQL, security, basic kind and
+[full production-profile qualification](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36700082241).
+The downloaded artifact `synthetic-production-profile-36700082241-1` confirms
+the **same wheel digest** as the local test above, zero restart discrepancies
+and rejected deleted-tail recovery through both normal and dedicated-source
+installed-wheel runs. The tested chart SHA-256 is
+`d7e673b110b7777c8983c6d0b25d34f5dee900a65d8b2c92032cb72cdef47136`;
+the Node image ID remains
+`sha256:636fed937fd6b9c3c55515e2125446d54ffeb28a7ff361a7a355cee413576669`.
+This is not a new completeness verdict. Reports are locally available under
+`/private/tmp/fabric-ci-f70fa8b-36700082241/`.
 
 Residual limits: a seal covers a terminal metadata prefix, not all physical
 agent actions. Its cached copy is not fresh disk readback. It does not

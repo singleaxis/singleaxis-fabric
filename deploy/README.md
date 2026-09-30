@@ -16,11 +16,15 @@ CAPTURE -> PROTECT -> DELIVER
   capture, durable local queueing, and at-least-once delivery through a
   destination outage and a recorder restart. Plaintext and unauthenticated —
   local evaluation only.
-- **Client-VM production overlay** (`compose/docker-compose.production.yml`,
+- **Client-VM technical overlay** (`compose/docker-compose.production.yml`,
   config `compose/collector-config/collector-production.yaml`): the same recorder
   image deployed on a single Linux VM with bearer-token-authenticated OTLP
-  ingress (optional receiver TLS), a durable file-backed exporter queue, and
-  authenticated HTTPS egress to a customer-selected OTLP backend. See
+  ingress (receiver TLS is configurable, not automatically required), a durable
+  file-backed exporter queue, and authenticated HTTPS egress to a
+  customer-selected OTLP backend. This example is **not** a production
+  approval: plaintext ingress must not cross a trust boundary, and actual
+  source binding, storage controls, independent receipts, and the declared
+  capture scope still require qualification. See
   `compose/README.md` ("Client VM deployment") for the quick start and
   `../docs/operations/dr.md` for queue sizing, backup, and alerting.
 

@@ -34,7 +34,7 @@ processors:
 
 exporters:
   otlphttp:
-    endpoint: http://host.docker.internal:19200
+    endpoint: http://host.docker.internal:${env:SINK_PORT}
 
 service:
   extensions: [health_check]

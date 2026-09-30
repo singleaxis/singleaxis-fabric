@@ -3,17 +3,17 @@
   "scope_id": "synthetic-model-terminal-artifact-v1",
   "scope_revision": 1,
   "result": "NO_GO",
-  "last_evidence_commit": "aa03e768fdfc06fdac03c4613b23b9e543a0cb1d",
+  "last_evidence_commit": "f70fa8b51a57fa3147294e178ff35c6f2d6e8bae",
   "linux_evidence": [
-    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36325062427",
-    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36325062391"
+    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36700082241",
+    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36700082237"
   ],
   "controls": [
     {"id": "BD-01", "owner": "customer-platform", "status": "unverified", "required_test": "route-inventory-and-direct-bypass"},
-    {"id": "ID-01", "owner": "recorder-platform", "status": "mtls-ingress-live-tested-payload-source-identity-unbound", "required_test": "source-tenant-auth-and-spoof-rejection"},
+    {"id": "ID-01", "owner": "recorder-platform", "status": "dedicated-single-source-auth-and-spoof-rejection-linux-tested-multisource-fixture-unbound", "required_test": "approved-per-source-credential-mapping-and-source-receipts"},
     {"id": "CA-01", "owner": "recorder-engineering", "status": "synthetic-installed-wheel-linux-tested-truth-unauthenticated", "required_test": "authenticated-independent-byte-and-operation-reconciliation"},
-    {"id": "CA-02", "owner": "recorder-engineering", "status": "source-journal-local-and-bypass-loss-linux-tested-pre-fsync-unverified", "required_test": "pre-fsync-crash-and-authenticated-gap-export"},
-    {"id": "PR-01", "owner": "customer-privacy", "status": "sink-and-collector-log-canary-linux-tested-other-surfaces-unverified", "required_test": "all-surface-secret-canary"},
+    {"id": "CA-02", "owner": "recorder-engineering", "status": "metadata-seal-restart-tail-loss-installed-wheel-linux-tested-pre-fsync-unverified", "required_test": "authenticated-source-receipt-and-independent-prefsync-operation-accounting"},
+    {"id": "PR-01", "owner": "customer-privacy", "status": "dedicated-source-sink-log-persistent-queue-canaries-linux-tested-target-stores-unverified", "required_test": "target-all-surface-secret-canary"},
     {"id": "ST-01", "owner": "customer-storage", "status": "local-store-tests-only", "required_test": "tenant-encryption-corruption-readback"},
     {"id": "ST-02", "owner": "customer-records", "status": "unverified", "required_test": "retention-backup-restore-key-rotation"},
     {"id": "DL-01", "owner": "recorder-and-destination", "status": "controlled-fsync-sink-live-tested-generic-durable-receipt-unverified", "required_test": "distinct-receipt-stages-and-live-partial-otlp"},

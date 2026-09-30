@@ -25,7 +25,7 @@ engines, or management services in this stack.
 | [`e2e-smoke/`](e2e-smoke/) | Live OTLP span-landing flow paired with the `e2e.yml` workflow's kind smoke job. |
 | [`governed-content/`](governed-content/) | Opt-in governed capture: a model → tool → model run where content lands in a customer-controlled store and telemetry carries refs only. |
 | [`offline-transcript/`](offline-transcript/) | Minimal record-and-read harness — SDK + local store only, no Node or services. |
-| [`agent-orchestration/`](agent-orchestration/) | Full UAT demo: orchestrated agent (tools, shell execs, HTTP fetch, file write) traced through the real collector + audit receiver, reconstructed into a journal and rendered by a local viewer. |
+| [`agent-orchestration/`](agent-orchestration/) | Offline scripted-model demo with real local tools and file writes, an agent-emitted audit-format shim, Fabric Node, a per-run journal and a local viewer. It is not an independent host audit or a production-completeness proof. |
 
 Pre-0.8 examples that demonstrated removed APIs (guardrails, policy
 evaluation, tool authorization, escalation, eval/judge capture) were

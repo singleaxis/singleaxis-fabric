@@ -1,33 +1,14 @@
 #!/usr/bin/env bash
-# Real auditd collection for the demo on Linux hosts.
-#
-# Replaces audit_shim.py entirely: kernel auditd produces the same
-# record stream (same format, same -k fabric tagging) that the
-# collector's audit receiver tails in logfile mode, or consumes live
-# over netlink with CAP_AUDIT_READ.
-#
-#   sudo bash examples/agent-orchestration/collect-audit-linux.sh start
-#   … run agent.py …
-#   sudo bash examples/agent-orchestration/collect-audit-linux.sh stop
+# This demo intentionally does not install or remove host-wide audit rules.
+# Host collection requires a separately approved, isolated disposable Linux
+# environment and scoped rules with an independently reviewed cleanup plan.
 set -euo pipefail
-cd "$(dirname "$0")"
-RULES="$(pwd)/../../deploy/auditd/fabric.rules"
-LOG="$(pwd)/out/audit/audit.log"
-mkdir -p out/audit
 
 case "${1:-}" in
-  start)
-    auditctl -R "$RULES"
-    # Point the demo collector at the real audit log instead of the
-    # shim path: mount /var/log/audit read-only over ./out/audit.
-    touch "$LOG"   # path kept for config compatibility; real data in /var/log/audit
-    echo "auditd rules loaded (-k fabric). Point the collector's"
-    echo "audit receiver at /var/log/audit/audit.log, or bind-mount:"
-    echo "  -v /var/log/audit:/demo-audit:ro"
+  start|stop)
+    echo "Refusing host audit rule changes: this demo has no approved scoped rule set." >&2
+    echo "Use a separately reviewed isolated Linux qualification environment; see deploy/auditd/README.md." >&2
+    exit 2
     ;;
-  stop)
-    auditctl -D -k fabric || auditctl -R <(grep -v '^-a' "$RULES" | head -0) || true
-    echo "fabric rules removed"
-    ;;
-  *) echo "usage: $0 start|stop"; exit 2 ;;
+  *) echo "usage: $0 start|stop (both refuse until a scoped plan is approved)" >&2; exit 2 ;;
 esac

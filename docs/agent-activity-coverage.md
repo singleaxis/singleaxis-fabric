@@ -42,6 +42,22 @@ passive and records evidence or an explicit gap. An unconstrained agent that
 can install code or reach uninstrumented hosts has no universal one-to-one
 capture guarantee.
 
+The Python [custom-agent call recorder](custom-agent-recording.md) now supplies
+a shared integration point for a customer's dispatcher: actual permitted
+input/output/context bytes, ordered stream chunks, nested/parallel calls and
+separate retry attempts. It does not depend on an agent framework. Its
+installed-package synthetic tests cover a controlled model delegate, file and
+SQLite tools, source-journal recovery, missing evidence and bypass detection.
+The separately scoped model/terminal/artifact fixture also records real
+no-shell subprocess streams and artifact bytes. These are bounded examples,
+not automatic discovery of every capability in the table below.
+
+The [qualification record](recorder-v1-qualification-status.md) is the authority
+for exact Linux-tested artifacts. Dedicated-source authenticated ingress and
+destination metadata readback have passed in disposable CI. Authenticated
+independent service feeds and customer storage qualification remain open;
+neither a test sink nor an agent-supplied witness establishes those controls.
+
 | Agent action / examples | Evidence needed for one-to-one historical reconstruction | Current Fabric evidence | Additional capture boundary needed |
 | --- | --- | --- | --- |
 | Model calls, function calling, streaming, embeddings | Final provider-bound request, ordered instructions/messages/tool schemas/parameters, response or partial stream, attempts and model identity | Manual Python/TypeScript governed `llm_call`; auto content capture deferred | Versioned provider/framework adapters at the last visible request boundary; record transformations and bypasses |
@@ -63,8 +79,9 @@ honestly; absence of a record is not evidence that an action did not occur.
 
 ## Current blockers to a complete-agent claim
 
-1. Governed content is opt-in and manual. Framework/provider auto-capture is
-   deferred; `model.request.*` records caller-supplied SDK values, not
+1. Governed content is opt-in at explicit call boundaries. Custom-dispatcher
+   wrappers are implemented; universal provider auto-capture is not.
+   `model.request.*` records caller-supplied SDK values, not
    necessarily a request after later provider transformations.
 2. No general terminal/PTY content, SSH remote-side, database protocol,
    browser, or arbitrary HTTP body capture exists. An explicit byte-recorder
@@ -85,9 +102,10 @@ honestly; absence of a record is not evidence that an action did not occur.
    **in-memory** queue and reports known gaps. Collector crash can still lose
    records, logfile cursor is not persisted, and netlink cannot replay.
    Fabric Node's durable queue begins only after Node accepts telemetry.
-6. Production S3 governed-content delivery and the exact tagged Node path
-   still require live qualification. A destination OTLP success is not a
-   durable-storage receipt.
+6. Production S3 governed-content delivery and target-environment storage
+   still require live qualification. The exact candidate Node path has
+   disposable Linux qualification, not customer durable-retention proof.
+   A destination OTLP success is not a durable-storage receipt.
 
 ## Release and deployment gates
 

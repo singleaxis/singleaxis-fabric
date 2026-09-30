@@ -181,13 +181,23 @@ jobs:
           python -m pip install build==1.6.1
           python -m build --wheel --outdir "${RUNNER_TEMP}/fabric-wheel" sdk/python
           python -m venv "${RUNNER_TEMP}/fabric-agent-venv"
+          WITNESS_TEST_WHEELS=("${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl)
+          test "${#WITNESS_TEST_WHEELS[@]}" -eq 1
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pip install \
-            "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
+            "${WITNESS_TEST_WHEELS[0]}[signing]" \
             opentelemetry-proto==1.44.0 grpcio==1.76.0 pytest==8.4.2
           sha256sum "${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl \
             | tee "${RUNNER_TEMP}/fabric-wheel-production.sha256"
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pytest -q \
             scripts/tests/test_source_binding_readback.py
+      - name: Test independent evidence against the installed wheel
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -c \
+            'import pathlib, sys, fabric.independent_feed as module; assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve())'
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pytest -q -o addopts= \
+            sdk/python/tests/test_independent_feed.py \
+            sdk/python/tests/test_independent_feed_adversarial.py
       - name: Test installed-wheel client byte boundary
         run: |
           set -euo pipefail

@@ -22,7 +22,6 @@ PRIMARY_DOCS = (
     "specs/027-recorder-v1.md",
     "docs/README.md",
     "docs/architecture.md",
-    "docs/run-variant-artifact-outcome-change-list.md",
     "docs/install.md",
     "docs/quickstart.md",
     "docs/deployment.md",

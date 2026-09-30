@@ -1,7 +1,9 @@
-# Agent orchestration demo — capture, protect, deliver, reconstruct
+# Agent orchestration demo — inspect a bounded synthetic run
 
-An end-to-end UAT of Fabric's governed recording plane against a real
-agentic workload. Not a mock — every layer below is exercised for real:
+An offline demonstration of Fabric's governed recording path. The model is a
+scripted deterministic stand-in; local subprocess, HTTP, and file operations
+are real. The audit-format shim is emitted by the agent, not an independent
+kernel witness. This is not a production-completeness or enterprise GO test.
 
 ```text
 agent.py  (Fabric SDK, governed capture, spooled durability)
@@ -10,12 +12,13 @@ agent.py  (Fabric SDK, governed capture, spooled durability)
 otelcol-fabric  (otlp receiver + audit receiver + fabricguard)
    |  allowlisted attrs; argv hashed at collection
    v
-sink.py   (durable destination: decoded span/log records -> records.jsonl)
+sink.py   (demo destination: decoded span/log records -> records.jsonl;
+           no fsync or durable-receipt claim)
    |
    +-- governed store (out/store/)  <- content bytes never left this
-   +-- audit stream   (out/audit/)  <- host observation layer
+   +-- audit stream   (run/audit/)  <- agent-emitted shim, not host proof
    v
-reconstruct.py  ->  out/journal.json  ->  viewer/index.html
+reconstruct.py  ->  run/journal.json  ->  run/viewer/index.html
 ```
 
 ## The workload
@@ -35,48 +38,59 @@ no API keys; everything *around* the model is real:
 | `write_report` | real `incident-report.md` write + `side_effect` record |
 | `run_shell` (secret) | exec whose argv carries a secret-shaped token — proves the collector hashes argv (`process.command_args_sha256`) and never exports it |
 
-## Run it
+## Run it locally
 
 ```bash
-bash examples/agent-orchestration/run.sh
-open examples/agent-orchestration/viewer/index.html
+FABRIC_DEMO_ISOLATED=1 bash examples/agent-orchestration/run.sh
 ```
+
+Run only with synthetic, non-sensitive data in an isolated local environment.
+The demo sink listens on all local interfaces without authentication and does
+not fsync or issue a durable persistence receipt. The explicit environment
+flag is an acknowledgement of that limited test posture, not a security
+control or production qualification.
+
+The command prints a unique `out/runs/<run-id>/viewer/index.html` path to
+open. Each run retains its own journal, collector log and viewer; the script
+does not delete previous output or an existing Docker container. It stops and
+removes only the container ID it created. The demo requires free local ports
+and does not run privileged host capture.
 
 Prereqs: Docker (for `fabric-otelcol:local` — rebuild with
 `docker build -t fabric-otelcol:local components/otel-collector-fabric`
 if the image predates your checkout), repo Python venv.
 
-`reconstruct.py` doubles as the UAT gate — it exits non-zero unless all
+`reconstruct.py` is a demo self-check — it exits non-zero unless all
 of these hold:
 
 - decision, both model calls, and every tool span reached the sink with
   refs (`fabric.content.request_ref`/`result_ref`/`manifest_ref`);
 - every manifest item resolved **available** — descriptor, byte length,
   and SHA-256 digest verified (21 items on a clean run);
-- audit exec/connect/openat events exist for the commands/connections
-  the agent actually made, correlated to spans as `inferred` provenance;
+- agent-emitted audit-format exec/connect/openat records exist for the
+  commands/connections the agent made, correlated to spans as `inferred`
+  provenance; these are not independent system records;
 - the secret argv token never appears in exported telemetry — only its
   sha256 does;
 - the stamped `manifest_ref` equals the resolved manifest URI.
 
 ## Host layer honesty
 
-- **macOS** (this demo): the kernel has no Linux audit subsystem and
-  Docker Desktop's VM masks `CAP_AUDIT_*` — `audit_shim.py` therefore
-  emits auditd-format records for syscalls the agent *really* performed
-  (real pid/ppid/exit/argv/cwd measured at exec). The collector parses,
-  assembles, dedupes, allowlists and forwards them through the identical
-  production code path (`audit` receiver → `fabricguard` → export).
-- **Linux**: `collect-audit-linux.sh start` loads
-  `deploy/auditd/fabric.rules` into real auditd; bind-mount
-  `/var/log/audit` over `out/audit/` (or use the receiver's netlink
-  source with `CAP_AUDIT_READ`). Zero demo code changes — kernel truth
-  replaces the shim.
+- **macOS and Linux, default demo:** `audit_shim.py` emits auditd-format
+  records for operations this agent performs. The collector parses and
+  protects those records, but the agent could omit or fabricate them.
+- **Independent Linux host evidence:** not installed by this demo.
+  `collect-audit-linux.sh` deliberately refuses to change audit rules.
+  Broad `deploy/auditd/fabric.rules` covers all host processes and must not
+  be loaded on a shared or customer host for this demonstration. A separately
+  approved isolated disposable host and scoped rule plan are required;
+  see `deploy/auditd/README.md`.
 - Audit events are **inferred provenance** (time+pid joins), never
   claimed causal edges — per spec 030.
 
 ## What this is not
 
-Demo artifacts only: no evaluation, no judging, no governance UI. The
-viewer is a read-only local renderer for the journal — policy,
-enforcement and fleet features stay out of scope per `AGENTS.md`.
+Demo artifacts only: no evaluation, judging, governance UI, independent
+system audit or full-run verdict. The viewer is a read-only local renderer
+for one synthetic run; policy, enforcement and fleet features stay out of
+scope per `AGENTS.md`.

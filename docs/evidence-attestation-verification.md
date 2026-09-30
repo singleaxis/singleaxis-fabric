@@ -58,8 +58,31 @@ GO verdict. The next required integration binds independently observed full
 operation/byte sets, route closure, source lifecycle and four receipt stages to
 the same frozen run and artifact bundle.
 
+## Checking an independent operation and byte feed
+
+The optional `fabric.independent_feed.verify_independent_feed` checker follows
+[spec 045](../specs/045-independent-evidence-feeds.md). Supply an approved
+`IndependentFeedExpectation`, a signed canonical feed, the trusted public-key
+registry and a tenant/issuer-bound byte reader. The expectation must come from
+separate native checkpoints and operation records, not from Fabric's output or
+the submitted feed itself.
+
+The checker verifies every expected operation, attempt, outcome, required
+content role and ordered chunk. It verifies the signature before reading
+objects, then checks each object's exact byte length and SHA-256. Missing,
+extra, reordered, altered and unreadable evidence cannot yield a verified
+feed. Reports contain fixed reasons and metadata, not the resolved content or
+private error messages.
+
+This checks **one feed**, not a complete agent run. The customer must still
+qualify the independent producer and byte reader, including access control and
+native checkpoint completeness. The checker neither supplies those systems
+nor upgrades the call reconciler's verdict. A signed fixture is not a live
+provider, filesystem or database audit feed.
+
 Run the tampering and authority tests:
 
 ```sh
 sdk/python/.venv/bin/python -m pytest -q -o addopts= -p no:cacheprovider sdk/python/tests/test_evidence_attestation.py
+sdk/python/.venv/bin/python -m pytest -q -o addopts= -p no:cacheprovider sdk/python/tests/test_independent_feed.py sdk/python/tests/test_independent_feed_adversarial.py
 ```
