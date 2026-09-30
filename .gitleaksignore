@@ -9,3 +9,4 @@ b52a3b1fdb51dd5172a8de92111580f5213be19f:charts/fabric/tests/fixtures/v0.6-suppo
 519d518d280a12067ee0bea645e44ce5ec5a7a9e:.github/workflows/e2e.yml:generic-api-key:109
 0f4f02f82e49f88d0fc165953dff692a99090e14:components/otel-collector-fabric/processor/fabricsamplerprocessor/processor_test.go:generic-api-key:20
 0f4f02f82e49f88d0fc165953dff692a99090e14:deploy/compose/.env.example:generic-api-key:12
+4bf4df9665aaa107ff9c0fd0ac2ebadbf9acac5a:components/otel-collector-fabric/gate/evidence_binding_test.go:generic-api-key:12

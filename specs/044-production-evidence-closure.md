@@ -115,6 +115,16 @@ installed-artifact test. Rejecting recorder telemetry must not affect an agent
 operation. The final complete-run decision still needs source loss accounting,
 independent witnesses and distinct receipts.
 
+The live dedicated-ingress probe also requires a non-retryable client-error
+response for a syntactically valid request with forged or missing bound
+identity: OTLP/HTTP 400 and OTLP/gRPC `INVALID_ARGUMENT`, with a fixed message
+that contains no supplied value. Collector v0.150.0 maps a permanent consumer
+error without an attached gRPC status to `INTERNAL`/HTTP 500. Therefore the
+guard's bound-identity rejection must carry both the permanent marker and an
+explicit `INVALID_ARGUMENT` status. A generic 500 is not an acceptable test
+outcome, even when the batch was not forwarded. Verify the pinned receiver
+mapping and preserve whole-batch rejection before any mutation or delivery.
+
 ## Next implementation slice: authenticated complete-run proof (not implemented)
 
 The C1 ingress tests do not close this slice. Preserve `reconcile_call_run` as
@@ -174,7 +184,89 @@ readback; reachable bypass; clean cryptographic fixture. Every omission must
 prevent a complete verdict. Customer storage and named owner sign-off remain
 additional gates even after this code exists.
 
+## C2 implementation contract — durable metadata epoch seal
+
+Implement this narrow prerequisite before a qualified reconciler. It is not a
+run-completeness receipt and must not change existing verdicts. An explicit
+`SyntheticSourceSpool.seal_epoch(expected_high_water, timeout_s=...)` call runs
+only after monitored work, stops further metadata admission for that epoch,
+waits within the bound for queued writes, securely reads all current-epoch
+event files and compares exact source sequence sets against the supplied
+assigned high-water map. A caller-supplied map is a consistency assertion,
+not independently authenticated truth. Do not obtain expected high-water by
+taking the largest surviving sequence during recovery.
+
+The metadata-only seal uses a closed schema with tenant/run/epoch, exact
+source high-water map, record count, and SHA-256 over the ordered canonical
+event records. Persist it as mode-0600 `seal-<epoch>.json` using file fsync,
+atomic replace and directory fsync. Require no pending, failed, dropped or
+unretained records and exact match to all records admitted in memory; compare
+disk bytes/digests with admission-time expected metadata digests so a validly
+rehashed substituted file cannot be silently sealed. Bound seal size/count
+and include seals in disk capacity accounting. Journal content status
+`pending` records an observation, not a content-store receipt: the seal covers
+metadata persistence only. Object availability is always a separate check.
+
+Refuse repeated/conflicting seal writes, undeclared sources, source-position
+holes, absent or additional events, corruption, quota/write failures and
+unsettled writes. Refusal returns a fixed bounded reason and never a clean
+seal. Ordinary `close()` does not create a seal. After seal attempt, further
+append attempts fail as recorder evidence without blocking/changing an agent
+delegate. A continued run must use a new epoch; this API certifies neither
+that no later work occurred nor that all reachable routes were observed.
+
+Recovery exposes verified seal metadata separately from recovered events and
+records every prior epoch lacking a seal, including an epoch with **zero**
+surviving events. A present seal whose count, identities, sequence bounds or
+digest disagrees with disk fails closed, including tail deletion and an event
+with a self-consistently rewritten checksum. Legacy unsealed journals remain
+readable but explicitly unsealed/unverified; their apparent largest sequence
+is only an observed value, never an expected terminal mark.
+
+Acceptance: empty epoch with explicit empty-source high-water `-1`; normal
+multi-source seal and restart; missing tail, altered bytes, extra record,
+rehashed substitution before/after sealing; invalid/bool/huge high-water;
+queue/disk-full/write/fsync failures; crash before event persistence and before
+seal persistence; close without seal; late append; seal file permissions and
+tenant mismatch; repeated finalization; secret-canary absence. Tests must
+distinguish process-crash simulation from actual power-loss qualification.
+No automatic signer, destination receipt or complete verdict is added here.
+
+`CallRecorder.seal_source()` is the explicit offline convenience API. It must
+refuse while a call/stream is running or partial, content writes are pending,
+required observations failed, or recorder/spool losses are known. It passes
+the recorder's assigned sequence high-water to the spool; never guesses it
+from disk. A later call still executes normally, but cannot enter a sealed
+epoch and must create a visible recording gap. Snapshot output distinguishes
+the recovered observed maximum from a seal's terminal high-water and includes
+compact prior-unsealed epoch ranges, even if no record survived an epoch.
+Missing seals preserve uncertainty; matching seals do not clear source trust,
+independent-feed or destination proof flags. A seal is explicitly limited to
+metadata persistence and never labels pending content as stored.
+
 ## Evidence ledger
+
+### PR #164 CI closure plan (head `4bf4df9`)
+
+The first Linux CI run exposed three separate gates, not a single recorder
+failure. Helm 3.15 rejected the intentionally injected undeclared Secret
+field, but the chart test matched Helm 3.19's exact diagnostic wording; keep
+the schema rejection and assert a version-neutral diagnostic. The image build
+stopped while Go downloaded a pinned gRPC dependency because the module proxy
+returned an HTTP/2 stream error, before the patched Collector, image scan or
+runtime tests ran. Retry the same source on isolated CI; do not waive the
+image scan or claim it passed. Full-history Gitleaks found a new static token
+literal in a gate unit-test fixture. Replace the literal with deterministic
+runtime-generated test material, prove the committed value's fixture-only
+provenance, then add at most that exact already-committed fingerprint to the
+historical baseline; retain full-history scanning and a new-commit rejection
+probe. Any ambiguous provenance remains an unresolved security finding.
+
+Acceptance: Helm 3.15 and 3.19 both reject the undeclared value; gate tests
+still exercise a valid singleton token and malformed rotations; Gitleaks
+reports no unclassified findings and the independent probe still detects a
+new canary; the exact image build, patch metadata, vulnerability scan and live
+tests must pass on CI before qualifying the artifact.
 
 Implementation and test results are recorded in
 `docs/recorder-v1-qualification-status.md`. Each phase must state which code and

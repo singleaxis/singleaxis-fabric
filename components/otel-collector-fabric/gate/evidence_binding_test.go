@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const dedicatedToken = "0123456789abcdef0123456789abcdef0123456789abcdef"
+var dedicatedToken = strings.Repeat("fixture-only-", 4)
 
 func dedicatedConfig(tokenPath string) string {
 	return `extensions:

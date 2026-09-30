@@ -10,12 +10,40 @@ This section supersedes older pending-security descriptions below, which are
 retained as dated test history. [Spec 044](../specs/044-production-evidence-closure.md)
 was written before this implementation. Work is on PR #164, not the user's
 separate dirty checkout. None of the new changes below is yet credited as a
-live-tested release artifact.
+fully qualified release artifact.
+
+### Published candidate results and corrections
+
+The frozen commit `4bf4df9665aaa107ff9c0fd0ac2ebadbf9acac5a` passed
+[CodeQL](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36625823263),
+[basic kind smoke](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36625823164)
+and license checks. The
+[fuller production-profile test](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36625823349)
+failed when the dedicated receiver returned HTTP 500 for a forged tenant.
+The guard rejected the batch, but the response incorrectly invited retries.
+The correction preserves a permanent gRPC `InvalidArgument` status through
+the receiver, yielding HTTP 400. Unit/race tests pass; the live probe still
+requires exactly HTTP 400 or gRPC `INVALID_ARGUMENT`, not a relaxed assertion.
+Live rotation, final readback and privacy gates after that failure are not
+credited until a fresh run completes.
+
+The recorder CI chart test also failed because Helm versions phrase schema
+errors differently. Its assertion now checks the rejected setting without
+requiring one diagnostic wording; local Helm tests pass. The image job
+stopped during a `proxy.golang.org` HTTP/2 download error before image
+construction or vulnerability scanning, so neither image result is credited.
+The history scanner identified one new static test token in this commit.
+Its source-proven fixture classification is recorded in
+[security triage](security-history-triage.md), with only its exact historical
+fingerprint added to the baseline (nine total). The fixture is now generated
+at test runtime. Full-history scanning and the independent new-credential
+rejection probe pass locally. A fresh committed CI run is required for all
+corrections. These results do not change the overall **NO-GO** decision.
 
 | Gate | Implemented / locally tested | Still required |
 | --- | --- | --- |
-| Historical secrets | Eight exact historical fingerprints classified; seven source fixtures and one Basic-auth example confirmed **never used** by the requesting user. Full-history scan with exact baseline and synthetic new-commit rejection probe passed. | Fresh CI history scan; named security-owner acceptance of the release, not just fixture classification. |
-| Security findings | Python import cycle removed with typed protocols; resolver descriptor cleanup uses independent cleanup callbacks; host-spool close/unlock errors preserved. SDK regression and host race tests passed. | Fresh CodeQL and release scans on the committed artifact. |
+| Historical secrets | Nine exact historical fingerprints classified; eight source fixtures and one Basic-auth example confirmed **never used** by the requesting user. Full-history scan with exact baseline and synthetic new-commit rejection probe passed. | Fresh CI history scan; named security-owner acceptance of the release, not just fixture classification. |
+| Security findings | Python import cycle removed with typed protocols; resolver descriptor cleanup uses independent cleanup callbacks; host-spool close/unlock errors preserved. SDK regression and host race tests passed; CodeQL passed on `4bf4df9`. | Release scans on the corrected committed artifact. |
 | Independent statement verification | Optional offline Ed25519 verifier pins issuer, tenant, run, scope, subject digest, stage, key validity and revocation. It rejects substituted issuers and expired-key backdating; 54 tests passed. | Qualified independent issuers and actual source/Node/destination receipt producers. A signature alone never promotes a run to complete. |
 | Credential-bound ingress | Dedicated one-tenant/one-source guard, strict startup validation, chart opt-in and HTTPS-only file-based bearer export implemented. Go guard/gate race tests, vet and chart tests passed. | Exact installed Node HTTP/gRPC negative tests, credential rotation and readback. Exclusive credential ownership remains a deployment control. |
 | Python regression | Full suite: **895 passed**, **86.58%** coverage on Python 3.12.13; Ruff and mypy passed using SDK configuration. Installed-wheel evidence below. | Fresh Linux CI qualification. |

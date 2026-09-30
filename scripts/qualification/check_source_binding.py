@@ -193,12 +193,9 @@ def exercise(args: argparse.Namespace) -> None:
                         if transport == "http"
                         else outcome == "INVALID_ARGUMENT"
                     )
-                    partial_rejection = (
-                        outcome == 200 if transport == "http" else outcome == "OK"
-                    ) and rejected == len(ids)
-                    if not explicit_rejection and not partial_rejection:
+                    if not explicit_rejection:
                         raise AssertionError(
-                            f"{transport} {name} lacked explicit whole-batch rejection: {outcome}"
+                            f"{transport} {name} lacked non-retryable client rejection: {outcome}"
                         )
                 checks.append(
                     {

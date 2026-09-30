@@ -5,7 +5,6 @@ package fabricguardprocessor
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -16,6 +15,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type guard struct {
@@ -76,7 +77,7 @@ func newGuard(cfg *Config, logger *zap.Logger) *guard {
 
 func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) {
 	if g.cfg.EvidenceSourceBinding != nil && !g.boundEvidenceBatch(ld) {
-		return ld, consumererror.NewPermanent(errors.New("fabricguard: evidence source binding rejected"))
+		return ld, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: evidence source binding rejected"))
 	}
 	resourceLogs := ld.ResourceLogs()
 	for ri := 0; ri < resourceLogs.Len(); ri++ {
@@ -410,7 +411,7 @@ func validSHA256Prefixed(value pcommon.Value) bool {
 
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
 	if g.cfg.EvidenceSourceBinding != nil && td.SpanCount() != 0 {
-		return td, consumererror.NewPermanent(errors.New("fabricguard: evidence source binding rejects traces"))
+		return td, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: evidence source binding rejects traces"))
 	}
 	allowed := unionSets(TraceAllowedFields, toSet(g.cfg.ExtraAllowedTraceFields...))
 	resourceSpans := td.ResourceSpans()

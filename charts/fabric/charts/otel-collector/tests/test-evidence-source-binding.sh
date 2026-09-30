@@ -17,6 +17,15 @@ reject() {
   fi
   contains "${result}" "${expected}"
 }
+reject_unknown_secret_field() {
+  local result
+  if result="$(helm template ci "${chart_dir}" "$@" 2>&1)"; then
+    fail "undeclared token Secret value rendered successfully"
+  fi
+  # Helm 3.15 and 3.19 phrase additionalProperties errors differently.
+  grep -Eiq 'additional propert' <<<"${result}" || fail "missing schema rejection"
+  grep -Fq 'value' <<<"${result}" || fail "wrong field rejected by schema"
+}
 
 default="$(helm template ci "${chart_dir}")"
 absent "${default}" 'evidence_source_binding:'
@@ -72,7 +81,7 @@ reject 'requires an https://' "${bound[@]}" \
   --set exporter.endpoint=http://otlp.example.invalid
 reject 'requires debugExporter.enabled=false' "${bound[@]}" \
   --set debugExporter.enabled=true
-reject "additional properties 'value' not allowed" "${bound[@]}" \
+reject_unknown_secret_field "${bound[@]}" \
   --set receiver.evidenceSourceBinding.tokenSecret.value=PRIVATE_TOKEN_CANARY
 
 printf 'PASS: dedicated evidence-source chart render and invalid combinations\n'

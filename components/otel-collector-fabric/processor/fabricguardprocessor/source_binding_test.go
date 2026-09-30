@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/collector/consumer/consumererror"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func boundGuard(t *testing.T) *guard {
@@ -60,8 +62,14 @@ func TestEvidenceSourceBindingAcceptsOnlyDeclaredIdentity(t *testing.T) {
 			}
 			firstRecord(t, bad).Body().SetStr("PRIVATE-CANARY")
 			_, err := boundGuard(t).processLogs(context.Background(), bad)
-			if err == nil || !consumererror.IsPermanent(err) || !strings.HasSuffix(err.Error(), "fabricguard: evidence source binding rejected") || strings.Contains(err.Error(), "PRIVATE-CANARY") {
+			if err == nil || !consumererror.IsPermanent(err) || status.Code(err) != codes.InvalidArgument || !strings.HasSuffix(err.Error(), "fabricguard: evidence source binding rejected") || strings.Contains(err.Error(), "PRIVATE-CANARY") {
 				t.Fatalf("forged batch was not safely rejected: %v", err)
+			}
+			// The pinned OTLP receiver calls status.FromError on consumer errors;
+			// a bare permanent error maps to INTERNAL/HTTP 500 instead.
+			mapped, ok := status.FromError(err)
+			if !ok || mapped.Code() != codes.InvalidArgument {
+				t.Fatalf("rejection would not map to OTLP client error: %v", err)
 			}
 			// Pre-scan rejects before mutating the first record or forwarding it.
 			if firstRecord(t, bad).Body().Str() != "PRIVATE-CANARY" {
@@ -74,7 +82,7 @@ func TestEvidenceSourceBindingAcceptsOnlyDeclaredIdentity(t *testing.T) {
 func TestEvidenceSourceBindingRejectsUnboundTraces(t *testing.T) {
 	td := makeTraces(spanFixture{name: "fabric.llm_call", attrs: map[string]any{"fabric.tenant_id": "tenant-a"}})
 	_, err := boundGuard(t).processTraces(context.Background(), td)
-	if err == nil || !consumererror.IsPermanent(err) || !strings.HasSuffix(err.Error(), "fabricguard: evidence source binding rejects traces") {
+	if err == nil || !consumererror.IsPermanent(err) || status.Code(err) != codes.InvalidArgument || !strings.HasSuffix(err.Error(), "fabricguard: evidence source binding rejects traces") {
 		t.Fatalf("unbound trace accepted: %v", err)
 	}
 }
