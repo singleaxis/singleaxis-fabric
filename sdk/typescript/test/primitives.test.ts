@@ -105,7 +105,7 @@ describe("local hashing (raw content never emitted)", () => {
     expect(() =>
       fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
         d.recordSideEffect({
-          type: "t",
+          type: "other",
           targetSystem: "sys",
           operation: "o",
           requestPayload: "{}",
@@ -141,15 +141,17 @@ describe("local hashing (raw content never emitted)", () => {
     expect(interaction["fabric.interaction.target"]).toBeUndefined();
   });
 
-  it("does not emit LLM output messages unless content capture is explicitly enabled", () => {
+  it("rejects LLM output messages unless content capture is explicitly enabled", () => {
     const outputMessages = [{ role: "assistant", content: "patient diagnosis" }];
-    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
-      d.llmCall({ system: "test", model: "model" }, (call) => {
-        call.setResponse({ outputMessages });
-      });
-    });
-    const llm = exporter.getFinishedSpans().find((span) => span.name === "chat model")!;
-    expect(llm.attributes["gen_ai.output.messages"]).toBeUndefined();
+    // Without captureContent the messages cannot be safely emitted —
+    // the SDK throws rather than silently dropping them (mirrors Python).
+    expect(() =>
+      fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+        d.llmCall({ system: "test", model: "model" }, (call) => {
+          call.setResponse({ outputMessages });
+        });
+      }),
+    ).toThrow(/requires captureContent/);
 
     exporter.reset();
     fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
@@ -158,7 +160,12 @@ describe("local hashing (raw content never emitted)", () => {
       });
     });
     const optedIn = exporter.getFinishedSpans().find((span) => span.name === "chat model")!;
-    expect(optedIn.attributes["gen_ai.output.messages"]).toBe(JSON.stringify(outputMessages));
+    // Emitted as sorted-key compact JSON, mirroring Python's json.dumps
+    // with sort_keys — parse before comparing so key order does not leak
+    // into the assertion.
+    expect(JSON.parse(String(optedIn.attributes["gen_ai.output.messages"]))).toEqual(
+      outputMessages,
+    );
   });
 });
 

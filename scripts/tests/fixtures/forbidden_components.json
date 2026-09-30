@@ -1,0 +1,19 @@
+{
+  "schema_version": "fabric.test-fixtures/v1",
+  "description": "Canonical legacy component names excluded from the recorder release boundary. Historical source may remain under components/ and charts/fabric/charts/, but release workflows, packaging, and the umbrella chart must not reference them. Consumed by test_recorder_release_boundary.py.",
+  "forbidden_components": [
+    "fabric-relay",
+    "langfuse-bootstrap",
+    "nemo-sidecar",
+    "presidio-sidecar",
+    "prompt-guard-sidecar",
+    "redteam-runner",
+    "update-agent"
+  ],
+  "forbidden_chart_names": [
+    "langfuse"
+  ],
+  "notes": {
+    "forbidden_chart_names": "Helm chart names that differ from their component directory name (the langfuse-bootstrap component shipped a 'langfuse' subchart). Checked in addition to forbidden_components when scanning chart manifests."
+  }
+}

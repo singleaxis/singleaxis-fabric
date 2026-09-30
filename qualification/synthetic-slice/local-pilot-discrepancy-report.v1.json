@@ -1,0 +1,31 @@
+{
+  "schema_version": "fabric.synthetic-pilot-summary/v1",
+  "evidence_class": "source-checkout-local-test-summary-not-signed-pilot-artifact",
+  "test": "sdk/python/tests/test_synthetic_evidence.py::test_local_shadow_pilot_reconciles_two_models_terminal_and_artifact",
+  "run_label": "run-1-ephemeral",
+  "verdict": "unverified",
+  "discrepancy_count": 0,
+  "required_byte_objects_compared": 12,
+  "operation_outcomes_compared": 5,
+  "rows": [
+    {"source_id": "provider-http-1", "boundary": "provider_bound", "operation_id": "model-1", "roles": ["interaction.payload", "model.request.messages", "model.output.messages"], "discrepancies": []},
+    {"source_id": "terminal-1", "boundary": "terminal", "operation_id": "tool-1", "roles": ["terminal.argv", "interaction.payload", "terminal.stdin", "terminal.stdout", "terminal.stderr"], "discrepancies": []},
+    {"source_id": "artifact-1", "boundary": "tool", "operation_id": "tool-1", "roles": ["artifact.after"], "absent_before_explicit": true, "discrepancies": []},
+    {"source_id": "provider-http-1", "boundary": "provider_bound", "operation_id": "model-2", "roles": ["interaction.payload", "model.request.messages", "model.output.messages"], "discrepancies": []}
+  ],
+  "artifact_after": {
+    "byte_length": 10,
+    "sha256": "sha256:d3075a2cd0d0a83f8fbf3d92c57624d5e7c83747a3748db10ef1c84410a16a7e"
+  },
+  "proofs_missing": [
+    "authenticated_source_identity",
+    "persisted_source_epoch_sequence_and_journal",
+    "passive_non_interference",
+    "closed_bypass_routes",
+    "authenticated_independent_truth",
+    "durable_destination_receipt",
+    "clean_tagged_installed_artifact_digest_pilot",
+    "target_storage_and_privacy_qualification"
+  ],
+  "promotion_status": "NO_GO"
+}

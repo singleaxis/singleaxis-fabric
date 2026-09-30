@@ -12,4 +12,6 @@ requires the destination trust material and is deliberately outside fixture
 validation.
 
 Payload and privacy-assertion SHA-256 values cover the exact bytes of their pinned UTF-8
-JSON files. RFC 8785 canonicalization is not claimed.
+JSON files (`digest_scope: exact_file_bytes`). RFC 8785 canonicalization is not claimed.
+`manifest.json` pins the schema and every JSON fixture; Markdown documentation,
+including this README, is not a pinned artifact.

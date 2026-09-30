@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/content/v2/content-object-v2.schema.json",
+  "title": "Fabric governed byte evidence descriptor v2 (draft)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "object_id",
+    "tenant_id",
+    "role",
+    "media_type",
+    "representation",
+    "provenance",
+    "boundary",
+    "source_id",
+    "source_epoch",
+    "source_sequence",
+    "captured_at",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {"const": "fabric.content-object/v2"},
+    "object_id": {"$ref": "#/$defs/opaqueId"},
+    "tenant_id": {"$ref": "#/$defs/opaqueId"},
+    "run_id": {"$ref": "#/$defs/opaqueId"},
+    "operation_id": {"$ref": "#/$defs/opaqueId"},
+    "attempt_id": {"$ref": "#/$defs/opaqueId"},
+    "privacy_mode": {"enum": ["original", "omit", "masked_only", "original_plus_masked"]},
+    "transformation_id": {"$ref": "#/$defs/opaqueId"},
+    "transformation_version": {"$ref": "#/$defs/opaqueId"},
+    "stream_id": {"$ref": "#/$defs/opaqueId"},
+    "chunk_index": {"type": "integer", "minimum": 0},
+    "role": {
+      "enum": [
+        "model.request.instructions", "model.request.messages",
+        "model.request.tool_definitions", "model.request.parameters",
+        "model.output.messages", "tool.definition", "tool.call.arguments",
+        "tool.call.result", "retrieval.query", "retrieval.results",
+        "memory.write.content", "memory.read.content",
+        "side_effect.request", "side_effect.result", "context.file",
+        "interaction.payload", "terminal.argv", "terminal.stdin",
+        "terminal.stdout", "terminal.stderr", "remote.request",
+        "remote.result", "remote.stream", "database.query",
+        "database.parameters", "database.rows", "database.mutation",
+        "network.request", "network.response", "network.stream",
+        "sandbox.config", "sandbox.output", "artifact.before",
+        "artifact.after", "service.receipt"
+      ]
+    },
+    "media_type": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+$",
+      "maxLength": 128
+    },
+    "encoding": {"type": "string", "enum": ["utf-8", "binary"]},
+    "representation": {
+      "enum": ["exact", "canonicalized", "assembled", "partial", "truncated", "redacted", "unavailable"]
+    },
+    "transformations": {
+      "type": "array",
+      "items": {"enum": ["utf8_encode", "json_canonicalize", "assemble", "truncate", "redact"]},
+      "uniqueItems": true
+    },
+    "source_byte_length": {"type": "integer", "minimum": 0},
+    "source_sha256": {"$ref": "#/$defs/digest"},
+    "stored_byte_length": {"type": "integer", "minimum": 0},
+    "stored_sha256": {"$ref": "#/$defs/digest"},
+    "ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^(s3|gs|file)://[^@?#]+$"
+    },
+    "provenance": {"enum": ["native", "protocol", "caller_reported", "inferred"]},
+    "boundary": {
+      "enum": ["caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service"]
+    },
+    "source_id": {"$ref": "#/$defs/opaqueId"},
+    "source_epoch": {"type": "integer", "minimum": 0},
+    "source_sequence": {"type": "integer", "minimum": 0},
+    "captured_at": {"type": "string", "format": "date-time"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "status": {
+      "enum": ["pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed"]
+    },
+    "status_reason": {"type": "string", "maxLength": 160},
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relation", "object_id"],
+        "properties": {
+          "relation": {"enum": ["parent", "derived_from", "request_for", "result_of", "before", "after"]},
+          "object_id": {"$ref": "#/$defs/opaqueId"}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"enum": ["stored", "truncated", "redacted"]}}},
+      "then": {"required": ["stored_byte_length", "stored_sha256", "ref"]}
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["not_captured", "unsupported", "dropped", "failed"]}}},
+      "then": {
+        "not": {
+          "anyOf": [
+            {"required": ["ref"]},
+            {"required": ["stored_sha256"]},
+            {"required": ["stored_byte_length"]}
+          ]
+        }
+      }
+    },
+    {
+      "if": {"properties": {"representation": {"const": "exact"}}},
+      "then": {"required": ["source_byte_length", "source_sha256"]}
+    },
+    {
+      "if": {"required": ["source_sha256"]},
+      "then": {"required": ["source_byte_length"]}
+    },
+    {
+      "if": {"required": ["chunk_index"]},
+      "then": {"required": ["stream_id"]}
+    }
+  ],
+  "$defs": {
+    "opaqueId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

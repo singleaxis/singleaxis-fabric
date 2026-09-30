@@ -45,6 +45,7 @@ from fabric._attributes import (
     ATTR_MCP_TOOLS_HASH,
     SCHEMA_VERSION,
 )
+from fabric._calls import ToolErrorCategory
 from fabric._crosscut import apply_cross_cutting
 
 if TYPE_CHECKING:
@@ -121,11 +122,13 @@ class MCPInventory:
     :meth:`InstrumentedMCPSession.snapshot_inventory`) so a caller can
     assert / diff what was captured. Carries only metadata + hashes — no
     raw tool description or input schema — mirroring exactly what lands on
-    the ``fabric.mcp.inventory`` span event.
+    the ``fabric.mcp.inventory`` span event. ``server`` / ``transport``
+    are ``None`` when the caller did not identify them (they are then
+    omitted from the event rather than stamped empty).
     """
 
-    server: str
-    transport: str
+    server: str | None
+    transport: str | None
     tool_count: int
     tools: tuple[str, ...]
     tools_hash: str
@@ -161,8 +164,8 @@ def _canonical(value: Any) -> str:
 def record_mcp_inventory(
     decision: Decision,
     *,
-    server: str,
-    transport: str,
+    server: str | None,
+    transport: str | None,
     tools: Sequence[Any],
     resources: Sequence[Any] | None = None,
     prompts: Sequence[Any] | None = None,
@@ -181,7 +184,9 @@ def record_mcp_inventory(
 
     Emits onto ``decision``'s span:
 
-    * ``fabric.mcp.server`` / ``fabric.mcp.transport``
+    * ``fabric.mcp.server`` / ``fabric.mcp.transport`` — only when a
+      non-empty ``server`` / ``transport`` is supplied (omitted rather
+      than stamped empty)
     * ``fabric.mcp.tool_count`` (int)
     * ``fabric.mcp.tools`` — tuple of ``"<tool_name>:<def_hash[:12]>"``,
       ordered as supplied
@@ -191,8 +196,10 @@ def record_mcp_inventory(
 
     Args:
         decision: the active :class:`fabric.Decision` (must be entered).
-        server: MCP server identity.
-        transport: transport label (``"stdio"`` / ``"sse"`` / …).
+        server: optional MCP server identity; omitted from the event
+            when ``None`` or empty.
+        transport: optional transport label (``"stdio"`` / ``"sse"`` /
+            …); omitted when ``None`` or empty.
         tools: the server's advertised tool definitions.
         resources: optional advertised resources (counted only).
         prompts: optional advertised prompts (counted only).
@@ -209,12 +216,16 @@ def record_mcp_inventory(
 
     event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
         "fabric.schema_version": SCHEMA_VERSION,
-        FABRIC_MCP_SERVER: server,
-        FABRIC_MCP_TRANSPORT: transport,
         ATTR_MCP_TOOL_COUNT: len(definitions),
         ATTR_MCP_TOOLS: tool_entries,
         ATTR_MCP_TOOLS_HASH: tools_hash,
     }
+    # Server identity / transport are stamped only when identified —
+    # empty strings carry no signal and would only pollute the event.
+    if server:
+        event_attrs[FABRIC_MCP_SERVER] = server
+    if transport:
+        event_attrs[FABRIC_MCP_TRANSPORT] = transport
     if resource_count is not None:
         event_attrs[ATTR_MCP_RESOURCE_COUNT] = resource_count
     if prompt_count is not None:
@@ -261,10 +272,10 @@ async def traced_call_tool(
         arguments: tool arguments. Serialized + hashed for the span;
             raw values never land on the trace.
         server_name: optional MCP server identity; stamped as
-            ``fabric.mcp.server``.
+            ``fabric.mcp.server`` when non-empty.
         transport: optional transport label (e.g. ``"stdio"``,
             ``"sse"``, ``"streamable-http"``); stamped as
-            ``fabric.mcp.transport``.
+            ``fabric.mcp.transport`` when non-empty.
     Returns:
         The raw result object returned by ``session.call_tool``.
     """
@@ -272,10 +283,13 @@ async def traced_call_tool(
 
     with decision.tool_call(tool_name) as tc:
         tc.set_kind("mcp")
-        if server_name is not None:
-            tc.set_attribute(FABRIC_MCP_SERVER, server_name)
-        if transport is not None:
-            tc.set_attribute(FABRIC_MCP_TRANSPORT, transport)
+        # ``fabric.*`` keys are SDK-owned and rejected by the public
+        # ``set_attribute`` convenience wrapper, so the integration stamps
+        # them on the span directly (same span, same output).
+        if server_name:
+            tc.span.set_attribute(FABRIC_MCP_SERVER, server_name)
+        if transport:
+            tc.span.set_attribute(FABRIC_MCP_TRANSPORT, transport)
         if arguments is not None:
             tc.set_arguments(serialized_args)
 
@@ -286,7 +300,7 @@ async def traced_call_tool(
         # but mocks / older shapes may not. ``getattr`` with defaults
         # keeps this from blowing up on absent attributes.
         if getattr(result, "isError", False):
-            tc.record_error("mcp_tool_error")
+            tc.record_error(ToolErrorCategory.SERVER_ERROR)
         content = getattr(result, "content", None)
         if content is not None:
             # ``content`` present but not sized => skip the count.
@@ -376,8 +390,8 @@ class InstrumentedMCPSession:
 
         return record_mcp_inventory(
             self._decision,
-            server=self._server_name or "",
-            transport=self._transport or "",
+            server=self._server_name,
+            transport=self._transport,
             tools=tools,
             resources=resources,
             prompts=prompts,

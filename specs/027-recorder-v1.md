@@ -4,7 +4,7 @@ status: accepted
 revision: 1
 last_updated: 2026-08-31
 owner: product-architecture
-supersedes: 025
+supersedes: 025, 001
 ---
 
 # 027 — Recorder-first OSS release
@@ -34,8 +34,9 @@ stage. Neither is a separate deployed layer.
 | `fabricctl` | Local recorder configuration creation, validation, digest, help and version reporting |
 
 Fabric Node is the existing Fabric OpenTelemetry Collector distribution. The
-separate Relay implementation is retained as experimental source, but is not a
-second required hop or a recorder-v1 release artifact.
+separate Relay implementation was removed from this repository along with the
+other non-recorder sources; it is not a second required hop or a recorder-v1
+release artifact.
 
 ## Required behavior
 

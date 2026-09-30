@@ -50,6 +50,9 @@ func TestFactory_DefaultConfigShape(t *testing.T) {
 	if cfg.MaxFieldBytes != 8192 {
 		t.Errorf("MaxFieldBytes default = %d, want %d", cfg.MaxFieldBytes, 8192)
 	}
+	if cfg.MaxAttributes != 256 || cfg.MaxEventsPerSpan != 128 || cfg.MaxLinksPerSpan != 64 || cfg.MaxSliceElements != 64 {
+		t.Errorf("unexpected aggregate defaults: %+v", cfg)
+	}
 	if len(cfg.TraceAttributePrefixes) != 0 {
 		t.Errorf("TraceAttributePrefixes default must be empty")
 	}

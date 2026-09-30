@@ -51,7 +51,8 @@
             "gateway_proxy",
             "otlp_receiver",
             "vendor_receiver",
-            "ebpf_discovery"
+            "ebpf_discovery",
+            "host_audit_connector"
           ]
         },
         "deployment_modes": {

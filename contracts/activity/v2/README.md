@@ -12,6 +12,8 @@ schema for each event.
 Recorder v1 transports protected OTLP. This contract is the public downstream
 normalization and interchange target; publication of the schema does not claim
 that Fabric Node materializes this JSON envelope in its OTLP pipeline.
+[MAPPING.md](MAPPING.md) maps the admitted OTLP wire attributes to the
+envelope paths they populate during normalization.
 
 The contract intentionally records observable facts. `reported` and `inferred`
 events must never be represented as directly `observed`.
@@ -24,4 +26,6 @@ causal graph is acyclic.
 
 Digest scope in this release is **the exact bytes of the pinned UTF-8 JSON file**.
 The contract does not claim RFC 8785 canonicalization; reserializing JSON changes
-its digest even when the parsed value is equivalent.
+its digest even when the parsed value is equivalent. `manifest.json` pins the
+schema and every JSON fixture; Markdown documentation, including this README
+and MAPPING.md, is not a pinned artifact.

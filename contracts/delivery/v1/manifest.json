@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
-    {"path": "schema/delivery-evidence-v1.schema.json", "role": "delivery-evidence-schema", "sha256": "7abd54220ee468e0941b3cf4a4fa870ee076b8c6de9679f79edd342db7e4de4b", "expectation": "schema"},
-    {"path": "valid/audit-delivery.json", "role": "valid-audit-delivery", "sha256": "7f62ddaec05d58deef2cb4b8056c6d52788219eb881dcc412d23dfe1bdf1cc0f", "expectation": "valid"},
-    {"path": "invalid/collapsed-delivery-stage.json", "role": "invalid-collapsed-delivery-stage", "sha256": "8628723f249f38efdc50234bae5c30c2b5734daaaa1420e719af3e3253efdc55", "expectation": "invalid", "expected_error": "delivery.stage.sequence"},
-    {"path": "invalid/non-destination-persistence-proof.json", "role": "invalid-non-destination-persistence-proof", "sha256": "b267d2a00c10bd139ac40fabb2d944e2a15888b28d0ab4146f90c8335ea18d70", "expectation": "invalid", "expected_error": "delivery.persistence.not_destination_issued"},
-    {"path": "invalid/privacy-batch-mismatch.json", "role": "invalid-privacy-batch-mismatch", "sha256": "e3441615b9fa13148cfb5c7bf0818363185b1e7ab547368901dd0c02a443bf29", "expectation": "invalid", "expected_error": "delivery.privacy.batch_binding"}
+    {"path": "schema/delivery-evidence-v1.schema.json", "role": "delivery-evidence-schema", "sha256": "0389240c63b22485d2f47bb7b38b8560febda2bb10d127ddb00902293c7604b8", "expectation": "schema"},
+    {"path": "valid/audit-delivery.json", "role": "valid-audit-delivery", "sha256": "cb7c955fbcc08badd9a56ef0583eab00595f38e59b880e1334921fa30e79e894", "expectation": "valid"},
+    {"path": "invalid/collapsed-delivery-stage.json", "role": "invalid-collapsed-delivery-stage", "sha256": "25382ebc1bfd52981af80fe2d062cdee4705957cfdd3fe146b47801e873af07e", "expectation": "invalid", "expected_error": "delivery.stage.sequence"},
+    {"path": "invalid/non-destination-persistence-proof.json", "role": "invalid-non-destination-persistence-proof", "sha256": "35e558ff1b20cc0875af6ae52edbf60307aa8bc64847fa5e89cf913e04695e44", "expectation": "invalid", "expected_error": "delivery.persistence.not_destination_issued"},
+    {"path": "invalid/privacy-batch-mismatch.json", "role": "invalid-privacy-batch-mismatch", "sha256": "7e65f6b4d005fd1fcd17a7653c5e447b877cae8f965fb2ac29ec7fb04597d96c", "expectation": "invalid", "expected_error": "delivery.privacy.batch_binding"}
   ]
 }

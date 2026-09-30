@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Retrieval recording.
 
-Per spec 003, every decision captures the context the agent pulled in
+Every decision captures the context the agent pulled in
 — RAG chunks, KG queries, memory reads, tool outputs — as a
 ``Retrieval`` node connected to the ``Decision`` node. The SDK's job
 is local: attach a ``fabric.retrieval`` event to the decision span
@@ -30,7 +30,7 @@ from ._hashes import require_sha256_hex_values
 class RetrievalSource(StrEnum):
     """Where the context came from.
 
-    Mirrors the Decision Graph's ``Retrieval.source`` enum (spec 003)
+    Mirrors the retrieval source enum used downstream for reconstruction
     and the Telemetry Bridge's allowlist.
     """
 

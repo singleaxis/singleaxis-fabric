@@ -1,0 +1,17 @@
+{
+  "contract": "singleaxis.fabric.evidence",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "schema/evidence-event-v1.schema.json", "sha256": "2e248ad139c27f40c2c27d6deaddcfe7ba7d82e4d15557f24c75e1fabcacb10b", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-manifest-v1.schema.json", "sha256": "23835dfafd5dc629c682bd4510cdf144bba51820a117200adc190448ae6026f8", "expectation": "schema", "expected_error": null},
+    {"path": "schema/source-capability-v1.schema.json", "sha256": "618e28c592273751363b3b886bac432ab28a338fab88ca7a73a4cec270235b12", "expectation": "schema", "expected_error": null},
+    {"path": "valid/artifact-event.json", "sha256": "ccf840241fbf50791eae63560d74163a5d8b1a3b6ad41654fc8499785b52b79d", "expectation": "valid", "expected_error": null},
+    {"path": "valid/complete-run.json", "sha256": "5c79c99b92c9e7d67867165eff44a69fc9b700a7c59fa893b28008b187610d88", "expectation": "valid", "expected_error": null},
+    {"path": "valid/sandbox-capability.json", "sha256": "ea8abe3b48434c69132c37def96bd3b16562981dd2ed5eed08b5ac0dfd59d80c", "expectation": "valid", "expected_error": null},
+    {"path": "valid/start-event.json", "sha256": "799b1bdaec189dbfb976a41436b7000d4170754f8810c58c5a65d7e5bffa16d3", "expectation": "valid", "expected_error": null},
+    {"path": "valid/terminal-event.json", "sha256": "dd4ce9ca401ee7d72dbdffa7cf4c8fae16292a71e33ea06fd961e90032aa30cf", "expectation": "valid", "expected_error": null},
+    {"path": "invalid/event-cross-tenant-ref.json", "sha256": "dbfe91c28547293a12b6c27283c05f7c93578fc471067bf70765d7d0d2f65043", "expectation": "invalid", "expected_error": "evidence.event.ref"},
+    {"path": "invalid/event-raw-body.json", "sha256": "38ea9564624e2c65e497e0ca02776aa0093007951f0ea7c7135afb19eee8a212", "expectation": "invalid", "expected_error": "evidence.schema"}
+  ]
+}

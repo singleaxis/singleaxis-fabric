@@ -1,0 +1,18 @@
+{
+  "name": "nested-json",
+  "kind": "json",
+  "value": "{\"a\":1,\"b\":[2,{\"a\":true,\"z\":1}],\"é\":\"café\"}",
+  "byte_length": 45,
+  "sha256": "sha256:b49ee6ea46c6c5b135122003bd1429a2614c4225f6c5490503a317705dad83d2",
+  "input": {
+    "b": [
+      2,
+      {
+        "z": 1,
+        "a": true
+      }
+    ],
+    "a": 1,
+    "é": "café"
+  }
+}

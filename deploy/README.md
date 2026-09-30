@@ -1,43 +1,39 @@
 # deploy/
 
-Reference Infrastructure-as-Code for the non-Kubernetes
-prerequisites Fabric requires (Vault, KMS, networking, workload
-identity).
+Deployment material for Fabric OSS, the customer-controlled recording data
+plane:
 
-These are **reference** modules — tenants using their own IaC
-patterns are welcome to replicate the equivalent. Fabric does not
-require these modules; it requires the outcomes they produce.
+```text
+CAPTURE -> PROTECT -> DELIVER
+```
+
+## What exists today
+
+### `compose/` — Docker Compose paths (no Kubernetes)
+
+- **Evaluation harness** (`compose/docker-compose.yml`): `fabric-node` plus a
+  controlled fsync test sink. `make up` / `make qualify` prove protected
+  capture, durable local queueing, and at-least-once delivery through a
+  destination outage and a recorder restart. Plaintext and unauthenticated —
+  local evaluation only.
+- **Client-VM technical overlay** (`compose/docker-compose.production.yml`,
+  config `compose/collector-config/collector-production.yaml`): the same recorder
+  image deployed on a single Linux VM with bearer-token-authenticated OTLP
+  ingress (receiver TLS is configurable, not automatically required), a durable
+  file-backed exporter queue, and authenticated HTTPS egress to a
+  customer-selected OTLP backend. This example is **not** a production
+  approval: plaintext ingress must not cross a trust boundary, and actual
+  source binding, storage controls, independent receipts, and the declared
+  capture scope still require qualification. See
+  `compose/README.md` ("Client VM deployment") for the quick start and
+  `../docs/operations/dr.md` for queue sizing, backup, and alerting.
+
+## What does not exist here yet
+
+Kubernetes deployment uses the Helm chart under `charts/fabric` (see the
+`shadow-production` values profile). There is no Terraform/Crossplane
+module set in this tree today.
 
 ## Authoritative spec
 
-[`../specs/008-deployment-model.md`](../specs/008-deployment-model.md)
-
-## Status
-
-Pre-alpha — scaffold only.
-
-## Planned layout
-
-```
-deploy/
-├── terraform/
-│   ├── aws/
-│   │   └── eks-fabric-prerequisites/
-│   ├── gcp/
-│   │   └── gke-fabric-prerequisites/
-│   └── azure/
-│       └── aks-fabric-prerequisites/
-└── crossplane/
-    └── compositions/
-```
-
-## What the modules provide
-
-- VPC endpoints / PrivateLink for LLM, object storage, secret
-  manager (so egress does not traverse public internet)
-- KMS key and IAM/workload-identity bindings for the `fabric-
-  system` service accounts
-- Either a Vault cluster deployment or Secret Manager + Workload
-  Identity configuration
-- Object storage bucket for backups, dry-run sink, content store
-- Network ACLs permitting egress only to `ingest-<region>.singleaxis.com`
+[`../specs/027-recorder-v1.md`](../specs/027-recorder-v1.md)

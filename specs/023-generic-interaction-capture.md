@@ -28,7 +28,7 @@ signatures. Everything here is **cross-cutting and surface-agnostic**:
   usable on *any* interaction, supplied as data/parameters — never hardcoded to
   one surface or one taxonomy.
 
-Invariant (unchanged from spec 002 / 022): **metadata + hashes on the span,
+Invariant (unchanged from spec 022): **metadata + hashes on the span,
 never raw data.** All additions are **additive** — the 31 + 5 conformance
 goldens must stay byte-identical; add new goldens for new behavior.
 

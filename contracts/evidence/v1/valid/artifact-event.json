@@ -1,0 +1,19 @@
+{
+  "schema_version": "agent.evidence.event/v1",
+  "event_name": "agent.evidence.artifact",
+  "record_id": "evt-1",
+  "tenant_id": "tenant-a",
+  "run_id": "run-1",
+  "source_id": "sandbox-1",
+  "source_epoch": 0,
+  "source_sequence": 1,
+  "operation_id": "op-1",
+  "boundary": "sandbox",
+  "provenance": "native",
+  "role": "artifact.after",
+  "status": "stored",
+  "content_object_id": "obj-1",
+  "content_ref": "file:///tenant-a/obj-1",
+  "content_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+  "observed_at": "2026-09-26T00:00:01Z"
+}

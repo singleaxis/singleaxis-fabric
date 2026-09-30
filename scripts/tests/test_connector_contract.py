@@ -40,8 +40,9 @@ def _document(relative: str) -> dict[str, Any]:
 
 def test_repository_contract_and_all_pinned_fixtures_validate() -> None:
     validated = validate_contract(CONTRACT_ROOT)
-    assert len(validated) == 11
+    assert len(validated) == 13
     assert "manifests/python-sdk.json" in validated
+    assert "manifests/python-byte-boundary.json" in validated
     assert "fixtures/invalid/ebpf-decision-overclaim.json" in validated
 
 
@@ -54,10 +55,23 @@ def test_released_manifest_set_is_explicit() -> None:
     }
     assert released == {
         "manifests/python-sdk.json",
+        "manifests/python-byte-boundary.json",
         "manifests/typescript-capture-sdk.json",
         "manifests/collector-otlp-receiver.json",
-        "manifests/ebpf-discovery-only.json",
+        "manifests/auditd-host-connector.json",
+        "manifests/ebpf-host-emitter.json",
     }
+
+
+def test_byte_boundary_manifest_does_not_claim_automatic_or_authenticated_capture() -> (
+    None
+):
+    document = _document("manifests/python-byte-boundary.json")
+    assert document["release"]["maturity"] == "experimental"
+    assert document["identity"]["strength"] == "asserted"
+    assert document["content"]["default_raw_capture"] is False
+    assert document["control"]["agent_runtime_actions"] == []
+    assert "bypasses" in document["observation"]["coverage_basis"]
 
 
 def test_shipped_connector_claims_follow_recorder_release_identity() -> None:
@@ -173,9 +187,15 @@ def test_nonillustrative_evidence_paths_exist_in_repository() -> None:
             )
 
 
-def test_ebpf_manifest_is_discovery_only_and_not_shipped() -> None:
-    document = _document("manifests/ebpf-discovery-only.json")
-    assert document["release"]["maturity"] == "illustrative"
+def test_ebpf_emitter_manifest_is_passive_and_honest() -> None:
+    document = _document("manifests/ebpf-host-emitter.json")
+    # Shipped beta — but the contract must stay passive: no decision semantics,
+    # no runtime actions, hash-only content, and no claimed causal correlation.
+    assert document["release"]["maturity"] == "beta"
     assert document["observation"]["decision_semantics"] == "none"
+    assert document["control"]["interposition"] == "passive_probe"
     assert document["control"]["agent_runtime_actions"] == []
-    assert document["data_egress"]["network_egress"] is False
+    assert document["content"]["raw_content_behavior"] == "hash_only"
+    assert document["content"]["default_raw_capture"] is False
+    assert document["identity"]["strength"] == "inferred"
+    assert document["context_propagation"]["w3c_tracecontext"]["inject"] is False

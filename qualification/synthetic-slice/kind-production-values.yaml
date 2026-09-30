@@ -1,0 +1,34 @@
+# Disposable kind qualification ONLY. This is layered over shadow-production.
+# The controlled sink acknowledges only after fsync. kind does not qualify
+# encrypted customer storage or NetworkPolicy enforcement by a production CNI.
+namespace:
+  create: false
+
+otel-collector:
+  replicaCount: 1
+  image:
+    repository: fabric-otelcol
+    tag: e2e-production
+    pullPolicy: Never
+  exporter:
+    endpoint: https://fabric-test-sink:8443
+    tls:
+      caSecret:
+        name: fabric-test-sink-ca
+        key: ca.crt
+    sendingQueue:
+      persistence:
+        size: 1Gi
+  networkPolicy:
+    ingressFrom:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: otel-collector
+    exporterEgress:
+      to:
+        - podSelector:
+            matchLabels:
+              app: fabric-test-sink
+      ports:
+        - protocol: TCP
+          port: 8443

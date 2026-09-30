@@ -1,3 +1,12 @@
-# Synthetic credential-shaped rejection fixture. The current source splits the
-# prefix from the body, but this exact false positive remains in public history.
+# Exact historical test/example findings only. See docs/security-history-triage.md.
+# Full-history scanning and default detectors remain enabled. A new commit,
+# path, rule or line is not ignored by these fingerprints.
 6e2d51504293d3643f0bee79584026d382a05695:tools/fabricctl/internal/initializer/initializer_test.go:github-pat:325
+b52a3b1fdb51dd5172a8de92111580f5213be19f:charts/fabric/tests/fixtures/v0.6-supported-values.yaml:generic-api-key:30
+250b40f60a90ccbebf57b4c3dfd3b7f4484d1e07:charts/fabric/charts/otel-collector/tests/test-traces-pipeline.sh:generic-api-key:23
+7e0806c0c62be25064721c2aa616be88ae6d9f7a:.github/workflows/ci.yml:generic-api-key:308
+7e0806c0c62be25064721c2aa616be88ae6d9f7a:.github/workflows/ci.yml:generic-api-key:321
+519d518d280a12067ee0bea645e44ce5ec5a7a9e:.github/workflows/e2e.yml:generic-api-key:109
+0f4f02f82e49f88d0fc165953dff692a99090e14:components/otel-collector-fabric/processor/fabricsamplerprocessor/processor_test.go:generic-api-key:20
+0f4f02f82e49f88d0fc165953dff692a99090e14:deploy/compose/.env.example:generic-api-key:12
+4bf4df9665aaa107ff9c0fd0ac2ebadbf9acac5a:components/otel-collector-fabric/gate/evidence_binding_test.go:generic-api-key:12

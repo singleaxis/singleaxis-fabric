@@ -10,6 +10,7 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 )
 
 type spanFixture struct {
@@ -185,54 +186,6 @@ func TestProcessTraces_UnknownNativeNamesBecomeFixedActivityCategory(t *testing.
 	}
 }
 
-func TestProcessTraces_PreservesSDKReconstructionEvents(t *testing.T) {
-	g := newTestGuard(t, nil)
-	td := makeTraces(spanFixture{name: "fabric.decision", attrs: map[string]any{
-		"fabric.checkpoint_count": 1,
-		"fabric.skill_count":      1,
-		"fabric.hook_count":       1,
-	}})
-	span := firstSpan(td)
-	fixtures := []struct {
-		name     string
-		key      string
-		value    any
-		expected string
-	}{
-		{"patient checkpoint", "fabric.checkpoint.checkpoint_id", "cp-1", "fabric.checkpoint"},
-		{"replay raw name", "fabric.replay.metadata_version", "1", "fabric.replay"},
-		{"MCP inventory raw name", "fabric.mcp.tool_count", 3, "fabric.mcp.inventory"},
-		{"skill raw name", "fabric.skill.name", "clinical-note", "fabric.skill"},
-		{"hook raw name", "fabric.hook.name", "before-tool", "fabric.hook"},
-		{"coverage raw name", "fabric.coverage.kind", "browser.navigate", "fabric.coverage"},
-	}
-	for _, fixture := range fixtures {
-		event := span.Events().AppendEmpty()
-		event.SetName(fixture.name)
-		putAttrs(event.Attributes(), map[string]any{fixture.key: fixture.value})
-	}
-
-	out, err := g.processTraces(context.Background(), td)
-	if err != nil {
-		t.Fatalf("processTraces: %v", err)
-	}
-	span = firstSpan(out)
-	for index, fixture := range fixtures {
-		event := span.Events().At(index)
-		if event.Name() != fixture.expected {
-			t.Errorf("event %d name = %q, want %q", index, event.Name(), fixture.expected)
-		}
-		if _, ok := event.Attributes().Get(fixture.key); !ok {
-			t.Errorf("SDK reconstruction attribute %q was removed", fixture.key)
-		}
-	}
-	for _, key := range []string{"fabric.checkpoint_count", "fabric.skill_count", "fabric.hook_count"} {
-		if _, ok := span.Attributes().Get(key); !ok {
-			t.Errorf("SDK reconstruction counter %q was removed", key)
-		}
-	}
-}
-
 func TestProcessTraces_ExtraFieldsAreExactAndCannotOverrideSensitiveDenial(t *testing.T) {
 	cfg := createDefaultConfig()
 	cfg.ExtraAllowedTraceFields = []string{"customer.region", "customer.prompt"}
@@ -295,30 +248,6 @@ func TestProcessTraces_PreservesMetadataEmptySpanForCausalTopology(t *testing.T)
 	}
 }
 
-func TestProcessTraces_PreservesDecisionAndRetrievalCausalCategories(t *testing.T) {
-	g := newTestGuard(t, nil)
-	td := makeTraces(spanFixture{name: "fabric.decision", attrs: map[string]any{
-		"fabric.decision_id":  "decision-1",
-		"fabric.execution_id": "execution-1",
-	}})
-	spans := td.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	retrieval := spans.AppendEmpty()
-	retrieval.SetName("retrieval patient context")
-	retrieval.Attributes().PutStr("gen_ai.operation.name", "retrieval")
-
-	out, err := g.processTraces(context.Background(), td)
-	if err != nil {
-		t.Fatalf("processTraces: %v", err)
-	}
-	spans = out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	if got := spans.At(0).Name(); got != "fabric.decision" {
-		t.Fatalf("decision carrying execution correlation became %q", got)
-	}
-	if got := spans.At(1).Name(); got != "fabric.retrieval" {
-		t.Fatalf("semantic retrieval became %q", got)
-	}
-}
-
 func TestProcessTraces_RejectsRawContentMasqueradingAsHash(t *testing.T) {
 	g := newTestGuard(t, nil)
 	td := makeTraces(spanFixture{name: "fabric.tool_call", attrs: map[string]any{
@@ -340,14 +269,148 @@ func TestProcessTraces_RejectsRawContentMasqueradingAsHash(t *testing.T) {
 	}
 }
 
-func TestSpanKeyAllowedUsesExactFields(t *testing.T) {
+func TestProcessTraces_ClearsResourceEntityRefs(t *testing.T) {
 	g := newTestGuard(t, nil)
-	for key, want := range map[string]bool{
-		"fabric.tenant_id": true, "gen_ai.request.model": true, "service.name": true,
-		"fabric.prompt": false, "fabric.arbitrary": false, "http.request.headers": false,
+	td := makeTraces(spanFixture{name: "fabric.decision", attrs: map[string]any{
+		"fabric.decision_id": "d-1",
+	}})
+	res := td.ResourceSpans().At(0).Resource()
+	refs := entity.ResourceEntityRefs(res)
+	ref := refs.AppendEmpty()
+	ref.IdKeys().FromRaw([]string{"service.name"})
+	ref.DescriptionKeys().FromRaw([]string{"host.name"})
+	if refs.Len() != 1 {
+		t.Fatalf("fixture setup: expected 1 entity ref, got %d", refs.Len())
+	}
+
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	if got := entity.ResourceEntityRefs(out.ResourceSpans().At(0).Resource()).Len(); got != 0 {
+		t.Errorf("entity_refs survived processing: %d refs remain", got)
+	}
+}
+
+func TestActivityCategoryVocabularyCoversEmittedNames(t *testing.T) {
+	// Every event name the recorder SDKs emit must be preserved by the
+	// fixed-vocabulary switch — regression coverage for the emitted set.
+	emitted := []string{
+		"fabric.decision", "fabric.execution", "fabric.llm_call", "fabric.model_call",
+		"fabric.tool_call", "fabric.retrieval", "fabric.memory", "fabric.side_effect",
+		"fabric.interaction", "fabric.file_access", "fabric.delegation",
+		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory",
+		"fabric.skill", "fabric.hook", "fabric.coverage",
+		"fabric.crewai.step", "fabric.crewai.task",
+		"fabric.error", "fabric.retry", "fabric.cancellation",
+		"fabric.deployment_change", "fabric.human_action",
+	}
+	empty := pcommon.NewMap()
+	for _, name := range emitted {
+		if got := activityCategory(name, empty); got != name {
+			t.Errorf("emitted event name %q normalized to %q — fidelity lost", name, got)
+		}
+	}
+}
+
+func TestProcessTraces_AggregateBoundsCapAttributesEventsLinksAndSlices(t *testing.T) {
+	cfg := createDefaultConfig()
+	cfg.MaxAttributes = 4
+	cfg.MaxEventsPerSpan = 2
+	cfg.MaxLinksPerSpan = 1
+	cfg.MaxSliceElements = 2
+	g := newTestGuard(t, cfg)
+
+	td := ptrace.NewTraces()
+	span := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetName("fabric.llm_call")
+	// Put the oversized slice first so its removal exercises the slice bound,
+	// not the later per-container attribute cap.
+	big := span.Attributes().PutEmptySlice("fabric.interaction_kinds")
+	for i := 0; i < 5; i++ {
+		big.AppendEmpty().SetStr("kind")
+	}
+	// Six other allowlisted attributes; only the cap should survive.
+	for _, key := range []string{
+		"gen_ai.request.model", "gen_ai.system", "fabric.decision_id",
+		"service.name", "fabric.execution_id", "fabric.tenant_id",
 	} {
-		if got := g.spanKeyAllowed(key); got != want {
-			t.Errorf("spanKeyAllowed(%q) = %v, want %v", key, got, want)
+		span.Attributes().PutStr(key, "v")
+	}
+	// Three events, one link extra, one oversized slice.
+	for i := 0; i < 3; i++ {
+		event := span.Events().AppendEmpty()
+		event.SetName("fabric.decision")
+	}
+	for i := 0; i < 2; i++ {
+		span.Links().AppendEmpty()
+	}
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	got := firstSpan(out)
+	if got.Attributes().Len() > cfg.MaxAttributes {
+		t.Errorf("attributes not capped: %d > %d", got.Attributes().Len(), cfg.MaxAttributes)
+	}
+	if got.Events().Len() != cfg.MaxEventsPerSpan {
+		t.Errorf("events not capped: %d != %d", got.Events().Len(), cfg.MaxEventsPerSpan)
+	}
+	if got.Links().Len() != cfg.MaxLinksPerSpan {
+		t.Errorf("links not capped: %d != %d", got.Links().Len(), cfg.MaxLinksPerSpan)
+	}
+	if _, ok := got.Attributes().Get("fabric.interaction_kinds"); ok {
+		t.Error("oversized slice should have been removed entirely")
+	}
+	if g.stats.aggregateCapped.Load() == 0 {
+		t.Error("aggregateCapped counter did not record any removals")
+	}
+}
+
+func TestProcessTraces_LogClassSafeFieldIsNotTraceAllowlisted(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{
+		name: "fabric.llm_call",
+		attrs: map[string]any{
+			"fabric.tenant_id": "tenant-a",
+			"input_tokens":     int64(42),
+		},
+	})
+
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("processTraces: %v", err)
+	}
+	attrs := firstSpan(out).Attributes()
+	if _, ok := attrs.Get("input_tokens"); ok {
+		t.Error("log-class input_tokens must not become allowlisted on spans")
+	}
+	if _, ok := attrs.Get("fabric.tenant_id"); !ok {
+		t.Error("trace allowlisted metadata was unexpectedly removed")
+	}
+}
+
+func TestSensitiveAttributeKey_GenericContentNamesDenied(t *testing.T) {
+	// Operator-supplied extra keys must not reopen content channels through
+	// generic names; built-in metadata fields stay exempt.
+	for _, key := range []string{
+		"customer.content", "app.text", "vendor.data", "llm.input",
+		"llm.output", "request.context", "file.blob",
+	} {
+		if !sensitiveAttributeKey(key) {
+			t.Errorf("generic content-bearing key %q should be denied for extensions", key)
+		}
+	}
+	for _, key := range []string{
+		// Built-in metadata whose names match a content marker but are
+		// counts, refs or hashes — exempt by membership, not by shape.
+		"gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens",
+		"fabric.content.ref", "fabric.hook.input_hash",
+		"fabric.input_length", "fabric.output_length",
+		"input_length", "output_length", "input_tokens", "output_tokens",
+	} {
+		if sensitiveAttributeKey(key) {
+			t.Errorf("built-in metadata field %q incorrectly denied", key)
 		}
 	}
 }

@@ -26,9 +26,7 @@ var (
 	ErrSymlinkTarget               = errors.New("initializer target is a symbolic link")
 	ErrInteractiveTerminalRequired = errors.New("interactive terminal required; piped input is not supported by fabricctl init")
 
-	namePattern      = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$`)
-	referencePattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,251}[A-Za-z0-9])?$`)
-	digestPattern    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
 type Generator struct {
@@ -161,7 +159,7 @@ func (w *wizard) collect() (recorder.Resource, error) {
 	fmt.Fprintln(w.output, "This offline wizard asks only for identifiers, references, and a configuration digest; never secret values.")
 	fmt.Fprintln(w.output)
 
-	name, err := w.required("Recorder name (lowercase DNS-style)", func(value string) bool { return namePattern.MatchString(value) })
+	name, err := w.required("Recorder name (lowercase DNS-style)", recorder.ValidName)
 	if err != nil {
 		return recorder.Resource{}, err
 	}
@@ -225,9 +223,7 @@ func (w *wizard) collect() (recorder.Resource, error) {
 
 func (w *wizard) reference(label string) (string, error) {
 	fmt.Fprintln(w.output, "Provide a non-secret identifier or configuration reference only; do not paste a URL, credential, or sensitive value.")
-	return w.required(label, func(value string) bool {
-		return referencePattern.MatchString(value) && !strings.Contains(value, "://")
-	})
+	return w.required(label, recorder.ValidReference)
 }
 
 func (w *wizard) required(label string, validate func(string) bool) (string, error) {

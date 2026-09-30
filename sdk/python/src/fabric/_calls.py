@@ -25,13 +25,15 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from enum import StrEnum
 from types import TracebackType
 from typing import TYPE_CHECKING, Self
 
-from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind, Status, StatusCode
+
+from ._attributes import check_attribute_key
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Histogram, Meter
@@ -298,6 +300,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         input_messages: object | None = None,
         tool_definitions: object | None = None,
         capture_content: bool = False,
+        governed_capture: Callable[..., str | None] | None = None,
         step_id: str | None = None,
         step_type: str | None = None,
         step_attempt_id: str | None = None,
@@ -313,6 +316,8 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             raise ValueError("LLMCall: operation_name is required")
         if prompt_version is not None and prompt_name is None:
             raise ValueError("LLMCall: prompt_version requires prompt_name")
+        if capture_content and governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         _validate_step_metadata(
             step_id=step_id,
             step_type=step_type,
@@ -344,6 +349,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._input_messages = input_messages
         self._tool_definitions = tool_definitions
         self._capture_content = capture_content
+        self._governed_capture = governed_capture
         self._step_id = step_id
         self._step_type = step_type
         self._step_attempt_id = step_attempt_id
@@ -462,7 +468,85 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 self._span.set_attribute(
                     GEN_AI_TOOL_DEFINITIONS, _json_value(self._tool_definitions)
                 )
+        self._capture_request_content()
         return self
+
+    def _span_id(self) -> str | None:
+        if self._span is None:
+            return None
+        span_id = self._span.get_span_context().span_id
+        # An all-zero id is INVALID_SPAN_ID (no provider configured) —
+        # absent, not a real binding.
+        if span_id == 0:
+            return None
+        return f"{span_id:016x}"
+
+    def _governed_llm_bindings(self) -> dict[str, object]:
+        bindings: dict[str, object] = {"step_type": _DEFAULT_LLM_STEP_TYPE}
+        for key, value in (
+            ("span_id", self._span_id()),
+            ("step_id", self._step_id),
+            ("step_attempt", self._step_attempt),
+            ("step_attempt_id", self._step_attempt_id),
+        ):
+            if value is not None:
+                bindings[key] = value
+        return bindings
+
+    def _capture_request_content(self) -> None:
+        """Governed capture of the effective model request (spec 028).
+
+        Writes caller-supplied instructions/messages/tool definitions and
+        scalar parameters to the configured store via the async writer and
+        stamps ``fabric.content.request_ref`` — never raw bytes. Hidden
+        provider-side context is not captured and not claimed.
+        """
+        capture = self._governed_capture
+        if capture is None:
+            return
+        bindings = self._governed_llm_bindings()
+        request_ref = None
+        if self._system_instructions is not None:
+            capture(
+                "model.request.instructions",
+                self._system_instructions,
+                bindings=bindings,
+            )
+        if self._input_messages is not None:
+            request_ref = capture(
+                "model.request.messages",
+                self._input_messages,
+                media_type="application/json",
+                bindings=bindings,
+            )
+        if self._tool_definitions is not None:
+            capture(
+                "model.request.tool_definitions",
+                self._tool_definitions,
+                media_type="application/json",
+                bindings=bindings,
+            )
+        parameters = {
+            key: value
+            for key, value in (
+                ("temperature", self._temperature),
+                ("top_p", self._top_p),
+                ("top_k", self._top_k),
+                ("max_tokens", self._max_tokens),
+                ("stream", self._stream),
+                ("output_type", self._output_type),
+            )
+            if value is not None
+        }
+        if parameters:
+            capture(
+                "model.request.parameters",
+                parameters,
+                media_type="application/json",
+                bindings=bindings,
+            )
+        if request_ref is not None and self._span is not None:
+            self._span.set_attribute("fabric.content.request_ref", request_ref)
 
     def __exit__(
         self,
@@ -482,6 +566,19 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             metric_attrs[GEN_AI_RESPONSE_MODEL] = self._response_model
         if exc is not None:
             metric_attrs[ERROR_TYPE] = type(exc).__name__
+            # ``error.type`` span attribute per the GenAI error
+            # convention — stamped for every failure exit.
+            span = self._span
+            if span is not None:
+                span.set_attribute(ERROR_TYPE, type(exc).__name__)
+                # OTel's context manager only records ``Exception``
+                # subclasses: a ``BaseException`` (asyncio.CancelledError,
+                # KeyboardInterrupt, GeneratorExit) would otherwise end the
+                # span UNSET with no exception event — a silent gap for
+                # cancellations. Record + mark ERROR ourselves.
+                if not isinstance(exc, Exception):
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
         if elapsed is not None and self._duration_histogram is not None:
             self._duration_histogram.record(elapsed, attributes=metric_attrs)
         if self._token_histogram is not None:
@@ -615,9 +712,44 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             self.span.set_attribute(GEN_AI_RESPONSE_FINISH_REASONS, reasons)
             self.span.set_attribute(FABRIC_LLM_RESPONSE_FINISH_REASONS, reasons)
         if output_messages is not None:
-            if not self._capture_content:
+            if self._governed_capture is not None:
+                bindings = self._governed_llm_bindings()
+                ref = self._governed_capture(
+                    "model.output.messages",
+                    output_messages,
+                    media_type="application/json",
+                    bindings=bindings,
+                )
+                if ref is not None:
+                    self.span.set_attribute("fabric.content.result_ref", ref)
+            elif not self._capture_content:
                 raise ValueError("output_messages requires capture_content=True on llm_call")
-            self.span.set_attribute(GEN_AI_OUTPUT_MESSAGES, _json_value(output_messages))
+            if self._capture_content:
+                self.span.set_attribute(GEN_AI_OUTPUT_MESSAGES, _json_value(output_messages))
+
+    def record_partial_output(self, content: object) -> None:
+        """Capture assembled-but-incomplete output from an interrupted stream.
+
+        Stores the assembled prefix as ``model.output.messages`` with
+        ``representation: assembled`` and a ``partial output`` status
+        reason (spec 028/029) — distinguishable from final output by
+        representation, not by role. The bytes are snapshotted at call
+        time.
+        """
+        if self._governed_capture is None:
+            raise ValueError("record_partial_output requires governed content capture")
+        bindings = self._governed_llm_bindings()
+        media = "text/plain" if isinstance(content, str) else "application/json"
+        ref = self._governed_capture(
+            "model.output.messages",
+            content,
+            media_type=media,
+            bindings=bindings,
+            status_reason="partial output",
+            representation="assembled",
+        )
+        if ref is not None:
+            self.span.set_attribute("fabric.content.result_ref", ref)
 
     def set_embedding_result(
         self,
@@ -755,7 +887,11 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         """Set a custom attribute on the LLM call span.
 
         Same scalar-type contract as :meth:`Decision.set_attribute`.
+        Keys under the reserved ``fabric.*`` / ``gen_ai.*`` namespaces
+        are rejected — they are SDK-owned (use the :attr:`span` escape
+        hatch for deliberate overrides).
         """
+        check_attribute_key(key)
         # bool first because isinstance(True, int) is True
         if not isinstance(value, (bool, str, int, float)):
             raise TypeError(
@@ -786,6 +922,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         description: str | None = None,
         agent_name: str | None = None,
         capture_content: bool = False,
+        governed_capture: Callable[..., str | None] | None = None,
         step_id: str | None = None,
         step_type: str | None = None,
         step_attempt_id: str | None = None,
@@ -796,6 +933,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
+        if capture_content and governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         _validate_step_metadata(
             step_id=step_id,
             step_type=step_type,
@@ -812,6 +951,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         self._description = description
         self._agent_name = agent_name
         self._capture_content = capture_content
+        self._governed_capture = governed_capture
         self._step_id = step_id
         self._step_type = step_type
         self._step_attempt_id = step_attempt_id
@@ -887,6 +1027,19 @@ class ToolCall(AbstractContextManager["ToolCall"]):
     ) -> bool | None:
         if self._cm is None:
             raise RuntimeError("ToolCall.__exit__ called before __enter__")
+        if exc is not None:
+            # ``error.type`` span attribute per the GenAI error
+            # convention — stamped for every failure exit.
+            span = self._span
+            if span is not None:
+                span.set_attribute(ERROR_TYPE, type(exc).__name__)
+                # OTel only records ``Exception`` subclasses; a
+                # ``BaseException`` (CancelledError / KeyboardInterrupt /
+                # GeneratorExit) would otherwise end UNSET with no
+                # exception event. Record + mark ERROR ourselves.
+                if not isinstance(exc, Exception):
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
         if self._duration_histogram is not None and self._started_at is not None:
             attrs: dict[str, str] = {
                 GEN_AI_TOOL_NAME: self._name,
@@ -940,17 +1093,46 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             raise ValueError("result count must be non-negative")
         self.span.set_attribute(FABRIC_TOOL_RESULT_COUNT, count)
 
+    def _governed_tool_bindings(self) -> dict[str, object]:
+        bindings: dict[str, object] = {"step_type": _DEFAULT_TOOL_STEP_TYPE}
+        if self._span is not None:
+            span_id = self._span.get_span_context().span_id
+            if span_id != 0:
+                bindings["span_id"] = f"{span_id:016x}"
+        if self._call_id is not None:
+            bindings["tool_call_id"] = self._call_id
+        if self._step_id is not None:
+            bindings["step_id"] = self._step_id
+        if self._step_attempt is not None:
+            bindings["step_attempt"] = self._step_attempt
+        if self._step_attempt_id is not None:
+            bindings["step_attempt_id"] = self._step_attempt_id
+        return bindings
+
     def set_arguments(self, payload: str, *, capture: bool | None = None) -> None:
         """Record a SHA-256 hash of the tool call's arguments.
 
         The tenant serializes their arguments (e.g. a dict) to a string
         and passes it here. The raw payload is hashed locally; only
         ``fabric.tool.arguments_hash`` lands on the span — raw args
-        never touch the trace stream.
+        never touch the trace stream. Under governed mode the serialized
+        payload is stored verbatim (``tool.call.arguments`` role) and the
+        span carries ``fabric.content.request_ref``.
         """
         if not isinstance(payload, str):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
+        if capture and self._governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
+        if self._governed_capture is not None:
+            ref = self._governed_capture(
+                "tool.call.arguments",
+                payload,
+                bindings=self._governed_tool_bindings(),
+                links={"tool_call_id": self._call_id} if self._call_id else None,
+            )
+            if ref is not None:
+                self.span.set_attribute("fabric.content.request_ref", ref)
         should_capture = self._capture_content if capture is None else capture
         if should_capture:
             self.span.set_attribute(GEN_AI_TOOL_CALL_ARGUMENTS, payload)
@@ -960,11 +1142,25 @@ class ToolCall(AbstractContextManager["ToolCall"]):
 
         Same privacy contract as :meth:`set_arguments` — the tenant
         serializes the result to a string; only the hash
-        (``fabric.tool.result_hash``) lands on the span.
+        (``fabric.tool.result_hash``) lands on the span. Under governed
+        mode the serialized payload is stored verbatim
+        (``tool.call.result`` role) and the span carries
+        ``fabric.content.result_ref``.
         """
         if not isinstance(payload, str):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
+        if capture and self._governed_capture is not None:
+            raise ValueError("raw span capture is incompatible with protected content capture")
         self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
+        if self._governed_capture is not None:
+            ref = self._governed_capture(
+                "tool.call.result",
+                payload,
+                bindings=self._governed_tool_bindings(),
+                links={"tool_call_id": self._call_id} if self._call_id else None,
+            )
+            if ref is not None:
+                self.span.set_attribute("fabric.content.result_ref", ref)
         should_capture = self._capture_content if capture is None else capture
         if should_capture:
             self.span.set_attribute(GEN_AI_TOOL_CALL_RESULT, payload)
@@ -1046,7 +1242,11 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         """Set a custom attribute on the tool call span.
 
         Same scalar-type contract as :meth:`Decision.set_attribute`.
+        Keys under the reserved ``fabric.*`` / ``gen_ai.*`` namespaces
+        are rejected — they are SDK-owned (use the :attr:`span` escape
+        hatch for deliberate overrides).
         """
+        check_attribute_key(key)
         if not isinstance(value, (bool, str, int, float)):
             raise TypeError(
                 f"set_attribute({key!r}, ...): value must be str/int/float/bool, "

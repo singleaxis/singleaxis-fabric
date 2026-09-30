@@ -5,6 +5,7 @@
   "artifacts": [
     {"path": "schema/export-privacy-assertion-v1.schema.json", "role": "privacy-assertion-schema", "sha256": "2dc48898259e382e3a5f413b7a9bf6fd7234ffc9816e19283d9d51e55afecea3", "expectation": "schema"},
     {"path": "valid/metadata-only-assertion.json", "role": "valid-metadata-only-assertion", "sha256": "283f59e38d31f725171bd93ad520cfd11d84652180646e7c05e747364894d45e", "expectation": "valid"},
-    {"path": "invalid/raw-content-claim.json", "role": "invalid-raw-content-claim", "sha256": "ca0bd8d5264041ed0410900187acfc7d7e51e752f92d680ab884939a2070f08f", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"}
+    {"path": "invalid/raw-content-claim.json", "role": "invalid-raw-content-claim", "sha256": "ca0bd8d5264041ed0410900187acfc7d7e51e752f92d680ab884939a2070f08f", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/prohibited-content-export-allowed.json", "role": "invalid-prohibited-content-export-allowed", "sha256": "2131376ea5fc7d26fe477ff2a0cc60a3286d92ab570091fa8523124a29400e99", "expectation": "invalid", "expected_error": "privacy.prohibited_content.export_allowed"}
   ]
 }

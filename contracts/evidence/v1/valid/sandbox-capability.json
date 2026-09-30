@@ -1,0 +1,29 @@
+{
+  "schema_version": "agent.evidence.source-capability/v1",
+  "connector_id": "sandbox-recorder",
+  "version": "0.1.0",
+  "artifact_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+  "boundaries": ["sandbox"],
+  "operation_classes": ["file"],
+  "roles": ["artifact.after"],
+  "observation_level": "content",
+  "provenance": ["native"],
+  "tenant_binding": "authenticated",
+  "trace_context": "propagated",
+  "sequence": true,
+  "loss_detection": "counter_and_heartbeat",
+  "spool_guarantee": "fsync_before_ack",
+  "sampling": "off",
+  "surfaces": [
+    {
+      "boundary": "sandbox",
+      "operation_class": "file",
+      "roles": ["artifact.after"],
+      "observation_level": "content",
+      "bypass_test_ids": ["sandbox-direct-file-write"]
+    }
+  ],
+  "bypasses": ["Uninstrumented remote mounts are outside this connector"],
+  "known_blind_spots": ["Provider-hidden state is not available to sandbox capture"],
+  "conformance_fixture_ids": ["binary-four-bytes"]
+}

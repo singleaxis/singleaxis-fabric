@@ -142,7 +142,14 @@ def validate_document(document: Mapping[str, Any], schema: Mapping[str, Any]) ->
                 "$.control",
                 "eBPF discovery must be passive and cannot claim agent or telemetry control",
             )
-        if content["raw_content_behavior"] != "network_metadata_only":
+        # eBPF must never claim raw application content. Hash-only evidence
+        # (e.g. command_args_sha256) and network/process metadata are equally
+        # content-excluding postures and are permitted.
+        if content["raw_content_behavior"] not in {
+            "network_metadata_only",
+            "hash_only",
+            "excluded",
+        }:
             raise ContractValidationError(
                 "connect.semantic.ebpf_content",
                 "$.content.raw_content_behavior",

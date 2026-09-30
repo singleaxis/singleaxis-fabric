@@ -1,0 +1,23 @@
+# Schema-valid but CLI-invalid: the published schema admits any
+# reference-shaped recorderId, while the release validator requires
+# spec.identity.recorderId to equal metadata.name.
+apiVersion: fabric.singleaxis.dev/v1alpha1
+kind: FabricRecorder
+metadata:
+  name: healthcare-shadow
+spec:
+  identity:
+    recorderId: billing-shadow
+    systemId: system/ambient-clinical-assistant
+    deploymentId: deployment/production-v1
+  input:
+    method: otlp
+  content:
+    mode: metadata
+  protect:
+    privacyPolicyRef: privacy/metadata-only-v1
+    configDigest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  destination:
+    ref: destination/customer-approved-monitoring
+  installation:
+    ref: installation/healthcare-shadow

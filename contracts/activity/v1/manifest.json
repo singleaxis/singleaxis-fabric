@@ -22,13 +22,7 @@
       "name": "content_ref_stamped",
       "fixture": "goldens/content_ref_stamped.json",
       "sha256": "dc1c2a1dafc1a3794a37a9c875a715f600b0ec135b4836580900fe5fd2f392a2",
-      "support": ["python", "typescript"]
-    },
-    {
-      "name": "decision_id_distinct",
-      "fixture": "goldens/decision_id_distinct.json",
-      "sha256": "b0fad07d60e274c6da230620f8f8cbf76db3d4065ab760d592b236a89fed0c9d",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "delegation",
@@ -40,13 +34,13 @@
       "name": "escalation",
       "fixture": "goldens/escalation.json",
       "sha256": "5dec10982d6dd5a840f78ea2a47d0b18ec23bd70360c5fa5460a3d0334bc1801",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "eval_record",
       "fixture": "goldens/eval_record.json",
       "sha256": "0ce2f5954a32404257b3e282890d8de63687f88942bf42b191ad0379bbb1fe62",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "execution",
@@ -64,13 +58,13 @@
       "name": "guardrail_block",
       "fixture": "goldens/guardrail_block.json",
       "sha256": "a9d649bb6dedb14d9f699cfc993862651d27db5bda1e87cde782b4a736950c06",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "guardrail_redaction",
       "fixture": "goldens/guardrail_redaction.json",
       "sha256": "9c507a6bbf68132569da69021ed9f81c9024ae32a276cecb57b8b23821ba993c",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "hook",
@@ -136,43 +130,43 @@
       "name": "policy_allow",
       "fixture": "goldens/policy_allow.json",
       "sha256": "fbbb4d2dde516251fd8be5d79073bfacb99d5e767e2feca7b9688bd70891f812",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "policy_deny",
       "fixture": "goldens/policy_deny.json",
       "sha256": "3f202806168a2ac0a2e02bdab28bf50c56b832b6ac3c0a761f02320a4aaf1068",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "policy_escalate",
       "fixture": "goldens/policy_escalate.json",
       "sha256": "22c05aa1b94640fc9605260bf8d72876fe73fabd4ee7a3d8b0e6fc30daedd359",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "policy_fail_closed",
       "fixture": "goldens/policy_fail_closed.json",
       "sha256": "9542001c8f09975b5146c931b617cb35804e15b32d675769b7b32e85d8fd1a43",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "policy_redact",
       "fixture": "goldens/policy_redact.json",
       "sha256": "9a2ff44893211e463b362707d6490508c62fbefbecc7bcb143ad0c4702d3ea48",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "policy_warn",
       "fixture": "goldens/policy_warn.json",
       "sha256": "ca404c9d62ac9a27041d85f6fb4bd88c15721c6495b3907eb43b90ba32faa62d",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "queue_judge",
       "fixture": "goldens/queue_judge.json",
       "sha256": "1addedc679a84d6731e13ebccb65c0d6845001d11ccd26643af4d4aa584d6b46",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "replay_metadata",
@@ -214,13 +208,13 @@
       "name": "tool_authorization_allow",
       "fixture": "goldens/tool_authorization_allow.json",
       "sha256": "19886948c998dde7a0b97e24fff1288b92fe5bc26c9cf3580fd5aec639fa9d03",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "tool_authorization_deny",
       "fixture": "goldens/tool_authorization_deny.json",
       "sha256": "5842a0537f70c70f005927829a57c1fa514e44c83d11290686c3841b61da6fe4",
-      "support": ["python", "typescript"]
+      "support": ["python-legacy", "typescript-legacy"]
     },
     {
       "name": "tool_call",

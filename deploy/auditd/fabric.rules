@@ -1,0 +1,32 @@
+# auditd rules for the Fabric host connector (spec 030).
+#
+# Load with: auditctl -R fabric.rules
+#   or place in /etc/audit/rules.d/fabric.rules and augenrules --load
+#
+# Every rule is tagged -k fabric so the receiver (rule_key: fabric) consumes
+# only these events and ignores unrelated audit volume on shared hosts.
+
+# Process lifecycle: every execve/execveat — catches ssh, curl | sh, scp,
+# uninstrumented tool spawns, and shell escapes.
+-a always,exit -F arch=b64 -S execve -S execveat -k fabric
+-a always,exit -F arch=b32 -S execve -S execveat -k fabric
+
+# Outbound network connections: connect, accept, bind — the "agent ssh'd into
+# another server" and exfiltration-relevant syscalls.
+-a always,exit -F arch=b64 -S connect -S accept -S bind -k fabric
+-a always,exit -F arch=b32 -S connect -S accept -S bind -k fabric
+
+# File access (HIGH VOLUME — enable only with scoping). Uncomment to capture
+# openat for a scoped path set instead of system-wide:
+# -a always,exit -F arch=b64 -S openat -F dir=/etc -k fabric
+# -a always,exit -F arch=b64 -S openat -F dir=/root -k fabric
+
+# Scoping to one agent workload (preferred on shared hosts):
+#   -F auid=<loginuid>  limits to a session identity
+#   -F exe=<path>       limits to one binary
+#   For container-scoped filtering use the eBPF emitter (spec 031) — auditd
+#   cannot filter by cgroup.
+#
+# Lock the ruleset so it cannot be cleared without reboot (last line, once
+# stable):
+# -e 2

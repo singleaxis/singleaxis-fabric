@@ -36,6 +36,9 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "otel-collector.serviceAccountName" . }}
+      # Never mount an API token, including when serviceAccount.create=false
+      # selects the namespace default ServiceAccount.
+      automountServiceAccountToken: false
       enableServiceLinks: {{ .Values.enableServiceLinks }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.imagePullSecrets }}
@@ -77,6 +80,11 @@ spec:
             {{- if .Values.receiver.tls.serverCertificateSecret.name }}
             - name: receiver-tls
               mountPath: /etc/fabric/receiver-tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+            - name: evidence-source-token
+              mountPath: /etc/fabric/evidence-source
               readOnly: true
             {{- end }}
             {{- if .Values.exporter.sendingQueue.persistence.enabled }}
@@ -122,6 +130,17 @@ spec:
                     - key: {{ .Values.receiver.tls.clientCASecret.key }}
                       path: client-ca.crt
               {{- end }}
+        {{- end }}
+        {{- if .Values.receiver.evidenceSourceBinding.enabled }}
+        - name: evidence-source-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Values.receiver.evidenceSourceBinding.tokenSecret.name | quote }}
+                  items:
+                    - key: {{ .Values.receiver.evidenceSourceBinding.tokenSecret.key | quote }}
+                      path: token
         {{- end }}
         {{- if and .Values.exporter.sendingQueue.persistence.enabled .Values.exporter.sendingQueue.persistence.existingClaim }}
         - name: queue-storage

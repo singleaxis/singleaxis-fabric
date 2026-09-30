@@ -1,0 +1,69 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "singleaxis.fabric.python-byte-boundary",
+  "display_name": "SingleAxis Python Byte Boundary Test Adapter",
+  "release": {"version": "0.8.0-rc.1", "maturity": "experimental", "distribution": "python-package"},
+  "implementation": {"kind": "framework_adapter", "deployment_modes": ["application"]},
+  "compatibility": {
+    "activity_contract": null,
+    "fabric_versions": ">=0.8.0-rc.1,<1.0.0",
+    "runtimes": ["CPython >=3.11 synchronous byte-oriented callers"],
+    "protocols": ["Python callable boundary"]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {"surface": "llm_operation", "source": "caller_reported"},
+      {"surface": "tool_operation", "source": "caller_reported"},
+      {"surface": "generic_interaction", "source": "caller_reported"}
+    ],
+    "decision_semantics": "none",
+    "coverage_basis": "Only explicit ByteBoundaryAdapter.call invocations with caller-supplied bytes and a synchronous delegate are observed. The adapter cannot authenticate provider-bound fidelity or discover bypasses."
+  },
+  "control": {
+    "interposition": "in_process",
+    "agent_runtime_actions": [],
+    "telemetry_pipeline_actions": []
+  },
+  "content": {
+    "raw_content_behavior": "configurable_raw",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "none",
+    "sensitive_field_allowlist": false
+  },
+  "identity": {
+    "source": "application_configuration",
+    "strength": "asserted",
+    "tenant_partitioning": "accepted_unverified"
+  },
+  "authentication": {
+    "ingress_supported": ["in_process_boundary"],
+    "ingress_default": "in_process_boundary",
+    "egress_supported": ["none"],
+    "egress_default": "none",
+    "credential_handling": "The adapter accepts no credential and inherits the application process identity; source and tenant IDs are untrusted assertions."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": false, "inject": false, "preserve": false},
+    "baggage": "unsupported",
+    "correlation_limitations": [
+      "The caller supplies operation and attempt IDs; the adapter does not propagate identity across processes.",
+      "Direct calls and lower transport transformations are outside the observed boundary."
+    ]
+  },
+  "data_egress": {
+    "network_egress": false,
+    "protocols": ["local content writer handoff"],
+    "transport_security": "not_applicable",
+    "destinations": "local_only",
+    "default_destination": null
+  },
+  "verification_evidence": [
+    {"type": "unit_test", "path": "sdk/python/tests/test_byte_boundary_adapter.py", "claim": "Checks exact bytes, retries, errors, recording faults, and direct-bypass downgrade."},
+    {"type": "integration_test", "path": "scripts/qualification/run_client_byte_adapter_smoke.py", "claim": "Exercises the installed wheel against independent in-process byte truth and a protected local store."}
+  ],
+  "known_blind_spots": [
+    "Streaming and async results are returned unchanged but unsupported for byte reconstruction.",
+    "No automatic framework discovery, terminal streams, file artifacts, remote side effects, or hidden provider state.",
+    "No authenticated source identity, timing non-interference qualification, or destination durable receipt."
+  ]
+}

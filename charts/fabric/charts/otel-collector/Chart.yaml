@@ -5,7 +5,7 @@ description: |
   activity, applies an export allowlist, buffers it, and delivers it over OTLP.
 type: application
 version: 0.4.0
-appVersion: "0.8.0-rc.2"
+appVersion: "0.8.0-rc.1"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - opentelemetry

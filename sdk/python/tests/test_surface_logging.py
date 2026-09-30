@@ -607,3 +607,106 @@ def test_all_touch_points_no_raw_data_leak(span_exporter: InMemorySpanExporter) 
     blob = _span_tree_blob(span_exporter)
     for secret in secrets:
         assert secret not in blob, f"raw data leaked onto span: {secret!r}"
+
+
+# --------------------------------------------------------------------------- #
+# 6. Empty-identifier validation (audit fix)
+# --------------------------------------------------------------------------- #
+
+
+def test_record_interaction_rejects_empty_identifiers(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as d:
+        with pytest.raises(ValueError, match="kind is required"):
+            d.record_interaction("", "t")
+        with pytest.raises(ValueError, match="target is required"):
+            d.record_interaction("http.request", "")
+    # No events, no counter drift on the span.
+    span = _decision_span(span_exporter)
+    assert "fabric.interaction_count" not in dict(span.attributes or {})
+    assert not [e for e in span.events if e.name == "fabric.interaction"]
+
+
+def test_record_skill_rejects_empty_identifiers(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as d:
+        with pytest.raises(ValueError, match="name is required"):
+            d.record_skill("", "1.0")
+        with pytest.raises(ValueError, match="version is required"):
+            d.record_skill("web-search", "")
+    span = _decision_span(span_exporter)
+    assert "fabric.skill_count" not in dict(span.attributes or {})
+
+
+def test_record_hook_rejects_empty_name(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as d,
+        pytest.raises(ValueError, match="name is required"),
+    ):
+        d.record_hook("", "pre_model")
+    span = _decision_span(span_exporter)
+    assert "fabric.hook_count" not in dict(span.attributes or {})
+
+
+def test_record_file_access_rejects_empty_path(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with (
+        client.decision(session_id="s", request_id="r") as d,
+        pytest.raises(ValueError, match="path is required"),
+    ):
+        d.record_file_access("", "read")
+    span = _decision_span(span_exporter)
+    assert "fabric.file_access_count" not in dict(span.attributes or {})
+
+
+def test_delegate_rejects_empty_identifiers(span_exporter: InMemorySpanExporter) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as d:
+        # delegate() is a context manager — validation runs on __enter__.
+        with pytest.raises(ValueError, match="to_agent is required"), d.delegate(""):
+            pass
+        with (
+            pytest.raises(ValueError, match="protocol is required"),
+            d.delegate("child", protocol=""),
+        ):
+            pass
+    span = _decision_span(span_exporter)
+    assert "fabric.delegation_count" not in dict(span.attributes or {})
+
+
+def test_delegate_counter_not_bumped_when_inject_fails(
+    span_exporter: InMemorySpanExporter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If propagation injection raises, the delegation counters must not
+    have moved — a failed delegation is not a delegation."""
+    import fabric.decision as decision_module  # noqa: PLC0415
+
+    def _boom(carrier: dict[str, str], ctx: object) -> None:
+        raise RuntimeError("carrier inject failed")
+
+    monkeypatch.setattr(decision_module, "inject", _boom)
+
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as d:
+        with (
+            pytest.raises(RuntimeError, match="carrier inject failed"),
+            d.delegate("child-agent"),
+        ):
+            pass
+        monkeypatch.undo()
+        # A subsequent, successful delegation is still counted as #1.
+        with d.delegate("child-agent") as sub:
+            assert sub.depth == 1
+
+    span = _decision_span(span_exporter)
+    assert dict(span.attributes or {})["fabric.delegation_count"] == 1
+    delegations = [e for e in span.events if e.name == "fabric.delegation"]
+    assert len(delegations) == 1

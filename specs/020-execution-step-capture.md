@@ -13,9 +13,8 @@ owner: project-lead
 > strict: the SDK emits canonical `fabric.execution` / `fabric.step.*`
 > spans and attributes; it never schedules, orchestrates, materializes
 > lineage, or reconstructs runs. Those belong to the commercial
-> operational-intelligence layer (Decision Graph, replay orchestration).
-> See [012](012-oss-commercialization-strategy.md) for the full
-> OSS↔commercial split.
+> operational-intelligence layer (Decision Graph, replay orchestration),
+> which is downstream of and not part of this repository.
 
 ## Summary
 
@@ -54,9 +53,8 @@ The OSS SDK **emits** the spans and attributes below. It explicitly does
   recorded outcome, not a control signal.
 - **materialize lineage or reconstruct** a run from the emitted spans —
   joining executions → decisions → steps into a graph, replaying, and
-  signing audit bundles is the commercial Decision Graph
-  ([003](003-decision-graph.md)) and replay orchestration
-  ([012](012-oss-commercialization-strategy.md)).
+  signing audit bundles is the commercial Decision Graph and replay
+  orchestration layer (downstream, not part of this repository).
 
 This keeps the emit/act boundary clean: OSS produces honest, canonical
 telemetry; the commercial layer turns it into operational intelligence.
@@ -234,7 +232,7 @@ build lineage. The OSS SDK only emits them.
 ## Conformance
 
 - A new `execution` scenario
-  ([scenarios.py](../sdk/python/tests/conformance/scenarios.py)) opens
+  (the SDK conformance harness) opens
   `fabric.execution(execution_id="execution-0001",
   workflow_id="workflow-0001")` with a bare decision inside, producing
   `goldens/execution.json`. The inner decision span carries the inherited

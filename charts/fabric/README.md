@@ -41,7 +41,13 @@ Fails closed at render time unless the recorder has:
 - no volatile batch processor before the persistent queue;
 - indefinite retry for transient destination failures;
 - no debug exporter and no sampler;
-- namespace deny-default and explicit Collector ingress/egress policy.
+- a ClusterIP-only Collector Service — NodePort/LoadBalancer is rejected;
+- a pinned Collector image (sha256 digest recommended; `latest` and empty
+  tags are rejected);
+- a non-root pod that cannot escalate privileges or mount an API token;
+- namespace deny-default and explicit Collector ingress/egress policy,
+  where every peer must be non-empty and non-world (`{}` and
+  `0.0.0.0/0`/`::/0` are rejected).
 
 The customer must create the referenced Secrets and identify the exact egress
 peer/port. Example render/install arguments:
@@ -76,6 +82,26 @@ namespace; do not broaden it to the whole cluster.
 Select a customer-approved encrypted StorageClass with
 `otel-collector.exporter.sendingQueue.persistence.storageClass`, or supply a
 customer-owned existing claim for a single replica.
+
+## Namespace and operations notes
+
+- Install into a **dedicated namespace**. `networkPolicy.denyDefault`
+  selects all pods in the release namespace; unrelated workloads placed
+  there lose pod-to-pod traffic. When `namespace.create=true`,
+  `namespace.name` must equal the release namespace passed to
+  `--namespace`, because all resources render into the release namespace.
+- `helm test` is dev-only: the bundled connection-test pod matches no
+  ingress peer under `shadow-production`. Run it under `shadow-dev`.
+- The health extension (default port 13133) is not opened by
+  NetworkPolicy. kubelet probes are node traffic and need no from-rule on
+  most CNIs; to allow an in-cluster monitoring stack, set
+  `otel-collector.networkPolicy.monitoringNamespaceSelector` to a
+  LabelSelector naming that namespace.
+- Pull secrets belong under `otel-collector.imagePullSecrets`. There is no
+  parent-level `imagePullSecrets` value; a top-level key would not reach
+  the Collector pod.
+- The bundled `otel-collector` dependency is vendored. Do not run
+  `helm dependency update` on this chart.
 
 ## Reliability semantics
 

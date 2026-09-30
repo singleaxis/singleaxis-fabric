@@ -4,10 +4,28 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import DEFAULT_PROFILE, Fabric, FabricConfig
+
+
+@pytest.mark.parametrize("first,second", [("client", "decision"), ("decision", "client")])
+def test_client_and_decision_import_in_either_order(first: str, second: str) -> None:
+    code = (
+        "import importlib; "
+        f"importlib.import_module('fabric.{first}'); "
+        f"importlib.import_module('fabric.{second}'); "
+        "from fabric import Fabric, FabricConfig; "
+        "from fabric.decision import Decision; "
+        "assert isinstance(Fabric(FabricConfig(tenant_id='t', agent_id='a')).decision("
+        "session_id='s', request_id='r'), Decision)"
+    )
+    # Fixed interpreter and allowlisted module names; no shell or external input.
+    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True)  # noqa: S603
 
 
 def test_from_env_with_all_fields() -> None:
@@ -15,17 +33,53 @@ def test_from_env_with_all_fields() -> None:
         env={
             "FABRIC_TENANT_ID": "acme",
             "FABRIC_AGENT_ID": "support-bot",
-            "FABRIC_PROFILE": "eu-ai-act-high-risk",
+            "FABRIC_PROFILE": "shadow-production",
+            "FABRIC_AGENT_NAME": "Support Bot",
+            "FABRIC_AGENT_VERSION": "1.4.2",
+            "FABRIC_WORKFLOW_ID": "complaint-resolution-v2",
+            "FABRIC_EXECUTION_ID": "run-2026-05-30-001",
         }
     )
     assert client.tenant_id == "acme"
     assert client.agent_id == "support-bot"
-    assert client.profile == "eu-ai-act-high-risk"
+    assert client.profile == "shadow-production"
+    assert client.config.agent_name == "Support Bot"
+    assert client.config.agent_version == "1.4.2"
+    assert client.config.workflow_id == "complaint-resolution-v2"
+    assert client.config.execution_id == "run-2026-05-30-001"
 
 
 def test_from_env_defaults_profile() -> None:
     client = Fabric.from_env(env={"FABRIC_TENANT_ID": "acme", "FABRIC_AGENT_ID": "support-bot"})
     assert client.profile == DEFAULT_PROFILE
+
+
+def test_from_env_optional_fields_default_none() -> None:
+    client = Fabric.from_env(env={"FABRIC_TENANT_ID": "acme", "FABRIC_AGENT_ID": "support-bot"})
+    assert client.config.agent_name is None
+    assert client.config.agent_version is None
+    assert client.config.workflow_id is None
+    assert client.config.execution_id is None
+
+
+def test_from_env_workflow_and_execution_propagate_to_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Env-supplied workflow/execution ids land on the decision span."""
+    client = Fabric.from_env(
+        env={
+            "FABRIC_TENANT_ID": "acme",
+            "FABRIC_AGENT_ID": "support-bot",
+            "FABRIC_WORKFLOW_ID": "env-wf",
+            "FABRIC_EXECUTION_ID": "env-exec",
+        }
+    )
+    with client.decision(session_id="s", request_id="r"):
+        pass
+    span = span_exporter.get_finished_spans()[0]
+    attrs = dict(span.attributes or {})
+    assert attrs["fabric.workflow_id"] == "env-wf"
+    assert attrs["fabric.execution_id"] == "env-exec"
 
 
 @pytest.mark.parametrize(

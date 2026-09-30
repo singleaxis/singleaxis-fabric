@@ -1,0 +1,84 @@
+{
+  "schema_version": "fabric.synthetic-scope/v1",
+  "scope_id": "synthetic-model-terminal-artifact-v1",
+  "revision": 1,
+  "approval_status": "unsigned-provisional",
+  "promotion_status": "NO_GO",
+  "tenant_id": "synthetic-tenant",
+  "run_id": "generated-per-run",
+  "runtime": {
+    "language": "python",
+    "declared_test_version": "3.11.x",
+    "locally_tested_version": "3.11.10",
+    "target_os": "linux",
+    "target_kernel": null,
+    "agent_build_digest": null,
+    "sdk_wheel_digest": null,
+    "node_image_digest": null,
+    "chart_digest": null,
+    "host_emitter_image_digest": null
+  },
+  "identities": {
+    "workload": "synthetic-fixture-process",
+    "source_ids": ["provider-http-1", "terminal-1", "artifact-1"],
+    "authenticated_ingress": false,
+    "identity_proof_ref": null
+  },
+  "boundaries": [
+    {"id": "provider-bound-loopback", "adapter": "controlled-http", "status": "source-checkout-locally-tested-not-route-complete"},
+    {"id": "terminal-no-shell", "adapter": "bounded-subprocess", "status": "source-checkout-locally-tested-not-passive-qualified"},
+    {"id": "artifact-temp-root", "adapter": "allowlisted-pre-post", "status": "source-checkout-locally-tested-not-passive-qualified"}
+  ],
+  "required_roles": [
+    "model.request.messages", "model.output.messages",
+    "terminal.argv", "terminal.stdin", "terminal.stdout", "terminal.stderr",
+    "interaction.payload", "artifact.after"
+  ],
+  "conditional_roles": ["artifact.before"],
+  "independent_truth": [
+    {"id": "controlled-provider-ledger", "status": "locally-tested-unauthenticated"},
+    {"id": "terminal-fixture-ledger", "status": "locally-tested-unauthenticated"},
+    {"id": "filesystem-pre-post-inventory", "status": "locally-tested-unauthenticated"}
+  ],
+  "excluded_routes": [
+    "hidden-provider-state", "pty", "unwrapped-subprocess", "unwrapped-http",
+    "ssh", "database", "browser-cloud", "background-jobs",
+    "sandbox-escape", "non-allowlisted-files"
+  ],
+  "exclusion_reachability_proof": "unverified",
+  "capacity": {
+    "basis": "provisional-not-measured",
+    "max_object_bytes": 1048576,
+    "max_queue_items": 64,
+    "max_descriptors": 4096,
+    "source_spool_max_bytes": 16777216,
+    "source_spool_queue_max_items": 64,
+    "stream_chunk_bytes": 4096,
+    "max_terminal_output_bytes": 8388608,
+    "max_stdin_bytes": 65536,
+    "subprocess_timeout_seconds": 60,
+    "receiver_outage_seconds": 60
+  },
+  "privacy": {
+    "data_class": "synthetic-non-sensitive-only",
+    "content_opt_in_roles": [
+      "model.request.messages", "model.output.messages",
+      "terminal.argv", "terminal.stdin", "terminal.stdout", "terminal.stderr",
+      "interaction.payload", "artifact.before", "artifact.after"
+    ],
+    "raw_content_otlp": false,
+    "store": "customer-controlled-tenant-bound",
+    "source_spool": "optional-owner-only-metadata-journal-target-encryption-unverified",
+    "retention_schedule": null,
+    "encryption_proof": null,
+    "residency": null
+  },
+  "approvers": {
+    "security": null,
+    "privacy": null,
+    "records": null,
+    "platform": null,
+    "ai_system": null,
+    "independent_reviewer": null
+  }
+}

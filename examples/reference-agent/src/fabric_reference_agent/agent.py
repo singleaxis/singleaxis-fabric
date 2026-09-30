@@ -1,39 +1,39 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Reference agent that exercises every SDK surface a Phase-1 tenant
-will touch:
+"""Reference agent that exercises the Fabric recorder-v1 capture surface.
 
-- Fabric client construction
-- Decision-scoped span lifecycle
-- Optional guardrails (skipped cleanly if no rails are wired)
-- Retrieval + memory recording
-- Side-effect recording
-- Judge-score-driven escalation
+One turn records everything a passive-recorder customer needs to see
+land downstream:
+
+- ``fabric.decision`` span with tenant / agent / session / request identity
+- ``fabric.retrieval`` event (RAG stand-in; query is hashed locally)
+- ``llm_call`` child span (OpenTelemetry GenAI semantic conventions)
+- ``tool_call`` child span (arguments and results are hashed locally)
+- ``fabric.memory`` write event
+- ``fabric.side_effect`` event (a committed notification)
+- ``fabric.checkpoint`` events bracketing the turn
 
 No real LLM is called — ``simulated_llm_call`` returns a canned
-response so the example runs anywhere without API keys. Real agents
-swap this function out for their model provider of choice; nothing
-else in this file changes.
+response so the example runs anywhere without API keys. Swap it for
+your provider's SDK; nothing else in this file changes.
+
+The SDK is passive: it records what the agent did and never blocks,
+alters, or delays it. Protection and delivery happen in the Fabric
+Node the spans are exported to — judges, guardrails, and policy
+engines are deliberately not part of this example.
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from fabric import (
-    EscalationSummary,
-    Fabric,
-    GuardrailNotConfiguredError,
-    MemoryKind,
-    RetrievalSource,
-)
+from fabric import Fabric, MemoryKind, RetrievalSource
 
-# Below this fast-tier judge score we ask for human review. Chosen to
-# match the default `sasf.instruction_following` `deep_flag` threshold
-# in the shipped rubrics so the reference agent and the judge workers
-# line up on what "low-confidence" means.
-ESCALATION_SCORE_THRESHOLD = 0.50
+
+def _sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -41,27 +41,8 @@ class AgentResult:
     """What a single reference-agent turn returns to its host."""
 
     response: str
-    escalated: bool
-    blocked: bool
     trace_id: str
-
-
-class SimulatedJudge:
-    """Deterministic stand-in for the async judge tier.
-
-    Real deployments call the judge-workers service over NATS; this
-    class returns a caller-supplied score so the reference agent is
-    testable without any broker running.
-    """
-
-    def __init__(self, score: float = 0.95) -> None:
-        if not 0.0 <= score <= 1.0:
-            raise ValueError("score must be in [0.0, 1.0]")
-        self._score = score
-
-    def score_instruction_following(self, prompt: str, response: str) -> float:
-        _ = prompt, response  # signature parity with real judge
-        return self._score
+    event_counts: dict[str, int] = field(default_factory=dict)
 
 
 def simulated_llm_call(prompt: str) -> str:
@@ -74,17 +55,15 @@ def simulated_llm_call(prompt: str) -> str:
 
 
 class ReferenceAgent:
-    """Minimal orchestrator that drives one turn end-to-end."""
+    """Minimal orchestrator that drives one agentic turn end-to-end."""
 
     def __init__(
         self,
         fabric: Fabric,
         *,
-        judge: SimulatedJudge | None = None,
         llm_call: Callable[[str], str] = simulated_llm_call,
     ) -> None:
         self._fabric = fabric
-        self._judge = judge or SimulatedJudge()
         self._llm_call = llm_call
 
     def run(
@@ -100,57 +79,53 @@ class ReferenceAgent:
         The happy path is:
 
         1. Open a Decision (span starts).
-        2. Guard input — skipped if no rails are configured.
-        3. Record a retrieval event (stand-in for RAG lookup).
-        4. Call the LLM.
-        5. Guard output — skipped if no rails are configured.
-        6. Record a memory write.
-        7. Score via the async judge stand-in; escalate if below
-           threshold.
+        2. Checkpoint the intake.
+        3. Record a retrieval event (stand-in for a RAG lookup).
+        4. Call the LLM inside an ``llm_call`` child span.
+        5. Call a tool inside a ``tool_call`` child span.
+        6. Record a memory write and a committed side effect.
+        7. Checkpoint the completed turn.
         """
         with self._fabric.decision(
             session_id=session_id,
             request_id=request_id,
             user_id=user_id,
         ) as decision:
-            safe_input = _guard_optional(
-                lambda: decision.guard_input(user_input),
-                fallback=user_input,
-            )
+            decision.checkpoint("intake")
 
             decision.record_retrieval(
                 RetrievalSource.RAG,
-                query=safe_input,
+                query=user_input,
                 result_count=3,
-                result_hashes=("doc-a", "doc-b", "doc-c"),
+                result_hashes=tuple(_sha256_hex(doc) for doc in ("doc-a", "doc-b", "doc-c")),
                 source_document_ids=("kb://faq", "kb://policy"),
                 latency_ms=12,
             )
 
             # Wrap the LLM call in a child span so the trace tree shows
-            # the actual model invocation — gen_ai.* attributes light
-            # up Phoenix's LLM view, Langfuse cost dashboards, etc.
-            # Synthetic numbers here; in production the caller passes
-            # real token counts from the LLM response.
+            # the actual model invocation — gen_ai.* attributes render
+            # natively in OTLP backends. Synthetic token counts here;
+            # in production pass the real counts from the response.
             with decision.llm_call(
                 provider="simulated",
                 model="reference-agent-stub-v1",
             ) as call:
-                raw_response = self._llm_call(safe_input)
+                response = self._llm_call(user_input)
                 call.set_usage(
-                    input_tokens=len(safe_input.split()),
-                    output_tokens=len(raw_response.split()),
+                    input_tokens=len(user_input.split()),
+                    output_tokens=len(response.split()),
                     finish_reason="stop",
                 )
 
-            safe_response = _guard_optional(
-                lambda: decision.guard_output_final(raw_response),
-                fallback=raw_response,
-            )
+            # The agent ran the tool itself; Fabric records the
+            # invocation with hashed payloads — raw values stay local.
+            with decision.tool_call("respond_to_user", call_id="call-0001") as tool:
+                tool.set_arguments('{"channel": "chat"}')
+                tool.set_result('{"delivered": true}')
 
             decision.remember(
                 kind=MemoryKind.EPISODIC,
-                content=safe_response,
+                content=response,
                 key=f"session:{session_id}:last_response",
                 tags=("reference-agent",),
                 ttl_seconds=3600,
@@ -160,41 +135,24 @@ class ReferenceAgent:
                 "notification",
                 target_system="reference-agent",
                 operation="response.ready",
-                request_payload=safe_response,
+                request_payload=response,
                 committed=True,
                 rollback_supported=False,
                 replay_behavior="suppress",
             )
 
-            score = self._judge.score_instruction_following(safe_input, safe_response)
-            if score < ESCALATION_SCORE_THRESHOLD:
-                decision.request_escalation(
-                    EscalationSummary(
-                        reason="low judge score",
-                        rubric_id="sasf.instruction_following",
-                        triggering_score=score,
-                        mode="async",
-                    ),
-                )
+            decision.checkpoint("turn-complete")
 
+            # Snapshot span attributes before the context exits; the
+            # span object is invalid afterwards.
+            attrs = dict(decision.span.attributes or {})
             return AgentResult(
-                response=safe_response,
-                escalated=decision.escalation is not None,
-                blocked=decision.blocked is not None,
+                response=response,
                 trace_id=decision.trace_id,
+                event_counts={
+                    "retrieval": int(attrs.get("fabric.retrieval_count", 0)),
+                    "memory_write": int(attrs.get("fabric.memory_write_count", 0)),
+                    "side_effect": int(attrs.get("fabric.side_effect_count", 0)),
+                    "checkpoint": int(attrs.get("fabric.checkpoint_count", 0)),
+                },
             )
-
-
-def _guard_optional(run: Callable[[], str], *, fallback: str) -> str:
-    """Call a guardrail method, falling back when no rails are wired.
-
-    The SDK raises :class:`GuardrailNotConfiguredError` rather than
-    silently passing content through — that's a compliance design
-    choice. For demo purposes where no Presidio/NeMo sidecar is
-    running, we catch that specific error only; real guardrail faults
-    propagate as before.
-    """
-    try:
-        return run()
-    except GuardrailNotConfiguredError:
-        return fallback

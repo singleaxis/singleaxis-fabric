@@ -2,7 +2,7 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.collector-otlp-receiver",
   "display_name": "SingleAxis Fabric Collector OTLP Receiver",
-  "release": {"version": "0.8.0-rc.2", "maturity": "beta", "distribution": "container"},
+  "release": {"version": "0.8.0-rc.1", "maturity": "beta", "distribution": "container"},
   "implementation": {"kind": "otlp_receiver", "deployment_modes": ["sidecar", "gateway", "collector"]},
   "compatibility": {
     "activity_contract": null,
@@ -38,18 +38,19 @@
     "tenant_partitioning": "accepted_unverified"
   },
   "authentication": {
-    "ingress_supported": ["none", "network_policy_only", "mtls"],
+    "ingress_supported": ["none", "network_policy_only", "bearer_token", "mtls"],
     "ingress_default": "none",
     "egress_supported": ["none", "bearer_token", "mtls"],
     "egress_default": "none",
-    "credential_handling": "Outbound header and TLS credentials can be mounted from operator-created Kubernetes Secrets; OTLP ingress has no application-layer authenticator."
+    "credential_handling": "Outbound header and TLS credentials can be mounted from operator-created Kubernetes Secrets or Compose secrets; bearer-token ingress is wired by the compose production overlay and mTLS by the production Helm profile."
   },
   "context_propagation": {
     "w3c_tracecontext": {"receive": true, "inject": false, "preserve": true},
     "baggage": "pass_through",
     "correlation_limitations": [
       "The receiver preserves correlation present in OTLP but cannot repair absent or incorrectly parented spans.",
-      "Trace identity attributes are asserted by the sender and are not bound to ingress workload identity."
+      "Trace identity attributes are asserted by the sender and are not bound to ingress workload identity.",
+      "Trace identity (trace_id, span_id, parent linkage) is preserved; free-form tracestate payloads on spans and links are cleared at export because they are caller-controlled text."
     ]
   },
   "data_egress": {
@@ -64,8 +65,11 @@
     {"type": "configuration_test", "path": "charts/fabric/charts/otel-collector/tests/test-durable-delivery.sh", "claim": "Verifies persistent queue, retry, TLS, and authentication configuration gates."}
   ],
   "known_blind_spots": [
+    "The pinned bearertokenauth extension (v0.150.0) splits token files on newlines and retains empty entries, so a blank line or trailing newline mints an empty \"Bearer \" credential that gRPC metadata preserves; preflight-prod.sh rejects unsafe files, fabric-gate refuses them at boot and while running (the extension re-reads via fsnotify), verify-prod.sh re-checks them, and an upstream patch is prepared under components/otel-collector-fabric/upstream/.",
     "The production chart supports mTLS ingress, but does not bind asserted telemetry identity attributes to a verified workload identity.",
     "The receiver cannot observe agent activity that was never emitted by upstream instrumentation.",
+    "Shipped configurations are limited to traces and logs pipelines; the fabric-gate image entrypoint refuses to boot a config defining any other pipeline, and qualify-distribution-config.sh proves the refusal. Operators who build or wrap their own collector binary lose that enforcement and must re-apply the qualification gate.",
+    "Bounded free-form caller metadata, including interaction kinds and tool names, crosses the boundary verbatim and is not semantic content; destinations should treat it as asserted-unverified metadata.",
     "The recorder preserves protected OTLP and does not materialize Activity Envelope v2, privacy assertions, or delivery receipts; a downstream adapter or destination must provide those contracts.",
     "The default development exporter is local stdout, not durable evidence storage or a compliance posture; the production profile requires an authenticated TLS destination.",
     "Persistent queues provide bounded at-least-once transport and cannot prove backend retention or exactly-once delivery.",

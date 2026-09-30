@@ -1,0 +1,19 @@
+# Synthetic local namespace only: permit Fabric Node to reach the fsync sink.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fabric-sim-sink-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: fabric-test-sink
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+              app.kubernetes.io/instance: fabric-sim
+      ports:
+        - protocol: TCP
+          port: 8443

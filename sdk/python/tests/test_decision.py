@@ -223,4 +223,82 @@ def test_recall_content_hash_matches_remember_hash_for_same_input(
     events = [e for e in span.events if e.name == "fabric.memory"]
     h0 = dict(events[0].attributes or {})["fabric.memory.content_hash"]
     h1 = dict(events[1].attributes or {})["fabric.memory.content_hash"]
-    assert h0 == h1
+    assert isinstance(h0, str) and isinstance(h1, str)
+    assert str(h0) == str(h1)
+
+
+# -- reserved attribute namespaces ------------------------------------------
+
+
+def test_decision_attributes_reject_reserved_namespace() -> None:
+    """Caller ``attributes=`` cannot clobber SDK-owned identity keys."""
+    client = _client()
+    with pytest.raises(ValueError, match="reserved namespace"):
+        client.decision(session_id="s", request_id="r", attributes={"fabric.tenant_id": "evil"})
+    with pytest.raises(ValueError, match="reserved namespace"):
+        client.decision(session_id="s", request_id="r", attributes={"gen_ai.system": "x"})
+
+
+def test_set_attribute_rejects_reserved_namespace() -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        with pytest.raises(ValueError, match="reserved namespace"):
+            dec.set_attribute("fabric.session_id", "hijacked")
+        with pytest.raises(ValueError, match="reserved namespace"):
+            dec.set_attribute("gen_ai.conversation.id", "hijacked")
+        # A caller namespace still works.
+        dec.set_attribute("agent.custom", "ok")
+
+
+def test_config_extra_stamped_on_decision(span_exporter: InMemorySpanExporter) -> None:
+    """``FabricConfig.extra`` lands as default attributes on the span."""
+    client = Fabric(
+        FabricConfig(
+            tenant_id="acme",
+            agent_id="bot",
+            extra={"acme.region": "us-east-1", "acme.tier": "gold"},
+        )
+    )
+    with client.decision(session_id="s", request_id="r"):
+        pass
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    attrs = dict(span.attributes or {})
+    assert attrs["acme.region"] == "us-east-1"
+    assert attrs["acme.tier"] == "gold"
+
+
+def test_config_extra_caller_attributes_win(span_exporter: InMemorySpanExporter) -> None:
+    """Per-decision ``attributes=`` overrides a colliding config extra."""
+    client = Fabric(
+        FabricConfig(
+            tenant_id="acme",
+            agent_id="bot",
+            extra={"acme.tier": "config-default"},
+        )
+    )
+    with client.decision(session_id="s", request_id="r", attributes={"acme.tier": "call"}):
+        pass
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    assert dict(span.attributes or {})["acme.tier"] == "call"
+
+
+def test_config_extra_rejects_reserved_namespace() -> None:
+    """A reserved key in ``FabricConfig.extra`` fails fast at build time."""
+    with pytest.raises(ValueError, match="reserved namespace"):
+        FabricConfig(tenant_id="t", agent_id="a", extra={"fabric.tenant_id": "evil"})
+    with pytest.raises(ValueError, match="reserved namespace"):
+        FabricConfig(tenant_id="t", agent_id="a", extra={"gen_ai.system": "x"})
+
+
+# -- failure visibility -----------------------------------------------------
+
+
+def test_decision_stamps_error_type_on_exception(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with pytest.raises(ValueError, match="bad"), client.decision(session_id="s", request_id="r"):
+        raise ValueError("bad")
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    assert span.status.status_code == StatusCode.ERROR
+    assert dict(span.attributes or {})["error.type"] == "ValueError"

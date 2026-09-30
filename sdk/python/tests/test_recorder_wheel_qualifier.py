@@ -21,12 +21,28 @@ def _qualifier() -> ModuleType:
     return module
 
 
+# Recorder and governed-content modules the qualifier requires in every artifact —
+# keep this list aligned with `qualify_recorder_wheel.py`'s required set.
+_GOVERNED_MEMBERS = (
+    "fabric/_content.py",
+    "fabric/_content_sink.py",
+    "fabric/_content_writer.py",
+    "fabric/content_store/__init__.py",
+    "fabric/content_store/base.py",
+    "fabric/content_store/local.py",
+    "fabric/content_store/s3.py",
+    "fabric/resolver.py",
+    "fabric/adapters/byte_boundary.py",
+)
+
+
 def _wheel(
     path: Path,
     *,
     extra: str | None = None,
     member: str | None = None,
     decision: str = "",
+    omit: str | None = None,
 ) -> Path:
     metadata = ["Name: singleaxis-fabric", "Version: 1.0.0"]
     if extra:
@@ -35,6 +51,9 @@ def _wheel(
         archive.writestr("fabric/__init__.py", '__all__ = ["Fabric"]\n')
         archive.writestr("fabric/client.py", "")
         archive.writestr("fabric/decision.py", decision)
+        for governed in _GOVERNED_MEMBERS:
+            if governed != omit:
+                archive.writestr(governed, "")
         archive.writestr("singleaxis_fabric-1.0.0.dist-info/METADATA", "\n".join(metadata))
         if member:
             archive.writestr(member, "")
@@ -49,6 +68,8 @@ def _sdist(path: Path, *, member: str | None = None, decision: str = "") -> Path
         f"{prefix}/src/fabric/decision.py": decision.encode(),
         f"{prefix}/PKG-INFO": b"Name: singleaxis-fabric\nVersion: 1.0.0\n",
     }
+    for governed in _GOVERNED_MEMBERS:
+        payloads[f"{prefix}/src/{governed}"] = b""
     if member:
         payloads[f"{prefix}/src/{member}"] = b""
     with tarfile.open(path, "w:gz") as archive:
@@ -63,6 +84,12 @@ def test_qualifies_minimal_recorder_wheel(tmp_path: Path) -> None:
     result = _qualifier().qualify(_wheel(tmp_path / "recorder.whl"))
     assert result["qualified"] is True
     assert len(result["sha256"]) == 64
+
+
+def test_missing_byte_boundary_adapter_fails_wheel_qualification(tmp_path: Path) -> None:
+    path = _wheel(tmp_path / "missing-adapter.whl", omit="fabric/adapters/byte_boundary.py")
+    with pytest.raises(ValueError, match="missing recorder modules"):
+        _qualifier().qualify(path)
 
 
 def test_qualifies_minimal_recorder_sdist(tmp_path: Path) -> None:

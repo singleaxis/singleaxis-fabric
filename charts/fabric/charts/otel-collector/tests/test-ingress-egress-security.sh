@@ -48,6 +48,13 @@ expect_fail() {
 printf '\n=== Receiver TLS and Secret projection ===\n'
 default_config="$(helm template ci "${chart_dir}" --show-only templates/configmap.yaml)"
 expect_not_contains "development default does not claim receiver TLS" "${default_config}" "cert_file: /etc/fabric/receiver-tls/tls.crt"
+expect_contains "gRPC request size is bounded" "${default_config}" "max_recv_msg_size_mib: 8"
+expect_contains "gRPC stream concurrency is bounded" "${default_config}" "max_concurrent_streams: 64"
+expect_contains "gRPC keepalive spacing is enforced" "${default_config}" "min_time: 10s"
+expect_contains "HTTP request size is bounded" "${default_config}" "max_request_body_size: 8388608"
+expect_contains "HTTP header reads are bounded" "${default_config}" "read_header_timeout: 5s"
+expect_contains "HTTP request reads are bounded" "${default_config}" "read_timeout: 30s"
+expect_contains "HTTP idle connections are bounded" "${default_config}" "idle_timeout: 120s"
 
 receiver_args=(
   --set receiver.requireTLS=true
@@ -119,6 +126,53 @@ egress_render="$(helm template ci "${chart_dir}" "${egress_args[@]}")"
 expect_contains "explicit exporter CIDR renders" "${egress_render}" "cidr: 203.0.113.10/32"
 expect_contains "explicit exporter port renders" "${egress_render}" "port: 443"
 
+printf '\n=== Degenerate peer rejection ===\n'
+expect_fail "empty ingress peer is rejected" "empty peer" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.ingressFrom=[{}]'
+expect_fail "world ingress CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.ingressFrom[0].ipBlock.cidr=0.0.0.0/0'
+expect_fail "IPv6 world ingress CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.ingressFrom[0].ipBlock.cidr=::/0'
+expect_fail "empty exporter egress peer is rejected" "empty peer" \
+  "${chart_dir}" --set exporter.endpoint=https://otlp.example.com \
+  --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.exporterEgress.to=[{}]' \
+  --set 'networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'networkPolicy.exporterEgress.ports[0].port=443'
+expect_fail "world exporter egress CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set exporter.endpoint=https://otlp.example.com \
+  --set networkPolicy.enabled=true \
+  --set 'networkPolicy.exporterEgress.to[0].ipBlock.cidr=0.0.0.0/0' \
+  --set 'networkPolicy.exporterEgress.ports[0].protocol=TCP' \
+  --set 'networkPolicy.exporterEgress.ports[0].port=443'
+expect_fail "empty egressTo peer is rejected" "empty peer" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.egressTo=[{}]'
+expect_fail "world egressTo CIDR is rejected" "world CIDR" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.egressTo[0].ipBlock.cidr=0.0.0.0/0'
+
+printf '\n=== Health-port NetworkPolicy scoping ===\n'
+np_default="$(helm template ci "${chart_dir}" --set networkPolicy.enabled=true \
+  --show-only templates/networkpolicy.yaml)"
+expect_not_contains "health port is not opened by default" "${np_default}" "port: 13133"
+np_monitoring="$(helm template ci "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.monitoringNamespaceSelector.matchLabels.kubernetes\.io/metadata\.name=monitoring' \
+  --show-only templates/networkpolicy.yaml)"
+expect_contains "named monitoring namespace can reach health" "${np_monitoring}" "kubernetes.io/metadata.name: monitoring"
+expect_contains "scoped health rule keeps the health port" "${np_monitoring}" "port: 13133"
+expect_fail "empty monitoring selector is rejected" "monitoringNamespaceSelector" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set-json 'networkPolicy.monitoringNamespaceSelector={"matchLabels":{}}'
+
+printf '\n=== Pod security ===\n'
+default_workload="$(helm template ci "${chart_dir}" --show-only templates/deployment.yaml)"
+expect_contains "pod never automounts a service-account token" "${default_workload}" "automountServiceAccountToken: false"
+expect_contains "pod runs as the nonroot uid" "${default_workload}" "runAsUser: 65532"
+
 printf '\n=== Shadow-production integration and locks ===\n'
 production_args=(
   --values "${profile}"
@@ -149,6 +203,7 @@ expect_contains "production profile enables receiver mTLS" "${production_render}
 expect_contains "production profile names receiver identity Secret" "${production_render}" "name: fabric-node-receiver-tls"
 expect_contains "production profile names client CA Secret" "${production_render}" "name: fabric-node-client-ca"
 expect_contains "production profile renders explicit egress peer" "${production_render}" "cidr: 203.0.113.10/32"
+expect_contains "production profile always refreshes a mutable image tag" "${production_render}" "imagePullPolicy: Always"
 
 expect_fail "production receiver TLS cannot be disabled" "profile shadow-production requires" \
   "${umbrella_dir}" "${production_args[@]}" \

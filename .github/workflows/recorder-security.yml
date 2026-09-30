@@ -37,6 +37,8 @@ jobs:
           install -m 0755 gitleaks /usr/local/bin/gitleaks
       - name: Scan the complete public repository
         run: gitleaks detect --source . --redact --verbose --exit-code 1
+      - name: Verify historical exceptions still reject a new credential
+        run: python3 scripts/qualification/check_secret_scan_baseline.py
 
   trivy:
     name: Released dependency scan (${{ matrix.name }})
@@ -57,6 +59,10 @@ jobs:
             # The assembled OCB dependency graph is scanned on the built image
             # in recorder-ci.yml.
             path: components/otel-collector-fabric/processor/fabricguardprocessor
+          - name: audit-receiver
+            path: components/otel-collector-fabric/receiver/auditreceiver
+          - name: host-emitter
+            path: components/host-emitter
           - name: fabricctl
             path: tools/fabricctl
     steps:
@@ -92,6 +98,8 @@ jobs:
           sdk/python/src/fabric
           sdk/typescript/src
           components/otel-collector-fabric/processor/fabricguardprocessor
+          components/otel-collector-fabric/receiver/auditreceiver
+          components/host-emitter
           tools/fabricctl/cmd/fabricctl/release_main.go
           tools/fabricctl/internal/recorder
           tools/fabricctl/internal/recorderinit
@@ -115,6 +123,8 @@ jobs:
             sdk/python
             sdk/typescript
             components/otel-collector-fabric/processor/fabricguardprocessor
+            components/otel-collector-fabric/receiver/auditreceiver
+            components/host-emitter
             tools/fabricctl
 
   scorecard:

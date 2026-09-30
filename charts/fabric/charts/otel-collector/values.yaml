@@ -24,7 +24,7 @@ podLabels: {}
 enableServiceLinks: false
 terminationGracePeriodSeconds: 60
 
-# Distroless nonroot posture per spec 008.
+# Distroless nonroot posture — the recorder runs unprivileged by default.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
@@ -62,6 +62,17 @@ receiver:
   # Fail the render unless TLS verifies client certificates against an
   # operator-provisioned CA. This implies requireTLS.
   requireClientCertificate: false
+  # Opt-in, dedicated one-source evidence ingress. The referenced Secret
+  # must already exist and contain one approved bearer token; the token is
+  # never supplied as a chart value. This authenticates receipt at Node,
+  # not the agent operation or completeness of the run.
+  evidenceSourceBinding:
+    enabled: false
+    tenantId: ""
+    sourceId: ""
+    tokenSecret:
+      name: ""
+      key: token
   tls:
     serverCertificateSecret:
       name: ""
@@ -251,18 +262,25 @@ podDisruptionBudget:
 # misconfigured policies will silently break the OTLP path.
 # shadow-production enables it alongside namespace deny-default.
 #
-# `ingressFrom` is appended verbatim to the OTLP ingress rule. Empty
-# means "any namespace in the cluster"; tenants typically narrow to
-# specific agent namespaces:
+# `ingressFrom` is appended verbatim to the OTLP ingress rule. An empty
+# LIST means "any namespace in the cluster" (rendered as an explicit
+# namespaceSelector fallback); tenants typically narrow to specific agent
+# namespaces:
 #
 #   ingressFrom:
 #     - namespaceSelector:
 #         matchLabels:
 #           fabric.singleaxis.ai/agent: "true"
 #
+# Every peer entry in ingressFrom, exporterEgress.to, and egressTo must
+# name an explicit restriction: empty peers ({}) and world CIDRs
+# (ipBlock 0.0.0.0/0 or ::/0) are rejected at render time because they are
+# equivalent to no policy.
+#
 # `egressTo` is for the configured exporter endpoint plus any extra
 # destinations the operator declares (e.g. an external OTLP gateway,
-# Tempo, Honeycomb). DNS to kube-system is always allowed.
+# Tempo, Honeycomb, or a non-kube-system DNS service). DNS to kube-system
+# is always allowed.
 networkPolicy:
   enabled: false
   # When true, rendering fails unless ingressFrom names at least one peer.
@@ -279,5 +297,16 @@ networkPolicy:
     to: []
     ports: []
   # Additional non-exporter peers. This compatibility surface remains for
-  # DNS-independent internal services and operator extensions.
+  # DNS-independent internal services and operator extensions. The same
+  # non-empty, non-world peer rule applies.
   egressTo: []
+  # Optional LabelSelector for the monitoring namespace allowed to reach
+  # the health extension. Empty (default) renders no health ingress rule:
+  # kubelet liveness/readiness probes are node traffic and do not need a
+  # NetworkPolicy from-rule on most CNIs. An empty selector
+  # ({matchLabels: {}}) is rejected because it matches every namespace.
+  #
+  #   monitoringNamespaceSelector:
+  #     matchLabels:
+  #       kubernetes.io/metadata.name: monitoring
+  monitoringNamespaceSelector: {}

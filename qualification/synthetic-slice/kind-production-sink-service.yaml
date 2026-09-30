@@ -1,0 +1,9 @@
+# Controlled disposable qualification fixture, not a production backend.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-test-sink
+spec:
+  selector: {app: fabric-test-sink}
+  ports:
+    - {name: https, port: 8443, targetPort: https}
