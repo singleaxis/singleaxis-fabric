@@ -244,6 +244,26 @@ Missing seals preserve uncertainty; matching seals do not clear source trust,
 independent-feed or destination proof flags. A seal is explicitly limited to
 metadata persistence and never labels pending content as stored.
 
+The installed-wheel custom-agent smoke must explicitly seal its completed
+source, reopen it with a tenant-authorized byte resolver and compare each
+recovered call and object with the original independent fixture witnesses.
+Require an unchanged `unverified` verdict with zero discrepancies, not a
+promotion to complete. In a separate disposable copy of the sealed journal,
+delete the terminal event and require recovery to fail. Keep the original
+journal intact for review; report these metadata tests separately from content
+and destination durability. These checks run in the existing isolated Linux
+workflow against its installed wheel, without rebuilding that wheel mid-test.
+
+Operational qualification limits: the timeout bounds each queue-drain wait
+(zero to 3,600 seconds), not a stalled kernel filesystem operation. Sealing
+must remain offline, outside the agent path. Local single-fault tests cover
+intent, seal and final directory-fsync failures. If a final fsync or detected
+concurrent loss requires restoring the intent and that restoration also
+fails, the local store alone cannot prove the failed result across a crash.
+Do not qualify that double-failure/power-loss case without an independent
+receipt and target-storage tests. A cached seal is never fresh disk readback
+and a durable prefix cannot prove that no later activity occurred.
+
 ## Evidence ledger
 
 ### PR #164 CI closure plan (head `4bf4df9`)

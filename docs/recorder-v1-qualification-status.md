@@ -14,6 +14,94 @@ fully qualified release artifact.
 
 ### Published candidate results and corrections
 
+### Source metadata finalization local qualification
+
+C2 adds an explicit offline `CallRecorder.seal_source()` and a persisted
+epoch seal. It checks assigned sequence bounds and admission-time record
+digests against secure disk readback. Recovery rejects missing tails,
+additional events and self-consistently rehashed substitutions, and exposes
+unsealed prior epochs even when no record survived. A persisted intent marks
+interrupted finalization; detected loss during finalization restores that
+marker. The agent still executes when recording is closed or fails.
+
+Independent code review found a call-completion race: the call became `ok`
+before its outcome was journaled. Completion now follows outcome admission,
+and a barrier test proves that finalization refuses while the outcome is in
+flight. This is a recorder correctness fix, not an agent-action lock.
+
+Local verification on Python 3.12.13: **935 tests passed**, **86.74% coverage**;
+Ruff, strict mypy and changed-file pre-commit hooks passed. The freshly built
+wheel `f3721a5d8d87c796107a9a1502045b66696cb7d0e743057ad509ead8a634a6fa`
+and sdist `05d27791f50db4389cc44c10111442a6aa5d7c7abbf49ddf5a2218fde01f894d`
+passed package-content qualification. An isolated installation of that wheel
+passed **124 focused tests** and the extended custom-agent smoke: five calls,
+twelve byte objects, zero discrepancies before and after restart, and rejected
+deleted-tail recovery. All expected faults remain `partial`; clean and
+recovered runs remain `unverified`. Local artifact evidence is under
+`/private/tmp/fabric-c2-final.4W8Osf/`; full coverage is in
+`/private/tmp/fabric-source-seal-coverage-final-20260930.xml`.
+The newer SDK still requires its committed Linux CI run.
+
+Residual limits: a seal covers a terminal metadata prefix, not all physical
+agent actions. Its cached copy is not fresh disk readback. It does not
+authenticate an issuer, persist queued raw content, or prove the absence of
+later work. Single directory-fsync faults and process exit during sealing are
+tested; actual power loss and simultaneous failure of both final fsync and
+the recovery-marker restoration remain unqualified. No completeness verdict
+or customer storage proof is inferred from these tests.
+
+```sh
+cd sdk/python
+.venv/bin/python -m pytest
+.venv/bin/ruff check src tests
+.venv/bin/mypy src/fabric
+cd ../..
+/private/tmp/fabric-c2-final.4W8Osf/venv/bin/python -m pytest -q -o addopts= sdk/python/tests/test_source_spool.py sdk/python/tests/test_call_source_spool.py sdk/python/tests/test_call_reconcile.py sdk/python/tests/test_call_otlp.py
+/private/tmp/fabric-c2-final.4W8Osf/venv/bin/python scripts/qualification/run_custom_agent_smoke.py --evidence-dir /private/tmp/fabric-c2-final.4W8Osf/reproduction-smoke
+```
+
+### Dedicated ingress Linux qualification
+
+The corrected commit `fcb618dacebe2994983c0a3a8295a3119f357da1` passed
+[Recorder CI](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36698218653),
+[security](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36698218605),
+[CodeQL](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36698218577),
+[basic kind smoke](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36698218679)
+and [production-profile qualification](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36698218602).
+This supersedes the pending CI corrections below. The published non-secret
+artifact `synthetic-production-profile-36698218602-1` records:
+
+- Sixteen HTTP/gRPC negative identity/authentication cases, with HTTP 400 and
+  gRPC `INVALID_ARGUMENT` for identity rejection; zero rejected records found
+  in destination readback. Live credential rotation passed both protocols.
+- The source-bound custom-agent slice matched five calls and twelve byte
+  objects with zero fixture discrepancies; all 22 metadata records plus four
+  privacy-failure records were checked against destination readback. The
+  clean verdict remains `unverified`; bypass, corruption and privacy faults
+  remain `partial`.
+- The controlled model/terminal/artifact fixture matched 25 required byte
+  objects, ten outcomes and 39 destination metadata records, with zero clean
+  discrepancies. Missing-object and bypass tests remained `partial`.
+- TLS failure checks and scans for private canaries in destination data,
+  Collector logs and persistent telemetry queue passed. This is disposable
+  CI storage, not target-environment encryption, retention or restore proof.
+
+Exact tested artifacts: wheel SHA-256
+`8082f93661ef9417d1f331113ebaa9e8d015265ca92d2b4b758b5c671ac091f0`;
+chart SHA-256 `9b95b62745c40071c000c8571b2bd2c244858330d314565cd39794eab1b963d7`;
+Node Docker image ID
+`sha256:636fed937fd6b9c3c55515e2125446d54ffeb28a7ff361a7a355cee413576669`.
+Both installed deployments reported the same container-runtime image digest
+`sha256:7f34be2b7548e541d423d64977aa5d7f46b489507488c8072a75f18aa16a026a`;
+the image ID and imported runtime digest are different identifiers, not
+interchangeable hashes. Downloaded reports are also available locally under
+`/private/tmp/fabric-ci-fcb618d-36698218602/`.
+
+The C2 source-seal work described in spec 044 is a subsequent code change;
+none of the `fcb618d` results qualifies that newer SDK. Full authenticated
+complete-run reconciliation, qualified receipt producers, independent feed
+completeness, route closure and target-storage controls remain open.
+
 The frozen commit `4bf4df9665aaa107ff9c0fd0ac2ebadbf9acac5a` passed
 [CodeQL](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36625823263),
 [basic kind smoke](https://github.com/singleaxis/singleaxis-fabric/actions/runs/36625823164)
@@ -42,10 +130,10 @@ corrections. These results do not change the overall **NO-GO** decision.
 
 | Gate | Implemented / locally tested | Still required |
 | --- | --- | --- |
-| Historical secrets | Nine exact historical fingerprints classified; eight source fixtures and one Basic-auth example confirmed **never used** by the requesting user. Full-history scan with exact baseline and synthetic new-commit rejection probe passed. | Fresh CI history scan; named security-owner acceptance of the release, not just fixture classification. |
-| Security findings | Python import cycle removed with typed protocols; resolver descriptor cleanup uses independent cleanup callbacks; host-spool close/unlock errors preserved. SDK regression and host race tests passed; CodeQL passed on `4bf4df9`. | Release scans on the corrected committed artifact. |
+| Historical secrets | Nine exact historical fingerprints classified; eight source fixtures and one Basic-auth example confirmed **never used** by the requesting user. History scan and new-commit rejection probe passed locally and on `fcb618d` CI. | Named security-owner acceptance of the release, not just fixture classification. |
+| Security findings | Python import cycle removed with typed protocols; resolver descriptor cleanup uses independent cleanup callbacks; host-spool close/unlock errors preserved. Regression, race, CodeQL and release image scans passed on `fcb618d`. | Repeat applicable gates for subsequent code changes; target deployment review. |
 | Independent statement verification | Optional offline Ed25519 verifier pins issuer, tenant, run, scope, subject digest, stage, key validity and revocation. It rejects substituted issuers and expired-key backdating; 54 tests passed. | Qualified independent issuers and actual source/Node/destination receipt producers. A signature alone never promotes a run to complete. |
-| Credential-bound ingress | Dedicated one-tenant/one-source guard, strict startup validation, chart opt-in and HTTPS-only file-based bearer export implemented. Go guard/gate race tests, vet and chart tests passed. | Exact installed Node HTTP/gRPC negative tests, credential rotation and readback. Exclusive credential ownership remains a deployment control. |
+| Credential-bound ingress | Dedicated one-tenant/one-source guard, strict startup validation, chart opt-in and HTTPS-only file-based bearer export implemented. Go race/vet/chart tests and `fcb618d` installed-artifact HTTP/gRPC rejection, rotation and readback tests passed. | Exclusive credential ownership and approved deployment identity mapping remain deployment controls. |
 | Python regression | Full suite: **895 passed**, **86.58%** coverage on Python 3.12.13; Ruff and mypy passed using SDK configuration. Installed-wheel evidence below. | Fresh Linux CI qualification. |
 
 Installed-package evidence: the freshly built wheel
@@ -111,8 +199,8 @@ lint passed. The isolated Linux workflow now uses the same built image and
 packaged chart for a second dedicated-source deployment, tests both protocols,
 performs live Secret rotation, compares every expected SDK metadata record
 with durable fixture readback, and scans sink/log/queue bytes for credentials
-and content canaries. Those **live tests remain pending** until the frozen
-commit's workflow succeeds. The local Docker setup failure is not waived.
+and content canaries. Those live tests passed on `fcb618d` as recorded above.
+The separate local Docker setup failure is not waived.
 
 The complete-run decision remains unavailable: pre-fsync source loss and raw
 queued-content crash safety are not closed; the trusted four-stage receipt

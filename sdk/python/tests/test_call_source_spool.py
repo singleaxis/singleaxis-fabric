@@ -239,3 +239,202 @@ def test_source_queue_overflow_does_not_wait_for_disk(
     finally:
         gate.set()
         spool.close()
+
+
+def test_explicit_metadata_seal_survives_restart_without_promoting_trust(
+    recording: Any, tmp_path: Path
+) -> None:
+    writer, store = recording
+    spool = _spool(tmp_path)
+    first = _recorder(writer, spool)
+    first.call(b"PRIVATE input", lambda _: b"PRIVATE output")
+    sealed = first.seal_source()
+    assert sealed["status"] == "sealed"
+    current = first.snapshot()
+    assert current["source_metadata_seal"]["source_high_water"] == {"source": 3}
+    assert current["source_identity_authenticated"] is False
+    assert current["pre_spool_crash_window_unverified"]
+    spool.close()
+    restarted = _spool(tmp_path)
+    try:
+        second = _recorder(
+            writer, restarted, recovery_resolver=ByteEvidenceResolver(store, tenant_id="tenant")
+        )
+        recovered = second.recovered_snapshots()[0]
+        assert recovered["source_high_water"] == {"source": 3}
+        assert recovered["source_observed_high_water"] == {"source": 3}
+        assert recovered["source_high_water_basis"] == "sealed_terminal"
+        assert recovered["source_unsealed_epoch_ranges"] == []
+        assert recovered["recovery_history_unverified"]
+        assert recovered["source_identity_authenticated"] is False
+        assert "PRIVATE" not in json.dumps(sealed)
+    finally:
+        restarted.close()
+
+
+def test_unsealed_empty_epoch_remains_visible(recording: Any, tmp_path: Path) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    spool.close()
+    restarted = _spool(tmp_path)
+    try:
+        snapshot = _recorder(writer, restarted).snapshot()
+        assert snapshot["recovered_records"] == []
+        assert snapshot["source_unsealed_epoch_ranges"] == [{"start": 0, "end": 0}]
+        assert snapshot["recovery_history_unverified"]
+    finally:
+        restarted.close()
+
+
+def test_sealed_empty_epoch_remains_visible(recording: Any, tmp_path: Path) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    assert _recorder(writer, spool).seal_source()["status"] == "sealed"
+    spool.close()
+    restarted = _spool(tmp_path)
+    try:
+        recovered = _recorder(writer, restarted).recovered_snapshots()
+        assert len(recovered) == 1
+        assert recovered[0]["source_high_water"] == {"source": -1}
+        assert recovered[0]["source_observed_high_water"] == {}
+        assert recovered[0]["events"] == []
+        assert recovered[0]["source_high_water_basis"] == "sealed_terminal"
+        assert recovered[0]["pre_spool_crash_window_unverified"]
+    finally:
+        restarted.close()
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), -1, True, "bad", 3601])
+def test_seal_timeout_is_bounded(recording: Any, tmp_path: Path, timeout: Any) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    try:
+        assert _recorder(writer, spool).seal_source(timeout_s=timeout) == {
+            "status": "refused",
+            "reason": "invalid_timeout",
+        }
+    finally:
+        spool.close()
+
+
+def test_seal_writer_failure_does_not_expose_exception(
+    recording: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    recorder = _recorder(writer, spool)
+
+    def fail(_timeout: float) -> bool:
+        raise OSError("PRIVATE credential in underlying storage error")
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(writer, "flush", fail)
+            result = recorder.seal_source()
+        assert result == {"status": "refused", "reason": "source_seal_failed"}
+        assert "PRIVATE" not in json.dumps(result)
+        assert spool.current_seal() is None
+    finally:
+        spool.close()
+
+
+def test_seal_pending_writer_is_not_completed(
+    recording: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(writer, "flush", lambda _timeout: False)
+            result = _recorder(writer, spool).seal_source(timeout_s=0)
+        assert result == {"status": "refused", "reason": "writers_unsettled"}
+        assert spool.current_seal() is None
+    finally:
+        spool.close()
+
+
+def test_late_action_after_seal_executes_but_is_a_recording_gap(
+    recording: Any, tmp_path: Path
+) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    recorder = _recorder(writer, spool)
+    try:
+        recorder.call(b"input", lambda value: value)
+        assert recorder.seal_source()["status"] == "sealed"
+        result = b"unchanged"
+        actual = recorder.call(b"later", lambda _: result)
+        assert actual is result
+        snapshot = recorder.snapshot()
+        assert snapshot["recording_gaps"] > 0
+        assert any(event["source_spool_status"] != "spooled" for event in snapshot["starts"])
+        assert recorder.seal_source()["status"] == "refused"
+    finally:
+        spool.close()
+
+
+def test_seal_refuses_incomplete_stream_and_missing_spool(recording: Any, tmp_path: Path) -> None:
+    writer, _store = recording
+    without = CallRecorder(writer, run_id="run", agent_id="agent", source_id="source")
+    assert without.seal_source() == {"status": "refused", "reason": "source_spool_unavailable"}
+    spool = _spool(tmp_path)
+    recorder = _recorder(writer, spool)
+    stream = recorder.stream(b"request", lambda _: iter((b"one", b"two")))
+    try:
+        assert next(stream) == b"one"
+        assert recorder.seal_source() == {"status": "refused", "reason": "call_incomplete"}
+        stream.close()
+        assert recorder.seal_source() == {"status": "refused", "reason": "call_incomplete"}
+        assert spool.current_seal() is None
+    finally:
+        stream.close()
+        spool.close()
+
+
+def test_seal_cannot_overtake_inflight_outcome(
+    recording: Any, tmp_path: Path, monkeypatch: Any
+) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    recorder = _recorder(writer, spool)
+    reached, release = threading.Event(), threading.Event()
+    original = recorder._base
+    result: list[bytes] = []
+
+    def paused(call: Any) -> dict[str, Any]:
+        if call.ended:
+            reached.set()
+            if not release.wait(timeout=3):
+                raise TimeoutError("test outcome barrier expired")
+        return original(call)
+
+    monkeypatch.setattr(recorder, "_base", paused)
+    thread = threading.Thread(target=lambda: result.append(recorder.call(b"input", lambda v: v)))
+    thread.start()
+    try:
+        assert reached.wait(timeout=1)
+        assert recorder.seal_source() == {"status": "refused", "reason": "call_incomplete"}
+        assert spool.current_seal() is None
+        release.set()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        assert result == [b"input"]
+        assert recorder.seal_source()["status"] == "sealed"
+    finally:
+        release.set()
+        thread.join(timeout=2)
+        spool.close()
+
+
+def test_seal_refuses_withheld_content_and_known_loss(recording: Any, tmp_path: Path) -> None:
+    writer, _store = recording
+    spool = _spool(tmp_path)
+    recorder = _recorder(writer, spool)
+    try:
+        recorder.call(b"input", lambda value: value, context=b"withheld context")
+        assert recorder.seal_source() == {"status": "refused", "reason": "content_not_stored"}
+        recorder._fault()
+        assert recorder.seal_source() == {"status": "refused", "reason": "recording_loss"}
+        assert spool.current_seal() is None
+    finally:
+        spool.close()

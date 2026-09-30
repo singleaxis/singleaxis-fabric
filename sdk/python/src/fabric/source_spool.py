@@ -9,10 +9,12 @@ file and directory were fsynced locally. The unspooled crash window remains.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import fcntl
 import hashlib
 import json
+import math
 import os
 import queue
 import re
@@ -84,6 +86,9 @@ _REQUIRED_EVENT_KEYS = frozenset(
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _FILE_MODE = 0o600
 _DIRECTORY_MODE = 0o700
+_SEAL_SCHEMA = "fabric.source-epoch-seal/v1"
+_MAX_SEAL_BYTES = 64 * 1024
+_MAX_SEAL_TIMEOUT_S = 3600
 _STATUSES = frozenset(
     {
         "recorded",
@@ -155,10 +160,20 @@ def _read_secure(path: Path, max_bytes: int) -> bytes:
         os.close(fd)
 
 
+def _events_digest(events: list[dict[str, Any]]) -> str:
+    """Hash unambiguous length-framed canonical records in source order."""
+    digest = hashlib.sha256()
+    for event in sorted(events, key=lambda row: (row["source_id"], row["source_sequence"])):
+        body = _canonical(event)
+        digest.update(len(body).to_bytes(8, "big"))
+        digest.update(body)
+    return "sha256:" + digest.hexdigest()
+
+
 class SyntheticSourceSpool:
     """One tenant/run owner with restart epochs and immutable event records."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915 - validate owner, recover epochs and acquire lock atomically
         self,
         root: str,
         *,
@@ -193,8 +208,14 @@ class SyntheticSourceSpool:
         self._condition = threading.Condition()
         self._pending = 0
         self._closed = False
+        self._seal_attempted = False
+        self._current_seal: dict[str, Any] | None = None
         self._statuses: dict[str, str] = {}
+        self._admitted_digests: dict[str, str] = {}
         self._recovered: list[dict[str, Any]] = []
+        self._recovered_seals: list[dict[str, Any]] = []
+        self._seal_intents: set[int] = set()
+        self._unsealed_epoch_ranges: list[dict[str, int]] = []
         self._recovered_gaps: list[dict[str, Any]] = []
         self._used = 0
         self._unretained_drops = 0
@@ -205,7 +226,7 @@ class SyntheticSourceSpool:
         try:
             _secure_regular(self.root / ".lock")
             fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self._recovered, self._used = self._recover()
+            self._recovered, self._recovered_seals, self._seal_intents, self._used = self._recover()
             self._recovered_gaps = self._find_recovered_gaps(self._recovered)
             self._statuses = {event["record_id"]: "spooled" for event in self._recovered}
             self._positions = {
@@ -213,19 +234,67 @@ class SyntheticSourceSpool:
                 for event in self._recovered
             }
             self.epoch = self._open_epoch()
+            sealed_epochs = {seal["source_epoch"] for seal in self._recovered_seals}
+            start = 0
+            for sealed_epoch in sorted(sealed_epochs):
+                if sealed_epoch > start:
+                    self._unsealed_epoch_ranges.append({"start": start, "end": sealed_epoch - 1})
+                start = sealed_epoch + 1
+            if start < self.epoch:
+                self._unsealed_epoch_ranges.append({"start": start, "end": self.epoch - 1})
         except BaseException:
             os.close(self._lock_fd)
             raise
         self._worker = threading.Thread(target=self._run, name="fabric-source-spool", daemon=True)
         self._worker.start()
 
-    def _recover(self) -> tuple[list[dict[str, Any]], int]:
+    def _recover(  # noqa: PLR0912, PLR0915 - closed journal entry formats require distinct checks
+        self,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int], int]:
         events: list[dict[str, Any]] = []
+        seals: list[dict[str, Any]] = []
+        intents: set[int] = set()
         used = 0
         seen_ids: set[str] = set()
         seen_positions: set[tuple[str, int, int]] = set()
         for path in sorted(self.root.iterdir()):
             if path.name in {".lock", "state.json"}:
+                continue
+            if path.name.startswith("intent-") and path.name.endswith(".json"):
+                _secure_regular(path)
+                raw_intent = _read_secure(path, min(4096, self.max_bytes - used))
+                intent = json.loads(raw_intent)
+                if (
+                    not isinstance(intent, dict)
+                    or set(intent) != {"schema_version", "tenant_id", "run_id", "source_epoch"}
+                    or intent["schema_version"] != _SEAL_SCHEMA
+                    or intent["tenant_id"] != self.tenant_id
+                    or intent["run_id"] != self.run_id
+                    or not isinstance(intent["source_epoch"], int)
+                    or isinstance(intent["source_epoch"], bool)
+                    or intent["source_epoch"] < 0
+                    or path.name != f"intent-{intent['source_epoch']}.json"
+                    or _canonical(intent) != raw_intent
+                    or intent["source_epoch"] in intents
+                ):
+                    raise ValueError("source spool seal intent invalid")
+                intents.add(intent["source_epoch"])
+                used += path.stat().st_size
+                continue
+            if path.name.startswith("seal-") and path.name.endswith(".json"):
+                _secure_regular(path)
+                remaining = min(_MAX_SEAL_BYTES, self.max_bytes - used)
+                raw_seal = _read_secure(path, remaining)
+                seal = json.loads(raw_seal)
+                self._validate_seal_shape(seal)
+                if _canonical(seal) != raw_seal:
+                    raise ValueError("source spool seal encoding invalid")
+                if path.name != f"seal-{seal['source_epoch']}.json":
+                    raise ValueError("source spool seal filename and epoch disagree")
+                if any(previous["source_epoch"] == seal["source_epoch"] for previous in seals):
+                    raise ValueError("duplicate source spool epoch seal")
+                used += path.stat().st_size
+                seals.append(seal)
                 continue
             if not path.name.startswith("event-") or not path.name.endswith(".json"):
                 raise ValueError("unexpected or incomplete source spool entry")
@@ -257,7 +326,15 @@ class SyntheticSourceSpool:
         events.sort(
             key=lambda event: (event["source_epoch"], event["source_id"], event["source_sequence"])
         )
-        return events, used
+        for seal in seals:
+            self._verify_seal_events(
+                seal, [event for event in events if event["source_epoch"] == seal["source_epoch"]]
+            )
+        # An intent is fsynced before the seal. If a later seal write fails
+        # after rename but before directory fsync, its presence bars credit.
+        seals = [seal for seal in seals if seal["source_epoch"] not in intents]
+        seals.sort(key=lambda seal: seal["source_epoch"])
+        return events, seals, intents, used
 
     @staticmethod
     def _find_recovered_gaps(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -278,6 +355,73 @@ class SyntheticSourceSpool:
                 gaps.append({"source_epoch": epoch, "source_id": source, "missing_ranges": ranges})
         return gaps
 
+    def _validate_high_water(self, high_water: Any) -> dict[str, int]:
+        if not isinstance(high_water, dict) or not high_water or len(high_water) > self.max_records:
+            raise ValueError("source spool seal source map invalid")
+        count = 0
+        for source, high in high_water.items():
+            if (
+                not isinstance(source, str)
+                or _SAFE_ID.fullmatch(source) is None
+                or not isinstance(high, int)
+                or isinstance(high, bool)
+                or high < -1
+                or high >= self.max_records
+            ):
+                raise ValueError("source spool seal source position invalid")
+            count += high + 1
+            if count > self.max_records:
+                raise ValueError("source spool seal record capacity exceeded")
+        return high_water
+
+    def _validate_seal_shape(self, seal: Any) -> None:
+        if not isinstance(seal, dict) or set(seal) != {
+            "schema_version",
+            "tenant_id",
+            "run_id",
+            "source_epoch",
+            "source_high_water",
+            "record_count",
+            "events_sha256",
+        }:
+            raise ValueError("source spool seal schema invalid")
+        if (
+            seal["schema_version"] != _SEAL_SCHEMA
+            or seal["tenant_id"] != self.tenant_id
+            or seal["run_id"] != self.run_id
+            or not isinstance(seal["source_epoch"], int)
+            or isinstance(seal["source_epoch"], bool)
+            or seal["source_epoch"] < 0
+            or not isinstance(seal["record_count"], int)
+            or isinstance(seal["record_count"], bool)
+            or seal["record_count"] < 0
+            or seal["record_count"] > self.max_records
+            or not isinstance(seal["events_sha256"], str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", seal["events_sha256"]) is None
+        ):
+            raise ValueError("source spool seal identity or digest invalid")
+        self._validate_high_water(seal["source_high_water"])
+
+    def _verify_seal_events(self, seal: dict[str, Any], events: list[dict[str, Any]]) -> None:
+        expected = seal["source_high_water"]
+        if len(events) != seal["record_count"]:
+            raise ValueError("source spool seal record count mismatch")
+        actual: dict[str, set[int]] = {}
+        for event in events:
+            if event["source_epoch"] != seal["source_epoch"]:
+                raise ValueError("source spool seal epoch mismatch")
+            actual.setdefault(event["source_id"], set()).add(event["source_sequence"])
+        for source, high in expected.items():
+            observed = actual.pop(source, set())
+            if len(observed) != high + 1 or (
+                observed and (min(observed) != 0 or max(observed) != high)
+            ):
+                raise ValueError("source spool seal sequence mismatch")
+        if actual:
+            raise ValueError("source spool seal contains undeclared source")
+        if _events_digest(events) != seal["events_sha256"]:
+            raise ValueError("source spool seal event digest mismatch")
+
     def _open_epoch(self) -> int:
         state_path = self.root / "state.json"
         if state_path.exists() or state_path.is_symlink():
@@ -293,11 +437,15 @@ class SyntheticSourceSpool:
                 or state["epoch"] < 0
             ):
                 raise ValueError("source spool state identity or epoch invalid")
-            if any(event["source_epoch"] > state["epoch"] for event in self._recovered):
+            if (
+                any(event["source_epoch"] > state["epoch"] for event in self._recovered)
+                or any(seal["source_epoch"] > state["epoch"] for seal in self._recovered_seals)
+                or any(epoch > state["epoch"] for epoch in self._seal_intents)
+            ):
                 raise ValueError("source spool event epoch exceeds persisted state")
             epoch = state["epoch"] + 1
         else:
-            if self._recovered:
+            if self._recovered or self._recovered_seals or self._seal_intents:
                 raise ValueError("source spool events exist without epoch state")
             epoch = 0
         _write_atomic(
@@ -407,6 +555,8 @@ class SyntheticSourceSpool:
             raise ValueError("source spool event epoch mismatch")
         record_id = event["record_id"]
         position = (event["source_id"], event["source_epoch"], event["source_sequence"])
+        admitted = copy.deepcopy(event)
+        admitted_digest = "sha256:" + hashlib.sha256(_canonical(admitted)).hexdigest()
         with self._condition:
             if record_id in self._statuses or position in self._positions:
                 raise ValueError("source spool duplicate record ID or position")
@@ -416,13 +566,15 @@ class SyntheticSourceSpool:
             self._positions.add(position)
             if self._closed:
                 self._statuses[record_id] = "failed"
+                self._current_seal = None
                 return "failed"
             try:
-                self._queue.put_nowait(copy.deepcopy(event))
+                self._queue.put_nowait(admitted)
             except queue.Full:
                 self._statuses[record_id] = "dropped"
                 return "dropped"
             self._statuses[record_id] = "pending"
+            self._admitted_digests[record_id] = admitted_digest
             self._pending += 1
             return "pending"
 
@@ -486,6 +638,120 @@ class SyntheticSourceSpool:
 
     def recovered_gaps(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self._recovered_gaps)
+
+    def recovered_seals(self) -> list[dict[str, Any]]:
+        """Verified disk metadata for prior epochs, without source attestation."""
+        return copy.deepcopy(self._recovered_seals)
+
+    def unsealed_epoch_ranges(self) -> list[dict[str, int]]:
+        """Compact inclusive prior epoch ranges with no terminal metadata seal."""
+        return copy.deepcopy(self._unsealed_epoch_ranges)
+
+    def current_seal(self) -> dict[str, Any] | None:
+        return copy.deepcopy(self._current_seal)
+
+    def seal_epoch(  # noqa: PLR0911, PLR0912 - each failure returns a fixed public reason
+        self, expected_high_water: dict[str, int], timeout_s: float = 10.0
+    ) -> dict[str, Any]:
+        """Offline metadata consistency check; never a complete-run receipt."""
+        with self._condition:
+            if self._seal_attempted or self._closed:
+                return {"status": "refused", "reason": "already_finalized"}
+            self._seal_attempted = True
+            self._closed = True
+        if (
+            isinstance(timeout_s, bool)
+            or not isinstance(timeout_s, (int, float))
+            or not math.isfinite(timeout_s)
+            or timeout_s < 0
+            or timeout_s > _MAX_SEAL_TIMEOUT_S
+        ):
+            return {"status": "refused", "reason": "invalid_timeout"}
+        try:
+            self._validate_high_water(expected_high_water)
+        except (TypeError, ValueError):
+            return {"status": "refused", "reason": "invalid_high_water"}
+        if not self.flush(timeout_s):
+            return {"status": "refused", "reason": "unsettled_writes"}
+        with self._condition:
+            if (
+                self._pending
+                or self._unretained_drops
+                or any(status != "spooled" for status in self._statuses.values())
+            ):
+                return {"status": "refused", "reason": "source_loss"}
+            admitted = dict(self._admitted_digests)
+            used = self._used
+        try:
+            events, _prior_seals, _prior_intents, disk_used = self._recover()
+            current = [event for event in events if event["source_epoch"] == self.epoch]
+            if disk_used != used:
+                return {"status": "refused", "reason": "disk_mismatch"}
+            if {event["record_id"] for event in current} != set(admitted):
+                return {"status": "refused", "reason": "admission_mismatch"}
+            for event in current:
+                digest = "sha256:" + hashlib.sha256(_canonical(event)).hexdigest()
+                if digest != admitted[event["record_id"]]:
+                    return {"status": "refused", "reason": "admission_mismatch"}
+            seal = {
+                "schema_version": _SEAL_SCHEMA,
+                "tenant_id": self.tenant_id,
+                "run_id": self.run_id,
+                "source_epoch": self.epoch,
+                "source_high_water": copy.deepcopy(expected_high_water),
+                "record_count": len(current),
+                "events_sha256": _events_digest(current),
+            }
+            self._validate_seal_shape(seal)
+            self._verify_seal_events(seal, current)
+            body = _canonical(seal)
+            if len(body) > _MAX_SEAL_BYTES:
+                return {"status": "refused", "reason": "seal_too_large"}
+            target = self.root / f"seal-{self.epoch}.json"
+            intent_path = self.root / f"intent-{self.epoch}.json"
+            if target.exists() or target.is_symlink():
+                return {"status": "refused", "reason": "seal_already_exists"}
+            if intent_path.exists() or intent_path.is_symlink():
+                return {"status": "refused", "reason": "seal_already_exists"}
+            intent = _canonical(
+                {
+                    "schema_version": _SEAL_SCHEMA,
+                    "tenant_id": self.tenant_id,
+                    "run_id": self.run_id,
+                    "source_epoch": self.epoch,
+                }
+            )
+            if len(body) + len(intent) > self.max_bytes - used:
+                return {"status": "refused", "reason": "capacity_exhausted"}
+            _write_atomic(intent_path, intent)
+            _write_atomic(target, body)
+            intent_path.unlink()
+            try:
+                _sync_directory(self.root)
+            except OSError:
+                # The seal itself has already been fsynced. A failed final
+                # intent removal still refuses this attempt. Restore the
+                # pre-synced intent where possible so recovery cannot credit
+                # an ambiguous finalization as completed.
+                with contextlib.suppress(OSError):
+                    _write_atomic(intent_path, intent)
+                raise
+        except (OSError, ValueError, OverflowError, json.JSONDecodeError):
+            return {"status": "refused", "reason": "seal_io_or_integrity_failure"}
+        with self._condition:
+            self._used += len(body)
+            lost = self._unretained_drops or any(
+                status != "spooled" for status in self._statuses.values()
+            )
+            if not lost:
+                self._current_seal = seal
+        if lost:
+            # Preserve a detected loss across restart, not just in memory.
+            # Do not hold the admission lock during filesystem operations.
+            with contextlib.suppress(OSError):
+                _write_atomic(intent_path, intent)
+            return {"status": "refused", "reason": "source_loss"}
+        return {"status": "sealed", "reason": "ok", "seal": copy.deepcopy(seal)}
 
     def health(self) -> dict[str, Any]:
         """Local stage counts, never a downstream or complete-source receipt."""

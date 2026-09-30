@@ -71,6 +71,23 @@ delivery receipts, target storage protection and independent review remain
 required before `verified_complete_for_declared_scope` is available. Current
 production qualification remains NO-GO.
 
+When a source journal is configured, call `recorder.seal_source()` explicitly
+after all monitored work finishes. This offline step waits for pending writes
+and checks the saved metadata against the sequence numbers assigned in memory.
+It refuses incomplete streams, withheld or failed content, known recording
+loss and inconsistent journal files. Do not put this storage wait inside the
+agent's call path. The journal stops accepting records after finalization;
+later agent calls still execute but their recording attempts become gaps.
+Start a new source epoch for further recorded work.
+
+A successful metadata seal helps detect a missing journal tail after restart.
+`recovered_snapshots()` distinguishes a sealed terminal sequence from the
+largest sequence merely found on disk, and the current snapshot lists prior
+epochs without seals, even when no events survived. Ordinary `close()` does
+not create a seal. This mechanism does not persist queued raw bytes, prove
+that every action was wrapped, or authenticate the source. It cannot close
+the pre-fsync loss window on its own and never changes a run to complete.
+
 ## Run the installed-package example
 
 From the repository root, build and install into a new virtual environment:

@@ -15,6 +15,7 @@ import asyncio
 import copy
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -34,6 +35,7 @@ from fabric import (
 )
 from fabric import __file__ as fabric_package_file
 from fabric.call_recorder import CallRecorder
+from fabric.byte_resolver import ByteEvidenceResolver
 from fabric.call_reconcile import (
     CallByteWitness,
     CallOperationWitness,
@@ -269,6 +271,9 @@ def main() -> int:
         result = asyncio.run(run())
         if result != b"completed":
             raise AssertionError("agent result changed")
+        seal_result = recorder.seal_source()
+        if seal_result.get("status") != "sealed":
+            raise AssertionError("completed source metadata did not seal")
         snapshot = recorder.snapshot()
         spans = exporter.get_finished_spans()
         if len(spans) != 5 or len({span.context.trace_id for span in spans}) != 1:
@@ -401,6 +406,60 @@ def main() -> int:
             raise AssertionError("content writer did not settle")
         if not spool.close():
             raise AssertionError("source journal did not settle")
+        reopened = SyntheticSourceSpool(
+            str(journal_path.resolve()), tenant_id="synthetic", run_id=run_id
+        )
+        try:
+            recovered = CallRecorder(
+                writer,
+                run_id=run_id,
+                agent_id="recovery-review",
+                source_id=SOURCE,
+                source_spool=reopened,
+                tracer=provider.get_tracer("custom-agent-recovery"),
+                recovery_resolver=ByteEvidenceResolver(store, tenant_id="synthetic"),
+            ).recovered_snapshots()
+            if (
+                len(recovered) != 1
+                or recovered[0].get("source_high_water_basis") != "sealed_terminal"
+            ):
+                raise AssertionError(
+                    "source terminal record not preserved after restart"
+                )
+            recovery_report = reconcile_call_run(
+                recovered[0],
+                expected,
+                resolver,
+                expected_operations=outcomes,
+                routes=routes,
+            )
+            if (
+                recovery_report["verdict"] != "unverified"
+                or recovery_report["discrepancies"]
+            ):
+                raise AssertionError(
+                    "recovered source differs from independent fixture"
+                )
+        finally:
+            if not reopened.close():
+                raise AssertionError("reopened source journal did not settle")
+        # Destroy only a test-owned copy; retain the original evidence journal.
+        damaged_path = root / "tail-loss-journal"
+        shutil.copytree(journal_path, damaged_path)
+        terminal = max(
+            [*snapshot["starts"], *snapshot["events"], *snapshot["operations"]],
+            key=lambda event: event["source_sequence"],
+        )
+        (damaged_path / f"event-{terminal['record_id']}.json").unlink()
+        try:
+            damaged = SyntheticSourceSpool(
+                str(damaged_path.resolve()), tenant_id="synthetic", run_id=run_id
+            )
+        except ValueError:
+            tail_loss_rejected = True
+        else:
+            damaged.close()
+            raise AssertionError("deleted journal tail was accepted after restart")
         provider.shutdown()
         summary = {
             "schema_version": "fabric.custom-agent-smoke/v1",
@@ -414,6 +473,10 @@ def main() -> int:
             "corruption_verdict": corrupted["verdict"],
             "qualification": "NO_GO",
             "privacy_failure_verdict": privacy_report["verdict"],
+            "source_metadata_sealed": True,
+            "source_restart_verdict": recovery_report["verdict"],
+            "source_restart_discrepancies": len(recovery_report["discrepancies"]),
+            "source_deleted_tail_rejected": tail_loss_rejected,
         }
         if args.otlp_endpoint:
             from fabric.call_otlp import export_call_snapshot, project_call_snapshot
@@ -463,6 +526,7 @@ def main() -> int:
                 ("report.json", clean),
                 ("summary.json", summary),
                 ("privacy-report.json", privacy_report),
+                ("source-recovery-report.json", recovery_report),
             ):
                 target = root / filename
                 target.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")

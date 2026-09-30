@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
+import math
 import re
 import threading
 import uuid
@@ -27,7 +28,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from opentelemetry import trace
 
 from .byte_evidence import ByteEvidenceRecorder
-from .source_spool import SyntheticSourceSpool
+from .source_spool import _MAX_SEAL_TIMEOUT_S, SyntheticSourceSpool
 from .tracing import get_tracer
 
 if TYPE_CHECKING:
@@ -45,6 +46,20 @@ _KINDS = {
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _seal_refusal(snapshot: dict[str, Any]) -> str | None:
+    if snapshot["writer_settled"] is not True or snapshot["source_spool_settled"] is not True:
+        return "writers_unsettled"
+    if snapshot["recording_gaps"] or snapshot["unretained_drops"]:
+        return "recording_loss"
+    if any(call["status"] not in {"ok", "error", "cancelled"} for call in snapshot["calls"]):
+        return "call_incomplete"
+    if any(event["status"] != "stored" for event in snapshot["events"]):
+        # Withheld bytes may be valid policy, but cannot establish original-byte
+        # completeness for this convenience API.
+        return "content_not_stored"
+    return None
 
 
 def _identifier(value: str) -> str:
@@ -339,8 +354,6 @@ class CallRecorder:
             return
         call.ended = True
         try:
-            with self._lock:
-                call.fields.update(status=status, ended_at=_now())
             event = self._base(call)
             result = "deferred" if status == "partial" else status
             event.update(
@@ -351,6 +364,10 @@ class CallRecorder:
             )
             self._append(self._operations, event)
             self._journal(event)
+            # A snapshot must not see terminal status before the terminal
+            # observation has been admitted (or a recording gap counted).
+            with self._lock:
+                call.fields.update(status=status, ended_at=_now())
             if call.span is not None:
                 call.span.set_attribute("fabric.call.outcome", status)
                 call.span.end()
@@ -448,6 +465,11 @@ class CallRecorder:
             "source_epoch_persisted": self.source_spool is not None,
             "source_identity_authenticated": False,
             "source_high_water": {self.source_id: high_water},
+            "source_high_water_basis": "assigned_in_process",
+            "source_metadata_seal": self.source_spool.current_seal() if self.source_spool else None,
+            "source_unsealed_epoch_ranges": self.source_spool.unsealed_epoch_ranges()
+            if self.source_spool
+            else [],
             "writer_settled": settled,
             "source_spool_settled": spool_settled,
             "source_spool_recovered_gaps": self.source_spool.recovered_gaps()
@@ -464,6 +486,34 @@ class CallRecorder:
             "events": sorted(events, key=lambda event: event["source_sequence"]),
             "operations": sorted(operations, key=lambda event: event["source_sequence"]),
         }
+
+    def seal_source(self, *, timeout_s: float = 10.0) -> dict[str, Any]:
+        """Finalize metadata persistence after work, never assert run completeness.
+
+        This explicit offline operation may wait for storage. It must not run
+        on the delegate's execution path. New calls still execute after sealing,
+        but their refused journal writes become evidence gaps; start a new epoch
+        for further recorded work. The seal is neither content durability nor
+        authenticated proof of all activity and does not change any verdict.
+        """
+        if self.source_spool is None:
+            return {"status": "refused", "reason": "source_spool_unavailable"}
+        if (
+            isinstance(timeout_s, bool)
+            or not isinstance(timeout_s, (int, float))
+            or not math.isfinite(timeout_s)
+            or timeout_s < 0
+            or timeout_s > _MAX_SEAL_TIMEOUT_S
+        ):
+            return {"status": "refused", "reason": "invalid_timeout"}
+        try:
+            snapshot = self.snapshot(settle_timeout_s=timeout_s)
+            reason = _seal_refusal(snapshot)
+            if reason is not None:
+                return {"status": "refused", "reason": reason}
+            return self.source_spool.seal_epoch(snapshot["source_high_water"], timeout_s=timeout_s)
+        except Exception:
+            return {"status": "refused", "reason": "source_seal_failed"}
 
     def _recovered_records(self) -> list[dict[str, Any]]:
         records = self.source_spool.recovered() if self.source_spool else []
@@ -520,6 +570,13 @@ class CallRecorder:
         for event in self._recovered_records():
             epochs.setdefault(event["source_epoch"], []).append(event)
         snapshots = []
+        seals = {
+            seal["source_epoch"]: seal
+            for seal in (self.source_spool.recovered_seals() if self.source_spool else [])
+        }
+        # Preserve explicit terminal marks even when the sealed epoch was empty.
+        for epoch in seals:
+            epochs.setdefault(epoch, [])
         for epoch, records in sorted(epochs.items()):
             starts = [event for event in records if event["role"] == "operation.start"]
             operations = [event for event in records if event["role"] == "operation.outcome"]
@@ -574,6 +631,7 @@ class CallRecorder:
                 water[record["source_id"]] = max(
                     water.get(record["source_id"], -1), record["source_sequence"]
                 )
+            seal = seals.get(epoch)
             gaps = (
                 [gap for gap in self.source_spool.recovered_gaps() if gap["source_epoch"] == epoch]
                 if self.source_spool
@@ -587,7 +645,13 @@ class CallRecorder:
                     "source_epoch": epoch,
                     "source_epoch_persisted": True,
                     "source_identity_authenticated": False,
-                    "source_high_water": water,
+                    "source_high_water": seal["source_high_water"] if seal else water,
+                    "source_observed_high_water": water,
+                    "source_high_water_basis": "sealed_terminal" if seal else "observed_only",
+                    "source_metadata_seal": seal,
+                    "source_unsealed_epoch_ranges": self.source_spool.unsealed_epoch_ranges()
+                    if self.source_spool
+                    else [],
                     "writer_settled": all(event.get("status") != "pending" for event in events),
                     "source_spool_settled": True,
                     "source_spool_recovered_gaps": gaps,
