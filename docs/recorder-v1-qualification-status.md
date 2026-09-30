@@ -21,10 +21,11 @@ and deleted tails, and never substitutes a cached seal. The separate local
 witness resolver has equivalent bounded tenant/issuer namespace checks. These
 are local integrity/permission checks, not target IAM or encryption proof.
 
-Executed local checks: **1,071 SDK tests passed**, **87.13% branch-inclusive
-coverage**, full strict mypy (92 files) and Ruff passed. The frozen installed
-wheel passed **136 focused tests** for combined proofs, receipts, source
-readback, witness storage and independent feeds. The real loopback-provider ->
+Executed final local checks: **1,074 SDK tests passed**, **87.13% branch-inclusive
+coverage**, full strict mypy (93 files) and Ruff passed. The final frozen installed
+wheel passed **203 focused tests** for combined proofs, receipts, source
+readback, witness storage, independent feeds, signatures, MCP and security
+dependency floors. The real loopback-provider ->
 no-shell subprocess -> binary artifact -> provider pilot reconciled **4 calls,
 15 required original objects and 23 projected metadata records**, with zero
 unexplained fixture discrepancies. All **24 injected omissions/substitutions**
@@ -41,13 +42,13 @@ artifact checks have gRPC available). Recorder wheel/sdist content and release
 identity qualification passed. New exact-artifact Linux CI is pending; prior
 head `9bcc439` CI is historical evidence only for its artifacts.
 
-Frozen wheel SHA-256:
-`942fadd8d88f555fdfb6b701697c487a0d95304c2d9ab349bf41488681d87ea5`;
+Final frozen wheel SHA-256:
+`dbca2af95d631437533cbefca9a1630156837203560dfaa2ea3a68b460220a35`;
 sdist SHA-256:
-`9e8eb4ad63a2137b95f5a9f600a32c3ed653eed75760a005b9a2d5bfd563b8fa`.
+`d8d1fe4eb97a4d486616e6ed628076522b053882c6f89810ec41956034c419e3`.
 Owned private local evidence:
 `/private/tmp/fabric-qualified-run-release.8ELf6P/`; coverage:
-`/private/tmp/fabric-qualified-run-coverage-20261001.xml`.
+`/private/tmp/fabric-qualified-run-coverage-20261001-final.xml`.
 Reproduction commands are in [qualified testing](qualified-call-run-testing.md).
 The Linux workflow now tests the same built wheel with the combined verifier
 and pilot and publishes only a non-secret summary.
@@ -70,6 +71,28 @@ package under fixture authority; it does not qualify real issuers, Node
 receipt production, storage controls, provider independence or customer
 deployment. Engineering for those live integrations is not claimed finished.
 Deployment status remains **NO-GO**.
+
+### First Linux run and dependency correction
+
+Commit `93f226f` passed the new exact-installed-wheel Kubernetes
+production-profile pilot (`36765324739`), CodeQL and license checks. Recorder
+CI failed only the new commit's missing DCO trailer; the commit was amended
+with the repository-required sign-off. The security scanner found the SDK's
+optional MCP dependency lock still selecting PyJWT 2.13.0: one critical and
+five high findings, with a patched version available. This is a real release
+dependency issue, not a reason to disable the scan.
+
+Before changing dependencies, spec 046 recorded the correction: require
+PyJWT >=2.15.0 in the MCP extra and regenerate its lock (resolved 2.15.1), and
+require cryptography >=49 in signing/dev so existing vulnerable versions do
+not satisfy an installation. Add source/lock/installed-metadata regression
+tests and repeat exact artifact/signature/MCP/security qualification. The
+maintainers' [PyJWT release](https://github.com/jpadilla/pyjwt/releases/tag/2.15.0)
+and [cryptography advisory](https://github.com/pyca/cryptography/security/advisories/GHSA-jwv3-5hgf-82ww)
+support the minimums. A new final wheel and Linux rerun are required; the
+original `dist/` artifact digests do not cover this dependency-metadata change.
+The final `final-dist/` wheel and `final-pilot/` evidence above passed the
+rerun locally. Linux release/security checks for that correction are pending.
 
 ## Current closure work — 2026-09-30 — NO-GO
 

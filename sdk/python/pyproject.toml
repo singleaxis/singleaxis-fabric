@@ -66,6 +66,7 @@ cohere = [
 # pulls the real `mcp` package in for users wiring it to a live server.
 mcp = [
   "mcp>=1.0",
+  "PyJWT>=2.15.0",
 ]
 # Optional generic signature verification (spec 023 §4). The
 # `fabric.verify_signature` ed25519 path uses `cryptography` when present
@@ -73,7 +74,7 @@ mcp = [
 # needs nothing here. This extra pulls the real primitive in for users who
 # want ed25519 verification.
 signing = [
-  "cryptography>=42",
+  "cryptography>=49",
 ]
 [dependency-groups]
 dev = [
@@ -90,7 +91,7 @@ dev = [
   # cryptography exercises the real ed25519 path in the generic
   # signature-verification tests (spec 023); without it ed25519 degrades
   # to verified=False and those asserts are skipped.
-  "cryptography>=42",
+  "cryptography>=49",
 ]
 
 [project.urls]

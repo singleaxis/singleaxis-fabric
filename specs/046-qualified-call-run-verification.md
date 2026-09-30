@@ -155,6 +155,16 @@ provider state, deterministic replay, enterprise approval or universal capture.
 
 ## Acceptance tests and evidence producers
 
+Before the release rerun, remediate the SDK's optional MCP authentication
+dependency found by Linux Trivy: the existing lock selects PyJWT 2.13.0, with
+one critical and five high findings and fixed version 2.14.0. Set an explicit
+MCP-extra floor of PyJWT 2.15.0 and regenerate that lock entry. Raise optional
+signing/dev cryptography to >=49 per the maintainer's patched certificate
+validation release, so an existing vulnerable client installation cannot
+satisfy the extra. Test minimum constraints, lock resolution and exact installed
+wheel requirements, then rerun signatures, MCP adapter tests, qualification and
+security gates. Do not suppress the scanner findings or remove the MCP extra.
+
 Use a non-sensitive custom-agent model -> no-shell tool -> artifact -> model
 fixture with a separately populated native operation ledger and byte store.
 Test empty/binary bytes, ordered stream chunks, parallel calls, retry attempts,

@@ -11,7 +11,7 @@
   "current_local_evidence": {
     "spec": "046",
     "test_date": "2026-10-01",
-    "wheel_sha256": "942fadd8d88f555fdfb6b701697c487a0d95304c2d9ab349bf41488681d87ea5",
+    "wheel_sha256": "dbca2af95d631437533cbefca9a1630156837203560dfaa2ea3a68b460220a35",
     "qualification": "installed-wheel-offline-fixture-only",
     "operations": 4,
     "byte_objects": 15,

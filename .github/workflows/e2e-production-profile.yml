@@ -208,6 +208,7 @@ jobs:
             sdk/python/tests/test_source_spool_readback.py \
             sdk/python/tests/test_route_closure_attestation.py \
             sdk/python/tests/test_independent_store.py \
+            sdk/python/tests/test_security_dependency_floors.py \
             sdk/python/tests/test_qualified_run.py
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
             scripts/qualification/run_qualified_call_pilot.py \
