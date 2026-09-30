@@ -19,7 +19,7 @@ and `signature`. Version is `fabric.evidence-attestation/v1`; algorithm is
 
 | Field | Required meaning |
 | --- | --- |
-| `statement_type` | `source_binding`, `independent_witness`, `source_spooled`, `node_accepted`, `destination_accepted`, or `destination_durable` |
+| `statement_type` | `source_binding`, `independent_witness`, `route_closure`, `source_spooled`, `node_accepted`, `destination_accepted`, or `destination_durable` |
 | `issuer_id`, `tenant_id` | Identifies the approved authority and its tenant |
 | `run_id`, `scope_sha256` | Names the run and exact approved scope bytes |
 | `subject_kind`, `subject_id`, `subject_sha256` | Identifies the exact source, evidence set, event or content object covered |
@@ -54,9 +54,12 @@ the issuer actually observed every action or completed a durable write.
 Those producer behaviors and independent truth feeds need their own tests.
 The custom-agent reconciler still reports matching local fixtures as
 `unverified`; this verifier alone never enables a complete-run or production
-GO verdict. The next required integration binds independently observed full
-operation/byte sets, route closure, source lifecycle and four receipt stages to
-the same frozen run and artifact bundle.
+GO verdict. The separate [qualified call-run verifier](qualified-call-run-testing.md)
+now binds independently observed full operation/byte sets, route closure,
+source lifecycle and four receipt stages to one declared source epoch. Its
+test-only issuer fixtures are not live producer qualification or production
+approval. `route_closure` statements cover an evidence set and must be issued
+by the separately authorized owner of the deployment's route controls.
 
 ## Checking an independent operation and byte feed
 

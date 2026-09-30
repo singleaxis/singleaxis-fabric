@@ -72,3 +72,4 @@ Every spec declares a `Status` in its header:
 | [043](043-custom-agent-call-recording.md) | Linked custom-agent calls, protected bytes and offline comparison | implementation in progress; NO-GO |
 | [044](044-production-evidence-closure.md) | Authenticated ingress, source metadata finalization and remaining proof gates | implementation in progress; NO-GO |
 | [045](045-independent-evidence-feeds.md) | Authenticated independent operation and byte feeds | draft; no complete-run claim |
+| [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | implementation in progress; NO-GO |

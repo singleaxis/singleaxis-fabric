@@ -131,22 +131,35 @@ def _write_atomic(path: Path, data: bytes) -> None:
         raise
 
 
-def _secure_regular(path: Path) -> None:
-    info = path.lstat()
-    if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != _FILE_MODE:
+def _secure_regular(path: Path, *, directory_fd: int | None = None) -> None:
+    info = (
+        path.lstat()
+        if directory_fd is None
+        else os.stat(path.name, dir_fd=directory_fd, follow_symlinks=False)
+    )
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or stat.S_IMODE(info.st_mode) != _FILE_MODE
+        or info.st_nlink != 1
+    ):
         raise ValueError("source journal entry must be a real mode-0600 file")
     if info.st_uid != os.geteuid():
         raise ValueError("source journal entry owner mismatch")
 
 
-def _read_secure(path: Path, max_bytes: int) -> bytes:
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+def _read_secure(path: Path, max_bytes: int, *, directory_fd: int | None = None) -> bytes:
+    fd = os.open(
+        path if directory_fd is None else path.name,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK,
+        dir_fd=directory_fd,
+    )
     try:
         info = os.fstat(fd)
         if (
             not stat.S_ISREG(info.st_mode)
             or stat.S_IMODE(info.st_mode) != _FILE_MODE
             or info.st_uid != os.geteuid()
+            or info.st_nlink != 1
         ):
             raise ValueError("source journal entry changed or is unsafe")
         if info.st_size < 0 or info.st_size > max_bytes:
@@ -155,6 +168,14 @@ def _read_secure(path: Path, max_bytes: int) -> bytes:
             data = handle.read(max_bytes + 1)
             if len(data) > max_bytes:
                 raise ValueError("source journal entry grew beyond configured capacity")
+            after = os.fstat(fd)
+            if len(data) != info.st_size or (
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+                info.st_nlink,
+            ) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns, after.st_nlink):
+                raise ValueError("source journal entry changed while reading")
             return data
     finally:
         os.close(fd)
@@ -250,6 +271,8 @@ class SyntheticSourceSpool:
 
     def _recover(  # noqa: PLR0912, PLR0915 - closed journal entry formats require distinct checks
         self,
+        *,
+        directory_fd: int | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int], int]:
         events: list[dict[str, Any]] = []
         seals: list[dict[str, Any]] = []
@@ -257,12 +280,19 @@ class SyntheticSourceSpool:
         used = 0
         seen_ids: set[str] = set()
         seen_positions: set[tuple[str, int, int]] = set()
-        for path in sorted(self.root.iterdir()):
+        paths = (
+            sorted(self.root.iterdir())
+            if directory_fd is None
+            else [self.root / name for name in sorted(os.listdir(directory_fd))]
+        )
+        for path in paths:
             if path.name in {".lock", "state.json"}:
                 continue
             if path.name.startswith("intent-") and path.name.endswith(".json"):
-                _secure_regular(path)
-                raw_intent = _read_secure(path, min(4096, self.max_bytes - used))
+                _secure_regular(path, directory_fd=directory_fd)
+                raw_intent = _read_secure(
+                    path, min(4096, self.max_bytes - used), directory_fd=directory_fd
+                )
                 intent = json.loads(raw_intent)
                 if (
                     not isinstance(intent, dict)
@@ -279,12 +309,12 @@ class SyntheticSourceSpool:
                 ):
                     raise ValueError("source spool seal intent invalid")
                 intents.add(intent["source_epoch"])
-                used += path.stat().st_size
+                used += len(raw_intent)
                 continue
             if path.name.startswith("seal-") and path.name.endswith(".json"):
-                _secure_regular(path)
+                _secure_regular(path, directory_fd=directory_fd)
                 remaining = min(_MAX_SEAL_BYTES, self.max_bytes - used)
-                raw_seal = _read_secure(path, remaining)
+                raw_seal = _read_secure(path, remaining, directory_fd=directory_fd)
                 seal = json.loads(raw_seal)
                 self._validate_seal_shape(seal)
                 if _canonical(seal) != raw_seal:
@@ -293,14 +323,15 @@ class SyntheticSourceSpool:
                     raise ValueError("source spool seal filename and epoch disagree")
                 if any(previous["source_epoch"] == seal["source_epoch"] for previous in seals):
                     raise ValueError("duplicate source spool epoch seal")
-                used += path.stat().st_size
+                used += len(raw_seal)
                 seals.append(seal)
                 continue
             if not path.name.startswith("event-") or not path.name.endswith(".json"):
                 raise ValueError("unexpected or incomplete source spool entry")
-            _secure_regular(path)
+            _secure_regular(path, directory_fd=directory_fd)
             remaining = self.max_bytes - used
-            body = json.loads(_read_secure(path, remaining))
+            raw_event = _read_secure(path, remaining, directory_fd=directory_fd)
+            body = json.loads(raw_event)
             if not isinstance(body, dict) or set(body) != {"event", "sha256"}:
                 raise ValueError("invalid source spool event wrapper")
             event = body["event"]
@@ -310,6 +341,8 @@ class SyntheticSourceSpool:
             digest = "sha256:" + hashlib.sha256(_canonical(event)).hexdigest()
             if body["sha256"] != digest:
                 raise ValueError("source spool event checksum mismatch")
+            if _canonical(body) != raw_event:
+                raise ValueError("source spool event encoding invalid")
             if path.name != f"event-{event['record_id']}.json":
                 raise ValueError("source spool filename and record ID disagree")
             position = (event["source_id"], event["source_epoch"], event["source_sequence"])
@@ -317,7 +350,7 @@ class SyntheticSourceSpool:
                 raise ValueError("duplicate source spool record or source position")
             seen_ids.add(event["record_id"])
             seen_positions.add(position)
-            used += path.stat().st_size
+            used += len(raw_event)
             if used > self.max_bytes:
                 raise ValueError("recovered source spool exceeds configured capacity")
             events.append(event)
@@ -649,6 +682,41 @@ class SyntheticSourceSpool:
 
     def current_seal(self) -> dict[str, Any] | None:
         return copy.deepcopy(self._current_seal)
+
+    def readback_sealed_epoch(self, epoch: int) -> dict[str, Any]:
+        """Fresh offline disk readback; cached seals are not durability evidence.
+
+        This does not advance an epoch, flush a writer or mutate the journal.
+        Failures expose no paths, bytes or underlying filesystem errors.
+        """
+        if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
+            raise ValueError("invalid source readback epoch")
+        directory_fd = None
+        try:
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
+            directory_fd = os.open(self.root.anchor, flags)
+            for component in self.root.parts[1:]:
+                child_fd = os.open(component, flags, dir_fd=directory_fd)
+                os.close(directory_fd)
+                directory_fd = child_fd
+            info = os.fstat(directory_fd)
+            if (
+                not stat.S_ISDIR(info.st_mode)
+                or stat.S_IMODE(info.st_mode) != _DIRECTORY_MODE
+                or info.st_uid != os.geteuid()
+            ):
+                raise ValueError("unsafe source root")
+            events, seals, intents, _used = self._recover(directory_fd=directory_fd)
+            seal = next((item for item in seals if item["source_epoch"] == epoch), None)
+            if epoch in intents or seal is None:
+                raise ValueError("source epoch unavailable")
+            records = [item for item in events if item["source_epoch"] == epoch]
+            return copy.deepcopy({"seal": seal, "records": records})
+        except (OSError, ValueError, TypeError, OverflowError, RecursionError):
+            raise ValueError("source readback unavailable or invalid") from None
+        finally:
+            if directory_fd is not None:
+                os.close(directory_fd)
 
     def seal_epoch(  # noqa: PLR0911, PLR0912 - each failure returns a fixed public reason
         self, expected_high_water: dict[str, int], timeout_s: float = 10.0

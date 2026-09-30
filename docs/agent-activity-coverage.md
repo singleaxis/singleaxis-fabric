@@ -58,6 +58,13 @@ destination metadata readback have passed in disposable CI. Authenticated
 independent service feeds and customer storage qualification remain open;
 neither a test sink nor an agent-supplied witness establishes those controls.
 
+The [qualified offline path](qualified-call-run-testing.md) now connects signed
+independent feeds to exact-byte and operation reconciliation, a fresh source
+seal and four distinct receipt sets. Installed-wheel tests cover a loopback
+provider, no-shell process and binary artifact, with deliberate evidence loss.
+All pilot receipt signers are fixtures, not qualified production issuers; no
+additional SSH, database, browser/cloud or sandbox route is claimed covered.
+
 | Agent action / examples | Evidence needed for one-to-one historical reconstruction | Current Fabric evidence | Additional capture boundary needed |
 | --- | --- | --- | --- |
 | Model calls, function calling, streaming, embeddings | Final provider-bound request, ordered instructions/messages/tool schemas/parameters, response or partial stream, attempts and model identity | Manual Python/TypeScript governed `llm_call`; auto content capture deferred | Versioned provider/framework adapters at the last visible request boundary; record transformations and bypasses |

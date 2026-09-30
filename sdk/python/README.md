@@ -117,6 +117,14 @@ authenticated source or durable delivery receipt chain and its in-memory
 timeline is not crash-durable. See [custom-agent recording](../../../docs/custom-agent-recording.md)
 and [spec 043](../../../specs/043-custom-agent-call-recording.md).
 
+The optional `fabric.qualified_run.verify_qualified_call_run` path is separate:
+it checks signed independent feeds, exact original bytes, fresh sealed source
+readback, source binding, route closure and four exact receipt sets. It can
+verify a bounded submitted package for one source epoch under owner-provided
+issuer authority. It does not supply production issuers or live storage
+qualification. See [installed-package qualified tests](../../../docs/qualified-call-run-testing.md)
+and [spec 046](../../../specs/046-qualified-call-run-verification.md).
+
 The separate `ByteEvidenceRecorder` API captures bytes the caller explicitly
 supplies. It does not intercept terminal, SSH, database or sandbox operations.
 

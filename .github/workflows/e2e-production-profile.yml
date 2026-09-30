@@ -198,6 +198,22 @@ jobs:
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pytest -q -o addopts= \
             sdk/python/tests/test_independent_feed.py \
             sdk/python/tests/test_independent_feed_adversarial.py
+      - name: Verify qualified bounded evidence against the installed wheel
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -c \
+            'import pathlib, sys, fabric.qualified_run as module; assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve())'
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" -m pytest -q -o addopts= \
+            sdk/python/tests/test_receipt_sets.py \
+            sdk/python/tests/test_source_spool_readback.py \
+            sdk/python/tests/test_route_closure_attestation.py \
+            sdk/python/tests/test_independent_store.py \
+            sdk/python/tests/test_qualified_run.py
+          "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
+            scripts/qualification/run_qualified_call_pilot.py \
+            --fixture-only \
+            --evidence-dir "${RUNNER_TEMP}/fabric-qualified-call-pilot" \
+            | tee "${RUNNER_TEMP}/fabric-qualified-call-pilot-summary.json"
       - name: Test installed-wheel client byte boundary
         run: |
           set -euo pipefail
@@ -492,6 +508,7 @@ jobs:
             ${{ runner.temp }}/fabric-agent-production-report.json
             ${{ runner.temp }}/fabric-client-byte-smoke.json
             ${{ runner.temp }}/fabric-custom-agent-smoke.json
+            ${{ runner.temp }}/fabric-qualified-call-pilot-summary.json
             ${{ runner.temp }}/fabric-custom-agent-node/summary.json
             ${{ runner.temp }}/fabric-custom-agent-node/report.json
             ${{ runner.temp }}/fabric-wheel-production.sha256

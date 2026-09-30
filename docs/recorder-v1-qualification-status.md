@@ -4,7 +4,93 @@ This document distinguishes implemented runtime behavior from public contracts
 and from checks that require the release CI environment. It is a development
 status record, not a certification or legal compliance statement.
 
+## Qualified offline evidence batch — 2026-10-01 — deployment NO-GO
+
+[Spec 046](../specs/046-qualified-call-run-verification.md) preceded its code.
+The optional combined verifier is now implemented: it rechecks raw signed
+independent feeds, compares every required original byte and physical attempt,
+checks the call graph against fresh sealed source records, authenticates source
+binding and route closure, and verifies four separately issued exact receipt
+sets. Original witness bytes are read once and reused internally to prevent
+second-read substitution. Reports contain fixed reasons and metadata only.
+The original local reconciler remains conservative; no trust flag upgrades it.
+
+Fresh source readback uses directory file descriptors and no-follow traversal,
+rejects hardlinks/FIFOs, nonprivate permissions, corrupt/noncanonical records
+and deleted tails, and never substitutes a cached seal. The separate local
+witness resolver has equivalent bounded tenant/issuer namespace checks. These
+are local integrity/permission checks, not target IAM or encryption proof.
+
+Executed local checks: **1,071 SDK tests passed**, **87.13% branch-inclusive
+coverage**, full strict mypy (92 files) and Ruff passed. The frozen installed
+wheel passed **136 focused tests** for combined proofs, receipts, source
+readback, witness storage and independent feeds. The real loopback-provider ->
+no-shell subprocess -> binary artifact -> provider pilot reconciled **4 calls,
+15 required original objects and 23 projected metadata records**, with zero
+unexplained fixture discrepancies. All **24 injected omissions/substitutions**
+prevented completeness, including source seal/record loss, original/witness
+corruption, missing feeds/stage receipts, invalid signatures and partial
+acceptance. Canaries stayed out of projection, journals, receipts and reports.
+
+Repository tests: **215 passed, 9 skipped**. The three Docker-backed tests in
+`test_governed_node_e2e.py` were not rerun locally because the previously
+established Docker ENOSPC condition remains; no pre-existing images/volumes
+were removed. Seven skips require a live approved S3 endpoint; the other two
+are filesystem-case behavior and a missing source-venv gRPC extra (installed
+artifact checks have gRPC available). Recorder wheel/sdist content and release
+identity qualification passed. New exact-artifact Linux CI is pending; prior
+head `9bcc439` CI is historical evidence only for its artifacts.
+
+Frozen wheel SHA-256:
+`942fadd8d88f555fdfb6b701697c487a0d95304c2d9ab349bf41488681d87ea5`;
+sdist SHA-256:
+`9e8eb4ad63a2137b95f5a9f600a32c3ed653eed75760a005b9a2d5bfd563b8fa`.
+Owned private local evidence:
+`/private/tmp/fabric-qualified-run-release.8ELf6P/`; coverage:
+`/private/tmp/fabric-qualified-run-coverage-20261001.xml`.
+Reproduction commands are in [qualified testing](qualified-call-run-testing.md).
+The Linux workflow now tests the same built wheel with the combined verifier
+and pilot and publishes only a non-secret summary.
+
+### Exact remaining live gates, owner and next action
+
+| Missing gate | Environment / owner | Next action |
+| --- | --- | --- |
+| Qualified native provider/tool/filesystem feed and terminal checkpoints | Declared real custom agent; application and independent service owners | Connect separately authorized native witness producers; reconcile every operation/byte, including direct bypass and pre-fsync loss |
+| Actual signed stage issuance and durable readback | Selected Fabric Node, metadata destination and separate original store; recorder/destination/storage owners | Implement/qualify issuer integration at each actual stage; copying source sets or an OTLP 200 is insufficient |
+| Route closure and capacity/passivity qualification | Isolated declared customer/laptop target; platform/application owners | Close excluded routes outside Fabric, inject bypasses, and measure behavior/rates/outage bounds against the unrecorded baseline |
+| IAM/KMS/encryption, retention, restore and rotation | Actual protected stores and spools; storage/security/privacy owners | Run the configured target-store failure/control suite and provide authorized readback evidence; local filesystem mocks cannot substitute |
+| Witnessed pilot and deployment decision | Frozen release on the signed target; independent reviewer and risk owner | Reconcile the live proof package and sign the bounded deployment decision after all gates pass |
+
+The new offline API supports one tenant/run/source at epoch zero, not a
+multi-source or recovered-history completeness claim. Pilot stage signers
+are explicitly **fixture-only**. Its positive
+`verified_complete_for_declared_scope` verifies that submitted synthetic
+package under fixture authority; it does not qualify real issuers, Node
+receipt production, storage controls, provider independence or customer
+deployment. Engineering for those live integrations is not claimed finished.
+Deployment status remains **NO-GO**.
+
 ## Current closure work — 2026-09-30 — NO-GO
+
+### Finite engineering completion batch — spec 046
+
+[Spec 046](../specs/046-qualified-call-run-verification.md) was written before
+the implementation. Remaining code in this batch: fresh sealed journal
+readback; exact-set, stage-specific receipt verification; authenticated
+independent-feed-to-capture reconciliation; source-binding and route-closure
+proof verification; an owner-authorized local witness resolver; and an
+installed-wheel model/tool/artifact/model qualification command with omissions
+and substitution tests. This pre-implementation entry is superseded by the
+dated October 1 evidence above. No production approval is credited.
+
+The prior feed-only checker and conservative reconciler remain valid as
+separate interfaces. This new optional offline path may verify a bounded
+submitted evidence package under out-of-band issuer authority. Fixture
+signatures do not qualify real provider independence, real Node/destination
+receipt issuance, target storage controls or customer route closure. Those
+live deployment gates remain NO_GO and must not be hidden by a positive
+synthetic offline verification result.
 
 This section supersedes older pending-security descriptions below, which are
 retained as dated test history. [Spec 044](../specs/044-production-evidence-closure.md)

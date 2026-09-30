@@ -44,6 +44,9 @@ that specification, 027 controls the recorder release.
   verify approved issuer signatures without claiming that a signature alone
   proves a complete run; [independent feed contract](../specs/045-independent-evidence-feeds.md)
   specifies the separate operation and byte records required from witnesses.
+- [Qualified bounded call-run testing](qualified-call-run-testing.md) —
+  combine signed witness feeds, exact original data, fresh source readback and
+  four distinct receipt sets; reproduce the installed-package loss tests.
 - [Exporting to your backend](exporting-to-your-observability-backend.md) —
   customer-owned and SingleAxis destinations.
 - [Install a pinned release](install.md) and

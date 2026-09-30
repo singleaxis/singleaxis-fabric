@@ -65,11 +65,15 @@ effects. The disposable SQLite example demonstrates state readback only; it
 is not an authenticated server audit feed, and a final database snapshot
 cannot prove every intermediate transaction.
 
-Matching fixtures yield `unverified`; known missing or changed observations
-yield `partial`. Source authentication, complete route inventory, durable
-delivery receipts, target storage protection and independent review remain
-required before `verified_complete_for_declared_scope` is available. Current
-production qualification remains NO-GO.
+The original local reconciler yields `unverified` for matching fixtures and
+`partial` for known missing or changed observations. A separate optional
+[qualified offline verifier](qualified-call-run-testing.md) now checks raw
+authenticated independent feeds, original bytes, a fresh sealed journal,
+source binding, route closure and four separately issued exact receipt sets.
+Only that fully proven path can return `verified_complete_for_declared_scope`
+for its single declared source epoch. Fixture signatures exercise the path;
+they do not qualify real issuers or approve deployment. Current production
+qualification remains NO-GO.
 
 When a source journal is configured, call `recorder.seal_source()` explicitly
 after all monitored work finishes. This offline step waits for pending writes

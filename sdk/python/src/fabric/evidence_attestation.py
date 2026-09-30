@@ -29,6 +29,7 @@ _TYPES = frozenset(
     {
         "source_binding",
         "independent_witness",
+        "route_closure",
         "source_spooled",
         "node_accepted",
         "destination_accepted",
@@ -67,7 +68,7 @@ def _timestamp(value: object) -> bool:
 def _subject_kind(statement_type: str, subject_kind: str) -> bool:
     if statement_type == "source_binding":
         return subject_kind == "source"
-    if statement_type == "independent_witness":
+    if statement_type in {"independent_witness", "route_closure"}:
         return subject_kind == "evidence_set"
     return subject_kind in {"evidence_event", "content_object", "evidence_set"}
 
