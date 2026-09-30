@@ -188,3 +188,15 @@ destination receipt issuance, target KMS/IAM/retention/restore/rotation proofs,
 live provider native feeds, route controls and owner sign-off remain explicitly
 unqualified until tested on their actual implementations. They are not replaced
 by fixture signatures. Keep deployment status NO_GO when such gates cannot run.
+
+### Findings-check follow-up
+
+Treat GitHub's findings check separately from successful CodeQL job execution.
+Before changes: remove append side effects from assertions so optimized Python
+cannot omit the exercised action. For the seal-mode negative test, inject the
+unsafe mode into the stat observation instead of actually exposing a file;
+retain rejection of world-readable modes and the existing real filesystem
+permission tests. Do not suppress security rules or dismiss runtime findings.
+ExitStack-managed descriptor warnings must be reviewed against cleanup tests,
+not silently counted as proved leaks or ignored findings. Repeat focused tests,
+format/type checks and Linux findings qualification after this change.

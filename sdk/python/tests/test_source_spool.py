@@ -276,7 +276,8 @@ def test_seal_empty_epoch_and_recovery_of_unsealed_empty_epoch(tmp_path: Path) -
         "status": "refused",
         "reason": "already_finalized",
     }
-    assert first.append(_event("late", first.epoch, 0)) == "failed"
+    late_result = first.append(_event("late", first.epoch, 0))
+    assert late_result == "failed"
     assert first.current_seal() is None
     _close(first)
     second = _open(root)
@@ -315,7 +316,9 @@ def test_multisource_seal_survives_restart_and_accounts_for_capacity(tmp_path: P
 @pytest.mark.parametrize(
     "alteration", ["delete_tail", "extra", "rehash", "seal_tenant", "seal_mode"]
 )
-def test_recovered_seal_fails_closed_on_disk_mismatch(tmp_path: Path, alteration: str) -> None:
+def test_recovered_seal_fails_closed_on_disk_mismatch(
+    tmp_path: Path, alteration: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root = _root(tmp_path)
     first = _open(root)
     _append(first, _event("first", 0, 0))
@@ -355,7 +358,19 @@ def test_recovered_seal_fails_closed_on_disk_mismatch(tmp_path: Path, alteration
         seal["tenant_id"] = "other-tenant"
         path.write_text(json.dumps(seal, sort_keys=True, separators=(",", ":")))
     else:
-        os.chmod(root / "seal-0.json", 0o644)
+        # Exercise the unsafe observation without creating a readable file.
+        # The real owner-private seal remains unchanged on disk.
+        original_stat = Path.stat
+
+        def unsafe_seal_stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+            observed = original_stat(path, follow_symlinks=follow_symlinks)
+            if path == root / "seal-0.json":
+                fields = list(observed)
+                fields[0] = (observed.st_mode & ~0o777) | 0o644
+                return os.stat_result(fields)
+            return observed
+
+        monkeypatch.setattr(Path, "stat", unsafe_seal_stat)
     with pytest.raises(ValueError):
         _open(root)
 
@@ -513,7 +528,8 @@ def test_late_append_during_seal_prevents_in_memory_success(
     def append_after_seal_write(path: Path, data: bytes) -> None:
         original(path, data)
         if path.name == f"seal-{spool.epoch}.json":
-            assert spool.append(_event("late", spool.epoch, 0)) == "failed"
+            late_result = spool.append(_event("late", spool.epoch, 0))
+            assert late_result == "failed"
 
     monkeypatch.setattr(source_spool_module, "_write_atomic", append_after_seal_write)
     assert spool.seal_epoch({"terminal-1": -1}) == {"status": "refused", "reason": "source_loss"}

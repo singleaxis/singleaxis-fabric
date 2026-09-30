@@ -6,6 +6,27 @@ status record, not a certification or legal compliance statement.
 
 ## Qualified offline evidence batch — 2026-10-01 — deployment NO-GO
 
+### Final Linux evidence and findings-check follow-up
+
+Head `11b2e42` passed all six workflow runs, including exact-artifact kind
+production-profile qualification (`36767899335`). Its installed wheel digest
+matches the final local wheel below; the chart digest is
+`3a0c0bbca2f502d095bceeaeab0f506aa5d357404db8c65b038cbb32f8aac469`.
+The Linux pilot independently reports 4 operations, 15 byte objects, 23
+metadata records, all 24 negative tests, zero unexplained discrepancies and
+passed metadata canaries, under explicitly fixture-only receipt authority.
+
+Workflow success is not the same as findings-check success: GitHub's separate
+CodeQL findings check failed with one high test-only permission finding and
+three assertion-side-effect errors. Before code changes, spec 046 recorded the
+correction. The permission test now injects an unsafe stat observation rather
+than creating a world-readable seal, while retaining fail-closed rejection;
+append calls no longer execute inside the three flagged assertions. Eighty
+focused spool/readback/witness tests passed. Descriptor-close warnings were
+reviewed: each opened descriptor is immediately registered with ExitStack's
+`os.close` callback, including exception paths. They are not suppressed.
+The findings-check rerun for this follow-up is pending; deployment remains NO-GO.
+
 [Spec 046](../specs/046-qualified-call-run-verification.md) preceded its code.
 The optional combined verifier is now implemented: it rechecks raw signed
 independent feeds, compares every required original byte and physical attempt,

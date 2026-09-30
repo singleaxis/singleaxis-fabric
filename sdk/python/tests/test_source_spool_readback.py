@@ -32,7 +32,8 @@ def _sealed(tmp_path: Path) -> tuple[SyntheticSourceSpool, dict[str, Any]]:
         "status": "pending",
         "observed_at": "2026-09-30T00:00:00Z",
     }
-    assert spool.append(event) == "pending"
+    admission = spool.append(event)
+    assert admission == "pending"
     assert spool.seal_epoch({"source-a": 0})["status"] == "sealed"
     return spool, event
 
