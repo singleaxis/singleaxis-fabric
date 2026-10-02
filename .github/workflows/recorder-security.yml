@@ -103,6 +103,9 @@ jobs:
           tools/fabricctl/cmd/fabricctl/release_main.go
           tools/fabricctl/internal/recorder
           tools/fabricctl/internal/recorderinit
+      - name: Report generated finding locations
+        if: always()
+        run: python3 scripts/qualification/summarize_sarif.py semgrep-recorder.sarif
       - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         if: always()
         with:

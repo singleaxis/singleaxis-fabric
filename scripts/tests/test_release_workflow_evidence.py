@@ -113,7 +113,9 @@ def test_semgrep_findings_fail_the_security_workflow() -> None:
     )
     config = yaml.safe_load(workflow.read_text())
     commands = [
-        step["run"] for step in config["jobs"]["semgrep"]["steps"] if "run" in step
+        step["run"]
+        for step in config["jobs"]["semgrep"]["steps"]
+        if "run" in step and step["run"].startswith("semgrep scan ")
     ]
     assert len(commands) == 1
     arguments = shlex.split(commands[0])
