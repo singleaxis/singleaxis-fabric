@@ -61,6 +61,10 @@ receivers:
     manage_rules: true
 ```
 
+Rule management pins native amd64 or arm64 syscall numbers to their audit
+architecture. Unsupported and 32-bit compatibility ABIs are not decoded or
+qualified. The supplied rules intentionally omit `b32` coverage.
+
 On hosts already running auditd, load `fabric.rules` with `auditctl -R` or
 `augenrules` instead — the connector never overrides a live daemon.
 

@@ -128,3 +128,15 @@ sources, corruption/quota/locking, discard continuation, hostile argc/header and
 rotation suffixes, FIFO rejection, and bounded shutdown. Fabricguard's tests
 verify typed IDs/cursors/loss counters and closed statuses survive protection.
 These local tests do not constitute live auditd/kernel/container qualification.
+
+
+Native netlink decoding validates message boundaries and truncation before
+turning kernel payloads into parser input. Rule construction uses native amd64
+or arm64 syscall numbers with an explicit architecture equality filter;
+unknown/32-bit compatibility ABIs are excluded from translation. Local framing
+and wire-layout tests do not qualify live kernel collection or rule management.
+
+Netlink assembly retains at most 256 records per pending serial. Excess records
+produce `assembly_records_dropped` with a record count, independently of event
+evictions. Control queries use a separate non-multicast socket and match kernel
+responses by sequence and type, with bounded receive time and message count.

@@ -42,7 +42,7 @@ docker run -d --name fabric-audit-col --network "$NET" \
   "$IMG" --config /etc/otelcol/config.yaml >/dev/null
 sleep 3
 
-# Append audit-format records to the tailed log — exactly what auditd writes.
+# Append synthetic audit-format fixtures; these are not independent auditd evidence.
 # Serials are unique; multi-record events share the serial.
 cat >> "$LOGDIR/audit.log" <<EOF
 type=SYSCALL msg=audit(1726000000.001:201): arch=c000003e syscall=59 success=yes exit=0 ppid=10 pid=42 auid=1000 uid=0 comm="$MARKER" exe="/tmp/$MARKER" key="fabric"

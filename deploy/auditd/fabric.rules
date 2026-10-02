@@ -3,18 +3,20 @@
 # Load with: auditctl -R fabric.rules
 #   or place in /etc/audit/rules.d/fabric.rules and augenrules --load
 #
+# Native 64-bit x86_64 or arm64 ABI only. The receiver does not decode
+# 32-bit compatibility ABIs; do not add b32 rules as if those were covered.
+# Review native syscall availability and scope on the target before loading.
+#
 # Every rule is tagged -k fabric so the receiver (rule_key: fabric) consumes
 # only these events and ignores unrelated audit volume on shared hosts.
 
 # Process lifecycle: every execve/execveat — catches ssh, curl | sh, scp,
 # uninstrumented tool spawns, and shell escapes.
 -a always,exit -F arch=b64 -S execve -S execveat -k fabric
--a always,exit -F arch=b32 -S execve -S execveat -k fabric
 
 # Outbound network connections: connect, accept, bind — the "agent ssh'd into
 # another server" and exfiltration-relevant syscalls.
 -a always,exit -F arch=b64 -S connect -S accept -S bind -k fabric
--a always,exit -F arch=b32 -S connect -S accept -S bind -k fabric
 
 # File access (HIGH VOLUME — enable only with scoping). Uncomment to capture
 # openat for a scoped path set instead of system-wide:

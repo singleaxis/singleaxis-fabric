@@ -120,8 +120,11 @@ docker build -t fabric-host-emitter:local .
 
 The builder compiles `bpf/emit.bpf.c` with clang via `bpf2go` against the
 vendored `bpf/vmlinux.h` (CO-RE), then links the emitter. `vmlinux.h` is
-extracted from a 6.12 linuxkit kernel — CO-RE handles drift across kernels
-that ship BTF.
+historically described as extracted from a 6.12 linuxkit kernel. The original
+source BTF digest, generator version and extraction command are unavailable,
+so this provenance is unverified. `bpf/vmlinux.provenance.json` records the
+SHA-256 of the unchanged checked-in header, not a source BTF attestation.
+CO-RE relocation still requires qualification on each target kernel.
 
 ## Test
 

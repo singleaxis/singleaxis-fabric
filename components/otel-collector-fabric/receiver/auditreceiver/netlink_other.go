@@ -20,3 +20,7 @@ func (c *auditConn) close() error                 { return nil }
 func (c *auditConn) manageRules(cfg *Config, logger logLike) error {
 	return fmt.Errorf("manage_rules requires Linux (CAP_AUDIT_CONTROL)")
 }
+
+func decodeAuditNetlink([]byte) ([]string, error) {
+	return nil, fmt.Errorf("audit netlink requires Linux")
+}

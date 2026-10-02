@@ -36,6 +36,8 @@ func putAttrs(attrs pcommon.Map, values map[string]any) {
 			attrs.PutStr(key, value)
 		case int:
 			attrs.PutInt(key, int64(value))
+		case int64:
+			attrs.PutInt(key, value)
 		case bool:
 			attrs.PutBool(key, value)
 		case []string:

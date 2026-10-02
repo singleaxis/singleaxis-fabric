@@ -219,7 +219,9 @@ func archIndex(arch string) int {
 	switch arch {
 	case "c00000b7": // arm64
 		return 1
-	default: // c000003e x86_64 and others default to the x86 table
+	case "c000003e": // x86_64
 		return 0
+	default:
+		return -1 // unknown and compatibility ABIs must not use x86_64 numbers
 	}
 }

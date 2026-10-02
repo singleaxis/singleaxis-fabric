@@ -80,3 +80,35 @@ func TestAssemblerOutOfOrderCompletion(t *testing.T) {
 		}
 	}
 }
+
+func TestAssemblerBoundsRecordsWithinOneSerialAndReportsLoss(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	r, sink := newTestReceiver(t, cfg)
+	now := time.Now()
+	for i := 0; i < 300; i++ {
+		r.asm.add(&auditRecord{serial: 1, typ: recPath}, now)
+	}
+	if len(r.asm.pending[1].records) != 256 || r.asm.droppedRecords != 44 {
+		t.Fatal("per-event record bound failed")
+	}
+	r.observeAssemblyLoss()
+	r.flushDeliveries(t.Context())
+	logs := sink.AllLogs()
+	if len(logs) != 1 {
+		t.Fatal("missing assembly loss signal")
+	}
+	a := logs[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Attributes()
+	kind, _ := a.Get("audit.event")
+	count, _ := a.Get("fabric.event_count")
+	if kind.Str() != "assembly_records_dropped" || count.Int() != 44 {
+		t.Fatal("wrong assembly loss signal")
+	}
+	r.observeAssemblyLoss()
+	r.flushDeliveries(t.Context())
+	if len(sink.AllLogs()) != 1 {
+		t.Fatal("loss counted twice")
+	}
+	if ev := r.asm.add(&auditRecord{serial: 1, typ: recEOE}, now); ev == nil || len(ev.records) != 256 {
+		t.Fatal("EOE cannot release bounded event")
+	}
+}

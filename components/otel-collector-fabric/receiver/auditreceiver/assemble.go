@@ -75,11 +75,12 @@ func (q *eventQueue) Pop() any {
 // assembler groups audit records into events by serial and flushes on EOE
 // or timeout. Bounded so a malformed stream cannot grow memory without limit.
 type assembler struct {
-	pending   map[uint64]*auditEvent
-	queue     eventQueue
-	timeout   time.Duration
-	maxPend   int
-	droppedEO int // events evicted before completion
+	pending        map[uint64]*auditEvent
+	queue          eventQueue
+	timeout        time.Duration
+	maxPend        int
+	droppedEO      int    // events evicted before completion
+	droppedRecords uint64 // records omitted at the per-event bound
 }
 
 func newAssembler(timeout time.Duration, maxPending int) *assembler {
@@ -111,6 +112,11 @@ func (a *assembler) add(rec *auditRecord, now time.Time) *auditEvent {
 		heap.Push(&a.queue, ev)
 	}
 	if rec.typ != recEOE {
+		if len(ev.records) >= 256 {
+			// Retain only the bounded prefix and account for omitted records.
+			a.droppedRecords++
+			return nil
+		}
 		ev.records = append(ev.records, rec)
 	}
 	if rec.typ == recEOE {
