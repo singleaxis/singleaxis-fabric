@@ -152,6 +152,15 @@ build a run manifest, or prove run completeness. A process crash can lose
 pending content. Configure customer-controlled storage permissions, encryption,
 retention, and authorized resolution separately before production use.
 
+The TypeScript local store resolves trusted parent aliases once at construction
+(for example, system temporary-directory aliases). It rejects symlinks at the
+configured root, tenant directories, object files, and descriptor/manifest paths, including
+links introduced after construction. Customer-controlled ancestor directories
+and no adversarial concurrent namespace mutation are required. Node path
+checks do not pin ancestor directory handles; they do not protect against a
+concurrent attacker replacing an ancestor between checks and filesystem I/O.
+This limitation differs from the Python local store's directory-handle checks.
+
 ### Role-specific protection before the byte queue
 
 Pass a validated `DeploymentPolicy` as `deploymentPolicy`, or a

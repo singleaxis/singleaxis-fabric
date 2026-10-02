@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
+from .content_join import CONTENT_JOIN_FIELDS, validate_content_join
 from .evidence_attestation import (
     EvidenceExpectation,
     EvidenceTrustKey,
@@ -31,7 +32,6 @@ _MAX_OBJECT_BYTES = 16 * 1024 * 1024
 _MAX_COUNTER = 2**63 - 1
 _MAX_COUNTER_CHARS = 19
 _MAX_TIMESTAMP_CHARS = 40
-_MAX_ATTRIBUTES = 32
 _MAX_OTLP_DEPTH = 10
 _STAGES = frozenset(
     {"source_spooled", "node_accepted", "destination_accepted", "destination_durable"}
@@ -52,7 +52,9 @@ _IDENTITY_FIELDS = frozenset(
         "content_object_id",
     }
 )
-_COUNTERS = frozenset({"source_epoch", "source_sequence", "chunk_index"})
+_COUNTERS = frozenset(
+    {"source_epoch", "source_sequence", "chunk_index", "policy_version", "content_byte_length"}
+)
 _FIXED_VALUES = {
     "event_class": frozenset({"evidence"}),
     "schema_version": frozenset({"agent.evidence.event/v1"}),
@@ -64,6 +66,9 @@ _FIXED_VALUES = {
     "call_kind": frozenset({"model", "tool", "database", "agent"}),
     "result_status": frozenset({"ok", "error", "cancelled", "deferred"}),
 }
+_MAX_ATTRIBUTES = len(
+    _IDENTITY_FIELDS | _COUNTERS | _FIXED_VALUES.keys() | CONTENT_JOIN_FIELDS | {"observed_at"}
+)
 _REQUIRED_METADATA = frozenset(
     {
         "event_class",
@@ -249,8 +254,9 @@ def _attribute_value(key: str, value: object) -> str | int:
         valid = _identifier(raw)
     elif key in _FIXED_VALUES:
         valid = raw in _FIXED_VALUES[key]
-    elif key == "content_sha256":
-        valid = _DIGEST.fullmatch(raw) is not None
+    elif key in CONTENT_JOIN_FIELDS:
+        # Validate the whole governed binding after every attribute is decoded.
+        valid = True
     elif key == "observed_at":
         # Only the projection's bounded UTC timestamp grammar is permitted.
         valid = len(raw) <= _MAX_TIMESTAMP_CHARS and raw.endswith("Z")
@@ -288,6 +294,7 @@ def _metadata_entry(record: object) -> EvidenceSetEntry:
         attributes[attribute["key"]] = _attribute_value(attribute["key"], attribute["value"])
     if not attributes.keys() >= _REQUIRED_METADATA:
         raise ValueError("invalid metadata document")
+    validate_content_join(attributes)
     body = _canonical({"eventName": record["eventName"], "attributes": attributes})
     return EvidenceSetEntry(
         "metadata_record",

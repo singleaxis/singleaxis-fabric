@@ -79,6 +79,8 @@ MAX_MEMBERS = 32
 # payload was smuggled into an ID field — fail loud rather than silently
 # emit a header strict W3C validators/proxies would reject or truncate.
 _MAX_VALUE_CHARS = 256
+# Bound allocation before splitting or decoding untrusted incoming headers.
+_MAX_HEADER_CHARS = MAX_MEMBERS * (2 * _MAX_VALUE_CHARS + 2)
 
 
 @dataclass(frozen=True)
@@ -213,10 +215,12 @@ def _decode(encoded: str) -> FabricContext | None:
     required fields) yields ``None`` rather than raising.
     """
     try:
+        if not isinstance(encoded, str) or len(encoded) > _MAX_VALUE_CHARS or not encoded.isascii():
+            raise ValueError("invalid tracestate member")
         padded = encoded + "=" * (-len(encoded) % 4)
         raw = base64.urlsafe_b64decode(padded.encode("ascii"))
         payload = json.loads(raw.decode("utf-8"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         _LOG.debug("tracestate: undecodable singleaxis member, ignoring")
         return None
     if not isinstance(payload, dict):
@@ -281,13 +285,17 @@ def _parse_members(tracestate: str) -> list[tuple[str, str]]:
     list members and a trailing comma are permitted). Members without a
     ``=`` are dropped — they are malformed and not ours to repair.
     """
+    if not isinstance(tracestate, str) or len(tracestate) > _MAX_HEADER_CHARS:
+        return []
     members: list[tuple[str, str]] = []
-    for entry in tracestate.split(","):
+    for entry in tracestate.split(",", MAX_MEMBERS)[:MAX_MEMBERS]:
         item = entry.strip()
         if not item or "=" not in item:
             continue
         key, _, value = item.partition("=")
-        members.append((key.strip(), value.strip()))
+        key, value = key.strip(), value.strip()
+        if len(key) <= _MAX_VALUE_CHARS and len(value) <= _MAX_VALUE_CHARS:
+            members.append((key, value))
     return members
 
 
@@ -349,7 +357,12 @@ def extract(carrier: Mapping[str, str]) -> FabricContext | None:
     must not crash because an upstream sent a corrupt header.
     """
     tracestate = carrier.get(TRACESTATE_HEADER, "")
-    if not tracestate:
+    if (
+        not isinstance(tracestate, str)
+        or not tracestate
+        or len(tracestate) > _MAX_HEADER_CHARS
+        or tracestate.count(",") >= MAX_MEMBERS
+    ):
         return None
     for key, value in _parse_members(tracestate):
         if key == FABRIC_KEY:

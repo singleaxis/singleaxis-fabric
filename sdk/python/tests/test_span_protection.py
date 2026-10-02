@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from opentelemetry import trace
@@ -81,7 +81,7 @@ def test_projection_scrubs_all_surfaces_without_mutating_source() -> None:
     assert "gen_ai.request.stream" not in result.attributes
     service_name = result.resource.attributes["service.name"]
     assert isinstance(service_name, str)
-    assert cast(str, service_name).startswith("sha256:")
+    assert service_name.startswith("sha256:")
     assert result.resource.schema_url == ""
     assert result.attributes["fabric.protection.dropped_events"] == 1
     assert result.attributes["fabric.protection.dropped_status_descriptions"] == 1
@@ -97,7 +97,9 @@ def test_numeric_allowlist_rejects_wrong_types_and_out_of_range(value: Any) -> N
     result = sink.get_finished_spans()[0]
     assert result.attributes is not None
     assert "gen_ai.usage.input_tokens" not in result.attributes
-    assert result.attributes["fabric.protection.dropped_attributes"] >= 1
+    dropped_attributes = result.attributes["fabric.protection.dropped_attributes"]
+    assert isinstance(dropped_attributes, int)
+    assert dropped_attributes >= 1
 
 
 def test_content_opt_in_is_explicit_raw_pass_through() -> None:
@@ -340,7 +342,9 @@ def test_metadata_size_boundaries_and_oversize_names() -> None:
     )
     result = sink.get_finished_spans()[0]
     assert result.attributes is not None
-    assert len(result.attributes["gen_ai.response.finish_reasons"]) == 32
+    finish_reasons = result.attributes["gen_ai.response.finish_reasons"]
+    assert isinstance(finish_reasons, tuple)
+    assert len(finish_reasons) == 32
     assert result.attributes["fabric.protection.dropped_oversize_names"] == 2
     assert "fabric.protection.span_name_hash" not in result.attributes
     assert len(result.to_json()) < 10000

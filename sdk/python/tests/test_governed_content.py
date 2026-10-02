@@ -1270,16 +1270,30 @@ def test_spool_record_carries_full_identity(tmp_path: Path) -> None:
     assert record["kind"] == "object"
 
 
-def test_spool_permissions(tmp_path: Path) -> None:
+def test_spool_permissions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _spool_config(tmp_path)
     writer = ContentWriter(cfg)
-    writer.submit(_descriptor(), "payload", decision_id="d-9")
-    dir_mode = stat.S_IMODE((tmp_path / "spool").stat().st_mode)
-    assert dir_mode == 0o700, f"spool dir mode {oct(dir_mode)}"
-    for spool_file in (tmp_path / "spool").glob("*.json"):
-        mode = stat.S_IMODE(spool_file.stat().st_mode)
+    # Retain the submitted record so delivery cannot race permission inspection.
+    allow_cleanup = threading.Event()
+    original_remove = writer._remove_spool
+
+    def held_cleanup(task: Any) -> bool:
+        if not allow_cleanup.wait(timeout=5):
+            return False
+        return original_remove(task)
+
+    monkeypatch.setattr(writer, "_remove_spool", held_cleanup)
+    try:
+        writer.submit(_descriptor(), "payload", decision_id="d-9")
+        dir_mode = stat.S_IMODE((tmp_path / "spool").stat().st_mode)
+        assert dir_mode == 0o700, f"spool dir mode {oct(dir_mode)}"
+        spool_files = list((tmp_path / "spool").glob("*.json"))
+        assert len(spool_files) == 1
+        mode = stat.S_IMODE(spool_files[0].stat().st_mode)
         assert mode == 0o600, f"spool file mode {oct(mode)}"
-    writer.close()
+    finally:
+        allow_cleanup.set()
+        writer.close()
 
 
 def test_recovery_processes_more_records_than_queue_capacity(tmp_path: Path) -> None:

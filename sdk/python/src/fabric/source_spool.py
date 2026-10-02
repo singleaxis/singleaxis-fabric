@@ -26,8 +26,9 @@ from pathlib import Path
 from typing import Any
 
 from .byte_evidence import _BOUNDARIES, _ROLES
+from .content_join import CONTENT_JOIN_FIELDS, validate_content_join
 
-_EVENT_KEYS = frozenset(
+_EVENT_KEYS = CONTENT_JOIN_FIELDS | frozenset(
     {
         "record_id",
         "tenant_id",
@@ -492,6 +493,7 @@ class SyntheticSourceSpool:
             raise ValueError("source spool event has missing or forbidden fields")
         if event["tenant_id"] != self.tenant_id or event["run_id"] != self.run_id:
             raise ValueError("source spool event identity mismatch")
+        validate_content_join(event)
         for key in (
             "record_id",
             "source_id",

@@ -306,6 +306,8 @@ def test_forward_lost_ack_replay_stable_and_role_scope_permissions(tmp_path: Pat
         _service(tmp_path / "node", "destination")
     unsafe = tmp_path / "unsafe"
     unsafe.mkdir(mode=0o755)
+    # mkdir's requested mode is filtered by the caller's umask.
+    unsafe.chmod(0o755)
     with pytest.raises(ValueError, match="owner-only"):
         _service(unsafe)
     link = tmp_path / "link"

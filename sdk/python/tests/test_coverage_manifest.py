@@ -88,6 +88,8 @@ def test_missing_required_extra_retained(monkeypatch: Any) -> None:
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", unavailable)
+    # Missing extras have neither an importable module nor installed metadata.
+    monkeypatch.setattr("fabric.coverage_manifest._version", lambda _: None)
     manifest = inspect_integrations(required=["openai"], only=[])
     row = _openai(manifest)
     assert row.required is True and row.status == "MISSING"

@@ -828,6 +828,10 @@ class GovernedLocalContentStore:
                 raise PermissionError("governed object retention has expired")
             # Descriptor reads also verify bytes; metadata alone is not readback proof.
             data = self._decode(envelope)
+            # Revalidate the complete descriptor on read, including privacy and
+            # policy bindings. A valid envelope signature alone is not a valid
+            # content descriptor, including during offline reconstruction.
+            self._validate_descriptor(envelope["descriptor"], data)
             self._audit(
                 directory,
                 claims,

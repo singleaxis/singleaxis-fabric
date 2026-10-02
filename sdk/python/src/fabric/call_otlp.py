@@ -13,6 +13,7 @@ import hashlib
 import json
 from typing import Any, TypeGuard
 
+from .content_join import CONTENT_JOIN_FIELDS, validate_content_join
 from .synthetic_otlp import (
     _MAX_EVENTS,
     _attribute,
@@ -89,6 +90,13 @@ def project_call_snapshot(  # noqa: PLR0912, PLR0915 - closed metadata validatio
     records = _records(projected)
     for event, record in zip(events, records, strict=True):
         extra = _call_fields(event)
+        validate_content_join(event)
+        extra.update({key: event[key] for key in sorted(CONTENT_JOIN_FIELDS) if key in event})
+        # The journal records admission before the asynchronous content writer
+        # settles. Preserve its opaque lookup even while that historical status
+        # is pending; only separate authorized readback can establish availability.
+        if "object_id" in event:
+            extra["content_object_id"] = _checked_id("object_id", event["object_id"])
         descriptor = event.get("descriptor")
         if isinstance(descriptor, dict):
             for key in (
@@ -106,6 +114,24 @@ def project_call_snapshot(  # noqa: PLR0912, PLR0915 - closed metadata validatio
             ):
                 if event.get(key) != descriptor.get(key):
                     raise ValueError("call content identity mismatch")
+            for key in CONTENT_JOIN_FIELDS - {"content_sha256", "content_byte_length"}:
+                if key == "representation" and descriptor.get("status") not in {
+                    "stored",
+                    "redacted",
+                }:
+                    # Failed persistence changes availability, not the original
+                    # privacy decision. Preserve the failure observation.
+                    continue
+                if key in event and event[key] != descriptor.get(key):
+                    raise ValueError("call content policy mismatch")
+        # The synthetic settled projection may already contain object/digest
+        # fields. Emit each key exactly once, rejecting disagreement.
+        existing = {item["key"]: item["value"] for item in record["attributes"]}
+        for key in tuple(extra):
+            if key in existing:
+                if existing[key] != _attribute(key, extra[key])["value"]:
+                    raise ValueError("call content binding mismatch")
+                del extra[key]
         record["attributes"].extend(_attribute(key, value) for key, value in extra.items())
     for phase, lifecycle in (("start", starts), ("outcome", operations)):
         for event in lifecycle:

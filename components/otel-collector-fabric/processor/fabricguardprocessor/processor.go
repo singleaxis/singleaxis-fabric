@@ -247,7 +247,7 @@ func validEvidenceRecord(record plog.LogRecord) bool {
 		return false
 	}
 	a := record.Attributes()
-	for _, key := range []string{"record_id", "tenant_id", "source_id", "operation_id", "attempt_id", "run_id", "content_object_id", "receipt_id", "receipt_subject_id", "call_id", "parent_call_id", "agent_id", "stream_id"} {
+	for _, key := range []string{"record_id", "tenant_id", "source_id", "operation_id", "attempt_id", "run_id", "content_object_id", "receipt_id", "receipt_subject_id", "call_id", "parent_call_id", "agent_id", "stream_id", "workload_id", "policy_id"} {
 		if value, ok := a.Get(key); ok {
 			if !evidenceID(value) {
 				return false
@@ -293,6 +293,9 @@ func validEvidenceRecord(record plog.LogRecord) bool {
 		return false
 	}
 	if v, ok := a.Get("content_sha256"); ok && !validSHA256Prefixed(v) {
+		return false
+	}
+	if !validGovernedEvidenceMetadata(record) {
 		return false
 	}
 	status, _ := a.Get("status")
@@ -348,6 +351,54 @@ func validEvidenceRecord(record plog.LogRecord) bool {
 	} else if status.Str() == "not_captured" || status.Str() == "unsupported" || status.Str() == "dropped" || status.Str() == "failed" {
 		if _, ok := a.Get("content_sha256"); ok {
 			return false
+		}
+	}
+	return true
+}
+
+// Governed join fields are closed metadata, never content or store locations.
+func validGovernedEvidenceMetadata(record plog.LogRecord) bool {
+	a := record.Attributes()
+	bindingFields := []string{"workload_id", "policy_id", "policy_version", "policy_digest", "privacy_mode", "representation", "protection_status"}
+	present := 0
+	for _, key := range bindingFields {
+		if _, ok := a.Get(key); ok {
+			present++
+		}
+	}
+	if present != 0 && present != len(bindingFields) {
+		return false
+	}
+	if mode, ok := a.Get("privacy_mode"); ok && mode.Str() != "retain_original" {
+		for _, key := range []string{"content_sha256", "content_byte_length"} {
+			if _, present := a.Get(key); present {
+				return false
+			}
+		}
+	}
+
+	for _, key := range []string{"policy_version", "content_byte_length"} {
+		if value, ok := a.Get(key); ok {
+			if value.Type() != pcommon.ValueTypeInt || value.Int() < 0 || (key == "policy_version" && value.Int() == 0) {
+				return false
+			}
+		}
+	}
+	if value, ok := a.Get("policy_digest"); ok && !validSHA256Prefixed(value) {
+		return false
+	}
+	for key, choices := range map[string]map[string]struct{}{
+		"privacy_mode":      toSet("retain_original", "redact", "tokenize", "metadata_only", "omit"),
+		"representation":    toSet("exact", "redacted", "tokenized", "unavailable"),
+		"protection_status": toSet("retained", "redacted", "tokenized", "withheld", "unsupported", "lost"),
+	} {
+		if value, ok := a.Get(key); ok {
+			if value.Type() != pcommon.ValueTypeStr {
+				return false
+			}
+			if _, valid := choices[value.Str()]; !valid {
+				return false
+			}
 		}
 	}
 	return true
@@ -667,7 +718,7 @@ func validHostAuditValue(key string, value pcommon.Value) bool {
 			return false
 		}
 		switch value.Str() {
-		case "logfile_checkpoint", "source_rotated", "source_rotation_gap", "source_missing", "source_truncated_or_rewritten", "capture_loss", "dedupe_collapsed", "delivery_queue_overflow", "rate_limited", "assembly_evicted", "command_args_incomplete", "path_incomplete", "path_and_command_args_incomplete":
+		case "logfile_checkpoint", "source_rotated", "source_rotation_gap", "source_missing", "source_truncated_or_rewritten", "capture_loss", "dedupe_collapsed", "delivery_queue_overflow", "rate_limited", "assembly_evicted", "assembly_records_dropped", "command_args_incomplete", "path_incomplete", "path_and_command_args_incomplete":
 			return true
 		default:
 			return false

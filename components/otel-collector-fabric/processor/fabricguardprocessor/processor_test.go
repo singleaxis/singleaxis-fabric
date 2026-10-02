@@ -644,3 +644,62 @@ func TestDurableAuditIdentityAndLossEvidenceSurviveProtection(t *testing.T) {
 		}
 	}
 }
+
+func TestGovernedJoinFieldsRemainClosed(t *testing.T) {
+	base := map[string]any{
+		"event_class": "evidence", "schema_version": "agent.evidence.event/v1", "record_id": "r1",
+		"tenant_id": "tenant", "run_id": "run", "source_id": "source", "source_epoch": 0, "source_sequence": 0,
+		"boundary": "tool", "provenance": "caller_reported", "role": "tool.call.arguments", "status": "pending",
+		"observed_at": "2026-10-02T00:00:00Z", "content_object_id": "object", "workload_id": "workload",
+		"policy_id": "policy", "policy_version": 1, "policy_digest": "sha256:" + strings.Repeat("a", 64),
+		"privacy_mode": "retain_original", "representation": "exact", "protection_status": "retained", "content_byte_length": 42,
+	}
+	ld := makeLogs(base)
+	firstRecord(t, ld).SetEventName("agent.evidence.content")
+	out, err := newTestGuard(t, nil).processLogs(context.Background(), ld)
+	if err != nil || recordCount(out) != 1 {
+		t.Fatal("valid pending join rejected")
+	}
+	for _, key := range []string{"content_object_id", "workload_id", "policy_id", "policy_version", "policy_digest", "privacy_mode", "representation", "protection_status", "content_byte_length"} {
+		if _, ok := firstRecord(t, out).Attributes().Get(key); !ok {
+			t.Fatalf("join field lost: %s", key)
+		}
+	}
+	for _, test := range []struct {
+		key   string
+		value any
+	}{
+		{"workload_id", "unsafe/path"}, {"policy_id", "unsafe/path"}, {"policy_version", 0}, {"policy_version", "1"},
+		{"policy_digest", "sha256:private"}, {"privacy_mode", "private"}, {"representation", "private"},
+		{"protection_status", "private"}, {"content_byte_length", -1},
+		{"privacy_mode", "redact"}, {"privacy_mode", "tokenize"},
+	} {
+		attrs := make(map[string]any, len(base))
+		for k, v := range base {
+			attrs[k] = v
+		}
+		attrs[test.key] = test.value
+		bad := makeLogs(attrs)
+		firstRecord(t, bad).SetEventName("agent.evidence.content")
+		filtered, err := newTestGuard(t, nil).processLogs(context.Background(), bad)
+		if err != nil || recordCount(filtered) != 0 {
+			t.Fatalf("invalid join field survived: %s", test.key)
+		}
+	}
+}
+
+func TestAuditAssemblyRecordLossPreserved(t *testing.T) {
+	logs := makeLogs(map[string]any{"event_class": "audit", "audit.event": "assembly_records_dropped", "fabric.event_count": 1})
+	out, err := newTestGuard(t, nil).processLogs(context.Background(), logs)
+	if err != nil || recordCount(out) != 1 {
+		t.Fatal("assembly loss record rejected")
+	}
+	event, ok := firstRecord(t, out).Attributes().Get("audit.event")
+	if !ok || event.Str() != "assembly_records_dropped" {
+		t.Fatal("assembly loss event dropped")
+	}
+	count, ok := firstRecord(t, out).Attributes().Get("fabric.event_count")
+	if !ok || count.Int() != 1 {
+		t.Fatal("assembly loss count dropped")
+	}
+}

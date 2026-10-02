@@ -14,6 +14,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from fabric.call_otlp import project_call_snapshot
 from fabric.evidence_attestation import EvidenceTrustKey, attestation_signing_bytes
 from fabric.receipt_sets import (
     EvidenceSetEntry,
@@ -258,3 +259,79 @@ def test_duplicate_json_and_oversized_metadata_rejected() -> None:
     for payload in [b'{"resourceLogs":[],"resourceLogs":[]}', b"x" * (1024 * 1024 + 1)]:
         with pytest.raises(ValueError, match=r"^invalid metadata document$"):
             metadata_entries(payload)
+
+
+def _governed_metadata() -> bytes:
+    payload, _ = project_call_snapshot(
+        {
+            "schema_version": "fabric.call-recording/v1",
+            "tenant_id": "tenant-a",
+            "run_id": "run-a",
+            "events": [
+                {
+                    "record_id": "record-a",
+                    "tenant_id": "tenant-a",
+                    "run_id": "run-a",
+                    "source_id": "source-a",
+                    "source_epoch": 0,
+                    "source_sequence": 0,
+                    "operation_id": "operation-a",
+                    "attempt_id": "attempt-a",
+                    "call_id": "call-a",
+                    "agent_id": "agent-a",
+                    "parent_call_id": "parent-a",
+                    "stream_id": "stream-a",
+                    "chunk_index": 0,
+                    "boundary": "tool",
+                    "role": "tool.call.result",
+                    "status": "pending",
+                    "observed_at": "2026-09-30T00:00:00Z",
+                    "object_id": "object-a",
+                    "workload_id": "workload-a",
+                    "policy_id": "policy-a",
+                    "policy_version": 1,
+                    "policy_digest": "sha256:" + "1" * 64,
+                    "privacy_mode": "retain_original",
+                    "representation": "exact",
+                    "protection_status": "retained",
+                    "content_sha256": "sha256:" + "2" * 64,
+                    "content_byte_length": 4,
+                }
+            ],
+        }
+    )
+    return payload
+
+
+def test_governed_projected_metadata_preserves_exact_receipt_binding() -> None:
+    payload = _governed_metadata()
+    entries = metadata_entries(payload)
+    assert len(entries) == 1 and entries[0].identifier == "record-a"
+    document = json.loads(payload)
+    attributes = _record(document)["attributes"]
+    next(row for row in attributes if row["key"] == "policy_version")["value"] = {"intValue": "2"}
+    changed = metadata_entries(json.dumps(document).encode())
+    assert changed[0].sha256 != entries[0].sha256
+
+
+@pytest.mark.parametrize(
+    "fault", ["partial", "unknown_mode", "counter", "digest", "duplicate", "unknown"]
+)
+def test_governed_receipt_metadata_rejects_invalid_binding(fault: str) -> None:
+    document = json.loads(_governed_metadata())
+    attributes = _record(document)["attributes"]
+    if fault == "partial":
+        attributes[:] = [row for row in attributes if row["key"] != "policy_digest"]
+    elif fault == "duplicate":
+        attributes.append(next(row for row in attributes if row["key"] == "policy_id"))
+    elif fault == "unknown":
+        attributes.append({"key": "content_raw", "value": {"stringValue": "CANARY"}})
+    else:
+        key, value = {
+            "unknown_mode": ("privacy_mode", {"stringValue": "CANARY"}),
+            "counter": ("policy_version", {"intValue": "0"}),
+            "digest": ("policy_digest", {"stringValue": "CANARY"}),
+        }[fault]
+        next(row for row in attributes if row["key"] == key)["value"] = value
+    with pytest.raises(ValueError, match=r"^invalid metadata document$"):
+        metadata_entries(json.dumps(document).encode())
