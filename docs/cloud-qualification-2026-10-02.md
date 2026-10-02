@@ -28,17 +28,65 @@ used. Neither supplied archive SHA-256 can be verified without its bytes.
 
 | Desktop logical change, as described in the handoff | Independent cloud status |
 |---|---|
-| Consolidate SDK hashing | Not adopted or independently reproduced |
-| Remove proven unused Go internals | Not adopted |
-| Move the legacy tailer into tests | Not adopted |
-| Repair license gate wiring and related docs | Independently repaired; desktop patch equivalence unverified |
+| Consolidate SDK hashing | Independently consolidated equivalent Python text and TypeScript byte/text helpers; encoding and outputs regression-tested |
+| Remove proven unused Go internals | Independent dependency review found both current private packages required by the released CLI; retained |
+| Move the legacy tailer into tests | Independently moved with identical bytes and attribution; durable production tailer retained |
+| Repair license gate wiring and related docs | Independently repaired and expanded; desktop patch equivalence unverified |
 
 These are logical groupings from the handoff description; the four desktop
 commit boundaries could not be inspected. The cloud parent chain is
-`dd7e2683 → 18ec69a4 → acf7fbf8 → 24e50931 → 060dd983 → 059d5474 → 0c057678 → ee2b3dd0 → 2757a117`.
+`dd7e2683 → 18ec69a4 → acf7fbf8 → 24e50931 → 060dd983 → 059d5474 → 0c057678 → ee2b3dd0 → 2757a117 → 0ad942bf`.
 The first cloud checkpoint comprises `24e50931`, `060dd983` and `059d5474`, each
 with the approved DCO. Later cloud commits and the current PR follow-ups are
 descendants of that chain, not of the unavailable desktop checkpoint.
+
+The subsequent [Go and license reconciliation](../qualification/cloud-audit-go-license-reconciliation.json)
+records reference and build-graph proof for retained packages, the byte-identical
+test-only move, and existing reconstruction-path and synthetic-provenance checks.
+No cleanup was inferred merely from an unused-looking filename. The license
+follow-up fixes permissive substring matching, expression grouping, conflicting
+declarations and empty inventories; the unchanged policy now also receives
+isolated optional-install inventories and the actual patched Collector graph.
+
+The [Python](../qualification/cloud-audit-python-codeql-followup.json) and
+[TypeScript](../qualification/cloud-audit-typescript-security-followup.json)
+reviews reconcile duplicate hashing while preserving encoding behavior and
+public interfaces. Python private registry aliases retain initial identity;
+rebinding private module constants across modules is not a supported interface.
+
+## Security follow-up and application-network evidence
+
+The exact `0ad942bf` checkpoint passed five workflows and all Recorder CI jobs;
+source SAST still failed with five Semgrep findings, and the separate CodeQL
+result check failed with 71 findings (three high, nine warnings, 59 notes).
+The full generated CodeQL scan contains 88 locations, which is a different
+scope. The read-only annotation diagnostic added afterward checks exact head,
+PR, app, terminal status and annotation counts; it fails when that membership
+cannot be verified. It does not accept or dismiss any finding.
+
+[Permission and TLS follow-up](../qualification/cloud-audit-security-followup.json)
+adds effective-directory-mode verification and explicit TLS floors. Its exact
+upstream rule review demonstrates why the five Semgrep audit matches persist:
+the numeric permission rule flags owner-only `0700`, and the HTTPS rule matches
+every direct `HTTPSConnection` call. No API was renamed or replaced to evade a
+query. The local rule reproduction is diagnostic evidence, not a substitute for
+the hosted source gate. The benchmark canary remains byte-identical. The
+TypeScript adapter still requires a customer-controlled ancestor namespace;
+native directory-relative operations are outside its current portable API.
+
+The [C8 matrix](../qualification/c8-network-capture-matrix.json) now records three
+executed application-network scenarios. Four physical HTTP requests cover a
+503/200 retry, a 400 response, and a lost response after an independent SQLite
+commit. Seven prequeue-redacted content observations can be reopened by a fresh
+authorized consumer. The lost-response caller remains uncertain until separate
+service readback; evidence recovery does not repeat the effect. Loopback peer
+metadata is distinct from HTTP semantics. This fixture does not establish host
+packet capture, TLS plaintext interception, uninstrumented application contents,
+remote authorization or production destination durability.
+
+Final local checks, source hashes and rebuilt package identities for this
+follow-up are in [security follow-up checks](../qualification/cloud-2026-10-02/security-followup-checks.json).
+The final published head and terminal hosted results are recorded on draft PR165.
 
 The published reconstruction defect was independently reproduced: two stored
 descriptors and two journal object IDs, but four exported records with zero

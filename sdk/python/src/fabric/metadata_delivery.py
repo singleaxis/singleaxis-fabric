@@ -137,6 +137,7 @@ class HTTPMetadataTransport:
         if parsed.scheme == "https":
             try:
                 self._tls = ssl.create_default_context(cafile=ca_cert_path)
+                self._tls.minimum_version = max(self._tls.minimum_version, ssl.TLSVersion.TLSv1_2)
                 if client_cert_path and client_key_path:
                     self._tls.load_cert_chain(client_cert_path, client_key_path)
             except Exception:

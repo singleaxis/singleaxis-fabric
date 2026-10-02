@@ -18,13 +18,12 @@ identifiers in the tenant's vocabulary).
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 
-from ._hashes import require_sha256_hex_values
+from ._hashes import require_sha256_hex_values, sha256_hex
 
 
 class RetrievalSource(StrEnum):
@@ -45,7 +44,7 @@ class RetrievalSource(StrEnum):
 
 def _sha256_hex(value: str) -> str:
     # surrogatepass: keep hashing total on lone surrogates (see memory._sha256_hex).
-    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(value)
 
 
 class RetrievalRecord(BaseModel):

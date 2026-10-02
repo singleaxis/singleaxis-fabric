@@ -65,13 +65,10 @@ def store() -> object:
     client = session.client("s3", endpoint_url=ENDPOINT)
     try:
         client.create_bucket(Bucket=BUCKET)
-    except client.exceptions.BucketAlreadyOwnedByYou:
-        pass
     except client.exceptions.ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") not in (
-            "BucketAlreadyOwnedByYou",
-            "BucketAlreadyExists",
-        ):
+        # A globally occupied name does not establish that this fixture owns
+        # the bucket. Do not continue with any object writes in that case.
+        if exc.response.get("Error", {}).get("Code") != "BucketAlreadyOwnedByYou":
             raise
     return _make_store(
         prefix=f"fabric-e2e/{uuid.uuid4().hex[:8]}/",

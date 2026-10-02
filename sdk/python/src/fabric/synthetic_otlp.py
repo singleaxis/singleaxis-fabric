@@ -256,6 +256,7 @@ def _export_projected_metadata(  # noqa: PLR0912
             raise ValueError("HTTPS synthetic OTLP requires client certificate/key")
         try:
             context = ssl.create_default_context(cafile=ca_cert_path)
+            context.minimum_version = max(context.minimum_version, ssl.TLSVersion.TLSv1_2)
             context.load_cert_chain(client_cert_path, client_key_path)
         except Exception:
             raise ValueError("OTLP TLS configuration failed") from None

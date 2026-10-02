@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from fabric import ContentCaptureConfig, ContentWriter, LocalFilesystemContentStore
+from fabric.content_store.local import _atomic_write_bytes
 from fabric.http_dispatch import FinalHTTPAdapter
 from fabric.metadata_delivery import HTTPMetadataTransport
 from fabric.synthetic_otlp import _export_projected_metadata
@@ -58,6 +59,38 @@ def test_spool_permission_failure_aborts_before_recovery_or_worker(
         ContentWriter(_config(tmp_path, spool))
     assert started == []
     assert list(spool.iterdir()) == []
+
+
+@pytest.mark.parametrize("ineffective", [False, True])
+def test_content_store_permission_failure_preserves_previous_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ineffective: bool
+) -> None:
+    parent = tmp_path / "content"
+    parent.mkdir(mode=0o755)
+    parent.chmod(0o755)
+    target = parent / "object"
+    target.write_bytes(b"previous synthetic evidence")
+
+    def refuse(_fd: int, _mode: int) -> None:
+        if not ineffective:
+            raise PermissionError("synthetic permission refusal")
+
+    monkeypatch.setattr(os, "fchmod", refuse)
+    with pytest.raises(PermissionError):
+        _atomic_write_bytes(target, b"replacement synthetic evidence")
+    assert target.read_bytes() == b"previous synthetic evidence"
+    assert list(parent.iterdir()) == [target]
+
+
+def test_content_store_enforces_private_directory_and_file_modes(tmp_path: Path) -> None:
+    parent = tmp_path / "content"
+    parent.mkdir(mode=0o755)
+    parent.chmod(0o755)
+    target = parent / "object"
+    _atomic_write_bytes(target, b"synthetic evidence")
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert target.read_bytes() == b"synthetic evidence"
 
 
 @pytest.mark.parametrize("ancestor", [False, True])
@@ -225,6 +258,8 @@ def tls_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    # This fixture explicitly serves supported TLS 1.2 and later clients.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(server_cert, server_key)
     context.load_verify_locations(cafile=ca_path)
     context.verify_mode = ssl.CERT_OPTIONAL
@@ -292,3 +327,32 @@ def test_stdlib_https_verifies_certificate_chain_and_hostname(
         with pytest.raises(ssl.SSLCertVerificationError):
             _send_tls(adapter, tls_server, fault, monkeypatch)
         assert tls_server["requests"] == []
+
+
+@pytest.mark.parametrize("adapter", ["dispatch", "metadata", "synthetic"])
+@pytest.mark.parametrize(
+    "initial_minimum", [ssl.TLSVersion.MINIMUM_SUPPORTED, ssl.TLSVersion.TLSv1_3]
+)
+def test_https_enforces_tls_floor_without_lowering_stricter_defaults(
+    tls_server: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    adapter: str,
+    initial_minimum: ssl.TLSVersion,
+) -> None:
+    default_context = ssl.create_default_context
+    contexts: list[ssl.SSLContext] = []
+
+    def configured_context(*args: Any, **kwargs: Any) -> ssl.SSLContext:
+        context = default_context(*args, **kwargs)
+        context.minimum_version = initial_minimum
+        contexts.append(context)
+        return context
+
+    monkeypatch.setattr(ssl, "create_default_context", configured_context)
+    _send_tls(adapter, tls_server, "none", monkeypatch)
+    assert len(contexts) == 1
+    assert contexts[0].minimum_version == max(initial_minimum, ssl.TLSVersion.TLSv1_2)
+    assert contexts[0].verify_mode == ssl.CERT_REQUIRED
+    assert contexts[0].check_hostname is True
+    assert contexts[0].verify_flags & ssl.VERIFY_X509_STRICT
+    assert len(tls_server["requests"]) == 1

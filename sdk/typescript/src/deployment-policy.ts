@@ -1,7 +1,8 @@
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 /** Local capture configuration, never regulatory certification or an execution gate. */
-import { createHash, createHmac } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { sha256BytesPrefixed } from "./hash.js";
 
 export const POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1";
 export type PrivacyMode = "metadata_only" | "omit" | "redact" | "tokenize" | "retain_original";
@@ -164,7 +165,7 @@ export class DeploymentPolicy {
       throw new Error("production requires pinned image, TLS and encrypted storage");
     data.deployment = deployment;
     this.#canonical = canonical(data);
-    this.#digest = "sha256:" + createHash("sha256").update(this.#canonical, "ascii").digest("hex");
+    this.#digest = sha256BytesPrefixed(Buffer.from(this.#canonical, "ascii"));
   }
   static fromDict(value: unknown): DeploymentPolicy {
     return new DeploymentPolicy(value);
@@ -310,12 +311,7 @@ export class ContentProtector {
     try {
       if (mode === "retain_original") {
         metadata.source_byte_length = data.byteLength;
-        return result(
-          "retained",
-          "original_retained",
-          data,
-          "sha256:" + createHash("sha256").update(data).digest("hex"),
-        );
+        return result("retained", "original_retained", data, sha256BytesPrefixed(data));
       }
       if (mode === "redact") {
         const bytes = this.#redactors[role]!(new Uint8Array(data));

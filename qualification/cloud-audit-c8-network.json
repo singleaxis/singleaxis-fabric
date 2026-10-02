@@ -1,0 +1,78 @@
+{
+  "schema_version": "fabric.c8-audit/v1",
+  "source_checkpoint": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "scope": "New controlled C8 application-network semantics harness, tests, docs and scenario map; no SDK runtime edits.",
+  "entries": [
+    {
+      "path": "scripts/qualification/run_c8_network_journey.py",
+      "sha256": "0090214bc7aeccbb2c20c3ec37a42c60cb7d7b1de8f55956efd0d6c8f93cbd49",
+      "methods": [
+        "full_text_review",
+        "sha256_inventory"
+      ],
+      "findings": []
+    },
+    {
+      "path": "scripts/tests/test_c8_network_journey.py",
+      "sha256": "a306c93930ab2b76cd74af3aaab7e5215fea75b69904416a93c963dd10d60aaa",
+      "methods": [
+        "full_text_review",
+        "sha256_inventory"
+      ],
+      "findings": []
+    },
+    {
+      "path": "docs/evidence-qualification-map.md",
+      "sha256": "0201895b43384eb6ac3844fae4fe3e9d022b202574e9e5f8819ba45eb04eb6e5",
+      "methods": [
+        "full_text_review",
+        "sha256_inventory"
+      ],
+      "findings": []
+    },
+    {
+      "path": "qualification/capture-level-matrix.json",
+      "sha256": "3b186b6b75c9fbcbcfa522d3eef727917aa57094bd29754052402cd406717aaa",
+      "methods": [
+        "full_text_review",
+        "sha256_inventory"
+      ],
+      "findings": []
+    },
+    {
+      "path": "qualification/c8-network-capture-matrix.json",
+      "sha256": "7648b43d952878832b4c25bbe19f1d7e462146475de14e35005bf248af8ef54c",
+      "methods": [
+        "full_text_review",
+        "sha256_inventory"
+      ],
+      "findings": [],
+      "refresh": "Root refreshed from rebuilt installed-wheel run after runtime freeze:3scenarios/4requests/7redacted objects/1effect; recovery did not repeat effect."
+    }
+  ],
+  "validation": [
+    {
+      "command": "pytest -q scripts/tests/test_c8_network_journey.py",
+      "result": "2 passed; real loopback and fresh subprocess plus metadata-tamper denial and no effect replay"
+    },
+    {
+      "command": "PYTHONPATH=sdk/python/src /workspace/fabric-venv/bin/python scripts/qualification/run_c8_network_journey.py --evidence-dir /workspace/fabric-qualification/c8-network-verified",
+      "result": "LOCAL_FIXTURE_PASSED; 3 scenarios, NO_GO"
+    },
+    {
+      "command": "ruff check/format new harness/tests; git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "env -u PYTHONPATH PYTHONOPTIMIZE=1 /workspace/fabric-wheel-venv/bin/python scripts/qualification/run_c8_network_journey.py --evidence-dir /workspace/fabric-qualification/c8-network-security-final",
+      "result": "LOCAL_FIXTURE_PASSED; installed rebuilt wheel matched current runtime hashes"
+    }
+  ],
+  "limits": [
+    "No TLS or host/kernel traffic execution; no encrypted uninstrumented plaintext claims.",
+    "Fresh reader uses local fixture capabilities and private persisted keys, not production IAM/KMS.",
+    "Same-host independent SQLite witness; lost-response correlation uses caller-supplied synthetic IDs.",
+    "No Collector delivery, external effects or producer closure qualified.",
+    "Run artifact hashes bind the executed source snapshot; concurrent subsequent SDK edits require rerun before claiming exact-current-source qualification."
+  ]
+}

@@ -15,6 +15,7 @@
   ],
   "ledgers": [
     "cloud-audit-benchmarks.json",
+    "cloud-audit-c8-network.json",
     "cloud-audit-chart-deep.json",
     "cloud-audit-codeql-followup.json",
     "cloud-audit-codeql.json",
@@ -22,8 +23,12 @@
     "cloud-audit-contracts-deep.json",
     "cloud-audit-docs-deep.json",
     "cloud-audit-final-paths.json",
+    "cloud-audit-go-license-reconciliation.json",
     "cloud-audit-host.json",
+    "cloud-audit-independent-security-followup.json",
+    "cloud-audit-license-independent.json",
     "cloud-audit-product.json",
+    "cloud-audit-python-codeql-followup.json",
     "cloud-audit-python-deep-a.json",
     "cloud-audit-python-deep-b.json",
     "cloud-audit-python-tests.json",
@@ -31,9 +36,12 @@
     "cloud-audit-runtime-deep.json",
     "cloud-audit-scripts-deep-a.json",
     "cloud-audit-scripts-deep-b.json",
+    "cloud-audit-scripts-security-followup.json",
+    "cloud-audit-security-followup.json",
     "cloud-audit-security.json",
     "cloud-audit-semgrep-current.json",
     "cloud-audit-typescript-runtime-deep.json",
+    "cloud-audit-typescript-security-followup.json",
     "cloud-audit-typescript-tests-deep.json",
     "cloud-audit-typescript.json"
   ],
@@ -144,21 +152,24 @@
       "path": ".github/license-allowlist.txt",
       "sha256": "054cceb3e40e1027154c0ae0e144ea0052163e6f6981c845dcda50085f748895",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-product.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-product.json"
       ]
     },
     {
       "path": ".github/workflows/codeql.yml",
-      "sha256": "5e570c7cc5fad10b614d37eed81997b5da5d2ec2ea5ebd45d06fff3b932d0c3b",
+      "sha256": "e81340997ab12f8a37f1a625666b11df71b6d5ef676159ee99c0984b0e7c420c",
       "reviews": [
         "cloud-audit-product.json",
-        "cloud-audit-root.json"
+        "cloud-audit-root.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -194,12 +205,15 @@
     },
     {
       "path": ".github/workflows/recorder-license.yml",
-      "sha256": "256edd20011972552ec8d8dc78a39ca81ea7ce8b9c58209d91c7a353c433d86b",
+      "sha256": "bf1e0cb09edb23cf6ee36cb4329dc77dc63c3273acb2ea7f457fa66c82ffd355",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
+        "cloud-audit-license-independent.json",
         "cloud-audit-root.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-go-license-reconciliation.json",
+        "cloud-audit-license-independent.json"
       ]
     },
     {
@@ -285,13 +299,14 @@
     },
     {
       "path": "CHANGELOG.md",
-      "sha256": "0e9fa5ea7e2260fa89fef074c5f83310fde2be88261983e1c755eda5709a7b28",
+      "sha256": "fb9daf0ecfa2b2436e819c72fc618c644c0f0f1d277b7825d4d4e98a677a4857",
       "reviews": [
         "cloud-audit-product.json",
-        "cloud-audit-root.json"
+        "cloud-audit-root.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -4166,9 +4181,11 @@
       "path": "components/host-emitter/bpf/vmlinux.h",
       "sha256": "6861f46ca59654cc75feb479edac9824e3a99bd8c5324706cd91cf7c63eab454",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ]
     },
@@ -4586,9 +4603,11 @@
       "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
       "sha256": "c93e9d3c4d2aa8223310132c153732c7056c198a853c909bf785a2fce7d91275",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ]
     },
@@ -4705,10 +4724,14 @@
     {
       "path": "components/otel-collector-fabric/receiver/auditreceiver/logfile.go",
       "sha256": "d90229befe437eb26acd25072c7ea2e701032ba4355ef9204efb74fadf778d4b",
+      "current_path": "components/otel-collector-fabric/receiver/auditreceiver/logfile_legacy_test.go",
+      "relocation": "byte_identical_test_only_move",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ]
     },
@@ -4746,9 +4769,11 @@
       "path": "components/otel-collector-fabric/receiver/auditreceiver/receiver.go",
       "sha256": "cea81469a3dc69ec6da74eac572b43ded4a23ae9b69da4efeb71ce9b0cd92e69",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ]
     },
@@ -7142,21 +7167,24 @@
     },
     {
       "path": "examples/agent-orchestration/agent.py",
-      "sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "sha256": "e277bb2c33d74eccd4659e88b1f85f8b6a1da154a6a4a9b5eb6de4f0e700b578",
       "reviews": [
-        "cloud-audit-host.json"
+        "cloud-audit-host.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-host.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
       "path": "examples/agent-orchestration/audit_shim.py",
       "sha256": "a02190eac1387ec901fa6a4583cc19815e46c19e9675511735f7eb1234bedcae",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ]
     },
@@ -7214,9 +7242,11 @@
       "path": "examples/agent-orchestration/reconstruct.py",
       "sha256": "447a7cf91f1d906d31c089067a0a622788d5a5893ef4a01505566a9eb7b15ed9",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-go-license-reconciliation.json",
         "cloud-audit-host.json"
       ]
     },
@@ -7275,11 +7305,13 @@
       "sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
       "reviews": [
         "cloud-audit-codeql.json",
-        "cloud-audit-product.json"
+        "cloud-audit-product.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
-        "cloud-audit-product.json"
+        "cloud-audit-product.json",
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -7892,23 +7924,29 @@
     },
     {
       "path": "scripts/license_check.py",
-      "sha256": "5860df93857219b7d73f44820cd2d3270cc455810b3a815eb713159250416672",
+      "sha256": "7528a4dc27ef0efc05ef38965e690347a0fa6b7d936733a2861fae6995d96947",
       "reviews": [
+        "cloud-audit-go-license-reconciliation.json",
+        "cloud-audit-license-independent.json",
         "cloud-audit-root.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-go-license-reconciliation.json",
+        "cloud-audit-license-independent.json"
       ]
     },
     {
       "path": "scripts/license_scan.sh",
-      "sha256": "94d2083bb3710e3f14834012e236885530687e88740dcd8fc03da97b06c07b97",
+      "sha256": "118b921b02ed581fd2c975aaa99739a83ebf55a2b315d8e84abcbb00768ad2f3",
       "reviews": [
         "cloud-audit-final-paths.json",
+        "cloud-audit-go-license-reconciliation.json",
+        "cloud-audit-license-independent.json",
         "cloud-audit-product.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-final-paths.json"
+        "cloud-audit-go-license-reconciliation.json",
+        "cloud-audit-license-independent.json"
       ]
     },
     {
@@ -8081,10 +8119,12 @@
       "reviews": [
         "cloud-audit-codeql.json",
         "cloud-audit-product.json",
-        "cloud-audit-scripts-deep-a.json"
+        "cloud-audit-scripts-deep-a.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-scripts-deep-a.json"
+        "cloud-audit-scripts-deep-a.json",
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -8158,13 +8198,14 @@
     },
     {
       "path": "scripts/release/qualify_release.py",
-      "sha256": "82896cec2d267534189cb2c4bd12f19bede1acdf21dbcfa276bfa040c231b47e",
+      "sha256": "bf97c8d1abe24971aee4465b58386a7cf2cdc3526e729f9927ffd0e13d855acc",
       "reviews": [
         "cloud-audit-product.json",
-        "cloud-audit-scripts-deep-a.json"
+        "cloud-audit-scripts-deep-a.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-scripts-deep-a.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -8358,15 +8399,16 @@
     },
     {
       "path": "scripts/tests/test_governed_node_e2e.py",
-      "sha256": "5ab990283dc57cf43a517d8ca6dcdbbf63cc8f42bc29d8a262a1df49e609189a",
+      "sha256": "06df7679f6936a37559c9c91b9cb7e7bad3cc36618f25771de59bcf6c2d2b71e",
       "reviews": [
         "cloud-audit-codeql.json",
         "cloud-audit-product.json",
         "cloud-audit-root.json",
-        "cloud-audit-scripts-deep-b.json"
+        "cloud-audit-scripts-deep-b.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -8487,14 +8529,15 @@
     },
     {
       "path": "scripts/tests/test_release_qualification.py",
-      "sha256": "0fa67b6206742a66083fda42db9a08fac850c8e46982b26d5eb7e743129349bb",
+      "sha256": "91a312d32e32d29fae9c511d31fe29ce4dde6d68f72992643eb76f3c41cdabda",
       "reviews": [
         "cloud-audit-product.json",
         "cloud-audit-scripts-deep-a.json",
-        "cloud-audit-scripts-deep-b.json"
+        "cloud-audit-scripts-deep-b.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-scripts-deep-a.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -8511,28 +8554,27 @@
     },
     {
       "path": "scripts/tests/test_s3_live.py",
-      "sha256": "7346a829e09060bf8eb0d25a95a829ec3b9a7712b81b5cfd53e9cc9cc66e333c",
+      "sha256": "b2c065bebf0cfcb8517e8b071721164866936ea29bcc80bdf321a0b69a03db72",
       "reviews": [
         "cloud-audit-codeql.json",
         "cloud-audit-product.json",
-        "cloud-audit-scripts-deep-b.json"
+        "cloud-audit-scripts-deep-b.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-codeql.json",
-        "cloud-audit-product.json",
-        "cloud-audit-scripts-deep-b.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
       "path": "scripts/tests/test_s3_live_harness.py",
-      "sha256": "bf7883ba9e34b4ea23ae696cc773833d7d823fb87b55e73f8e5e970c99fd8ad7",
+      "sha256": "cdad98a5b99cc68908a1718aaf0170657b25e6895f7165b757142a51d0ee31e1",
       "reviews": [
         "cloud-audit-product.json",
-        "cloud-audit-scripts-deep-b.json"
+        "cloud-audit-scripts-deep-b.json",
+        "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-product.json",
-        "cloud-audit-scripts-deep-b.json"
+        "cloud-audit-scripts-security-followup.json"
       ]
     },
     {
@@ -8675,12 +8717,13 @@
     },
     {
       "path": "sdk/python/src/fabric/_calls.py",
-      "sha256": "a8f79ae5d480cddc57eb5bc729e1def6235527b544ee6e4a9195c74656b21a47",
+      "sha256": "57ff50593fba6694d9855e4a53ed5e0e80d9c21914f3d6e6ebd2f5c2589fe54d",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-runtime-deep.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
@@ -8706,24 +8749,27 @@
     },
     {
       "path": "sdk/python/src/fabric/_content_sink.py",
-      "sha256": "61955cf2de3f88d8f0135baa32e69b220420953731a1425a3632fe77724492ad",
+      "sha256": "6ab766f44bc9ab3643ecea32f06b8a3a3f37c1bfb9ee02e3f3f2acfcbfb1420a",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-root.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/_content_writer.py",
       "sha256": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4",
       "reviews": [
+        "cloud-audit-security-followup.json",
         "cloud-audit-security.json",
         "cloud-audit-semgrep-current.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-security-followup.json",
         "cloud-audit-semgrep-current.json"
       ]
     },
@@ -8830,14 +8876,14 @@
     },
     {
       "path": "sdk/python/src/fabric/auto_instrument.py",
-      "sha256": "ddb634e99c4865d17f06ee36e58a2e4593489495a4855b625a6e7ad3b07d8371",
+      "sha256": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-codeql.json",
-        "cloud-audit-security.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
@@ -8865,10 +8911,12 @@
       "sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ]
     },
@@ -8976,26 +9024,26 @@
     },
     {
       "path": "sdk/python/src/fabric/content_store/base.py",
-      "sha256": "e61e0610804f39c5289fce8b10d29cc7aef3d9734b9e8232033f2528bc7677a0",
+      "sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-codeql.json",
-        "cloud-audit-security.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/content_store/local.py",
-      "sha256": "e0c5ed1376566081891e2884f821c453d84e7a476347966dc0df89138b8228ac",
+      "sha256": "3dea808e391722ba49bd11d9b7932d9c054dd9ca0f2cb20a87d6c5d27ee06319",
       "reviews": [
+        "cloud-audit-security-followup.json",
         "cloud-audit-security.json",
         "cloud-audit-semgrep-current.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-security.json",
-        "cloud-audit-semgrep-current.json"
+        "cloud-audit-security-followup.json"
       ]
     },
     {
@@ -9023,35 +9071,38 @@
       "sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/coverage_manifest.py",
-      "sha256": "0bf31e36c20601a4a50898233fd238a85e27a1f594921f48aed76e3dac408c89",
+      "sha256": "c70ad95c2faca0ace8c6429aa737d0ae0470c0b1a0707a7d7745169263674338",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-codeql.json",
-        "cloud-audit-runtime-deep.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/decision.py",
-      "sha256": "5ed580c66a39bcdc67ffec34e4b17cc4a3f952443cc7b0a54689a59e6a83b2cd",
+      "sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-root.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
@@ -9069,10 +9120,12 @@
       "sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ]
     },
@@ -9131,23 +9184,25 @@
       "sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/http_dispatch.py",
-      "sha256": "9c545641c4111f3ac05aba7f61b06a1d325efff4bca5ac0734e2a3afcd636500",
+      "sha256": "d8deb3ce738e15085ba943e706eeb49907469a7d93f87b52167b0e0550aac1b4",
       "reviews": [
+        "cloud-audit-security-followup.json",
         "cloud-audit-security.json",
         "cloud-audit-semgrep-current.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-security.json",
-        "cloud-audit-semgrep-current.json"
+        "cloud-audit-security-followup.json"
       ]
     },
     {
@@ -9155,10 +9210,12 @@
       "sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ]
     },
@@ -9167,10 +9224,12 @@
       "sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ]
     },
@@ -9186,36 +9245,37 @@
     },
     {
       "path": "sdk/python/src/fabric/integrations/mcp.py",
-      "sha256": "624f3ff3446a5fcbc9273742d7b47d9c6cc80db86671ae06c953f5786a21a272",
+      "sha256": "e6450367e3e52f38ed11ac4ccfce56c518333894531221623e036c8788f784ce",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-security.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/memory.py",
-      "sha256": "a2980e60f0d915ffdf1ce84f29cb0d4492cedf072837d62554265a1c0f01d2ca",
+      "sha256": "b9e0c1b0eb609026bd8fc74c041c47b085d09936b92508b9df8ffee5fbac056f",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-security.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/metadata_delivery.py",
-      "sha256": "90f711e348f182a1115ca14fa5dcb839951a4d3e136c31925a50bf333fbca2bb",
+      "sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-security-followup.json",
         "cloud-audit-security.json",
         "cloud-audit-semgrep-current.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-codeql.json",
-        "cloud-audit-security.json",
-        "cloud-audit-semgrep-current.json"
+        "cloud-audit-security-followup.json"
       ]
     },
     {
@@ -9263,10 +9323,12 @@
       "sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ]
     },
@@ -9282,22 +9344,24 @@
     },
     {
       "path": "sdk/python/src/fabric/retrieval.py",
-      "sha256": "3d33466ccad9f9fec5fad1ac46d4d396c37782211ff4ecc3f8dc8f3c47c529a7",
+      "sha256": "1cc21e6d0b99a5d8e2e110ac51a5cecfeba9d37c6b6f7dfa6b12fc0c37542997",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-security.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
       "path": "sdk/python/src/fabric/side_effect.py",
-      "sha256": "5e51c018665f4eea2be91ac314750d005ebc531dafb9f61fb8c38d93771959be",
+      "sha256": "2acecfceed8bd848f3daa310c22c9e0f8646edd1b84c6de1576012debddb22c8",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-security.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
@@ -9322,14 +9386,14 @@
     },
     {
       "path": "sdk/python/src/fabric/synthetic_otlp.py",
-      "sha256": "ee82810ef19be5d0372d1e293f6ac488e194007fae25030d597261a90727045f",
+      "sha256": "dfabda633f4ab6b02b8f7a4054be031cf810284935c4de28cb6b674a00371131",
       "reviews": [
         "cloud-audit-runtime-deep.json",
+        "cloud-audit-security-followup.json",
         "cloud-audit-semgrep-current.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-runtime-deep.json",
-        "cloud-audit-semgrep-current.json"
+        "cloud-audit-security-followup.json"
       ]
     },
     {
@@ -9377,10 +9441,12 @@
       "sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ]
     },
@@ -9408,11 +9474,13 @@
       "path": "sdk/python/tests/test_adapters_crewai.py",
       "sha256": "f567e4af166b2f10130f1c9a3ae04780601a1d89aab672b98cd7a1c87851f6f3",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-runtime-deep.json"
       ]
@@ -9534,11 +9602,13 @@
       "sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ]
@@ -9559,10 +9629,12 @@
       "path": "sdk/python/tests/test_calls.py",
       "sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ]
@@ -9582,10 +9654,12 @@
       "sha256": "94a7cc03c9141f70c18757e510fa4caf1e9a60c233631fdc554bcf379f2b012e",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ]
     },
@@ -9623,14 +9697,14 @@
     },
     {
       "path": "sdk/python/tests/test_client.py",
-      "sha256": "1a0b696c39d11c900b7b2a258447f3f4f23fc493464c4cea12a8154d4a996240",
+      "sha256": "7b1ea0c5719eba05a3d9fb0330c745b8ef7b68ac081c3500aaa86dbc1df04cc4",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-python-deep-a.json",
-        "cloud-audit-python-tests.json"
+        "cloud-audit-python-codeql-followup.json"
       ]
     },
     {
@@ -9705,10 +9779,12 @@
       "path": "sdk/python/tests/test_decision.py",
       "sha256": "fc6b61c5fb2099265f5831a14a288162238fa8d5ea81d450bd64a693b25df9a4",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ]
@@ -9897,10 +9973,12 @@
       "sha256": "8e4d0009f6dcb31777ffe29a1c4845221e2ad563bc0fe4debbb2dd36f509fdd7",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ]
     },
@@ -9945,11 +10023,13 @@
       "sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ]
@@ -9993,10 +10073,12 @@
       "sha256": "d291ff35abe28a56ff6c8f9a870057a635f48c5397e24de1caf04df397f945c7",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ]
     },
@@ -10083,11 +10165,13 @@
       "sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ]
@@ -10107,10 +10191,12 @@
       "sha256": "73c8acfc40e1485ac3a7627d9658714b749c1f815d8cacb96e11886a12a1b0a2",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json",
         "cloud-audit-root.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-root.json"
       ]
     },
@@ -10118,10 +10204,12 @@
       "path": "sdk/python/tests/test_surface_logging.py",
       "sha256": "116510424bff88cec32ea40bb48473fdd011cd5443ee99ae2681e6ea11239413",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ]
@@ -10130,11 +10218,13 @@
       "path": "sdk/python/tests/test_synthetic_evidence.py",
       "sha256": "4cda692fd45bd0adad962bd8f7dcd1c0306bce9b90232e0f101abed60dbebdb5",
       "reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-runtime-deep.json"
       ]
@@ -10156,11 +10246,13 @@
       "sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
       "reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-codeql.json",
+        "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ]
@@ -10298,14 +10390,16 @@
     },
     {
       "path": "sdk/typescript/src/byte-evidence.ts",
-      "sha256": "2ed6408498eddceb6f4e9dbd374dd7ed2b44f97efe33a1b3f5f385c88ed3d8ae",
+      "sha256": "268a6f29420245810e0574687064f48b4587064388252af3ffbb798e63fac5c6",
       "reviews": [
+        "cloud-audit-independent-security-followup.json",
         "cloud-audit-typescript-runtime-deep.json",
+        "cloud-audit-typescript-security-followup.json",
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-typescript-runtime-deep.json",
-        "cloud-audit-typescript.json"
+        "cloud-audit-independent-security-followup.json",
+        "cloud-audit-typescript-security-followup.json"
       ]
     },
     {
@@ -10345,35 +10439,44 @@
     },
     {
       "path": "sdk/typescript/src/content-store.ts",
-      "sha256": "02f08ec6eab2dd8ade4d94da3bbe4034a5d2d33f087863a946c2b9e887a46c9f",
+      "sha256": "757b3e57a06c5ace2a8d061c368fbc0a2a9db2e6672d60fe34c0a514419252fb",
       "reviews": [
+        "cloud-audit-independent-security-followup.json",
         "cloud-audit-typescript-runtime-deep.json",
+        "cloud-audit-typescript-security-followup.json",
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-typescript-runtime-deep.json"
+        "cloud-audit-independent-security-followup.json",
+        "cloud-audit-typescript-security-followup.json"
       ]
     },
     {
       "path": "sdk/typescript/src/content-writer.ts",
-      "sha256": "09dae21dfc7eb234763fb29343c09c27c6b9b8bb377aed1545d4bdf74369f85c",
+      "sha256": "fc365361cc148ecab9012f45940d531471be4ea435c31536808d5b65ed2a4c07",
       "reviews": [
+        "cloud-audit-independent-security-followup.json",
         "cloud-audit-typescript-runtime-deep.json",
+        "cloud-audit-typescript-security-followup.json",
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-typescript-runtime-deep.json"
+        "cloud-audit-independent-security-followup.json",
+        "cloud-audit-typescript-security-followup.json"
       ]
     },
     {
       "path": "sdk/typescript/src/content.ts",
-      "sha256": "8a86d26c105638e674a119f76075aae3b6a10bdae1ee3834dd22999ff759f922",
+      "sha256": "a58077eaf94899e6617283d3b0f0606ab05af457a778e4aa6ab1756599b81ef9",
       "reviews": [
+        "cloud-audit-independent-security-followup.json",
         "cloud-audit-typescript-runtime-deep.json",
+        "cloud-audit-typescript-security-followup.json",
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-typescript-runtime-deep.json"
+        "cloud-audit-independent-security-followup.json",
+        "cloud-audit-typescript-security-followup.json"
       ]
     },
     {
@@ -10401,14 +10504,16 @@
     },
     {
       "path": "sdk/typescript/src/deployment-policy.ts",
-      "sha256": "29b435d491baae63eadda46cb654295adad1fdc48b5a1396a30885869d12e9f8",
+      "sha256": "e9101d085e0e6d4e49e50b457889722db4d343996ce2d4c79a75da4b8311c0e4",
       "reviews": [
+        "cloud-audit-independent-security-followup.json",
         "cloud-audit-typescript-runtime-deep.json",
+        "cloud-audit-typescript-security-followup.json",
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-typescript-runtime-deep.json",
-        "cloud-audit-typescript.json"
+        "cloud-audit-independent-security-followup.json",
+        "cloud-audit-typescript-security-followup.json"
       ]
     },
     {
@@ -10425,14 +10530,16 @@
     },
     {
       "path": "sdk/typescript/src/hash.ts",
-      "sha256": "25b241ffc37e5ac26ec00159bd18df7781c3ee4be575522cb25fb1c8cc17c8c8",
+      "sha256": "f04f3112e8466b7c8f7df4ca972a2d6c9696255ae680e2451f393af0b87b6aa0",
       "reviews": [
+        "cloud-audit-independent-security-followup.json",
         "cloud-audit-typescript-runtime-deep.json",
+        "cloud-audit-typescript-security-followup.json",
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-typescript-runtime-deep.json",
-        "cloud-audit-typescript.json"
+        "cloud-audit-independent-security-followup.json",
+        "cloud-audit-typescript-security-followup.json"
       ]
     },
     {
@@ -10483,14 +10590,16 @@
     },
     {
       "path": "sdk/typescript/src/resolver.ts",
-      "sha256": "c09a54ae26ed9c6f9dba408033066902aa11ddf0d8f664fab0910ce2f6ed6f19",
+      "sha256": "c984a6cff7f1b1de4eecb48c4f8af44013749273254f36cc7a247ac7f3b94285",
       "reviews": [
+        "cloud-audit-independent-security-followup.json",
         "cloud-audit-typescript-runtime-deep.json",
+        "cloud-audit-typescript-security-followup.json",
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-typescript-runtime-deep.json",
-        "cloud-audit-typescript.json"
+        "cloud-audit-independent-security-followup.json",
+        "cloud-audit-typescript-security-followup.json"
       ]
     },
     {

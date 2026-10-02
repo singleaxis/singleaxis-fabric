@@ -11,7 +11,17 @@ import { createHash, randomUUID as nodeRandomUUID } from "node:crypto";
  * match the shared conformance goldens.
  */
 export function sha256Hex(value: string): string {
-  return createHash("sha256").update(value, "utf-8").digest("hex");
+  return sha256BytesHex(Buffer.from(value, "utf-8"));
+}
+
+/** SHA-256 of exact bytes, without text decoding or normalization. */
+export function sha256BytesHex(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/** Canonical algorithm-prefixed SHA-256 of exact bytes. */
+export function sha256BytesPrefixed(value: Uint8Array): string {
+  return "sha256:" + sha256BytesHex(value);
 }
 
 /** Reject raw content masquerading as hash-labelled recorder metadata. */

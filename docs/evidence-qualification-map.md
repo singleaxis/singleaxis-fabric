@@ -43,10 +43,36 @@ exports `capture-matrix.json`, per-level commands, source hashes, command logs,
 JUnit results and pytest fixture files. These fixtures use synthetic inputs only.
 `LOCAL_FIXTURE_PASSED` credits precisely the selected assertions, not an entire
 level; `not_implemented_scenarios` remains present even after those assertions
-pass. Skips, malformed/missing JUnit and command errors cannot pass. C8 has no
-implemented target scenario and is explicitly `NOT_IMPLEMENTED`. The runner
+pass. Skips, malformed/missing JUnit and command errors cannot pass. C8 now has
+a controlled application HTTP scenario; host and TLS coverage remains unimplemented. The runner
 uses local tests, not a live model or cloud service, and always reports `NO_GO`.
 Retain the whole directory with its exact source/artifact ledger for review.
+
+## Controlled C8 application-network journey
+
+```sh
+python scripts/qualification/run_c8_network_journey.py \
+  --evidence-dir /tmp/fabric-c8-UNIQUE
+```
+
+The new private directory retains `capture-matrix.json`, protected metadata,
+encrypted derivative objects and an independent SQLite service ledger. The
+actual Python HTTP adapter makes four requests: a 503 followed by an explicit
+200 retry, a 400 response, and a request whose effect commits before its response
+is lost. The caller's last outcome remains unknown; only the independent service
+ledger establishes that the effect committed once. Evidence recovery starts a
+fresh authorized reader and sends no HTTP request. Keep the generated key files
+private; this fixture uses local capabilities, not production IAM or KMS.
+
+The privacy check observes seven actual writer handoffs after DeploymentPolicy
+redaction and searches retained files for the synthetic raw canary. The fresh
+reader verifies seven redacted objects and denies wrong-tenant metadata. It does
+not recover original content. Socket peer observations do not prove application
+semantics; response IDs and fixture request IDs provide the scoped joins here.
+No host packet sensing, TLS run, HTTP/2, SSH, uninstrumented plaintext recovery,
+external destination durability or producer closure is credited. An explicit
+HTTP adapter can observe application bytes before encryption; host connection
+metadata alone cannot reveal encrypted request/response content.
 
 ## What counts as evidence
 

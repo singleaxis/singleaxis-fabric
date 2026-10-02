@@ -15,6 +15,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from ._instrumentation_registry import _KNOWN_INSTRUMENTORS, _set_content_capture_default
 from ._version import __version__
 
 _DISTRIBUTIONS = {
@@ -192,11 +193,6 @@ def inspect_integrations(
     adds independent metadata-only protection; existing host exporters are
     outside that boundary.
     """
-    from .auto_instrument import (  # noqa: PLC0415 - avoid registration import cycle
-        _KNOWN_INSTRUMENTORS,
-        _set_content_capture_default,
-    )
-
     if any(not isinstance(name, str) or not name for name in required):
         raise ValueError("required integrations must be nonempty names")
     wanted = set(only if only is not None else [item.name for item in _KNOWN_INSTRUMENTORS])

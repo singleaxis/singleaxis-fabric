@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-level-qualification/v1",
-  "scope": "Declared standalone CAPTURE -> PROTECT -> DELIVER scenarios; documentation map, not executed campaign",
+  "scope": "Declared standalone CAPTURE -> PROTECT -> DELIVER scenarios; documentation map with separately linked scoped run evidence, not a unified executed campaign",
   "production_verdict": "NO_GO",
   "status_semantics": {
     "unexecuted": "No scenario execution is credited by this map; implementation references are not run evidence.",
@@ -268,31 +268,44 @@
     {
       "level": "C8",
       "scenario": "network",
-      "expected_action": "Compare connection attempts with actual application requests and encrypted traffic.",
-      "actual_boundary": "Optional host connection metadata plus explicit application boundary capture.",
-      "identity_causality": "Host process/connection versus application attempt identities need actual correlation.",
+      "expected_action": "Compare physical application HTTP attempts, retries and HTTP error bodies; lose a response after an independently committed service effect and recover evidence without repeating it.",
+      "actual_boundary": "Opt-in Python FinalHTTPAdapter HTTP/1.1 bodies and explicit caller retries; independent service socket peer metadata. No host packet collector or TLS execution in this case.",
+      "identity_causality": "Operation IDs join explicit retries with distinct attempt IDs; acknowledged response witness IDs join service rows. Lost response uses fixture-supplied request identity, not authenticated service attestation.",
       "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
-      "independent_ground_truth": "Independent application/service ledger and scoped network witness.",
-      "observed_result": null,
+      "independent_ground_truth": "Loopback service SQLite transactions committed before response; fresh query of request/effect count before and after authorized evidence-only readback.",
+      "observed_result": {
+        "scoped_run": "Four HTTP requests, seven redacted byte objects, one independently committed lost-response effect; fresh reader does not repeat effect.",
+        "production_verdict": "NO_GO"
+      },
       "known_omissions": [
-        "TLS/SSH plaintext unavailable to host metadata",
-        "Connection success not semantic effect"
+        "Host/kernel network correlation",
+        "TLS/SSH execution or encrypted uninstrumented plaintext recovery",
+        "HTTP/2, redirects and automatic retries",
+        "Production remote service attestation",
+        "Fresh byte reader uses local policy/key files, not production IAM or KMS"
       ],
-      "status": "unexecuted",
-      "evidence": [],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        "qualification/c8-network-capture-matrix.json"
+      ],
       "source_references": [
-        "docs/sdk-support-matrix.md"
+        "docs/sdk-support-matrix.md",
+        "scripts/qualification/run_c8_network_journey.py"
       ],
       "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
       "acceptance": {
-        "pytest_nodes": [],
-        "tested_claim": "No scoped live host/TLS network scenario is implemented in this runner.",
-        "not_implemented_scenarios": [
-          "Host connection/application correlation",
-          "TLS/SSH semantics",
-          "Live network witness"
+        "pytest_nodes": [
+          "scripts/tests/test_c8_network_journey.py::test_network_semantics_independent_commit_and_fresh_readback"
         ],
-        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+        "tested_claim": "Controlled HTTP503->200 physical retry, HTTP400 response, one committed effect with lost response, prequeue redaction and fresh authorized derivative readback without effect replay.",
+        "not_implemented_scenarios": [
+          "Host/kernel network correlation",
+          "TLS/SSH execution or encrypted uninstrumented plaintext recovery",
+          "HTTP/2, redirects and automatic retries",
+          "Production remote service attestation",
+          "Fresh byte reader uses local policy/key files, not production IAM or KMS"
+        ],
+        "independent_truth_scope": "Same-host separately observed service SQLite commit and socket peers; fixture-local trust only."
       }
     },
     {

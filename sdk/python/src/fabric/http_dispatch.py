@@ -72,11 +72,13 @@ class FinalHTTPAdapter:
         if parsed.scheme not in {"http", "https"} or parsed.hostname is None or parsed.username:
             raise ValueError("unsupported HTTP transport URL")
         if parsed.scheme == "https":
+            context = ssl.create_default_context()
+            context.minimum_version = max(context.minimum_version, ssl.TLSVersion.TLSv1_2)
             connection: http.client.HTTPConnection = http.client.HTTPSConnection(
                 parsed.hostname,
                 parsed.port,
                 timeout=self.timeout_s,
-                context=ssl.create_default_context(),
+                context=context,
             )
         else:
             connection = http.client.HTTPConnection(

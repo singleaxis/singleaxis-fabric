@@ -272,6 +272,7 @@ def _sink_contains(needle: str) -> bool:
 
 def _wait_node_health(timeout_s: float = 15.0) -> None:
     deadline = time.monotonic() + timeout_s
+    last_outcome = "no_response"
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(
@@ -279,11 +280,14 @@ def _wait_node_health(timeout_s: float = 15.0) -> None:
             ) as response:
                 if response.status == 200:
                     return
+                last_outcome = "non_success_status"
         except (OSError, ValueError):
-            pass
+            # Keep the bounded retry outcome without copying endpoint details
+            # or arbitrary exception text into the diagnostic.
+            last_outcome = "transport_or_response_error"
         time.sleep(0.5)
     raise AssertionError(
-        "Fabric Node health endpoint unavailable after Compose startup"
+        "Fabric Node health endpoint unavailable after Compose startup: " + last_outcome
     )
 
 

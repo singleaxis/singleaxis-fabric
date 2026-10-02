@@ -18,12 +18,13 @@ both sides.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
+
+from ._hashes import sha256_hex
 
 
 class MemoryKind(StrEnum):
@@ -47,7 +48,7 @@ def _sha256_hex(value: str) -> str:
     # (malformed but reachable via arbitrary tool/memory content) would
     # otherwise raise UnicodeEncodeError mid-hash. Byte-identical for all
     # well-formed text, so no golden/wire output changes.
-    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(value)
 
 
 class MemoryRecord(BaseModel):

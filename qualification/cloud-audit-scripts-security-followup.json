@@ -1,0 +1,153 @@
+{
+  "schema_version": "fabric.security-followup-scripts/v1",
+  "baseline_sha": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "scope": "All scripts/example whole-scan CodeQL locations; exact PR-gate membership is separately unverified until authorized check annotations are read. Benchmark excluded and unchanged.",
+  "files": [
+    {
+      "path": "examples/agent-orchestration/agent.py",
+      "rule_id": "py/multiple-definition",
+      "scanned_line": 233,
+      "source_sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "sha256": "e277bb2c33d74eccd4659e88b1f85f8b6a1da154a6a4a9b5eb6de4f0e700b578",
+      "changed": true,
+      "disposition": "quality_cleanup",
+      "rationale": "Remove overwritten tuple initialization; actual run_shell result remains assigned before use."
+    },
+    {
+      "path": "examples/agent-orchestration/agent.py",
+      "rule_id": "py/multiple-definition",
+      "scanned_line": 233,
+      "source_sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "sha256": "e277bb2c33d74eccd4659e88b1f85f8b6a1da154a6a4a9b5eb6de4f0e700b578",
+      "changed": true,
+      "disposition": "quality_cleanup",
+      "rationale": "Remove overwritten tuple initialization; actual run_shell result remains assigned before use."
+    },
+    {
+      "path": "scripts/qualification/run_synthetic_agent_pilot.py",
+      "rule_id": "py/import-and-import-from",
+      "scanned_line": 26,
+      "source_sha256": "6ed74ef441e5a7620cdd21e5d0f06443c50b2d2c60f4326a80c7fb2a34aff6d7",
+      "sha256": "6ed74ef441e5a7620cdd21e5d0f06443c50b2d2c60f4326a80c7fb2a34aff6d7",
+      "changed": false,
+      "disposition": "intentional_semantics_retained",
+      "rationale": "Module import verifies installed package provenance; from-imports refer to SDK classes. No name collision or dynamic replacement is performed."
+    },
+    {
+      "path": "scripts/release/qualify_release.py",
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "scanned_line": 426,
+      "source_sha256": "82896cec2d267534189cb2c4bd12f19bede1acdf21dbcfa276bfa040c231b47e",
+      "sha256": "bf97c8d1abe24971aee4465b58386a7cf2cdc3526e729f9927ffd0e13d855acc",
+      "changed": true,
+      "disposition": "quality_clarity",
+      "rationale": "Generate separate parenthesized Python lines rather than ambiguous adjacent list string literals. Installed-code compile and runtime smoke remain required."
+    },
+    {
+      "path": "scripts/release/qualify_release.py",
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "scanned_line": 430,
+      "source_sha256": "82896cec2d267534189cb2c4bd12f19bede1acdf21dbcfa276bfa040c231b47e",
+      "sha256": "bf97c8d1abe24971aee4465b58386a7cf2cdc3526e729f9927ffd0e13d855acc",
+      "changed": true,
+      "disposition": "quality_clarity",
+      "rationale": "Generate separate parenthesized Python lines rather than ambiguous adjacent list string literals. Installed-code compile and runtime smoke remain required."
+    },
+    {
+      "path": "examples/enterprise-orchestration/run.py",
+      "rule_id": "py/ineffectual-statement",
+      "scanned_line": 412,
+      "source_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "changed": false,
+      "disposition": "intentional_semantics_retained",
+      "rationale": "Awaited tasks execute background completion and cancellation handling. Removing await would break producer closure; tests exercise these effects."
+    },
+    {
+      "path": "examples/enterprise-orchestration/run.py",
+      "rule_id": "py/ineffectual-statement",
+      "scanned_line": 437,
+      "source_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "changed": false,
+      "disposition": "intentional_semantics_retained",
+      "rationale": "Awaited tasks execute background completion and cancellation handling. Removing await would break producer closure; tests exercise these effects."
+    },
+    {
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "rule_id": "py/empty-except",
+      "scanned_line": 282,
+      "source_sha256": "5ab990283dc57cf43a517d8ca6dcdbbf63cc8f42bc29d8a262a1df49e609189a",
+      "sha256": "06df7679f6936a37559c9c91b9cb7e7bad3cc36618f25771de59bcf6c2d2b71e",
+      "changed": true,
+      "disposition": "diagnostic_improvement",
+      "rationale": "Transient health errors remain retried with monotonic deadline; retain a bounded diagnostic enum, never arbitrary exception text."
+    },
+    {
+      "path": "scripts/tests/test_s3_live.py",
+      "rule_id": "py/empty-except",
+      "scanned_line": 68,
+      "source_sha256": "7346a829e09060bf8eb0d25a95a829ec3b9a7712b81b5cfd53e9cc9cc66e333c",
+      "sha256": "b2c065bebf0cfcb8517e8b071721164866936ea29bcc80bdf321a0b69a03db72",
+      "changed": true,
+      "disposition": "defect_fixed",
+      "rationale": "Only BucketAlreadyOwnedByYou permits fixture initialization; globally occupied BucketAlreadyExists no longer allows fixture object operations."
+    }
+  ],
+  "regression_files": [
+    {
+      "path": "scripts/tests/test_s3_live_harness.py",
+      "sha256": "cdad98a5b99cc68908a1718aaf0170657b25e6895f7165b757142a51d0ee31e1"
+    },
+    {
+      "path": "scripts/tests/test_governed_queue_probe.py",
+      "sha256": "20cb9789a85a8d424ea4630caa8d3d1169bccd74453da138277a552202a01e55"
+    },
+    {
+      "path": "scripts/tests/test_release_qualification.py",
+      "sha256": "91a312d32e32d29fae9c511d31fe29ce4dde6d68f72992643eb76f3c41cdabda"
+    }
+  ],
+  "regression_evidence": {
+    "before": "New S3 ownership tests against exact baseline source:1 failed,4 passed. BucketAlreadyExists incorrectly reached store initialization.",
+    "after": "76 focused tests passed; closed enum health errors, retries and timeout failure; generated wheel Python compiles; controlled enterprise examples unchanged.",
+    "independent_review": "security_audit independently reviewed seven changed scripts/example files and ran56 focused checks; no new defects found. Additional fixture exception class then added solely to reproduce actual baseline exception hierarchy.",
+    "limits": [
+      "S3 tests use controlled fake clients; no live S3 claim.",
+      "No gate change, suppression or alert dismissal; CI must determine scanner closure.",
+      "Awaited expressions and intentional module/direct imports retained on semantic evidence; these quality findings do not require production acceptance merely to preserve valid language constructs."
+    ]
+  },
+  "supplementary_authored_or_reviewed_paths": [
+    {
+      "path": ".github/workflows/codeql.yml",
+      "sha256": "e81340997ab12f8a37f1a625666b11df71b6d5ef676159ee99c0984b0e7c420c",
+      "method": "full_diff_and_semantic_review_with_focused_regressions",
+      "assessment": "Bounded read-only exact-head CodeQL metadata diagnostic; no scanner gate or alert writes. Root independently reviewed fixed routes, authorization handling, limits, identity and count checks; tests pass."
+    },
+    {
+      "path": "scripts/qualification/report_codeql_pr_annotations.py",
+      "sha256": "9ef8887abd526b15f5353e9da9e5aa7ec5b00d44963e45c3f23bed5fe56742fd",
+      "method": "full_diff_and_semantic_review_with_focused_regressions",
+      "assessment": "Bounded read-only exact-head CodeQL metadata diagnostic; no scanner gate or alert writes. Root independently reviewed fixed routes, authorization handling, limits, identity and count checks; tests pass."
+    },
+    {
+      "path": "scripts/tests/test_codeql_pr_annotations.py",
+      "sha256": "b2ea035d75569902d9a2516edb8b231674b0d9e322975301cbd6db1f8e69e90b",
+      "method": "full_diff_and_semantic_review_with_focused_regressions",
+      "assessment": "Bounded read-only exact-head CodeQL metadata diagnostic; no scanner gate or alert writes. Root independently reviewed fixed routes, authorization handling, limits, identity and count checks; tests pass."
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "fb9daf0ecfa2b2436e819c72fc618c644c0f0f1d277b7825d4d4e98a677a4857",
+      "method": "full_diff_review_against_executed_evidence",
+      "assessment": "Record security fixes, independent cleanup provenance, C8 fixture outcomes and explicit remaining decisions without changing product scope."
+    },
+    {
+      "path": "docs/cloud-qualification-2026-10-02.md",
+      "sha256": "074363fe900f11c3096f2ebf6daa35b34583f793ad0f93bacaa0b368626e4038",
+      "method": "full_diff_review_against_executed_evidence",
+      "assessment": "Record security fixes, independent cleanup provenance, C8 fixture outcomes and explicit remaining decisions without changing product scope."
+    }
+  ]
+}

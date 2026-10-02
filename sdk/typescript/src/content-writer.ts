@@ -14,7 +14,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { sha256BytesHex } from "./hash.js";
 
 import {
   ContentStatus,
@@ -429,7 +430,7 @@ export class ContentWriter {
       );
       record["content_b64"] = Buffer.from(task.content as string, "utf-8").toString("base64");
     }
-    record["checksum"] = createHash("sha256").update(canonicalJsonBytes(record)).digest("hex");
+    record["checksum"] = sha256BytesHex(canonicalJsonBytes(record));
     return record;
   }
 
@@ -533,7 +534,7 @@ export class ContentWriter {
 
   private taskFromRecord(record: Record<string, unknown>): Task {
     const { checksum, ...body } = record;
-    const expected = createHash("sha256").update(canonicalJsonBytes(body)).digest("hex");
+    const expected = sha256BytesHex(canonicalJsonBytes(body));
     if (checksum !== expected) {
       throw new Error("spool record checksum mismatch");
     }

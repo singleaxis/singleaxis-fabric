@@ -188,6 +188,7 @@ def test_python_wheel_smoke_exercises_installed_governed_runtime(
     assert calls[1][-1] == str(wheel.resolve())
     assert "--no-deps" not in calls[1]
     runtime_code = calls[2][-1]
+    compile(runtime_code, "installed-wheel-smoke", "exec")
     assert "ContentCaptureConfig" in runtime_code
     assert "record_context" in runtime_code
     assert "export_transcript" in runtime_code

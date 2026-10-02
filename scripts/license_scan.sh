@@ -40,14 +40,18 @@ if [ -z "${FABRIC_PYTHON_BIN}" ]; then
 fi
 
 FABRIC_GATE_ARGS=()
-FABRIC_PYTHON_VENV="${FABRIC_RAW_DIR}/python-venv"
-"${FABRIC_PYTHON_BIN}" -m venv "${FABRIC_PYTHON_VENV}"
-"${FABRIC_PYTHON_VENV}/bin/python" -m pip install --quiet --upgrade pip
-"${FABRIC_PYTHON_VENV}/bin/pip" install --quiet pip-licenses './sdk/python[otlp]'
-"${FABRIC_PYTHON_VENV}/bin/pip-licenses" --format=json \
-  --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel hatchling hatch-vcs pathspec trove-classifiers \
-  > "${FABRIC_RAW_DIR}/python-sdk.json"
-FABRIC_GATE_ARGS+=(--pip "sdk/python=${FABRIC_RAW_DIR}/python-sdk.json")
+# Each published optional install surface is scanned independently so mutually
+# incompatible optional instrumentors do not force an artificial combined env.
+for extra in otlp openai anthropic bedrock otel-langchain cohere mcp signing; do
+  FABRIC_PYTHON_VENV="${FABRIC_RAW_DIR}/python-venv-${extra}"
+  "${FABRIC_PYTHON_BIN}" -m venv "${FABRIC_PYTHON_VENV}"
+  "${FABRIC_PYTHON_VENV}/bin/python" -m pip install --quiet --upgrade pip
+  "${FABRIC_PYTHON_VENV}/bin/pip" install --quiet pip-licenses "./sdk/python[${extra}]"
+  "${FABRIC_PYTHON_VENV}/bin/pip-licenses" --format=json \
+    --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel hatchling hatch-vcs pathspec trove-classifiers \
+    > "${FABRIC_RAW_DIR}/python-${extra}.json"
+  FABRIC_GATE_ARGS+=(--pip "sdk/python=${FABRIC_RAW_DIR}/python-${extra}.json")
+done
 
 FABRIC_GO_BIN="$(go env GOPATH)/bin"
 if [ ! -x "${FABRIC_GO_BIN}/go-licenses" ]; then
@@ -59,6 +63,7 @@ fi
 (
   cd components/otel-collector-fabric
   "${FABRIC_GO_BIN}/builder" --config ocb-config.yaml
+  sh ./upstream/build-patched-bearertokenauth.sh
   cd dist
   go mod download
   "${FABRIC_GO_BIN}/go-licenses" report ./... \
@@ -93,6 +98,10 @@ npm ci --silent --prefix sdk/typescript
 npx --yes license-checker-rseidelsohn --production --json \
   --start sdk/typescript > "${FABRIC_RAW_DIR}/npm-typescript.json"
 FABRIC_GATE_ARGS+=(--npm "sdk/typescript=${FABRIC_RAW_DIR}/npm-typescript.json")
+npm install --prefix sdk/typescript --no-save --package-lock=false --ignore-scripts '@aws-sdk/client-s3@>=3.0.0'
+npx --yes license-checker-rseidelsohn --production --json \
+  --start sdk/typescript > "${FABRIC_RAW_DIR}/npm-typescript-s3.json"
+FABRIC_GATE_ARGS+=(--npm "sdk/typescript=${FABRIC_RAW_DIR}/npm-typescript-s3.json")
 
 mkdir -p build/recorder-license-report
 "${FABRIC_PYTHON_BIN}" scripts/license_check.py \

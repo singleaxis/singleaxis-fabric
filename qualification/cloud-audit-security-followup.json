@@ -1,0 +1,287 @@
+{
+  "baseline_revision": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "changelog_rationale": "Fail content writes before persistence when requested owner-only directory mode is not actually enforced; require TLS1.2 or a stronger existing default for Python HTTPS transports and explicitly qualify the controlled TLS fixture protocol floor.",
+  "changes": [
+    {
+      "change": "After descriptor-relative fchmod(0700), inspect fstat permission bits and raise PermissionError unless owner-only 0700 was enforced. This runs before any temporary content file is created or existing object is replaced.",
+      "limits": "Owner/root and trusted filesystem namespace remain trusted. Mode bits alone do not certify encryption, filesystem correctness, retention or immunity to privileged concurrent mutation.",
+      "path": "sdk/python/src/fabric/content_store/local.py",
+      "risk_addressed": "Filesystems or permission operations that return success without applying the requested mode must not receive private content silently.",
+      "tests": [
+        "raised fchmod preserves previous content and leaves no temporary file",
+        "ineffective fchmod preserves previous content and leaves no temporary file",
+        "successful write creates a 0700 directory and 0600 content file"
+      ]
+    },
+    {
+      "change": "Set minimum_version to max(existing minimum_version,TLSVersion.TLSv1_2) on the existing verified context. Retain stronger defaults, certificate validation, hostname checks, strict flags and configured client identities.",
+      "interfaces": "No public signature, HTTP opt-in behavior, authorization header, retry or acknowledgement semantics changed.",
+      "paths": [
+        "sdk/python/src/fabric/http_dispatch.py",
+        "sdk/python/src/fabric/metadata_delivery.py",
+        "sdk/python/src/fabric/synthetic_otlp.py"
+      ],
+      "risk_addressed": "Make the supported TLS floor an explicit invariant instead of relying solely on interpreter/OpenSSL default behavior. Current supported interpreter defaults were already TLS1.2; this is bounded defense in depth, not a claim that baseline traffic was insecure.",
+      "tests": [
+        "each adapter raises an injected permissive default floor to TLS1.2",
+        "each adapter preserves an injected TLS1.3 floor",
+        "all six cases execute a real strict TLS handshake and HTTP request",
+        "existing wrong-CA and hostname rejection tests remain active"
+      ]
+    },
+    {
+      "change": "Declare fixture server minimum_version=TLSv1_2 with PROTOCOL_TLS_SERVER, keeping VERIFY_X509_STRICT and verified optional presented client certificates. Add the nine regression cases above.",
+      "limits": "CERT_OPTIONAL is limited to the loopback fixture to permit the business HTTP adapter without a client certificate. The other adapters assert verified presented certificates. This is not production mTLS configuration and has no external service credentials.",
+      "path": "sdk/python/tests/test_semgrep_security_boundaries.py",
+      "risk_addressed": "The controlled test server deliberately supports TLS1.2 and newer; make that protocol policy explicit for runtime behavior and static review."
+    },
+    {
+      "change": "No additional source change. Existing setup already uses no-follow directory traversal, owner-private creation and effective-mode verification before recovery.",
+      "limits": "The initialization descriptor does not pin the namespace for the entire lifetime of the legacy path-based spool. Trusted, stable ancestors remain required.",
+      "path": "sdk/python/src/fabric/_content_writer.py",
+      "rationale": "Its retained 0700 fchmod operation is correct; switching to another permission API or spelling just to avoid the matcher would not improve security. Existing regression cases for symlink rejection, raised/ineffective chmod, root/traversal rejection and permissive-umask creation remain passing."
+    }
+  ],
+  "concrete_remaining_decision": {
+    "application_changes_completed": "The reviewed code now enforces effective private directory mode and explicit non-downgrading TLS protocol floors. No additional safe application change removes an unconditional API match or correct owner-only directory mode.",
+    "codeql_status": "Explicit fixture TLS1.2 minimum is implemented and tested; hosted exact-head CodeQL must determine whether that finding clears.",
+    "incompatible_alternatives_rejected": [
+      "Reducing directory mode to 0644/0600 would expose data or break directory traversal.",
+      "Renaming constants, aliasing APIs, replacing fchmod with another permission call, or reimplementing HTTPS only to defeat a matcher would hide unchanged behavior.",
+      "Disabling, excluding or downgrading the findings would weaken the existing gate and is outside authorization."
+    ],
+    "next_step": "Retain the safe application code and preserve the blocking gate. A zero-finding outcome requires a separately authorized upstream/scanner rule correction or explicit security-governance disposition of the demonstrably overbroad matches. No such action was taken in this work.",
+    "semgrep_status": "Five expected source matches remain in the reproduced predicates. Hosted findings are not accepted, dismissed or suppressed."
+  },
+  "date": "2026-10-02",
+  "files": [
+    {
+      "baseline_sha256": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4",
+      "bytes": 35477,
+      "changed": false,
+      "line_count": 830,
+      "method": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_review",
+        "focused_runtime_regressions"
+      ],
+      "path": "sdk/python/src/fabric/_content_writer.py",
+      "sha256": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4"
+    },
+    {
+      "baseline_sha256": "e0c5ed1376566081891e2884f821c453d84e7a476347966dc0df89138b8228ac",
+      "bytes": 13545,
+      "changed": true,
+      "line_count": 330,
+      "method": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_review",
+        "focused_runtime_regressions"
+      ],
+      "path": "sdk/python/src/fabric/content_store/local.py",
+      "sha256": "3dea808e391722ba49bd11d9b7932d9c054dd9ca0f2cb20a87d6c5d27ee06319"
+    },
+    {
+      "baseline_sha256": "9c545641c4111f3ac05aba7f61b06a1d325efff4bca5ac0734e2a3afcd636500",
+      "bytes": 14722,
+      "changed": true,
+      "line_count": 377,
+      "method": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_review",
+        "focused_runtime_regressions"
+      ],
+      "path": "sdk/python/src/fabric/http_dispatch.py",
+      "sha256": "d8deb3ce738e15085ba943e706eeb49907469a7d93f87b52167b0e0550aac1b4"
+    },
+    {
+      "baseline_sha256": "90f711e348f182a1115ca14fa5dcb839951a4d3e136c31925a50bf333fbca2bb",
+      "bytes": 31874,
+      "changed": true,
+      "line_count": 744,
+      "method": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_review",
+        "focused_runtime_regressions"
+      ],
+      "path": "sdk/python/src/fabric/metadata_delivery.py",
+      "sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95"
+    },
+    {
+      "baseline_sha256": "ee82810ef19be5d0372d1e293f6ac488e194007fae25030d597261a90727045f",
+      "bytes": 12032,
+      "changed": true,
+      "line_count": 302,
+      "method": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_review",
+        "focused_runtime_regressions"
+      ],
+      "path": "sdk/python/src/fabric/synthetic_otlp.py",
+      "sha256": "dfabda633f4ab6b02b8f7a4054be031cf810284935c4de28cb6b674a00371131"
+    },
+    {
+      "baseline_sha256": "2dfde068f84fb6d570eaed035969ed5c3fd0ab048d32d771654448434d14c3bb",
+      "bytes": 13959,
+      "changed": true,
+      "line_count": 358,
+      "method": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_review",
+        "focused_runtime_regressions"
+      ],
+      "path": "sdk/python/tests/test_semgrep_security_boundaries.py",
+      "sha256": "948fe64eb33ca56ccfe4b8283092509ea866d888f26be313c144b9fda1eafb90"
+    }
+  ],
+  "local_predicate_reproduction": {
+    "command": "SEMGREP_SETTINGS_FILE=<writable settings file> SEMGREP_LOG_FILE=<writable log file> semgrep scan --disable-version-check --metrics=off --config <config serialized from config_definition> --json --output <report> <five owned source paths>",
+    "config_definition": {
+      "rules": [
+        {
+          "id": "upstream-httpsconnection-predicate-reproduction",
+          "languages": [
+            "python"
+          ],
+          "message": "Reproduction of the inspected upstream HTTPSConnection audit predicate.",
+          "pattern-either": [
+            {
+              "pattern": "httplib.HTTPSConnection(...)"
+            },
+            {
+              "pattern": "http.client.HTTPSConnection(...)"
+            },
+            {
+              "pattern": "six.moves.http_client.HTTPSConnection(...)"
+            }
+          ],
+          "severity": "WARNING"
+        },
+        {
+          "id": "upstream-numeric-permissions-predicate-reproduction",
+          "languages": [
+            "python"
+          ],
+          "message": "Reproduction of the inspected upstream numeric permissions predicate.",
+          "patterns": [
+            {
+              "pattern-inside": "os.$METHOD(...)"
+            },
+            {
+              "metavariable-pattern": {
+                "metavariable": "$METHOD",
+                "pattern-either": [
+                  {
+                    "pattern": "chmod"
+                  },
+                  {
+                    "pattern": "lchmod"
+                  },
+                  {
+                    "pattern": "fchmod"
+                  }
+                ]
+              }
+            },
+            {
+              "pattern": "os.$METHOD($FILE, $BITS, ...)"
+            },
+            {
+              "metavariable-comparison": {
+                "comparison": "$BITS >= 0o650 and $BITS < 0o100000",
+                "metavariable": "$BITS"
+              }
+            }
+          ],
+          "severity": "WARNING"
+        }
+      ]
+    },
+    "config_local_path": "/workspace/fabric-qualification/upstream-security-rules/observed-predicates.yaml",
+    "config_sha256": "dbceb44b2a72bc0aacd4e856882d7dbbb16dfaf6a98f5450c537e8895f0ad28b",
+    "count": 5,
+    "errors": [],
+    "matches": [
+      {
+        "line": 208,
+        "path": "sdk/python/src/fabric/_content_writer.py",
+        "rule": "upstream-numeric-permissions-predicate-reproduction"
+      },
+      {
+        "line": 78,
+        "path": "sdk/python/src/fabric/content_store/local.py",
+        "rule": "upstream-numeric-permissions-predicate-reproduction"
+      },
+      {
+        "line": 77,
+        "path": "sdk/python/src/fabric/http_dispatch.py",
+        "rule": "upstream-httpsconnection-predicate-reproduction"
+      },
+      {
+        "line": 174,
+        "path": "sdk/python/src/fabric/metadata_delivery.py",
+        "rule": "upstream-httpsconnection-predicate-reproduction"
+      },
+      {
+        "line": 263,
+        "path": "sdk/python/src/fabric/synthetic_otlp.py",
+        "rule": "upstream-httpsconnection-predicate-reproduction"
+      }
+    ],
+    "note": "No rules, exclusions, suppressions or severity changes were made to the repository security workflow. Full hosted auto-config scan remains authoritative. Local registry auto-rule retrieval remains blocked by proxy 403; the displayed predicates are explicitly identified reproductions.",
+    "purpose": "Reproduce only the inspected upstream matching predicates on the five owned source files after hardening. This is diagnostic evidence, not a replacement CI ruleset or gate.",
+    "result_local_path": "/workspace/fabric-qualification/semgrep-predicate-reproduction.json",
+    "result_sha256": "d3a23dfa6e5acdbbb68d0218c3766fb90c237e97099329d0c9415f6a37c3f806",
+    "version": "1.174.0"
+  },
+  "review_scope": "Five Semgrep Python source findings and one CodeQL test TLS-context finding. The source review, bounded hardening and regression evidence are separate from hosted gate disposition.",
+  "schema": "fabric.cloud-audit-security-followup/v1",
+  "upstream_limits": "Read full referenced rule/query bodies through the authorized web tool. These are current upstream branch URLs, not a claim of byte-identical hosted auto config or CodeQL pack. Executor attempts to fetch immutable GitHub API commit references returned proxy 403, so no immutable upstream commit is invented.",
+  "upstream_rule_inspection": [
+    {
+      "conclusion": "Owner-only directory 0o700 lies in this numeric interval despite group and other bits both being zero. Directory execute permission is needed for owner traversal. Changing the mode to 0o644 would expose owner data to other users and remove required owner traversal. The directory-vs-regular-file distinction is not represented in this rule branch.",
+      "predicate": "Numeric permissions branch matches chmod/lchmod/fchmod bits >= 0o650 and < 0o100000.",
+      "primary_url": "https://raw.githubusercontent.com/semgrep/semgrep-rules/develop/python/lang/security/audit/insecure-file-permissions.yaml",
+      "rule": "python.lang.security.audit.insecure-file-permissions.insecure-file-permissions"
+    },
+    {
+      "conclusion": "The rule is an audit reminder about version-dependent historical certificate defaults. It does not inspect explicit SSLContext, certificate verification, hostname checking, TLS minimum or the supported Python>=3.11 requirement. Every direct HTTPSConnection call remains a match after hardening.",
+      "predicate": "Unconditional direct call pattern for httplib.HTTPSConnection, http.client.HTTPSConnection or six.moves.http_client.HTTPSConnection.",
+      "primary_url": "https://raw.githubusercontent.com/semgrep/semgrep-rules/develop/python/lang/security/audit/httpsconnection-detected.yaml",
+      "rule": "python.lang.security.audit.httpsconnection-detected.httpsconnection-detected"
+    },
+    {
+      "conclusion": "Make the fixture-supported protocol floor explicit as TLS1.2. Keep version-flexible PROTOCOL_TLS_SERVER so TLS1.3 remains supported; do not switch to deprecated fixed-version constructors. Exact hosted-query result is still pending.",
+      "predicate": "The ssl model treats protocol-family contexts as potentially admitting TLS1.0/1.1 and tracks explicit minimum_version restrictions before wrap_socket.",
+      "primary_url": "https://github.com/github/codeql/blob/main/python/ql/src/Security/CWE-327/InsecureProtocol.ql",
+      "rule": "py/insecure-protocol",
+      "supporting_urls": [
+        "https://codeql.github.com/codeql-query-help/python/py-insecure-protocol/",
+        "https://raw.githubusercontent.com/github/codeql/main/python/ql/src/Security/CWE-327/Ssl.qll",
+        "https://raw.githubusercontent.com/github/codeql/main/python/ql/src/Security/CWE-327/FluentApiModel.qll"
+      ]
+    }
+  ],
+  "verification": [
+    {
+      "command": "python -m pytest --no-cov -q tests/test_semgrep_security_boundaries.py tests/test_governed_content.py tests/test_content_store.py tests/test_http_dispatch.py tests/test_metadata_delivery.py tests/test_synthetic_otlp.py",
+      "cwd": "sdk/python",
+      "log_local_path": "/workspace/fabric-qualification/semgrep-followup-tests.log",
+      "log_sha256": "5a1f06c74ab89faf27fce1d173b90f014d2667f5a2f0884ca4a9c276a7303556",
+      "result": "191 passed in 26.26s"
+    },
+    {
+      "command": "CI quality venv ruff check and ruff format --check on four changed source files plus the owned test file",
+      "result": "passed",
+      "version": "0.13.0"
+    },
+    {
+      "command": "CI quality venv mypy on four changed source files plus the owned test file",
+      "result": "Success: no issues found in 5 source files"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ]
+}

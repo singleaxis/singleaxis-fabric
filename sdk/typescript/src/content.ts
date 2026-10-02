@@ -9,7 +9,9 @@
  * `ContentResolver` (resolver.ts), and the `ContentRole` vocabulary.
  */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+
+import { sha256BytesPrefixed } from "./hash.js";
 
 export const SCHEMA_CONTENT_OBJECT = "fabric.content-object/v1";
 export const SCHEMA_TRANSCRIPT_MANIFEST = "fabric.transcript-manifest/v1";
@@ -88,7 +90,7 @@ export function sortForJson(value: unknown): unknown {
 }
 
 export function sha256Prefixed(data: Uint8Array): string {
-  return "sha256:" + createHash("sha256").update(data).digest("hex");
+  return sha256BytesPrefixed(data);
 }
 
 /**

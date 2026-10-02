@@ -230,7 +230,6 @@ def main() -> int:
         decision.record_context("runbook.md", (DATA / "runbook.md").read_text())
 
         # ---- tool: run_shell ×2 (real execs the audit layer sees) ----
-        grep_out, _grep_rc = None, None
         with decision.tool_call("run_shell", call_id="call-grep") as tool:
             argv = ["grep", "-in", "error", "data/deploy.log"]
             tool.set_arguments(json.dumps({"argv": argv}))

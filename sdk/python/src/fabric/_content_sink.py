@@ -37,10 +37,6 @@ if TYPE_CHECKING:
 
 _LOG = logging.getLogger("fabric.content")
 
-_CONTENT_REF = "fabric.content.ref"
-_CONTENT_REQUEST_REF = "fabric.content.request_ref"
-_CONTENT_RESULT_REF = "fabric.content.result_ref"
-
 
 class ContentSink:
     """One governed-content accumulator per decision."""

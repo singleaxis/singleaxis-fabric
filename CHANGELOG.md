@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   with policy, identity, representation, digest and length validation.
 - Added an actual Collector crash/restart/readback fixture and a C0–C10
   acceptance runner that records executed checks and unsupported scenarios.
+- Added a controlled HTTP semantics fixture with physical retries, error
+  responses, independent effect readback and fresh authorized derivative reads.
 
 ### Fixed
 
@@ -50,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Included host-emitter and entrypoint-gate inventories in license enforcement.
 - Made missing-instrumentor and asynchronous permission tests deterministic
   without weakening their assertions.
+- Verified effective local directory permissions before persistence and made
+  TLS minimums explicit without reducing stronger platform defaults.
+- Rejected malformed, restrictive, conflicting and missing license inventories;
+  expanded scans to published optional dependencies and the patched Collector.
+- Used opened file descriptors for TypeScript file-type decisions and rejected
+  unowned S3 bucket names in the live qualification harness.
 
 ### Changed
 

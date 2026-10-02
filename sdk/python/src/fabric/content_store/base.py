@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from .._hashes import sha256_hex
+
 # Spec 033 §2.1 — the shared safe-identifier rule for values used as
 # namespace path/key components (tenant_id and friends). First character
 # must be alphanumeric; separators, traversal, NUL, and percent-encoded
@@ -152,7 +154,7 @@ def content_hash(content: str) -> str:
     """SHA-256 hex of the content's UTF-8 bytes. Shared key strategy
     so the same content lands at the same address (content-addressed).
     """
-    return hashlib.sha256(content.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(content)
 
 
 def content_hash_bytes(data: bytes) -> str:

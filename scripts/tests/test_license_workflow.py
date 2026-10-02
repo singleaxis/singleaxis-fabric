@@ -40,12 +40,16 @@ def test_workflow_enforces_license_for_auxiliary_binaries(
     arguments = _gate_arguments()
     raw = tmp_path / "raw"
     raw.mkdir()
-    (raw / "python-sdk.json").write_text(
-        json.dumps([{"Name": "fixture-python", "Version": "1", "License": "MIT"}])
-    )
-    (raw / "npm-typescript.json").write_text(
-        json.dumps({"fixture-npm@1": {"licenses": "MIT"}})
-    )
+    for index, argument in enumerate(arguments):
+        if argument == "--pip":
+            _, relative = arguments[index + 1].split("=", 1)
+            (tmp_path / relative).write_text(
+                json.dumps(
+                    [{"Name": "fixture-python", "Version": "1", "License": "MIT"}]
+                )
+            )
+    for name in ("npm-typescript.json", "npm-typescript-s3.json"):
+        (raw / name).write_text(json.dumps({"fixture-npm@1": {"licenses": "MIT"}}))
     for surface in ("fabric-node", "fabricctl", "fabric-gate", "host-emitter"):
         license_id = "GPL-3.0" if surface == blocked_surface else "MIT"
         (raw / f"go-{surface}.csv").write_text(
@@ -69,3 +73,23 @@ def test_workflow_enforces_license_for_auxiliary_binaries(
     assert report["summary"]["deny"] == 1
     denied = [row for row in report["dependencies"] if row["disposition"] == "DENY"]
     assert denied[0]["surface"] == blocked_surface
+
+
+def test_all_published_python_extras_reach_license_gate() -> None:
+    import tomllib
+
+    project = tomllib.loads((ROOT / "sdk/python/pyproject.toml").read_text())
+    extras = set(project["project"]["optional-dependencies"])
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/recorder-license.yml").read_text()
+    )
+    assert set(workflow["jobs"]["python"]["strategy"]["matrix"]["extra"]) == extras
+    arguments = _gate_arguments()
+    scans = {arguments[i + 1] for i, arg in enumerate(arguments) if arg == "--pip"}
+    assert scans == {f"sdk/python=raw/python-{extra}.json" for extra in extras}
+
+
+def test_optional_s3_inventory_reaches_license_gate() -> None:
+    package = json.loads((ROOT / "sdk/typescript/package.json").read_text())
+    assert package["peerDependenciesMeta"]["@aws-sdk/client-s3"]["optional"] is True
+    assert "sdk/typescript=raw/npm-typescript-s3.json" in _gate_arguments()

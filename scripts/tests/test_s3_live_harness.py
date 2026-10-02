@@ -9,6 +9,67 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+
+@pytest.mark.parametrize(
+    ("code", "allowed"),
+    [
+        ("BucketAlreadyOwnedByYou", True),
+        ("BucketAlreadyExists", False),
+        ("AccessDenied", False),
+        ("", False),
+    ],
+)
+def test_live_harness_rejects_bucket_without_ownership(monkeypatch, code, allowed):
+    spec = importlib.util.spec_from_file_location(
+        "fabric_s3_bucket_ownership", Path(__file__).with_name("test_s3_live.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class ClientError(Exception):
+        def __init__(self):
+            self.response = {"Error": {"Code": code}}
+
+    error = ClientError()
+
+    class BucketAlreadyOwnedByYou(ClientError):
+        pass
+
+    def create_bucket(**kwargs):
+        raise error
+
+    client = SimpleNamespace(
+        create_bucket=create_bucket,
+        exceptions=SimpleNamespace(
+            ClientError=ClientError,
+            BucketAlreadyOwnedByYou=BucketAlreadyOwnedByYou,
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "boto3",
+        SimpleNamespace(
+            session=SimpleNamespace(
+                Session=lambda **kwargs: SimpleNamespace(
+                    client=lambda *args, **kwargs: client
+                )
+            )
+        ),
+    )
+    stores = []
+    monkeypatch.setattr(module, "_make_store", lambda **kwargs: stores.append(kwargs))
+    if allowed:
+        module.store.__wrapped__()
+        assert len(stores) == 1
+        assert stores[0]["client"] is client
+    else:
+        with pytest.raises(ClientError) as caught:
+            module.store.__wrapped__()
+        assert caught.value is error
+        assert stores == []
+
 
 def test_live_harness_injects_explicit_client_into_every_tenant(monkeypatch):
     spec = importlib.util.spec_from_file_location(

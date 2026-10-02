@@ -44,7 +44,6 @@ managers.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import math
@@ -129,7 +128,7 @@ from ._content import (
 )
 from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
-from ._hashes import require_sha256_hex, require_sha256_hex_values
+from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
@@ -350,7 +349,7 @@ def _sha256_hex(value: str) -> str:
     # (malformed but reachable via arbitrary file paths / content),
     # matching ``memory._sha256_hex`` so a hash computed here is
     # byte-identical to one a record module would produce.
-    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(value)
 
 
 @dataclass(frozen=True)

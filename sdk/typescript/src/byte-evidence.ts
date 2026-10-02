@@ -7,7 +7,8 @@
  * OTLP delivery receipt, or run-completeness verdict.
  */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { sha256BytesPrefixed as digest } from "./hash.js";
 
 import type { GovernedStore } from "./content-store.js";
 import {
@@ -516,8 +517,4 @@ export class ByteEvidenceRecorder {
     this.closed = true;
     return this.flush(timeoutMs);
   }
-}
-
-function digest(bytes: Uint8Array): string {
-  return "sha256:" + createHash("sha256").update(bytes).digest("hex");
 }

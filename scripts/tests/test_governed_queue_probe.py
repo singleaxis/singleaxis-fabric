@@ -21,6 +21,47 @@ probe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(probe)
 
 
+def test_health_poll_retries_then_accepts_independent_success(monkeypatch):
+    clock = iter([0, 0.1, 0.2])
+    monkeypatch.setattr(probe.time, "monotonic", lambda: next(clock))
+    sleeps = []
+    monkeypatch.setattr(probe.time, "sleep", sleeps.append)
+    outcomes = iter([OSError("PRIVATE_ENDPOINT_DIAGNOSTIC"), 200])
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def urlopen(*args, **kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return Response()
+
+    monkeypatch.setattr(probe.urllib.request, "urlopen", urlopen)
+    probe._wait_node_health(1)
+    assert sleeps == [0.5]
+
+
+def test_health_poll_does_not_turn_connection_failure_into_success(monkeypatch):
+    clock = iter([0, 0.1, 2])
+    monkeypatch.setattr(probe.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(probe.time, "sleep", lambda _: None)
+
+    def urlopen(*args, **kwargs):
+        raise OSError("PRIVATE_ENDPOINT_DIAGNOSTIC")
+
+    monkeypatch.setattr(probe.urllib.request, "urlopen", urlopen)
+    with pytest.raises(AssertionError, match="transport_or_response_error") as caught:
+        probe._wait_node_health(1)
+    assert "PRIVATE_ENDPOINT_DIAGNOSTIC" not in str(caught.value)
+
+
 def scan(root: Path, marker: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-c", probe.QUEUE_SCAN_CODE, str(root), marker],

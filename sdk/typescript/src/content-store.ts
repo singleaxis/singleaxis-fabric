@@ -15,8 +15,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 
-import { createHash, randomUUID } from "node:crypto";
-import { sha256Hex } from "./hash.js";
+import { randomUUID } from "node:crypto";
+import { sha256BytesHex, sha256Hex } from "./hash.js";
 
 /** A reference to stored content: tenant-resolvable URI + integrity hash. */
 export interface ContentRef {
@@ -103,7 +103,7 @@ export interface GovernedStore {
 
 /** SHA-256 hex of the exact stored bytes — digest scope for objects. */
 export function contentHashBytes(data: Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex");
+  return sha256BytesHex(data);
 }
 
 const DIGEST_RE = /^[0-9a-f]{64}$/;
@@ -217,8 +217,10 @@ function assertUnlinkedPath(target: string): void {
 
 function readLocalFile(target: string): Uint8Array {
   assertUnlinkedPath(target);
-  if (!fs.lstatSync(target).isFile())
-    throw new Error("local content store requires a regular file");
+  // Pathname metadata can become stale before open. Only fstat on the
+  // opened descriptor determines whether the content is a regular file.
+  // O_NOFOLLOW rejects a swapped leaf link and O_NONBLOCK prevents FIFO
+  // substitution from blocking before that descriptor check.
   const fd = fs.openSync(
     target,
     fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0),

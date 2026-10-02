@@ -98,7 +98,7 @@ def _script_root(tmp_path: Path) -> Path:
 
 def _utilities(bin_dir: Path) -> None:
     bin_dir.mkdir()
-    for name in ("dirname", "mktemp", "rm", "mkdir"):
+    for name in ("dirname", "mktemp", "rm", "mkdir", "sh"):
         target = shutil.which(name)
         assert target is not None
         (bin_dir / name).symlink_to(target)
@@ -143,6 +143,13 @@ def test_local_license_scan_includes_entrypoint_gate_in_real_policy_check(
         "tools/fabricctl",
     ):
         (root / module).mkdir(parents=True)
+    helper = (
+        root
+        / "components/otel-collector-fabric/upstream/build-patched-bearertokenauth.sh"
+    )
+    helper.parent.mkdir(parents=True)
+    helper.write_text("#!/bin/sh\nexit 0\n")
+    helper.chmod(0o600)  # Real helper is not executable; caller must use sh.
     # Only external inventory/build commands are fixtures. The shell script and
     # final license_check.py policy evaluation run unchanged in a disposable tree.
     driver = tmp_path / "inventory-driver"

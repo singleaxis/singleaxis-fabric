@@ -68,7 +68,28 @@ jobs:
         with:
           category: "/language:${{ matrix.language }}"
           output: codeql-results
+          wait-for-processing: true
 
       - name: Report generated finding locations
         if: always()
         run: python3 scripts/qualification/summarize_sarif.py codeql-results
+
+  pr-finding-membership:
+    name: CodeQL PR finding membership (read-only diagnostic)
+    needs: analyze
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Report exact completed PR check annotations
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CODEQL_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CODEQL_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/qualification/report_codeql_pr_annotations.py
