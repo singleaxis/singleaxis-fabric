@@ -958,9 +958,12 @@ defaults to no intentional rate limiting or deduplication. Raw argv and paths
 are not spooled or exported; truncated argv/path fields are marked incomplete
 rather than mislabeled as full hashes. The guard has exact keys and closed
 values for host status metadata and strips raw path keys. The audit receiver
-has bounded in-memory retry and known-gap reporting, but **not** a durable
-receiver queue or persisted logfile cursor. Neither host path has passed a
-target-Linux BPF/kernel loss test or independent host-truth reconciliation.
+now has an explicit persistent logfile mode: private checkpoint/replay state,
+accepted cursor, stable record IDs, bounded source/rotation handling and
+fault/restart tests. Logfile configuration requires a dedicated persistent
+`state_directory`; see its migration guidance. Netlink remains bounded
+in-memory and non-replayable. Neither host path has passed a target-Linux
+BPF/kernel loss test or independent host-truth reconciliation here.
 
 The host-emitter DaemonSet is a fail-closed qualification template. A static
 preflight checks pinned image identity, scoped cgroup, TLS credentials and

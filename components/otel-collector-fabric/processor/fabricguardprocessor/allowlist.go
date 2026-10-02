@@ -147,6 +147,10 @@ var BuiltInAllowedFields = map[string]map[string]struct{}{
 	"audit": toSet(
 		"audit.syscall", "audit.result", "audit.serial", "audit.source",
 		"audit.event", "audit.dedupe_key", "audit.cgroup_id", "audit.loss_reason",
+		"fabric.record_id", "audit.source_id", "audit.source_generation",
+		"audit.cursor_start", "audit.cursor_end", "audit.assembly_complete",
+		"audit.input_records", "audit.filtered_events", "audit.invalid_records",
+		"audit.oversized_records", "audit.incomplete_events", "audit.unmatched_events", "audit.discarded_bytes",
 		"log.record.uid",
 		"process.pid", "process.parent_pid", "process.executable.name",
 		"process.executable.path_sha256", "process.command_args_sha256", "process.owner",

@@ -181,6 +181,7 @@ def export_synthetic_snapshot(
     ca_cert_path: str | None = None,
     client_cert_path: str | None = None,
     client_key_path: str | None = None,
+    bearer_token_path: str | None = None,
 ) -> dict[str, Any]:
     """Post settled metadata to a controlled loopback Node, off the action path.
 
@@ -196,6 +197,7 @@ def export_synthetic_snapshot(
         ca_cert_path=ca_cert_path,
         client_cert_path=client_cert_path,
         client_key_path=client_key_path,
+        bearer_token_path=bearer_token_path,
     )
 
 

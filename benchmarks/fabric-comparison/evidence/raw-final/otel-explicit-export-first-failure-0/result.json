@@ -1,0 +1,205 @@
+{
+  "mode": "otel-explicit",
+  "managed_provider": false,
+  "exception_redaction_exporter": false,
+  "fault": "export-first-failure",
+  "setup_ms": 0.154342,
+  "workload_ms": 51.570578,
+  "flush_ms": 0.053901,
+  "truth_actions": 7,
+  "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+  "declared_scope_actions": 6,
+  "captured_local_records": 6,
+  "exported_spans": 5,
+  "error_records": 1,
+  "export_attempts": 6,
+  "failed_export_spans": 1,
+  "raw_canary_in_export": false,
+  "unwrapped_action_captured": false,
+  "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+  "captured_action_ids": [
+    [
+      "background",
+      "one"
+    ],
+    [
+      "file",
+      "one"
+    ],
+    [
+      "model",
+      "success"
+    ],
+    [
+      "process",
+      "one"
+    ],
+    [
+      "retry",
+      "first"
+    ],
+    [
+      "retry",
+      "second"
+    ]
+  ],
+  "independent_inventory_unmatched_action_ids": [
+    [
+      "bypass",
+      "one"
+    ]
+  ],
+  "recording_gaps": null,
+  "provider_model_attribute_spans": 0,
+  "token_usage_attribute_spans": 0,
+  "caller_attempt_attribute_spans": 6,
+  "policy_event_statuses": [],
+  "snapshot": null,
+  "spans": [
+    {
+      "name": "model",
+      "context": {
+        "trace_id": "0xaf09ee4d8cfcb51431c87cc836fdd3f7",
+        "span_id": "0x0ec6d9ea4a450130",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:28.220912Z",
+      "end_time": "2026-10-02T17:07:28.222882Z",
+      "status": {
+        "status_code": "ERROR"
+      },
+      "attributes": {
+        "bench.operation_id": "retry",
+        "bench.attempt_id": "first",
+        "bench.kind": "model",
+        "bench.status": "error"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "model",
+      "context": {
+        "trace_id": "0x70d9750607eb3a2a45f893e7359cc3f5",
+        "span_id": "0x32c7c8cc1a00d79b",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:28.223434Z",
+      "end_time": "2026-10-02T17:07:28.225253Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "retry",
+        "bench.attempt_id": "second",
+        "bench.kind": "model",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "tool",
+      "context": {
+        "trace_id": "0x1967f4b1784613e23eac9649829c4986",
+        "span_id": "0x1680564c3658ba37",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:28.225586Z",
+      "end_time": "2026-10-02T17:07:28.225688Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "file",
+        "bench.attempt_id": "one",
+        "bench.kind": "tool",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "tool",
+      "context": {
+        "trace_id": "0xd7b1b966b52ffc5ce10da85c1b56b617",
+        "span_id": "0x4d4ba3f91804273b",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:28.225921Z",
+      "end_time": "2026-10-02T17:07:28.236150Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "process",
+        "bench.attempt_id": "one",
+        "bench.kind": "tool",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "model",
+      "context": {
+        "trace_id": "0x3e2b03afa822733790779f037a9de548",
+        "span_id": "0x6f95d6e10c2f0fa6",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:28.238464Z",
+      "end_time": "2026-10-02T17:07:28.240737Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "background",
+        "bench.attempt_id": "one",
+        "bench.kind": "model",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    }
+  ]
+}

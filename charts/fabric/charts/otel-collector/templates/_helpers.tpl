@@ -51,6 +51,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "otel-collector.validateReceiver" -}}
+{{- range $key, $_ := .Values.podAnnotations -}}
+{{- if or (eq $key "checksum/config") (has $key (list "fabric.singleaxis.ai/tenant-id" "fabric.singleaxis.ai/workload-id" "fabric.singleaxis.ai/identity-attestation-ref" "fabric.singleaxis.ai/capture-policy-version" "fabric.singleaxis.ai/capture-policy-digest" "fabric.singleaxis.ai/storage-encryption-attestation-ref")) -}}
+{{- fail (printf "podAnnotations cannot override reserved deployment annotation %s" $key) -}}
+{{- end -}}
+{{- end -}}
 {{- $r := .Values.receiver -}}
 {{- $server := $r.tls.serverCertificateSecret -}}
 {{- $clientCA := $r.tls.clientCASecret -}}
@@ -74,6 +79,41 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- if and $clientCA.name (not $clientCA.key) -}}
 {{- fail "receiver.tls.clientCASecret.name requires receiver.tls.clientCASecret.key" -}}
+{{- end -}}
+{{- $workload := $r.workloadAuthentication -}}
+{{- if $workload.enabled -}}
+{{- if $r.evidenceSourceBinding.enabled -}}
+{{- fail "receiver.workloadAuthentication cannot be combined with evidenceSourceBinding; use separate ordinary-telemetry and evidence-only ingress" -}}
+{{- end -}}
+{{- if not (and $r.requireTLS $r.requireClientCertificate $server.name $clientCA.name) -}}
+{{- fail "receiver.workloadAuthentication.enabled=true requires receiver TLS and client-certificate verification" -}}
+{{- end -}}
+{{- range $name, $id := dict "tenantId" $workload.tenantId "workloadId" $workload.workloadId -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $id) -}}
+{{- fail (printf "receiver.workloadAuthentication requires a valid nonempty %s" $name) -}}
+{{- end -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,255}$" $workload.identityAttestationRef) -}}
+{{- fail "receiver.workloadAuthentication requires identityAttestationRef for the workload-scoped credential provisioning review" -}}
+{{- end -}}
+{{- if or (gt (len $workload.tokenSecret.name) 63) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $workload.tokenSecret.name)) -}}
+{{- fail "receiver.workloadAuthentication requires a valid tokenSecret.name for an existing workload-scoped Secret" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9._-]+$" $workload.tokenSecret.key) -}}
+{{- fail "receiver.workloadAuthentication requires a valid tokenSecret.key" -}}
+{{- end -}}
+{{- if ne (empty $workload.policyVersion) (empty $workload.policyDigest) -}}
+{{- fail "receiver.workloadAuthentication requires policyVersion and policyDigest together, or neither" -}}
+{{- end -}}
+{{- if and $workload.policyDigest (not (regexMatch "^sha256:[0-9a-f]{64}$" $workload.policyDigest)) -}}
+{{- fail "receiver.workloadAuthentication.policyDigest must be a full sha256 digest" -}}
+{{- end -}}
+{{- if not .Values.exporter.requireTLS -}}
+{{- fail "receiver.workloadAuthentication.enabled=true requires exporter.requireTLS=true" -}}
+{{- end -}}
+{{- if .Values.debugExporter.enabled -}}
+{{- fail "receiver.workloadAuthentication.enabled=true requires debugExporter.enabled=false" -}}
+{{- end -}}
 {{- end -}}
 {{- $binding := $r.evidenceSourceBinding -}}
 {{- if $binding.enabled -}}
@@ -115,6 +155,21 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- if or (not (kindIs "map" $peer)) (eq (len $peer) 0) -}}
 {{- fail (printf "%s[%d] is an empty peer, which selects all sources/destinations; name an explicit podSelector, namespaceSelector, or ipBlock" $.field $i) -}}
 {{- end -}}
+{{- $selectorRestricted := false -}}
+{{- range $name := list "namespaceSelector" "podSelector" -}}
+{{- if hasKey $peer $name -}}
+{{- $selector := index $peer $name -}}
+{{- if not (kindIs "map" $selector) -}}
+{{- fail (printf "%s[%d].%s must be a LabelSelector" $.field $i $name) -}}
+{{- end -}}
+{{- if or (not (empty (index $selector "matchLabels"))) (not (empty (index $selector "matchExpressions"))) -}}
+{{- $selectorRestricted = true -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and (not (hasKey $peer "ipBlock")) (not $selectorRestricted) -}}
+{{- fail (printf "%s[%d] has no restrictive selector; empty selectors do not identify an approved workload or destination" $.field $i) -}}
+{{- end -}}
 {{- if hasKey $peer "ipBlock" -}}
 {{- $block := index $peer "ipBlock" -}}
 {{- if not (kindIs "map" $block) -}}
@@ -124,8 +179,11 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- if eq $cidr "" -}}
 {{- fail (printf "%s[%d].ipBlock.cidr is required" $.field $i) -}}
 {{- end -}}
-{{- if or (eq $cidr "0.0.0.0/0") (eq $cidr "::/0") -}}
+{{- if regexMatch "/0+$" $cidr -}}
 {{- fail (printf "%s[%d] uses world CIDR %s, which is equivalent to no policy; name a specific CIDR or selector" $.field $i $cidr) -}}
+{{- end -}}
+{{- if or (hasKey $peer "namespaceSelector") (hasKey $peer "podSelector") -}}
+{{- fail (printf "%s[%d] must not combine ipBlock with label selectors" $.field $i) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

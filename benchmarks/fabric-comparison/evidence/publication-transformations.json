@@ -1,0 +1,33 @@
+{
+  "transformation": "Replace temporary benchmark virtual-environment absolute path prefix with <BENCHMARK_VENV>; no workspace/user-home paths found",
+  "changed_files": [
+    "evidence/representative/protected-provenance.json",
+    "evidence/representative/openinference-auto-result.json",
+    "evidence/raw-final/openinference-auto-none-0/result.json",
+    "evidence/raw-final/openinference-auto-none-0/exported.jsonl",
+    "evidence/raw-final/openinference-auto-export-first-failure-0/result.json",
+    "evidence/raw-final/openinference-auto-export-first-failure-0/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-6/result.json",
+    "evidence/raw-final/openinference-auto-none-6/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-4/result.json",
+    "evidence/raw-final/openinference-auto-none-4/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-9/result.json",
+    "evidence/raw-final/openinference-auto-none-9/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-5/result.json",
+    "evidence/raw-final/openinference-auto-none-5/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-10/result.json",
+    "evidence/raw-final/openinference-auto-none-10/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-7/result.json",
+    "evidence/raw-final/openinference-auto-none-7/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-3/result.json",
+    "evidence/raw-final/openinference-auto-none-3/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-8/result.json",
+    "evidence/raw-final/openinference-auto-none-8/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-1/result.json",
+    "evidence/raw-final/openinference-auto-none-1/exported.jsonl",
+    "evidence/raw-final/openinference-auto-none-2/result.json",
+    "evidence/raw-final/openinference-auto-none-2/exported.jsonl"
+  ],
+  "runtime_or_measurement_changes": false,
+  "synthetic_fixture_only": true
+}

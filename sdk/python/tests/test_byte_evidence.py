@@ -20,6 +20,7 @@ from fabric import (
     LocalFilesystemContentStore,
     S3ContentStore,
 )
+from fabric.byte_evidence import BytePrivacyPolicy
 
 
 def _recorder(
@@ -140,6 +141,66 @@ def test_store_failure_never_claims_stored(tmp_path: Path, monkeypatch: pytest.M
     assert "ref" not in settled and "stored_sha256" not in settled
     assert settled["status_reason"] == "store_write_failed"
     recorder.close()
+
+
+def test_derivative_reference_failure_leaves_no_pending_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    review = LocalFilesystemContentStore(str(tmp_path / "review"), tenant_id="tenant-a")
+    recorder, store = _recorder(
+        tmp_path,
+        review_store=review,
+        role_policies={
+            "artifact.after": BytePrivacyPolicy(
+                mode="original_plus_masked",
+                transform=lambda _: b"safe",
+                transformation_id="redactor",
+                transformation_version="v1",
+            )
+        },
+    )
+    original_ref = LocalFilesystemContentStore.evidence_ref_for
+
+    def reference(target: LocalFilesystemContentStore, object_id: str) -> str:
+        if target is review:
+            raise PermissionError("private credential details")
+        return original_ref(target, object_id)
+
+    monkeypatch.setattr(LocalFilesystemContentStore, "evidence_ref_for", reference)
+    try:
+        item = _capture(recorder, b"secret")
+        assert item["status"] == "failed"
+        assert item["status_reason"] == "store_reference_failed"
+        assert "ref" not in item and "private credential" not in json.dumps(item)
+        assert recorder.derivatives(item["object_id"]) == []
+        assert recorder.flush()
+        assert recorder.drain_settled() == [item]
+        assert not Path(store.root).exists()
+        assert not Path(review.root).exists()
+    finally:
+        _close(recorder)
+
+
+@pytest.mark.parametrize(
+    "field", ["source_id", "run_id", "operation_id", "attempt_id", "stream_id"]
+)
+def test_oversized_observation_ids_rejected_before_admission(tmp_path: Path, field: str) -> None:
+    recorder, store = _recorder(tmp_path)
+    options: dict[str, Any] = {
+        "role": "artifact.after",
+        "boundary": "caller",
+        "source_id": "source",
+        "source_epoch": 0,
+        "source_sequence": 0,
+        field: "x" * 129,
+    }
+    try:
+        with pytest.raises(ValueError, match=field):
+            recorder.capture(b"secret", **options)
+        assert recorder.drain_settled() == []
+        assert not Path(store.root).exists()
+    finally:
+        _close(recorder)
 
 
 def test_queue_full_reports_loss_without_ref(

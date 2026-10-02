@@ -24,16 +24,17 @@ type logLike interface {
 }
 
 type auditReceiver struct {
-	cfg    *Config
-	logger *zap.Logger
-	next   consumer.Logs
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	asm    *assembler
-	dedup  *deduper
-	bucket *tokenBucket
-	conn   *auditConn
-	stats  recvStats
+	cfg     *Config
+	logger  *zap.Logger
+	next    consumer.Logs
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	asm     *assembler
+	dedup   *deduper
+	bucket  *tokenBucket
+	conn    *auditConn
+	stats   recvStats
+	durable *durableLog
 	// consume owns this bounded retry queue. It is intentionally not durable:
 	// a collector crash can still lose records queued here.
 	pending  []plog.Logs
@@ -74,6 +75,17 @@ func newAuditReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) (*
 
 func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
 	ctx, r.cancel = context.WithCancel(context.Background())
+	if r.cfg.Source == "logfile" {
+		d, err := openDurableLog(r.cfg)
+		if err != nil {
+			r.cancel()
+			return err
+		}
+		r.durable = d
+		r.wg.Add(1)
+		go func() { defer r.wg.Done(); defer d.close(); r.runDurableLog(ctx, d) }()
+		return nil
+	}
 	var lines chan string
 	lines = make(chan string, 1024)
 
@@ -92,12 +104,7 @@ func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
 		}
 		r.wg.Add(1)
 		go r.readNetlink(ctx, lines)
-	case "logfile":
-		r.wg.Add(1)
-		go func() {
-			defer r.wg.Done()
-			tailFileObserved(ctx, r.cfg.LogPath, lines, r.noteSourceIssue)
-		}()
+
 	}
 
 	r.wg.Add(1)
@@ -105,14 +112,22 @@ func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
 	return nil
 }
 
-func (r *auditReceiver) Shutdown(context.Context) error {
+func (r *auditReceiver) Shutdown(ctx context.Context) error {
 	if r.cancel != nil {
 		r.cancel()
 	}
 	if r.conn != nil {
 		r.conn.close()
 	}
-	r.wg.Wait()
+	stopped := make(chan struct{})
+	go func() { r.wg.Wait(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("audit receiver: downstream did not stop within 5s; durable state remains locked and replayable")
+	}
 	r.logStats()
 	return nil
 }

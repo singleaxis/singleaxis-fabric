@@ -7,7 +7,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, codex/synthetic-evidence-qualification-20260927]
   workflow_dispatch:
 
 permissions:
@@ -46,6 +46,13 @@ jobs:
           version: v0.23.0
           wait: 120s
       - run: kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
+      - name: Pin actual imported Node manifest on every kind node
+        run: |
+          set -euo pipefail
+          DIGEST=$(scripts/qualification/pin_kind_node_image.sh \
+            "${KIND_CLUSTER}" "docker.io/library/${COLLECTOR_IMAGE}")
+          printf 'COLLECTOR_DIGEST=%s\n' "${DIGEST}" >> "${GITHUB_ENV}"
+          printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/fabric-node-manifest-digest.txt"
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with:
           version: v3.15.0
@@ -108,6 +115,7 @@ jobs:
           # the sink; printf deliberately writes no newline.
           printf 'Bearer %s' "$(openssl rand -hex 32)" \
             > "${CERT_DIR}/authorization"
+          printf '%s' "$(openssl rand -hex 32)" > "${CERT_DIR}/workload-token"
       - name: Install authenticated HTTPS controlled sink
         run: |
           set -euo pipefail
@@ -126,6 +134,8 @@ jobs:
             --from-file=ca.crt="${CERT_DIR}/sink-ca.crt"
           kubectl create secret generic fabric-node-export-auth --namespace "${NAMESPACE}" \
             --from-file=authorization="${CERT_DIR}/authorization"
+          kubectl create secret generic fabric-workload-token --namespace "${NAMESPACE}" \
+            --from-file=token="${CERT_DIR}/workload-token"
           for manifest in qualification/synthetic-slice/kind-production-sink-*.yaml; do
             kubectl apply --namespace "${NAMESPACE}" -f "${manifest}"
           done
@@ -139,6 +149,7 @@ jobs:
             --values charts/fabric/profiles/shadow-production.yaml \
             --values qualification/synthetic-slice/kind-production-values.yaml \
             --set tenant.id=synthetic-tenant \
+            --set "otel-collector.image.digest=${COLLECTOR_DIGEST}" \
             --wait --timeout 5m
           kubectl wait --for=condition=ready pods --namespace "${NAMESPACE}" \
             -l app.kubernetes.io/name=otel-collector --timeout=300s
@@ -246,6 +257,7 @@ jobs:
           # accepted. curl failures may be TLS alerts or HTTP 4xx.
           if curl -fsS --cacert "${CERT_DIR}/ingress-ca.crt" \
             -X POST https://localhost:14319/v1/logs \
+            -H "Authorization: Bearer $(cat "${CERT_DIR}/workload-token")" \
             -H 'Content-Type: application/json' -d '{}'; then
             echo 'Collector accepted request without client certificate' >&2
             exit 1
@@ -253,10 +265,23 @@ jobs:
           if curl -fsS --cacert "${CERT_DIR}/ingress-ca.crt" \
             --cert "${CERT_DIR}/untrusted.crt" --key "${CERT_DIR}/untrusted.key" \
             -X POST https://localhost:14319/v1/logs \
+            -H "Authorization: Bearer $(cat "${CERT_DIR}/workload-token")" \
             -H 'Content-Type: application/json' -d '{}'; then
             echo 'Collector accepted untrusted client certificate' >&2
             exit 1
           fi
+          # Valid TLS alone must not bypass workload-token authentication.
+          STATUS=$(curl -sS --cacert "${CERT_DIR}/ingress-ca.crt" \
+            --cert "${CERT_DIR}/client.crt" --key "${CERT_DIR}/client.key" \
+            -o /dev/null -w '%{http_code}' -X POST https://localhost:14319/v1/logs \
+            -H 'Content-Type: application/json' -d '{}')
+          test "${STATUS}" = 401
+          STATUS=$(curl -sS --cacert "${CERT_DIR}/ingress-ca.crt" \
+            --cert "${CERT_DIR}/client.crt" --key "${CERT_DIR}/client.key" \
+            -o /dev/null -w '%{http_code}' -X POST https://localhost:14319/v1/logs \
+            -H 'Authorization: Bearer deliberately-wrong-workload-token' \
+            -H 'Content-Type: application/json' -d '{}')
+          test "${STATUS}" = 401
           if curl -fsS --cacert "${CERT_DIR}/sink-ca.crt" \
             -X POST https://localhost:18443/v1/logs \
             -H 'Content-Type: application/x-protobuf' -d 'forbidden'; then
@@ -272,13 +297,15 @@ jobs:
             --otlp-endpoint https://localhost:14319/v1/logs \
             --ca-cert "${CERT_DIR}/ingress-ca.crt" \
             --client-cert "${CERT_DIR}/client.crt" \
-            --client-key "${CERT_DIR}/client.key"
+            --client-key "${CERT_DIR}/client.key" \
+            --bearer-token-file "${CERT_DIR}/workload-token"
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
             scripts/qualification/run_synthetic_agent_pilot.py \
             --node-url https://localhost:14319/v1/logs \
             --node-ca "${CERT_DIR}/ingress-ca.crt" \
             --node-cert "${CERT_DIR}/client.crt" \
             --node-key "${CERT_DIR}/client.key" \
+            --node-token-file "${CERT_DIR}/workload-token" \
             --sink-url https://localhost:18443 \
             --sink-ca "${CERT_DIR}/sink-ca.crt" \
             --report-path "${RUNNER_TEMP}/fabric-agent-production-report.json"
@@ -336,7 +363,9 @@ jobs:
             --namespace "${NAMESPACE}" \
             --values charts/fabric/profiles/shadow-production.yaml \
             --values qualification/synthetic-slice/kind-production-values.yaml \
-            --set tenant.id=synthetic-tenant \
+            --set tenant.id=synthetic \
+            --set "otel-collector.image.digest=${COLLECTOR_DIGEST}" \
+            --set otel-collector.receiver.workloadAuthentication.enabled=false \
             --set otel-collector.receiver.evidenceSourceBinding.enabled=true \
             --set otel-collector.receiver.evidenceSourceBinding.tenantId=synthetic \
             --set otel-collector.receiver.evidenceSourceBinding.sourceId=dispatcher \

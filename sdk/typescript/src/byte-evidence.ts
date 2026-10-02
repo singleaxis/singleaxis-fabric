@@ -10,6 +10,12 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { GovernedStore } from "./content-store.js";
+import {
+  ContentProtector,
+  DeploymentPolicy,
+  type PrivacyMode,
+  type ProtectionStatus,
+} from "./deployment-policy.js";
 
 export const BYTE_EVIDENCE_ROLES = new Set([
   "model.request.instructions",
@@ -77,7 +83,14 @@ export interface ByteEvidenceDescriptor {
   role: string;
   media_type: string;
   encoding: "binary";
-  representation: "exact" | "unavailable";
+  representation: "exact" | "unavailable" | "redacted" | "tokenized";
+  privacy_mode?: PrivacyMode;
+  policy_digest?: string;
+  policy_id?: string;
+  policy_version?: number;
+  workload_id?: string;
+  protection_status?: ProtectionStatus;
+  transformations?: ("redact" | "tokenize")[];
   source_byte_length?: number;
   source_sha256?: string;
   stored_byte_length?: number;
@@ -89,7 +102,7 @@ export interface ByteEvidenceDescriptor {
   source_epoch: number;
   source_sequence: number;
   captured_at: string;
-  status: "pending" | "stored" | "not_captured" | "dropped" | "failed";
+  status: "pending" | "stored" | "redacted" | "not_captured" | "unsupported" | "dropped" | "failed";
   status_reason?: string;
 }
 
@@ -110,6 +123,9 @@ export interface ByteEvidenceCapture {
 export interface ByteEvidenceConfig {
   /** Store must support the v2 byte methods, bound to exactly this tenant. */
   store: GovernedStore;
+  reviewStore?: GovernedStore;
+  deploymentPolicy?: DeploymentPolicy;
+  contentProtector?: ContentProtector;
   /** Closed, explicitly enabled role set. `all` is intentionally absent. */
   roles: ReadonlySet<string>;
   /** In-memory queue length; overflow becomes a visible dropped descriptor. */
@@ -127,10 +143,13 @@ export interface ByteEvidenceConfig {
 interface WorkItem {
   descriptor: ByteEvidenceDescriptor;
   bytes: Uint8Array;
+  store: GovernedStore;
 }
 
 export class ByteEvidenceRecorder {
   private readonly store: GovernedStore;
+  private readonly reviewStore?: GovernedStore;
+  private readonly protector?: ContentProtector;
   private readonly roles: ReadonlySet<string>;
   private readonly queueMaxItems: number;
   private readonly maxRecords: number;
@@ -143,7 +162,15 @@ export class ByteEvidenceRecorder {
   private running = false;
   private closed = false;
   private lostRecordCount = 0;
-  private readonly counts = { stored: 0, pending: 0, dropped: 0, failed: 0, not_captured: 0 };
+  private readonly counts = {
+    stored: 0,
+    redacted: 0,
+    unsupported: 0,
+    pending: 0,
+    dropped: 0,
+    failed: 0,
+    not_captured: 0,
+  };
 
   constructor(config: ByteEvidenceConfig) {
     if (
@@ -186,6 +213,40 @@ export class ByteEvidenceRecorder {
     ) {
       throw new Error("invalid bounded byte-evidence queue, payload, or retry limit");
     }
+    const policy = config.deploymentPolicy ?? config.contentProtector?.policy;
+    if (policy !== undefined) {
+      if (!(policy instanceof DeploymentPolicy) || policy.tenant_id !== config.store.tenantId)
+        throw new Error("deployment policy must match byte store tenant");
+      this.protector =
+        config.contentProtector ??
+        new ContentProtector(policy, { payloadMaxBytes: this.payloadMaxBytes });
+      if (this.protector.policy.digest !== policy.digest)
+        throw new Error("content protector must match deployment policy");
+      if (
+        [...config.roles].some((role) =>
+          ["redact", "tokenize"].includes(policy.privacy[role] ?? "omit"),
+        )
+      ) {
+        const review = config.reviewStore;
+        if (
+          !review ||
+          review.tenantId !== config.store.tenantId ||
+          typeof review.evidenceRefFor !== "function" ||
+          typeof review.putBytesObject !== "function"
+        )
+          throw new Error("deployment derivatives require a same-tenant review store");
+        const probe = "00000000-0000-4000-8000-000000000000";
+        const originalRef = config.store.evidenceRefFor(probe);
+        const reviewRef = review.evidenceRefFor(probe);
+        if (
+          reviewRef === originalRef ||
+          config.store.ownsUri(reviewRef) ||
+          review.ownsUri(originalRef)
+        )
+          throw new Error("original and derivative store namespaces must differ");
+      }
+    }
+    this.reviewStore = config.reviewStore;
     this.store = config.store;
     this.roles = new Set(config.roles);
   }
@@ -279,10 +340,38 @@ export class ByteEvidenceRecorder {
       this.counts.not_captured += 1;
       return descriptor;
     }
+    const protectedContent = this.protector?.protect(options.role, data);
+    if (protectedContent !== undefined) {
+      const policy = this.protector!.policy;
+      Object.assign(descriptor, {
+        privacy_mode: protectedContent.mode,
+        protection_status: protectedContent.status,
+        policy_digest: policy.digest,
+        policy_id: policy.policy_id,
+        policy_version: policy.policy_version,
+        workload_id: policy.workload_id,
+      });
+      if (typeof protectedContent.metadata.source_byte_length === "number")
+        descriptor.source_byte_length = protectedContent.metadata.source_byte_length;
+      if (protectedContent.original_digest !== null)
+        descriptor.source_sha256 = protectedContent.original_digest;
+      if (protectedContent.protected_bytes === null) {
+        descriptor.status =
+          protectedContent.status === "lost"
+            ? "failed"
+            : protectedContent.status === "unsupported"
+              ? "unsupported"
+              : "not_captured";
+        descriptor.status_reason = String(protectedContent.metadata.reason);
+        this.counts[descriptor.status] += 1;
+        return { ...descriptor };
+      }
+      data = protectedContent.protected_bytes;
+    }
     if (
       this.closed ||
       data.byteLength > this.payloadMaxBytes ||
-      this.queue.length + Number(this.running) >= this.queueMaxItems
+      this.counts.pending >= this.queueMaxItems
     ) {
       descriptor.status = "dropped";
       descriptor.status_reason = this.closed
@@ -294,11 +383,18 @@ export class ByteEvidenceRecorder {
       return descriptor;
     }
     const bytes = new Uint8Array(data); // immutable capture snapshot
-    descriptor.representation = "exact";
-    descriptor.source_byte_length = bytes.byteLength;
-    descriptor.source_sha256 = digest(bytes);
+    let targetStore = this.store;
+    if (protectedContent?.status === "redacted" || protectedContent?.status === "tokenized") {
+      descriptor.representation = protectedContent.status;
+      descriptor.transformations = [protectedContent.status === "redacted" ? "redact" : "tokenize"];
+      targetStore = this.reviewStore!;
+    } else {
+      descriptor.representation = "exact";
+      descriptor.source_byte_length = bytes.byteLength;
+      descriptor.source_sha256 = protectedContent?.original_digest ?? digest(bytes);
+    }
     descriptor.status = "pending";
-    this.queue.push({ descriptor, bytes });
+    this.queue.push({ descriptor, bytes, store: targetStore });
     this.counts.pending += 1;
     this.schedule();
     return descriptor;
@@ -363,12 +459,15 @@ export class ByteEvidenceRecorder {
           try {
             stored = {
               ...d,
-              status: "stored",
+              status:
+                d.representation === "redacted" || d.representation === "tokenized"
+                  ? "redacted"
+                  : "stored",
               stored_byte_length: item.bytes.byteLength,
               stored_sha256: digest(item.bytes),
-              ref: this.store.evidenceRefFor!(d.object_id),
+              ref: item.store.evidenceRefFor!(d.object_id),
             };
-            const result = await this.store.putBytesObject!(
+            const result = await item.store.putBytesObject!(
               stored as unknown as Record<string, unknown>,
               item.bytes,
             );
@@ -387,7 +486,8 @@ export class ByteEvidenceRecorder {
         this.counts.pending -= 1;
         if (succeeded && stored !== undefined) {
           Object.assign(d, stored);
-          this.counts.stored += 1;
+          if (stored.status === "redacted") this.counts.redacted += 1;
+          else this.counts.stored += 1;
         } else {
           d.status = "failed";
           d.status_reason = "store_delivery_failed";

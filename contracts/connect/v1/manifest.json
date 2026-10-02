@@ -28,7 +28,7 @@
     },
     {
       "path": "manifests/auditd-host-connector.json",
-      "sha256": "481e717d8ce54517bc6e30925627b4726fa763f1d0937f79ff7d4f264f2eb718",
+      "sha256": "5899d7e58db56d53b96a35b7a31fe8c7ec96c04c71eb752002b597397384df76",
       "expectation": "valid"
     },
     {

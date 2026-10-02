@@ -25,7 +25,11 @@ def check_safe_identifier(field_name: str, value: str) -> str:
     Shared by the local store, the S3 store, and the client tenant check —
     adapters never invent their own rule (spec 033 §2.1).
     """
-    if not isinstance(value, str) or not SAFE_IDENTIFIER_RE.match(value) or value in (".", ".."):
+    if (
+        not isinstance(value, str)
+        or not SAFE_IDENTIFIER_RE.fullmatch(value)
+        or value in (".", "..")
+    ):
         raise ValueError(
             f"{field_name}={value!r} is not a safe namespace identifier: "
             "must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$ and may not be '.' or '..'"

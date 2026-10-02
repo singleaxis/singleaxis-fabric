@@ -105,14 +105,17 @@ best-effort `loss` event alone is insufficient. Passive capture may still
 lose data under catastrophic source failure. The allowed claim is **no
 silent loss within the tested bound**, not unconditional zero loss.
 
-The audit receiver now retains failed downstream deliveries in a bounded
-in-memory retry queue and reports overflow/rate/assembly gaps after recovery
-([source](../components/otel-collector-fabric/receiver/auditreceiver/receiver.go)).
-This repairs a silent-error path, but the queue and logfile cursor are not
-restart-durable, and netlink events cannot be replayed. Collector crash and
-kernel-loss tests therefore still block a complete host-audit claim. The
-host emitter's durable-spool work requires separate qualification; its source-side
-fsync acknowledgement must not be conflated with destination persistence.
+The audit receiver's logfile path now stores a bounded scrubbed replay batch
+and accepted cursor in a private, persistent `state_directory`
+([source](../components/otel-collector-fabric/receiver/auditreceiver/durable_logfile.go)).
+File/directory fsync, stable replay IDs, downstream-acceptance cursor commits,
+retained numeric rotation and bounded corruption/loss evidence are locally
+regression-tested. A crash after downstream acceptance can duplicate the same
+IDs. Netlink remains in-memory and cannot replay; disappearing source files or
+unsupported rotation are unknown coverage, not zero loss. Native kernel loss
+and exact target/image tests still block a complete host-audit claim. The host
+emitter requires separate qualification; neither source-side fsync nor Node
+acceptance establishes independent destination persistence.
 
 ## 4. Deterministic verdict and pass thresholds
 

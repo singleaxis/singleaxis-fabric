@@ -15,9 +15,9 @@ propagates, and exports.
 
 | Model | Deploy it | What it can know | Runtime control | Primary limitation |
 | --- | --- | --- | --- | --- |
-| In-process SDK | Inside agent code | Native decision, model, tool, and explicitly recorded activity | Possible before an action | Requires code access and complete instrumentation |
-| Framework adapter | Registered with framework hooks | Lifecycle events exposed by that framework version | Possible where hooks are synchronous and blocking | Direct calls that bypass hooks are invisible |
-| Gateway or proxy | Inline for LLM, MCP, HTTP, or tool traffic | Requests crossing known protocols; semantics may be inferred | Can block or transform traffic that must traverse it | Local or bypass traffic is invisible |
+| In-process SDK | Inside agent code | Native decision, model, tool, and explicitly recorded activity | No action enforcement in the recorder; external future interface only | Requires code access and complete instrumentation |
+| Framework adapter | Registered with framework hooks | Lifecycle events exposed by that framework version | None in the recorder | Direct calls that bypass hooks are invisible |
+| Gateway or proxy | Inline for LLM, MCP, HTTP, or tool traffic | Requests crossing known protocols; semantics may be inferred | Possible in a separately deployed external gateway, not the recorder | Local or bypass traffic is invisible |
 | OTLP receiver | Collector or gateway | Preserves telemetry an existing system already emitted | Telemetry acceptance/redaction/routing only | Cannot prevent an agent action that already occurred |
 | Vendor receiver | Collector plugin or managed integration | Fields and history exposed by the vendor API | Usually telemetry processing only | Vendor sampling, schema, API, and retention constrain replay |
 | auditd host connector | `audit` receiver in the Fabric Node ([spec 030](../specs/030-auditd-host-connector.md)) | Kernel-observed exec/connect/file-access records from the existing audit subsystem | None — read-only consumer | Requires audit rules + `CAP_AUDIT_READ`; no semantic/decision context; correlation is inferred provenance |

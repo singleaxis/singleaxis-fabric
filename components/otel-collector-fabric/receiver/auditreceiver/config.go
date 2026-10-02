@@ -5,6 +5,8 @@ package auditreceiver
 
 import (
 	"fmt"
+	"math"
+	"path/filepath"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -17,6 +19,13 @@ type Config struct {
 	Source string `mapstructure:"source"`
 	// LogPath is the audit log file when source=logfile.
 	LogPath string `mapstructure:"log_path"`
+	// StateDirectory is a dedicated persistent local directory, required for logfile.
+	StateDirectory string `mapstructure:"state_directory"`
+	// These bounds include one replay batch; no unbounded in-memory retry queue is used.
+	MaxStateBytes   int64 `mapstructure:"max_state_bytes"`
+	MaxBatchBytes   int   `mapstructure:"max_batch_bytes"`
+	MaxRecordBytes  int   `mapstructure:"max_record_bytes"`
+	MaxBatchRecords int   `mapstructure:"max_batch_records"`
 
 	// Syscall classes to emit. exec/connect default on; file_access is high
 	// volume and defaults off.
@@ -33,11 +42,11 @@ type Config struct {
 	// value consumes every audit event (use with care on busy hosts).
 	RuleKey string `mapstructure:"rule_key"`
 
-	// MaxEventsPerSec bounds emit rate; excess events are dropped and
-	// counted. Zero means unlimited (not recommended on busy hosts).
+	// MaxEventsPerSec drops/counts excess netlink events; logfile mode paces
+	// whole accepted batches instead. Zero means unlimited.
 	MaxEventsPerSec float64 `mapstructure:"max_events_per_sec"`
-	// DedupeWindow collapses identical events inside the window into a
-	// single record carrying fabric.event_count. Zero disables dedupe.
+	// DedupeWindow collapses netlink repeats. Durable logfile mode preserves
+	// separate records and ignores this window; deduplication uses stable IDs.
 	DedupeWindow time.Duration `mapstructure:"dedupe_window"`
 	// AssemblyTimeout is how long a serial-grouped event waits for its
 	// trailing records (EOE) before being flushed incomplete.
@@ -45,13 +54,17 @@ type Config struct {
 	// HashFilePaths must remain true when file_access is enabled. Paths can
 	// contain sensitive names and are never emitted raw.
 	HashFilePaths bool `mapstructure:"hash_file_paths"`
-	// ReadBufferBytes sizes the netlink/logfile read buffer.
+	// ReadBufferBytes sizes the netlink buffer. Durable logfile uses bounded 4 KiB reads.
 	ReadBufferBytes int `mapstructure:"read_buffer_bytes"`
 }
 
 func createDefaultConfig() component.Config {
 	return &Config{
 		Source:          "netlink",
+		MaxStateBytes:   16 << 20,
+		MaxBatchBytes:   4 << 20,
+		MaxRecordBytes:  1 << 20,
+		MaxBatchRecords: 4096,
 		LogPath:         "/var/log/audit/audit.log",
 		Exec:            true,
 		Connect:         true,
@@ -70,13 +83,19 @@ func (c *Config) Validate() error {
 	switch c.Source {
 	case "netlink":
 	case "logfile":
+		if !filepath.IsAbs(c.StateDirectory) {
+			return fmt.Errorf("audit receiver: absolute state_directory is required when source=logfile; migrate to a dedicated persistent volume")
+		}
+		if c.MaxRecordBytes < 4096 || c.MaxRecordBytes > 16<<20 || c.MaxBatchBytes < c.MaxRecordBytes || c.MaxBatchBytes > 64<<20 || c.MaxBatchRecords < 1 || c.MaxBatchRecords > 65536 || c.MaxStateBytes < int64(c.MaxBatchBytes)*2 || c.MaxStateBytes > 256<<20 {
+			return fmt.Errorf("audit receiver: invalid durable logfile bounds (record 4 KiB–16 MiB, batch >= record and <=64 MiB, state >=2*batch and <=256 MiB, records 1–65536)")
+		}
 		if c.LogPath == "" {
 			return fmt.Errorf("audit receiver: log_path is required when source=logfile")
 		}
 	default:
 		return fmt.Errorf("audit receiver: source must be netlink or logfile, got %q", c.Source)
 	}
-	if c.MaxEventsPerSec < 0 {
+	if c.MaxEventsPerSec < 0 || math.IsNaN(c.MaxEventsPerSec) || math.IsInf(c.MaxEventsPerSec, 0) {
 		return fmt.Errorf("audit receiver: max_events_per_sec must be >= 0")
 	}
 	if c.FileAccess && !c.HashFilePaths {

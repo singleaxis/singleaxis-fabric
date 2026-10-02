@@ -1,0 +1,265 @@
+{
+  "mode": "fabric-auto",
+  "managed_provider": true,
+  "exception_redaction_exporter": false,
+  "fault": "none",
+  "setup_ms": 52.404052,
+  "workload_ms": 19.373492,
+  "flush_ms": 0.872014,
+  "truth_actions": 7,
+  "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+  "declared_scope_actions": 4,
+  "captured_local_records": 4,
+  "exported_spans": 4,
+  "error_records": 1,
+  "export_attempts": 1,
+  "failed_export_spans": 0,
+  "raw_canary_in_export": false,
+  "unwrapped_action_captured": false,
+  "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+  "captured_action_ids": [],
+  "independent_inventory_unmatched_action_ids": [
+    [
+      "background",
+      "one"
+    ],
+    [
+      "bypass",
+      "one"
+    ],
+    [
+      "file",
+      "one"
+    ],
+    [
+      "model",
+      "success"
+    ],
+    [
+      "process",
+      "one"
+    ],
+    [
+      "retry",
+      "first"
+    ],
+    [
+      "retry",
+      "second"
+    ]
+  ],
+  "recording_gaps": null,
+  "provider_model_attribute_spans": 4,
+  "token_usage_attribute_spans": 3,
+  "caller_attempt_attribute_spans": 0,
+  "policy_event_statuses": [],
+  "snapshot": null,
+  "spans": [
+    {
+      "name": "fabric.capture.span",
+      "context": {
+        "trace_id": "0x25210ee27eadf504430681da701ee440",
+        "span_id": "0x80cb5ee792beec01",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:44.188999Z",
+      "end_time": "2026-10-02T17:46:44.190892Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "sha256:ce0951f8cd5c6ac20e6e0d1a3c423d52a45bb6cd116385141c1f8da3d0d40aac",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "sha256:ce0951f8cd5c6ac20e6e0d1a3c423d52a45bb6cd116385141c1f8da3d0d40aac",
+        "gen_ai.response.finish_reasons": [
+          "sha256:6c45cb72a36e63d522aa54ed8adbd7a29a989474f2f77e0458af8800564ef3cb"
+        ],
+        "gen_ai.response.id": "sha256:13370beb607f8a10e5eceb293df0cd17020081a704a351db73ba8b52c103e983",
+        "gen_ai.usage.input_tokens": 1,
+        "gen_ai.usage.output_tokens": 1,
+        "fabric.protection.span_name_hash": "sha256:766f2c5954f41815a894523623fa1cd857ec2ce018612e19bbef174e7c8e5a2e",
+        "fabric.protection.scope_name_hash": "sha256:fc3b31bd8f5079fe29134e7a7ff5be09f84f052e5af5ca90851ebaba41d1ca62",
+        "fabric.protection.dropped_attributes": 0,
+        "fabric.protection.dropped_oversize_attributes": 0,
+        "fabric.protection.dropped_events": 0,
+        "fabric.protection.dropped_status_descriptions": 0,
+        "fabric.protection.hashed_attributes": 9,
+        "fabric.protection.dropped_scope_attributes": 0,
+        "fabric.protection.upstream_dropped_attributes": 0,
+        "fabric.protection.upstream_dropped_events": 0,
+        "fabric.protection.upstream_dropped_links": 0,
+        "fabric.protection.dropped_oversize_names": 0,
+        "fabric.protection.mode": "metadata_only"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "telemetry.sdk.language": "python",
+          "telemetry.sdk.name": "sha256:15646ccfc4230c22f54d0e3d4f140d68e405ddf68ef83c11ed7457a17e76242e",
+          "telemetry.sdk.version": "sha256:d123b650a6ef31ebb1cbd9fddbf544f4e52b8c442b9fb2bedc13a5ef37c70aea",
+          "service.instance.id": "sha256:ffd60bc75fe177ec6877bfbeec71b02b5c1c51c82cca6d617b0212335a94f98b",
+          "service.name": "sha256:3c7dfd4c01b4abcf4014293b9541357899966408cd812b529965dc47d3c144f1",
+          "fabric.sdk.version": "sha256:c0efee40e86bcdd98ef734449f3061c43ff935bc82e8a4e74c1bbd8b94695c2e"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "fabric.capture.span",
+      "context": {
+        "trace_id": "0xbc5ef05af27c604984a6986174dc2bc2",
+        "span_id": "0x484b3b7da0b65145",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:44.191157Z",
+      "end_time": "2026-10-02T17:46:44.192605Z",
+      "status": {
+        "status_code": "ERROR"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "sha256:ce0951f8cd5c6ac20e6e0d1a3c423d52a45bb6cd116385141c1f8da3d0d40aac",
+        "gen_ai.system": "openai",
+        "error.type": "sha256:daf888f00cc76a16abe1e9f561155fd8111a3fc9bd752c0fc009381f935be580",
+        "fabric.protection.span_name_hash": "sha256:766f2c5954f41815a894523623fa1cd857ec2ce018612e19bbef174e7c8e5a2e",
+        "fabric.protection.scope_name_hash": "sha256:fc3b31bd8f5079fe29134e7a7ff5be09f84f052e5af5ca90851ebaba41d1ca62",
+        "fabric.protection.dropped_attributes": 0,
+        "fabric.protection.dropped_oversize_attributes": 0,
+        "fabric.protection.dropped_events": 0,
+        "fabric.protection.dropped_status_descriptions": 1,
+        "fabric.protection.hashed_attributes": 7,
+        "fabric.protection.dropped_scope_attributes": 0,
+        "fabric.protection.upstream_dropped_attributes": 0,
+        "fabric.protection.upstream_dropped_events": 0,
+        "fabric.protection.upstream_dropped_links": 0,
+        "fabric.protection.dropped_oversize_names": 0,
+        "fabric.protection.mode": "metadata_only"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "telemetry.sdk.language": "python",
+          "telemetry.sdk.name": "sha256:15646ccfc4230c22f54d0e3d4f140d68e405ddf68ef83c11ed7457a17e76242e",
+          "telemetry.sdk.version": "sha256:d123b650a6ef31ebb1cbd9fddbf544f4e52b8c442b9fb2bedc13a5ef37c70aea",
+          "service.instance.id": "sha256:ffd60bc75fe177ec6877bfbeec71b02b5c1c51c82cca6d617b0212335a94f98b",
+          "service.name": "sha256:3c7dfd4c01b4abcf4014293b9541357899966408cd812b529965dc47d3c144f1",
+          "fabric.sdk.version": "sha256:c0efee40e86bcdd98ef734449f3061c43ff935bc82e8a4e74c1bbd8b94695c2e"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "fabric.capture.span",
+      "context": {
+        "trace_id": "0xb7990b98f7353a2d56768d92c352c1b7",
+        "span_id": "0x824aa5ce597fba29",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:44.192771Z",
+      "end_time": "2026-10-02T17:46:44.194683Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "sha256:ce0951f8cd5c6ac20e6e0d1a3c423d52a45bb6cd116385141c1f8da3d0d40aac",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "sha256:ce0951f8cd5c6ac20e6e0d1a3c423d52a45bb6cd116385141c1f8da3d0d40aac",
+        "gen_ai.response.finish_reasons": [
+          "sha256:6c45cb72a36e63d522aa54ed8adbd7a29a989474f2f77e0458af8800564ef3cb"
+        ],
+        "gen_ai.response.id": "sha256:13370beb607f8a10e5eceb293df0cd17020081a704a351db73ba8b52c103e983",
+        "gen_ai.usage.input_tokens": 1,
+        "gen_ai.usage.output_tokens": 1,
+        "fabric.protection.span_name_hash": "sha256:766f2c5954f41815a894523623fa1cd857ec2ce018612e19bbef174e7c8e5a2e",
+        "fabric.protection.scope_name_hash": "sha256:fc3b31bd8f5079fe29134e7a7ff5be09f84f052e5af5ca90851ebaba41d1ca62",
+        "fabric.protection.dropped_attributes": 0,
+        "fabric.protection.dropped_oversize_attributes": 0,
+        "fabric.protection.dropped_events": 0,
+        "fabric.protection.dropped_status_descriptions": 0,
+        "fabric.protection.hashed_attributes": 9,
+        "fabric.protection.dropped_scope_attributes": 0,
+        "fabric.protection.upstream_dropped_attributes": 0,
+        "fabric.protection.upstream_dropped_events": 0,
+        "fabric.protection.upstream_dropped_links": 0,
+        "fabric.protection.dropped_oversize_names": 0,
+        "fabric.protection.mode": "metadata_only"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "telemetry.sdk.language": "python",
+          "telemetry.sdk.name": "sha256:15646ccfc4230c22f54d0e3d4f140d68e405ddf68ef83c11ed7457a17e76242e",
+          "telemetry.sdk.version": "sha256:d123b650a6ef31ebb1cbd9fddbf544f4e52b8c442b9fb2bedc13a5ef37c70aea",
+          "service.instance.id": "sha256:ffd60bc75fe177ec6877bfbeec71b02b5c1c51c82cca6d617b0212335a94f98b",
+          "service.name": "sha256:3c7dfd4c01b4abcf4014293b9541357899966408cd812b529965dc47d3c144f1",
+          "fabric.sdk.version": "sha256:c0efee40e86bcdd98ef734449f3061c43ff935bc82e8a4e74c1bbd8b94695c2e"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "fabric.capture.span",
+      "context": {
+        "trace_id": "0xd0981fa75240345fdcdedc342183b267",
+        "span_id": "0x49729455176262a2",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:44.205306Z",
+      "end_time": "2026-10-02T17:46:44.207855Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "sha256:ce0951f8cd5c6ac20e6e0d1a3c423d52a45bb6cd116385141c1f8da3d0d40aac",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "sha256:ce0951f8cd5c6ac20e6e0d1a3c423d52a45bb6cd116385141c1f8da3d0d40aac",
+        "gen_ai.response.finish_reasons": [
+          "sha256:6c45cb72a36e63d522aa54ed8adbd7a29a989474f2f77e0458af8800564ef3cb"
+        ],
+        "gen_ai.response.id": "sha256:13370beb607f8a10e5eceb293df0cd17020081a704a351db73ba8b52c103e983",
+        "gen_ai.usage.input_tokens": 1,
+        "gen_ai.usage.output_tokens": 1,
+        "fabric.protection.span_name_hash": "sha256:766f2c5954f41815a894523623fa1cd857ec2ce018612e19bbef174e7c8e5a2e",
+        "fabric.protection.scope_name_hash": "sha256:fc3b31bd8f5079fe29134e7a7ff5be09f84f052e5af5ca90851ebaba41d1ca62",
+        "fabric.protection.dropped_attributes": 0,
+        "fabric.protection.dropped_oversize_attributes": 0,
+        "fabric.protection.dropped_events": 0,
+        "fabric.protection.dropped_status_descriptions": 0,
+        "fabric.protection.hashed_attributes": 9,
+        "fabric.protection.dropped_scope_attributes": 0,
+        "fabric.protection.upstream_dropped_attributes": 0,
+        "fabric.protection.upstream_dropped_events": 0,
+        "fabric.protection.upstream_dropped_links": 0,
+        "fabric.protection.dropped_oversize_names": 0,
+        "fabric.protection.mode": "metadata_only"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "telemetry.sdk.language": "python",
+          "telemetry.sdk.name": "sha256:15646ccfc4230c22f54d0e3d4f140d68e405ddf68ef83c11ed7457a17e76242e",
+          "telemetry.sdk.version": "sha256:d123b650a6ef31ebb1cbd9fddbf544f4e52b8c442b9fb2bedc13a5ef37c70aea",
+          "service.instance.id": "sha256:ffd60bc75fe177ec6877bfbeec71b02b5c1c51c82cca6d617b0212335a94f98b",
+          "service.name": "sha256:3c7dfd4c01b4abcf4014293b9541357899966408cd812b529965dc47d3c144f1",
+          "fabric.sdk.version": "sha256:c0efee40e86bcdd98ef734449f3061c43ff935bc82e8a4e74c1bbd8b94695c2e"
+        },
+        "schema_url": ""
+      }
+    }
+  ]
+}

@@ -135,10 +135,9 @@ export function truncateBytes(data: Uint8Array, maxBytes: number): Uint8Array {
     return data;
   }
   let end = maxBytes;
-  while (end > 0 && ((data[end - 1] ?? 0) & UTF8_LEAD_OR_ASCII_MASK) === UTF8_CONTINUATION) {
-    end -= 1;
-  }
-  if (end > 0 && (data[end - 1] ?? 0) >= UTF8_LEAD_OR_ASCII_MASK) {
+  // Only back up when the first excluded byte continues a character.
+  // Looking at the last retained byte would discard a complete final rune.
+  while (end > 0 && ((data[end] ?? 0) & UTF8_LEAD_OR_ASCII_MASK) === UTF8_CONTINUATION) {
     end -= 1;
   }
   return data.subarray(0, end);

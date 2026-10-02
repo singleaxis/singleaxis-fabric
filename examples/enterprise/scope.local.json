@@ -1,0 +1,6 @@
+{
+  "source_ids": ["fixture-source"],
+  "source_epochs": [0],
+  "expected_max_records": 4096,
+  "expected_max_object_bytes": 16777216
+}

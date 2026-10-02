@@ -23,10 +23,15 @@
     "schema_version": {"const": "fabric.content-object/v2"},
     "object_id": {"$ref": "#/$defs/opaqueId"},
     "tenant_id": {"$ref": "#/$defs/opaqueId"},
+    "workload_id": {"$ref": "#/$defs/opaqueId"},
     "run_id": {"$ref": "#/$defs/opaqueId"},
     "operation_id": {"$ref": "#/$defs/opaqueId"},
     "attempt_id": {"$ref": "#/$defs/opaqueId"},
-    "privacy_mode": {"enum": ["original", "omit", "masked_only", "original_plus_masked"]},
+    "privacy_mode": {"enum": ["original", "omit", "masked_only", "original_plus_masked", "retain_original", "metadata_only", "redact", "tokenize"]},
+    "policy_digest": {"$ref": "#/$defs/digest"},
+    "policy_id": {"$ref": "#/$defs/opaqueId"},
+    "policy_version": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+    "protection_status": {"enum": ["withheld", "redacted", "tokenized", "retained", "unsupported", "lost"]},
     "transformation_id": {"$ref": "#/$defs/opaqueId"},
     "transformation_version": {"$ref": "#/$defs/opaqueId"},
     "stream_id": {"$ref": "#/$defs/opaqueId"},
@@ -55,11 +60,11 @@
     },
     "encoding": {"type": "string", "enum": ["utf-8", "binary"]},
     "representation": {
-      "enum": ["exact", "canonicalized", "assembled", "partial", "truncated", "redacted", "unavailable"]
+      "enum": ["exact", "canonicalized", "assembled", "partial", "truncated", "redacted", "tokenized", "unavailable"]
     },
     "transformations": {
       "type": "array",
-      "items": {"enum": ["utf8_encode", "json_canonicalize", "assemble", "truncate", "redact"]},
+      "items": {"enum": ["utf8_encode", "json_canonicalize", "assemble", "truncate", "redact", "tokenize"]},
       "uniqueItems": true
     },
     "source_byte_length": {"type": "integer", "minimum": 0},
@@ -70,7 +75,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 2048,
-      "pattern": "^(s3|gs|file)://[^@?#]+$"
+      "pattern": "^(s3|gs|file|fabric-local)://[^@?#]+$"
     },
     "provenance": {"enum": ["native", "protocol", "caller_reported", "inferred"]},
     "boundary": {
@@ -126,6 +131,40 @@
     {
       "if": {"required": ["chunk_index"]},
       "then": {"required": ["stream_id"]}
+    },
+    {
+      "if": {"required": ["ref"], "properties": {"ref": {"pattern": "^fabric-local:"}}},
+      "then": {"required": ["workload_id", "policy_digest"]}
+    },
+    {
+      "if": {
+        "anyOf": [
+          {"required": ["policy_digest"]},
+          {"required": ["policy_id"]},
+          {"required": ["policy_version"]},
+          {"required": ["protection_status"]},
+          {"required": ["privacy_mode"], "properties": {"privacy_mode": {"enum": ["metadata_only", "retain_original", "redact", "tokenize"]}}},
+          {"properties": {"representation": {"const": "tokenized"}}}
+        ]
+      },
+      "then": {
+        "required": ["policy_digest", "policy_id", "policy_version", "privacy_mode", "protection_status"],
+        "properties": {"privacy_mode": {"enum": ["omit", "metadata_only", "retain_original", "redact", "tokenize"]}}
+      }
+    },
+    {
+      "if": {
+        "required": ["policy_digest"],
+        "properties": {"privacy_mode": {"enum": ["omit", "metadata_only", "redact", "tokenize"]}}
+      },
+      "then": {"not": {"required": ["source_sha256"]}}
+    },
+    {
+      "if": {
+        "required": ["policy_digest", "privacy_mode"],
+        "properties": {"privacy_mode": {"enum": ["omit", "redact", "tokenize"]}}
+      },
+      "then": {"not": {"required": ["source_byte_length"]}}
     }
   ],
   "$defs": {

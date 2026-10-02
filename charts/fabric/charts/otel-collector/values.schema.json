@@ -67,10 +67,55 @@
     "receiver": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requireTLS", "requireClientCertificate", "evidenceSourceBinding", "tls"],
+      "required": ["requireTLS", "requireClientCertificate", "evidenceSourceBinding", "tls", "workloadAuthentication"],
       "properties": {
         "requireTLS": {"type": "boolean"},
         "requireClientCertificate": {"type": "boolean"},
+        "workloadAuthentication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "tenantId",
+            "workloadId",
+            "identityAttestationRef",
+            "policyVersion",
+            "policyDigest",
+            "tokenSecret"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "tenantId": {
+              "type": "string",
+              "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$",
+              "maxLength": 128
+            },
+            "workloadId": {
+              "type": "string",
+              "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$",
+              "maxLength": 128
+            },
+            "identityAttestationRef": {
+              "type": "string",
+              "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:/@-]{0,255})$",
+              "maxLength": 256
+            },
+            "policyVersion": {
+              "type": "string",
+              "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$",
+              "maxLength": 128
+            },
+            "policyDigest": {
+              "type": "string",
+              "pattern": "^(?:|sha256:[0-9a-f]{64})$"
+            },
+            "tokenSecret": {
+              "$ref": "#/definitions/secretKeyReference"
+            }
+          }
+        },
         "evidenceSourceBinding": {
           "type": "object",
           "additionalProperties": false,
@@ -182,7 +227,7 @@
             "persistence": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["enabled", "directory", "fsync", "existingClaim", "accessModes", "size", "storageClass", "annotations"],
+              "required": ["enabled", "directory", "fsync", "existingClaim", "accessModes", "size", "storageClass", "annotations", "encryptionAttestationRef"],
               "properties": {
                 "enabled": {"type": "boolean"},
                 "directory": {"type": "string", "pattern": "^/", "minLength": 2},
@@ -196,6 +241,7 @@
                 },
                 "size": {"type": "string", "minLength": 1},
                 "storageClass": {"type": "string"},
+                "encryptionAttestationRef": {"type": "string", "maxLength": 256, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:/@-]{0,255})$"},
                 "annotations": {"$ref": "#/definitions/stringMap"}
               }
             }

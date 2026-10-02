@@ -175,8 +175,8 @@ expect_contains "pod runs as the nonroot uid" "${default_workload}" "runAsUser: 
 
 printf '\n=== Shadow-production integration and locks ===\n'
 production_args=(
-  --values "${profile}"
-  --set tenant.id=11111111-1111-4111-8111-111111111111
+  --values "${profile}" --values "${umbrella_dir}/tests/fixtures/production-assertions.yaml"
+  --set tenant.id=customer-production
   --set otel-collector.exporter.endpoint=https://otlp.example.com
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
@@ -185,14 +185,14 @@ production_args=(
 )
 
 expect_fail "production profile requires an operator exporter peer" "exporterEgress.to peer" \
-  "${umbrella_dir}" --values "${profile}" \
-  --set tenant.id=11111111-1111-4111-8111-111111111111 \
+  "${umbrella_dir}" --values "${profile}" --values "${umbrella_dir}/tests/fixtures/production-assertions.yaml" \
+  --set tenant.id=customer-production \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 
 expect_fail "production profile requires an operator ingress peer" "networkPolicy.ingressFrom peer" \
-  "${umbrella_dir}" --values "${profile}" \
-  --set tenant.id=11111111-1111-4111-8111-111111111111 \
+  "${umbrella_dir}" --values "${profile}" --values "${umbrella_dir}/tests/fixtures/production-assertions.yaml" \
+  --set tenant.id=customer-production \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
@@ -203,13 +203,13 @@ expect_contains "production profile enables receiver mTLS" "${production_render}
 expect_contains "production profile names receiver identity Secret" "${production_render}" "name: fabric-node-receiver-tls"
 expect_contains "production profile names client CA Secret" "${production_render}" "name: fabric-node-client-ca"
 expect_contains "production profile renders explicit egress peer" "${production_render}" "cidr: 203.0.113.10/32"
-expect_contains "production profile always refreshes a mutable image tag" "${production_render}" "imagePullPolicy: Always"
+expect_contains "production profile retains explicit image pull policy" "${production_render}" "imagePullPolicy: Always"
 
-expect_fail "production receiver TLS cannot be disabled" "profile shadow-production requires" \
+expect_fail "production receiver TLS cannot be disabled" "requires receiver TLS and client-certificate verification" \
   "${umbrella_dir}" "${production_args[@]}" \
   --set otel-collector.receiver.requireTLS=false \
   --set otel-collector.receiver.requireClientCertificate=false
-expect_fail "production client certificate cannot be disabled" "profile shadow-production requires" \
+expect_fail "production client certificate cannot be disabled" "requires receiver TLS and client-certificate verification" \
   "${umbrella_dir}" "${production_args[@]}" --set otel-collector.receiver.requireClientCertificate=false
 expect_fail "production explicit egress cannot be disabled" "profile shadow-production requires" \
   "${umbrella_dir}" "${production_args[@]}" --set otel-collector.networkPolicy.exporterEgress.requireExplicit=false

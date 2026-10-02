@@ -12,6 +12,7 @@
 import { context, trace, type Attributes } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
+  AlwaysOnSampler,
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -38,6 +39,7 @@ beforeAll(() => {
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
   provider = new BasicTracerProvider({
+    sampler: new AlwaysOnSampler(),
     spanProcessors: [new SimpleSpanProcessor(exporter)],
   });
   trace.setGlobalTracerProvider(provider);
@@ -832,6 +834,7 @@ describe("installDefaultProvider", () => {
     trace.disable();
     try {
       const fresh = new BasicTracerProvider({
+        sampler: new AlwaysOnSampler(),
         spanProcessors: [new SimpleSpanProcessor(exporter)],
       });
       const cm = new AsyncLocalStorageContextManager();

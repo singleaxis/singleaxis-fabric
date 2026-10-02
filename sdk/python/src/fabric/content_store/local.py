@@ -190,6 +190,7 @@ class LocalFilesystemContentStore:
     def write_manifest(
         self, manifest: Mapping[str, Any], *, decision_id: str, manifest_id: str
     ) -> str:
+        check_safe_identifier("manifest_id", manifest_id)
         root = self._tenant_root() / "manifests"
         target = root / f"{manifest_id}.json"
         body = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -206,6 +207,7 @@ class LocalFilesystemContentStore:
         return re.sub(r"[^A-Za-z0-9._-]", "_", value)
 
     def manifest_uri_for(self, manifest_id: str) -> str:
+        check_safe_identifier("manifest_id", manifest_id)
         return f"file://{self._tenant_root() / 'manifests' / f'{manifest_id}.json'}"
 
     def manifest_uri_for_decision(self, decision_id: str) -> str:

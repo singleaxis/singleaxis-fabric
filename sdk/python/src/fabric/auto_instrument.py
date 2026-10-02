@@ -22,8 +22,10 @@ Content capture posture
 -----------------------
 
 By default, each instrumentor's prompt/completion content capture is
-**disabled** so raw user input and LLM output never land on a span —
-Fabric's compliance posture is that raw content stays out of telemetry.
+**disabled** as a best-effort upstream setting. This does not sanitize
+exception text or guarantee privacy in third-party instrumentors. Fabric's
+managed default provider separately sanitizes spans before export. Existing
+host providers/exporters are not modified and must enforce their own policy.
 Operators who explicitly want content on spans (for debugging in a dev
 environment) set ``FABRIC_CAPTURE_LLM_CONTENT=true`` before calling
 ``enable_auto_instrumentation``; that flag flips the relevant upstream
@@ -38,7 +40,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
+
+    from .coverage_manifest import CoverageManifest
 
 
 logger = logging.getLogger("fabric.auto_instrument")
@@ -98,12 +102,14 @@ _CONTENT_CAPTURE_ENV_VARS = (
 def _set_content_capture_default(*, capture: bool) -> None:
     """Set Fabric's content-capture posture across upstream env vars.
 
-    Only sets a variable if it isn't already set — operators who
-    explicitly chose a value via env keep it.
+    Fabric's explicit capture choice is authoritative, including after a
+    previous enable call. Upstream environment flags do not bypass it.
     """
+    if type(capture) is not bool:
+        raise ValueError("capture_content must be a boolean")
     value = "true" if capture else "false"
     for var in _CONTENT_CAPTURE_ENV_VARS:
-        os.environ.setdefault(var, value)
+        os.environ[var] = value
 
 
 def enable_auto_instrumentation(
@@ -167,12 +173,15 @@ def _try_enable(spec: _InstrumentorSpec) -> bool:
     """
     try:
         module = __import__(spec.module, fromlist=[spec.class_name])
-    except ImportError as exc:
+    except ImportError:
         logger.debug(
-            "fabric.auto_instrument: %s instrumentor not installed (%s)",
+            "fabric.auto_instrument: %s instrumentor import unavailable; "
+            "inspect the coverage manifest for installed/dependency status",
             spec.name,
-            exc,
         )
+        return False
+    except Exception:
+        logger.warning("fabric.auto_instrument: %s instrumentor import failed; skipping", spec.name)
         return False
     try:
         instrumentor_cls = getattr(module, spec.class_name)
@@ -190,7 +199,9 @@ def _try_enable(spec: _InstrumentorSpec) -> bool:
         # third-party Instrumentor.__init__ can raise on missing peer
         # deps (e.g., openai-instrumentation requires `openai` itself
         # to be importable; older versions check that in __init__).
-        instrumentor_cls().instrument()
+        instance = instrumentor_cls()
+        instance.instrument()
+        active = getattr(instance, "is_instrumented_by_opentelemetry", None)
     except Exception:
         # Catching broad on purpose — Instrumentor's constructor and
         # .instrument() are third-party and can raise anything.
@@ -198,13 +209,43 @@ def _try_enable(spec: _InstrumentorSpec) -> bool:
         logger.warning(
             "fabric.auto_instrument: %s instrumentor raised on init/instrument; skipping",
             spec.name,
-            exc_info=True,
         )
         return False
-    logger.info("fabric.auto_instrument: %s enabled", spec.name)
+    if active is not True:
+        logger.warning(
+            "fabric.auto_instrument: %s activation %s; not reporting enabled. "
+            "Inspect the coverage manifest before relying on capture.",
+            spec.name,
+            "inactive" if active is False else "unobservable",
+        )
+        return False
+    logger.info("fabric.auto_instrument: %s enabled (upstream activation reported)", spec.name)
     return True
 
 
 def known_instrumentor_names() -> tuple[str, ...]:
     """Return the canonical names of instrumentors Fabric understands."""
     return tuple(spec.name for spec in _KNOWN_INSTRUMENTORS)
+
+
+def enable_auto_instrumentation_with_manifest(
+    *,
+    required: Sequence[str] = (),
+    only: Sequence[str] | None = None,
+    expected_versions: Mapping[str, Mapping[str, str]] | None = None,
+    capture_content: bool = False,
+) -> CoverageManifest:
+    """Register opt-in hooks with explicit version, missing and unknown states.
+
+    The original tuple-returning API is unchanged. Registration success does
+    not establish routed capture or qualify an upstream integration.
+    """
+    from .coverage_manifest import inspect_integrations  # noqa: PLC0415
+
+    return inspect_integrations(
+        required=required,
+        only=only,
+        expected_versions=expected_versions,
+        enable=True,
+        capture_content=capture_content,
+    )

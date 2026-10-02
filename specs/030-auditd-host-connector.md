@@ -1,8 +1,8 @@
 ---
 title: auditd Host Connector (auditreceiver)
 status: implemented-not-enterprise-qualified
-revision: 2
-last_updated: 2026-09-26
+revision: 3
+last_updated: 2026-10-02
 owner: project-lead
 ---
 
@@ -48,10 +48,11 @@ auditd rules → kernel emits records → audit netlink (unicast) or audit.log
    (`manage_rules: true`) — first writer wins, never overrides an existing
    daemon.
 2. **`logfile`**. Tail `/var/log/audit/audit.log` (configurable path) with
-   rotation handling and an in-process read position. The position is not
-   restart-durable. Needs read access to the audit log
-   directory only — the lowest-privilege fallback for hosts where the audit
-   subsystem is owned by an existing daemon.
+   rotation handling, a mandatory persistent `state_directory`, accepted-cursor
+   checkpointing and one scrubbed replay batch. Needs read access to the audit
+   log directory and a dedicated private read-write state volume. See the
+   [durability and migration contract](../components/otel-collector-fabric/receiver/auditreceiver/README.md).
+   Native auditd/source completeness qualification remains external.
 
 ## Event assembly
 
@@ -59,7 +60,7 @@ Audit events arrive as multi-record groups sharing `audit(epoch:serial)`
 (SYSCALL 1300, EXECVE 1302, CWD 1303, PATH 1304, PROCTITLE 1307, SOCKADDR 1309,
 EOE 1320). The receiver:
 
-- groups records by serial into one event; flush on EOE or a bounded
+- groups logfile records by epoch+serial (netlink by serial); flush on EOE or a bounded
   assembly timeout (default 500 ms) with eviction stats;
 - maps syscall numbers to names on x86_64/arm64: `execve`(59/221),
   `connect`(42/203), `accept`(43/202), `openat`(257/56), `bind`(49/200),
@@ -94,9 +95,12 @@ Resource attributes: `host.name`, plus collector's configured resource.
 - **Path minimization at collection** — executable and file paths are hashed;
   `file_access: true` with `hash_file_paths: false` fails configuration
   validation. The export guard drops raw path keys even from other sources.
-- **Volume**: `max_events_per_sec` token bucket (default 200) + optional
+- **Netlink volume**: `max_events_per_sec` token bucket (default 200) + optional
   `dedupe_window` (default 1s) collapsing identical exec/connect bursts into
   `fabric.event_count`. Drops counted and surfaced via collector telemetry.
+- **Logfile volume**: bounded durable batches, paced by `max_events_per_sec`;
+  distinct observed events remain separate (`dedupe_window` is ignored).
+  Replay deduplication uses stable `fabric.record_id`.
 - **Syscall classes** are config-gated: `exec: true` (default),
   `connect: true` (default), `file_access: false` (default — high volume).
 - **Attribution is inferred provenance**: records carry pid/ppid/host/time;
@@ -133,6 +137,11 @@ Resource attributes: `host.name`, plus collector's configured resource.
   *why the agent did it*.
 - Failed downstream deliveries now enter a bounded in-memory retry queue and
   overflow/rate/assembly gaps are reported when delivery resumes. This queue
-  is not restart-durable, logfile mode has no persisted cursor, and multicast
-  netlink cannot replay lost kernel events. Source-to-Node loss/restart
+  is not restart-durable for netlink, which cannot replay lost kernel events.
+  Logfile mode now checkpoints an accepted cursor and fsynced scrubbed replay
+  batch with stable IDs; restart/fault/rotation behavior has local temporary-log
+  tests. Corruption/storage failure blocks rather than resetting state. Numeric
+  retained rotations are drained; missing/ambiguous generations, invalid or
+  oversized input and incomplete assembly have explicit evidence. Pre-stage
+  input still relies on auditd source retention. Source-to-Node native runtime
   qualification remains required before any complete-host-capture claim.

@@ -116,6 +116,12 @@ from ._attributes import (
     check_attribute_keys,
 )
 from ._calls import LLMCall, ToolCall
+from ._capture_health import (
+    DecisionCaptureHealth,
+    capture_health,
+    recording_state,
+    warn_capture_health,
+)
 from ._content import (
     ContentRole,
     TranscriptManifest,
@@ -488,6 +494,8 @@ class Decision(AbstractContextManager["Decision"]):
         # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
         # rejection; shared by the sync and async context-manager paths.
         self._state = "new"
+        self._recording_at_start: bool | None = None
+        self._capture_health = capture_health(None, None)
         # Governed content (spec 028/029): lazily built per-decision sink
         # accumulating manifest items; ``None`` forever in metadata mode.
         self._content_sink: ContentSink | None = None
@@ -584,7 +592,7 @@ class Decision(AbstractContextManager["Decision"]):
 
     # -- context manager --------------------------------------------------
 
-    def __enter__(self) -> Self:  # noqa: PLR0912
+    def __enter__(self) -> Self:  # noqa: PLR0912, PLR0915 - stamp decision metadata and local health
         if self._state != "new":
             raise RuntimeError(
                 f"Decision already {self._state}; open one Decision per agent "
@@ -602,6 +610,9 @@ class Decision(AbstractContextManager["Decision"]):
             set_status_on_exception=False,
         )
         self._span = self._cm.__enter__()
+        self._recording_at_start = recording_state(self._span)
+        self._capture_health = capture_health(self._span, self._recording_at_start)
+        warn_capture_health(self._capture_health)
         self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
         self._span.set_attribute(ATTR_DECISION_ID, self._decision_id)
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
@@ -694,6 +705,8 @@ class Decision(AbstractContextManager["Decision"]):
         if self._content_sink is not None:
             self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
         result = self._cm.__exit__(exc_type, exc, tb)
+        self._capture_health = capture_health(self._span, self._recording_at_start)
+        warn_capture_health(self._capture_health)
         self._span = None
         self._cm = None
         self._state = "closed"
@@ -722,6 +735,19 @@ class Decision(AbstractContextManager["Decision"]):
         return self.__exit__(exc_type, exc, tb)
 
     # -- introspection ----------------------------------------------------
+
+    @property
+    def capture_health(self) -> DecisionCaptureHealth:
+        """Local decision-span recording/loss snapshot, available after close.
+
+        Null counters mean the host provider does not expose usable statistics.
+        ``unverified`` is not completeness: child spans, event attributes,
+        exporter queues, delivery and uninstrumented activity are outside scope.
+        No sampling, privacy setting or span limit is changed by this check.
+        """
+        if self._span is not None:
+            self._capture_health = capture_health(self._span, self._recording_at_start)
+        return self._capture_health.copy()
 
     @property
     def span(self) -> Span:

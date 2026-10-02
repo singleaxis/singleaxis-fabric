@@ -19,7 +19,8 @@ CFG="$HERE/collector-e2e.yaml"
 NET="fabric-audit-e2e"
 WORK="$(mktemp -d)"
 LOGDIR="$WORK/audit"
-mkdir -p "$LOGDIR"
+mkdir -p "$LOGDIR" "$WORK/audit-state"
+chmod 0700 "$WORK/audit-state"
 touch "$LOGDIR/audit.log"
 MARKER="fabric-e2e-marker-$$"
 
@@ -37,6 +38,7 @@ docker run -d --name fabric-audit-col --network "$NET" \
   --user 0 \
   -v "$CFG:/etc/otelcol/config.yaml:ro" \
   -v "$LOGDIR:/var/log/audit:ro" \
+  -v "$WORK/audit-state:/var/lib/fabric/audit:rw" \
   "$IMG" --config /etc/otelcol/config.yaml >/dev/null
 sleep 3
 

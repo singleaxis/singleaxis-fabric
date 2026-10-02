@@ -93,6 +93,28 @@ Use `fabric.execution(...)` to correlate multiple decisions. `Decision` also
 captures retrieval, memory, side effects, checkpoints, delegation, MCP
 inventory, skills, hooks, file access and generic interactions.
 
+## Local capture health
+
+`decision.captureHealth` returns a fresh local snapshot with `scope:
+"decision_span_only"`, `recordingAtStart`, `droppedEvents`, and
+`droppedAttributes`. Its `status` is:
+
+- `disabled` when the decision span was not recording at creation
+- `partial` when public provider counters expose dropped events or attributes
+- `unverified` otherwise, including a recording span with zero observed drops
+
+Unavailable counters are `null`. Recording is checked at creation, so ending a
+recording span does not incorrectly mark it disabled. Final counters are checked
+after the span ends, including synchronous and asynchronous callback exits. The
+SDK emits a fixed, identifier-free warning once per affected status per process;
+logger failures do not change the application's return value or exception.
+
+This diagnostic does **not** prove complete capture or delivery. It does not
+cover child spans, event-attribute/value truncation, exporter or collector loss,
+uncalled instrumentation, or governed-content delivery. It does not change host
+sampling, span limits, or privacy settings. Retain the decision object if you
+need to inspect the snapshot after the callback completes.
+
 ## Opt-in exact-byte evidence (draft)
 
 The separate content-v2 `ByteEvidenceRecorder` stores **only bytes explicitly
@@ -129,6 +151,37 @@ not issue durable source or destination receipts, emit OTLP evidence events,
 build a run manifest, or prove run completeness. A process crash can lose
 pending content. Configure customer-controlled storage permissions, encryption,
 retention, and authorized resolution separately before production use.
+
+### Role-specific protection before the byte queue
+
+Pass a validated `DeploymentPolicy` as `deploymentPolicy`, or a
+`ContentProtector` as `contentProtector`, to `ByteEvidenceRecorder`. The policy
+tenant must match the store. Protection runs before bytes enter the delivery
+queue; roles absent from the policy are omitted. These options apply only to
+this explicit byte-capture interface, not automatically to every SDK content
+path or third-party integration.
+
+- `omit` records no original bytes, digest, or length
+- `metadata_only` records the original length without bytes or an original digest
+- `redact` requires a synchronous customer-supplied redactor for each selected role
+- `tokenize` produces an irreversible, whole-object HMAC pseudonym using a
+  customer-supplied key of at least 32 bytes; it is scoped to policy, tenant,
+  workload, and role
+- `retain_original` explicitly permits original bytes and their digest
+
+Redacted/tokenized bytes require a same-tenant `reviewStore` with a different
+namespace from the original store. Transform errors, unsupported results, and
+oversized outputs become explicit failed/unsupported descriptors; original bytes
+are never used as a fallback. Derivatives carry their own stored digest and no
+original digest or length. Policy ID, version, digest, and workload bind the local
+descriptor to its configured capture policy; they do not prove independent
+authorization, encryption, residency, delivery, or completeness.
+
+Transforms execute synchronously on a bounded payload, so customers must keep
+redactors fast and test their correctness. Storage delivery remains asynchronous.
+Configuration errors are reported during setup; capture outcomes never authorize
+or reject the monitored action. This Node interface does not implement the Python
+authenticated local store, capability authority, or deployment-state registry.
 
 ## Propagation across services
 
@@ -188,3 +241,12 @@ npm test
 npm run build
 npm run test:package
 ```
+
+### Enterprise capture support boundary
+
+The shared deployment-policy/privacy/byte path is supported. Python's
+CallRecorder, source journal, encrypted durable byte spool, restartable metadata
+sender, governed local backend, authenticated configuration lifecycle/readback,
+and reference closure do not have TypeScript parity. See the
+[explicit SDK support matrix](../../docs/sdk-support-matrix.md). Neither SDK
+implements a portal or action enforcement runtime.

@@ -12,13 +12,13 @@ import (
 
 // audit record type numbers (linux/audit.h userspace constants).
 const (
-	recSyscall  = 1300
-	recExecve   = 1302
-	recCWD      = 1303
-	recPath     = 1304
+	recSyscall   = 1300
+	recExecve    = 1302
+	recCWD       = 1303
+	recPath      = 1304
 	recProctitle = 1307
-	recSockaddr = 1309
-	recEOE      = 1320
+	recSockaddr  = 1309
+	recEOE       = 1320
 )
 
 // auditRecord is one parsed `type=NAME msg=audit(sec.msec:serial): k=v ...`
@@ -70,13 +70,40 @@ func parseRecord(line string) *auditRecord {
 	if colon < 0 {
 		return nil
 	}
-	if s, err := strconv.ParseUint(hdr[colon+1:], 10, 64); err == nil {
-		rec.serial = s
+	// Header identity is not best-effort: malformed numerics must not merge
+	// into a synthetic serial-zero event or escape invalid-record accounting.
+	dot := strings.IndexByte(hdr[:colon], '.')
+	if dot <= 0 || dot+1 >= colon || colon-dot-1 > 3 {
+		return nil
 	}
-	if dot := strings.IndexByte(hdr[:colon], '.'); dot >= 0 {
-		rec.sec, _ = strconv.ParseInt(hdr[:dot], 10, 64)
-		rec.msec, _ = strconv.ParseInt(hdr[dot+1:colon], 10, 64)
+	secText, fracText, serialText := hdr[:dot], hdr[dot+1:colon], hdr[colon+1:]
+	for _, value := range []string{secText, fracText, serialText} {
+		if value == "" {
+			return nil
+		}
+		for _, c := range value {
+			if c < '0' || c > '9' {
+				return nil
+			}
+		}
 	}
+	var err error
+	rec.serial, err = strconv.ParseUint(serialText, 10, 64)
+	if err != nil {
+		return nil
+	}
+	rec.sec, err = strconv.ParseInt(secText, 10, 64)
+	if err != nil || rec.sec > 9223372035 {
+		return nil
+	}
+	rec.msec, err = strconv.ParseInt(fracText+strings.Repeat("0", 3-len(fracText)), 10, 64)
+	if err != nil {
+		return nil
+	}
+	if len(rest) <= end+1 || rest[end+1] != ':' {
+		return nil
+	}
+
 	rest = strings.TrimSpace(rest[end+1:])
 	rest = strings.TrimPrefix(rest, ":")
 	parseFields(rest, rec.fields)

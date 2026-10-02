@@ -54,6 +54,12 @@ installed and an OTLP exporter is constructed from the environment. Calling it
 with neither produces spans that go nowhere (the SDK warns loudly rather than
 dropping them silently).
 
+For optional Python auto capture, configure the protected managed provider before
+registering the upstream hook. Its default span exporter suppresses raw content,
+hashes free-form metadata strings and preserves typed numeric usage and trace
+identity. Existing host exporters are not modified. See
+[protected auto-capture setup, verified dependencies and limits](../../docs/python-auto-capture-privacy.md).
+
 `gen_ai.client.*` metrics (token usage, operation duration, time-to-first-token,
 time-per-chunk, tool duration) are recorded on the global OpenTelemetry metrics
 API. Without a `MeterProvider` installed they silently no-op — install an SDK
@@ -223,3 +229,29 @@ uv run pytest
 uv run ruff check src tests
 uv run mypy src
 ```
+
+### Local decision capture health
+
+Inspect `decision.capture_health` during or after a decision. It reports local
+`decision_span_only` health with `recording_at_start`, `dropped_events`, and
+`dropped_attributes`. The last counter covers span attributes, not attributes
+inside individual events. Unsupported provider counters are `None`, never zero.
+The SDK emits one content-free warning per process/reason for `disabled` (the
+span did not record) or `partial` (the provider reports local dropped events or
+attributes). Warning-handler errors do not change the application's result.
+
+A normal snapshot remains `unverified`, not complete. This does not assess child
+spans, exporter queues, delivery, uninstrumented calls, independent records, or
+production readiness. Sampling and privacy choices remain yours; the SDK does
+not force recording or increase event limits. OpenTelemetry's default event cap
+can drop earlier decision events during long runs; exact local counts remain in
+the health snapshot even when events were dropped. Use deployment-specific loss
+and route-coverage qualification before relying on complete capture.
+
+### Enterprise capture interfaces and SDK scope
+
+See the [Python/TypeScript support matrix](../../docs/sdk-support-matrix.md) and
+[capture/control compatibility contracts](../../docs/capture-control-compatibility.md).
+Optional Python submodules expose authenticated local configuration lifecycle,
+workload/operator bindings, readback/drift and metadata-only final-boundary
+correlation. They do not install a portal, controller client or execution gate.

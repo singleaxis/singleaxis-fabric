@@ -20,6 +20,7 @@ import * as path from "node:path";
 import { context, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
+  AlwaysOnSampler,
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -117,6 +118,7 @@ beforeAll(() => {
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
   provider = new BasicTracerProvider({
+    sampler: new AlwaysOnSampler(),
     spanProcessors: [new SimpleSpanProcessor(exporter)],
   });
   trace.setGlobalTracerProvider(provider);
@@ -278,6 +280,18 @@ describe("canonical bytes", () => {
     expect(descriptor.byte_length).toBe(data.length);
     expect(descriptor.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
+
+  it.each(["é", "中", "🙂"])(
+    "preserves complete UTF-8 characters at the byte limit: %s",
+    (rune) => {
+      const prefix = `a${rune}`;
+      const encoded = new TextEncoder().encode(`${prefix}z`);
+      const limit = new TextEncoder().encode(prefix).length;
+      const out = truncateBytes(encoded, limit);
+      expect(new TextDecoder("utf-8", { fatal: true }).decode(out)).toBe(prefix);
+      expect(out.length).toBe(limit);
+    },
+  );
 
   it("truncateBytes never splits a rune", () => {
     const encoded = new TextEncoder().encode("ééé");

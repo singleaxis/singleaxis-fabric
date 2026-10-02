@@ -116,6 +116,40 @@ function checkedEvidenceObject(
 ): { objectId: string; digest: string } {
   const objectId = descriptor["object_id"];
   const digest = String(descriptor["stored_sha256"] ?? "").split(":", 2)[1] ?? "";
+  const hasPolicy = ["policy_digest", "policy_id", "policy_version", "protection_status"].some(
+    (key) => Object.hasOwn(descriptor, key),
+  );
+  const policyIdentityValid =
+    typeof descriptor["policy_digest"] === "string" &&
+    /^sha256:[0-9a-f]{64}$/.test(descriptor["policy_digest"]) &&
+    typeof descriptor["policy_id"] === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(descriptor["policy_id"]) &&
+    typeof descriptor["policy_version"] === "number" &&
+    Number.isSafeInteger(descriptor["policy_version"]) &&
+    descriptor["policy_version"] >= 1 &&
+    descriptor["policy_version"] <= 2147483647;
+  const exact =
+    descriptor["status"] === "stored" &&
+    descriptor["representation"] === "exact" &&
+    descriptor["source_byte_length"] === data.length &&
+    descriptor["source_sha256"] === descriptor["stored_sha256"] &&
+    (!hasPolicy ||
+      (policyIdentityValid &&
+        descriptor["privacy_mode"] === "retain_original" &&
+        descriptor["protection_status"] === "retained"));
+  const representation = descriptor["representation"];
+  const transform = representation === "redacted" ? "redact" : "tokenize";
+  const derivative =
+    descriptor["status"] === "redacted" &&
+    (representation === "redacted" || representation === "tokenized") &&
+    descriptor["privacy_mode"] === transform &&
+    descriptor["protection_status"] === representation &&
+    policyIdentityValid &&
+    !Object.hasOwn(descriptor, "source_sha256") &&
+    !Object.hasOwn(descriptor, "source_byte_length") &&
+    Array.isArray(descriptor["transformations"]) &&
+    descriptor["transformations"].length === 1 &&
+    descriptor["transformations"][0] === transform;
   if (
     descriptor["schema_version"] !== "fabric.content-object/v2" ||
     descriptor["tenant_id"] !== tenantId ||
@@ -124,10 +158,7 @@ function checkedEvidenceObject(
     !DIGEST_RE.test(digest) ||
     descriptor["stored_byte_length"] !== data.length ||
     contentHashBytes(data) !== digest ||
-    descriptor["status"] !== "stored" ||
-    descriptor["representation"] !== "exact" ||
-    descriptor["source_byte_length"] !== data.length ||
-    descriptor["source_sha256"] !== descriptor["stored_sha256"]
+    (!exact && !derivative)
   ) {
     throw new Error("invalid content-v2 descriptor or byte digest");
   }
@@ -292,6 +323,7 @@ export class LocalFilesystemContentStore implements GovernedStore {
   }
 
   writeManifest(manifest: Record<string, unknown>, decisionId: string, manifestId: string): string {
+    assertSafeIdentifier("manifestId", manifestId);
     const root = path.join(this.tenantRoot(), "manifests");
     const target = path.join(root, `${manifestId}.json`);
     atomicWriteBytes(target, new TextEncoder().encode(JSON.stringify(manifest, null, 2) + "\n"));
@@ -303,6 +335,7 @@ export class LocalFilesystemContentStore implements GovernedStore {
   }
 
   manifestUriFor(manifestId: string): string {
+    assertSafeIdentifier("manifestId", manifestId);
     return `file://${path.join(this.tenantRoot(), "manifests", `${manifestId}.json`)}`;
   }
 
@@ -580,6 +613,7 @@ export class S3ContentStore implements GovernedStore {
     decisionId: string,
     manifestId: string,
   ): Promise<string> {
+    assertSafeIdentifier("manifestId", manifestId);
     const client = this.getClient();
     const key = `${this.prefix}${this.tenantId}/manifests/${manifestId}.json`;
     await client.send(
@@ -601,6 +635,7 @@ export class S3ContentStore implements GovernedStore {
   }
 
   manifestUriFor(manifestId: string): string {
+    assertSafeIdentifier("manifestId", manifestId);
     const key = `${this.prefix}${this.tenantId}/manifests/${manifestId}.json`;
     return `s3://${this.bucket}/${key}`;
   }

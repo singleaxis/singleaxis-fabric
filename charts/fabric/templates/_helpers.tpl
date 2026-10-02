@@ -49,6 +49,10 @@ regulatory certification and not proof that a destination persisted a batch.
       "otel-collector.service.type" "ClusterIP"
       "otel-collector.podSecurityContext.runAsNonRoot" true
       "otel-collector.securityContext.allowPrivilegeEscalation" false
+      "otel-collector.securityContext.readOnlyRootFilesystem" true
+      "otel-collector.securityContext.runAsNonRoot" true
+      "otel-collector.podSecurityContext.seccompProfile.type" "RuntimeDefault"
+      "otel-collector.enableServiceLinks" false
 -}}
 {{- range $path, $expected := $required -}}
   {{- $cur := $.Values -}}
@@ -68,21 +72,50 @@ regulatory certification and not proof that a destination persisted a batch.
     {{- fail (printf "profile shadow-production requires %q=%v; effective value is %v" $path $expected $cur) -}}
   {{- end -}}
 {{- end -}}
-{{/* Pinned image identity: a mutable tag or the empty tag fallback is not a
-     production identity. A sha256 digest is the recommended pin; an explicit
-     non-latest tag is accepted. */}}
-{{- $collector := index $.Values "otel-collector" | default dict -}}
-{{- $image := dict -}}
-{{- if kindIs "map" $collector -}}
-  {{- $image = index $collector "image" | default dict -}}
+{{/* A tag is mutable even when version-shaped. Check the final effective
+     value here too, so --skip-schema-validation cannot admit a short digest. */}}
+{{- $collector := index $.Values "otel-collector" -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $collector.image.digest) -}}
+{{- fail "profile shadow-production requires a pinned Collector image: otel-collector.image.digest must be a full sha256 digest; tags alone are not immutable identities" -}}
 {{- end -}}
-{{- if not (kindIs "map" $image) -}}
-  {{- $image = dict -}}
+{{- $workload := $collector.receiver.workloadAuthentication -}}
+{{- if $workload.enabled -}}
+{{- if ne $workload.tenantId $.Values.tenant.id -}}
+{{- fail "profile shadow-production requires receiver.workloadAuthentication.tenantId to match tenant.id" -}}
 {{- end -}}
-{{- $digest := $image.digest | default "" | toString | trim -}}
-{{- $tag := $image.tag | default "" | toString | trim -}}
-{{- if and (not $digest) (or (eq $tag "") (eq $tag "latest")) -}}
-  {{- fail "profile shadow-production requires a pinned Collector image: set otel-collector.image.digest (recommended, sha256:...) or an explicit non-latest otel-collector.image.tag; \"latest\" and the empty appVersion fallback are not a production image identity" -}}
+{{- else if $collector.receiver.evidenceSourceBinding.enabled -}}
+{{- if ne $collector.receiver.evidenceSourceBinding.tenantId $.Values.tenant.id -}}
+{{- fail "profile shadow-production requires receiver.evidenceSourceBinding.tenantId to match tenant.id" -}}
+{{- end -}}
+{{- else -}}
+{{- fail "profile shadow-production requires receiver.workloadAuthentication.enabled=true or a dedicated evidenceSourceBinding" -}}
+{{- end -}}
+{{- $storage := $collector.exporter.sendingQueue.persistence -}}
+{{- if and (empty $storage.storageClass) (empty $storage.existingClaim) -}}
+{{- fail "profile shadow-production requires an explicit queue storageClass or existingClaim; a default StorageClass is not an encryption decision" -}}
+{{- end -}}
+{{- if and $storage.storageClass $storage.existingClaim -}}
+{{- fail "profile shadow-production requires only one of queue storageClass or existingClaim; the attestation must identify the storage actually used" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,255}$" $storage.encryptionAttestationRef) -}}
+{{- fail "profile shadow-production requires queue encryptionAttestationRef; storage selection alone does not attest encryption" -}}
+{{- end -}}
+{{- if or $collector.securityContext.privileged $collector.securityContext.capabilities.add -}}
+{{- fail "profile shadow-production rejects privileged containers and added capabilities" -}}
+{{- end -}}
+{{- if and $collector.securityContext.seccompProfile (ne $collector.securityContext.seccompProfile.type "RuntimeDefault") -}}
+{{- fail "profile shadow-production rejects a container seccompProfile that overrides RuntimeDefault" -}}
+{{- end -}}
+{{- if and (hasKey $collector.securityContext "runAsGroup") (le (int $collector.securityContext.runAsGroup) 0) -}}
+{{- fail "profile shadow-production rejects a root container runAsGroup" -}}
+{{- end -}}
+{{- if not (deepEqual $collector.securityContext.capabilities.drop (list "ALL")) -}}
+{{- fail "profile shadow-production requires securityContext.capabilities.drop=[ALL]" -}}
+{{- end -}}
+{{- range $field, $value := dict "podSecurityContext.runAsUser" $collector.podSecurityContext.runAsUser "podSecurityContext.runAsGroup" $collector.podSecurityContext.runAsGroup "securityContext.runAsUser" $collector.securityContext.runAsUser "podSecurityContext.fsGroup" $collector.podSecurityContext.fsGroup -}}
+{{- if or (empty $value) (le (int $value) 0) -}}
+{{- fail (printf "profile shadow-production requires a positive non-root %s" $field) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

@@ -87,8 +87,10 @@ not cross a production trust boundary.
 ## Production shadow deployment
 
 Start from `shadow-production`. Supply organization-owned TLS certificates,
-client CA, export authorization Secret, HTTPS endpoint, persistent storage,
-tenant identity, and explicit NetworkPolicy ingress and egress. The chart
+client CA, a workload-scoped ingress token Secret and identity review reference,
+export authorization Secret, immutable image digest, HTTPS endpoint, explicit
+persistent storage and encryption review reference, tenant/workload identity,
+and explicit NetworkPolicy ingress and egress. The chart
 refuses an incomplete production posture.
 
 ```bash
@@ -97,6 +99,13 @@ helm upgrade --install fabric ./fabric-VERSION.tgz \
   --create-namespace \
   --values charts/fabric/profiles/shadow-production.yaml \
   --set tenant.id=TENANT_UUID \
+  --set 'otel-collector.image.digest=sha256:<approved-64-lowercase-hex>' \
+  --set otel-collector.receiver.workloadAuthentication.tenantId=TENANT_UUID \
+  --set otel-collector.receiver.workloadAuthentication.workloadId=approved-agent \
+  --set otel-collector.receiver.workloadAuthentication.identityAttestationRef=identity-review-001 \
+  --set otel-collector.receiver.workloadAuthentication.tokenSecret.name=fabric-workload-token \
+  --set otel-collector.exporter.sendingQueue.persistence.storageClass=customer-encrypted \
+  --set otel-collector.exporter.sendingQueue.persistence.encryptionAttestationRef=storage-review-001 \
   --set otel-collector.exporter.endpoint=https://approved-otlp.example.com \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \

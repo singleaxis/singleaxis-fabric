@@ -115,6 +115,32 @@ def _validate_verification_ref(
         )
 
 
+def _safe_content_ref(document: Mapping[str, Any]) -> bool:
+    ref = document["ref"]
+    if not ref.startswith("fabric-local:"):
+        return _safe_ref(ref, document["tenant_id"])
+    # This adapter scheme is intentionally limited to policy-bound content
+    # objects. It is not accepted for external receipts or verification proofs.
+    mode = document.get("privacy_mode")
+    plane = {
+        "retain_original": "original",
+        "redact": "derivative",
+        "tokenize": "derivative",
+    }.get(mode)
+    workload = document.get("workload_id")
+    if (
+        plane is None
+        or "policy_digest" not in document
+        or not isinstance(workload, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", workload) is None
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", document["tenant_id"])
+        is None
+    ):
+        return False
+    expected = f"fabric-local://{document['tenant_id']}/{workload}/{plane}/{document['object_id']}"
+    return ref == expected
+
+
 def _timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -136,15 +162,16 @@ def _validate_content(document: Mapping[str, Any]) -> None:
             "$.representation",
             "truncated status needs truncated representation",
         )
-    if status == "redacted" and representation != "redacted":
+    if status == "redacted" and representation not in {"redacted", "tokenized"}:
         raise EvidenceContractError(
             "evidence.content.representation",
             "$.representation",
-            "redacted status needs redacted representation",
+            "redacted status needs redacted or tokenized representation",
         )
     if status == "stored" and representation in {
         "truncated",
         "redacted",
+        "tokenized",
         "unavailable",
     }:
         raise EvidenceContractError(
@@ -161,12 +188,23 @@ def _validate_content(document: Mapping[str, Any]) -> None:
             "$.representation",
             "uncaptured bytes need unavailable representation",
         )
-    if ("source_sha256" in document) != ("source_byte_length" in document):
+    metadata_only = (
+        "policy_digest" in document
+        and document.get("privacy_mode") == "metadata_only"
+        and document.get("protection_status") == "withheld"
+        and status in {"not_captured", "dropped"}
+        and "source_sha256" not in document
+    )
+    if ("source_sha256" in document) != (
+        "source_byte_length" in document
+    ) and not metadata_only:
         raise EvidenceContractError(
             "evidence.content.source_pair",
             "$",
             "source byte length and digest must be present together",
         )
+    if "policy_digest" in document:
+        _validate_content_protection(document)
     if ("stored_sha256" in document) != ("stored_byte_length" in document):
         raise EvidenceContractError(
             "evidence.content.stored_pair",
@@ -183,11 +221,53 @@ def _validate_content(document: Mapping[str, Any]) -> None:
                 "$",
                 "exact source and stored bytes must match",
             )
-    if "ref" in document and not _safe_ref(document["ref"], document["tenant_id"]):
+    if "ref" in document and not _safe_content_ref(document):
         raise EvidenceContractError(
             "evidence.content.ref",
             "$.ref",
             "reference must be credential-free and local to an approved scheme",
+        )
+
+
+def _validate_content_protection(document: Mapping[str, Any]) -> None:
+    """Keep configured privacy and recorded outcomes consistent, without certifying policy."""
+    mode = document["privacy_mode"]
+    protection = document["protection_status"]
+    status = document["status"]
+    expected = {
+        "omit": "withheld",
+        "metadata_only": "withheld",
+        "retain_original": "retained",
+        "redact": "redacted",
+        "tokenize": "tokenized",
+    }
+    valid = mode in expected and protection in {
+        expected.get(mode),
+        "lost",
+        "unsupported",
+    }
+    if protection == "lost":
+        valid = valid and status in {"failed", "dropped"}
+    elif protection == "unsupported":
+        valid = valid and status in {"unsupported", "dropped"}
+    elif protection == "withheld":
+        valid = valid and status in {"not_captured", "dropped"}
+    elif status in {"pending", "stored", "redacted"}:
+        representation = "exact" if protection == "retained" else protection
+        valid = valid and document["representation"] == representation
+        valid = valid and status in {
+            "pending",
+            "stored" if protection == "retained" else "redacted",
+        }
+        if mode in {"redact", "tokenize"}:
+            valid = valid and document.get("transformations") == [mode]
+    else:
+        valid = valid and status in {"failed", "dropped"}
+    if not valid:
+        raise EvidenceContractError(
+            "evidence.content.protection",
+            "$",
+            "deployment privacy mode, protection outcome and content status must agree",
         )
 
 

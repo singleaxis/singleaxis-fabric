@@ -140,8 +140,8 @@ expect_fail "durability contract rejects volatile pre-queue batching" "requires 
 
 printf '\n=== Shadow production profile ===\n'
 profile_render="$(helm template ci "${umbrella_dir}" \
-  --values "${profile}" \
-  --set tenant.id=11111111-1111-4111-8111-111111111111 \
+  --values "${profile}" --values "${umbrella_dir}/tests/fixtures/production-assertions.yaml" \
+  --set tenant.id=customer-production \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
@@ -152,8 +152,8 @@ expect_contains "profile renders two replicas" "${profile_render}" "replicas: 2"
 expect_contains "profile references export credential" "${profile_render}" "name: fabric-node-export-auth"
 
 if helm template ci "${umbrella_dir}" \
-  --values "${profile}" \
-  --set tenant.id=11111111-1111-4111-8111-111111111111 \
+  --values "${profile}" --values "${umbrella_dir}/tests/fixtures/production-assertions.yaml" \
+  --set tenant.id=customer-production \
   --set otel-collector.exporter.endpoint=http://otlp.example.com \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \

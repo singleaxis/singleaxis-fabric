@@ -414,3 +414,43 @@ func TestSensitiveAttributeKey_GenericContentNamesDenied(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessTraces_AggregateCapsPreserveDroppedCounts(t *testing.T) {
+	const max = ^uint32(0)
+	for _, tc := range []struct {
+		name         string
+		before, want uint32
+	}{
+		{"new losses", 0, 2},
+		{"upstream losses", 7, 9},
+		{"saturates", max - 1, max},
+		{"already saturated", max, max},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := createDefaultConfig()
+			cfg.MaxEventsPerSpan = 1
+			cfg.MaxLinksPerSpan = 1
+			g := newTestGuard(t, cfg)
+			td := ptrace.NewTraces()
+			span := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+			span.SetDroppedEventsCount(tc.before)
+			span.SetDroppedLinksCount(tc.before)
+			for i := 0; i < 3; i++ {
+				span.Events().AppendEmpty().SetName("fabric.activity")
+				span.Links().AppendEmpty()
+			}
+			// Reprocessing must not double-count elements already removed.
+			for pass := 0; pass < 2; pass++ {
+				if _, err := g.processTraces(context.Background(), td); err != nil {
+					t.Fatal(err)
+				}
+				if span.Events().Len() != 1 || span.Links().Len() != 1 {
+					t.Fatalf("cap not enforced: events=%d links=%d", span.Events().Len(), span.Links().Len())
+				}
+				if span.DroppedEventsCount() != tc.want || span.DroppedLinksCount() != tc.want {
+					t.Fatalf("pass %d: dropped events=%d links=%d, want %d", pass, span.DroppedEventsCount(), span.DroppedLinksCount(), tc.want)
+				}
+			}
+		})
+	}
+}

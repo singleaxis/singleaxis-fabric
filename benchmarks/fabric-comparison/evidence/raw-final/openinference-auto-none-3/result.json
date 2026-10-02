@@ -1,0 +1,206 @@
+{
+  "mode": "openinference-auto",
+  "managed_provider": false,
+  "exception_redaction_exporter": false,
+  "fault": "none",
+  "setup_ms": 42.840343,
+  "workload_ms": 31.88111,
+  "flush_ms": 0.028053,
+  "truth_actions": 7,
+  "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+  "declared_scope_actions": 4,
+  "captured_local_records": 4,
+  "exported_spans": 4,
+  "error_records": 1,
+  "export_attempts": 4,
+  "failed_export_spans": 0,
+  "raw_canary_in_export": true,
+  "unwrapped_action_captured": false,
+  "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+  "captured_action_ids": [
+    [
+      "background",
+      "one"
+    ],
+    [
+      "model",
+      "success"
+    ],
+    [
+      "retry",
+      "first"
+    ],
+    [
+      "retry",
+      "second"
+    ]
+  ],
+  "independent_inventory_unmatched_action_ids": [
+    [
+      "bypass",
+      "one"
+    ],
+    [
+      "file",
+      "one"
+    ],
+    [
+      "process",
+      "one"
+    ]
+  ],
+  "recording_gaps": null,
+  "provider_model_attribute_spans": 3,
+  "token_usage_attribute_spans": 3,
+  "caller_attempt_attribute_spans": 0,
+  "policy_event_statuses": [],
+  "snapshot": null,
+  "spans": [
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0xe1d1928361a9f2371174d92b9eb7dbf9",
+        "span_id": "0xb2f901295384e8bc",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:31.651288Z",
+      "end_time": "2026-10-02T17:07:31.653551Z",
+      "status": {
+        "status_code": "OK"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "output.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"model:success\"}",
+        "llm.model_name": "benchmark-local",
+        "llm.token_count.total": 2,
+        "llm.token_count.prompt": 1,
+        "llm.token_count.completion": 1,
+        "llm.finish_reason": "stop",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0x3e8bee108dee5b23dd5e194947bd7c81",
+        "span_id": "0x6a3f7da53c2e103f",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:31.655902Z",
+      "end_time": "2026-10-02T17:07:31.660637Z",
+      "status": {
+        "status_code": "ERROR",
+        "description": "InternalServerError: Error code: 503 - {'error': {'message': 'synthetic transient error SYNTHETIC-PRIVATE-CANARY-3742', 'type': 'server_error', 'code': 'retry'}}"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"retry:first\"}",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [
+        {
+          "name": "exception",
+          "timestamp": "2026-10-02T17:07:31.659349Z",
+          "attributes": {
+            "exception.type": "openai.InternalServerError",
+            "exception.message": "Error code: 503 - {'error': {'message': 'synthetic transient error SYNTHETIC-PRIVATE-CANARY-3742', 'type': 'server_error', 'code': 'retry'}}",
+            "exception.stacktrace": "Traceback (most recent call last):\n  File \"<BENCHMARK_VENV>/lib/python3.12/site-packages/openinference/instrumentation/openai/_request.py\", line 360, in __call__\n    response = wrapped(*args, **kwargs)\n               ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<BENCHMARK_VENV>/lib/python3.12/site-packages/openai/_base_client.py\", line 1213, in request\n    raise self._make_status_error_from_response(err.response) from None\nopenai.InternalServerError: Error code: 503 - {'error': {'message': 'synthetic transient error SYNTHETIC-PRIVATE-CANARY-3742', 'type': 'server_error', 'code': 'retry'}}\n",
+            "exception.escaped": "False"
+          }
+        }
+      ],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0xdf00021e6f8017b92c0345b5b6374e51",
+        "span_id": "0xb63160c25785b5f1",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:31.661657Z",
+      "end_time": "2026-10-02T17:07:31.663987Z",
+      "status": {
+        "status_code": "OK"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "output.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"retry:second\"}",
+        "llm.model_name": "benchmark-local",
+        "llm.token_count.total": 2,
+        "llm.token_count.prompt": 1,
+        "llm.token_count.completion": 1,
+        "llm.finish_reason": "stop",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0xdd13bce8221c27acb70e31c15222ca8f",
+        "span_id": "0xa9565a901c991289",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:31.678514Z",
+      "end_time": "2026-10-02T17:07:31.681601Z",
+      "status": {
+        "status_code": "OK"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "output.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"background:one\"}",
+        "llm.model_name": "benchmark-local",
+        "llm.token_count.total": 2,
+        "llm.token_count.prompt": 1,
+        "llm.token_count.completion": 1,
+        "llm.finish_reason": "stop",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    }
+  ]
+}

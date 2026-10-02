@@ -598,3 +598,49 @@ func TestSensitiveAttributeKey(t *testing.T) {
 }
 
 var _ = pcommon.NewMap // keep pcommon import in case test utilities evolve
+
+func TestDurableAuditIdentityAndLossEvidenceSurviveProtection(t *testing.T) {
+	g := newTestGuard(t, nil)
+	fields := map[string]any{
+		"event_class": "audit", "audit.event": "logfile_checkpoint",
+		"fabric.record_id": strings.Repeat("a", 64), "audit.source_id": strings.Repeat("b", 32),
+		"audit.source_generation": int(2), "audit.cursor_start": int(0), "audit.cursor_end": int(4096),
+		"audit.assembly_complete": false, "audit.input_records": int(3), "audit.filtered_events": int(0),
+		"audit.invalid_records": int(1), "audit.oversized_records": int(1), "audit.incomplete_events": int(1),
+		"audit.unmatched_events": int(1), "audit.discarded_bytes": int(4096),
+	}
+	bad := map[string]any{"event_class": "audit"}
+	for k := range fields {
+		if k != "event_class" {
+			bad[k] = "secret=/private/customer/argv"
+		}
+	}
+	ld := makeLogs(fields, bad)
+	out, err := g.processLogs(context.Background(), ld)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := out.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords()
+	for k := range fields {
+		if _, ok := records.At(0).Attributes().Get(k); !ok {
+			t.Errorf("durable evidence stripped: %s", k)
+		}
+	}
+	for k := range bad {
+		if k != "event_class" {
+			if _, ok := records.At(1).Attributes().Get(k); ok {
+				t.Errorf("caller-controlled text leaked: %s", k)
+			}
+		}
+	}
+	for _, reason := range []string{"source_rotated", "source_rotation_gap", "source_missing", "source_truncated_or_rewritten"} {
+		out, err := g.processLogs(context.Background(), makeLogs(map[string]any{"event_class": "audit", "audit.event": reason}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, ok := out.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Attributes().Get("audit.event")
+		if !ok || v.Str() != reason {
+			t.Fatalf("loss evidence %q stripped", reason)
+		}
+	}
+}

@@ -25,6 +25,10 @@ make status
 make smoke
 ```
 
+Evaluation ports are always published on `127.0.0.1`, including the sink's
+telemetry-search endpoint. `FABRIC_BIND_ADDR` applies only to the separate VM
+overlay; it cannot expose the unauthenticated evaluation harness.
+
 Send OTLP/HTTP to `http://localhost:4318`. The controlled sink exposes:
 
 - `GET http://localhost:8080/health`
@@ -99,7 +103,7 @@ no unauthenticated fallback.
 
 To run the signed release image instead of building locally, verify the
 cosign signature per [`docs/verify-release.md`](../../docs/verify-release.md), then set
-`FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol:0.8.0-rc.1` and
+`FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol@sha256:<approved-64-hex-digest>` and
 `FABRIC_NODE_PULL_POLICY=always` in `.env`.
 
 ### Firewall and exposure
@@ -113,6 +117,13 @@ into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`), and open only ports
 loopback.
 
 ### Secure defaults and honest limitations
+
+This VM overlay is a technical example, not the Helm `shadow-production`
+contract or a production approval. It does not implement Helm's workload
+identity/review metadata or require an image digest and storage-encryption
+attestation. Those controls and independent live qualification remain the
+operator's responsibility. The local build is useful for evaluation, not a
+verified release identity. Static Compose checks are not Docker execution.
 
 - Ingress requires a bearer token (file-backed Compose secret); receiver TLS
   is optional-but-supported and required before binding beyond loopback.

@@ -14,6 +14,7 @@ from ._version import __version__
 from .baseline import Baseline, BaselineCheck
 from .byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder, BytePrivacyPolicy
 from .byte_resolver import ByteEvidenceResolver, ByteResolution
+from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool, PermanentByteDeliveryError
 from .call_recorder import CallRecorder
 from .checkpoint import CheckpointEvent
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
@@ -42,6 +43,7 @@ from .integrations.mcp import (
     traced_call_tool,
 )
 from .memory import MemoryKind, MemoryRecord
+from .metadata_delivery import HTTPMetadataTransport, JournalMetadataSender, MetadataHTTPResponse
 from .propagation import FabricContext, extract, inject, inject_decision
 from .resolver import ContentResolver, ResolveResult, ResolveStatus
 from .retrieval import RetrievalRecord, RetrievalSource
@@ -75,6 +77,7 @@ __all__ = [
     "ByteEvidenceStore",
     "BytePrivacyPolicy",
     "ByteResolution",
+    "ByteSpoolAdmissionError",
     "CallRecorder",
     "CheckpointEvent",
     "ConcurrentDecisionUseError",
@@ -88,18 +91,23 @@ __all__ = [
     "CorruptedObjectError",
     "Decision",
     "DelegationContext",
+    "DurableByteSpool",
     "Execution",
     "Fabric",
     "FabricConfig",
     "FabricContext",
     "FlushResult",
     "GovernedStore",
+    "HTTPMetadataTransport",
     "InstrumentedMCPSession",
+    "JournalMetadataSender",
     "LLMCall",
     "LocalFilesystemContentStore",
     "MCPSessionLike",
     "MemoryKind",
     "MemoryRecord",
+    "MetadataHTTPResponse",
+    "PermanentByteDeliveryError",
     "ReplayBehavior",
     "ResolveResult",
     "ResolveStatus",
