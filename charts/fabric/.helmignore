@@ -8,7 +8,9 @@
 *.bak
 *.orig
 *.log
-tests/
+# Exclude development tests only; templates/tests contains the runtime Helm hook.
+/tests/
+/charts/otel-collector/tests/
 docs/
 # Historical/optional chart sources retained in the repository but excluded
 # from the Fabric Node v1 package. The released dependency surface is Collector

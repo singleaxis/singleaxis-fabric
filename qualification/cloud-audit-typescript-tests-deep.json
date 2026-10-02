@@ -18,6 +18,22 @@
       "baseline_cross_language_failed": 3,
       "cross_language_command": "/workspace/fabric-venv/bin/python -m pytest scripts/tests/test_typescript_content_contract.py -q",
       "note": "Cross-language fixture rebuilds current SDK, then validates emitted memory/side-effect manifest/descriptors and mixed status manifest using existing Python schema+semantic validator; skips explicitly without Node or installed TS build tool."
+    },
+    "node20_fixture_followup": {
+      "source_checkpoint": "2757a11",
+      "previous_local_full_passed": 453,
+      "pre_fix_node20": {
+        "version": "20.19.0",
+        "target_passed": 52,
+        "target_failed": 1,
+        "cause": "V8 lazy Error.stack materialization invoked hostile message getter during fixture construction"
+      },
+      "post_fix_node20": {
+        "target_passed": 53,
+        "full_passed": 453
+      },
+      "evidence_source": "Parent and security_audit worker execution reports; test diff and assertions manually verified during this ledger-only refresh. Root maintains CI follow-up record.",
+      "limits": "Earlier local full pass did not qualify Node20 before the fixture correction. No runtime/dependency change or new execution performed for this refresh; no universal supported-platform qualification implied."
     }
   },
   "findings": [
@@ -55,6 +71,11 @@
       "id": "TS-EMPTY-TRANSCRIPT",
       "status": "fixed_targeted_tests_pass",
       "detail": "Schema-invalid empty publication removed without inventing role outcomes or changing published contracts. Empty windows have no URI/reference/files/stored count; empty accumulator serialization rejects; explicit zero-byte text remains a real validated observation. Existing Python behavior reported to parent for separately owned correction."
+    },
+    {
+      "id": "TS-NODE20-EXCEPTION-FIXTURE",
+      "status": "test_fixture_corrected_worker_reports_pass",
+      "detail": "Stack property replacement precedes hostile message getter installation; diagnosticReads===0 strengthens protection assertion. Preserves pre-fix Node20 failure separately from453post-fix full pass and earlier453local checkpoint pass."
     }
   ],
   "files": [
@@ -288,15 +309,16 @@
     },
     {
       "path": "sdk/typescript/test/exception-privacy.test.ts",
-      "sha256": "2d444406e46f8e8eb9d848e08d8ba4f1d94905bf8fb312d4b6a52728e9962c98",
-      "line_count": 161,
+      "sha256": "3c59e1a025c2d037a04eccba8f1a0ec0cf2cc1be37944de3adecd81eb3ead5f0",
+      "line_count": 167,
       "review_depth": "full_text_manual_semantic_review",
       "methods": [
         "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
-        "manual contract, privacy/error/closure and false-pass assessment"
+        "manual contract, privacy/error/closure and false-pass assessment",
+        "manual review of final test-only follow-up diff and surrounding assertions; no tests rerun during ledger refresh"
       ],
-      "contracts": "Read full newly authored53 tests: eight sync/async decision/execution/LLM/tool direct InMemory exporter canary checks with exact span counts and original throw identity; ten closed error classes per path including AbortError/TimeoutError; hostile/changing name getters, revoked proxies, non-Error reasons;128 generated arbitrary names and message/stack getters that throw. No protection wrapper between SDK and provider.",
-      "limits_and_findings": "Cancellation-shaped errors represent rejected callbacks, not an external AbortController lifecycle. Generated adversarial names are deterministic, not exhaustive fuzzing. Does not protect host attributes or third-party instrumentation."
+      "contracts": "Read full newly authored53 tests: eight sync/async decision/execution/LLM/tool direct InMemory exporter canary checks with exact span counts and original throw identity; ten closed error classes per path including AbortError/TimeoutError; hostile/changing name getters, revoked proxies, non-Error reasons;128 generated arbitrary names and message/stack getters that throw. No protection wrapper between SDK and provider. Node20 follow-up replaces native stack before installing hostile message getter, avoiding V8 lazy-stack evaluation during fixture construction. Each of128 generated cases now additionally requires diagnosticReads===0; original exception identity, canary absence and closed exported diagnostic assertions remain.",
+      "limits_and_findings": "Cancellation-shaped errors represent rejected callbacks, not an external AbortController lifecycle. Generated adversarial names are deterministic, not exhaustive fuzzing. Does not protect host attributes or third-party instrumentation. Before this test-only correction, pinned Node20.19.0 target had52pass/1fail despite earlier local full453pass at2757a11. Parent/security worker report post-fix53target and453full Node20pass; this ledger refresh reviewed code, not rerun those commands. Runtime source unchanged by this compatibility correction."
     },
     {
       "path": "sdk/typescript/test/governed-content.test.ts",
@@ -348,15 +370,16 @@
     },
     {
       "path": "sdk/typescript/test/parity.test.ts",
-      "sha256": "03221e07c246f1b8febcda642653a0a3a78360fd6e264fcfc0260d1a9155f390",
-      "line_count": 938,
+      "sha256": "b8e34c9eb425798efb2aa1afcbad850fac4bdb0c4a7bf1dab477d7acf1a98b04",
+      "line_count": 949,
       "review_depth": "full_text_manual_semantic_review",
       "methods": [
         "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
-        "manual contract, privacy/error/closure and false-pass assessment"
+        "manual contract, privacy/error/closure and false-pass assessment",
+        "manual review of final test-only follow-up diff and surrounding assertions; no tests rerun during ledger refresh"
       ],
-      "contracts": "Read entire938-line suite: delegation options/depth/context, reentrant mutation sentinel, metadata stamping, MCP normalization, LLM defaults/steps/cache/aliases/streaming, tool opt-in overrides, getter/return records, keyed coverage, PII scan timing/boundary/multibyte, error.type, replay lineage, reserved namespaces and provider installation. Global provider/context installed with final cleanup; warning spies use try/finally.",
-      "limits_and_findings": "Delegation throw test only asserts throw, does not observe restored depth; input_schema normalization test only checks hash shape, not equivalence. Provider-install case checks context.active defined but does not prove async propagation or dispose fresh provider/context. PII timing500ms depends on host load; full Python parity not established by test name."
+      "contracts": "Read entire938-line suite: delegation options/depth/context, reentrant mutation sentinel, metadata stamping, MCP normalization, LLM defaults/steps/cache/aliases/streaming, tool opt-in overrides, getter/return records, keyed coverage, PII scan timing/boundary/multibyte, error.type, replay lineage, reserved namespaces and provider installation. Global provider/context installed with final cleanup; warning spies use try/finally. Reviewed final PII-boundary follow-up: beforeEach resets the process-local shape-warning budget using internal resetIdentifierWarningsForTesting, not a public barrel export. Positive warning detection,500ms timing,8KiB/UTF8 bounds remain; additional assertions exclude raw PII from diagnostic output.",
+      "limits_and_findings": "Delegation throw test only asserts throw, does not observe restored depth; input_schema normalization test only checks hash shape, not equivalence. Provider-install case checks context.active defined but does not prove async propagation or dispose fresh provider/context. PII timing500ms depends on host load; full Python parity not established by test name. Prior full-suite five failures arose from warning dedup consuming the budget across cases; explicit per-case reset makes each detection test independent. Security worker reports60parity+ID tests passing; no runtime warning policy weakened."
     },
     {
       "path": "sdk/typescript/test/primitives.test.ts",

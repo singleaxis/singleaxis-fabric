@@ -132,9 +132,14 @@ it("rejects generated arbitrary classifications and never reads private diagnost
   for (let index = 0; index < 128; index++) {
     const error = new Error();
     error.name = `PRIVATE_${index}_${String.fromCharCode(index)}_${"x".repeat(index)}`;
-    for (const key of ["message", "stack"]) {
+    let diagnosticReads = 0;
+    // Node 20 materializes a native Error's lazy stack while replacing it.
+    // Replace stack before installing the hostile message getter so fixture
+    // construction itself cannot trigger that getter.
+    for (const key of ["stack", "message"]) {
       Object.defineProperty(error, key, {
         get() {
+          diagnosticReads += 1;
           throw new Error("diagnostic getter accessed");
         },
       });
@@ -148,6 +153,7 @@ it("rejects generated arbitrary classifications and never reads private diagnost
       caught = value;
     }
     expect(caught).toBe(error);
+    expect(diagnosticReads).toBe(0);
   }
   const spans = exporter.getFinishedSpans();
   expect(spans).toHaveLength(128);

@@ -35,10 +35,10 @@ used. Neither supplied archive SHA-256 can be verified without its bytes.
 
 These are logical groupings from the handoff description; the four desktop
 commit boundaries could not be inspected. The cloud parent chain is
-`dd7e2683 → 18ec69a4 → acf7fbf8 → 24e50931 → 060dd983 → 059d5474 → 0c057678 → ee2b3dd0`.
-The last three commits are the first cloud checkpoint, each with the approved
-DCO. Follow-up commit `0c057678` protects diagnostics and truncation; subsequent
-follow-ups are descendants of it, not of the unavailable desktop checkpoint.
+`dd7e2683 → 18ec69a4 → acf7fbf8 → 24e50931 → 060dd983 → 059d5474 → 0c057678 → ee2b3dd0 → 2757a117`.
+The first cloud checkpoint comprises `24e50931`, `060dd983` and `059d5474`, each
+with the approved DCO. Later cloud commits and the current PR follow-ups are
+descendants of that chain, not of the unavailable desktop checkpoint.
 
 The published reconstruction defect was independently reproduced: two stored
 descriptors and two journal object IDs, but four exported records with zero
@@ -111,6 +111,15 @@ Follow-up CI installs the TypeScript driver so emitted-manifest schema tests
 execute there as well. All 15 local pre-commit hooks and the pinned Markdown
 linter passed; Markdown used the registry package because npm blocked the hook's
 Git installation. No npm security setting was changed.
+
+CI at `2757a117` exposed four test/setup issues: Node 20 lazy-stack fixture
+construction, incomplete synthetic certificate extensions rejected by Python
+3.13 strict verification, Helm ignore rules excluding the health-test hook,
+and the queue privacy probe's mismatched filesystem identity. The
+[CI portability follow-up](../qualification/cloud-2026-10-02/ci-followup-checks.json)
+records their fixes and local checks: 453 tests on Node 20, 16 strict TLS cases,
+mypy across 138 files and 477 repository tests. Runtime SDK bytes and the
+installed-wheel journey remain unchanged; live Helm/Docker checks require CI.
 
 The selected C0–C7, C9 and C10 fixture checks passed; C8 application-network
 semantics remains `NOT_IMPLEMENTED`. Each level retains explicit unimplemented

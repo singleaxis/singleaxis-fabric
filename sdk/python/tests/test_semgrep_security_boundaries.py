@@ -21,7 +21,7 @@ import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from fabric import ContentCaptureConfig, ContentWriter, LocalFilesystemContentStore
 from fabric.http_dispatch import FinalHTTPAdapter
@@ -131,6 +131,8 @@ def _certificate(
     server: bool = False,
 ) -> tuple[Path, Path, x509.Certificate, rsa.RSAPrivateKey]:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    is_ca = issuer_cert is None
+    signing_key = issuer_key or key
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
     now = datetime.datetime.now(datetime.UTC)
     builder = (
@@ -141,14 +143,35 @@ def _certificate(
         .serial_number(x509.random_serial_number())
         .not_valid_before(now - datetime.timedelta(minutes=1))
         .not_valid_after(now + datetime.timedelta(hours=1))
-        .add_extension(x509.BasicConstraints(ca=issuer_cert is None, path_length=None), True)
+        .add_extension(x509.BasicConstraints(ca=is_ca, path_length=0 if is_ca else None), True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), False)
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(signing_key.public_key()), False
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=not is_ca,
+                content_commitment=False,
+                key_encipherment=not is_ca,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=is_ca,
+                crl_sign=is_ca,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            True,
+        )
     )
+    if not is_ca:
+        purpose = ExtendedKeyUsageOID.SERVER_AUTH if server else ExtendedKeyUsageOID.CLIENT_AUTH
+        builder = builder.add_extension(x509.ExtendedKeyUsage([purpose]), False)
     if server:
         builder = builder.add_extension(
             x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
             False,
         )
-    cert = builder.sign(issuer_key or key, hashes.SHA256())
+    cert = builder.sign(signing_key, hashes.SHA256())
     cert_path, key_path = root / (name + ".crt"), root / (name + ".key")
     cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     key_path.touch(mode=0o600)
@@ -163,7 +186,16 @@ def _certificate(
 
 
 @pytest.fixture
-def tls_server(tmp_path: Path) -> Iterator[dict[str, Any]]:
+def tls_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
+    default_context = ssl.create_default_context
+
+    def strict_context(*args: Any, **kwargs: Any) -> ssl.SSLContext:
+        context = default_context(*args, **kwargs)
+        # Exercise Python 3.13's stricter chain validation on older runtimes too.
+        context.verify_flags |= ssl.VERIFY_X509_STRICT
+        return context
+
+    monkeypatch.setattr(ssl, "create_default_context", strict_context)
     ca_path, _, ca, ca_key = _certificate(tmp_path, "ca")
     server_cert, server_key, _, _ = _certificate(
         tmp_path, "server", issuer_cert=ca, issuer_key=ca_key, server=True
@@ -196,6 +228,7 @@ def tls_server(tmp_path: Path) -> Iterator[dict[str, Any]]:
     context.load_cert_chain(server_cert, server_key)
     context.load_verify_locations(cafile=ca_path)
     context.verify_mode = ssl.CERT_OPTIONAL
+    context.verify_flags |= ssl.VERIFY_X509_STRICT
     server.socket = context.wrap_socket(server.socket, server_side=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

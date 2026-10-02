@@ -331,6 +331,14 @@
       "reviewer": "root",
       "review_note": "Reviewed fresh internal warning-cache budget per boundary test; all timing/UTF8/detection assertions retained and private-value absence added.",
       "findings": []
+    },
+    {
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "sha256": "5ab990283dc57cf43a517d8ca6dcdbbf63cc8f42bc29d8a262a1df49e609189a",
+      "method": "Follow-up complete changed-function read and unit regression inspection",
+      "reviewer": "root",
+      "review_note": "Probe preserves private queue modes and zero capabilities; resolves controlled Node explicit nonroot identity with bounded regular account-file archive parsing and no extraction, rejects ambiguity, passes numeric UID:GID as separate argument. Actual Docker rerun remains a CI obligation.",
+      "findings": []
     }
   ],
   "findings": [

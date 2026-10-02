@@ -3669,14 +3669,13 @@
     },
     {
       "path": "charts/fabric/.helmignore",
-      "sha256": "fe5d7d67ba8cc4a538c1a8bd8eb36ec8f494e9bfba6c62e6e6e13e6444e57ee8",
+      "sha256": "5c023195db7faf159ab18ec0416e1002e71129d469bfb7f710754db8933a7577",
       "reviews": [
         "cloud-audit-chart-deep.json",
         "cloud-audit-product.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-chart-deep.json",
-        "cloud-audit-product.json"
+        "cloud-audit-chart-deep.json"
       ]
     },
     {
@@ -3717,14 +3716,13 @@
     },
     {
       "path": "charts/fabric/charts/otel-collector/.helmignore",
-      "sha256": "9a0b5691c213c20020cd0aebfd535ecfad67db46b4ffc0f423e167997f72954c",
+      "sha256": "98ddfe17be198bbd6b9a803567b920713a4ea8dc36a673c5ee9e3b19cd06ddab",
       "reviews": [
         "cloud-audit-chart-deep.json",
         "cloud-audit-product.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-chart-deep.json",
-        "cloud-audit-product.json"
+        "cloud-audit-chart-deep.json"
       ]
     },
     {
@@ -4049,14 +4047,13 @@
     },
     {
       "path": "charts/fabric/tests/test-package-boundary.sh",
-      "sha256": "8d10590d8e8e5c46906cd07993d07bd14714ce11eb50b22defb35cf5156f7857",
+      "sha256": "b4d9b37f1fa0059e38969cf72f071e9e368c5a2c878af74c60d73bdb22820067",
       "reviews": [
         "cloud-audit-chart-deep.json",
         "cloud-audit-product.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-chart-deep.json",
-        "cloud-audit-product.json"
+        "cloud-audit-chart-deep.json"
       ]
     },
     {
@@ -8361,14 +8358,15 @@
     },
     {
       "path": "scripts/tests/test_governed_node_e2e.py",
-      "sha256": "daac46677c7a0ce5cc90be9149ce5ebd2b6f82cca915bfdbb46f3bb9d1fb77a5",
+      "sha256": "5ab990283dc57cf43a517d8ca6dcdbbf63cc8f42bc29d8a262a1df49e609189a",
       "reviews": [
         "cloud-audit-codeql.json",
         "cloud-audit-product.json",
+        "cloud-audit-root.json",
         "cloud-audit-scripts-deep-b.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-scripts-deep-b.json"
+        "cloud-audit-root.json"
       ]
     },
     {
@@ -10693,7 +10691,8 @@
         "cloud-audit-typescript.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-root.json"
+        "cloud-audit-root.json",
+        "cloud-audit-typescript-tests-deep.json"
       ]
     },
     {

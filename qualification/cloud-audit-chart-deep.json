@@ -16,6 +16,12 @@
       "id": "C2",
       "status": "fixed",
       "summary": "Removed Helm default operator from schema-required minAvailable so explicit integer0 survives; default1 still comes from values.yaml. Added zero and percentage render regressions; execution awaits Helm CI."
+    },
+    {
+      "id": "C3",
+      "status": "fixed_pending_helm_ci",
+      "summary": "Exact275 CI revealed bare tests/ ignore rules pruned templates/tests/test-connection.yaml. Anchored root development-test exclusions in both charts and explicit umbrella vendored tests exclusion preserve hook loading without packaging development tests.",
+      "evidence": "Two root-anchor static cases failed before fix; three final static cases pass. Strengthened real helm package test requires hook and excludes parent/child development-test directories; local Helm still unavailable."
     }
   ],
   "verification": [
@@ -38,6 +44,10 @@
     {
       "method": "bash -n changed shell regressions; git diff --check charts/fabric",
       "result": "passed; newly added helm template assertions not executable locally because Helm unavailable"
+    },
+    {
+      "method": "C3 follow-up: pytest scripts/tests/test_helm_test_packaging.py; Ruff; bash -n package test; git diff --check",
+      "result": "3 tests passed; quality and syntax checks passed. Helm render/package execution remains pending CI after exact275 failure."
     }
   ],
   "limits": [
@@ -48,10 +58,10 @@
   "files": [
     {
       "path": "charts/fabric/.helmignore",
-      "sha256": "fe5d7d67ba8cc4a538c1a8bd8eb36ec8f494e9bfba6c62e6e6e13e6444e57ee8",
-      "bytes": 441,
+      "sha256": "5c023195db7faf159ab18ec0416e1002e71129d469bfb7f710754db8933a7577",
+      "bytes": 554,
       "method": "full_text_semantic_review",
-      "review": "Read every packaging exclusion; keeps vendored Collector while excluding historical sidecars and local tests/docs. Cross-checked package-boundary test.",
+      "review": "Read every packaging exclusion; keeps vendored Collector while excluding historical sidecars and local tests/docs. Cross-checked package-boundary test. C3 follow-up corrects earlier static packaging assumption: bare tests/ excluded runtime templates/tests too. Final anchored development-test exclusions reviewed; umbrella explicitly excludes vendored development tests.",
       "limits": [
         "Actual helm package archive not regenerated locally."
       ]
@@ -78,10 +88,10 @@
     },
     {
       "path": "charts/fabric/charts/otel-collector/.helmignore",
-      "sha256": "9a0b5691c213c20020cd0aebfd535ecfad67db46b4ffc0f423e167997f72954c",
-      "bytes": 136,
+      "sha256": "98ddfe17be198bbd6b9a803567b920713a4ea8dc36a673c5ee9e3b19cd06ddab",
+      "bytes": 219,
       "method": "full_text_semantic_review",
-      "review": "Read all dependency packaging exclusions, including test/CI tooling; chart template hook under templates/tests remains shipped.",
+      "review": "Read all dependency packaging exclusions, including test/CI tooling; chart template hook under templates/tests remains shipped. C3 follow-up corrects earlier static packaging assumption: bare tests/ excluded runtime templates/tests too. Final anchored development-test exclusions reviewed; umbrella explicitly excludes vendored development tests.",
       "limits": [
         "Packaging not re-executed locally."
       ]
@@ -365,10 +375,10 @@
     },
     {
       "path": "charts/fabric/tests/test-package-boundary.sh",
-      "sha256": "8d10590d8e8e5c46906cd07993d07bd14714ce11eb50b22defb35cf5156f7857",
-      "bytes": 1443,
+      "sha256": "b4d9b37f1fa0059e38969cf72f071e9e368c5a2c878af74c60d73bdb22820067",
+      "bytes": 1789,
       "method": "full_text_semantic_review",
-      "review": "Read package temp-directory lifecycle, archive listing/extraction, forbidden path/content checks and required Collector dependency check; bash -n passed.",
+      "review": "Read package temp-directory lifecycle, archive listing/extraction, forbidden path/content checks and required Collector dependency check; bash -n passed. Added actual archive assertions requiring Collector health hook and forbidding both parent and child development-test directories. Shell syntax passes; Helm execution pending CI.",
       "limits": [
         "No local packaging executed; checks are lexical forbidden-list coverage, not proof every possible unrelated runtime is excluded."
       ]
@@ -402,6 +412,16 @@
       "limits": [
         "Namespace.name is independent of Release.Namespace; differing values can create an unused namespace.",
         "Destination absent means debug stdout, not durable audit."
+      ]
+    },
+    {
+      "path": "scripts/tests/test_helm_test_packaging.py",
+      "sha256": "a50611e50482753aff5f082e10233d002da179e71da49c67287cbc7629fe3bdc",
+      "bytes": 1228,
+      "method": "full_text_semantic_review_and_regression_execution",
+      "review": "New three-case regression protects root-anchored ignore rules and explicit parent exclusion of vendored development tests; both initial root-anchor cases failed before fix, all three final cases pass.",
+      "limits": [
+        "Static guard is not Helm rendering or packaging proof; real archive test remains in chart CI."
       ]
     }
   ]

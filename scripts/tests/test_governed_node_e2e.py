@@ -28,12 +28,14 @@ environment-dependent by design.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import urllib.request
 import uuid
@@ -123,6 +125,58 @@ except Exception:
 """
 
 
+def _numeric_queue_owner(container: str, configured: str) -> str:
+    parts = configured.split(":")
+    if len(parts) != 2 or any(
+        re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*|[1-9][0-9]{0,9}", part) is None
+        for part in parts
+    ):
+        raise AssertionError(
+            "controlled Fabric Node requires explicit nonroot numeric UID:GID"
+        )
+    resolved = []
+    for part, filename, fields in zip(parts, ("passwd", "group"), (7, 4), strict=True):
+        if part.isdecimal():
+            resolved.append(part)
+            continue
+        copied = subprocess.run(
+            ["docker", "cp", f"{container}:/etc/{filename}", "-"],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        ).stdout
+        if len(copied) > 262144:
+            raise AssertionError("controlled Node identity archive exceeds bound")
+        with tarfile.open(fileobj=io.BytesIO(copied), mode="r:") as archive:
+            members = archive.getmembers()
+            if (
+                len(members) != 1
+                or not members[0].isfile()
+                or members[0].name != filename
+                or members[0].size > 65536
+            ):
+                raise AssertionError("controlled Node identity archive is invalid")
+            stream = archive.extractfile(members[0])
+            if stream is None:
+                raise AssertionError("controlled Node identity file missing")
+            with stream:
+                lines = stream.read(65537).decode("utf-8").splitlines()
+        matches = [line.split(":") for line in lines if line.split(":", 1)[0] == part]
+        if len(matches) != 1 or len(matches[0]) != fields:
+            raise AssertionError(
+                "controlled Node identity name is missing or ambiguous"
+            )
+        resolved.append(matches[0][2])
+    owner = ":".join(resolved)
+    if not re.fullmatch(r"[1-9][0-9]{0,9}:[1-9][0-9]{0,9}", owner) or any(
+        int(part) > 2**32 - 2 for part in resolved
+    ):
+        raise AssertionError(
+            "controlled Fabric Node requires explicit nonroot numeric UID:GID"
+        )
+    return owner
+
+
 def _assert_queue_private(marker: str) -> None:
     container = _compose("ps", "-q", "test-sink").stdout.strip()
     if not re.fullmatch(r"[a-f0-9]{12,64}", container):
@@ -137,6 +191,19 @@ def _assert_queue_private(marker: str) -> None:
     image_id = inspected.stdout.strip()
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", image_id):
         raise AssertionError("cannot identify immutable test sink image")
+    node = _compose("ps", "-q", "fabric-node").stdout.strip()
+    if not re.fullmatch(r"[a-f0-9]{12,64}", node):
+        raise AssertionError("cannot identify controlled Fabric Node container")
+    owner = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Config.User}}", node],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+    owner = _numeric_queue_owner(node, owner)
+    # Owner-only queue permissions remain intact. Dropped capabilities do not
+    # let the helper's default root identity bypass those permissions.
     result = subprocess.run(
         [
             "docker",
@@ -146,6 +213,8 @@ def _assert_queue_private(marker: str) -> None:
             "--network=none",
             "--read-only",
             "--cap-drop=ALL",
+            "--user",
+            owner,
             "-v",
             f"{QUEUE_VOLUME}:/q:ro",
             image_id,

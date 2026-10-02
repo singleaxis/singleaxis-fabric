@@ -177,18 +177,20 @@
     "local_semgrep_status": "Blocked before scan: semgrep.dev /c/auto rule retrieval returned proxy tunnel 403 Forbidden. No denied route bypass or gate weakening attempted."
   },
   "regression_file": {
-    "bytes": 9945,
+    "bytes": 11379,
     "contracts": [
       "Two permission-enforcement failures (raised and ineffective fchmod) abort before recovery or worker start.",
       "Configured spool symlink or symlink ancestor is rejected without modifying the outside target.",
       "Filesystem root and explicit parent traversal cannot reach a permission mutation.",
       "Isolated spawned process under umask 000 observes newly created directory modes immediately after mkdir and before fchmod: both 0700.",
-      "Nine TLS combinations: three adapters times trusted success, wrong CA and hostname mismatch. Independent local service records one request only for trusted success, and zero for rejected peers. Client certificates are observed for metadata and synthetic adapters."
+      "Nine TLS combinations: three adapters times trusted success, wrong CA and hostname mismatch. Independent local service records one request only for trusted success, and zero for rejected peers. Client certificates are observed for metadata and synthetic adapters.",
+      "Both fixture client contexts and server chain validation explicitly include VERIFY_X509_STRICT, including on Python 3.12. Fixture certificates have matching SKI/AKI, critical BasicConstraints/KeyUsage and role-specific leaf EKU; verification is not disabled."
     ],
     "fixture_limits": "Ephemeral locally generated synthetic certificates and loopback server; no external credentials/services. No claim about every TLS implementation, OS, key custody or production authorization policy.",
+    "line_count": 294,
     "new_cases": 16,
     "path": "sdk/python/tests/test_semgrep_security_boundaries.py",
-    "sha256": "19ad103056a2014f02ad1ca6be551a69a4622d6941bd31430d5dc9e6b4c47a68"
+    "sha256": "2dfde068f84fb6d570eaed035969ed5c3fd0ab048d32d771654448434d14c3bb"
   },
   "remaining_work": [
     "Parent reruns full Python, CI-pinned lint/types, rebuilt wheel and actual Collector reconstruction journey at final exact head.",
@@ -205,6 +207,54 @@
   },
   "schema": "fabric.cloud-audit-semgrep-current/v1",
   "scope": "Five reported Semgrep rule/location pairs only; one actual spool setup defect repaired, four contextual audit queries documented without suppression or automatic acceptance.",
+  "strict_tls_fixture_followup": {
+    "codeql_fixture_finding": {
+      "assessment": [
+        "The reported call wraps an ephemeral ThreadingHTTPServer bound to 127.0.0.1 with an explicit ssl.PROTOCOL_TLS_SERVER context and synthetic local certificates.",
+        "CERT_OPTIONAL on this server verifies a client certificate if presented but intentionally permits the business adapter case without a client certificate. The other two adapter cases assert a verified client certificate was observed by the server.",
+        "All three client paths require server chain and hostname verification; wrong-CA and wrong-hostname tests assert the server received zero HTTP requests.",
+        "The local runtime PROTOCOL_TLS_SERVER minimum_version is TLSv1_2. No unverified client context, obsolete TLS version selection or verification-disable change was introduced."
+      ],
+      "current_line": 232,
+      "limits": "Fixture server configuration is not a production mutual-authentication policy or blanket security approval. Hosted CodeQL results and security-owner adjudication remain authoritative.",
+      "parent_reported_security_severity": "7.5",
+      "path": "sdk/python/tests/test_semgrep_security_boundaries.py",
+      "reported_line_at_diagnostic_revision": 199,
+      "rule_id": "py/insecure-protocol",
+      "status": "open; contextual review only, no suppression or automatic acceptance"
+    },
+    "diagnostic_revision": "2757a117a17fa982a057ccca6be4511b1b422bd2",
+    "repair": [
+      "Add SubjectKeyIdentifier and AuthorityKeyIdentifier to the self-signed CA and both end-entity certificates.",
+      "Use critical BasicConstraints with CA path length zero and critical KeyUsage permitting signing/CRL signing only for the CA and digital signature/key encipherment for RSA leaves.",
+      "Use SERVER_AUTH ExtendedKeyUsage for the server leaf and CLIENT_AUTH for the client leaf; retain the explicit 127.0.0.1 server SAN.",
+      "Set VERIFY_X509_STRICT in fixture-created default client contexts and on the fixture server so older supported Python runtimes exercise strict issuer and leaf validation too."
+    ],
+    "reproduction": "On local Python 3.12.14/OpenSSL 3.5.8, enabled VERIFY_X509_STRICT in the test fixture and reproduced all three positive-case failures before fixing certificate generation. The direct and metadata errors reported Missing Authority Key Identifier; synthetic export preserved its sanitized transport error.",
+    "scope": "Test fixture certificates and explicit strict regression coverage only; SDK runtime TLS source and security gates unchanged.",
+    "trigger": "Parent reported Python 3.13 CI failure in the three trusted TLS cases: Missing Authority Key Identifier; Python 3.11/3.12 CI had passed without the stricter default.",
+    "validation": {
+      "cwd": "sdk/python",
+      "diff_check": "passed",
+      "limit": "Local strict-mode emulation on Python 3.12; exact-head Python 3.13 result remains owned by parent/CI.",
+      "logs": {
+        "after": {
+          "last_line": "16 passed in 6.69s",
+          "local_path": "/workspace/fabric-qualification/tls-strict-after-fix.log",
+          "sha256": "335c279c5a4ab95e86c4681c38feb4d62998d8214705665a483f290e482dfb93"
+        },
+        "before": {
+          "last_line": "3 failed, 13 deselected in 2.28s",
+          "local_path": "/workspace/fabric-qualification/tls-strict-before-fix.log",
+          "sha256": "bbe327e9c06ebe9bc81db62a824bb81f5e1f86175d50bf8d260d300193eebd78"
+        }
+      },
+      "mypy": "CI quality venv mypy passed for the changed test file.",
+      "ruff": "CI-pinned Ruff 0.13.0 check and format --check passed for the changed test file.",
+      "test_command": "/workspace/fabric-venv/bin/python -m pytest --no-cov -q tests/test_semgrep_security_boundaries.py",
+      "test_result": "16 passed in 6.69s"
+    }
+  },
   "verification": [
     {
       "command": "/workspace/fabric-venv/bin/python -m pytest --no-cov -q tests/test_semgrep_security_boundaries.py tests/test_governed_content.py tests/test_content_store.py tests/test_http_dispatch.py tests/test_metadata_delivery.py tests/test_synthetic_otlp.py",
