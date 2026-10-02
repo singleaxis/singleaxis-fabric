@@ -35,6 +35,11 @@ from fabric.enterprise import PolicyCaptureSession
 from fabric.governed_store import GovernedLocalContentStore, LocalCapabilityAuthority
 from fabric.source_spool import SyntheticSourceSpool
 
+if not __debug__:
+    raise RuntimeError(
+        "qualification example requires assertions; optimized Python is unsupported"
+    )
+
 CANARY = b"SYNTHETIC_ORCHESTRATION_SECRET"
 
 
@@ -437,10 +442,12 @@ async def orchestrate(
             attempt_id="try-1",
         )
         if inject_gaps:
-            assert next(stream) == b"first"
+            first = next(stream)
+            assert first == b"first"
             stream.close()
         else:
-            assert list(stream) == [b"first", b"unconsumed"]
+            chunks = list(stream)
+            assert chunks == [b"first", b"unconsumed"]
         return b"|".join(results)
 
     result = await recorder.acall(
@@ -539,10 +546,10 @@ def run(
             agent_id="agent",
             tracer=provider.get_tracer("denied-store"),
         )
-        assert (
-            denied_recorder.call(b"input", lambda _: b"application-still-works")
-            == b"application-still-works"
+        denied_result = denied_recorder.call(
+            b"input", lambda _: b"application-still-works"
         )
+        assert denied_result == b"application-still-works"
         denied_snapshot = denied_recorder.snapshot()
         assert all(row["status"] == "failed" for row in denied_snapshot["events"])
         denied_writer.close()

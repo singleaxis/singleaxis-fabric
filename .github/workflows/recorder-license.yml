@@ -134,6 +134,8 @@ jobs:
             --npm 'sdk/typescript=raw/npm-typescript.json' \
             --go 'fabric-node=raw/go-fabric-node.csv' \
             --go 'fabricctl=raw/go-fabricctl.csv' \
+            --go 'fabric-gate=raw/go-fabric-gate.csv' \
+            --go 'host-emitter=raw/go-host-emitter.csv' \
             --ignore go.opentelemetry.io/collector/cmd/builder \
             --ignore @singleaxis/fabric \
             --ignore singleaxis-fabric \

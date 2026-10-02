@@ -1,0 +1,366 @@
+{
+  "schema_version": "fabric.capture-level-qualification/v1",
+  "scope": "Declared standalone CAPTURE -> PROTECT -> DELIVER scenarios; documentation map, not executed campaign",
+  "production_verdict": "NO_GO",
+  "status_semantics": {
+    "unexecuted": "No scenario execution is credited by this map; implementation references are not run evidence.",
+    "observed_result": "Populate only from exact-artifact per-run evidence, never neighboring tests."
+  },
+  "scenarios": [
+    {
+      "level": "C0",
+      "scenario": "agent_root",
+      "expected_action": "Run agent(input) to output; raise, cancel and return unsupported serialization.",
+      "actual_boundary": "Explicit Python CallRecorder call/acall wrapper, preserving application outcomes.",
+      "identity_causality": "Run/source/call identity and parent call; root return is not producer closure.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent caller input/result and exception/cancellation observations.",
+      "observed_result": null,
+      "known_omissions": [
+        "Unwrapped root execution",
+        "Producer closure",
+        "Arbitrary object serialization"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/custom-agent-recording.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_recorder.py::test_exception_identity_retry_unsupported_and_absent_context",
+          "sdk/python/tests/test_call_recorder.py::test_async_parallel_agent_contexts_cancellation_and_streams"
+        ],
+        "tested_claim": "Explicit callable preserves result/exception/cancellation; unsupported serialization is marked.",
+        "not_implemented_scenarios": [
+          "Arbitrary agent framework root interception"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C1",
+      "scenario": "model_attempts",
+      "expected_action": "Exercise distinct physical retries, complete and interrupted streams.",
+      "actual_boundary": "Explicit final dispatch with bytes and attempt identity; stream chunks only when observed.",
+      "identity_causality": "Operation versus physical attempt identity; chunk sequence and terminal state.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Native provider request ledger and original byte feed.",
+      "observed_result": null,
+      "known_omissions": [
+        "Hidden SDK retries",
+        "Hidden provider context",
+        "Unobserved interruption"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "specs/046-qualified-call-run-verification.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_recorder.py::test_sync_stream_pull_order_close_and_empty",
+          "sdk/python/tests/test_call_recorder.py::test_stream_error_and_unconsumed_close",
+          "sdk/python/tests/test_byte_boundary_adapter.py::test_exact_model_and_tool_bytes_retries_and_empty_context"
+        ],
+        "tested_claim": "Explicit physical attempts and stream closure with local delegates.",
+        "not_implemented_scenarios": [
+          "Live model provider hidden retries"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C2",
+      "scenario": "tool_permissions",
+      "expected_action": "Record tool args/results/errors and existing permission attempt, grant and exercise.",
+      "actual_boundary": "Explicit tool wrapper plus externally supplied permission observations.",
+      "identity_causality": "Call/attempt and separately attributed permission decision identity.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Tool result/error witness and existing permission authority logs.",
+      "observed_result": null,
+      "known_omissions": [
+        "No permission enforcement",
+        "Grant does not prove exercised action"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/capture-control-compatibility.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_recorder.py::test_nested_exact_bytes_linked_to_call_and_safe_trace",
+          "sdk/python/tests/test_control_evidence.py::test_external_claim_is_never_action_authorization"
+        ],
+        "tested_claim": "Nested tool bytes/causal links and external observation cannot authorize an action.",
+        "not_implemented_scenarios": [
+          "Live permission authority attempted/granted/exercised reconciliation"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C3",
+      "scenario": "remote_effects",
+      "expected_action": "Distinguish requested, acknowledged, committed and unknown effects.",
+      "actual_boundary": "Caller request/response and optional independently read destination state.",
+      "identity_causality": "Stable effect/attempt identity; lost acknowledgement remains ambiguous.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Authoritative service or database readback independent of recorder.",
+      "observed_result": null,
+      "known_omissions": [
+        "Tool success alone does not prove commit",
+        "Remote effects outside declared witness"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/sdk-support-matrix.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_reconcile.py::test_sqlite_independent_committed_state_not_tool_success"
+        ],
+        "tested_claim": "Separate read-only SQLite readback rejects claimed-but-rolled-back write.",
+        "not_implemented_scenarios": [
+          "Remote service requested/acknowledged/committed/unknown witness"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C4",
+      "scenario": "retrieval_memory",
+      "expected_action": "Capture actual retrieval/memory/context bytes and supplied provenance.",
+      "actual_boundary": "Explicit permitted content roles and application observations.",
+      "identity_causality": "Call/context source links supplied by producer; do not infer missing provenance.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent retrieval/memory result and actual context supplied to dispatch.",
+      "observed_result": null,
+      "known_omissions": [
+        "Hidden model context",
+        "Implicit memory access",
+        "Provenance not supplied"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/capturing-interactions.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_governed_content.py::test_retrieval_memory_side_effect_context_capture"
+        ],
+        "tested_claim": "Explicit supplied retrieval/memory/context roles persist under configured content policy.",
+        "not_implemented_scenarios": [
+          "Independent live retrieval provenance",
+          "Hidden provider context"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C5",
+      "scenario": "delegation",
+      "expected_action": "Run parallel/delegated/background producers including missing and late children.",
+      "actual_boundary": "Context propagation plus optional authenticated distributed closure evidence.",
+      "identity_causality": "Registered sources, contiguous epochs, expected child joins and parent anchors.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Separate coordinator plan, lifecycle witness and joins.",
+      "observed_result": null,
+      "known_omissions": [
+        "Root return alone",
+        "Undeclared workers",
+        "Shared-host witness independence"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/enterprise-distributed-closure.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_distributed_closure.py::test_detached_unjoined_child_is_not_finalized_by_parent_completion",
+          "sdk/python/tests/test_distributed_closure.py::test_child_declared_after_parent_closure_invalidates_old_proof",
+          "sdk/python/tests/test_distributed_closure.py::test_reference_campaign_runs_real_source_process_restart"
+        ],
+        "tested_claim": "Missing/late joins reject closure; local source process restart campaign.",
+        "not_implemented_scenarios": [
+          "Remote scheduler and independent production witness"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C6",
+      "scenario": "shell",
+      "expected_action": "Exercise subprocess stdin/stdout/stderr, descendants and detached children; PTY only when supported.",
+      "actual_boundary": "BoundedTerminalAdapter explicit child; optional scoped host metadata.",
+      "identity_causality": "Explicit child and parent links; unknown descendants stay unknown.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent process lifecycle and terminal byte observer.",
+      "observed_result": null,
+      "known_omissions": [
+        "General PTY unsupported",
+        "Arbitrary detached descendants unqualified",
+        "No universal shell session capture"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/sdk-support-matrix.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_synthetic_evidence.py::test_terminal_and_artifact_exact_binary_bytes_and_empty_stream",
+          "sdk/python/tests/test_synthetic_evidence.py::test_terminal_overflow_and_cancel_are_explicit_and_do_not_change_action"
+        ],
+        "tested_claim": "Bounded local terminal bytes, overflow and cancellation.",
+        "not_implemented_scenarios": [
+          "General PTY",
+          "Arbitrary shell descendants",
+          "Detached child lifecycle capture"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C7",
+      "scenario": "files_stores",
+      "expected_action": "Observe explicit files/store effects including partial writes and renames.",
+      "actual_boundary": "Allowlisted artifact observation and selected state readback.",
+      "identity_causality": "Named object/version/effect identity and before/after evidence where supplied.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Fresh authoritative file/database content and transaction observation.",
+      "observed_result": null,
+      "known_omissions": [
+        "Arbitrary filesystem coverage",
+        "Unobserved partial writes/renames",
+        "Readback alone not full history"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/agent-activity-coverage.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_synthetic_evidence.py::test_artifact_modification_and_privacy_canary_stay_in_content_store",
+          "sdk/python/tests/test_governed_store.py::test_failed_object_replace_has_intent_no_completed_claim"
+        ],
+        "tested_claim": "Explicit artifact modification and failed atomic object replacement cannot claim completed mutation.",
+        "not_implemented_scenarios": [
+          "Arbitrary partial writes and renames",
+          "Uninstrumented stores"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C8",
+      "scenario": "network",
+      "expected_action": "Compare connection attempts with actual application requests and encrypted traffic.",
+      "actual_boundary": "Optional host connection metadata plus explicit application boundary capture.",
+      "identity_causality": "Host process/connection versus application attempt identities need actual correlation.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent application/service ledger and scoped network witness.",
+      "observed_result": null,
+      "known_omissions": [
+        "TLS/SSH plaintext unavailable to host metadata",
+        "Connection success not semantic effect"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/sdk-support-matrix.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [],
+        "tested_claim": "No scoped live host/TLS network scenario is implemented in this runner.",
+        "not_implemented_scenarios": [
+          "Host connection/application correlation",
+          "TLS/SSH semantics",
+          "Live network witness"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C9",
+      "scenario": "sandbox_restart",
+      "expected_action": "Restart containers/sandboxes and source epochs; inject collector loss and ephemeral storage loss.",
+      "actual_boundary": "Source journal/spool recovery and explicit loss counters; target host/container tests separate.",
+      "identity_causality": "Source/epoch/sequence continuity and terminal high water.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent lifecycle supervisor and pre-established operation inventory.",
+      "observed_result": null,
+      "known_omissions": [
+        "Pre-fsync gap",
+        "Ephemeral volume deletion",
+        "Native kernel/source loss unqualified"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "specs/038-capture-boundary-and-loss-qualification.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_distributed_closure.py::test_unknown_prefsync_source_truth_cannot_disappear_at_restart",
+          "sdk/python/tests/test_distributed_closure.py::test_recovered_source_epochs_complete_only_with_all_independent_truth"
+        ],
+        "tested_claim": "Offline epoch/loss verification with fixture truth; no live container qualification.",
+        "not_implemented_scenarios": [
+          "Container/sandbox lifecycle",
+          "Collector process loss",
+          "Ephemeral storage deletion"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C10",
+      "scenario": "remote_workers",
+      "expected_action": "Exercise remote workers, duplicates, partitions and independently read results.",
+      "actual_boundary": "Metadata retry/ack ledger and optional distributed closure; destination-specific readback.",
+      "identity_causality": "Stable record identity, exact duplicate reconciliation, worker epoch joins.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent worker/service authority and fresh destination readback.",
+      "observed_result": null,
+      "known_omissions": [
+        "Local reference is not remote qualification",
+        "Customer IAM/KMS/retention",
+        "Unobserved reachable routes"
+      ],
+      "status": "unexecuted",
+      "evidence": [],
+      "source_references": [
+        "docs/enterprise-distributed-closure.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_metadata_delivery.py::test_large_durable_inventory_http_loss_retry_and_both_process_restarts",
+          "sdk/python/tests/test_distributed_closure.py::test_duplicate_transport_delivery_idempotent_but_epoch_equivocation_fails"
+        ],
+        "tested_claim": "Local HTTP ACK-loss/retry/restart and duplicate-versus-conflict closure.",
+        "not_implemented_scenarios": [
+          "Remote workers and real partitions",
+          "Cloud destination independent durability"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    }
+  ]
+}

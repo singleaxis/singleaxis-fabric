@@ -877,8 +877,10 @@ loss/sampling, independent-feed and durable-receipt structure, and false
 completeness verdicts. The Python and TypeScript SDKs now locally test an
 explicit opt-in content-v2 **byte** recorder: it persists caller-supplied
 bytes per observation in a tenant-bound local or S3-compatible store. Its
-bounded queue is process-memory only; it does not automatically intercept
-model/tool/terminal calls, produce run manifests or obtain durable
+default bounded queue is process-memory only; Python additionally provides an
+opt-in encrypted durable byte spool (see [SDK support matrix](sdk-support-matrix.md)).
+Neither path automatically intercepts
+model/tool/terminal calls, produces run manifests or obtains durable
 destination receipts. A separate offline synthetic adapter projects settled
 metadata to AEEP OTLP logs for a controlled loopback Node; it is not an
 automatic production publisher. The schemas are not an implemented

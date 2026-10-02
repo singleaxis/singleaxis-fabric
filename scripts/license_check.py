@@ -465,10 +465,9 @@ def write_markdown(
     lines.append(f"Generated: {now}")
     lines.append("")
     lines.append(
-        "This is a procurement-grade inventory of every third-party "
-        "dependency bundled or pulled by SingleAxis Fabric across all four "
-        "dependency surfaces (Python SDK, Python components/sidecars, the Go "
-        "OpenTelemetry collector, and the TypeScript SDK), together with the "
+        "This report inventories the third-party dependencies found in the "
+        "supplied recorder scans (Python SDK, TypeScript SDK, Fabric Node, "
+        "recorder CLI, image entrypoint gate, and host emitter), together with the "
         "license-compatibility disposition under the policy in "
         "[`.github/license-allowlist.txt`](../../.github/license-allowlist.txt)."
     )

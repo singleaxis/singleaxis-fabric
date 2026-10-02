@@ -1,0 +1,6264 @@
+{
+  "schema_version": "fabric.cloud-audit-index/v1",
+  "published_source": "acf7fbf8d2950331559aadc67c4576375dc0ca57",
+  "original_paths": 1035,
+  "paths_with_declared_review_methods": 1035,
+  "every_file_deep_review_complete": false,
+  "review_limits": [
+    "A review reference can mean targeted semantic inspection, structural parsing, hash/provenance verification or lexical review. Consult each ledger; methods are not interchangeable.",
+    "The portable desktop review ledger was not restored, so its560 reviewed/475 deeper-review counts cannot be reconciled.",
+    "Python remaining-path ledger explicitly retains48 paths at structural-only depth. Additional targeted-only areas are stated in other ledgers.",
+    "No security acceptance, compliance certification or production approval follows from full inventory coverage."
+  ],
+  "ledgers": [
+    "cloud-audit-benchmarks.json",
+    "cloud-audit-codeql.json",
+    "cloud-audit-host.json",
+    "cloud-audit-product.json",
+    "cloud-audit-python-tests.json",
+    "cloud-audit-root.json",
+    "cloud-audit-security.json",
+    "cloud-audit-typescript.json"
+  ],
+  "files": [
+    {
+      "path": ".commitlintrc.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".editorconfig",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/CODEOWNERS",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/implementation_slice.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/spec_proposal.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/dependabot.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/license-allowlist.txt",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/workflows/codeql.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/workflows/e2e-production-profile.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/workflows/e2e.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/workflows/recorder-ci.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/workflows/recorder-license.yml",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": ".github/workflows/recorder-security.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".gitignore",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".gitleaks.toml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".gitleaksignore",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".markdownlint-cli2.jsonc",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": ".pre-commit-config.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "AGENTS.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "CHANGELOG.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "GOVERNANCE.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "LICENSE",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "MAINTAINERS.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "NOTICE",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "SECURITY.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "SUPPORT.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "VERSION",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/README.md",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/RESULTS.md",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/adapters.py",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/PUBLICATION.md",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/artifact-sha256.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/metrics.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/omitted-artifacts.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/prior-runs/frozen-final-metrics.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/prior-runs/release-final-metrics.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/publication-transformations.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-crash-before-flush-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-crash-before-flush-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-crash-before-flush-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-export-first-failure-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-export-first-failure-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-export-first-failure-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-export-first-failure-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-export-first-failure-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-1/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-1/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-1/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-1/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-1/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-10/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-10/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-10/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-10/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-10/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-2/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-2/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-2/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-2/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-2/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-3/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-3/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-3/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-3/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-3/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-4/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-4/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-4/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-4/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-4/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-5/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-5/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-5/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-5/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-5/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-6/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-6/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-6/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-6/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-6/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-7/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-7/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-7/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-7/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-7/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-8/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-8/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-8/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-8/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-8/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-9/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-9/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-9/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-9/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-auto-none-9/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-crash-before-flush-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-crash-before-flush-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-crash-before-flush-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-export-first-failure-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-export-first-failure-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-export-first-failure-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-export-first-failure-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-export-first-failure-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-1/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-1/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-1/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-1/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-1/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-10/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-10/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-10/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-10/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-10/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-2/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-2/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-2/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-2/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-2/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-3/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-3/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-3/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-3/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-3/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-4/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-4/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-4/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-4/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-4/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-5/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-5/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-5/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-5/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-5/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-6/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-6/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-6/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-6/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-6/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-7/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-7/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-7/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-7/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-7/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-8/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-8/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-8/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-8/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-8/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-9/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-9/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-9/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-9/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/fabric-explicit-none-9/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/metrics.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-1/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-1/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-1/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-1/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-10/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-10/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-10/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-10/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-2/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-2/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-2/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-2/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-3/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-3/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-3/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-3/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-4/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-4/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-4/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-4/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-5/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-5/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-5/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-5/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-6/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-6/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-6/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-6/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-7/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-7/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-7/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-7/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-8/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-8/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-8/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-8/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-9/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-9/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-9/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/none-none-9/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-crash-before-flush-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-crash-before-flush-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-crash-before-flush-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-export-first-failure-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-export-first-failure-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-export-first-failure-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-export-first-failure-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-export-first-failure-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-1/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-1/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-1/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-1/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-1/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-10/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-10/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-10/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-10/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-10/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-2/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-2/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-2/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-2/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-2/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-3/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-3/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-3/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-3/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-3/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-4/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-4/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-4/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-4/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-4/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-5/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-5/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-5/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-5/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-5/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-6/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-6/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-6/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-6/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-6/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-7/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-7/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-7/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-7/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-7/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-8/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-8/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-8/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-8/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-8/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-9/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-9/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-9/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-9/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/openinference-auto-none-9/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-crash-before-flush-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-crash-before-flush-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-crash-before-flush-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-export-first-failure-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-export-first-failure-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-export-first-failure-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-export-first-failure-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-export-first-failure-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-0/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-0/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-0/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-0/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-0/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-1/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-1/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-1/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-1/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-1/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-10/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-10/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-10/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-10/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-10/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-2/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-2/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-2/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-2/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-2/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-3/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-3/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-3/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-3/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-3/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-4/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-4/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-4/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-4/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-4/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-5/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-5/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-5/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-5/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-5/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-6/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-6/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-6/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-6/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-6/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-7/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-7/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-7/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-7/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-7/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-8/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-8/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-8/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-8/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-8/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-9/artifact.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-9/bypass.bin",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-9/exported.jsonl",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-9/result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/raw-final/otel-explicit-none-9/truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/fabric-auto-result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/fabric-auto-truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/fabric-explicit-result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/fabric-explicit-truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/fabric-managed-result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/none-result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/none-truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/openinference-auto-result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/openinference-auto-truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/openinference-redacted-result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/otel-explicit-result.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/otel-explicit-truth.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/evidence/representative/protected-provenance.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/exception_redaction.py",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/integration-cost.json",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/integration_cost.py",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/requirements.lock.txt",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/run.py",
+      "reviews": [
+        "cloud-audit-benchmarks.json",
+        "cloud-audit-codeql.json"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/test_benchmark.py",
+      "reviews": [
+        "cloud-audit-benchmarks.json"
+      ]
+    },
+    {
+      "path": "charts/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/.helmignore",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/Chart.lock",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/Chart.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/.helmignore",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/Chart.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/NOTES.txt",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/_helpers.tpl",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/configmap.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/deployment.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/networkpolicy.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/poddisruptionbudget.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/service.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/serviceaccount.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/tests/test-connection.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-durable-delivery.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-evidence-source-binding.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-ingress-egress-security.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-recorder-boundary.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/values.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/values.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/profiles/shadow-dev.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/profiles/shadow-production.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/NOTES.txt",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/_helpers.tpl",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/namespace.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/networkpolicy.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/fixtures/production-assertions.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/invalid-values/umbrella-toggle-type.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/invalid-values/umbrella-unknown-key.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/schema-validation.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/test-package-boundary.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/test-values-schema.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/values.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "charts/fabric/values.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "components/README.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/.gitignore",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/Dockerfile",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/README.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf/emit.bpf.c",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf/gen.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf/vmlinux.h",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf_stub.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/cgroup_linux.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/cgroup_other.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/dedupe.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/e2e-emitter.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/emitter.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/emitter_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/go.mod",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/go.sum",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/main.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/otlp.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/spool.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/host-emitter/spool_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/.dockerignore",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/Dockerfile",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/Makefile",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/README.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/examples/config.yaml",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/evidence_binding_test.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/gate.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/gate_test.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/go.mod",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/go.sum",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/main.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/supervise.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/ocb-config.yaml",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/allowlist.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/call_evidence_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/config.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/doc.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/factory.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/factory_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/go.mod",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/go.sum",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/processor.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/processor_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/source_binding_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/traces_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/README.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/assemble.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/assemble_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/config.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/dedupe.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_logfile.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_platform_linux.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_platform_other.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_state.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/errno.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/factory.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/go.mod",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/go.sum",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/logfile.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_linux.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_other.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/parse.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/receiver.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/translate.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/tests/qualify-distribution-config.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/tests/test-recorder-manifest.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/README.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/bearertokenauth-empty-tokens.patch",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/bearertokenauth_empty_tokens_test.go",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/build-patched-bearertokenauth.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/bare_decision.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/checkpoint.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/content_ref_stamped.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/delegation.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/escalation.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/eval_record.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/execution.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/file_access.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/guardrail_block.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/guardrail_redaction.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/hook.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/interaction.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/interaction_deviation.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/interaction_tagged.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/llm_call.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/llm_call_rich.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/mcp_inventory.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/memory_erase.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/memory_invalidate.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/memory_read_write.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/policy_allow.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/policy_deny.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/policy_escalate.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/policy_fail_closed.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/policy_redact.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/policy_warn.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/queue_judge.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/replay_metadata.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/retrieval.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/side_effect.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/side_effect_parent_tool_call.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/skill.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/step_retry.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/tool_authorization_allow.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/tool_authorization_deny.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/tool_call.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/tool_call_error.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/goldens/workflow_execution.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v1/schema/fabric-decision-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/MAPPING.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/invalid/duplicate-event-id.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/invalid/self-causal-reference.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/invalid/source-order-regression.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/schema/activity-sequence-v2.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/activity/v2/valid/shadow-execution.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/fixtures/invalid/auth-default-unsupported.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/fixtures/invalid/ebpf-decision-overclaim.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/fixtures/invalid/raw-default-inconsistent.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/fixtures/invalid/receiver-runtime-control.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/fixtures/valid/framework-adapter.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/fixtures/valid/gateway-proxy.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/fixtures/valid/vendor-receiver.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifests/auditd-host-connector.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifests/collector-otlp-receiver.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifests/ebpf-host-emitter.json",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifests/python-byte-boundary.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifests/python-sdk.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifests/typescript-capture-sdk.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/schema/connector-capability-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/fixtures/bytes/ascii.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/fixtures/bytes/empty-array.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/fixtures/bytes/empty-object.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/fixtures/bytes/empty-string.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/fixtures/bytes/multiline.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/fixtures/bytes/nested-json.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/fixtures/bytes/unicode.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/invalid/content-object-truncated-no-length.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/invalid/transcript-manifest-completeness-mismatch.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/invalid/transcript-manifest-descriptor-status-mismatch.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/invalid/transcript-manifest-missing-descriptor.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/invalid/transcript-manifest-sequence-gap.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/invalid/transcript-manifest-stray-descriptor.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/schema/content-object-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/schema/transcript-export-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/schema/transcript-manifest-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/valid/content-object-model-request.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/valid/transcript-export-complete.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/valid/transcript-manifest-complete.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v1/valid/transcript-manifest-incomplete.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/fixtures/bytes/binary-four-bytes.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/fixtures/bytes/binary-terminal-five-bytes.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/invalid/artifact-credential-ref.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/invalid/artifact-false-exact.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/schema/content-object-v2.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/valid/artifact-after.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/content/v2/valid/caller-terminal-chunk.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/delivery/v1/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/delivery/v1/invalid/collapsed-delivery-stage.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/delivery/v1/invalid/non-destination-persistence-proof.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/delivery/v1/invalid/privacy-batch-mismatch.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/delivery/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/delivery/v1/schema/delivery-evidence-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/delivery/v1/valid/audit-delivery.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/deployment-policy/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/deployment-policy/v1/schema/deployment-policy-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/invalid/event-cross-tenant-ref.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/invalid/event-raw-body.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/schema/evidence-event-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/schema/run-manifest-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/schema/source-capability-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/valid/artifact-event.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/valid/complete-run.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/valid/sandbox-capability.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/valid/start-event.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/evidence/v1/valid/terminal-event.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/privacy/v1/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/privacy/v1/invalid/prohibited-content-export-allowed.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/privacy/v1/invalid/raw-content-claim.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/privacy/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/privacy/v1/schema/export-privacy-assertion-v1.schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/privacy/v1/valid/metadata-only-assertion.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/recorder/v1/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/recorder/v1/example.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/recorder/v1/invalid/credential-shaped-reference.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/recorder/v1/invalid/recorder-id-mismatch.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/recorder/v1/manifest.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "contracts/recorder/v1/schema.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/auditd/README.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "deploy/auditd/collector-e2e.yaml",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "deploy/auditd/collector-host-monitor-e2e-netlink.yaml",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "deploy/auditd/e2e-host-monitor.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "deploy/auditd/fabric.rules",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/.env.example",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/Makefile",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/collector-config/collector-host-monitor.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/collector-config/collector-production.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/collector-config/collector.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/docker-compose.production.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/docker-compose.yml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/fixtures/decision-summary.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/fixtures/otlp-trace-service.proto",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/preflight-prod.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/qualify.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/sink/otlp_sink.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/tls/.gitignore",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/compose/verify-prod.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "deploy/kubernetes/host-emitter-daemonset.yaml",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "docs/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/agent-activity-coverage.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/agent-developer-best-practices.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/api-stability.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/architecture.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/auditor-checklist.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/building-fabric.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/capture-control-compatibility.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/capturing-interactions.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/codeql-capture-triage.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/custom-agent-recording-privacy.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/custom-agent-recording.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/deployment.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/enterprise-distributed-closure.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/enterprise-preflight.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/enterprise-readiness.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/enterprise-reference-validation.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/enterprise-release-traceability.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/enterprise-testing-quickstart.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/evidence-attestation-verification.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/exporting-to-your-observability-backend.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/genai-semantic-conventions.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/governed-content-gap-assessment.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/governed-content.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/governed-local-storage.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/how-fabric-fits-in-your-agent-stack.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/install.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/integration-models.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/licenses/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/loom-walkthrough.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/operations/dr.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/oss-commercial-boundary.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/protected-byte-spool.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/python-auto-capture-privacy.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/qualified-call-run-testing.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/quickstart.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/recorder-v1-qualification-status.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/regulatory-profiles.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/sdk-support-matrix.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/security-history-triage.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/specs/enterprise-capture-build.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/typescript-parity-backlog.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "docs/verify-release.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/.gitignore",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/README.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/agent.py",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/audit_shim.py",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/collect-audit-linux.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/collector.demo.yaml",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/data/deploy.log",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/data/metrics.json",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/data/runbook.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/reconstruct.py",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/run.sh",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/sink.py",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/viewer/index.html",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "examples/e2e-smoke/flow.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-orchestration/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-orchestration/run.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-reference/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-reference/closure_campaign.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-reference/integrate.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-reference/policy.integration.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-reference/processes.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise-reference/run.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise/policy.local.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/enterprise/scope.local.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/governed-content/.gitignore",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/governed-content/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/governed-content/capture.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/governed-content/evaluate.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/harness-smoke/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/harness-smoke/pyproject.toml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/harness-smoke/smoke.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/kind-quickstart/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/kind-quickstart/agent.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/kind-quickstart/down.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/kind-quickstart/up.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/offline-transcript/.gitignore",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/offline-transcript/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/offline-transcript/transcript.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/pyproject.toml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/src/fabric_reference_agent/__init__.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/src/fabric_reference_agent/__main__.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/src/fabric_reference_agent/agent.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/tests/__init__.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/tests/conftest.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/tests/test_agent.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/tests/test_recorder_e2e.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "examples/reference-agent/uv.lock",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/local-go-simulation/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/local-go-simulation/observed-run-20260928.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/local-go-simulation/sink-ingress-policy.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/production-go/decision-packet.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/sol-local-stage/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/sol-local-stage/local-results.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/control-coverage-matrix.v1.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/end-to-end-agent-pilot-plan.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/kind-production-sink-deployment.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/kind-production-sink-pvc.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/kind-production-sink-service.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/kind-production-values.yaml",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/local-artifact-ledger.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/local-pilot-discrepancy-report.v1.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/local-pilot-report.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/production-profile-kind-plan.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "qualification/synthetic-slice/scope.v1.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/check_changelog_keep_alive.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/contracts/__init__.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/contracts/validate_connector_contract.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/contracts/validate_content_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/contracts/validate_data_plane_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/contracts/validate_evidence_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/contracts/validate_recorder_contract.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/license_check.py",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "scripts/license_scan.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/capture_measurements.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/check_host_emitter_manifest.py",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/check_secret_scan_baseline.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/check_source_binding.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/enterprise_preflight.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/pin_kind_node_image.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/project_sol_stage_to_fabric.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_client_byte_adapter_smoke.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_custom_agent_node_pilot.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_custom_agent_smoke.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_enterprise_local.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_local_go_simulation.sh",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_qualified_call_pilot.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_sol_local_stage.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_synthetic_agent_pilot.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/summarize_local_go_simulation.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/synthetic_agent_tool.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/verify_sol_sink_readback.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/qualification/verify_synthetic_sink_readback.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/release/__init__.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/release/package_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/release/qualify_release.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/release/release-policy.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/release/verify_workflow_runs.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/_governed_flow_driver.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/fixtures/forbidden_components.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/fixtures/release_identity_cases.json",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_capture_measurements.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_check_changelog_keep_alive.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_compose_security_bounds.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_connector_contract.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_content_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_custom_agent_node_pilot.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_data_plane_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_enterprise_deployment.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_enterprise_examples.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_enterprise_integration_example.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_evidence_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_host_emitter_manifest.py",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_host_sensor_security_gates.py",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_local_go_simulation.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_npm_release_workflow.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_orchestration_demo_safety.py",
+      "reviews": [
+        "cloud-audit-host.json",
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_package_contracts.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_qualified_call_pilot.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_recorder_contract.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_recorder_documentation_scope.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_recorder_release_boundary.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_release_qualification.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_release_workflow_evidence.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_s3_live.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_s3_live_harness.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_sol_local_stage.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_source_binding_readback.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_synthetic_sink_readback.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_verify_release_identity.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "scripts/verify_release_identity.py",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "sdk/README.md",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "sdk/python/LICENSE",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/README.md",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/SCOPE.md",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/pyproject.toml",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/scripts/qualify_recorder_wheel.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/__init__.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_attributes.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_calls.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_capture_health.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_content.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_sink.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_writer.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_coverage_canary.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_crosscut.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_hashes.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_id_validators.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_span_protection.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_version.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/__init__.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/byte_boundary.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/crewai.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/synthetic_evidence.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/auto_instrument.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/baseline.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_evidence.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_resolver.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_spool.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/call_otlp.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/call_reconcile.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/call_recorder.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_capabilities.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_identity.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_readback.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/checkpoint.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/client.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/__init__.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/local.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/s3.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/control_evidence.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/control_protocol.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/coverage_manifest.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/decision.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_policy.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_state.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/distributed_closure.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise_preflight.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/evidence_attestation.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/execution.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/governed_store.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/http_dispatch.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_feed.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_store.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/integrations/__init__.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/integrations/mcp.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/memory.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/metadata_delivery.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/propagation.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/py.typed",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/qualified_run.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/receipt_sets.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/reference_receipts.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/resolver.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/retrieval.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/side_effect.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/signing.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/source_spool.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_otlp.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_reconcile.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/taxonomies/mitre-atlas.json",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/taxonomies/owasp-llm.json",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/taxonomy.py",
+      "reviews": [
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/tracing.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-security.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/__init__.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/conftest.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_adapters_crewai.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_async.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_auto_instrument.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_byte_boundary_adapter.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_byte_evidence.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_byte_resolver.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_byte_spool.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_call_batches.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_call_otlp.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_call_privacy.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_call_reconcile.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_call_recorder.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_call_source_spool.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_calls.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_capture_capabilities.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_capture_health.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_capture_identity.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_capture_readback.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_checkpoint.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_client.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_concurrency.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_content_boundaries.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_content_store.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_control_evidence.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_control_protocol.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_coverage_manifest.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_decision.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_deployment_policy.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_deployment_state.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_distributed_closure.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_enterprise_integration.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_enterprise_preflight.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_enterprise_reference.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_evidence_attestation.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_execution.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_generic_interaction.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_governed_content.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_governed_store.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_hardening.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_http_dispatch.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_id_validators.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_independent_feed.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_independent_feed_adversarial.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_independent_store.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_mcp_integration.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_memory.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_metadata_delivery.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_propagation.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_qualified_run.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_receipt_sets.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_recorder_package_surface.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_recorder_wheel_qualifier.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_reference_receipts.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_replay_metadata.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_retrieval.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_route_closure_attestation.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_security_dependency_floors.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_side_effect.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_source_spool.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_source_spool_readback.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_span_protection.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_surface_logging.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_synthetic_evidence.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_synthetic_otlp.py",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_tracing.py",
+      "reviews": [
+        "cloud-audit-codeql.json",
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/python/uv.lock",
+      "reviews": [
+        "cloud-audit-python-tests.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/.gitignore",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/.prettierignore",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/.prettierrc.json",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/LICENSE",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/README.md",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/eslint.config.js",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/package-lock.json",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/package.json",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/scripts/package-qualified.mjs",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/attributes.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/byte-evidence.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/calls.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/client.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/content-sink.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/content-store.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/content-writer.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/content.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/crosscut.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/decision.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/deployment-policy.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/execution.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/hash.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/id-validators.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/index.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/propagation.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/recorder-attributes.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/resolver.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/testing.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/tracing.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/validators.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/version.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/async-callbacks.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/byte-evidence.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/canonical-hash.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/capture-health.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/client.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/content-boundaries.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/content-parity.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/deployment-policy.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/enums-validation.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/governed-content.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/hash.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/package-artifact.node.mjs",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/parity.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/primitives.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/propagation.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/recorder-surface.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/vocab.test.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/tsconfig.json",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "sdk/typescript/tsup.config.ts",
+      "reviews": [
+        "cloud-audit-typescript.json"
+      ]
+    },
+    {
+      "path": "specs/000-overview.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/001-product-vision.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/010-development-standards.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/020-execution-step-capture.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/021-replay-metadata.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/022-surface-logging.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/023-generic-interaction-capture.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/025-product-planes-and-packaging.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/027-recorder-v1.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/028-governed-content-capture.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/029-content-objects-transcript-contract.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/030-auditd-host-connector.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/031-ebpf-host-emitter.md",
+      "reviews": [
+        "cloud-audit-host.json"
+      ]
+    },
+    {
+      "path": "specs/032-passive-content-delivery.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/033-content-storage-resolution.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/034-eval-interoperability.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/035-agent-execution-evidence-profile.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/036-evidence-capture-implementation-plan.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/037-bounded-enterprise-deployment-and-controls.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/038-capture-boundary-and-loss-qualification.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/039-storage-release-and-shadow-pilot.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/040-synthetic-agent-evidence-slice.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/041-follow-on-evidence-adapter-scopes.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/042-client-boundary-integration.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/043-custom-agent-call-recording.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/044-production-evidence-closure.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/045-independent-evidence-feeds.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/046-qualified-call-run-verification.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "specs/README.md",
+      "reviews": [
+        "cloud-audit-product.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/.gitignore",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/Makefile",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/README.md",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/recorder_command_test.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/release_binary_test.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/release_helpers_test.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/release_main.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/go.mod",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/go.sum",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/open_regular_other.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/open_regular_unix.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/recorder.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/recorder_test.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/internal/recorderinit/recorderinit.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    },
+    {
+      "path": "tools/fabricctl/internal/recorderinit/recorderinit_test.go",
+      "reviews": [
+        "cloud-audit-root.json"
+      ]
+    }
+  ]
+}

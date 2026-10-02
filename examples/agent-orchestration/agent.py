@@ -13,7 +13,7 @@ drives a realistic incident-investigation orchestration:
       -> fetch_metrics tool (real localhost HTTP GET — audit connect)
       -> retrieval          (runbook search — governed results object)
       -> llm_call #2        (input messages carry the observed tool results)
-      -> write_report tool  (real file write — side effect + exec record)
+      -> write_report tool  (real file write — SDK side effect record)
       -> decision close     (manifest delivered via the bounded writer)
 
 Every tool argument/result, model message, context blob and the report
@@ -305,18 +305,11 @@ def main() -> int:
                 ]
             )
 
-        # ---- tool: write_report (real side effect + exec record) ----
+        # ---- tool: write_report (real side effect; no subprocess is spawned) ----
         report_path = OUT / "incident-report.md"
         with decision.tool_call("write_report", call_id="call-report") as tool:
             tool.set_arguments(json.dumps({"path": str(report_path)}))
             report_path.write_text(report)
-            AUDIT.emit_exec(
-                [sys.executable, "-c", "write_report", str(report_path)],
-                pid=os.getpid(),
-                ppid=os.getppid(),
-                exit_code=0,
-                cwd=str(HERE),
-            )
             tool.set_result(f"wrote {report_path} ({len(report)} bytes)")
         decision.record_side_effect(
             "file_write",

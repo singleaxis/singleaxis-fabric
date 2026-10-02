@@ -1,0 +1,212 @@
+{
+  "schema_version": "fabric.cloud-audit-root/v1",
+  "baseline": "acf7fbf8d2950331559aadc67c4576375dc0ca57",
+  "files": [
+    {
+      "path": ".github/workflows/recorder-license.yml",
+      "sha256": "256edd20011972552ec8d8dc78a39ca81ea7ce8b9c58209d91c7a353c433d86b",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/evidence_binding_test.go",
+      "sha256": "1bb6188aa84cea3f2aa5596b37248584f59d20c6a7ba6eba3b2017d708fd1300",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/gate.go",
+      "sha256": "6d335be7ca0d69a944efc8491c6d7ecbb2bdb23242f4c460c68b1ebb05e7a1d4",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/gate_test.go",
+      "sha256": "8558ce5fbe8e6258dc1cd9ee31e7cf520e7dc72850e0ea1512ce297b710fbec8",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/go.mod",
+      "sha256": "fd227218b160a188e5a813705c6c9bd40401df69a7631c77bce12804b0e5c796",
+      "method": "Dependency/module declarations inspected; no dependency implementation review",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/go.sum",
+      "sha256": "e42794fa9b56301ad073de55cac1dea683b320ed951454d8709ffc7156088dd2",
+      "method": "Dependency inventory plus go mod verify; no dependency implementation review",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/main.go",
+      "sha256": "3a0d66cdd1bf8ae4a895630a1aa8f8dde2901766d9d7e5248591b8299c180e1e",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/supervise.go",
+      "sha256": "77946570aa23ad1421c11bcea539e999a9cb05253d21f97a983049f53641bc18",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "scripts/license_check.py",
+      "sha256": "5860df93857219b7d73f44820cd2d3270cc455810b3a815eb713159250416672",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/.gitignore",
+      "sha256": "b7b5a9a5bdb3a876455f7320f221592c77a378fac89c0283dc6ebe19b124bf43",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/Makefile",
+      "sha256": "72d7ae66d502859959d34c44494eb7cc109be9a6950621c7e0b47336b637fe02",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/README.md",
+      "sha256": "31bc05078817df66eeb75437d12c22f664645d34b07fce579c22e596ac5208c9",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/recorder_command_test.go",
+      "sha256": "cf23d41783f001ed97439b38fd2061fb6785153cddee86813bdf0e195aa436b7",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/release_binary_test.go",
+      "sha256": "51891269f05149be5abc9d933c5de3c07da8fe8009fc83a53bdf5b6d5cd4ae2e",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/release_helpers_test.go",
+      "sha256": "99d3aab0dfad496284ec91f79bed14fc2847606fa79e4fc8057da573aa903fd8",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/cmd/fabricctl/release_main.go",
+      "sha256": "7acbca344d9c6c688e09fcd0d87388bc572d994dff72372a05279bb5ac13e3e8",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/go.mod",
+      "sha256": "d87c4ae14bbd5496ed469eac832b896f62db05e1d2d178e3cbb2b338a14add07",
+      "method": "Dependency/module declarations inspected; no dependency implementation review",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/go.sum",
+      "sha256": "48619698ada3f35bd17c87febd86fd22bde23c9b724796a8f20b5bb6ed01c9aa",
+      "method": "Dependency inventory plus go mod verify; no dependency implementation review",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/open_regular_other.go",
+      "sha256": "2753125aea97e2a11efaaedac6c79076fe4d2049a129b4c34effa11108ad7298",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/open_regular_unix.go",
+      "sha256": "548e5ad1582916422c2e1371f618336daf9233c886253dbb45b4455cb10f757b",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/recorder.go",
+      "sha256": "2b26924042ae8dc06c7de4e9e2c8974fbdaf10684dea2bf2225db83e41078453",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/internal/recorder/recorder_test.go",
+      "sha256": "51aa78b73483d06d0ea5bc95f525b1922f7735fccb814cc2c8b83dea6db927db",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/internal/recorderinit/recorderinit.go",
+      "sha256": "536f7d3a72db57d5083134f3a3ac85fcf0c0437f9fead89980a851ae4781db4a",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "tools/fabricctl/internal/recorderinit/recorderinit_test.go",
+      "sha256": "c871da423b0f2668b8b308c39273bb72103c8d818b7ff219f8ae7a250e8fff7a",
+      "method": "Full source/text read; trace validation, bounded regular-file I/O, command boundary, and tests",
+      "reviewer": "root",
+      "findings": []
+    },
+    {
+      "path": "sdk/README.md",
+      "sha256": "0debcbc698131eee5a86d603f958bf40193c86261fb9fa30f09cf0a69efeaecd",
+      "method": "Full text review against Python governed/legacy byte paths, TypeScript span export and support matrix; corrected uniform privacy/parity/no-overhead claims",
+      "reviewer": "root",
+      "findings": [
+        "FIXED: shared wire vocabulary does not establish complete distributed reconstruction or feature parity",
+        "FIXED: TypeScript raw exceptions and Python worker-side masking explicitly distinguished from governed prequeue protection"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "ROOT-LICENSE-001",
+      "status": "fixed",
+      "description": "Gate and host-emitter inventories generated but omitted from license gate; workflow wiring repaired with denied-dependency regressions."
+    },
+    {
+      "id": "ROOT-CLI-002",
+      "status": "fixed",
+      "description": "CLI help incorrectly called all commands non-mutating; now identifies initializer local writes and monitored-runtime boundary."
+    },
+    {
+      "id": "ROOT-INIT-003",
+      "status": "limitation",
+      "description": "Initializer no-clobber creation protects final filenames and checks parent symlinks before creation; it does not pin parent directories against hostile concurrent rename. Local filesystem administration remains trusted."
+    },
+    {
+      "id": "ROOT-GATE-004",
+      "status": "limitation",
+      "description": "Strong routing/TLS requirements apply only when evidence_source_binding configured; generic custom Collector configurations need separate qualification."
+    }
+  ],
+  "verification": {
+    "gate": "go test -race ./...; go vet ./...; go mod verify passed",
+    "fabricctl": "same commands passed before help wording-only change; final rebuild pending",
+    "license": "7 license+changelog regressions passed"
+  },
+  "scope_limit": "This is a local targeted review, not security-owner acceptance or exhaustive review of third-party dependencies."
+}

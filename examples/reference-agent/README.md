@@ -20,11 +20,12 @@ For one agent turn:
    GenAI semantic conventions; swap for your provider).
 4. Run a stand-in tool inside a `tool_call` child span (arguments and
    results are hashed locally).
-5. Record a `fabric.memory` write and a committed `fabric.side_effect`.
+5. Record simulated `fabric.memory` and `fabric.side_effect` observations.
+   The committed flag is supplied by this fixture, not an independent receipt.
 6. Mark the turn with `fabric.checkpoint` events.
 
-The SDK is passive: it records what the agent did and never blocks,
-alters, or delays it. Judges, guardrails, policy engines, and
+The SDK is passive: it records supplied observations without authorizing or
+altering agent actions. Instrumentation and export still have overhead. Judges, guardrails, policy engines, and
 escalation are deliberately outside the recorder — protection and
 delivery happen in the Fabric Node the spans are exported to.
 

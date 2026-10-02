@@ -2,18 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Audit-format emitter for the agent-orchestration demo.
 
-Writes records in the exact ``audit.log`` line format the collector's
-audit receiver tails in ``logfile`` mode — the same bytes auditd would
-emit on a Linux host with ``deploy/auditd/fabric.rules`` loaded. Every
-field is real: the child pid, parent pid, exit status, comm/exe path,
-argv, cwd and timestamp are measured from the subprocess this process
-actually spawned (and for connects, the socket it actually opened).
-
-What is shimmed is only the *collection mechanism*: on macOS there is no
-kernel audit subsystem, so the emitting process logs its own syscall
-metadata instead of the kernel logging it. On Linux this file is unused —
-auditd + ``fabric.rules`` produce the same record stream with zero demo
-code changes (see ``collect-audit-linux.sh``).
+Writes synthetic audit-format records consumed by the collector's logfile
+receiver. The agent reports its own operations on both macOS and Linux;
+this is not an independent kernel witness or byte-equivalent auditd output.
+Pids and child exit status come from subprocess results, but an execve syscall
+return is not a child's eventual exit status. Timestamps are emission times,
+exe paths are best-effort, openat file descriptors may be placeholders,
+and connect error codes are synthetic stand-ins.
+The Linux collection helper refuses rule changes; this shim remains in use.
 """
 
 from __future__ import annotations
@@ -48,7 +44,7 @@ class AuditLog:
     """Appends auditd-format record groups to a log file.
 
     Thread-safe, append-only; each event is a SYSCALL+payload+EOE group
-    sharing one serial, exactly like kernel audit output.
+    sharing one synthetic serial; not kernel audit evidence.
     """
 
     def __init__(self, path: Path) -> None:

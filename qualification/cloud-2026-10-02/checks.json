@@ -1,0 +1,176 @@
+{
+  "schema_version": "fabric.cloud-qualification-checks/v1",
+  "baseline": "acf7fbf8d2950331559aadc67c4576375dc0ca57",
+  "runtime_commit": "24e509319bb1f397465532365326f6b5ae3c8b55",
+  "scope": "Local selected checks; exact-head CI and production qualification remain separate. Captured log transformations are explicit per artifact.",
+  "python": {
+    "passed": 1711,
+    "coverage_percent": 88.65,
+    "runtime_sources_stable_during_run": true,
+    "test_annotation_changed_during_run": "test_governed_reconstruction.py",
+    "annotation_final_targeted_tests": 48,
+    "final_full_run": "All final Python runtime, tests and qualifier sources were frozen for this full run."
+  },
+  "typescript": {
+    "passed": 380,
+    "package_tests": 6,
+    "artifact_smoke": [
+      "ESM",
+      "CommonJS",
+      "types"
+    ]
+  },
+  "repository_scripts": {
+    "passed": 303,
+    "skipped": 51,
+    "excluded_previously_attempted_blocked_module": "scripts/tests/test_governed_node_e2e.py",
+    "reason": "Docker Hub HTTP429 prevented three Compose tests startup"
+  },
+  "package_hashes": [
+    {
+      "path": "/workspace/fabric-qualification/python-final-dist/singleaxis_fabric-0.8.0rc1-py3-none-any.whl",
+      "sha256": "475a9b17f0a1d6aee7aea0da80020fb17bf526d9dbd2c01398971edd6f7de5cd"
+    },
+    {
+      "path": "/workspace/fabric-qualification/python-final-dist/singleaxis_fabric-0.8.0rc1.tar.gz",
+      "sha256": "d4dc895b5bd0933088ea4ed489dd5789d30beb395c7e8d48dc8ce8f32e408489"
+    },
+    {
+      "path": "/workspace/fabric-qualification/npm-final/singleaxis-fabric-0.8.0-rc.1.tgz",
+      "sha256": "006ad18443298406edb817c50485c60e7a216935094ff2578615b39bf5ab451a"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "checks/python-frozen-final.txt",
+      "sha256": "d5d755a96193c74fd505f4dcd8fd32c93587abcf126cfea478b1b6aa72609d73",
+      "bytes": 17411,
+      "source_log": "/workspace/fabric-qualification/python-frozen-final.log"
+    },
+    {
+      "path": "checks/python-reconstruction-final.txt",
+      "sha256": "37ab6d4795e26445cdfcc64fb8c4b6e71d1cf5a0b9dbb3dc459d86c960418384",
+      "bytes": 100,
+      "source_log": "/workspace/fabric-qualification/python-reconstruction-final.log"
+    },
+    {
+      "path": "checks/python-ruff-final.txt",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "bytes": 19,
+      "source_log": "/workspace/fabric-qualification/python-ruff-final.log"
+    },
+    {
+      "path": "checks/python-format-final.txt",
+      "sha256": "3e363a951eafb2bc4d7b7edadd4f34b1fb2c5ca55e2ed514e89e27827e64b786",
+      "bytes": 28,
+      "source_log": "/workspace/fabric-qualification/python-format-final.log"
+    },
+    {
+      "path": "checks/python-mypy-final.txt",
+      "sha256": "b7bcac463232a13ea02b4c9c110e00cec7c4d018bea59e705d5b0ae2f732c318",
+      "bytes": 45,
+      "source_log": "/workspace/fabric-qualification/python-mypy-final.log"
+    },
+    {
+      "path": "checks/typescript-final-test.txt",
+      "sha256": "b53320dcc5f9348d5b0b71368b73f622a77f60bf8db281614bda11addce42496",
+      "bytes": 285,
+      "source_log": "/workspace/fabric-qualification/typescript-final-test.log",
+      "original_run_sha256": "4cb405a12bcc9c9af4071bbaa0841286df356185ca44aa501888860ea8fbb81f",
+      "publication_transform": "Normalized EOF blank lines using repository end-of-file-fixer; log content otherwise unchanged"
+    },
+    {
+      "path": "checks/typescript-final-test-package.txt",
+      "sha256": "595623d97511c55048aad473472391db1dd1c68a5b04ee58db2699a2f3c2c6b1",
+      "bytes": 836,
+      "source_log": "/workspace/fabric-qualification/typescript-final-test-package.log"
+    },
+    {
+      "path": "checks/typescript-final-lint.txt",
+      "sha256": "be7693b8a40f70d3965f848ca70cfaa85628251355d01c12358a2f5d26863d8c",
+      "bytes": 258,
+      "source_log": "/workspace/fabric-qualification/typescript-final-lint.log"
+    },
+    {
+      "path": "checks/typescript-final-typecheck.txt",
+      "sha256": "3b9abb8924fbe67439690cfaeffd5da8379fdede90f325b861e1a8f63202d812",
+      "bytes": 58,
+      "source_log": "/workspace/fabric-qualification/typescript-final-typecheck.log",
+      "original_run_sha256": "410b6492c41414053323cb9590efe6302ac3a9091fcf9bb8c49e4f782b3ba9b8",
+      "publication_transform": "Normalized EOF blank lines using repository end-of-file-fixer; log content otherwise unchanged"
+    },
+    {
+      "path": "checks/typescript-final-build.txt",
+      "sha256": "74b474599e7674a158a670e046bcc8c86dd3db153e1415569706506499603499",
+      "bytes": 599,
+      "source_log": "/workspace/fabric-qualification/typescript-final-build.log"
+    },
+    {
+      "path": "checks/typescript-final-format.txt",
+      "sha256": "5211164d1ca8034253b4728307c415425f29409587e80350e033d8a64894528a",
+      "bytes": 336,
+      "source_log": "/workspace/fabric-qualification/typescript-final-format.log"
+    },
+    {
+      "path": "checks/typescript-package-final.txt",
+      "sha256": "46a2494cd87748d224cb5439c0a9026dad21c16f21e20fd6e4fffc2ea1488b5e",
+      "bytes": 2075,
+      "source_log": "/workspace/fabric-qualification/typescript-package-final.log"
+    },
+    {
+      "path": "checks/scripts-tests-final-no-docker.txt",
+      "sha256": "63baf96e4038e764fb74f6c4090531a53a64e483cc05dcb03f15247fdafa2d4d",
+      "bytes": 432,
+      "source_log": "/workspace/fabric-qualification/scripts-tests-final-no-docker.log"
+    },
+    {
+      "path": "checks/go-fabricctl-final.txt",
+      "sha256": "0a47853e356133d895e5ea85535085678893936fc3324e90e0186f099fef636d",
+      "bytes": 283,
+      "source_log": "/workspace/fabric-qualification/go/fabricctl-final.log"
+    },
+    {
+      "path": "checks/go-gate.txt",
+      "sha256": "e2f3a4f8c182c91d7050298d748c39fab93e3b0708f46e7deeef0ba9737ad898",
+      "bytes": 111,
+      "source_log": "/workspace/fabric-qualification/go/gate.log"
+    },
+    {
+      "path": "checks/gitleaks-final.txt",
+      "sha256": "18889d58d38ba7d1781c57ba158f98a0c93aae0b2251e493120ae09484fd8cb3",
+      "bytes": 80,
+      "source_log": "/workspace/fabric-qualification/gitleaks-final.log"
+    },
+    {
+      "path": "checks/actionlint.txt",
+      "sha256": "c3f2ce708cbf07ff34dd7f293e1923a96110ff9e00711a92f31bdc23e948485e",
+      "bytes": 244,
+      "source_log": "/workspace/fabric-qualification/actionlint.log"
+    },
+    {
+      "path": "checks/markdownlint-final.txt",
+      "sha256": "50068ffe92b77247ff6c80ad6b72f12704cf96dea5df5eda8f4e572aec03faa5",
+      "bytes": 289,
+      "source_log": "/workspace/fabric-qualification/markdownlint-final.log"
+    },
+    {
+      "path": "checks/python-publication.txt",
+      "sha256": "6c9f43211bd4f97c69486d781e870ce2f1cfaf79311177f895a93090d7030aa8",
+      "bytes": 17491,
+      "source_log": "/workspace/fabric-qualification/python-publication.log"
+    },
+    {
+      "path": "checks/scripts-publication.txt",
+      "sha256": "012b2e17e63d7d7b0db950af6e6d31b6459232c16b807423051d15384e795d2e",
+      "bytes": 432,
+      "source_log": "/workspace/fabric-qualification/scripts-publication.log"
+    }
+  ],
+  "limitations": [
+    "Published desktop archives were not restored",
+    "No live privileged kernel qualification",
+    "No new benchmark performance run",
+    "TypeScript is a narrower implementation with unresolved privacy limits",
+    "Exact new-head CodeQL findings require security review"
+  ]
+}

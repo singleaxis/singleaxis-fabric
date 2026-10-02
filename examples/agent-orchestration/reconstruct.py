@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[2]
+REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "sdk" / "python" / "src"))
 
 OUT = Path(os.environ.get("FABRIC_DEMO_OUT", HERE / "out"))
@@ -122,6 +122,7 @@ def _audit_join(logs: list[dict]) -> list[dict]:
                 "path": attrs.get("file.path"),
                 "time_s": _ns_to_s(int(rec.get("time_ns") or 0)),
                 "source": attrs.get("audit.source"),
+                "provenance": "synthetic-agent-shim",
             }
         )
     return sorted(events, key=lambda e: e["time_s"])
@@ -152,7 +153,7 @@ def _attach_host(events: list[dict], nodes: list[dict]) -> None:
                 s += 100
             if ev["peer"] and str(ev["peer"]) in args and str(ev["peer_port"]) in args:
                 s += 100
-            if (ev["path"] or "") in args:
+            if ev["path"] and ev["path"] in args:
                 s += 100
             if node["start_s"] <= ev["time_s"] <= node["end_s"]:
                 s += 50
@@ -254,8 +255,8 @@ def main() -> int:
         )
 
     exec_events = [e for e in host_events if e["syscall"] in ("execve", "execveat")]
-    if len(exec_events) < 4:
-        failures.append(f"expected >=4 exec audit events, saw {len(exec_events)}")
+    if len(exec_events) < 3:
+        failures.append(f"expected >=3 exec audit events, saw {len(exec_events)}")
     if not any(e["syscall"] == "connect" for e in host_events):
         failures.append("no connect audit event for the metrics fetch")
     if not any(e["syscall"] == "openat" for e in host_events):
@@ -300,9 +301,9 @@ def main() -> int:
             "sdk": {"governed_store": str(store_root), "durability": "spooled"},
             "otlp": {"spans": len(spans), "log_records": len(logs)},
             "host": {
-                "capture": "audit-format replay (macOS shim) — on Linux the same "
-                "records come from auditd + fabric.rules via the "
-                "collector audit receiver, unchanged downstream",
+                "capture": "synthetic agent-emitted audit-format replay on all platforms; "
+                "not independent kernel or auditd evidence",
+                "provenance": "synthetic-agent-shim",
                 "events": len(host_events),
             },
         },

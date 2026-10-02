@@ -33,6 +33,17 @@ _GOVERNED_MEMBERS = (
     "fabric/content_store/s3.py",
     "fabric/resolver.py",
     "fabric/adapters/byte_boundary.py",
+    "fabric/byte_evidence.py",
+    "fabric/byte_resolver.py",
+    "fabric/byte_spool.py",
+    "fabric/call_recorder.py",
+    "fabric/call_otlp.py",
+    "fabric/source_spool.py",
+    "fabric/metadata_delivery.py",
+    "fabric/content_join.py",
+    "fabric/deployment_policy.py",
+    "fabric/governed_store.py",
+    "fabric/governed_reconstruction.py",
 )
 
 
@@ -60,7 +71,9 @@ def _wheel(
     return path
 
 
-def _sdist(path: Path, *, member: str | None = None, decision: str = "") -> Path:
+def _sdist(
+    path: Path, *, member: str | None = None, decision: str = "", omit: str | None = None
+) -> Path:
     prefix = "singleaxis_fabric-1.0.0"
     payloads = {
         f"{prefix}/src/fabric/__init__.py": b'__all__ = ["Fabric"]\n',
@@ -69,7 +82,8 @@ def _sdist(path: Path, *, member: str | None = None, decision: str = "") -> Path
         f"{prefix}/PKG-INFO": b"Name: singleaxis-fabric\nVersion: 1.0.0\n",
     }
     for governed in _GOVERNED_MEMBERS:
-        payloads[f"{prefix}/src/{governed}"] = b""
+        if governed != omit:
+            payloads[f"{prefix}/src/{governed}"] = b""
     if member:
         payloads[f"{prefix}/src/{member}"] = b""
     with tarfile.open(path, "w:gz") as archive:
@@ -83,11 +97,43 @@ def _sdist(path: Path, *, member: str | None = None, decision: str = "") -> Path
 def test_qualifies_minimal_recorder_wheel(tmp_path: Path) -> None:
     result = _qualifier().qualify(_wheel(tmp_path / "recorder.whl"))
     assert result["qualified"] is True
+    assert result["qualification_scope"] == "critical_module_presence_and_legacy_exclusion"
+    assert result["runtime_behavior_verified"] is False
     assert len(result["sha256"]) == 64
 
 
 def test_missing_byte_boundary_adapter_fails_wheel_qualification(tmp_path: Path) -> None:
     path = _wheel(tmp_path / "missing-adapter.whl", omit="fabric/adapters/byte_boundary.py")
+    with pytest.raises(ValueError, match="missing recorder modules"):
+        _qualifier().qualify(path)
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "byte_evidence",
+        "byte_resolver",
+        "byte_spool",
+        "call_recorder",
+        "call_otlp",
+        "source_spool",
+        "metadata_delivery",
+        "content_join",
+        "deployment_policy",
+        "governed_store",
+        "governed_reconstruction",
+    ],
+)
+@pytest.mark.parametrize("kind", ["wheel", "sdist"])
+def test_missing_standalone_evidence_module_refuses_structural_qualification(
+    tmp_path: Path, module: str, kind: str
+) -> None:
+    omitted = "fabric/" + module + ".py"
+    path = (
+        _wheel(tmp_path / "incomplete.whl", omit=omitted)
+        if kind == "wheel"
+        else _sdist(tmp_path / "incomplete.tar.gz", omit=omitted)
+    )
     with pytest.raises(ValueError, match="missing recorder modules"):
         _qualifier().qualify(path)
 

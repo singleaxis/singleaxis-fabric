@@ -53,8 +53,9 @@ d.record_interaction(
   `.direction`, `.payload_hash`, plus tags/baseline/signature results (below).
 - Rolling `fabric.interaction_count` + `fabric.interaction_kinds` (tuple) on the
   decision span.
-- This is the **completeness guarantee**: any interaction a host can name is
-  capturable today, without waiting for a first-class method.
+- This is an explicit observation surface: a host can report a named
+  interaction without a first-class method. It does not prove every interaction
+  was observed or that the supplied identity and content are complete.
 
 ## 2. Generic baseline comparison (any hashed thing)
 

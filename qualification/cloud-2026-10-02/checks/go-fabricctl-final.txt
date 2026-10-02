@@ -1,0 +1,4 @@
+ok  	github.com/singleaxis/singleaxis-fabric/tools/fabricctl/cmd/fabricctl	1.262s
+ok  	github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/recorder	(cached)
+ok  	github.com/singleaxis/singleaxis-fabric/tools/fabricctl/internal/recorderinit	(cached)
+all modules verified

@@ -38,7 +38,7 @@ def run(root: str, tenant: str) -> str:
         FabricConfig(
             tenant_id=tenant,
             agent_id="example-agent",
-            profile="permissive-dev",
+            profile="shadow-dev",
         ),
         content_capture=ContentCaptureConfig(
             store=store,

@@ -120,16 +120,16 @@ The offline `fabric.call_reconcile.reconcile_call_run` compares specific calls
 and bytes against independent witness inputs. Matching local fixtures remain
 `unverified`; missing or corrupt evidence becomes `partial`. The API has no
 authenticated source or durable delivery receipt chain and its in-memory
-timeline is not crash-durable. See [custom-agent recording](../../../docs/custom-agent-recording.md)
-and [spec 043](../../../specs/043-custom-agent-call-recording.md).
+timeline is not crash-durable. See [custom-agent recording](../../docs/custom-agent-recording.md)
+and [spec 043](../../specs/043-custom-agent-call-recording.md).
 
 The optional `fabric.qualified_run.verify_qualified_call_run` path is separate:
 it checks signed independent feeds, exact original bytes, fresh sealed source
 readback, source binding, route closure and four exact receipt sets. It can
 verify a bounded submitted package for one source epoch under owner-provided
 issuer authority. It does not supply production issuers or live storage
-qualification. See [installed-package qualified tests](../../../docs/qualified-call-run-testing.md)
-and [spec 046](../../../specs/046-qualified-call-run-verification.md).
+qualification. See [installed-package qualified tests](../../docs/qualified-call-run-testing.md)
+and [spec 046](../../specs/046-qualified-call-run-verification.md).
 
 The separate `ByteEvidenceRecorder` API captures bytes the caller explicitly
 supplies. It does not intercept terminal, SSH, database or sandbox operations.
@@ -161,7 +161,7 @@ this is caller-side evidence, not proof of provider-bound bytes. Streaming,
 async calls, unwrapped routes and external side effects are not captured by
 this adapter. Reconcile against an independent endpoint/tool witness before
 claiming coverage. The current session/source identity and receipt chain are
-not production-qualified; see [spec 042](../../../specs/042-client-boundary-integration.md).
+not production-qualified; see [spec 042](../../specs/042-client-boundary-integration.md).
 
 This is not a substitute for the terminal/artifact adapter or an installer
 that discovers every route in a client's agent. A customer must declare and

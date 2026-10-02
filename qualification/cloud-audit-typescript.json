@@ -1,0 +1,674 @@
+{
+  "scope": "sdk/typescript tracked paths; all paths enumerated, review depth explicit",
+  "source_base": "published PR165 baseline with local uncommitted authorized hardening",
+  "environment": {
+    "node": "24.19.0",
+    "npm": "11.9.0"
+  },
+  "results": {
+    "vitest_passed": 380,
+    "package_node_tests_passed": 6,
+    "package_smoke": [
+      "esm",
+      "cjs",
+      "types"
+    ],
+    "live_paid_api_calls": 0
+  },
+  "findings": [
+    {
+      "id": "TS-LOCAL-SYMLINK",
+      "status": "partially_hardened_with_explicit_limit",
+      "paths": [
+        "sdk/typescript/src/content-store.ts",
+        "sdk/typescript/test/content-boundaries.test.ts",
+        "sdk/typescript/test/package-artifact.node.mjs",
+        "sdk/typescript/README.md"
+      ],
+      "evidence": "Synthetic pre-fix tenant symlink wrote/read outside configured root. Post-fix tests cover initial root/tenant links, post-construction root/tenant/manifests/by-decision/evidence/meta swaps, final object/descriptor/manifest links, trusted parent aliases and bounded FIFO subprocess.",
+      "remaining_limit": "Customer-controlled ancestors and no adversarial concurrent namespace mutation required. Node has no directory-relative openat API; path checks do not establish race-proof containment or parity with Python pinned descriptors."
+    },
+    {
+      "id": "TS-RAW-EXCEPTION",
+      "status": "remaining_privacy_limitation",
+      "paths": [
+        "sdk/typescript/src/decision.ts",
+        "sdk/typescript/src/execution.ts",
+        "sdk/typescript/src/tracing.ts"
+      ],
+      "evidence": "recordError/fail call span.recordException(err); provider installation has no metadata-only exporter wrapper.",
+      "remaining_limit": "Exception messages/stacks can reach host exporter; direct export is not uniformly metadata-only. No live external export performed."
+    },
+    {
+      "id": "TS-SPOOL-SETTLEMENT",
+      "status": "remaining_durability_limitation",
+      "paths": [
+        "sdk/typescript/src/content-writer.ts"
+      ],
+      "evidence": "deliver increments stored/settles before removeSpool; removeSpool suppresses failures.",
+      "remaining_limit": "flush/stored count is not proof of durable source cleanup. No durable source/destination receipt parity claimed."
+    },
+    {
+      "id": "TS-INBOUND-HEADER-BOUND",
+      "status": "remaining_resource_limit",
+      "paths": [
+        "sdk/typescript/src/propagation.ts"
+      ],
+      "evidence": "extract calls parseMembers on entire header and decodeContext JSON/base64 decode without incoming size bound.",
+      "remaining_limit": "Inbound headers must be bounded by host HTTP layer; malformed-shape handling alone is not resource qualification."
+    },
+    {
+      "id": "TS-TRUSTED-SPOOL",
+      "status": "remaining_trust_assumption",
+      "paths": [
+        "sdk/typescript/src/content-writer.ts"
+      ],
+      "evidence": "taskFromRecord checks checksum then casts descriptor/manifest and tenant fields without matching configured store tenant.",
+      "remaining_limit": "Customer must control spool files; checksum is corruption detection, not authorization against malicious local rewrites."
+    }
+  ],
+  "files": [
+    {
+      "path": "sdk/typescript/.gitignore",
+      "sha256": "3e0683977cf4da81d88bf3ef8d2d5cf15a19e54102574330d24f3a4bc66e68a5",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/.prettierignore",
+      "sha256": "925cfa6aa53985c544ac58e5705c0ee47e7f168da8f23e2b32811ea74de8426c",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/.prettierrc.json",
+      "sha256": "d5f90f76c5b68ce7be5ba077813f97e1983511b8c314764537345a538c1261f4",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/LICENSE",
+      "sha256": "7ecd8ce1d30b8aa26232f5c7c878cca53bc273547ce52f1678f955154746e64f",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/README.md",
+      "sha256": "1c39348ee88c5781d1e16a402c129f7980c3fac05f20541a1b8b2ebf1aa341a7",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual relevant artifact/privacy scope inspection"
+      ],
+      "findings": [
+        "TS-LOCAL-SYMLINK"
+      ],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/eslint.config.js",
+      "sha256": "cecb166502e7dfd8b4725661191f6ebc5826580b50e36164320d91a33df074d9",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/package-lock.json",
+      "sha256": "f605dfa202214c34dd342f101c03acae8ee13ac790058d07dfbc14ab42999926",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/package.json",
+      "sha256": "12b6bd257fbeaa21dacbb452b7d1c2a227ca8a2646bc356c02922bc4979e6d04",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual relevant artifact/privacy scope inspection"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/scripts/package-qualified.mjs",
+      "sha256": "d8aa300069519ff9cd0622fb002b036dccadc6abf6f70b01f031625c22bd1147",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual relevant artifact/privacy scope inspection"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/src/attributes.ts",
+      "sha256": "8b25153827c99a9206f20712af8bbec4585e33618d3efa4dc14b7c743556f02a",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Selected recorder vocabulary constants reviewed; attribute values are metadata conventions, not a sanitizer."
+    },
+    {
+      "path": "sdk/typescript/src/byte-evidence.ts",
+      "sha256": "2ed6408498eddceb6f4e9dbd374dd7ed2b44f97efe33a1b3f5f385c88ed3d8ae",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed constructor, role/source/queue bounds, protect-before-queue ordering, immutable byte snapshot, ref/hash verification and delivery failure paths. Process-memory handoff only; no durable receipt/run completeness claim."
+    },
+    {
+      "path": "sdk/typescript/src/calls.ts",
+      "sha256": "ebee0f864648053049279d6a97e1a5f2b55c63766a29bcbc55782105bd4c7da6",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed tool argument/result hashing and explicit raw-content opt-in. Governed refs route through sink; direct capture=true intentionally emits raw attributes."
+    },
+    {
+      "path": "sdk/typescript/src/client.ts",
+      "sha256": "95e65d305513260c04d2d6396f6b500e869cc93a8129a6ce7e8dbddc024dfcba",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed identity/config construction, reserved keys, content opt-in, restrictive metadata env setting and store/client tenant equality. User-selected host tracer still controls export protection."
+    },
+    {
+      "path": "sdk/typescript/src/content-sink.ts",
+      "sha256": "25413021e0c51a9fa5c647c05ffa1d35426adaae43ca6737ccf9a15f1c017e91",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed capture/settlement/manifest handling. Serialization errors enter governed status_reason; arbitrary caller errors are not universally content-free. No transport receipt."
+    },
+    {
+      "path": "sdk/typescript/src/content-store.ts",
+      "sha256": "7312cf30a966420934bcdab406728e74661f9bc0d65895c4cb0dde3e651a8d6c",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [
+        "TS-LOCAL-SYMLINK"
+      ],
+      "review_note": "Detailed local read/write/path/sidecar/manifest review and synthetic symlink escape reproduction. Added existing-symlink rejection including post-construction swaps, canonical trusted parent handling, exclusive randomized temp files, regular-file and nofollow/nonblock reads. Concurrent ancestor mutation remains unsupported; S3 is mocked rather than live-qualified."
+    },
+    {
+      "path": "sdk/typescript/src/content-writer.ts",
+      "sha256": "d549124179674604a38c425d667f3b60fc8214f78cea548ba30a9f221d65f693",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [
+        "TS-SPOOL-SETTLEMENT",
+        "TS-TRUSTED-SPOOL"
+      ],
+      "review_note": "Reviewed config bounds, source spool checksum recovery and deliver/settle/cleanup order. Recovery casts record fields and checksum is not tenant authentication. Stored/settled precedes best-effort spool deletion, so flush is not proof of durable source cleanup."
+    },
+    {
+      "path": "sdk/typescript/src/content.ts",
+      "sha256": "6cde72e83187079a850879bc308233240b1c632ac2fac476d16bbb22c67e9c74",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed serialization/truncation/descriptor construction. v1 is canonicalized text/JSON; binary is rejected and truncated output marked. Canonicalization happens before payload truncation and is not a memory bound."
+    },
+    {
+      "path": "sdk/typescript/src/crosscut.ts",
+      "sha256": "b0b7557c2b2d50f95e06a5ef227f9231364f879a16188c3a0313850824c41e31",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed full result-only baseline/signature stamping and tag validation. Verification is caller-supplied, not performed by this module; free-form metadata remains caller-controlled."
+    },
+    {
+      "path": "sdk/typescript/src/decision.ts",
+      "sha256": "26d99e0d1cbfb22bc0addfa0c55ef19168c937e17fe73f773272197043f7b7ca",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [
+        "TS-RAW-EXCEPTION"
+      ],
+      "review_note": "Selected capture-health, governed routing, hash/event surfaces and exception handling reviewed. captureHealth truthfully reports decision_span_only; raw Error is passed to span.recordException (privacy limitation). Not a full line-by-line review of 2092 lines."
+    },
+    {
+      "path": "sdk/typescript/src/deployment-policy.ts",
+      "sha256": "29b435d491baae63eadda46cb654295adad1fdc48b5a1396a30885869d12e9f8",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed full role-map/config validation, immutable canonical policy, protect modes, HMAC domain separation, redactor failure handling and no original digest for transformed/withheld modes. Customer redactor quality is not certified."
+    },
+    {
+      "path": "sdk/typescript/src/execution.ts",
+      "sha256": "26bc25ecec4dff4d6387266f7f7a4ab075ff68b759b3ea5cbb2a1a6587038f79",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [
+        "TS-RAW-EXCEPTION"
+      ],
+      "review_note": "Reviewed callback exits and failure handling. Raw Error is passed to span.recordException; host exporter must protect before egress."
+    },
+    {
+      "path": "sdk/typescript/src/hash.ts",
+      "sha256": "25b241ffc37e5ac26ec00159bd18df7781c3ee4be575522cb25fb1c8cc17c8c8",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed full hash/canonical serialization implementation and stated whole-valued-float parity limitation. SHA-256 establishes byte equality, not authorization."
+    },
+    {
+      "path": "sdk/typescript/src/id-validators.ts",
+      "sha256": "07c268b161975134737dec50d00582c86e1b3211f33bc9b528f98ac6ebee68d3",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed placeholder checks and bounded embedded PII scan. Warnings include offending values and dedupe retains messages; these are warnings, not a privacy filter."
+    },
+    {
+      "path": "sdk/typescript/src/index.ts",
+      "sha256": "ae1077d33df034d239632c17964e5959af0ec42464276457bba910b0904a3268",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed full public export surface plus artifact token allowlist test. Export vocabulary excludes legacy runtime-control/evaluation modules."
+    },
+    {
+      "path": "sdk/typescript/src/propagation.ts",
+      "sha256": "a6bdfd9a305b0611bfdf847fd4f71b9bea00e0cfa7a682fbd5d26a21b29f1404",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [
+        "TS-INBOUND-HEADER-BOUND"
+      ],
+      "review_note": "Reviewed encode/decode/extract and injection member limits. Incoming tracestate/member parsing lacks size bound; outbound member bound does not qualify inbound resource use."
+    },
+    {
+      "path": "sdk/typescript/src/recorder-attributes.ts",
+      "sha256": "2dc48e847566e88719bef040bc1cb80debb1fc9c42e6a5cdc7966b9d5862f8e7",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Selected allowlist and module header reviewed; recorder-surface tests enforce public API boundary. Not every constant manually compared."
+    },
+    {
+      "path": "sdk/typescript/src/resolver.ts",
+      "sha256": "c09a54ae26ed9c6f9dba408033066902aa11ddf0d8f664fab0910ce2f6ed6f19",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed configured-store authorization, descriptor tenant/identity/hash/length checks and manifest resolution. No bytes available before integrity verification; arbitrary manifest shape validation is not comprehensive."
+    },
+    {
+      "path": "sdk/typescript/src/testing.ts",
+      "sha256": "9c3a3dc5bb47bf10321e89d63305bfb65c5aec788bed246b2e8fde0b5be62b8e",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed full reset-only test-support export module; no delivery/security authority."
+    },
+    {
+      "path": "sdk/typescript/src/tracing.ts",
+      "sha256": "431e784b55ec5531605bf774ef0d61ac0cdfc1969b76e42b974ff286f19a91c9",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [
+        "TS-RAW-EXCEPTION"
+      ],
+      "review_note": "Reviewed full host-provider installation/no-op warning behavior. No exporter is shipped and no default protected exporter wrapper is inserted; host must protect raw exceptions/attributes."
+    },
+    {
+      "path": "sdk/typescript/src/validators.ts",
+      "sha256": "8020eb53d9f81a9be78459ca2e107c1b2634b89967bd3212f002dbc46de2935a",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed full scalar/finite/enum/string runtime guards. Errors can contain invalid caller values; validation is not redaction."
+    },
+    {
+      "path": "sdk/typescript/src/version.ts",
+      "sha256": "384eb08ed87237356b477971feeadeb7f78b09fe2b2689ab387e3894689cfa52",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual selected semantic/security/privacy source review"
+      ],
+      "findings": [],
+      "review_note": "Reviewed full SDK and schema identity constants; release identity checks and build validate packaging consistency."
+    },
+    {
+      "path": "sdk/typescript/test/async-callbacks.test.ts",
+      "sha256": "f1d8998d0de6d05f91d7662bcc6391e390d95000f5caaeaf8c0ea5c69974e684",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/byte-evidence.test.ts",
+      "sha256": "b6cdf86abd5e36b6425195063395389e7c5edab08f98166868b1dcb2d97918a2",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/canonical-hash.test.ts",
+      "sha256": "692d53e3f3fc141c893f1d3b1bb06d55fc3b8c1a1789cd0fa6085f2a573ba655",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/capture-health.test.ts",
+      "sha256": "c936ee4fe6508298f56849ec67fcf45b9c04af35bb1604133aecb35779f8afdd",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/client.test.ts",
+      "sha256": "fe8f361c5fbece1e710153014d2e858cdc9b75e80b1eb3e3df3f0d5a30472751",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/content-boundaries.test.ts",
+      "sha256": "ef1535c384e0f2b83245e6e6a66a50c917956b9499730dd2875ab01abfc96f51",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual regression test implementation/review"
+      ],
+      "findings": [
+        "TS-LOCAL-SYMLINK"
+      ],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/content-parity.test.ts",
+      "sha256": "80c06b73684658e7ab269033f5fe620bd57d0db93d06b1824c60718ffce0d09f",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/deployment-policy.test.ts",
+      "sha256": "de3f85792640d5b4c01680c461edba0c571db89bf3e6f615a9834c27e300f2c5",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/enums-validation.test.ts",
+      "sha256": "d2e763ff737cdb87b1d2cdb4029da12b0a9e7bb827192a05cd2151a27b037e68",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/governed-content.test.ts",
+      "sha256": "006cdaecd9d1bee7a85fbe8ac72dee206e1b8c255b4a2240e7767ab962051d17",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/hash.test.ts",
+      "sha256": "001d6349321c3e40d838b83303ccf258f759b30f2081298912424a4fdf9ee171",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/package-artifact.node.mjs",
+      "sha256": "2543e7ea9c4b2d023f97d745af336e561c512daed9c2ec30826653aa5b597439",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)",
+        "manual regression test implementation/review"
+      ],
+      "findings": [
+        "TS-LOCAL-SYMLINK"
+      ],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/parity.test.ts",
+      "sha256": "03221e07c246f1b8febcda642653a0a3a78360fd6e264fcfc0260d1a9155f390",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/primitives.test.ts",
+      "sha256": "4f0270322f7f8700a37ffd39185910885f1d78cab5dcec028ef25d612650e467",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/propagation.test.ts",
+      "sha256": "0439b52d426ff4cfd6cd1b2c7229b8ec59fe264f92645ff7321134989774365a",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/recorder-surface.test.ts",
+      "sha256": "77bec2ea3c784f2d7e7e89674e73c81b230a6737b345f0b690f53808629e37ea",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/vocab.test.ts",
+      "sha256": "6049e69ef53ca93c3a9104c18b0e9112a45a43fc6801c5946fc0eb582160c148",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/tsconfig.json",
+      "sha256": "c456fb46fb1111e5a7da48581fecf1de27d52eaa84273d35cc5c64458869664a",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/tsup.config.ts",
+      "sha256": "222681e1c47b4578645b91d7739afe4447133638f706578fbb8a14e588f1af49",
+      "methods": [
+        "npm ci from lockfile",
+        "format/lint/typecheck/build/test SDK gates",
+        "test:package and package:qualified --smoke artifact gates (applicable packaged paths)"
+      ],
+      "findings": [],
+      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    }
+  ],
+  "limits": [
+    "Not a universal security audit or production qualification.",
+    "Local filesystem tests executed on Linux; macOS trusted-parent alias behavior simulated, Windows not exercised.",
+    "No cloud S3 or paid-provider end-to-end run.",
+    "Full file gate membership is not evidence that every branch or fixture was executed."
+  ]
+}

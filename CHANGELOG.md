@@ -16,6 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Added versioned capture configuration, health/canary/readback interfaces,
   auditd logfile cursor/recovery, developer guidance, and a matched local
   benchmark with published synthetic evidence.
+- Added durable governed-content joins and fresh authorized reconstruction
+  with policy, identity, representation, digest and length validation.
+- Added an actual Collector crash/restart/readback fixture and a C0–C10
+  acceptance runner that records executed checks and unsupported scenarios.
+
+### Fixed
+
+- Confined Python local content adapter operations through no-follow directory
+  descriptors, including replacements after initialization.
+- Rejected TypeScript content-store symlink redirection and nonregular objects,
+  while documenting its remaining ancestor-replacement race.
+- Bounded propagated context headers and rejected deeply nested malformed input.
+- Corrected native audit netlink framing, rule structure/constants, architecture
+  filters, control response matching and bounded assembly loss reporting.
+- Repaired the orchestration reconstruction root and synthetic audit provenance.
+- Included host-emitter and entrypoint-gate inventories in license enforcement.
+- Made missing-instrumentor and asynchronous permission tests deterministic
+  without weakening their assertions.
 
 ### Changed
 

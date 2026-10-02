@@ -102,3 +102,23 @@ def test_short_sha_is_rejected_before_query() -> None:
         verifier.verify_required_workflows(
             "singleaxis/singleaxis-fabric", "abc123", ("ci.yml",)
         )
+
+
+def test_semgrep_findings_fail_the_security_workflow() -> None:
+    import shlex
+    import yaml
+
+    workflow = (
+        Path(__file__).resolve().parents[2] / ".github/workflows/recorder-security.yml"
+    )
+    config = yaml.safe_load(workflow.read_text())
+    commands = [
+        step["run"] for step in config["jobs"]["semgrep"]["steps"] if "run" in step
+    ]
+    assert len(commands) == 1
+    arguments = shlex.split(commands[0])
+    assert arguments[:2] == ["semgrep", "scan"]
+    assert "--error" in arguments
+    assert "--sarif" in arguments
+    assert "--exclude" not in arguments
+    assert "--exclude-rule" not in arguments

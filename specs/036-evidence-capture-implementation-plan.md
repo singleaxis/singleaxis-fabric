@@ -340,6 +340,11 @@ customer-boundary review exist.
 
 ## Implementation ledger (2026-09-26)
 
+This dated ledger is historical, not the current source-support matrix. See
+[SDK support](../docs/sdk-support-matrix.md) and
+[qualification status](../docs/recorder-v1-qualification-status.md) for later
+Python durable byte-spool and audit logfile checkpoint additions.
+
 Work package 1 has a locally tested draft baseline. Closed schemas, exact-byte
 pinned fixtures, and a semantic validator live in `contracts/evidence/v1/`,
 `contracts/content/v2/`, and

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -163,3 +165,26 @@ def test_duplicate_policy_key_is_rejected(tmp_path: Path) -> None:
     path.write_text('{"storage":{},"storage":{}}')
     with pytest.raises(ValueError, match="duplicate JSON key"):
         module.run(tmp_path / "evidence", path)
+
+
+def test_optimized_orchestration_refuses_false_qualification(tmp_path: Path) -> None:
+    output = tmp_path / "not-created"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-O",
+            str(ROOT / "examples/enterprise-orchestration/run.py"),
+            "--scenario",
+            "clean",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "optimized Python is unsupported" in result.stderr
+    assert "LOCAL_CHECKS_PASS" not in result.stdout
+    assert not output.exists()

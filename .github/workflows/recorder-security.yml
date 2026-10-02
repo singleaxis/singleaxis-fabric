@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Scan recorder release source only
         run: >-
-          semgrep scan --config auto --sarif --output semgrep-recorder.sarif
+          semgrep scan --config auto --error --sarif --output semgrep-recorder.sarif
           sdk/python/src/fabric
           sdk/typescript/src
           components/otel-collector-fabric/processor/fabricguardprocessor

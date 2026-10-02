@@ -13,11 +13,15 @@ CAPTURE -> PROTECT -> DELIVER
 - **Protect** — strip everything except an exact metadata allowlist before
   records cross the customer boundary.
 - **Deliver** — buffer records in a persistent queue and retry export to the
-  customer-chosen destination until it succeeds. At least once, never best
-  effort.
+  customer-chosen destination with at-least-once retry after durable queue
+  admission. Finite storage, pre-admission loss and terminal export failures
+  still require explicit operational evidence.
 
-The recorder is **passive**: it observes telemetry and must never block,
-alter, or delay the monitored AI system. The accepted design of record is
+The recorder is **passive**: it does not authorize or alter monitored actions.
+SDK admission is bounded, but instrumentation and synchronous privacy transforms
+have overhead; Node backpressure can block a telemetry exporter. Keep exporter
+and shutdown work off the application critical path and measure target overhead.
+The accepted design of record is
 [spec 027](../specs/027-recorder-v1.md).
 
 ## System context
@@ -246,7 +250,9 @@ flowchart TD
 Cross-service agent workflows stay connected: SDK `inject()` writes W3C
 `traceparent` plus Fabric identity into carriers, and the child decision
 stamps `fabric.parent_agent_id` / `fabric.parent_decision_id`. A delegated
-call chain reconstructs as one trace.
+call chain can reconstruct as one trace when every participating producer
+propagates and emits that context. Root return does not prove background or
+remote producers have closed; missing producers remain unknown.
 
 ## Deployment topologies
 
