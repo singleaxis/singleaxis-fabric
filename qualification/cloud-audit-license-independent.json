@@ -1,0 +1,113 @@
+{
+  "schema_version": "fabric.independent-license-review/v1",
+  "source_checkpoint": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "scope": "Independent source review of current license gate changes. No policy, runtime source or workflow edits by reviewer.",
+  "entries": [
+    {
+      "path": "scripts/license_check.py",
+      "sha256": "7528a4dc27ef0efc05ef38965e690347a0fa6b7d936733a2861fae6995d96947",
+      "methods": [
+        "full_changed_source_review",
+        "targeted_caller_and_policy_review",
+        "sha256_inventory"
+      ],
+      "initial_review_sha256": "35171163bd6848ec9230515cd86cf7642d0ed527f2628322f15820a288472be6"
+    },
+    {
+      "path": "scripts/license_scan.sh",
+      "sha256": "118b921b02ed581fd2c975aaa99739a83ebf55a2b315d8e84abcbb00768ad2f3",
+      "methods": [
+        "full_changed_source_review",
+        "targeted_caller_and_policy_review",
+        "sha256_inventory"
+      ],
+      "initial_review_sha256": "7ce68e09d3aa5d0f7dc990983aed4657f49de35ed98ac5c7a89cef8abad248c8"
+    },
+    {
+      "path": ".github/workflows/recorder-license.yml",
+      "sha256": "bf1e0cb09edb23cf6ee36cb4329dc77dc63c3273acb2ea7f457fa66c82ffd355",
+      "methods": [
+        "full_changed_source_review",
+        "targeted_caller_and_policy_review",
+        "sha256_inventory"
+      ],
+      "initial_review_sha256": "9545f4660f125594c2ea2c47bd9e4166334f80783b9f58dd93c09d57d3338b2a"
+    },
+    {
+      "path": "scripts/tests/test_license_fail_closed.py",
+      "sha256": "cd549bf72bae381d071b0df25d5c31d8cf554c63541099c2108f571dad93acf7",
+      "methods": [
+        "full_changed_source_review",
+        "targeted_caller_and_policy_review",
+        "sha256_inventory"
+      ],
+      "initial_review_sha256": "cf5212442acaf4d0b8e6b0ffe51f6fccda6f15129ee061bd2e1e1f5cad9b0c02"
+    },
+    {
+      "path": "scripts/tests/test_license_workflow.py",
+      "sha256": "fd506c04f4f7acc148814a9d5530011f8b4d266ee1c48693db3eda445665fe5b",
+      "methods": [
+        "full_changed_source_review",
+        "targeted_caller_and_policy_review",
+        "sha256_inventory"
+      ],
+      "initial_review_sha256": "fd506c04f4f7acc148814a9d5530011f8b4d266ee1c48693db3eda445665fe5b"
+    },
+    {
+      "path": "scripts/tests/test_final_audit_regressions.py",
+      "sha256": "123ec1de2051eb12865bfaeeaeb338927b7b9cb7ce8040c9c33cf6371e91111d",
+      "methods": [
+        "full_changed_source_review",
+        "targeted_caller_and_policy_review",
+        "sha256_inventory"
+      ],
+      "initial_review_sha256": "1358fefd77fe40bf3c17297e40d27ee3cb44f5682c5b9fd442c667efdf969ede"
+    }
+  ],
+  "findings": [
+    {
+      "id": "LIC-REVIEW-001",
+      "status": "corrected_by_owner_independently_verified",
+      "detail": "npm licenses array [MIT OR Apache-2.0, GPL-3.0] loses conjunctive grouping through unparenthesized AND join; actual CLI exits0. Each array expression must preserve grouping.",
+      "resolution": "Each nonempty string array expression is grouped and individually checked for balanced delimiters before conjunction; forbidden second expression and grouping escape now fail, permissive alternatives remain accepted."
+    },
+    {
+      "id": "LIC-REVIEW-002",
+      "status": "corrected_by_owner_independently_verified",
+      "detail": "An individually empty supplied inventory [] plus another nonempty MIT inventory causes actual CLI exit0; each requested input needs independent nonempty/shape validation.",
+      "resolution": "Every supplied inventory independently validates expected container/row types and nonempty parsed records; malformed and empty inputs return usage2 even alongside a valid inventory."
+    }
+  ],
+  "validation": [
+    {
+      "command": "pytest -q scripts/tests/test_license_fail_closed.py scripts/tests/test_license_workflow.py scripts/tests/test_final_audit_regressions.py",
+      "result": "55 passed in 2.83s before owner followup; existing tests did not cover two findings."
+    },
+    {
+      "command": "Two disposable CLI inventory fixtures invoking actual scripts/license_check.py",
+      "result": "Both incorrectly exited0 before followup; no real dependency license decisions inferred."
+    },
+    {
+      "command": "pytest -q scripts/tests/test_license_fail_closed.py scripts/tests/test_license_workflow.py scripts/tests/test_final_audit_regressions.py",
+      "result": "66 passed in 3.52s after owner froze fixes; includes npm conjunction/injection and each-input failure cases."
+    },
+    {
+      "command": "git diff --check for six reviewed source/test paths",
+      "result": "passed"
+    }
+  ],
+  "verified_properties": [
+    "All8 pyproject optional extras appear in workflow matrix and explicit --pip gate arguments.",
+    "Both TypeScript base and optional S3 inventories reach gate.",
+    "Local and CI Collector inventory run bearer patch build helper before scanning generated graph.",
+    "Conflicting raw license declarations are retained per surface/version after deduplication.",
+    "Reviewed npm scanner5.0.1 tarball source: production traversal marks peer dependencies nonextraneous unless nopeer; no full live scanner executed.",
+    "Patched Collector helper now invoked through sh in local and CI paths; fixture helper chmod0600 verifies no executable-bit assumption."
+  ],
+  "limits": [
+    "Full actual dependency inventories/CI not rerun by reviewer.",
+    "Dynamic dependency resolution and unpinned npm scanner mean license evidence binds scanned resolution, not all possible supported versions.",
+    "Policy commentary about DENY even alongside permissive token is broader than longstanding valid SPDX OR-choice implementation; no policy relaxation or reinterpretation performed."
+  ],
+  "review_conclusion": "Both reproduced false passes corrected by owner and independently re-reviewed/tested. No remaining blocking defect found in reviewed change scope. Policy unchanged; no gate weakening."
+}

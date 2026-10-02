@@ -1,0 +1,23 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 test:package
+> node --test test/package-artifact.node.mjs
+
+✔ accepts one exact, integrity-bound package allowlist (1.750233ms)
+✔ rejects an undeclared file even when npm metadata includes it (0.482849ms)
+✔ rejects altered bytes and version drift (0.261786ms)
+✔ rejects hidden control or evaluation code in packed JS and declarations (0.52996ms)
+✔ accepts recorder-only packed payloads (1.070726ms)
+✔ built local store rejects FIFO reads without blocking (64.810654ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 128.969123
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

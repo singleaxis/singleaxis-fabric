@@ -47,9 +47,9 @@ refuses to replace existing targets, and creates two mode-`0600` files:
 | `fabric-recorder.yaml` | Strict, reviewable `FabricRecorder` configuration. |
 | `recorder-init-receipt.json` | Deterministic proof of local preparation. |
 
-The receipt says `installation_status: not-installed`. Preparation is local
-and non-mutating: it does not contact a destination, inspect traffic, install
-Fabric, or change the monitored AI system.
+The receipt says `installation_status: not-installed`. Preparation writes the
+two local files after confirmation. It does not contact a destination, inspect
+traffic, install Fabric, or change the monitored AI system.
 
 ## Validate and identify configuration
 

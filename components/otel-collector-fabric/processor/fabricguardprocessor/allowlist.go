@@ -141,12 +141,18 @@ var BuiltInAllowedFields = map[string]map[string]struct{}{
 		"receipt_subject_type",
 		"call_id", "parent_call_id", "agent_id", "stream_id", "chunk_index",
 		"call_phase", "call_kind", "result_status",
+		"workload_id", "policy_id", "policy_version", "policy_digest",
+		"privacy_mode", "representation", "protection_status", "content_byte_length",
 	),
 	// Host-layer audit events emitted by the auditreceiver (spec 030) and the
 	// host emitter (spec 031). argv is hash-only; no raw command lines.
 	"audit": toSet(
 		"audit.syscall", "audit.result", "audit.serial", "audit.source",
 		"audit.event", "audit.dedupe_key", "audit.cgroup_id", "audit.loss_reason",
+		"fabric.record_id", "audit.source_id", "audit.source_generation",
+		"audit.cursor_start", "audit.cursor_end", "audit.assembly_complete",
+		"audit.input_records", "audit.filtered_events", "audit.invalid_records",
+		"audit.oversized_records", "audit.incomplete_events", "audit.unmatched_events", "audit.discarded_bytes",
 		"log.record.uid",
 		"process.pid", "process.parent_pid", "process.executable.name",
 		"process.executable.path_sha256", "process.command_args_sha256", "process.owner",

@@ -66,6 +66,22 @@ receiver:
   # must already exist and contain one approved bearer token; the token is
   # never supplied as a chart value. This authenticates receipt at Node,
   # not the agent operation or completeness of the run.
+  # Optional dedicated workload credential boundary for ordinary traces/logs.
+  # Requires mTLS, one workload-scoped token and a reference to the customer's
+  # credential-provisioning review. These labels attest deployment intent;
+  # they do not authenticate arbitrary tenant/source fields in telemetry.
+  workloadAuthentication:
+    enabled: false
+    tenantId: ""
+    workloadId: ""
+    identityAttestationRef: ""
+    # Optional paired metadata naming the approved capture policy. The Node
+    # does not download or execute it. Its actual config has a separate hash.
+    policyVersion: ""
+    policyDigest: ""
+    tokenSecret:
+      name: ""
+      key: token
   evidenceSourceBinding:
     enabled: false
     tenantId: ""
@@ -218,6 +234,9 @@ exporter:
         - ReadWriteOnce
       size: 10Gi
       storageClass: ""
+      # Customer review/reference for this exact storage class or claim's
+      # encryption/KMS posture. A nonempty reference is NOT encryption proof.
+      encryptionAttestationRef: ""
       annotations: {}
   retry:
     enabled: true

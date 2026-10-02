@@ -192,7 +192,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  fabricctl recorder digest FILE [--json]")
 	fmt.Fprintln(w, "  fabricctl version")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Scope: CAPTURE -> PROTECT -> DELIVER. All commands are local and non-mutating.")
+	fmt.Fprintln(w, "Scope: CAPTURE -> PROTECT -> DELIVER. Commands run locally without changing the monitored runtime.")
+	fmt.Fprintln(w, "init writes configuration and a preparation receipt after confirmation.")
 	fmt.Fprintln(w, "Deploy the reviewed recorder with the shipped Helm chart; this CLI does not install it.")
 }
 

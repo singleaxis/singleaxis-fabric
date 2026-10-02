@@ -29,6 +29,9 @@ repos:
       - id: check-toml
       - id: detect-private-key
       - id: end-of-file-fixer
+        # Published benchmark bytes are hashed evidence, including intentional
+        # no-newline binary/text records. Rewriting them breaks provenance.
+        exclude: ^benchmarks/fabric-comparison/evidence/
       - id: trailing-whitespace
         # Unified diffs intentionally contain leading '+' followed by context
         # whitespace; rewriting them corrupts the vendored security patch.

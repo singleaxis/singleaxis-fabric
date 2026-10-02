@@ -10,6 +10,7 @@ The chart exposes only recorder concerns:
 
 - OTLP/gRPC and OTLP/HTTP ingestion;
 - optional receiver mTLS;
+- optional workload-scoped bearer authentication for ordinary traces/logs;
 - optional dedicated evidence ingress with one Secret-backed bearer token
   bound to one declared tenant/source identity;
 - the `fabricguard` export allowlist on logs and traces;
@@ -46,3 +47,28 @@ Secret prevents the pod from starting. The
 Secret's sole use by the declared source, its rotation and the source's route
 closure require deployment proof; this chart setting alone does not establish
 complete capture or a production GO.
+
+## Ordinary workload authentication
+
+`receiver.workloadAuthentication` requires mTLS and a separate workload-scoped
+Secret token on both OTLP protocols. Configure `enabled`, `tenantId`,
+`workloadId`, `identityAttestationRef`, and `tokenSecret.name`/`key`. A token is
+32–4096 printable ASCII bytes with no spaces or newlines; the shipped singleton
+authenticator rejects malformed values on startup and reload. The Secret must
+already exist; its contents are never Helm values or ConfigMap data. This mode
+requires verified HTTPS egress and disables debug export. It is separate from
+`evidenceSourceBinding` and does not reject ordinary traces.
+
+The identity review must cover token custody, certificate issuance and rotation
+for that one workload. The receiver authenticates credential possession, not
+arbitrary tenant/source strings supplied in telemetry. It does not compare a
+client certificate SAN to `workloadId`. The identity fields and optional paired
+`policyVersion`/`policyDigest` are deployment-owned Pod annotations, not a policy
+engine or per-record evidence. Full production requirements and migration
+arguments are in the [umbrella chart README](../../README.md).
+
+The persistent queue's `encryptionAttestationRef` identifies a customer review of
+the chosen StorageClass or existing PVC. It neither enables nor verifies disk
+encryption. The production umbrella requires explicit storage selection plus
+this reference. Real credentials, KMS state, wrong-identity rejection and durable
+readback must be independently qualified before production approval.

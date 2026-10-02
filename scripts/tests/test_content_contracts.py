@@ -155,3 +155,16 @@ def test_byte_fixtures_reproduce_pinned_digest(fixture: str) -> None:
 def test_canonical_json_sorts_keys_and_omits_whitespace() -> None:
     assert canonical_json({"b": [2], "a": 1}) == '{"a":1,"b":[2]}'
     assert canonical_json({"é": "café"}) == '{"é":"café"}'
+
+
+@pytest.mark.parametrize("fault", ["cross_tenant", "truncated_without_length"])
+def test_manifest_nested_descriptors_use_canonical_rules(fault: str) -> None:
+    document = _json("contracts/content/v1/valid/transcript-manifest-complete.json")
+    descriptor = document["items"][0]["descriptor"]
+    if fault == "cross_tenant":
+        descriptor["tenant_id"] = "another-tenant"
+    else:
+        descriptor["representation"] = "truncated"
+        descriptor.pop("original_byte_length", None)
+    with pytest.raises(ContentContractError):
+        validate_content_document(document, _schemas())

@@ -81,7 +81,7 @@
     "baggage": "unsupported",
     "correlation_limitations": [
       "Audit events carry kernel identity (pid, ppid, auid, executable-path hash) and timestamps \u2014 they are not span edges. Joining them to agent traces is inferred provenance by pid/host/time, never causal.",
-      "Audit serials are host-local and restart-sensitive; they are dedupe evidence, not durable identity.",
+      "Audit serials remain host-local and restart-sensitive. Durable logfile replay adds stable fabric.record_id derived from a persisted source identity, generation, inode, byte offset and audit event identity; deleting state creates a new identity.",
       "process.command_args_sha256 proves a command line existed without revealing it; replay requires the source host's own records."
     ]
   },
@@ -99,6 +99,11 @@
       "type": "unit_test",
       "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
       "claim": "Covers record parsing, assembly, argv/path hash-only emission, sockaddr decode, rule-key filtering, bounded retry and known-gap reporting. It does not qualify restart durability."
+    },
+    {
+      "type": "unit_test",
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_test.go",
+      "claim": "Temporary-log tests cover durable accepted-cursor/replay state, restart and acceptance faults, retained numeric multi-rotation, copytruncate/concurrent rewrite, loss accounting, quotas/corruption/locking and bounded hostile inputs/shutdown. These do not qualify native auditd/kernel completeness."
     }
   ],
   "known_blind_spots": [
@@ -108,6 +113,6 @@
     "Very short-lived processes and io_uring-driven syscalls can evade the audit pipeline on some kernels; auditd's own blind spots carry through.",
     "manage_rules writes audit rules only when no daemon holds the control socket; a running auditd wins and its ruleset governs what we see.",
     "Records are host-level metadata (process, peer, path hash), not agent intent \u2014 the semantic layer still requires SDK or framework instrumentation.",
-    "Failed downstream deliveries use bounded in-memory retry only; collector crash can lose them, logfile mode lacks a persisted cursor, and netlink multicast cannot replay missed kernel events."
+    "Netlink failed deliveries use bounded in-memory retry and multicast cannot replay missed kernel events. Logfile mode requires persistent private state and source retention: staged scrubbed batches are restart-replayable, while removed pre-stage source generations, ambiguous rotation and kernel/auditd loss remain unknown gaps. Next-consumer acceptance is not remote durable acknowledgement; at-least-once replay requires destination deduplication by stable record ID."
   ]
 }

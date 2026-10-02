@@ -1,0 +1,9 @@
+{
+  "contract": "singleaxis.fabric.deployment-policy",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "schema": {
+    "path": "schema/deployment-policy-v1.schema.json",
+    "sha256": "f4cbb1bc07896350daedb92a72854bafd78e6881e2de85a4ccd028bff34da6bf"
+  }
+}

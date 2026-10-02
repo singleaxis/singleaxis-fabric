@@ -1,0 +1,18 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 test:package
+> node --test test/package-artifact.node.mjs
+
+✔ accepts one exact, integrity-bound package allowlist (2.015013ms)
+✔ rejects an undeclared file even when npm metadata includes it (0.438031ms)
+✔ rejects altered bytes and version drift (0.265531ms)
+✔ rejects hidden control or evaluation code in packed JS and declarations (1.218129ms)
+✔ accepts recorder-only packed payloads (0.194364ms)
+✔ built local store rejects FIFO reads without blocking (53.259176ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 120.005069

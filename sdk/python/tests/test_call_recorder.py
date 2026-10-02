@@ -14,6 +14,7 @@ import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
 from fabric import (
     ByteEvidenceConfig,
@@ -42,7 +43,7 @@ def recording(
 ) -> Iterator[tuple[CallRecorder, LocalFilesystemContentStore, InMemorySpanExporter]]:
     store = LocalFilesystemContentStore(str(tmp_path / "store"), tenant_id="tenant")
     writer = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=ROLES))
-    provider = TracerProvider()
+    provider = TracerProvider(sampler=ALWAYS_ON)
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     recorder = CallRecorder(

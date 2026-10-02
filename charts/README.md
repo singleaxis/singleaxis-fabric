@@ -32,5 +32,6 @@ scope and were removed; their history is in git.
 
 ## Release signing
 
-Charts are signed with `cosign` and a `.prov` provenance file.
-Verification instructions ship with each release.
+Published chart OCI artifacts are signed with keyless `cosign`; the current
+workflow does not generate a Helm `.prov` file. See
+[release verification](../docs/verify-release.md) for digest and signer checks.

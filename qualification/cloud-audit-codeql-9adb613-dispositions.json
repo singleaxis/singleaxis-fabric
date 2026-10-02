@@ -1,0 +1,1728 @@
+{
+  "schema_version": "fabric.codeql-exact-scan-dispositions/v1",
+  "scan_head_sha": "9adb613cbe34210f70044d3d2a9914e0d6ac808f",
+  "scan_artifact": "/workspace/fabric-qualification/scan-9adb613.json",
+  "scan_artifact_sha256": "09309e86ff32285fcf743707b4cadd0f7dc67ce8166781dbd905d684baee767a",
+  "scope": "Complete76CodeQL locations, including verified60PR-annotation members. Five Semgrep entries are outside this CodeQL-only reconciliation. Runtime unchanged; one test-only readability clarification after scan.",
+  "method": "Map exact scan path/line to source symbol at scanned commit; reconcile prior manual source dispositions against unchanged current bytes; directly inspect new registry aliases, metadata Protocol, remaining warnings and cross-owner statements. All current file hashes bind review. No finding dismissal, suppression, acceptance override or fresh hosted rescan is implied.",
+  "counts": {
+    "whole_codeql": 76,
+    "verified_pr_members": 60,
+    "reviewed_intentional_retained": 74,
+    "test_clarification_pending_hosted_scan": 1,
+    "security_owner_decision_open": 1
+  },
+  "entries": [
+    {
+      "whole_scan_index": 0,
+      "tool": "CodeQL",
+      "rule_id": "py/clear-text-storage-sensitive-data",
+      "level": "error",
+      "security_severity": "7.5",
+      "path": "benchmarks/fabric-comparison/run.py",
+      "scan_line": 230,
+      "scan_symbol": "worker.file_action",
+      "scan_source_line": "path.write_bytes(payload)",
+      "scan_file_sha256": "8d12908c9927d52a83c378aa037b26136a63c59c3aa8b269a5a56be3b9c8efdc",
+      "current_file_sha256": "8d12908c9927d52a83c378aa037b26136a63c59c3aa8b269a5a56be3b9c8efdc",
+      "verified_pr_annotation_member": true,
+      "disposition": "open_security_owner_decision_frozen_benchmark",
+      "rationale": "file_action writes supplied payload to artifact.bin and reads it back as application truth; the driver supplies its synthetic SECRET canary. The cleartext behavior is deliberate fixture capture, but this review does not dismiss the high-severity hosted security finding or alter frozen benchmark bytes. Owner must explicitly decide acceptable synthetic-fixture treatment versus authorized benchmark redesign; current security gate remains unresolved.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-benchmarks.json",
+          "sha256": "c0cbd8a5d9270f26ec32fb5afc2ad275db4883bbe7e01496e9bc33a588ca2802"
+        },
+        {
+          "path": "qualification/cloud-audit-independent-security-followup.json",
+          "sha256": "57d0bf91c009076c109a1aa3660327ac17cd6e2469aab3561b4f1444c687cc79"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 1,
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/_instrumentation_registry.py",
+      "scan_line": 25,
+      "scan_symbol": "",
+      "scan_source_line": "_KNOWN_INSTRUMENTORS: tuple[_InstrumentorSpec, ...] = (",
+      "scan_file_sha256": "9242c9b422904eefecb4a76d429df23e073a0a8bb3331462c3e996a6ace8132c",
+      "current_file_sha256": "9242c9b422904eefecb4a76d429df23e073a0a8bb3331462c3e996a6ace8132c",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "_KNOWN_INSTRUMENTORS defines the shared immutable tuple consumed by auto_instrument at target selection/name validation and coverage_manifest at inspection/spec lookup. Cross-module reads are observable; deletion would break discovery. Keep the descriptive private constant and no cosmetic suppression/rename.",
+      "supporting_ledgers": []
+    },
+    {
+      "whole_scan_index": 2,
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/auto_instrument.py",
+      "scan_line": 49,
+      "scan_symbol": "",
+      "scan_source_line": "_CONTENT_CAPTURE_ENV_VARS = _instrumentation_registry._CONTENT_CAPTURE_ENV_VARS",
+      "scan_file_sha256": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7",
+      "current_file_sha256": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "_CONTENT_CAPTURE_ENV_VARS is a deliberate alias preserving the pre-extraction import location. test_auto_instrument imports and reads it to verify explicit content capture environment settings; registry helper consumes the original tuple. Removing alias breaks existing imports. No claim that rebinding private globals propagates between consumers.",
+      "supporting_ledgers": []
+    },
+    {
+      "whole_scan_index": 3,
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/tracing.py",
+      "scan_line": 95,
+      "scan_symbol": "_warn_if_noop_provider",
+      "scan_source_line": "_NOOP_PROVIDER_WARNED = True",
+      "scan_file_sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759",
+      "current_file_sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "_NOOP_PROVIDER_WARNED is read before writes in _warn_if_noop_provider, preventing repeated warnings. The global declaration targets that module-level latch; warning/reset tests cover the behavior.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 4,
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/tracing.py",
+      "scan_line": 105,
+      "scan_symbol": "_warn_if_noop_provider",
+      "scan_source_line": "_NOOP_PROVIDER_WARNED = True",
+      "scan_file_sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759",
+      "current_file_sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "_NOOP_PROVIDER_WARNED is read before writes in _warn_if_noop_provider, preventing repeated warnings. The global declaration targets that module-level latch; warning/reset tests cover the behavior.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 5,
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "note",
+      "security_severity": null,
+      "path": "scripts/qualification/run_c8_network_journey.py",
+      "scan_line": 26,
+      "scan_symbol": "",
+      "scan_source_line": "import fabric",
+      "scan_file_sha256": "0090214bc7aeccbb2c20c3ec37a42c60cb7d7b1de8f55956efd0d6c8f93cbd49",
+      "current_file_sha256": "0090214bc7aeccbb2c20c3ec37a42c60cb7d7b1de8f55956efd0d6c8f93cbd49",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "The fabric module object verifies installed package provenance via fabric.__file__; directly imported SDK classes construct recorder objects. Both bindings serve distinct necessary roles, with no collision or replacement. Removing provenance access would weaken qualification.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-scripts-security-followup.json",
+          "sha256": "4264984e99b0b6172b0cc146e1fe570dec1b3458d0900040054574045e071526"
+        },
+        {
+          "path": "qualification/cloud-audit-c8-network.json",
+          "sha256": "d8bc7105189b211d7766a7f6f5097b890ae837864e88974e39a22fbc8e97e5b2"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 6,
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "note",
+      "security_severity": null,
+      "path": "scripts/qualification/run_synthetic_agent_pilot.py",
+      "scan_line": 26,
+      "scan_symbol": "",
+      "scan_source_line": "import fabric",
+      "scan_file_sha256": "6ed74ef441e5a7620cdd21e5d0f06443c50b2d2c60f4326a80c7fb2a34aff6d7",
+      "current_file_sha256": "6ed74ef441e5a7620cdd21e5d0f06443c50b2d2c60f4326a80c7fb2a34aff6d7",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "The fabric module object verifies installed package provenance via fabric.__file__; directly imported SDK classes construct recorder objects. Both bindings serve distinct necessary roles, with no collision or replacement. Removing provenance access would weaken qualification.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-scripts-security-followup.json",
+          "sha256": "4264984e99b0b6172b0cc146e1fe570dec1b3458d0900040054574045e071526"
+        },
+        {
+          "path": "qualification/cloud-audit-c8-network.json",
+          "sha256": "d8bc7105189b211d7766a7f6f5097b890ae837864e88974e39a22fbc8e97e5b2"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 7,
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_independent_feed_adversarial.py",
+      "scan_line": 16,
+      "scan_symbol": "",
+      "scan_source_line": "import fabric.independent_feed as module",
+      "scan_file_sha256": "8e4d0009f6dcb31777ffe29a1c4845221e2ad563bc0fe4debbb2dd36f509fdd7",
+      "current_file_sha256": "8e4d0009f6dcb31777ffe29a1c4845221e2ad563bc0fe4debbb2dd36f509fdd7",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "The module import permits monkeypatching dependency globals while from-imports exercise public receipt/resolver types. These names have distinct test roles; eliminating either is cosmetic.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 8,
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_metadata_delivery.py",
+      "scan_line": 21,
+      "scan_symbol": "",
+      "scan_source_line": "import fabric.metadata_delivery as module",
+      "scan_file_sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
+      "current_file_sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Module alias patches module-level transport dependencies while direct imports construct HTTPMetadataTransport, JournalMetadataSender and MetadataHTTPResponse. No conflicting rebinding was found.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 9,
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_recorder_package_surface.py",
+      "scan_line": 9,
+      "scan_symbol": "",
+      "scan_source_line": "import fabric",
+      "scan_file_sha256": "d291ff35abe28a56ff6c8f9a870057a635f48c5397e24de1caf04df397f945c7",
+      "current_file_sha256": "d291ff35abe28a56ff6c8f9a870057a635f48c5397e24de1caf04df397f945c7",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "The module object supports package-surface inspection; directly imported Decision and Fabric support API assertions. Both roles are deliberate.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 10,
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_source_spool.py",
+      "scan_line": 18,
+      "scan_symbol": "",
+      "scan_source_line": "import fabric.source_spool as source_spool_module",
+      "scan_file_sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
+      "current_file_sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Module alias is used to fault-inject module dependencies while the direct SyntheticSourceSpool import exercises its API.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 11,
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_tracing.py",
+      "scan_line": 34,
+      "scan_symbol": "_reset_tracer_provider",
+      "scan_source_line": "import fabric.tracing as ft  # noqa: PLC0415",
+      "scan_file_sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
+      "current_file_sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Fixture module import resets the private warning latch; direct imports exercise tracing API. Resetting the original module namespace is intentional.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 12,
+      "tool": "CodeQL",
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_synthetic_evidence.py",
+      "scan_line": 203,
+      "scan_symbol": "test_recorder_write_failure_does_not_change_provider_or_terminal_result",
+      "scan_source_line": "\"import sys; sys.stdout.buffer.write(b'output\\\\x00'); \"",
+      "scan_file_sha256": "4cda692fd45bd0adad962bd8f7dcd1c0306bce9b90232e0f101abed60dbebdb5",
+      "current_file_sha256": "50bba1dc10f1f41653bff2daba602a05df9dc2ede006be53f04a42dfc46ce40f",
+      "verified_pr_annotation_member": true,
+      "disposition": "clarified_test_program_construction_pending_hosted_scan",
+      "rationale": "The old two literals intentionally formed one Python -c program, not two argv values. Test-only clarification constructs three complete source lines with explicit newline join. Existing exact binary stdout/stderr assertions remain and13tests pass; no security/runtime behavior change.",
+      "supporting_ledgers": []
+    },
+    {
+      "whole_scan_index": 13,
+      "tool": "CodeQL",
+      "rule_id": "py/unexpected-raise-in-special-method",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_adapters_crewai.py",
+      "scan_line": 268,
+      "scan_symbol": "test_callback_failure_logs_no_exception_content.Hostile.__getattr__",
+      "scan_source_line": "def __getattr__(self, name: str) -> object:",
+      "scan_file_sha256": "f567e4af166b2f10130f1c9a3ae04780601a1d89aab672b98cd7a1c87851f6f3",
+      "current_file_sha256": "f567e4af166b2f10130f1c9a3ae04780601a1d89aab672b98cd7a1c87851f6f3",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Hostile fixture __getattr__ intentionally raises a non-AttributeError containing a synthetic privacy canary. It tests adapter exception containment; making it conformant would remove the adversarial contract.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 14,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 64,
+      "scan_symbol": "ContentStore.put",
+      "scan_source_line": "def put(self, content: str, *, key_hint: str | None = None) -> ContentRef: ...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 15,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 66,
+      "scan_symbol": "ContentStore.close",
+      "scan_source_line": "def close(self) -> None: ...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 16,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 85,
+      "scan_symbol": "GovernedStore.tenant_id",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 17,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 91,
+      "scan_symbol": "GovernedStore.ref_for",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 18,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 96,
+      "scan_symbol": "GovernedStore.put_object",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 19,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 102,
+      "scan_symbol": "GovernedStore.write_manifest",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 20,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 108,
+      "scan_symbol": "GovernedStore.manifest_uri_for",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 21,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 112,
+      "scan_symbol": "GovernedStore.manifest_uri_for_decision",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 22,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 117,
+      "scan_symbol": "GovernedStore.owns_uri",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 23,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 119,
+      "scan_symbol": "GovernedStore.exists",
+      "scan_source_line": "def exists(self, uri: str) -> bool: ...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 24,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 124,
+      "scan_symbol": "GovernedStore.read",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 25,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 128,
+      "scan_symbol": "GovernedStore.read_descriptor",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 26,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 130,
+      "scan_symbol": "GovernedStore.read_manifest",
+      "scan_source_line": "def read_manifest(self, uri: str) -> dict[str, Any]: ...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 27,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 134,
+      "scan_symbol": "GovernedStore.list_object_uris",
+      "scan_source_line": "...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 28,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 146,
+      "scan_symbol": "ByteEvidenceStore.tenant_id",
+      "scan_source_line": "def tenant_id(self) -> str | None: ...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 29,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 148,
+      "scan_symbol": "ByteEvidenceStore.evidence_ref_for",
+      "scan_source_line": "def evidence_ref_for(self, object_id: str) -> str: ...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 30,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "scan_line": 150,
+      "scan_symbol": "ByteEvidenceStore.put_bytes_object",
+      "scan_source_line": "def put_bytes_object(self, descriptor: Mapping[str, Any], content: bytes) -> ContentRef: ...",
+      "scan_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "current_file_sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 31,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/control_protocol.py",
+      "scan_line": 159,
+      "scan_symbol": "ExternalFinalBoundaryController.evaluate_at_final_boundary",
+      "scan_source_line": "def evaluate_at_final_boundary(self, request: FinalBoundaryRequest) -> ExternalControlReply: ...",
+      "scan_file_sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
+      "current_file_sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 32,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 155,
+      "scan_symbol": "_ConfigLike.extra",
+      "scan_source_line": "def extra(self) -> dict[str, str]: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 33,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 158,
+      "scan_symbol": "_ConfigLike.workflow_id",
+      "scan_source_line": "def workflow_id(self) -> str | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 34,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 161,
+      "scan_symbol": "_ConfigLike.execution_id",
+      "scan_source_line": "def execution_id(self) -> str | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 35,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 164,
+      "scan_symbol": "_ConfigLike.execution_attempt_id",
+      "scan_source_line": "def execution_attempt_id(self) -> str | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 36,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 167,
+      "scan_symbol": "_ConfigLike.execution_attempt",
+      "scan_source_line": "def execution_attempt(self) -> int | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 37,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 170,
+      "scan_symbol": "_ConfigLike.execution_retry_reason",
+      "scan_source_line": "def execution_retry_reason(self) -> str | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 38,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 173,
+      "scan_symbol": "_ConfigLike.execution_retry_previous_attempt_id",
+      "scan_source_line": "def execution_retry_previous_attempt_id(self) -> str | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 39,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 184,
+      "scan_symbol": "_ClientLike.config",
+      "scan_source_line": "def config(self) -> _ConfigLike: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 40,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 187,
+      "scan_symbol": "_ClientLike.tracer",
+      "scan_source_line": "def tracer(self) -> Tracer: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 41,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 190,
+      "scan_symbol": "_ClientLike.meter",
+      "scan_source_line": "def meter(self) -> Meter: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 42,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 193,
+      "scan_symbol": "_ClientLike.tenant_id",
+      "scan_source_line": "def tenant_id(self) -> str: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 43,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 196,
+      "scan_symbol": "_ClientLike.agent_id",
+      "scan_source_line": "def agent_id(self) -> str: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 44,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 199,
+      "scan_symbol": "_ClientLike.profile",
+      "scan_source_line": "def profile(self) -> str: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 45,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 202,
+      "scan_symbol": "_ClientLike.agent_name",
+      "scan_source_line": "def agent_name(self) -> str: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 46,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 205,
+      "scan_symbol": "_ClientLike.agent_version",
+      "scan_source_line": "def agent_version(self) -> str | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 47,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 208,
+      "scan_symbol": "_ClientLike.agent_description",
+      "scan_source_line": "def agent_description(self) -> str | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 48,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 211,
+      "scan_symbol": "_ClientLike.content_store",
+      "scan_source_line": "def content_store(self) -> ContentStore | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 49,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 214,
+      "scan_symbol": "_ClientLike.content_capture",
+      "scan_source_line": "def content_capture(self) -> ContentCaptureConfig | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 50,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 217,
+      "scan_symbol": "_ClientLike.content_writer",
+      "scan_source_line": "def content_writer(self) -> ContentWriter | None: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 51,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/decision.py",
+      "scan_line": 220,
+      "scan_symbol": "_ClientLike.content_roles",
+      "scan_source_line": "def content_roles(self) -> frozenset[str]: ...",
+      "scan_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "current_file_sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 52,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/deployment_state.py",
+      "scan_line": 152,
+      "scan_symbol": "PolicyAuthority.authorize",
+      "scan_source_line": ") -> Mapping[str, Any]: ...",
+      "scan_file_sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
+      "current_file_sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 53,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/independent_feed.py",
+      "scan_line": 108,
+      "scan_symbol": "IndependentFeedByteResolver.resolve",
+      "scan_source_line": "def resolve(self, byte_object_id: str, max_bytes: int) -> bytes: ...",
+      "scan_file_sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43",
+      "current_file_sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 54,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/metadata_delivery.py",
+      "scan_line": 79,
+      "scan_symbol": "MetadataTransport.send",
+      "scan_source_line": "def send(self, payload: bytes, batch_id: str) -> MetadataHTTPResponse: ...",
+      "scan_file_sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95",
+      "current_file_sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "MetadataTransport.send is a signature-only typing.Protocol member specifying payload bytes, batch_id and MetadataHTTPResponse result; identity is separately declared. Ellipsis intentionally supplies no concrete transport implementation. HTTPMetadataTransport provides behavior and34metadata tests pass; changing the declaration to execute or raise would alter semantics for query cosmetics.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-security-followup.json",
+          "sha256": "5db609605462c5b3ca6a0c08cf7892a5df9ff1eaa2a925d742573b2caed4b337"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 55,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/reference_receipts.py",
+      "scan_line": 78,
+      "scan_symbol": "_PrivateKey.sign",
+      "scan_source_line": "def sign(self, data: bytes) -> bytes: ...",
+      "scan_file_sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55",
+      "current_file_sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Ellipsis is the intentional signature-only body of the enclosing typing.Protocol member shown in symbol. The structural interface specifies implementer behavior; replacing it with a concrete operation or exception to silence a query would change the declared default runtime behavior without improving safety.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 56,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "examples/enterprise-orchestration/run.py",
+      "scan_line": 412,
+      "scan_symbol": "orchestrate.coordinator",
+      "scan_source_line": "await task",
+      "scan_file_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "current_file_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Awaiting the task is a synchronization/cancellation boundary even though its result is unused. Line412 waits for background capture before continuing; line437 consumes CancelledError inside contextlib.suppress after explicit cancellation. Removing these awaits would race evidence or leave work unfinished.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-scripts-security-followup.json",
+          "sha256": "4264984e99b0b6172b0cc146e1fe570dec1b3458d0900040054574045e071526"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 57,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "examples/enterprise-orchestration/run.py",
+      "scan_line": 437,
+      "scan_symbol": "orchestrate.coordinator",
+      "scan_source_line": "await cancel_task",
+      "scan_file_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "current_file_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Awaiting the task is a synchronization/cancellation boundary even though its result is unused. Line412 waits for background capture before continuing; line437 consumes CancelledError inside contextlib.suppress after explicit cancellation. Removing these awaits would race evidence or leave work unfinished.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-scripts-security-followup.json",
+          "sha256": "4264984e99b0b6172b0cc146e1fe570dec1b3458d0900040054574045e071526"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 58,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_call_recorder.py",
+      "scan_line": 296,
+      "scan_symbol": "test_async_stream_empty_exception_and_task_cancellation.exercise",
+      "scan_source_line": "await task",
+      "scan_file_sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+      "current_file_sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "await task consumes the task cancellation inside pytest.raises(asyncio.CancelledError) before stream cleanup; awaiting has scheduling/exception effects even though the result is unused.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 59,
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "note",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_governed_reconstruction.py",
+      "scan_line": 443,
+      "scan_symbol": "test_root_return_does_not_close_inherited_background_producer.scenario",
+      "scan_source_line": "await tasks[0]",
+      "scan_file_sha256": "8e2a705d3052e4dcbdc73156c649a9040b75daf1f73b53e5a2cf7cb1b2b1b468",
+      "current_file_sha256": "8e2a705d3052e4dcbdc73156c649a9040b75daf1f73b53e5a2cf7cb1b2b1b468",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "await tasks[0] synchronizes released late background work before snapshot assertions. Removing the await races the asserted state.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 60,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_capture_health.py",
+      "scan_line": 151,
+      "scan_symbol": "test_exception_event_is_included_in_final_loss_snapshot",
+      "scan_source_line": "assert decision.capture_health[\"dropped_events\"] == 2",
+      "scan_file_sha256": "94a7cc03c9141f70c18757e510fa4caf1e9a60c233631fdc554bcf379f2b012e",
+      "current_file_sha256": "94a7cc03c9141f70c18757e510fa4caf1e9a60c233631fdc554bcf379f2b012e",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "pytest.raises suppresses the deliberately raised exception; following assertions verify dropped count and partial capture state.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 61,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_calls.py",
+      "scan_line": 1098,
+      "scan_symbol": "test_llm_call_stamps_error_type_on_exception",
+      "scan_source_line": "span = _llm_span(span_exporter)",
+      "scan_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "current_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "pytest.raises suppresses deliberately raised RuntimeError/CancelledError; following assertions verify error type/status and emitted exception events.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 62,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_calls.py",
+      "scan_line": 1119,
+      "scan_symbol": "test_llm_call_cancelled_error_marks_span_error",
+      "scan_source_line": "span = _llm_span(span_exporter)",
+      "scan_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "current_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "pytest.raises suppresses deliberately raised RuntimeError/CancelledError; following assertions verify error type/status and emitted exception events.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 63,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_calls.py",
+      "scan_line": 1140,
+      "scan_symbol": "test_tool_call_cancelled_error_marks_span_error",
+      "scan_source_line": "span = _tool_span(span_exporter)",
+      "scan_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "current_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "pytest.raises suppresses deliberately raised RuntimeError/CancelledError; following assertions verify error type/status and emitted exception events.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 64,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_calls.py",
+      "scan_line": 1161,
+      "scan_symbol": "test_tool_call_stamps_error_type_on_exception",
+      "scan_source_line": "span = _tool_span(span_exporter)",
+      "scan_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "current_file_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "pytest.raises suppresses deliberately raised RuntimeError/CancelledError; following assertions verify error type/status and emitted exception events.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 65,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_decision.py",
+      "scan_line": 302,
+      "scan_symbol": "test_decision_stamps_error_type_on_exception",
+      "scan_source_line": "span = next(s for s in span_exporter.get_finished_spans() if s.name == \"fabric.decision\")",
+      "scan_file_sha256": "fc6b61c5fb2099265f5831a14a288162238fa8d5ea81d450bd64a693b25df9a4",
+      "current_file_sha256": "fc6b61c5fb2099265f5831a14a288162238fa8d5ea81d450bd64a693b25df9a4",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "pytest.raises suppresses the deliberate ValueError; following assertions inspect the ended decision span ERROR status.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 66,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_span_protection.py",
+      "scan_line": 180,
+      "scan_symbol": "test_independent_host_exporter_stays_raw_and_boundary_is_visible",
+      "scan_source_line": "assert raised.value is original_error",
+      "scan_file_sha256": "73c8acfc40e1485ac3a7627d9658714b749c1f815d8cacb96e11886a12a1b0a2",
+      "current_file_sha256": "73c8acfc40e1485ac3a7627d9658714b749c1f815d8cacb96e11886a12a1b0a2",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "The pytest.raises context exits normally after matching the exception. Following assertions verify original exception identity, protected export exclusion and host span behavior.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 67,
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/tests/test_surface_logging.py",
+      "scan_line": 382,
+      "scan_symbol": "test_delegate_depth_pops_on_exception",
+      "scan_source_line": "with d.delegate(\"after\") as after:",
+      "scan_file_sha256": "116510424bff88cec32ea40bb48473fdd011cd5443ee99ae2681e6ea11239413",
+      "current_file_sha256": "116510424bff88cec32ea40bb48473fdd011cd5443ee99ae2681e6ea11239413",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "pytest.raises intentionally suppresses the nested delegate failure. The following assertion verifies capture depth was restored.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 68,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/byte_resolver.py",
+      "scan_line": 146,
+      "scan_symbol": "ByteEvidenceResolver._read",
+      "scan_source_line": "descriptors.append(os.open(self._root.anchor, directory_flags))",
+      "scan_file_sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+      "current_file_sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Each successful os.open immediately registers os.close with the surrounding ExitStack; stack unwinding closes root, descendants and leaf on read/validation failure and success. New fault regression verifies every open failure plus fstat failure, reverse close order and invalidated descriptors; byte resolver covers both object and metadata paths.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 69,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/byte_resolver.py",
+      "scan_line": 154,
+      "scan_symbol": "ByteEvidenceResolver._read",
+      "scan_source_line": "descriptors.append(os.open(component, directory_flags, dir_fd=descriptors[-1]))",
+      "scan_file_sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+      "current_file_sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Each successful os.open immediately registers os.close with the surrounding ExitStack; stack unwinding closes root, descendants and leaf on read/validation failure and success. New fault regression verifies every open failure plus fstat failure, reverse close order and invalidated descriptors; byte resolver covers both object and metadata paths.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 70,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/byte_resolver.py",
+      "scan_line": 157,
+      "scan_symbol": "ByteEvidenceResolver._read",
+      "scan_source_line": "descriptor = os.open(",
+      "scan_file_sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+      "current_file_sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Each successful os.open immediately registers os.close with the surrounding ExitStack; stack unwinding closes root, descendants and leaf on read/validation failure and success. New fault regression verifies every open failure plus fstat failure, reverse close order and invalidated descriptors; byte resolver covers both object and metadata paths.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 71,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/governed_store.py",
+      "scan_line": 379,
+      "scan_symbol": "GovernedLocalContentStore._directory",
+      "scan_source_line": "opened = [os.open(\"/\", flags)]",
+      "scan_file_sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
+      "current_file_sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Root and descendant descriptors are appended to an owned list inside _directory, with reversed os.close in finally across normal yield and traversal/consumer exceptions. New fault regression verifies successful traversal, every open failure, and fstat failure release all acquired descriptors.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 72,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/governed_store.py",
+      "scan_line": 389,
+      "scan_symbol": "GovernedLocalContentStore._directory",
+      "scan_source_line": "opened.append(os.open(part, flags, dir_fd=opened[-1]))",
+      "scan_file_sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
+      "current_file_sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
+      "verified_pr_annotation_member": true,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Root and descendant descriptors are appended to an owned list inside _directory, with reversed os.close in finally across normal yield and traversal/consumer exceptions. New fault regression verifies successful traversal, every open failure, and fstat failure release all acquired descriptors.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 73,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/independent_store.py",
+      "scan_line": 82,
+      "scan_symbol": "LocalIndependentFeedResolver._read",
+      "scan_source_line": "fd = os.open(self._root.anchor, flags)",
+      "scan_file_sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+      "current_file_sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Each successful os.open immediately registers os.close with the surrounding ExitStack; stack unwinding closes root, descendants and leaf on read/validation failure and success. New fault regression verifies every open failure plus fstat failure, reverse close order and invalidated descriptors; byte resolver covers both object and metadata paths.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 74,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/independent_store.py",
+      "scan_line": 87,
+      "scan_symbol": "LocalIndependentFeedResolver._read",
+      "scan_source_line": "fd = os.open(component, flags, dir_fd=fd)",
+      "scan_file_sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+      "current_file_sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Each successful os.open immediately registers os.close with the surrounding ExitStack; stack unwinding closes root, descendants and leaf on read/validation failure and success. New fault regression verifies every open failure plus fstat failure, reverse close order and invalidated descriptors; byte resolver covers both object and metadata paths.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    },
+    {
+      "whole_scan_index": 75,
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "path": "sdk/python/src/fabric/independent_store.py",
+      "scan_line": 93,
+      "scan_symbol": "LocalIndependentFeedResolver._read",
+      "scan_source_line": "object_fd = os.open(identifier, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)",
+      "scan_file_sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+      "current_file_sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+      "verified_pr_annotation_member": false,
+      "disposition": "reviewed_intentional_retained",
+      "rationale": "Each successful os.open immediately registers os.close with the surrounding ExitStack; stack unwinding closes root, descendants and leaf on read/validation failure and success. New fault regression verifies every open failure plus fstat failure, reverse close order and invalidated descriptors; byte resolver covers both object and metadata paths.",
+      "supporting_ledgers": [
+        {
+          "path": "qualification/cloud-audit-python-codeql-followup.json",
+          "sha256": "2be6af799238154ae2985c1d4e464ea17bd009cf41f5e807b244f4e26dd2dc11"
+        }
+      ]
+    }
+  ],
+  "validation": [
+    {
+      "command": "/workspace/fabric-venv/bin/python -m coverage run --data-file=/tmp/fabric-9adb-codeql.coverage --source=fabric -m pytest --no-cov sdk/python/tests/test_capture_health.py::test_exception_event_is_included_in_final_loss_snapshot sdk/python/tests/test_span_protection.py::test_independent_host_exporter_stays_raw_and_boundary_is_visible sdk/python/tests/test_fd_ownership.py sdk/python/tests/test_auto_instrument.py sdk/python/tests/test_coverage_manifest.py sdk/python/tests/test_metadata_delivery.py",
+      "result": "77passed13.01s",
+      "log": "/workspace/fabric-qualification/python-codeql-9adb-review.log",
+      "limit": "Targeted behavior evidence; no whole-suite coverage threshold claimed."
+    },
+    {
+      "command": "/workspace/fabric-venv/bin/python -m pytest --no-cov sdk/python/tests/test_synthetic_evidence.py",
+      "result": "13passed3.61s",
+      "log": "/workspace/fabric-qualification/python-codeql-9adb-synthetic.log"
+    },
+    {
+      "command": "/workspace/fabric-tools-venv/bin/ruff check sdk/python/tests/test_synthetic_evidence.py && /workspace/fabric-tools-venv/bin/ruff format --check sdk/python/tests/test_synthetic_evidence.py",
+      "result": "check/format passed,Ruff0.13.0"
+    }
+  ],
+  "limits": [
+    "Hosted CodeQL findings persist until an exact later scan reports otherwise; reviewed intentional statements are retained rather than changed to evade queries.",
+    "All eight FD locations retain ExitStack/finally ownership. Tests cover every acquisition failure, successful return and fstat failure; they do not claim recovery from os.close failure, process kill or MemoryError.",
+    "Full-suite coverage/build qualification was owned by root; this ledger adds focused current-source evidence only.",
+    "Benchmark bytes are frozen. A synthetic canary explanation does not itself grant security acceptance."
+  ],
+  "independent_verification": {
+    "status": "passed",
+    "methods": [
+      "Compared all76 entries bijectively against CodeQL-only whole_scan positions/rules/paths/lines/severities source inventory",
+      "Recomputed all scanned git-file SHA256 and all current file SHA256; source lines match recorded scanned lines",
+      "Recomputed every referenced supporting-ledger SHA256",
+      "Mapped each of60 exactPR annotations bijectively by path, inclusive start/end line and matched_rules; verified all entry booleans and matching head SHA",
+      "Read all distinct disposition rationales and inspected sole test-only diff; original exact stdout/stderr and failure assertions preserved"
+    ],
+    "counts": {
+      "whole_codeql_entries": 76,
+      "exact_pr_annotations": 60,
+      "hash_mismatches": 0,
+      "missing_or_duplicate_memberships": 0
+    },
+    "test_command": "/workspace/fabric-venv/bin/python -m pytest -q scripts/tests/test_license_fail_closed.py scripts/tests/test_license_workflow.py scripts/tests/test_final_audit_regressions.py sdk/python/tests/test_synthetic_evidence.py --no-cov",
+    "test_result": "82 passed in 7.19s",
+    "limits": "Local metadata/source verification only; no new hosted scan, finding dismissal or security approval. Alias tests included in this combined run; license policy unchanged."
+  }
+}

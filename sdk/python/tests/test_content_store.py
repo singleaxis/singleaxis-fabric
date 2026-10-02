@@ -26,7 +26,8 @@ from fabric import (
     LocalFilesystemContentStore,
     S3ContentStore,
 )
-from fabric.content_store.base import content_hash
+from fabric.content_store import local
+from fabric.content_store.base import CorruptedObjectError, content_hash
 
 
 def _sha256(content: str) -> str:
@@ -330,3 +331,67 @@ def test_content_ref_store_failure_warns_but_does_not_raise(
     event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
     assert "fabric.content.ref" not in dict(event.attributes or {})
     assert any("content store" in r.message for r in caplog.records)
+
+
+@pytest.mark.parametrize("component", ["tenant", "evidence", "meta"])
+def test_local_byte_write_refuses_swapped_namespace(tmp_path: Path, component: str) -> None:
+    """A post-construction symlink must not redirect original bytes or metadata."""
+    root, outside = tmp_path / "store", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    store = LocalFilesystemContentStore(str(root), tenant_id="tenant")
+    namespace = root / "tenant"
+    if component == "tenant":
+        target = namespace
+    elif component == "evidence":
+        namespace.mkdir()
+        target = namespace / "evidence"
+    else:
+        (namespace / "evidence").mkdir(parents=True)
+        target = namespace / "evidence" / "meta"
+    target.symlink_to(outside, target_is_directory=True)
+    payload = b"synthetic-boundary-probe"
+    descriptor = {
+        "schema_version": "fabric.content-object/v2",
+        "tenant_id": "tenant",
+        "object_id": "object",
+        "stored_sha256": "sha256:" + _sha256(payload.decode()),
+        "stored_byte_length": len(payload),
+        "ref": store.evidence_ref_for("object"),
+    }
+    with pytest.raises((OSError, ValueError)):
+        store.put_bytes_object(descriptor, payload)
+    assert list(outside.iterdir()) == []
+
+
+def test_local_read_refuses_sidecar_symlink(tmp_path: Path) -> None:
+    root, outside = tmp_path / "store", tmp_path / "outside.json"
+    store = LocalFilesystemContentStore(str(root), tenant_id="tenant")
+    descriptor = {"digest": "sha256:" + _sha256("content")}
+    ref = store.put_object(descriptor, "content")
+    sidecar = root / "tenant" / "meta" / f"{ref.content_hash}.json"
+    sidecar.unlink()
+    outside.write_text('{"private": "synthetic"}')
+    sidecar.symlink_to(outside)
+    with pytest.raises((OSError, CorruptedObjectError)):
+        store.read_descriptor(ref.uri)
+
+
+def test_local_read_refuses_file_swap_after_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = LocalFilesystemContentStore(str(tmp_path / "store"), tenant_id="tenant")
+    ref = store.put_object({"digest": "sha256:" + _sha256("content")}, "content")
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"synthetic-outside")
+    original = local._exists
+
+    def swap_after_check(path: Path) -> bool:
+        exists = original(path)
+        path.unlink()
+        path.symlink_to(outside)
+        return exists
+
+    monkeypatch.setattr(local, "_exists", swap_after_check)
+    with pytest.raises(OSError):
+        store.read(ref.uri)

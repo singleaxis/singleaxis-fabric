@@ -1,0 +1,134 @@
+{
+  "schema_version": "fabric.independent-security-followup/v1",
+  "review_base": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "source_state": "shared working-tree followup; reviewed files bound by hashes",
+  "status": "INDEPENDENT_LOCAL_REVIEW_PASSED_HOSTED_SECURITY_ACCEPTANCE_OPEN",
+  "finding_membership": {
+    "full_scan_metadata_sha256": "3ce6110b59fa8427565cb0b82d068a77ee21cd06ffac339fff5c13919fee84b6",
+    "full_codeql_count": 88,
+    "full_codeql_levels": {
+      "error": 1,
+      "warning": 24,
+      "note": 63
+    },
+    "reported_pr_codeql_count": 71,
+    "reported_pr_categories": {
+      "high_security": 3,
+      "other_warnings": 9,
+      "other_notes": 59
+    },
+    "verified_pr_annotation_membership": false,
+    "supported_reads": [
+      {
+        "action": "github_get_commit_combined_status",
+        "result": "statuses=[]"
+      },
+      {
+        "action": "github_fetch documented commits/{sha}/check-runs subresource",
+        "result": "Exact head CodeQL check111045775098 completed/failure; GitHub Advanced Security app; annotations_count71; PR165/head matched."
+      }
+    ],
+    "blocker": "Active connector has no annotations/code-scanning read action; github_fetch previously reported annotations endpoint unsupported400. That route was not retried or bypassed. Full88 membership cannot stand in for exact71.",
+    "new_diagnostic": "Root-reviewed postmatrix job uses explicit checks:read on standard GitHub Actions token to read documented Checks API. Not executed in hosted CI yet; pending publication. It never changes scanner acceptance."
+  },
+  "reviewed_paths": [
+    {
+      "path": "sdk/typescript/src/hash.ts",
+      "sha256": "f04f3112e8466b7c8f7df4ca972a2d6c9696255ae680e2451f393af0b87b6aa0"
+    },
+    {
+      "path": "sdk/typescript/src/content-store.ts",
+      "sha256": "757b3e57a06c5ace2a8d061c368fbc0a2a9db2e6672d60fe34c0a514419252fb"
+    },
+    {
+      "path": "sdk/typescript/src/content.ts",
+      "sha256": "a58077eaf94899e6617283d3b0f0606ab05af457a778e4aa6ab1756599b81ef9"
+    },
+    {
+      "path": "sdk/typescript/src/byte-evidence.ts",
+      "sha256": "268a6f29420245810e0574687064f48b4587064388252af3ffbb798e63fac5c6"
+    },
+    {
+      "path": "sdk/typescript/src/content-writer.ts",
+      "sha256": "fc365361cc148ecab9012f45940d531471be4ea435c31536808d5b65ed2a4c07"
+    },
+    {
+      "path": "sdk/typescript/src/deployment-policy.ts",
+      "sha256": "e9101d085e0e6d4e49e50b457889722db4d343996ce2d4c79a75da4b8311c0e4"
+    },
+    {
+      "path": "sdk/typescript/src/resolver.ts",
+      "sha256": "c984a6cff7f1b1de4eecb48c4f8af44013749273254f36cc7a247ac7f3b94285"
+    },
+    {
+      "path": "sdk/typescript/test/opened-file-authority.test.ts",
+      "sha256": "d1b45a5d61ff143a41beca62a3b64cfcfbe4da65f48c44c3723fa9e62e4f87dc"
+    },
+    {
+      "path": "sdk/typescript/test/digest-helper-vectors.test.ts",
+      "sha256": "e3db7dc542f91448dc814759f85d8b958bc174d4f2a7b18d2d5b03813d2149b4"
+    },
+    {
+      "path": "scripts/qualification/run_c8_network_journey.py",
+      "sha256": "0090214bc7aeccbb2c20c3ec37a42c60cb7d7b1de8f55956efd0d6c8f93cbd49"
+    },
+    {
+      "path": "scripts/tests/test_c8_network_journey.py",
+      "sha256": "a306c93930ab2b76cd74af3aaab7e5215fea75b69904416a93c963dd10d60aaa"
+    }
+  ],
+  "typescript_review": {
+    "material_regressions_found": [],
+    "findings": [
+      "Opened descriptor fstat remains regular-file authority, with close in finally; leaf NOFOLLOW/NONBLOCK rejection on supported tested Linux is preserved. Removing stale pathname isFile check removes false rejection of a legitimate replacement regular inode.",
+      "Central digest helper hashes exact Uint8Array views. UTF8 text and ASCII canonical policy encodings remain explicit; digest prefixes, byte offsets, spool checksums and resolver hex comparisons are unchanged.",
+      "New tests exercise stale inode classification, immediate regular/symlink/FIFO replacement and independent fixed SHA256 vectors including NUL/Unicode and subarray offsets."
+    ],
+    "validation": "Independent Node20.19 run:5 resolved targeted files/54tests passed645ms. Full461/typecheck/lint/format are worker evidence, not claimed independently rerun.",
+    "limits": [
+      "Parent-directory namespace races remain outside documented controlled-tree threat boundary.",
+      "Platforms without O_NOFOLLOW/O_NONBLOCK were not independently qualified.",
+      "Local tests do not prove hosted CodeQL alert cleared."
+    ]
+  },
+  "c8_review": {
+    "material_regressions_found": [],
+    "findings": [
+      "Four physical HTTP requests reach independent SQLite witness; retry attempt identities remain distinct; HTTP400 body is captured; lost-response transaction commits before connection shutdown.",
+      "Fresh subprocess reads persisted derivative evidence without dispatch; witness count/effect rows unchanged before/afterreadback. Exactly seven protected handoffs verified with raw canary absent from queue and retained evidence.",
+      "Declared model roles and caller-supplied operation/attempt correlation are explicit limited identities; no authenticated source identity inferred.",
+      "No TLS/kernel packets/general network/Collector delivery/production attestation claimed; production_verdict NO_GO remains."
+    ],
+    "validation": "Independent pytest scripts/tests/test_c8_network_journey.py:2passed0.68s, including real loopback/freshprocess/tamperedmetadata denial and no effect replay.",
+    "limits": [
+      "Final report regeneration after all SDK sources frozen remains root-owned.",
+      "Harness checks imported tree against checkout at start and hashes source at end; concurrent source edits require rerun.",
+      "Same-host SQLite witness and private local capability authority are controlled fixture truth, not remote IAM/service attestation."
+    ]
+  },
+  "diagnostic_primary_sources": [
+    "https://docs.github.com/en/rest/checks/runs?apiVersion=2022-11-28",
+    "https://raw.githubusercontent.com/github/codeql-action/db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28/analyze/action.yml"
+  ],
+  "permissions": "No alert writes, dismissals, scanner suppressions, gate weakening, merge, deployment, commit or push performed.",
+  "diagnostic_review": {
+    "reviewer": "parent/root independent code review",
+    "result": "Approved fixedhost/routeallowlist/no redirects, budget/page/body bounds, exact head/app/PR binding, stable terminalcheck reread, full annotation count, privacy-minimal output",
+    "independent_validation": "Root independently ran23 tests plus Ruff check/format; author later added list-pagination/deadline cases, total25 pass0.07s.",
+    "files": [
+      {
+        "path": "scripts/qualification/report_codeql_pr_annotations.py",
+        "sha256": "9ef8887abd526b15f5353e9da9e5aa7ec5b00d44963e45c3f23bed5fe56742fd"
+      },
+      {
+        "path": "scripts/tests/test_codeql_pr_annotations.py",
+        "sha256": "b2ea035d75569902d9a2516edb8b231674b0d9e322975301cbd6db1f8e69e90b"
+      },
+      {
+        "path": ".github/workflows/codeql.yml",
+        "sha256": "e81340997ab12f8a37f1a625666b11df71b6d5ef676159ee99c0984b0e7c420c"
+      }
+    ],
+    "rule_mapping": "If exact ruleID absent from annotation title, output null. Later fullSARIF path/line correlation must retain ambiguity rather than infer a rule."
+  }
+}

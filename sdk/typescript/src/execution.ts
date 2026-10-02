@@ -271,13 +271,15 @@ function finish<T>(span: Span, fn: () => T): T {
   return result;
 }
 
-/** Stamp `failed` status + record the exception on `span` (does not end it). */
+/** Stamp `failed` status + a protected diagnostic (does not end the span). */
 function fail(span: Span, err: unknown): void {
+  const classification = errorName(err);
   span.setAttribute(ATTR_EXECUTION_STATUS, EXECUTION_STATUS_FAILED);
-  span.setStatus({ code: SpanStatusCode.ERROR, message: errorName(err) });
-  if (err instanceof Error) {
-    span.recordException(err);
-  }
+  span.setStatus({ code: SpanStatusCode.ERROR, message: classification });
+  span.addEvent("exception", {
+    "exception.type": classification,
+    "exception.message": "Operation failed",
+  });
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -289,8 +291,26 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 }
 
 function errorName(err: unknown): string {
-  if (err instanceof Error) {
-    return err.name;
+  // Error names are user-controlled too. Never export arbitrary names or
+  // inspect messages/stacks; hostile property access must not mask the cause.
+  try {
+    if (err instanceof Error) {
+      const name = err.name;
+      switch (name) {
+        case "TypeError":
+        case "RangeError":
+        case "ReferenceError":
+        case "SyntaxError":
+        case "URIError":
+        case "EvalError":
+        case "AggregateError":
+        case "AbortError":
+        case "TimeoutError":
+          return name;
+      }
+    }
+  } catch {
+    // Uninspectable thrown values receive the same bounded fallback.
   }
   return "Error";
 }

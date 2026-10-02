@@ -44,7 +44,6 @@ managers.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import math
@@ -116,6 +115,12 @@ from ._attributes import (
     check_attribute_keys,
 )
 from ._calls import LLMCall, ToolCall
+from ._capture_health import (
+    DecisionCaptureHealth,
+    capture_health,
+    recording_state,
+    warn_capture_health,
+)
 from ._content import (
     ContentRole,
     TranscriptManifest,
@@ -123,7 +128,7 @@ from ._content import (
 )
 from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
-from ._hashes import require_sha256_hex, require_sha256_hex_values
+from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
@@ -344,7 +349,7 @@ def _sha256_hex(value: str) -> str:
     # (malformed but reachable via arbitrary file paths / content),
     # matching ``memory._sha256_hex`` so a hash computed here is
     # byte-identical to one a record module would produce.
-    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(value)
 
 
 @dataclass(frozen=True)
@@ -488,6 +493,8 @@ class Decision(AbstractContextManager["Decision"]):
         # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
         # rejection; shared by the sync and async context-manager paths.
         self._state = "new"
+        self._recording_at_start: bool | None = None
+        self._capture_health = capture_health(None, None)
         # Governed content (spec 028/029): lazily built per-decision sink
         # accumulating manifest items; ``None`` forever in metadata mode.
         self._content_sink: ContentSink | None = None
@@ -584,7 +591,7 @@ class Decision(AbstractContextManager["Decision"]):
 
     # -- context manager --------------------------------------------------
 
-    def __enter__(self) -> Self:  # noqa: PLR0912
+    def __enter__(self) -> Self:  # noqa: PLR0912, PLR0915 - stamp decision metadata and local health
         if self._state != "new":
             raise RuntimeError(
                 f"Decision already {self._state}; open one Decision per agent "
@@ -602,6 +609,9 @@ class Decision(AbstractContextManager["Decision"]):
             set_status_on_exception=False,
         )
         self._span = self._cm.__enter__()
+        self._recording_at_start = recording_state(self._span)
+        self._capture_health = capture_health(self._span, self._recording_at_start)
+        warn_capture_health(self._capture_health)
         self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
         self._span.set_attribute(ATTR_DECISION_ID, self._decision_id)
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
@@ -694,6 +704,8 @@ class Decision(AbstractContextManager["Decision"]):
         if self._content_sink is not None:
             self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
         result = self._cm.__exit__(exc_type, exc, tb)
+        self._capture_health = capture_health(self._span, self._recording_at_start)
+        warn_capture_health(self._capture_health)
         self._span = None
         self._cm = None
         self._state = "closed"
@@ -722,6 +734,19 @@ class Decision(AbstractContextManager["Decision"]):
         return self.__exit__(exc_type, exc, tb)
 
     # -- introspection ----------------------------------------------------
+
+    @property
+    def capture_health(self) -> DecisionCaptureHealth:
+        """Local decision-span recording/loss snapshot, available after close.
+
+        Null counters mean the host provider does not expose usable statistics.
+        ``unverified`` is not completeness: child spans, event attributes,
+        exporter queues, delivery and uninstrumented activity are outside scope.
+        No sampling, privacy setting or span limit is changed by this check.
+        """
+        if self._span is not None:
+            self._capture_health = capture_health(self._span, self._recording_at_start)
+        return self._capture_health.copy()
 
     @property
     def span(self) -> Span:
@@ -984,9 +1009,9 @@ class Decision(AbstractContextManager["Decision"]):
 
     @property
     def content_manifest_uri(self) -> str | None:
-        """The manifest's deterministic store URI (metadata mode: ``None``).
+        """The manifest's URI, or ``None`` without content observations.
 
-        Computable before close with no store I/O — the bytes arrive
+        Computable after the first observation with no store I/O — the bytes arrive
         asynchronously; resolve the URI to learn actual delivery state."""
         sink = self._content_sink
         return sink.manifest_uri if sink is not None else None

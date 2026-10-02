@@ -31,6 +31,18 @@ spec:
       annotations:
         # Force a pod roll when the config changes.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.receiver.workloadAuthentication.enabled }}
+        fabric.singleaxis.ai/tenant-id: {{ .Values.receiver.workloadAuthentication.tenantId | quote }}
+        fabric.singleaxis.ai/workload-id: {{ .Values.receiver.workloadAuthentication.workloadId | quote }}
+        fabric.singleaxis.ai/identity-attestation-ref: {{ .Values.receiver.workloadAuthentication.identityAttestationRef | quote }}
+        {{- if .Values.receiver.workloadAuthentication.policyDigest }}
+        fabric.singleaxis.ai/capture-policy-version: {{ .Values.receiver.workloadAuthentication.policyVersion | quote }}
+        fabric.singleaxis.ai/capture-policy-digest: {{ .Values.receiver.workloadAuthentication.policyDigest | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.exporter.sendingQueue.persistence.encryptionAttestationRef }}
+        fabric.singleaxis.ai/storage-encryption-attestation-ref: {{ .Values.exporter.sendingQueue.persistence.encryptionAttestationRef | quote }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -87,6 +99,11 @@ spec:
               mountPath: /etc/fabric/evidence-source
               readOnly: true
             {{- end }}
+            {{- if .Values.receiver.workloadAuthentication.enabled }}
+            - name: workload-auth-token
+              mountPath: /etc/fabric/workload-auth
+              readOnly: true
+            {{- end }}
             {{- if .Values.exporter.sendingQueue.persistence.enabled }}
             - name: queue-storage
               mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
@@ -140,6 +157,17 @@ spec:
                   name: {{ .Values.receiver.evidenceSourceBinding.tokenSecret.name | quote }}
                   items:
                     - key: {{ .Values.receiver.evidenceSourceBinding.tokenSecret.key | quote }}
+                      path: token
+        {{- end }}
+        {{- if .Values.receiver.workloadAuthentication.enabled }}
+        - name: workload-auth-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Values.receiver.workloadAuthentication.tokenSecret.name | quote }}
+                  items:
+                    - key: {{ .Values.receiver.workloadAuthentication.tokenSecret.key | quote }}
                       path: token
         {{- end }}
         {{- if and .Values.exporter.sendingQueue.persistence.enabled .Values.exporter.sendingQueue.persistence.existingClaim }}

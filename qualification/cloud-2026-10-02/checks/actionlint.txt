@@ -1,0 +1,4 @@
+[INFO] Installing environment for https://github.com/rhysd/actionlint.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+Lint GitHub Actions workflow files.......................................Passed

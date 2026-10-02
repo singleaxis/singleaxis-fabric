@@ -26,8 +26,9 @@ from pathlib import Path
 from typing import Any
 
 from .byte_evidence import _BOUNDARIES, _ROLES
+from .content_join import CONTENT_JOIN_FIELDS, validate_content_join
 
-_EVENT_KEYS = frozenset(
+_EVENT_KEYS = CONTENT_JOIN_FIELDS | frozenset(
     {
         "record_id",
         "tenant_id",
@@ -492,6 +493,7 @@ class SyntheticSourceSpool:
             raise ValueError("source spool event has missing or forbidden fields")
         if event["tenant_id"] != self.tenant_id or event["run_id"] != self.run_id:
             raise ValueError("source spool event identity mismatch")
+        validate_content_join(event)
         for key in (
             "record_id",
             "source_id",
@@ -665,6 +667,68 @@ class SyntheticSourceSpool:
                     return False
                 self._condition.wait(remaining)
             return True
+
+    def durable_records(self) -> list[dict[str, Any]]:
+        """Fresh verified inventory of fsynced records, including recovered epochs.
+
+        This never flushes pending admissions or claims source completeness. It
+        snapshots only successful fsync settlements; concurrent pending files
+        are excluded. Disk identities and checksums are compared with admission
+        or recovery evidence before callers may project or send the metadata.
+        """
+        with self._condition:
+            expected = {
+                event["record_id"]: "sha256:" + hashlib.sha256(_canonical(event)).hexdigest()
+                for event in self._recovered
+            }
+            expected.update(
+                {
+                    identity: digest
+                    for identity, digest in self._admitted_digests.items()
+                    if self._statuses.get(identity) == "spooled"
+                }
+            )
+        records: list[dict[str, Any]] = []
+        directory_fd = None
+        try:
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
+            directory_fd = os.open(self.root.anchor, flags)
+            for component in self.root.parts[1:]:
+                child_fd = os.open(component, flags, dir_fd=directory_fd)
+                os.close(directory_fd)
+                directory_fd = child_fd
+            info = os.fstat(directory_fd)
+            if stat.S_IMODE(info.st_mode) != _DIRECTORY_MODE or info.st_uid != os.geteuid():
+                raise ValueError("unsafe source root")
+            for identity, digest in expected.items():
+                raw = _read_secure(
+                    self.root / f"event-{identity}.json",
+                    self.max_bytes,
+                    directory_fd=directory_fd,
+                )
+                wrapper = json.loads(raw)
+                if not isinstance(wrapper, dict) or set(wrapper) != {"event", "sha256"}:
+                    raise ValueError("invalid event wrapper")
+                event = wrapper["event"]
+                self._validate_event(event)
+                actual = "sha256:" + hashlib.sha256(_canonical(event)).hexdigest()
+                if (
+                    event["record_id"] != identity
+                    or actual != digest
+                    or wrapper["sha256"] != digest
+                    or _canonical(wrapper) != raw
+                ):
+                    raise ValueError("source inventory mismatch")
+                records.append(event)
+        except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
+            raise ValueError("source durable inventory unavailable or invalid") from None
+        finally:
+            if directory_fd is not None:
+                os.close(directory_fd)
+        records.sort(
+            key=lambda row: (row["source_id"], row["source_epoch"], row["source_sequence"])
+        )
+        return records
 
     def recovered(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self._recovered)

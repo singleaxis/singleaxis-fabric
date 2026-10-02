@@ -105,10 +105,13 @@ honestly; absence of a record is not evidence that an action did not occur.
    cannot deploy unchanged: its image digest is a placeholder and its cgroup
    path is empty. Source fsync and OTLP acceptance do not prove destination
    retention or complete host observation.
-5. The audit receiver now retries failed downstream delivery in a bounded
-   **in-memory** queue and reports known gaps. Collector crash can still lose
-   records, logfile cursor is not persisted, and netlink cannot replay.
-   Fabric Node's durable queue begins only after Node accepts telemetry.
+5. The audit receiver's logfile mode now requires a private persistent
+   `state_directory`. It stages a bounded scrubbed OTLP batch and accepted cursor
+   with fsync, replays stable IDs after restart, and advances only after downstream
+   acceptance. Numeric retained rotations, truncation, corruption and resource
+   failures have explicit tests/evidence. Netlink remains a bounded in-memory,
+   non-replayable source. Neither path proves complete kernel observation or
+   destination durability; the native target remains unqualified here.
 6. Production S3 governed-content delivery and target-environment storage
    still require live qualification. The exact candidate Node path has
    disposable Linux qualification, not customer durable-retention proof.

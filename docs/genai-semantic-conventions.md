@@ -29,13 +29,21 @@ v0.6 compatibility. New integrations should pass `provider=`.
 
 Fabric does not place raw prompts, messages, retrieval queries, documents,
 tool arguments, tool results, or memory content on spans by default. Existing
-Fabric SHA-256 attributes remain the safe default.
+Fabric SHA-256 attributes are deterministic fingerprints. They reveal equality
+and can expose low-entropy inputs through guessing; classify their disclosure
+as well as the original content.
 
 Set `capture_content=True` on an individual LLM, tool, retrieval, or memory
 operation only after applying the data controls appropriate for that trace
-destination. This enables standard content attributes such as
+destination. Outside governed mode, this can enable standard content attributes such as
 `gen_ai.input.messages`, `gen_ai.output.messages`,
 `gen_ai.tool.call.arguments`, and `gen_ai.retrieval.query.text`.
+The Python governed client rejects conflicting raw-content flags. Its separate
+managed metadata exporter also suppresses raw content unless that exporter
+explicitly opts in; an operation flag alone cannot bypass that protection.
+TypeScript and customer-owned exporters have different boundaries. See
+[Python export protection](python-auto-capture-privacy.md) and
+[governed capture](governed-content.md) before choosing a route.
 
 ## Python example
 
@@ -77,5 +85,7 @@ deliberately additive:
 - legacy cache token attributes are emitted alongside the current dotted
   keys during the compatibility window.
 
-Content capture is opt-in in both namespaces. Collector allowlists should be
-reviewed before enabling raw content in production.
+Content capture is opt-in in both namespaces. Fabric Node strips raw content;
+its production allowlist is not a raw-content delivery route. Use explicitly
+authorized governed storage for permitted originals and review every separate
+exporter/instrumentation route.

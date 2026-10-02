@@ -72,6 +72,7 @@ export const MAX_MEMBERS = 32;
  * truncate.
  */
 const MAX_VALUE_CHARS = 256;
+const MAX_HEADER_CHARS = MAX_MEMBERS * (256 + MAX_VALUE_CHARS + 2);
 
 /**
  * The Fabric identity carried across a service boundary.
@@ -184,6 +185,9 @@ function encodeContext(context: FabricContext): string {
  * missing required fields) yields `undefined` rather than throwing.
  */
 function decodeContext(encoded: string): FabricContext | undefined {
+  if (encoded.length > MAX_VALUE_CHARS || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
+    return undefined;
+  }
   let payload: unknown;
   try {
     // Node's base64url decoder re-pads implicitly and ignores stray
@@ -261,13 +265,20 @@ function decodeContext(encoded: string): FabricContext | undefined {
  */
 function parseMembers(tracestate: string): [string, string][] {
   const members: [string, string][] = [];
-  for (const entry of tracestate.split(",")) {
+  if (typeof tracestate !== "string" || tracestate.length > MAX_HEADER_CHARS) {
+    return members;
+  }
+  for (const entry of tracestate.split(",").slice(0, MAX_MEMBERS)) {
     const item = entry.trim();
     const eq = item.indexOf("=");
     if (item === "" || eq < 0) {
       continue;
     }
-    members.push([item.slice(0, eq).trim(), item.slice(eq + 1).trim()]);
+    const key = item.slice(0, eq).trim();
+    const value = item.slice(eq + 1).trim();
+    if (key.length <= 256 && value.length <= MAX_VALUE_CHARS) {
+      members.push([key, value]);
+    }
   }
   return members;
 }
@@ -349,7 +360,12 @@ export function inject(
  */
 export function extract(carrier: Record<string, string>): FabricContext | undefined {
   const tracestate = carrier[TRACESTATE_HEADER] ?? "";
-  if (!tracestate) {
+  if (
+    typeof tracestate !== "string" ||
+    !tracestate ||
+    tracestate.length > MAX_HEADER_CHARS ||
+    tracestate.split(",").length > MAX_MEMBERS
+  ) {
     return undefined;
   }
   for (const [key, value] of parseMembers(tracestate)) {

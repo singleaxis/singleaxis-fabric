@@ -1,0 +1,66 @@
+{
+  "schema_version": "fabric.ci-checkpoint/v1",
+  "head": "ee2b3dd0e5a03e28ce84361685698f94a6b508c0",
+  "workflows": [
+    {
+      "id": 37065522327,
+      "name": "Recorder security",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/singleaxis/singleaxis-fabric/actions/runs/37065522327"
+    },
+    {
+      "id": 37065522424,
+      "name": "Recorder license compliance",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/singleaxis/singleaxis-fabric/actions/runs/37065522424"
+    },
+    {
+      "id": 37065522229,
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/singleaxis/singleaxis-fabric/actions/runs/37065522229"
+    },
+    {
+      "id": 37065522370,
+      "name": "Recorder CI",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/singleaxis/singleaxis-fabric/actions/runs/37065522370"
+    },
+    {
+      "id": 37065522115,
+      "name": "Synthetic production-profile qualification",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/singleaxis/singleaxis-fabric/actions/runs/37065522115"
+    },
+    {
+      "id": 37065522436,
+      "name": "E2E kind smoke",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/singleaxis/singleaxis-fabric/actions/runs/37065522436"
+    }
+  ],
+  "codeql_result_gate": {
+    "id": 111032576734,
+    "conclusion": "failure",
+    "high": 2,
+    "warnings": 7,
+    "notes": 58,
+    "total": 67,
+    "url": "https://github.com/singleaxis/singleaxis-fabric/runs/111032576734"
+  },
+  "semgrep_source_gate": {
+    "conclusion": "failure",
+    "total_findings": 5
+  },
+  "limits": [
+    "This diagnostic checkpoint is not the later follow-up head.",
+    "CodeQL workflow success is separate from the failed result gate.",
+    "Whole-scan metadata is in scan-locations-ee2b3dd.json and is not the PR diff result count."
+  ]
+}

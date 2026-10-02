@@ -14,7 +14,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { sha256BytesHex } from "./hash.js";
 
 import {
   ContentStatus,
@@ -429,7 +430,7 @@ export class ContentWriter {
       );
       record["content_b64"] = Buffer.from(task.content as string, "utf-8").toString("base64");
     }
-    record["checksum"] = createHash("sha256").update(canonicalJsonBytes(record)).digest("hex");
+    record["checksum"] = sha256BytesHex(canonicalJsonBytes(record));
     return record;
   }
 
@@ -450,7 +451,14 @@ export class ContentWriter {
     try {
       const fd = fs.openSync(tmp, "w", 0o600);
       try {
-        fs.writeSync(fd, entry);
+        let offset = 0;
+        while (offset < entry.length) {
+          const written = fs.writeSync(fd, entry, offset, entry.length - offset);
+          if (!Number.isInteger(written) || written <= 0 || written > entry.length - offset) {
+            throw new Error("spool write made no valid progress");
+          }
+          offset += written;
+        }
         fs.fsyncSync(fd);
       } finally {
         fs.closeSync(fd);
@@ -526,7 +534,7 @@ export class ContentWriter {
 
   private taskFromRecord(record: Record<string, unknown>): Task {
     const { checksum, ...body } = record;
-    const expected = createHash("sha256").update(canonicalJsonBytes(body)).digest("hex");
+    const expected = sha256BytesHex(canonicalJsonBytes(body));
     if (checksum !== expected) {
       throw new Error("spool record checksum mismatch");
     }
@@ -594,6 +602,7 @@ export class ContentWriter {
       return;
     }
     task.attempts += 1;
+    let preserveSpool = false;
     try {
       if (task.kind === "manifest") {
         await this.config.store.writeManifest(
@@ -630,12 +639,13 @@ export class ContentWriter {
         try {
           await this.reconcileRecoveredObject(task, ContentStatus.FAILED);
         } catch {
-          // The object spool remains for a later restart/reconciliation.
+          // Failed reconciliation must leave the original bytes available to a later restart.
+          preserveSpool = true;
         }
       }
       this.settle(task, ContentStatus.FAILED);
     }
-    if (this.config.durability === "spooled") {
+    if (this.config.durability === "spooled" && !preserveSpool) {
       this.removeSpool(task);
     }
   }

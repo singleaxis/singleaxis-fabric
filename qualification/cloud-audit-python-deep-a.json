@@ -1,0 +1,1067 @@
+{
+  "schema_version": "fabric.cloud-audit-python-deep/v1",
+  "date": "2026-10-02",
+  "reviewer": "qualification",
+  "scope": "Alphabetical first24 structural-only entries from cloud-audit-python-tests.json, test_adapters_crewai.py through test_evidence_attestation.py",
+  "file_count": 24,
+  "full_text_read_complete": true,
+  "automated_parse_is_not_semantic_read": true,
+  "runtime_source_changes": false,
+  "authorized_test_changes": [
+    "sdk/python/tests/test_auto_instrument.py",
+    "sdk/python/tests/test_byte_boundary_adapter.py"
+  ],
+  "focused_validation": {
+    "command": "/workspace/fabric-venv/bin/python -m pytest tests/test_auto_instrument.py tests/test_byte_boundary_adapter.py -o addopts= -q",
+    "result": "28 passed in0.74s",
+    "installed_extras_simulation": "2 passed in0.16s",
+    "ruff_version": "0.13.0",
+    "ruff_check": "passed",
+    "ruff_format": "2 files already formatted",
+    "mypy": "2 source files passed"
+  },
+  "findings": [
+    {
+      "id": "PY-DEEP-A-001",
+      "status": "fixed_test_only",
+      "paths": [
+        "sdk/python/tests/test_auto_instrument.py"
+      ],
+      "finding": "Two optional-instrumentor tests inherited installed-package availability, making their assertions environment-dependent.",
+      "resolution": "Explicitly block instrumentor imports except allowed fake OpenAI.28 targeted tests pass; two relevant tests also pass with synthetic installed OpenAI/Anthropic modules injected. No runtime change."
+    },
+    {
+      "id": "PY-DEEP-A-002",
+      "status": "fixed_test_only",
+      "paths": [
+        "sdk/python/tests/test_byte_boundary_adapter.py"
+      ],
+      "finding": "all on last two failed events could accept absent/short added sequence.",
+      "resolution": "Assert exactly two added events and exact model request/result failed role sequence;28 targeted tests pass."
+    },
+    {
+      "id": "PY-DEEP-A-003",
+      "status": "open_test_harness_timeout_risk",
+      "paths": [
+        "sdk/python/tests/test_byte_spool.py",
+        "sdk/python/tests/test_client.py",
+        "sdk/python/tests/test_distributed_closure.py"
+      ],
+      "finding": "Unbounded child stdout.readline in byte spool and subprocess.run without timeout in client/closure tests can hang runner before later timeout applies.",
+      "resolution": "Recorded only; process harness changes not included in authorized narrow test fixes."
+    },
+    {
+      "id": "PY-DEEP-A-004",
+      "status": "open_assertion_strength_gap",
+      "paths": [
+        "sdk/python/tests/test_content_store.py"
+      ],
+      "finding": "Content-ref integration tests compute expected refs by calling store.put after SDK operation; that call can create missing bytes and mask failure to persist original operation.",
+      "resolution": "Read-only finding; direct ref-file existence/readback before second put would independently prove persistence."
+    },
+    {
+      "id": "PY-DEEP-A-005",
+      "status": "open_inventory_cardinality_gap",
+      "paths": [
+        "sdk/python/tests/test_distributed_closure.py",
+        "sdk/python/tests/test_enterprise_integration.py",
+        "sdk/python/tests/test_enterprise_preflight.py",
+        "sdk/python/tests/test_enterprise_reference.py"
+      ],
+      "finding": "Selected all(values) and set(values) checks do not pin expected named check/gate inventory; empty all or shrunken nonempty set can pass if a runner removes cases.",
+      "resolution": "Record expected gate/case names before universal success assertions in future test strengthening; existing tests still prove explicitly asserted counters/negative outcomes."
+    }
+  ],
+  "files": [
+    {
+      "path": "sdk/python/tests/test_adapters_crewai.py",
+      "sha256": "f567e4af166b2f10130f1c9a3ae04780601a1d89aab672b98cd7a1c87851f6f3",
+      "bytes": 10518,
+      "line_count": 278,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_step_callback_records_content_safe_step_metadata",
+        "test_step_callback_captures_modern_crewai_reasoning_fields",
+        "test_step_callback_captures_agentfinish_output_field",
+        "test_step_callback_handles_missing_attributes",
+        "test_step_callback_hashes_entire_long_log_without_recording_it",
+        "test_task_callback_records_task_event_with_description_and_agent",
+        "test_task_callback_hashes_entire_long_description_without_recording_it",
+        "test_task_callback_handles_missing_fields",
+        "test_callbacks_never_emit_raw_sensitive_content",
+        "test_step_callback_never_raises_into_host",
+        "test_task_callback_never_raises_into_host",
+        "test_callback_failure_logs_no_exception_content"
+      ],
+      "test_contract": "Duck-typed CrewAI step/task callbacks hash selected thought/log/output/description content, preserve full lengths, prefer modern thought fields, tolerate missing fields and swallow hostile property exceptions. Re-read new callback-error regression: exactly two diagnostic records, no private exception canary or exc_info.",
+      "false_pass_risks_and_limits": [
+        "SimpleNamespace fixtures do not exercise a real CrewAI release or callback registration.",
+        "Privacy assertions cover event dictionaries and newly added hostile-error diagnostic canary; no real exporter transport or full sensitive-label canary test.",
+        "Agent/tool labels remain raw and are not tested with sensitive values."
+      ],
+      "privacy_closure_error_cases": "Strong raw-content canary and digest checks for selected fields; no completion/delivery claims; hostile property failures preserve host execution. New concurrent security-worker regression explicitly excludes exception text from diagnostics; reviewed final patch.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": false
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_async.py",
+      "sha256": "f664643534fa3efc4b22efe21bd9d896274a9b51777b90405d0c35c33f6612c9",
+      "bytes": 4496,
+      "line_count": 119,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_async_with_emits_same_span_as_sync_with",
+        "test_async_exit_records_exception",
+        "test_async_llm_and_tool_child_spans",
+        "test_record_retrieval_inside_async_block"
+      ],
+      "test_contract": "Async decision output matches normalized sync metadata/events, async failures mark ERROR and exception event, async LLM/tool child spans emit model/name and retrieval count.",
+      "false_pass_risks_and_limits": [
+        "Normalization omits parent/span identity and timing; child-span test does not assert parent linkage across an actual await.",
+        "Exception test catches RuntimeError without asserting original exception identity or message.",
+        "Uses in-memory provider, not async exporter delivery."
+      ],
+      "privacy_closure_error_cases": "Checks exception event presence but not redaction; no cancellation, concurrent context interleaving or durable closure case.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_auto_instrument.py",
+      "sha256": "44635dca359a0a7b759852d4b7a69747c2c4e8d5ff7af86699521bf9568d496c",
+      "bytes": 11963,
+      "line_count": 338,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_known_instrumentor_names_returns_canonical_set",
+        "test_no_extras_installed_returns_empty",
+        "test_one_extra_installed_enables_only_that",
+        "test_only_filter_restricts_to_subset",
+        "test_only_filter_warns_on_unknown_name",
+        "test_instrument_method_failure_logs_warning_and_skips",
+        "test_instrumentor_constructor_failure_logs_warning_and_skips",
+        "test_module_imports_but_class_missing_logs_warning",
+        "test_content_capture_default_off",
+        "test_content_capture_explicit_arg_true",
+        "test_content_capture_via_env_flag",
+        "test_content_capture_false_overrides_upstream_env",
+        "test_fabric_enable_auto_instrumentation_delegates",
+        "test_import_diagnostics_do_not_include_third_party_error_content",
+        "test_registration_diagnostics_do_not_include_third_party_error_content",
+        "test_tuple_does_not_report_unverified_or_noop_activation",
+        "test_upstream_content_opt_in_requires_actual_boolean"
+      ],
+      "test_contract": "Stub instrumentor import/constructor/registration and active-state logic; only-filter, unknown-name diagnostics, actual boolean opt-in, restrictive content environment variables, sanitized third-party exceptions and Fabric passthrough.",
+      "false_pass_risks_and_limits": [
+        "FIXED in this audit: optional instrumentor availability is explicitly mocked in both environment-sensitive tests; verified with preinstalled fake OpenAI/Anthropic modules.",
+        "Fake active=True does not prove upstream SDK emits spans or honors content environment settings.",
+        "Module reload does not itself restore process environment; tests rely on monkeypatch around most environment changes."
+      ],
+      "privacy_closure_error_cases": "Explicit private-canary absence and exc_info=None in import/registration diagnostics. False/unknown instrumentation excluded; no live API or delivery qualification.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": false
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_byte_boundary_adapter.py",
+      "sha256": "0252ef34c1abb9f2caca22b95e1fee809bbbf4b8e987192c2ae805fc8942983e",
+      "bytes": 8882,
+      "line_count": 241,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_exact_model_and_tool_bytes_retries_and_empty_context",
+        "test_delegate_exception_and_unsupported_result_preserve_caller_semantics",
+        "test_deferred_result_is_not_mislabeled_as_completed",
+        "test_recorder_failure_does_not_change_delegate_and_bypass_is_partial",
+        "test_session_capture_exception_falls_back_to_explicit_gaps"
+      ],
+      "test_contract": "Byte-call wrapper preserves binary/empty request/result/context, retry attempt identity, delegate exception/result identity, deferred iterator status, explicit recorder/session capture gaps, and independent-witness route-bypass partial verdict.",
+      "false_pass_risks_and_limits": [
+        "Deferred test covers iterator only, not coroutine/async generator/cancellation.",
+        "FIXED in this audit: recorder failure requires exactly two added events and exact request/result roles with failed status, eliminating short/empty-tail false pass.",
+        "Local synthetic witness only, not provider-boundary attestation."
+      ],
+      "privacy_closure_error_cases": "Unsupported/deferred and bypass cannot become complete; exception identity preserved; content store readback verifies exact bytes. No secret-error/log canary.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": false
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_byte_evidence.py",
+      "sha256": "307c934ad00320229ea588e1b98a291bfa4de2a768e3aa682a2a2c535d53855e",
+      "bytes": 14865,
+      "line_count": 411,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_binary_round_trip_and_v2_descriptor",
+        "test_identical_bytes_keep_distinct_observation_identity",
+        "test_outside_policy_and_oversize_are_explicit_nonstored",
+        "test_store_failure_never_claims_stored",
+        "test_derivative_reference_failure_leaves_no_pending_records",
+        "test_oversized_observation_ids_rejected_before_admission",
+        "test_queue_full_reports_loss_without_ref",
+        "test_store_rejects_tampered_bytes_and_cross_tenant",
+        "test_record_bound_requires_caller_to_drain",
+        "test_closed_and_invalid_capture_never_claim_stored",
+        "test_config_rejects_legacy_store_and_unknown_role",
+        "test_terminal_chunk_matches_pinned_cross_sdk_fixture",
+        "test_s3_byte_store_uses_conditional_write_and_preserves_descriptor"
+      ],
+      "test_contract": "Binary roundtrip and public schema, distinct observation IDs, excluded/no-fingerprint and oversize outcomes, store/ref failures, bounds, queue overflow, tamper/tenant rejection, closed/type errors, pinned cross-SDK fixture and S3 conditional writes.",
+      "false_pass_risks_and_limits": [
+        "Schema importorskip occurs after operations and can skip whole result when dependency absent; frozen dev env includes it.",
+        "Several recorder.close results not asserted and most tests lack finally cleanup; assertion failure can leak worker into later tests.",
+        "S3 FakeS3 always treats existing key as precondition failure regardless headers; tests inspect IfNoneMatch but do not test replay/corrupt existing object in this file."
+      ],
+      "privacy_closure_error_cases": "Explicit excluded-content fingerprint absence and no-ref failure statuses; derivative ref failure sanitizes exception and leaves no pending records; local binary exactness verified against bytes/schema.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_byte_spool.py",
+      "sha256": "0e85d0fa2ae5f3197f83ff9990f7dba4ceedd308a3e98d5b40652017b376d850",
+      "bytes": 29439,
+      "line_count": 747,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_fresh_process_replays_exact_identity_after_crash",
+        "test_process_death_at_atomic_fsync_boundaries",
+        "test_pre_fsync_admission_is_unknown_to_fresh_process",
+        "test_outage_recovers_same_id_and_bounded_shutdown",
+        "test_permanent_or_exhausted_loss_is_durable_and_sanitized",
+        "test_capacity_loss_persists_health_and_never_claims_durable",
+        "test_corrupted_payload_never_replays_or_becomes_complete",
+        "test_blocked_destination_does_not_block_admission_or_shutdown",
+        "test_fsync_failure_is_visible_without_private_exception_text",
+        "test_retention_removes_failed_protected_payload_but_keeps_loss",
+        "test_blocked_spool_fsync_does_not_block_capture_or_close",
+        "test_actual_fsync_failure_never_acknowledges_durable",
+        "test_wrong_key_does_not_destroy_recoverable_inventory",
+        "test_retry_growth_is_reserved_bounded_and_updates_high_water",
+        "test_deployment_privacy_replays_into_existing_governed_encrypted_stores",
+        "test_deleted_committed_entry_keeps_recovery_unverified_across_restarts",
+        "test_earlier_health_schema_still_detects_deleted_entry",
+        "test_each_persisted_unknown_counter_blocks_empty_recovered_durability"
+      ],
+      "test_contract": "Real subprocess SIGKILL replay across outage/lost ACK/cleanup and fsync boundaries, stable IDs, encrypted raw/protected canary absence, sticky unknown admission/inventory losses, retry/permanent loss, retention, key mismatch preservation, bounded shutdown, fsync faults and deployment privacy replay.",
+      "false_pass_risks_and_limits": [
+        "Child stdout.readline before communicate timeout is unbounded and can hang the test runner if worker dies/stalls before witness line; several crash tests also lack finally child cleanup.",
+        "Some crash injection hooks target private methods/cipher fields; behavior is implementation-coupled, not independent filesystem power-loss qualification.",
+        "At-most-one *.bytes count can be vacuous because local artifact layout may not use that suffix; exact readback and identity assertions provide actual evidence."
+      ],
+      "privacy_closure_error_cases": "Strong before/after crash readback, no source digest on masked/tokenized data, raw canary absence on disk/health, durable lost/unknown sticky across restarts. Explicitly distinguishes process death from power failure.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_call_batches.py",
+      "sha256": "50a6b71fdc74a5f4923ac2767da1c0fb5ba2ce800c58b8d1f637091a106f0359",
+      "bytes": 3053,
+      "line_count": 85,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_more_than_one_projection_batch_preserves_exact_set",
+        "test_cross_batch_duplicate_rejected_before_output",
+        "test_invalid_batch_bounds",
+        "test_later_invalid_record_never_returns_partial_result",
+        "test_empty_snapshot_has_valid_zero_record_manifest"
+      ],
+      "test_contract": "4100 records project as4096+4 preserving ordered exact IDs, deterministic mutation-sensitive snapshot digest and unverified durability; reject duplicate IDs/sequence across batches, invalid size, late-invalid record without partial return; empty manifest shape.",
+      "false_pass_risks_and_limits": [
+        "All generated records are outcome-only and same source/epoch; no mixed groups, byte payload validation or distributed epoch behavior in this file.",
+        "Manifest digest change tests one outcome mutation, not every semantically significant field."
+      ],
+      "privacy_closure_error_cases": "Invalid outcome enum secret-error rejects rather than exports; output manifest explicitly unverified, not receipt.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_call_otlp.py",
+      "sha256": "c3f173b715977020f574c12071449bedede93db7e3d57b47a70ff248799bd6c4",
+      "bytes": 7875,
+      "line_count": 205,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_all_records_project_with_call_links_and_chunk_order",
+        "test_malformed_metadata_rejects_batch",
+        "test_duplicate_ids_cardinality_and_foreign_descriptors",
+        "test_one_post_no_partial_replay",
+        "test_transport_validation_and_tls_errors_do_not_echo_paths",
+        "test_bearer_requires_tls_and_never_echoes_missing_path",
+        "test_bearer_rejects_unbounded_or_header_unsafe_tokens",
+        "test_bearer_only_enters_authorization_header"
+      ],
+      "test_contract": "Projects live starts/events/outcomes to closed OTLP metadata with exact IDs and stream order, strips raw/refs/errors, rejects invalid IDs/counters/cardinality/descriptor joins, one POST/no replay including partialSuccess errors, loopback/TLS/path sanitization and bearer bounds.",
+      "false_pass_risks_and_limits": [
+        "Loopback HTTP fixture exercises200 responses only; no real TLS handshake, auth server, timeout or connection-loss behavior.",
+        "All(body absent/call linkage) assertions rely on independent ID equality/chunk checks for non-vacuity; sufficient here.",
+        "Writer.close result in snapshot helper is ignored; snapshot settles via recorder semantics but shutdown success is not independently asserted."
+      ],
+      "privacy_closure_error_cases": "Canary absent from OTLP bytes and receipt, URI stripped, fixed transport/TLS errors, destination_durable false/retry_allowed false. Strong no automatic replay contract.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_call_recorder.py",
+      "sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+      "bytes": 14881,
+      "line_count": 397,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_nested_exact_bytes_linked_to_call_and_safe_trace",
+        "test_exception_identity_retry_unsupported_and_absent_context",
+        "test_sync_stream_pull_order_close_and_empty",
+        "test_stream_error_and_unconsumed_close",
+        "test_async_parallel_agent_contexts_cancellation_and_streams",
+        "test_recording_failure_and_capacity_do_not_change_action",
+        "test_generator_returned_to_nonstream_api_never_claims_success",
+        "test_async_stream_empty_exception_and_task_cancellation",
+        "test_factory_error_and_close_error_preserve_exception",
+        "test_missing_descriptor_closed_writer_and_explicit_parent",
+        "test_invalid_configuration_and_trace_failure",
+        "test_unfinished_stream_is_running_and_sequence_is_contiguous"
+      ],
+      "test_contract": "Nested exact-byte call identity and safe spans; sync/async stream laziness, empty chunks, close/error/cancellation statuses, parallel child lineage, callback exception identity, recording-capacity failure preservation, missing descriptors, trace failure and contiguous source positions.",
+      "false_pass_risks_and_limits": [
+        "Nested content loop accepts any allowed content per event rather than role-specific exact multiplicity; separate assertions establish some presence but not entire expected role-to-byte map.",
+        "Fixture ignores writer.close result; exporter is only in-memory.",
+        "Private max_events/_tracer mutation targets implementation and no process-crash persistence is established."
+      ],
+      "privacy_closure_error_cases": "Strong raw secret absence from spans/snapshot and exception identity. Unfinished running/no operation, early-close deferred, cancelled/error and unsupported nonstream generator cannot be labeled success.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_call_source_spool.py",
+      "sha256": "45f6d8db45006ed12f53d0f6811e912bcd2dca2fc4906123ab81f0381c303bfa",
+      "bytes": 16114,
+      "line_count": 440,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_source_journal_restart_exact_content_readback",
+        "test_pending_bytes_and_incomplete_stream_survive_restart",
+        "test_source_journal_failure_preserves_delegate",
+        "test_source_identity_and_corrupt_content_recovery",
+        "test_source_queue_overflow_does_not_wait_for_disk",
+        "test_explicit_metadata_seal_survives_restart_without_promoting_trust",
+        "test_unsealed_empty_epoch_remains_visible",
+        "test_sealed_empty_epoch_remains_visible",
+        "test_seal_timeout_is_bounded",
+        "test_seal_writer_failure_does_not_expose_exception",
+        "test_seal_pending_writer_is_not_completed",
+        "test_late_action_after_seal_executes_but_is_a_recording_gap",
+        "test_seal_refuses_incomplete_stream_and_missing_spool",
+        "test_seal_cannot_overtake_inflight_outcome",
+        "test_seal_refuses_withheld_content_and_known_loss"
+      ],
+      "test_contract": "Metadata-only journal replay with source epoch persistence, separate verified byte readback, pending/corrupt/incomplete outcomes, quota/write/closed queue failures, explicit sealed/unsealed empty epochs, bounded seal inputs, no overtaking inflight outcome and late-call gap handling.",
+      "false_pass_risks_and_limits": [
+        "Restart is same-process spool reopen; byte writer survives and supplies content, so not proof that pre-admission bytes survive process death.",
+        "Some flush/close booleans ignored; blocked destination releases via3-second timeout as fallback.",
+        "Fixture seals/stores use local synthetic trusted source, no authenticated external source."
+      ],
+      "privacy_closure_error_cases": "On-disk canary/ref absence, source_identity_authenticated false and pre-spool-crash-window unverified preserved. Seal refuses running/partial streams, withheld content, unsettled writers and known loss.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_calls.py",
+      "sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "bytes": 39229,
+      "line_count": 1187,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_llm_call_emits_child_span_under_decision",
+        "test_llm_call_writes_both_namespaces_on_entry",
+        "test_llm_call_set_usage_writes_both_namespaces",
+        "test_llm_call_set_usage_with_sequence_finish_reasons",
+        "test_llm_call_set_response_model",
+        "test_llm_call_records_exception_and_status",
+        "test_llm_call_rejects_empty_system",
+        "test_llm_call_rejects_empty_model",
+        "test_llm_call_set_usage_rejects_negative_input_tokens",
+        "test_llm_call_set_usage_rejects_negative_output_tokens",
+        "test_llm_call_set_response_model_rejects_empty",
+        "test_llm_call_set_attribute_accepts_scalars",
+        "test_llm_call_set_attribute_rejects_dict",
+        "test_llm_call_span_property_before_enter_raises",
+        "test_llm_call_double_exit_raises",
+        "test_llm_call_double_enter_raises",
+        "test_llm_call_set_usage_rejects_non_int_input_tokens",
+        "test_llm_call_set_usage_rejects_non_int_output_tokens",
+        "test_llm_call_set_usage_rejects_bool_for_tokens",
+        "test_llm_call_optional_request_attrs_omitted_when_unset",
+        "test_llm_call_set_cache_usage_writes_both_namespaces",
+        "test_llm_call_cache_usage_absent_when_not_called",
+        "test_llm_call_set_cache_usage_rejects_negative",
+        "test_llm_call_set_cache_usage_rejects_bool",
+        "test_llm_call_set_streaming_stamps_attributes",
+        "test_llm_call_streaming_absent_when_not_called",
+        "test_llm_call_set_streaming_rejects_negative_ttft",
+        "test_llm_call_set_streaming_rejects_bool_ttft",
+        "test_llm_call_set_retry_stamps_count_and_reason",
+        "test_llm_call_set_retry_reason_optional",
+        "test_llm_call_retry_absent_when_not_called",
+        "test_llm_call_set_retry_rejects_negative_count",
+        "test_tool_call_emits_child_span_under_decision",
+        "test_tool_call_with_call_id",
+        "test_tool_call_rejects_empty_name",
+        "test_tool_call_set_result_count_rejects_negative",
+        "test_tool_call_double_enter_raises",
+        "test_tool_call_set_result_count_rejects_non_int",
+        "test_tool_call_set_attribute_accepts_scalars",
+        "test_tool_call_set_attribute_rejects_list",
+        "test_tool_call_records_exception_and_status",
+        "test_tool_call_span_property_before_enter_raises",
+        "test_tool_call_double_exit_raises",
+        "test_tool_call_set_arguments_hashes_payload",
+        "test_tool_call_set_result_hashes_payload",
+        "test_tool_call_set_kind_stamps_attribute",
+        "test_tool_call_record_error_stamps_attributes",
+        "test_tool_call_set_arguments_rejects_non_str",
+        "test_tool_call_set_result_rejects_non_str",
+        "test_tool_call_set_kind_rejects_non_str",
+        "test_tool_call_set_kind_rejects_empty",
+        "test_tool_call_record_error_rejects_non_str",
+        "test_tool_call_record_error_rejects_empty",
+        "test_tool_call_record_error_accepts_enum",
+        "test_tool_call_record_error_accepts_raw_string",
+        "test_tool_error_category_enum_values",
+        "test_tool_call_set_retry_stamps_count_and_reason",
+        "test_tool_call_retry_absent_when_not_called",
+        "test_tool_call_set_retry_rejects_negative",
+        "test_tool_call_set_idempotency_stamps_attributes",
+        "test_tool_call_set_idempotency_key_optional",
+        "test_tool_call_idempotency_absent_when_not_called",
+        "test_tool_call_set_idempotency_rejects_non_bool",
+        "test_llm_call_auto_stamps_step_type",
+        "test_tool_call_auto_stamps_step_type",
+        "test_llm_call_step_type_host_override",
+        "test_tool_call_step_type_host_override",
+        "test_step_metadata_absent_when_not_provided",
+        "test_step_id_stamped_when_provided",
+        "test_step_retry_metadata_stamped_when_provided",
+        "test_step_retry_independent_from_execution_attempt",
+        "test_step_attempt_rejects_zero",
+        "test_step_attempt_rejects_bool",
+        "test_step_type_rejects_empty",
+        "test_llm_call_and_tool_call_are_exported_at_top_level",
+        "test_llm_call_stamps_error_type_on_exception",
+        "test_llm_call_cancelled_error_marks_span_error",
+        "test_tool_call_cancelled_error_marks_span_error",
+        "test_tool_call_stamps_error_type_on_exception",
+        "test_llm_call_set_attribute_rejects_reserved_namespace",
+        "test_tool_call_set_attribute_rejects_reserved_namespace"
+      ],
+      "test_contract": "LLM/tool child parent IDs, semantic/Fabric attributes, usage/cache/streaming/retry/idempotency, default omission, hash-only tool payloads, input/type/bool guards, lifecycle double enter/exit, step vs execution attempt separation and BaseException cancellation ERROR/type events.",
+      "false_pass_risks_and_limits": [
+        "set_attribute_accepts_scalars tests only no raise, not emitted values.",
+        "Exception tests verify ERROR/type and some event presence, not duplicate events, full original exception identity or sensitive exception-text removal.",
+        "Span helper selects first matching operation, not exact child count; all providers are local test fixtures."
+      ],
+      "privacy_closure_error_cases": "Raw tool argument/result canaries excluded from span attributes/events and reserved metadata namespaces cannot be overridden. Raw retry/error categories are intentionally open strings; privacy of those inputs not tested here.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_checkpoint.py",
+      "sha256": "e00e28f5f96a0529a42bc67f6536abd88847d59b76092f4b87b67a7b27d012b1",
+      "bytes": 3153,
+      "line_count": 84,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_single_checkpoint_emits_event",
+        "test_multiple_checkpoints_aggregate_count",
+        "test_state_hash_optional",
+        "test_state_hash_rejects_non_sha256_metadata",
+        "test_explicit_checkpoint_id_honored",
+        "test_empty_step_name_rejected"
+      ],
+      "test_contract": "Checkpoint event/model UUID, ordered count aggregation, optional state-hash presence, invalid raw hash rejection, supplied UUID preservation and blank-step rejection.",
+      "false_pass_risks_and_limits": [
+        "Valid state_hash test checks presence only, not exact value; supplied checkpoint ID test checks returned model but not emitted event identity."
+      ],
+      "privacy_closure_error_cases": "Rejects raw content as state hash; checkpoint is an event marker rather than a completeness/delivery seal.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_client.py",
+      "sha256": "1a0b696c39d11c900b7b2a258447f3f4f23fc493464c4cea12a8154d4a996240",
+      "bytes": 6412,
+      "line_count": 164,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_client_and_decision_import_in_either_order",
+        "test_from_env_with_all_fields",
+        "test_from_env_defaults_profile",
+        "test_from_env_optional_fields_default_none",
+        "test_from_env_workflow_and_execution_propagate_to_span",
+        "test_from_env_missing_required_var_raises",
+        "test_config_validates_fields",
+        "test_tracer_property_is_reused",
+        "test_workflow_and_execution_propagate_to_span",
+        "test_execution_retry_metadata_propagates_to_span"
+      ],
+      "test_contract": "Import-order subprocesses, env required/default/optional config, workflow/execution retry propagation, validation of blank/invalid/bool fields and tracer instance reuse.",
+      "false_pass_risks_and_limits": [
+        "Import subprocess.run has no timeout, so an import deadlock could hang tests.",
+        "Uses explicit env dictionaries rather than real inherited deployment environment; no production provider/export check."
+      ],
+      "privacy_closure_error_cases": "Opaque identity propagation and config guards tested; no secret identifier or exception-output privacy assertions.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_concurrency.py",
+      "sha256": "3207d52fd5b8e5e8ff5530c572497606815bafb4f38570ae9a2d1d0c4468a447",
+      "bytes": 2686,
+      "line_count": 78,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_sequential_capture_calls_do_not_trip",
+        "test_overlapping_mutation_is_rejected",
+        "test_double_enter_and_reuse_raise",
+        "test_async_double_enter_raises",
+        "test_two_distinct_decisions_are_independent"
+      ],
+      "test_contract": "Sequential mutations, private nonblocking overlap sentinel rejection, decision single-use lifecycle and independence of two decisions, including async double-enter.",
+      "false_pass_risks_and_limits": [
+        "Overlap is simulated by acquiring private lock; no real concurrent threads/tasks or scheduler race is exercised.",
+        "Independence mutation asserts no raise rather than verifying each emitted span/attribute."
+      ],
+      "privacy_closure_error_cases": "Fail-fast overlap contract is asserted; no concurrent context-leak or exporter closure/delivery evidence.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_content_store.py",
+      "sha256": "8be90b75c02d33de830b060d4e984857499f44e181e3bb278c91eaa4879b8941",
+      "bytes": 15127,
+      "line_count": 397,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_content_hash_matches_sha256",
+        "test_local_put_writes_file_and_returns_file_ref",
+        "test_local_put_is_idempotent",
+        "test_local_content_addressed_distinct_content",
+        "test_local_creates_nested_root",
+        "test_local_close_is_noop",
+        "test_local_satisfies_protocol",
+        "test_s3_put_calls_put_object_and_returns_s3_ref",
+        "test_s3_custom_prefix",
+        "test_s3_client_is_lazy_and_reused",
+        "test_s3_close_is_noop_and_clears_handle",
+        "test_s3_satisfies_protocol",
+        "test_s3_missing_dep_raises_on_put",
+        "test_fabric_content_store_defaults_none",
+        "test_fabric_exposes_content_store",
+        "test_remember_stamps_content_ref_when_store_configured",
+        "test_recall_stamps_content_ref_when_store_configured",
+        "test_side_effect_stamps_request_and_result_refs",
+        "test_no_content_ref_without_store",
+        "test_content_ref_store_failure_warns_but_does_not_raise",
+        "test_local_byte_write_refuses_swapped_namespace",
+        "test_local_read_refuses_sidecar_symlink",
+        "test_local_read_refuses_file_swap_after_resolution"
+      ],
+      "test_contract": "Legacy text content-addressed local storage/idempotent mtime/nested roots, lazy mocked S3 config/read/client recreation, Fabric store hooks, memory/side-effect refs, no-ref defaults, passive store failure and new namespace/leaf/sidecar symlink guards.",
+      "false_pass_risks_and_limits": [
+        "Ref-integration tests call store.put again to obtain expected URI; this can create missing content and therefore only proves ref stamping, not that the original SDK call persisted it.",
+        "Default no-ref loop lacks explicit nonempty event count; other tests exercise emission.",
+        "S3 uses narrow fake client without actual network/IAM/conditional/concurrency behavior."
+      ],
+      "privacy_closure_error_cases": "Raw memory payload excluded from attributes; failing store preserves event without ref. Symlink writes assert outside directory unchanged; descriptor reads and post-resolution file swap reject. Local store validation reviewed to confirm minimal test descriptor reaches actual path checks.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_control_evidence.py",
+      "sha256": "7c0d876960d06607a95501481279b6a6ee80106709d773997fe76ad138ec95ac",
+      "bytes": 1649,
+      "line_count": 53,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_external_claim_is_never_action_authorization",
+        "test_invalid_or_content_bearing_fields_are_rejected",
+        "test_raw_payload_extension_rejected"
+      ],
+      "test_contract": "External control observation remains unverified caller report with enforcement_performed_by_fabric false; invalid IDs/version/decision/digest/proof URLs and raw extension rejected.",
+      "false_pass_risks_and_limits": [
+        "Small representative invalid-field set, not exhaustive schema permutation or roundtrip immutability test.",
+        "No authentication/actual external action enforcement exercised, explicitly by design."
+      ],
+      "privacy_closure_error_cases": "Content-bearing URLs and raw payload rejected; observation never authorizes action.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_control_protocol.py",
+      "sha256": "3c5a4f26b9364fd9311c0ab4ec09df6ed5ef5955e7a44bb1252a8810daf4b19b",
+      "bytes": 6339,
+      "line_count": 169,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_allow_is_unverified_metadata_never_an_execution_permit",
+        "test_denied_but_executed_outcome_and_expiry_remain_evidence",
+        "test_reply_cannot_be_reused_across_any_request_binding",
+        "test_matching_reply_digest_does_not_hide_mismatched_observation",
+        "test_outcome_must_bind_to_the_exact_attempt_request",
+        "test_request_rejects_malformed_metadata",
+        "test_reply_and_outcome_reject_unknown_or_content_bearing_metadata"
+      ],
+      "test_contract": "Request/reply/outcome exact digest and identity bindings, all14 request fields prevent reply reuse, six observation bindings independently checked, expiry boundary, denied-but-succeeded evidence preserved, malformed metadata and raw extension rejected.",
+      "false_pass_risks_and_limits": [
+        "All request digests generated by same implementation; no independently pinned canonical vectors.",
+        "Observed-time malformed types/overflow not parameterized here; no real external controller transaction."
+      ],
+      "privacy_closure_error_cases": "Matched allow remains unauthenticated and never permit; contradictory deny/succeeded records remain evidence. Opaque metadata only, no action enforcement.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_decision.py",
+      "sha256": "fc6b61c5fb2099265f5831a14a288162238fa8d5ea81d450bd64a693b25df9a4",
+      "bytes": 11924,
+      "line_count": 304,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_happy_path_emits_single_span",
+        "test_decision_id_minted_when_not_supplied",
+        "test_decision_id_supplied_verbatim_and_independent_of_request",
+        "test_span_omits_user_when_not_provided",
+        "test_extra_attributes_flow_through",
+        "test_exception_inside_block_records_on_span",
+        "test_missing_required_ids_rejected",
+        "test_span_access_before_enter_raises",
+        "test_schema_version_stamped_on_decision_span",
+        "test_schema_version_stamped_on_event_types",
+        "test_recall_emits_memory_event_with_direction_read",
+        "test_remember_and_recall_in_same_decision_aggregate",
+        "test_recall_content_hash_matches_remember_hash_for_same_input",
+        "test_decision_attributes_reject_reserved_namespace",
+        "test_set_attribute_rejects_reserved_namespace",
+        "test_config_extra_stamped_on_decision",
+        "test_config_extra_caller_attributes_win",
+        "test_config_extra_rejects_reserved_namespace",
+        "test_decision_stamps_error_type_on_exception"
+      ],
+      "test_contract": "Exactly one happy span with identity, minted/provided decision IDs distinct from request, optional user omission, custom/config attributes and precedence, exception ERROR/events/type, schema stamps, memory counts/hash consistency and reserved namespace rejection.",
+      "false_pass_risks_and_limits": [
+        "Memory hash consistency compares outputs to each other rather than independent expected digest.",
+        "Exception test allows description prefix and event presence; does not check privacy or exact event count.",
+        "Several span lookups take first match so only happy test pins global span count."
+      ],
+      "privacy_closure_error_cases": "Reserved tenant/session keys protected and raw source memory hashed by other suites; this file is lifecycle metadata testing, not protected-export or delivery qualification.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_deployment_state.py",
+      "sha256": "2edeaa95f15fb35f42adcce7ee74e343c2e626b7cd59a4222bf15f6cf3aaa40f",
+      "bytes": 9578,
+      "line_count": 257,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_dry_run_has_no_runtime_claim",
+        "test_approve_apply_propose_stale_and_reauthorize",
+        "test_unauthorized_cannot_initialize_or_mutate",
+        "test_approval_is_required_and_version_and_identity_are_fixed",
+        "test_revision_is_exact_integer",
+        "test_symlink_and_policy_tamper_rejected",
+        "test_inconsistent_persisted_state_cannot_be_read_or_mutated",
+        "test_history_hash_chain_detects_in_place_corruption",
+        "test_rehashed_history_still_requires_valid_lifecycle_transitions",
+        "test_applied_capabilities_require_closed_bounded_metadata"
+      ],
+      "test_contract": "Authorized policy desired/approved/applied-observed lifecycle with exact CAS revision, monotonic policy version, reauthorization after digest change, reopen persistence, symlink/tamper rejection, strict stored fields/history/capabilities and rehashed invalid transitions.",
+      "false_pass_risks_and_limits": [
+        "Revision conflicts are sequential, not a real multiprocess CAS race.",
+        "History digest tests prove consistency, not malicious local rewrite resistance without external authenticated anchor.",
+        "No fault injection between state write/fsync or policy approval and applied report."
+      ],
+      "privacy_closure_error_cases": "No unauthorized initialization directory or mutation; runtime_attestation stays unverified and validate_policy configuration_only. Corrupt state remains unmodified on failed mutation.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_distributed_closure.py",
+      "sha256": "09443f982037db65d5963feb48f7d37a7c79d5b7d7293f14af4b0d63a6368133",
+      "bytes": 24812,
+      "line_count": 674,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_registered_children_join_exact_terminal_epoch",
+        "test_recovered_source_epochs_complete_only_with_all_independent_truth",
+        "test_dead_or_unfinished_worker_prevents_parent_success",
+        "test_detached_unjoined_child_is_not_finalized_by_parent_completion",
+        "test_child_declared_after_parent_closure_invalidates_old_proof",
+        "test_orphan_registration_cannot_complete",
+        "test_missing_registered_worker_and_unregistered_epoch_fail",
+        "test_missing_child_epoch_remains_unresolved",
+        "test_missing_epochs_do_not_use_timestamps_or_allocate_huge_ranges",
+        "test_duplicate_transport_delivery_idempotent_but_epoch_equivocation_fails",
+        "test_overlapping_epoch_after_completed_epoch_fails",
+        "test_epoch_link_substitution_fails",
+        "test_sequence_gaps_overlap_and_duplicate_record_ids_fail",
+        "test_unknown_prefsync_source_truth_cannot_disappear_at_restart",
+        "test_explicit_loss_never_complete",
+        "test_context_forgery_and_wrong_parent_key_fail",
+        "test_parent_context_must_anchor_actual_source_sequence",
+        "test_wrong_tenant_scope_run_or_stale_challenge_rejected",
+        "test_missing_stale_mutated_and_revoked_witness_fail",
+        "test_independent_witness_must_freeze_inventory",
+        "test_witness_tail_control_and_source_substitution_fail",
+        "test_signature_issuance_clock_skew_never_invents_causal_order",
+        "test_same_key_or_issuer_cannot_self_witness",
+        "test_duplicate_and_malformed_fields_fail_closed",
+        "test_root_only_explicitly_empty_run",
+        "test_persisted_proofs_survive_fresh_process_recovery",
+        "test_process_kill_after_durable_ack_retains_exact_proof",
+        "test_conflicting_epoch_versions_persist_across_restart",
+        "test_store_faults_never_load_complete_evidence",
+        "test_store_capacity_lock_scope_and_closed_state",
+        "test_journal_adapter_preserves_source_canonical_record_digest",
+        "test_authenticate_context_before_child_accepts_it",
+        "test_interrupted_fsync_is_unsettled_not_durable",
+        "test_reference_campaign_runs_real_source_process_restart",
+        "test_duplicate_children_and_orphan_joins_are_not_set_collapsed",
+        "test_child_cycle_cannot_hide_behind_a_separate_root",
+        "test_lost_directory_fsync_ack_retries_exact_control_proof"
+      ],
+      "test_contract": "Ed25519-authenticated registrations/context/epoch/witness exact-set finite closure, parent-child joins and recovered epoch chains, loss/gap/duplicate/equivocation/cycle/authority/expiry/challenge rejection, persisted proofs/restart/abrupt exit/fsync and reference real-process campaign.",
+      "false_pass_risks_and_limits": [
+        "Campaign.sign and verifier share canonical signing helpers; independent source observations are fixture arrays, not independently persisted live authority.",
+        "Two subprocess.run calls lack timeout; subprocess deadlock could hang suite.",
+        "Reference negative_cases all(...) has no explicit expected key/count assertion and could be vacuous if runner omitted cases.",
+        "Durable append+os._exit proves process survival, not power-loss/filesystem qualification."
+      ],
+      "privacy_closure_error_cases": "Strong no false closure for unknown/lost/witness-tail/source conflicts; explicit empty root scope supported; production_qualified false. Malformed/deep JSON fail closed and corrupt/temp/mode/symlink store faults reject.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_enterprise_integration.py",
+      "sha256": "9194c3fce3f9714992d6ef1fe25c87fccf4aa3cf79d648408b3cb05ca1b957ed",
+      "bytes": 4705,
+      "line_count": 118,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_configured_actual_capture_lifecycle",
+        "test_real_multi_agent_orchestration_detects_gaps",
+        "test_session_rejects_unbound_legacy_store_before_capture",
+        "test_session_close_reports_settlement"
+      ],
+      "test_contract": "Runs real local quickstart and orchestration entrypoints, checks deny/bypass/retry/recovery behavior, rejects policy-unbound legacy store before writes, tests blocked close false/pending then successful close true/settled.",
+      "false_pass_risks_and_limits": [
+        "Effect-readback all(values) lacks expected key/cardinality assertion; report shape can shrink unnoticed.",
+        "local_checks set(values)==PASS guarantees nonempty but does not pin required check names.",
+        "Runner implementation supplies both report and checks; no independent service witness in this test file."
+      ],
+      "privacy_closure_error_cases": "Production NO_GO and external-control unverified preserved; storage denial creates failed events without changing delegate; explicit close settlement distinction.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_enterprise_preflight.py",
+      "sha256": "30d53c9271a5a32b062e1d97ea826226c8b7ef79347fd5b43e9d16ce02e91dc6",
+      "bytes": 18267,
+      "line_count": 513,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_actual_routed_fixture_detects_bypass_and_hidden_retry",
+        "test_module_entrypoint_runs_actual_canary_and_writes_local_report",
+        "test_production_config_and_local_canary_cannot_qualify_live_environment",
+        "test_unsupported_scope_or_capacity_fails_closed",
+        "test_missing_proofs_remain_unknown",
+        "test_production_configuration_rejected_at_entrypoint",
+        "test_duplicate_json_input_rejected_without_echo",
+        "test_symlink_filesystem_root_fails_without_writing",
+        "test_fsync_error_is_failed_not_encrypted",
+        "test_valid_fixture_signature_never_becomes_live_production_evidence",
+        "test_external_attestation_binding_and_authority_fail_closed",
+        "test_snapshot_loss_and_projection_limit_prevent_ready",
+        "test_required_unsupported_integration_not_silently_dropped",
+        "test_local_span_loss_sampling_and_unknown_counters",
+        "test_active_provider_with_no_routed_provider_canary_cannot_be_ready",
+        "test_external_attestation_cli_uses_separate_trust_file",
+        "test_real_sealed_snapshot_checks_local_loss_without_complete_claim",
+        "test_snapshot_known_loss_or_unclosed_source_cannot_pass"
+      ],
+      "test_contract": "Real routed fixture detects bypass/hidden retries; bounded CLI local readiness stays production NO_GO/live unknown; closed capacity scope, malformed/duplicate input, symlink/fsync errors, exact separately trusted attestation bindings, sampling/loss counters and sealed snapshot prerequisites.",
+      "false_pass_risks_and_limits": [
+        "Some all(live_gates/checks.values) assertions do not pin gate names/count, potentially passing if lists shrink.",
+        "Signed fixture uses same helper as verifier and authenticity is correctly not live evidence; no real environment attestation.",
+        "Snapshot fixture has NoOpTracer but local observed-recording check targets source journal, so PASS does not certify span recording."
+      ],
+      "privacy_closure_error_cases": "Fixed input/fsync diagnostics exclude private canaries; authentic fixture alone never promotes live gates. Source seal/writers/gaps/epochs invalidity fail while independent completeness/original reconstruction remain false.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_enterprise_reference.py",
+      "sha256": "98ee78854db308561abfed8886bf8c9bbf1f68db1528c4aa5cc9a4b413f91b3a",
+      "bytes": 3765,
+      "line_count": 96,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_reference_real_process_recovery_and_exact_readback",
+        "test_reference_rejects_unbounded_workload",
+        "test_reference_never_blesses_shrunken_recovery_inventory",
+        "test_reference_requires_successful_distributed_campaign"
+      ],
+      "test_contract": "Runs separate-process public reference with exact expected6 content/12 metadata, no byte loss, persisted report equality, invalid iteration bounds before output, deleted/corrupted spool recovery rejection and required distributed-campaign success.",
+      "false_pass_risks_and_limits": [
+        "set(checks.values)==True proves nonempty but not expected inventory of named checks.",
+        "Monkeypatch injection after local spool.close is verified injected, but is one fixed loss location, not all crash windows."
+      ],
+      "privacy_closure_error_cases": "Explicit local-only verdict, NO_GO production, node acceptance not destination durability, not actual collector/cloud attestation and bypass unverified. No report written after failed corruption/closure campaign.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    },
+    {
+      "path": "sdk/python/tests/test_evidence_attestation.py",
+      "sha256": "a2c6fb4bb4b182ed7ea2722aceaff555ed7957b4deacdeb2842288d9beea1705",
+      "bytes": 11225,
+      "line_count": 345,
+      "methods": [
+        "manual_full_text_semantic_read",
+        "manual_review_of_fixture_setup_assertion_strength_error_and_privacy_contracts",
+        "sha256_binding_and_auxiliary_AST_test_inventory"
+      ],
+      "semantic_review_complete": true,
+      "deeper_semantic_review_required": false,
+      "test_functions": [
+        "test_authority_binds_exact_subject",
+        "test_expired_key_cannot_backdate_a_new_signature",
+        "test_different_authorized_destination_cannot_replace_expected_issuer",
+        "test_exact_expected_binding_is_required",
+        "test_valid_signature_alone_does_not_supply_authority",
+        "test_self_supplied_unknown_and_revoked_keys_do_not_authorize",
+        "test_tamper_and_key_substitution_fail",
+        "test_closed_envelope_and_fixed_diagnostics",
+        "test_invalid_payload_is_not_signed_or_accepted",
+        "test_malformed_documents_fail_closed",
+        "test_dependency_absence_is_explicit",
+        "test_explicit_clock_and_valid_trust_configuration_are_required",
+        "test_receipt_stages_need_separate_authority"
+      ],
+      "test_contract": "Real Ed25519 signatures bound to expected issuer/tenant/run/scope/subject/kind/digest, key validity at issuance+verification and revocation/role authorization, closed envelope/payload, tamper/key alias, malformed/deep/oversize/duplicate JSON and dependency absence; independent authority per receipt stage.",
+      "false_pass_risks_and_limits": [
+        "Signer test uses production attestation_signing_bytes, so shared canonical/domain bug could pass roundtrip; no external published signature vector.",
+        "Dependency absence test builds real fixture first and monkeypatches imports; not a full clean environment without cryptography.",
+        "Several failure checks assert reason only; broad invalid-envelope cases assert unverified plus canary exclusion."
+      ],
+      "privacy_closure_error_cases": "Verification result has no complete property; stage cannot imply later receipt or whole-run closure. Fixed diagnostics exclude private extension content and unknown/self-supplied keys do not confer trust.",
+      "qualification_evidence": {
+        "prior_full_suite": "1689 passed,88.65 percent coverage; not rerun as part of this full-text review",
+        "prior_full_suite_file_hash_matches": true
+      },
+      "review_limit": "Entire file text manually read; semantic review is bounded to tests/fixtures and does not prove exhaustive runtime security, real cloud/provider behavior or power-loss durability."
+    }
+  ]
+}

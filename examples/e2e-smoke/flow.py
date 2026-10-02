@@ -4,7 +4,7 @@
 
 Runs a deterministic Fabric :class:`Decision` and exports the spans it
 emits over OTLP/HTTP to a running collector (e.g. the compose stack or a
-port-forwarded kind pod). Set ``FABRIC_OTLP_ENDPOINT`` (including the
+port-forwarded kind pod). Set ``FABRIC_OTLP_ENDPOINT`` to the base URL (without the
 ``/v1/traces`` path) to point at the receiver. The CI e2e job
 (``.github/workflows/e2e.yml``) uses its own fixture + fsync sink path
 rather than this script; this is the manual SDK -> OTLP -> collector
@@ -55,7 +55,8 @@ def _build_provider() -> TracerProvider:
     """Install a real provider with a synchronous OTLP exporter.
 
     ``SimpleSpanProcessor`` exports each span the moment it ends, so the
-    spans are on the wire before ``main`` returns even without batching.
+    export attempts finish before ``main`` returns even without batching;
+    this does not prove destination acceptance or durable readback.
     """
     provider = TracerProvider(
         resource=Resource.create(
@@ -119,7 +120,7 @@ def main() -> int:
         trace_id = _run_decision(fabric)
     finally:
         # Belt-and-braces: SimpleSpanProcessor exports on span-end, but
-        # force_flush guarantees the OTLP request completes before exit.
+        # force_flush waits for pending exporter work; it does not verify delivery.
         provider.force_flush()
         provider.shutdown()
     print(f"e2e-smoke emitted trace_id={trace_id}")

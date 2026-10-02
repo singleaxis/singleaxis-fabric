@@ -14,11 +14,12 @@ never land on spans.
 
 from __future__ import annotations
 
-import hashlib
 from enum import StrEnum
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from ._hashes import sha256_hex
 
 
 class SideEffectType(StrEnum):
@@ -46,7 +47,7 @@ class ReplayBehavior(StrEnum):
 
 def _sha256_hex(value: str) -> str:
     # surrogatepass: keep hashing total on lone surrogates (see memory._sha256_hex).
-    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(value)
 
 
 class SideEffectRecord(BaseModel):

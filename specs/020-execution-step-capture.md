@@ -8,6 +8,12 @@ owner: project-lead
 
 # 020 — Execution & Step capture
 
+Current-boundary note (2026-10-02): the historical commercial-only
+reconstruction wording below concerns action replay and operational graph
+services. Current OSS libraries also provide authorized stored-byte resolution
+and offline evidence comparison. Those read-only capabilities do not execute
+agent actions or establish complete capture by themselves.
+
 > **Scope split.** This spec covers two capture primitives that the OSS
 > SDK *emits* and the commercial layer *interprets*. The OSS boundary is
 > strict: the SDK emits canonical `fabric.execution` / `fabric.step.*`

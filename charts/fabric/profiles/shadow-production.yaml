@@ -8,7 +8,10 @@
 #   the referenced ingress TLS, client CA, and export-auth Secrets
 #   at least one ingressFrom peer identifying the monitored workload
 #   exporterEgress.to and exporterEgress.ports matching that destination
-#   a suitable encrypted StorageClass (or an existing customer-owned PVC)
+#   an approved full sha256 Collector image digest (tags are insufficient)
+#   workloadAuthentication tenant/workload identity, token Secret and review ref
+#   a suitable encrypted StorageClass (or existing customer-owned PVC), plus
+#   encryptionAttestationRef naming the independent storage/KMS review
 #
 # Delivery is at least once. A successful OTLP acknowledgement proves remote
 # acceptance, not durable persistence by an arbitrary destination.
@@ -27,19 +30,25 @@ otelCollector:
 
 otel-collector:
   replicaCount: 2
-  # Pinned image identity is required by this profile. RECOMMENDED: supply
-  # an immutable digest instead —
-  #   --set otel-collector.image.digest=sha256:<64-hex>
-  # An explicit non-latest tag (below) is accepted; "latest" and the empty
-  # appVersion fallback are rejected at render time.
+  # No fabricated production digest. Select and verify the approved release:
+  #   --set otel-collector.image.digest=sha256:<64-lowercase-hex>
+  # A version-shaped tag remains mutable and is never sufficient.
   image:
-    tag: "0.8.0-rc.1"
-    # A mutable tag must re-resolve on every start; IfNotPresent could keep a
-    # stale (or moved) local image. With image.digest set this is a no-op.
+    tag: ""
+    digest: ""
     pullPolicy: Always
   receiver:
     requireTLS: true
     requireClientCertificate: true
+    workloadAuthentication:
+      enabled: true
+      # Supply tenantId equal to tenant.id, and the single approved workload.
+      tenantId: ""
+      workloadId: ""
+      identityAttestationRef: ""
+      tokenSecret:
+        name: ""
+        key: token
     tls:
       serverCertificateSecret:
         name: fabric-node-receiver-tls

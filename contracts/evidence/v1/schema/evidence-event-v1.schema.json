@@ -5,49 +5,624 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "event_name", "record_id", "tenant_id",
-    "source_id", "source_epoch", "source_sequence", "boundary",
-    "provenance", "observed_at", "status"
+    "schema_version",
+    "event_name",
+    "record_id",
+    "tenant_id",
+    "source_id",
+    "source_epoch",
+    "source_sequence",
+    "boundary",
+    "provenance",
+    "observed_at",
+    "status"
   ],
   "properties": {
-    "schema_version": {"const": "agent.evidence.event/v1"},
-    "event_name": {"enum": ["agent.evidence.content", "agent.evidence.artifact", "agent.evidence.coverage", "agent.evidence.loss", "agent.evidence.receipt"]},
-    "record_id": {"$ref": "#/$defs/id"},
-    "tenant_id": {"$ref": "#/$defs/id"},
-    "run_id": {"$ref": "#/$defs/id"},
-    "source_id": {"$ref": "#/$defs/id"},
-    "source_epoch": {"type": "integer", "minimum": 0},
-    "source_sequence": {"type": "integer", "minimum": 0},
-    "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
-    "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
-    "operation_id": {"$ref": "#/$defs/id"},
-    "attempt_id": {"$ref": "#/$defs/id"},
-    "boundary": {"enum": ["caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service"]},
-    "provenance": {"enum": ["native", "protocol", "caller_reported", "inferred"]},
-    "role": {"type": "string", "minLength": 3, "maxLength": 80},
-    "status": {"enum": ["pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed", "observed"]},
-    "content_object_id": {"$ref": "#/$defs/id"},
-    "content_ref": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^(s3|gs|file)://[^@?#]+$"},
-    "content_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "observed_at": {"type": "string", "format": "date-time"},
-    "occurred_at": {"type": "string", "format": "date-time"},
-    "loss_count": {"type": "integer", "minimum": 1},
-    "loss_reason": {"enum": ["rate_limit", "queue_full", "spool_full", "export_failure", "kernel_loss", "unknown"]},
-    "coverage_phase": {"enum": ["start", "stop", "heartbeat", "restart", "scope_changed"]},
-    "receipt_id": {"$ref": "#/$defs/id"},
-    "receipt_stage": {"enum": ["source_spooled", "node_accepted", "destination_accepted", "destination_durable"]},
-    "receipt_subject_id": {"$ref": "#/$defs/id"},
-    "receipt_subject_type": {"enum": ["evidence_event", "content_object"]}
+    "schema_version": {
+      "const": "agent.evidence.event/v1"
+    },
+    "event_name": {
+      "enum": [
+        "agent.evidence.content",
+        "agent.evidence.artifact",
+        "agent.evidence.coverage",
+        "agent.evidence.loss",
+        "agent.evidence.receipt",
+        "agent.evidence.call"
+      ]
+    },
+    "record_id": {
+      "$ref": "#/$defs/id"
+    },
+    "tenant_id": {
+      "$ref": "#/$defs/id"
+    },
+    "run_id": {
+      "$ref": "#/$defs/id"
+    },
+    "source_id": {
+      "$ref": "#/$defs/id"
+    },
+    "source_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "span_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "operation_id": {
+      "$ref": "#/$defs/id"
+    },
+    "attempt_id": {
+      "$ref": "#/$defs/id"
+    },
+    "boundary": {
+      "enum": [
+        "caller",
+        "provider_bound",
+        "tool",
+        "terminal",
+        "sandbox",
+        "remote",
+        "host",
+        "service"
+      ]
+    },
+    "provenance": {
+      "enum": [
+        "native",
+        "protocol",
+        "caller_reported",
+        "inferred"
+      ]
+    },
+    "role": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 80
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "stored",
+        "truncated",
+        "redacted",
+        "not_captured",
+        "unsupported",
+        "dropped",
+        "failed",
+        "observed"
+      ]
+    },
+    "content_object_id": {
+      "$ref": "#/$defs/id"
+    },
+    "content_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^(s3|gs|file)://[^@?#]+$"
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "loss_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "loss_reason": {
+      "enum": [
+        "rate_limit",
+        "queue_full",
+        "spool_full",
+        "export_failure",
+        "kernel_loss",
+        "unknown"
+      ]
+    },
+    "coverage_phase": {
+      "enum": [
+        "start",
+        "stop",
+        "heartbeat",
+        "restart",
+        "scope_changed"
+      ]
+    },
+    "receipt_id": {
+      "$ref": "#/$defs/id"
+    },
+    "receipt_stage": {
+      "enum": [
+        "source_spooled",
+        "node_accepted",
+        "destination_accepted",
+        "destination_durable"
+      ]
+    },
+    "receipt_subject_id": {
+      "$ref": "#/$defs/id"
+    },
+    "receipt_subject_type": {
+      "enum": [
+        "evidence_event",
+        "content_object"
+      ]
+    },
+    "agent_id": {
+      "$ref": "#/$defs/id"
+    },
+    "call_id": {
+      "$ref": "#/$defs/id"
+    },
+    "parent_call_id": {
+      "$ref": "#/$defs/id"
+    },
+    "stream_id": {
+      "$ref": "#/$defs/id"
+    },
+    "workload_id": {
+      "$ref": "#/$defs/id"
+    },
+    "policy_id": {
+      "$ref": "#/$defs/id"
+    },
+    "event_class": {
+      "const": "evidence"
+    },
+    "chunk_index": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "content_byte_length": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "policy_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "policy_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "privacy_mode": {
+      "enum": [
+        "retain_original",
+        "redact",
+        "tokenize",
+        "metadata_only",
+        "omit"
+      ]
+    },
+    "representation": {
+      "enum": [
+        "exact",
+        "redacted",
+        "tokenized",
+        "unavailable"
+      ]
+    },
+    "protection_status": {
+      "enum": [
+        "retained",
+        "redacted",
+        "tokenized",
+        "withheld",
+        "unsupported",
+        "lost"
+      ]
+    },
+    "call_phase": {
+      "enum": [
+        "start",
+        "outcome"
+      ]
+    },
+    "call_kind": {
+      "enum": [
+        "model",
+        "tool",
+        "database",
+        "agent"
+      ]
+    },
+    "result_status": {
+      "enum": [
+        "ok",
+        "error",
+        "cancelled",
+        "deferred"
+      ]
+    }
   },
   "allOf": [
-    {"if": {"required": ["span_id"]}, "then": {"required": ["trace_id"]}},
-    {"if": {"properties": {"event_name": {"const": "agent.evidence.loss"}}}, "then": {"required": ["loss_count", "loss_reason"], "properties": {"status": {"const": "dropped"}}}},
-    {"if": {"properties": {"event_name": {"const": "agent.evidence.coverage"}}}, "then": {"required": ["coverage_phase"], "properties": {"status": {"const": "observed"}}}},
-    {"if": {"properties": {"event_name": {"const": "agent.evidence.receipt"}}}, "then": {"required": ["receipt_id", "receipt_stage", "receipt_subject_id", "receipt_subject_type"], "properties": {"status": {"const": "observed"}}}},
-    {"if": {"properties": {"event_name": {"enum": ["agent.evidence.content", "agent.evidence.artifact"]}}}, "then": {"required": ["role"]}},
-    {"if": {"properties": {"status": {"enum": ["not_captured", "unsupported", "dropped", "failed"]}}}, "then": {"not": {"anyOf": [{"required": ["content_ref"]}, {"required": ["content_sha256"]}]}}}
+    {
+      "if": {
+        "required": [
+          "span_id"
+        ]
+      },
+      "then": {
+        "required": [
+          "trace_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "agent.evidence.loss"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "loss_count",
+          "loss_reason"
+        ],
+        "properties": {
+          "status": {
+            "const": "dropped"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "agent.evidence.coverage"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "coverage_phase"
+        ],
+        "properties": {
+          "status": {
+            "const": "observed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "agent.evidence.receipt"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "receipt_id",
+          "receipt_stage",
+          "receipt_subject_id",
+          "receipt_subject_type"
+        ],
+        "properties": {
+          "status": {
+            "const": "observed"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "enum": [
+              "agent.evidence.content",
+              "agent.evidence.artifact"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "role"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "not_captured",
+              "unsupported",
+              "dropped",
+              "failed"
+            ]
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "content_ref"
+              ]
+            },
+            {
+              "required": [
+                "content_sha256"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "required": [
+              "workload_id"
+            ]
+          },
+          {
+            "required": [
+              "policy_id"
+            ]
+          },
+          {
+            "required": [
+              "policy_version"
+            ]
+          },
+          {
+            "required": [
+              "policy_digest"
+            ]
+          },
+          {
+            "required": [
+              "privacy_mode"
+            ]
+          },
+          {
+            "required": [
+              "representation"
+            ]
+          },
+          {
+            "required": [
+              "protection_status"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "required": [
+          "workload_id",
+          "policy_id",
+          "policy_version",
+          "policy_digest",
+          "privacy_mode",
+          "representation",
+          "protection_status",
+          "content_object_id"
+        ],
+        "properties": {
+          "event_name": {
+            "enum": [
+              "agent.evidence.content",
+              "agent.evidence.artifact"
+            ]
+          }
+        },
+        "not": {
+          "required": [
+            "content_ref"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "privacy_mode"
+        ],
+        "properties": {
+          "privacy_mode": {
+            "enum": [
+              "redact",
+              "tokenize",
+              "metadata_only",
+              "omit"
+            ]
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "content_sha256"
+              ]
+            },
+            {
+              "required": [
+                "content_byte_length"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "chunk_index"
+        ]
+      },
+      "then": {
+        "required": [
+          "stream_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "stream_id"
+        ]
+      },
+      "then": {
+        "required": [
+          "chunk_index"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "agent.evidence.call"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "agent_id",
+          "call_id",
+          "call_phase",
+          "call_kind"
+        ],
+        "properties": {
+          "status": {
+            "const": "observed"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "role"
+              ]
+            },
+            {
+              "required": [
+                "content_object_id"
+              ]
+            },
+            {
+              "required": [
+                "content_ref"
+              ]
+            },
+            {
+              "required": [
+                "content_sha256"
+              ]
+            },
+            {
+              "required": [
+                "content_byte_length"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "call_phase"
+        ],
+        "properties": {
+          "call_phase": {
+            "const": "outcome"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "result_status"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "call_phase"
+        ],
+        "properties": {
+          "call_phase": {
+            "const": "start"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "result_status"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "required": [
+              "call_phase"
+            ]
+          },
+          {
+            "required": [
+              "call_kind"
+            ]
+          },
+          {
+            "required": [
+              "result_status"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_name": {
+            "const": "agent.evidence.call"
+          }
+        }
+      }
+    }
   ],
   "$defs": {
-    "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"}
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    }
   }
 }

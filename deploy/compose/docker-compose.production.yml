@@ -1,4 +1,6 @@
-# Production overlay for a single client VM (Docker Engine, no Kubernetes).
+# Client-VM technical overlay (Docker Engine, no Kubernetes).
+# The historical filename is not a production-approval or Helm-profile claim;
+# workload identity, immutable release and storage controls need qualification.
 #
 #   make up-prod
 #
@@ -34,7 +36,7 @@ services:
   fabric-node:
     # Same build as the evaluation harness. To run the signed release image
     # instead of a local build, set in .env:
-    #   FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol:0.8.0-rc.1
+    #   FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol@sha256:<approved-64-hex>
     #   FABRIC_NODE_PULL_POLICY=always
     # and verify the cosign signature per docs/verify-release.md first.
     # Pin to a digest for repeatability: image: ghcr.io/...@sha256:<digest>

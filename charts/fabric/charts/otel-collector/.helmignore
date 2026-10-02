@@ -15,4 +15,5 @@
 .tox/
 .coverage
 ci/
-tests/
+# Exclude development tests only; templates/tests contains the runtime Helm hook.
+/tests/

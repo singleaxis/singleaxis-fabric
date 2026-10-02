@@ -36,10 +36,13 @@ namespace:
 | `fabric-node-receiver-tls` | `tls.crt`, `tls.key` | Fabric Node OTLP server identity |
 | `fabric-node-client-ca` | `ca.crt` | CA used to authenticate OTLP clients |
 | `fabric-node-export-auth` | `authorization` | Complete outbound authorization value |
+| `fabric-workload-token` | `token` | Single workload-scoped ingress bearer token |
 
-Select an encrypted StorageClass or a customer-owned persistent volume. Then
-label or select the monitored workload namespace, then install with a real
-tenant identity, HTTPS destination, and explicit ingress and egress peers. This
+Select an encrypted StorageClass or a customer-owned persistent volume and
+retain a review reference for its actual encryption/KMS posture. Provision one
+workload-scoped client identity and bearer token, with a credential-custody review.
+Then select the monitored workload namespace and install with a verified image
+digest, tenant/workload identity, HTTPS destination, and explicit network peers. This
 example CIDR is documentation-only:
 
 ```bash
@@ -51,6 +54,13 @@ helm upgrade --install fabric charts/fabric \
   --create-namespace \
   --values charts/fabric/profiles/shadow-production.yaml \
   --set tenant.id=TENANT_UUID \
+  --set 'otel-collector.image.digest=sha256:<approved-64-lowercase-hex>' \
+  --set otel-collector.receiver.workloadAuthentication.tenantId=TENANT_UUID \
+  --set otel-collector.receiver.workloadAuthentication.workloadId=approved-agent \
+  --set otel-collector.receiver.workloadAuthentication.identityAttestationRef=identity-review-001 \
+  --set otel-collector.receiver.workloadAuthentication.tokenSecret.name=fabric-workload-token \
+  --set otel-collector.exporter.sendingQueue.persistence.storageClass=customer-encrypted \
+  --set otel-collector.exporter.sendingQueue.persistence.encryptionAttestationRef=storage-review-001 \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
@@ -71,10 +81,10 @@ Operational notes:
   subchart policy opens it. When `namespace.create=true`,
   `namespace.name` must equal the release namespace (`--namespace`) —
   resources are always rendered into the release namespace.
-- **Pinned image.** `shadow-production` rejects the `latest` tag and the
-  empty-tag appVersion fallback. Prefer
-  `--set otel-collector.image.digest=sha256:<64-hex>`; an explicit
-  non-latest `otel-collector.image.tag` is accepted.
+- **Pinned image.** `shadow-production` requires
+  `otel-collector.image.digest=sha256:<64-lowercase-hex>`. Every tag-only
+  selection, including a version-shaped tag, is rejected. Verify the actual
+  release image and signature; the example is not a real digest.
 - **Peer rules.** Every NetworkPolicy peer in `ingressFrom`,
   `exporterEgress.to`, and `egressTo` must be non-empty and must not use a
   world CIDR (`0.0.0.0/0`, `::/0`); such entries are equivalent to no
@@ -91,26 +101,52 @@ Operational notes:
 
 `shadow-production` must render only when all of these are true:
 
-- OTLP receivers require TLS and a verified client certificate;
+- OTLP receivers require TLS, a verified client certificate and a workload-scoped
+  bearer token on both HTTP/gRPC, or an explicitly selected evidence-only binding;
+- the selected binding's tenant matches `tenant.id`;
 - the export endpoint is HTTPS and authenticated;
 - metadata-only protection is enabled;
 - custom allowlist extensions are empty in the named production profile;
 - at least one operator-supplied workload ingress peer is present;
 - the sending queue uses persistent file storage with fsync;
+- one storageClass or existingClaim is explicitly selected with an
+  `encryptionAttestationRef`;
 - volatile batching before the persistent exporter queue is disabled;
 - overflow blocks intake instead of silently discarding accepted audit data;
 - retry has no finite maximum elapsed time for retryable failures;
 - the debug exporter is disabled;
 - the audit path is not sampled;
 - the Collector Service is ClusterIP (no NodePort/LoadBalancer exposure);
-- the Collector image is pinned by digest or explicit non-latest tag;
+- the Collector image is pinned by a full immutable sha256 digest;
 - the pod runs as non-root and cannot escalate privileges;
-- every declared network peer is non-empty and non-world;
+- every declared network peer names a restrictive selector or non-world CIDR;
 - default-deny network policy and explicit workload ingress and destination
   egress are enabled.
 
-Helm validation proves configuration shape and required references. Pod
-readiness proves that referenced Secrets and storage are actually available.
+Helm validation proves configuration shape and required references. Process
+readiness is not proof of credential custody, workload identity, encryption,
+destination durability, or complete capture. Review references are operator
+assertions; the chart does not fetch or verify their evidence.
+
+The ordinary workload mode authenticates possession of a dedicated credential;
+it does not compare a certificate SAN to the configured workload ID or validate
+arbitrary tenant fields in spans. Keep separate credential boundaries in separate
+releases. `identityAttestationRef` must cover certificate issuance, token custody,
+rotation and revocation. Test missing/wrong tokens and client certificates in the
+real environment. Tokens must contain one 32–4096-byte printable ASCII value
+with no spaces/newlines; their values never belong in Helm values.
+
+Optional paired `workloadAuthentication.policyVersion` and `policyDigest` are
+capture-policy metadata on the Pod, not executable policy or runtime approval.
+The actual Collector config has a distinct `checksum/config`. For an evidence-only
+endpoint, explicitly disable workload authentication and enable
+`evidenceSourceBinding`; its tenant must also match `tenant.id`, and traces remain
+rejected by that dedicated mode. See the [chart README](../charts/fabric/README.md)
+for exact migration and security requirements.
+
+The Compose VM example remains a separate technical profile; it does not
+inherit these Helm validations. Real target-environment identity, storage/KMS,
+retention and independent readback checks remain required before production GO.
 
 ## Delivery semantics
 

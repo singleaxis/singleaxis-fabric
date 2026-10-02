@@ -9,4 +9,4 @@
  * `fabric.decision` but not re-exported at the package root).
  */
 
-export { resetCoverageRegistry } from "./decision.js";
+export { resetCoverageRegistry, resetCaptureHealthWarnings } from "./decision.js";

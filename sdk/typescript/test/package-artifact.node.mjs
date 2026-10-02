@@ -1,10 +1,15 @@
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
-/* global Buffer */
+/* global Buffer, process */
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { URL } from "node:url";
 
 import {
     EXPECTED_PACKAGE_FILES,
@@ -70,3 +75,33 @@ test("accepts recorder-only packed payloads", () => {
         }),
     );
 });
+
+test(
+    "built local store rejects FIFO reads without blocking",
+    { skip: process.platform === "win32" },
+    () => {
+        const root = mkdtempSync(join(tmpdir(), "fabric-fifo-"));
+        try {
+            const tenant = join(root, "acme");
+            mkdirSync(tenant);
+            const fifo = join(tenant, "fifo");
+            const made = spawnSync("mkfifo", [fifo], { timeout: 2000, encoding: "utf8" });
+            assert.equal(made.status, 0, made.stderr);
+            const code = `
+            import { LocalFilesystemContentStore } from ${JSON.stringify(new URL("../dist/index.js", import.meta.url).href)};
+            const store = new LocalFilesystemContentStore(process.argv[1], "acme");
+            try { store.read(process.argv[2]); process.exitCode = 2; }
+            catch (error) { if (!/regular file/.test(error.message)) throw error; }
+        `;
+            const result = spawnSync(
+                process.execPath,
+                ["--input-type=module", "-e", code, root, `file://${fifo}`],
+                { timeout: 2000, encoding: "utf8" },
+            );
+            assert.equal(result.error, undefined, result.error?.message);
+            assert.equal(result.status, 0, result.stderr);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    },
+);

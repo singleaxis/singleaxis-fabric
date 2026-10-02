@@ -54,6 +54,12 @@ installed and an OTLP exporter is constructed from the environment. Calling it
 with neither produces spans that go nowhere (the SDK warns loudly rather than
 dropping them silently).
 
+For optional Python auto capture, configure the protected managed provider before
+registering the upstream hook. Its default span exporter suppresses raw content,
+hashes free-form metadata strings and preserves typed numeric usage and trace
+identity. Existing host exporters are not modified. See
+[protected auto-capture setup, verified dependencies and limits](../../docs/python-auto-capture-privacy.md).
+
 `gen_ai.client.*` metrics (token usage, operation duration, time-to-first-token,
 time-per-chunk, tool duration) are recorded on the global OpenTelemetry metrics
 API. Without a `MeterProvider` installed they silently no-op — install an SDK
@@ -114,16 +120,16 @@ The offline `fabric.call_reconcile.reconcile_call_run` compares specific calls
 and bytes against independent witness inputs. Matching local fixtures remain
 `unverified`; missing or corrupt evidence becomes `partial`. The API has no
 authenticated source or durable delivery receipt chain and its in-memory
-timeline is not crash-durable. See [custom-agent recording](../../../docs/custom-agent-recording.md)
-and [spec 043](../../../specs/043-custom-agent-call-recording.md).
+timeline is not crash-durable. See [custom-agent recording](../../docs/custom-agent-recording.md)
+and [spec 043](../../specs/043-custom-agent-call-recording.md).
 
 The optional `fabric.qualified_run.verify_qualified_call_run` path is separate:
 it checks signed independent feeds, exact original bytes, fresh sealed source
 readback, source binding, route closure and four exact receipt sets. It can
 verify a bounded submitted package for one source epoch under owner-provided
 issuer authority. It does not supply production issuers or live storage
-qualification. See [installed-package qualified tests](../../../docs/qualified-call-run-testing.md)
-and [spec 046](../../../specs/046-qualified-call-run-verification.md).
+qualification. See [installed-package qualified tests](../../docs/qualified-call-run-testing.md)
+and [spec 046](../../specs/046-qualified-call-run-verification.md).
 
 The separate `ByteEvidenceRecorder` API captures bytes the caller explicitly
 supplies. It does not intercept terminal, SSH, database or sandbox operations.
@@ -155,7 +161,7 @@ this is caller-side evidence, not proof of provider-bound bytes. Streaming,
 async calls, unwrapped routes and external side effects are not captured by
 this adapter. Reconcile against an independent endpoint/tool witness before
 claiming coverage. The current session/source identity and receipt chain are
-not production-qualified; see [spec 042](../../../specs/042-client-boundary-integration.md).
+not production-qualified; see [spec 042](../../specs/042-client-boundary-integration.md).
 
 This is not a substitute for the terminal/artifact adapter or an installer
 that discovers every route in a client's agent. A customer must declare and
@@ -223,3 +229,29 @@ uv run pytest
 uv run ruff check src tests
 uv run mypy src
 ```
+
+### Local decision capture health
+
+Inspect `decision.capture_health` during or after a decision. It reports local
+`decision_span_only` health with `recording_at_start`, `dropped_events`, and
+`dropped_attributes`. The last counter covers span attributes, not attributes
+inside individual events. Unsupported provider counters are `None`, never zero.
+The SDK emits one content-free warning per process/reason for `disabled` (the
+span did not record) or `partial` (the provider reports local dropped events or
+attributes). Warning-handler errors do not change the application's result.
+
+A normal snapshot remains `unverified`, not complete. This does not assess child
+spans, exporter queues, delivery, uninstrumented calls, independent records, or
+production readiness. Sampling and privacy choices remain yours; the SDK does
+not force recording or increase event limits. OpenTelemetry's default event cap
+can drop earlier decision events during long runs; exact local counts remain in
+the health snapshot even when events were dropped. Use deployment-specific loss
+and route-coverage qualification before relying on complete capture.
+
+### Enterprise capture interfaces and SDK scope
+
+See the [Python/TypeScript support matrix](../../docs/sdk-support-matrix.md) and
+[capture/control compatibility contracts](../../docs/capture-control-compatibility.md).
+Optional Python submodules expose authenticated local configuration lifecycle,
+workload/operator bindings, readback/drift and metadata-only final-boundary
+correlation. They do not install a portal, controller client or execution gate.

@@ -1,0 +1,234 @@
+{
+  "mode": "otel-explicit",
+  "managed_provider": false,
+  "exception_redaction_exporter": false,
+  "fault": "none",
+  "setup_ms": 0.169555,
+  "workload_ms": 26.870956,
+  "flush_ms": 0.028303,
+  "truth_actions": 7,
+  "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+  "declared_scope_actions": 6,
+  "captured_local_records": 6,
+  "exported_spans": 6,
+  "error_records": 1,
+  "export_attempts": 6,
+  "failed_export_spans": 0,
+  "raw_canary_in_export": false,
+  "unwrapped_action_captured": false,
+  "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+  "captured_action_ids": [
+    [
+      "background",
+      "one"
+    ],
+    [
+      "file",
+      "one"
+    ],
+    [
+      "model",
+      "success"
+    ],
+    [
+      "process",
+      "one"
+    ],
+    [
+      "retry",
+      "first"
+    ],
+    [
+      "retry",
+      "second"
+    ]
+  ],
+  "independent_inventory_unmatched_action_ids": [
+    [
+      "bypass",
+      "one"
+    ]
+  ],
+  "recording_gaps": null,
+  "provider_model_attribute_spans": 0,
+  "token_usage_attribute_spans": 0,
+  "caller_attempt_attribute_spans": 6,
+  "policy_event_statuses": [],
+  "snapshot": null,
+  "spans": [
+    {
+      "name": "model",
+      "context": {
+        "trace_id": "0x4c3e58c2179fb35ce2b3c7c90b616ce0",
+        "span_id": "0xaa388dc1409a5710",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:15.879853Z",
+      "end_time": "2026-10-02T17:07:15.882667Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "model",
+        "bench.attempt_id": "success",
+        "bench.kind": "model",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "model",
+      "context": {
+        "trace_id": "0x2a605efb70e1d555e7544724f3774a78",
+        "span_id": "0xcfc0043976193694",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:15.883103Z",
+      "end_time": "2026-10-02T17:07:15.885112Z",
+      "status": {
+        "status_code": "ERROR"
+      },
+      "attributes": {
+        "bench.operation_id": "retry",
+        "bench.attempt_id": "first",
+        "bench.kind": "model",
+        "bench.status": "error"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "model",
+      "context": {
+        "trace_id": "0xe428ac0d2f7f6a1f5455139181e79c62",
+        "span_id": "0x1518e9088956299c",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:15.885396Z",
+      "end_time": "2026-10-02T17:07:15.887391Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "retry",
+        "bench.attempt_id": "second",
+        "bench.kind": "model",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "tool",
+      "context": {
+        "trace_id": "0xaf890adbb4c39228825c14fdce681e6a",
+        "span_id": "0x12b41da015a6c782",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:15.887649Z",
+      "end_time": "2026-10-02T17:07:15.887747Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "file",
+        "bench.attempt_id": "one",
+        "bench.kind": "tool",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "tool",
+      "context": {
+        "trace_id": "0x32942e481a38d84ba4d3acad32b6659e",
+        "span_id": "0x65aa988c4d0af0f6",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:15.887993Z",
+      "end_time": "2026-10-02T17:07:15.899891Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "process",
+        "bench.attempt_id": "one",
+        "bench.kind": "tool",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "model",
+      "context": {
+        "trace_id": "0x06e3d6c412c2c89adcf0a058a8957e63",
+        "span_id": "0x3afa92822c98c423",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:15.902778Z",
+      "end_time": "2026-10-02T17:07:15.905859Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "bench.operation_id": "background",
+        "bench.attempt_id": "one",
+        "bench.kind": "model",
+        "bench.status": "ok"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "base_commit": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "scope": "Authorized TypeScript filesystem descriptor authority and duplicate SHA-256 consolidation. No suppression, query/config/threshold edits, benchmark changes or source gates weakened.",
+  "files": [
+    {
+      "path": "sdk/typescript/src/hash.ts",
+      "sha256": "f04f3112e8466b7c8f7df4ca972a2d6c9696255ae680e2451f393af0b87b6aa0",
+      "bytes": 7599,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/content-store.ts",
+      "sha256": "757b3e57a06c5ace2a8d061c368fbc0a2a9db2e6672d60fe34c0a514419252fb",
+      "bytes": 30288,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/content.ts",
+      "sha256": "a58077eaf94899e6617283d3b0f0606ab05af457a778e4aa6ab1756599b81ef9",
+      "bytes": 10351,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/byte-evidence.ts",
+      "sha256": "268a6f29420245810e0574687064f48b4587064388252af3ffbb798e63fac5c6",
+      "bytes": 18312,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/content-writer.ts",
+      "sha256": "fc365361cc148ecab9012f45940d531471be4ea435c31536808d5b65ed2a4c07",
+      "bytes": 29713,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/deployment-policy.ts",
+      "sha256": "e9101d085e0e6d4e49e50b457889722db4d343996ce2d4c79a75da4b8311c0e4",
+      "bytes": 13611,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/src/resolver.ts",
+      "sha256": "c984a6cff7f1b1de4eecb48c4f8af44013749273254f36cc7a247ac7f3b94285",
+      "bytes": 12954,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/opened-file-authority.test.ts",
+      "sha256": "d1b45a5d61ff143a41beca62a3b64cfcfbe4da65f48c44c3723fa9e62e4f87dc",
+      "bytes": 2856,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    },
+    {
+      "path": "sdk/typescript/test/digest-helper-vectors.test.ts",
+      "sha256": "e3db7dc542f91448dc814759f85d8b958bc174d4f2a7b18d2d5b03813d2149b4",
+      "bytes": 1660,
+      "methods": [
+        "full_changed_diff_review",
+        "focused_and_full_regression_execution",
+        "sha256_current_bytes"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "TS-LOCAL-PREOPEN-TYPE-RACE",
+      "status": "redundant_pathname_type_dependency_removed",
+      "change": "Removed lstat.isFile predicate immediately before open. Open uses O_NOFOLLOW|O_NONBLOCK where available; fstat on actual opened descriptor remains required before read. Pathname checks remain defense in depth only.",
+      "baseline": "New stale-metadata regression failed at prior lstat isFile rejection; other three leaf-swap tests passed baseline and remain regression coverage.",
+      "postfix": "Stale directory metadata does not reject an actually opened regular inode. Replacement regular file read reflects actual descriptor; immediately-before-open symlink and FIFO replacements refused."
+    },
+    {
+      "id": "TS-ANCESTOR-NAMESPACE-RACE",
+      "status": "genuine_residual_supported_threat_boundary",
+      "decision": "No portable native Node directory-relative openat API is available in this implementation. Concurrent adversarial ancestor namespace changes remain outside local adapter contract; cannot safely claim containment from check/use pathname tests or compare-after-read. Customer must own/control root and ancestors. Platforms without NOFOLLOW/NONBLOCK have weaker leaf guarantees; tests established Linux behavior only. No cosmetic hiding or assertion of CodeQL clearance.",
+      "existing_public_documentation": "sdk/typescript/README.md and assertUnlinkedPath comment disclose trust requirement. A native platform-specific adapter or restricted alternative storage design needs explicit portability/API design rather than silent behavior expansion."
+    },
+    {
+      "id": "TS-DUPLICATE-SHA256",
+      "status": "consolidated",
+      "change": "hash.ts owns single createHash SHA256 implementation for Uint8Array; prefixed byte helper and UTF8 text helper delegate. Legacy public contentHashBytes and sha256Prefixed outputs retained. Content store, descriptors, byte evidence, writer checksums, policy and resolver call shared helpers. Policy canonical string explicitly ASCII-encodes as before; HMAC remains separate keyed construction.",
+      "compatibility": "Fixed empty/abc/NUL/UTF8 vectors; typed-array subview excludes backing bytes; invalid UTF8 is never decoded on byte paths. Existing canonical/hash/policy/spool tests included in full461."
+    }
+  ],
+  "validation": {
+    "node20_binary": "/tmp/fabric-node20-cache/_npx/39eeea3b362d2c2d/node_modules/node/bin/node",
+    "node20_version": "20.19.0",
+    "full_vitest": {
+      "files": 23,
+      "passed": 461,
+      "log": "/workspace/fabric-qualification/ts-security-followup-full.log"
+    },
+    "focused_passed": 74,
+    "typecheck": "passed",
+    "eslint_full": "passed",
+    "prettier_full": "passed",
+    "build": "passed",
+    "package_tests_passed": 6,
+    "package_log": "/workspace/fabric-qualification/ts-security-followup-package.log",
+    "independent_review": {
+      "reviewer": "collector_journey",
+      "method": "Read-only seven runtime diffs plus two tests, independent Node20 targeted execution",
+      "result": "54 tests passed in645ms; no material regression found",
+      "limits": "Linux leaf race behavior established; ancestor races and absent NOFOLLOW platforms remain documented restrictions; no inference of CodeQL closure"
+    }
+  },
+  "limitations": [
+    "No current CodeQL rerun result is inferred from source changes.",
+    "No adversarial ancestor confinement or Windows leaf-race proof. Existing bounded built-package FIFO subprocess also passes.",
+    "No cryptographic authenticity added by SHA256 consolidation; digest scope and text/byte encodings preserved."
+  ]
+}

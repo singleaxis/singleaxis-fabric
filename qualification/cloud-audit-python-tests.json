@@ -1,0 +1,3742 @@
+{
+  "date": "2026-10-02",
+  "files": [
+    {
+      "bytes": 709,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 15,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/LICENSE",
+      "published_sha256": "7ecd8ce1d30b8aa26232f5c7c878cca53bc273547ce52f1678f955154746e64f",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read complete packaged license notice. This is textual license inventory, not legal advice or independent license-compliance certification.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "7ecd8ce1d30b8aa26232f5c7c878cca53bc273547ce52f1678f955154746e64f",
+      "test_contract": {}
+    },
+    {
+      "bytes": 11761,
+      "deeper_semantic_review_required": false,
+      "findings": [
+        "PY-AUDIT-002"
+      ],
+      "line_count": 257,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": false,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/README.md",
+      "published_sha256": "5d672216abaaf446bc5a9d8124e4eca86bce233ee7b5ecbc57038e2597396769",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read entire SDK README. Distinguishes local witness comparison from signed declared-scope verifier; explicitly documents legacy background masking and host-owned exporter limits. Fixed five spec/custom-agent links with one excessive parent traversal; all eight local links now resolve inside the repository and none includes a fragment. Generic introductory protection wording predates governed prequeue mode; new standalone guide supplies current path.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "5735e0838f87c02f6b76f04b74ce618999c25bac593bc5f7982a80e8b49b0662",
+      "test_contract": {}
+    },
+    {
+      "bytes": 1437,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 34,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": false,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/SCOPE.md",
+      "published_sha256": "ebe347f378d841982800b3d15690ea2b7ce1263127cb042d2e0622bc81e87d1e",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read full supported/excluded/artifact-boundary document. Recorder/control separation stated; artifact absence is asserted as a release property and needs current built-artifact verification. No legal or enterprise compliance interpretation.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "ebe347f378d841982800b3d15690ea2b7ce1263127cb042d2e0622bc81e87d1e",
+      "test_contract": {}
+    },
+    {
+      "bytes": 6790,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 215,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_toml_parse",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/pyproject.toml",
+      "published_sha256": "140e2b3e3356412e6f5b3f13fc2b49a16885a7e7becd5549ae2dcd79c610ec51",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all build/dependency/lint/test configuration, parse with tomllib. Reviewed core and optional dependency declarations, source/wheel exclusions and 85 percent total coverage threshold. Configured coverage threshold is not proof every line or route is verified; transitive code not audited.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "140e2b3e3356412e6f5b3f13fc2b49a16885a7e7becd5549ae2dcd79c610ec51",
+      "test_contract": {
+        "package_versions": [],
+        "top_level_keys": [
+          "build-system",
+          "dependency-groups",
+          "project",
+          "tool"
+        ]
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 8799,
+      "deeper_semantic_review_required": false,
+      "findings": [
+        "PY-AUDIT-001"
+      ],
+      "focused_validation": {
+        "command": "pytest -q -o addopts= sdk/python/tests/test_recorder_wheel_qualifier.py",
+        "real_archives_structurally_qualified": true,
+        "result": "33 passed",
+        "tool_environment": "/workspace/fabric-reconstruction-venv"
+      },
+      "line_count": 272,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": false,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/scripts/qualify_recorder_wheel.py",
+      "published_sha256": "5d8b06126f6a4eb30ace99acb797271f0770e637931a089ce3ddf14ec66bbbc6",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all code. Reviewed archive member path/link checks, duplicate raw names, required module set, forbidden legacy members/extras/symbols/methods and exact artifact hash. Fixed missing current standalone modules and labeled result structural. No extraction/execution. Unbounded in-memory archive expansion remains unsuitable for untrusted arbitrarily large archives; runtime behavior and transitive import closure require installed-artifact tests.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "4cd916d2669fd456d74b0cc916ef6a65a59f2c113cd4edbd00fc644b20e92a52",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [],
+        "module_docstring": "Check critical module presence and scope boundaries in an exact SDK archive.\n\nThis structural qualification does not execute the artifact or prove that its\nmodule contents work. Installed-artifact smoke tests remain a separate gate.",
+        "test_function_count": 0
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/scripts/qualify_recorder_wheel.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "bytes": 0,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 0,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": false,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/src/fabric/py.typed",
+      "published_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read empty PEP 561 marker bytes; presence declares typed package, not successful static typing of every downstream use.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "test_contract": {}
+    },
+    {
+      "bytes": 870,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 32,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_json_parse",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": false,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/src/fabric/taxonomies/mitre-atlas.json",
+      "published_sha256": "599ef652440da76bf9f7859cc4bce7308fcdfbf5d188f16f8f6a1889160704a3",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all six bundled entries and parse JSON. Public taxonomy labels/URLs/version are data; no classifier implementation or guarantee of current authoritative taxonomy completeness.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "599ef652440da76bf9f7859cc4bce7308fcdfbf5d188f16f8f6a1889160704a3",
+      "test_contract": {
+        "entry_count": 6,
+        "top_level_keys": [
+          "entries",
+          "homepage",
+          "namespace",
+          "title",
+          "version"
+        ]
+      }
+    },
+    {
+      "bytes": 984,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 32,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_json_parse",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": false,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/src/fabric/taxonomies/owasp-llm.json",
+      "published_sha256": "0aec48fbd46b17698bc3ce55230732c02cea121cbc3707a291b67df198f857a7",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all six bundled entries and parse JSON. Bundled subset/version is not automated security evaluation or certification; external links not fetched.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "0aec48fbd46b17698bc3ce55230732c02cea121cbc3707a291b67df198f857a7",
+      "test_contract": {
+        "entry_count": 6,
+        "top_level_keys": [
+          "entries",
+          "homepage",
+          "namespace",
+          "title",
+          "version"
+        ]
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 92,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 2,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/__init__.py",
+      "published_sha256": "42c2ac8eb7edfe3f4a5d43332cabefda5e1bf05f8a53c4cb791b223416f494a1",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read both copyright/license comment lines. Empty test-package marker; no runtime behavior.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "42c2ac8eb7edfe3f4a5d43332cabefda5e1bf05f8a53c4cb791b223416f494a1",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [],
+        "module_docstring": null,
+        "test_function_count": 0
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/__init__.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 1481,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 46,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/conftest.py",
+      "published_sha256": "1e1b6e91ec9eaa1fb6c9f9dde7d723a05475cab0ab89bcc72dd7f285c060e3d0",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read full fixtures. Session-scoped ALWAYS_ON TracerProvider and in-memory exporter; before/after test clearing. These defaults make local span assertions deterministic and do not exercise production sampling, asynchronous export loss, or existing host provider conflicts by themselves.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "1e1b6e91ec9eaa1fb6c9f9dde7d723a05475cab0ab89bcc72dd7f285c060e3d0",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [],
+        "module_docstring": "Shared pytest fixtures for the Fabric SDK.\n\nThe SDK deliberately doesn't install a global tracer provider on\nimport. Tests set one up once per session using an\n``InMemorySpanExporter`` so assertions can inspect emitted spans\ndirectly.",
+        "test_function_count": 0
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/conftest.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 9839,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 262,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_adapters_crewai.py",
+      "published_sha256": "dfbc2c14daeb5be399a4307649fbef743e1244a0e38403723792d58b2f57192d",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "dfbc2c14daeb5be399a4307649fbef743e1244a0e38403723792d58b2f57192d",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.adapters.crewai"
+        ],
+        "module_docstring": "CrewAI adapter callbacks record passive, content-safe activity.",
+        "test_function_count": 11
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_adapters_crewai.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 4496,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 119,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_async.py",
+      "published_sha256": "f664643534fa3efc4b22efe21bd9d896274a9b51777b90405d0c35c33f6612c9",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "f664643534fa3efc4b22efe21bd9d896274a9b51777b90405d0c35c33f6612c9",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._calls"
+        ],
+        "module_docstring": "Async call-style tests for passive recorder contexts and child spans.",
+        "test_function_count": 4
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_async.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 11266,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 323,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_auto_instrument.py",
+      "published_sha256": "bd63fbe43cc98bb05d337dcc915e4d86cc9ea66e96d6177049018d1bfee2dfea",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "bd63fbe43cc98bb05d337dcc915e4d86cc9ea66e96d6177049018d1bfee2dfea",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.auto_instrument"
+        ],
+        "module_docstring": "Tests for fabric.auto_instrument lazy-detect-and-enable logic.\n\nThe upstream `opentelemetry-instrumentation-*` packages aren't dev\ndeps (they pull heavy LLM SDK transitives), so these tests stub the\nimport + Instrumentor surface via monkeypatch rather than actually\ninstalling them.",
+        "test_function_count": 17
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_auto_instrument.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "adapter.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 115
+        },
+        {
+          "call": "adapter.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 178
+        },
+        {
+          "call": "adapter.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 206
+        },
+        {
+          "call": "adapter.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 224
+        }
+      ],
+      "bytes": 8659,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 236,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_byte_boundary_adapter.py",
+      "published_sha256": "cdcfa4dff9b7070bfcee0247b66a1fecbbc85f059b53c90a336d975105852a62",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "cdcfa4dff9b7070bfcee0247b66a1fecbbc85f059b53c90a336d975105852a62",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.adapters.byte_boundary",
+          "fabric.adapters.synthetic_evidence",
+          "fabric.synthetic_reconcile"
+        ],
+        "module_docstring": "Spec 042: a byte-call tap preserves the caller's action and marks gaps.",
+        "test_function_count": 5
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_byte_boundary_adapter.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 59
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 91
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 138
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 242
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 250
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 264
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 346
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 403
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 176
+        }
+      ],
+      "bytes": 14865,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 411,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_byte_evidence.py",
+      "published_sha256": "307c934ad00320229ea588e1b98a291bfa4de2a768e3aa682a2a2c535d53855e",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "307c934ad00320229ea588e1b98a291bfa4de2a768e3aa682a2a2c535d53855e",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.byte_evidence"
+        ],
+        "module_docstring": "Explicit content-v2 byte capture: exactness, identity, loss, isolation.",
+        "test_function_count": 13
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_byte_evidence.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 14274,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 371,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_byte_resolver.py",
+      "published_sha256": "11fb7cb9b6977316b9f0d69dbd2867ad198693d9df8db130d43fccd0206f5b31",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read every original/review resolution test. Known failures lower verdict and expose no bytes; sidecar/content mismatch, wrong tenant/ref, symlinks, hardlinks, oversize and duplicate JSON refuse. FD cleanup is exercised at open/read/close faults. Independent host exporter deliberately remains raw while Fabric-created spans omit canary; authority is scoped local configuration.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "11fb7cb9b6977316b9f0d69dbd2867ad198693d9df8db130d43fccd0206f5b31",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.call_reconcile"
+        ],
+        "module_docstring": "Authorized originals/review resolution and deliberately incomplete reports.",
+        "test_function_count": 10
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_byte_resolver.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 262
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 289
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 305
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 387
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 490
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 526
+        },
+        {
+          "call": "resumed.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 638
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 705
+        },
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 674
+        }
+      ],
+      "bytes": 29439,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 747,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_byte_spool.py",
+      "published_sha256": "0e85d0fa2ae5f3197f83ff9990f7dba4ceedd308a3e98d5b40652017b376d850",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "0e85d0fa2ae5f3197f83ff9990f7dba4ceedd308a3e98d5b40652017b376d850",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.byte_spool",
+          "fabric.content_store",
+          "fabric.deployment_policy",
+          "fabric.governed_store"
+        ],
+        "module_docstring": "Protected replay: actual subprocess termination, outage, privacy and bounded loss.",
+        "test_function_count": 18
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_byte_spool.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 3053,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 85,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_call_batches.py",
+      "published_sha256": "50a6b71fdc74a5f4923ac2767da1c0fb5ba2ce800c58b8d1f637091a106f0359",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "50a6b71fdc74a5f4923ac2767da1c0fb5ba2ce800c58b8d1f637091a106f0359",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.call_otlp"
+        ],
+        "module_docstring": "Large bounded snapshots have exact-set projection without a false receipt.",
+        "test_function_count": 5
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_call_batches.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 7875,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 205,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_call_otlp.py",
+      "published_sha256": "c3f173b715977020f574c12071449bedede93db7e3d57b47a70ff248799bd6c4",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "c3f173b715977020f574c12071449bedede93db7e3d57b47a70ff248799bd6c4",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.byte_evidence",
+          "fabric.call_otlp",
+          "fabric.call_recorder",
+          "fabric.content_store.local",
+          "fabric.synthetic_otlp"
+        ],
+        "module_docstring": "Closed metadata projection covers every live call source record.",
+        "test_function_count": 8
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_call_otlp.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 14477,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 398,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_call_privacy.py",
+      "published_sha256": "4bbca7da3938c37335b694d50875dfd3120537266261a1931b2e78daf118306a",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all tests and fixtures. Masked-only disk output excludes original canary/fingerprint; dual copies have separate stores and attempt/link identity; failed transform has no raw fallback; explicit raw spans/env flags refuse in protected mode. Test_transform_runs_off_path explicitly confirms legacy worker-side masking, not prequeue protection. Customer transform semantics are not an infallible PII detector.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "4bbca7da3938c37335b694d50875dfd3120537266261a1931b2e78daf118306a",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._calls",
+          "fabric.byte_evidence"
+        ],
+        "module_docstring": "Privacy processing and legacy call identity regression tests for spec 043.",
+        "test_function_count": 11
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_call_privacy.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 15693,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 429,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_call_reconcile.py",
+      "published_sha256": "2c187aa5aacd75acc592a884df1ba9ea0dab3fa97b46d767cee792ff0d12b81d",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all fixture construction and tests. Clean bytes remain unverified even with planted authentication flags; 20 injected loss classes require partial. SQLite commits and rollback use separate read-only readback. Tested canaries are absent from reports; originals and review copies do not interchange. This is local synthetic evidence, not authenticated provider truth.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "2c187aa5aacd75acc592a884df1ba9ea0dab3fa97b46d767cee792ff0d12b81d",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.byte_evidence",
+          "fabric.call_reconcile",
+          "fabric.call_recorder",
+          "fabric.content_store.local",
+          "fabric.synthetic_reconcile"
+        ],
+        "module_docstring": "Independent-object matching, explicit losses and conservative verdicts.",
+        "test_function_count": 10
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_call_reconcile.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 14881,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 397,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_call_recorder.py",
+      "published_sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric"
+        ],
+        "module_docstring": "Custom dispatcher evidence preserves actions and reports partial streams.",
+        "test_function_count": 12
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_call_recorder.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "_recorder(writer, spool).seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 292
+        },
+        {
+          "call": "without.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 379
+        },
+        {
+          "call": "_recorder(writer, spool).seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 312
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 364
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 371
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 385
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 387
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 416
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 422
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 435
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 437
+        }
+      ],
+      "bytes": 16114,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 440,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_call_source_spool.py",
+      "published_sha256": "45f6d8db45006ed12f53d0f6811e912bcd2dca2fc4906123ab81f0381c303bfa",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "45f6d8db45006ed12f53d0f6811e912bcd2dca2fc4906123ab81f0381c303bfa",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.byte_resolver",
+          "fabric.source_spool"
+        ],
+        "module_docstring": "Custom call journal restart/readback distinguishes metadata and bytes.",
+        "test_function_count": 15
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_call_source_spool.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 39229,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 1187,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_calls.py",
+      "published_sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._calls"
+        ],
+        "module_docstring": "Tests for Decision.llm_call / Decision.tool_call child spans.",
+        "test_function_count": 81
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_calls.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 2013,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 50,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_capture_capabilities.py",
+      "published_sha256": "c01edf3aede50391d0059d5b7ddf73eb6e5edd3f57f517752e11314e5e65b191",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read entire declaration matrix tests. Python/TypeScript narrower support is explicit, control exchange stays contract-only, enforcement/portal/rollout absent, and production/hook qualification false. These tests compare declared capability data and do not exercise every implementation marked implemented.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "c01edf3aede50391d0059d5b7ddf73eb6e5edd3f57f517752e11314e5e65b191",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.capture_capabilities"
+        ],
+        "module_docstring": null,
+        "test_function_count": 3
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_capture_capabilities.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 6525,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 165,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_capture_health.py",
+      "published_sha256": "94a7cc03c9141f70c18757e510fa4caf1e9a60c233631fdc554bcf379f2b012e",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all local OTel health tests. Selected event/attribute caps, disabled sampling, unsupported counters, failing logger, async contexts and final exception-event loss are exercised. Healthy local result explicitly remains unverified; the scope is decision_span_only and does not cover child spans, network delivery or arbitrary detached work.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "94a7cc03c9141f70c18757e510fa4caf1e9a60c233631fdc554bcf379f2b012e",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric"
+        ],
+        "module_docstring": "Local loss is visible without changing sampling, span limits, or actions.",
+        "test_function_count": 9
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_capture_health.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 5864,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 145,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_capture_identity.py",
+      "published_sha256": "a05beff502dd4c1f317aaa659091c0be7cb329747eb961d648764d1af8860ed2",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all principal binding tests. Issuer/subject/tenant/workload/permission and token expiry are checked; workload cannot gain policy-admin privileges; unverified telemetry labels cannot substitute for grants. Fake authority result is filtered to a closed output. Local administrator key and configured bindings do not establish federated identity or host attestation.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "a05beff502dd4c1f317aaa659091c0be7cb329747eb961d648764d1af8860ed2",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.capture_identity",
+          "fabric.governed_store"
+        ],
+        "module_docstring": null,
+        "test_function_count": 6
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_capture_identity.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 6739,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 176,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_capture_readback.py",
+      "published_sha256": "8430a48a09a1c56d5212a190c05c3e2b5d6f1252ec2b2845d23fcfbd6058af89",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read every test. Readback preserves registry state, distinguishes desired approval/applied/observed status, refuses reporter scope/authority mismatch, stale/future/unknown inputs and unbounded contracts. Matched state explicitly retains runtime_attestation=unverified and production_qualified=False. No live workload attestation.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "8430a48a09a1c56d5212a190c05c3e2b5d6f1252ec2b2845d23fcfbd6058af89",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.capture_identity",
+          "fabric.capture_readback",
+          "fabric.deployment_policy",
+          "fabric.deployment_state",
+          "fabric.governed_store"
+        ],
+        "module_docstring": null,
+        "test_function_count": 6
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_capture_readback.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 3153,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 84,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_checkpoint.py",
+      "published_sha256": "e00e28f5f96a0529a42bc67f6536abd88847d59b76092f4b87b67a7b27d012b1",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "e00e28f5f96a0529a42bc67f6536abd88847d59b76092f4b87b67a7b27d012b1",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric"
+        ],
+        "module_docstring": "Tests for decision.checkpoint().",
+        "test_function_count": 6
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_checkpoint.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 6412,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 164,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_client.py",
+      "published_sha256": "1a0b696c39d11c900b7b2a258447f3f4f23fc493464c4cea12a8154d4a996240",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "1a0b696c39d11c900b7b2a258447f3f4f23fc493464c4cea12a8154d4a996240",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric"
+        ],
+        "module_docstring": "Fabric client construction and env parsing.",
+        "test_function_count": 10
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_client.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 2686,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 78,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_concurrency.py",
+      "published_sha256": "3207d52fd5b8e5e8ff5530c572497606815bafb4f38570ae9a2d1d0c4468a447",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "3207d52fd5b8e5e8ff5530c572497606815bafb4f38570ae9a2d1d0c4468a447",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric"
+        ],
+        "module_docstring": "Decision single-use and non-overlap recorder contract.",
+        "test_function_count": 5
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_concurrency.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 2151,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 52,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_content_boundaries.py",
+      "published_sha256": "5d9ea86cf6396c6015c6336a246e3536523c88d43bafaf87ed07c611e34b169b",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read whole test file. UTF-8 truncation matches all complete prefixes of selected multibyte strings. Unsafe manifest/namespace IDs reject before local directory creation, including local and S3 adapters; successful local namespace roundtrip checks ownership. S3 cases reject locally; no real S3 call or IAM qualification.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "5d9ea86cf6396c6015c6336a246e3536523c88d43bafaf87ed07c611e34b169b",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric._content",
+          "fabric.content_store",
+          "fabric.content_store.base"
+        ],
+        "module_docstring": "Regression coverage for content namespace and UTF-8 boundaries.",
+        "test_function_count": 4
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_content_boundaries.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "store.put",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 266
+        },
+        {
+          "call": "store.put",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 286
+        },
+        {
+          "call": "store.put",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 287
+        }
+      ],
+      "bytes": 15127,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 397,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_content_store.py",
+      "published_sha256": "bb4c7d534fffc758613690caeff55b8e6db5e6b8c7b7e7da2e8a632417ba100e",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "8be90b75c02d33de830b060d4e984857499f44e181e3bb278c91eaa4879b8941",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.content_store",
+          "fabric.content_store.base"
+        ],
+        "module_docstring": "Tests for the dual-pipeline content stores.\n\nThe local store writes to a content-addressed path under ``tmp_path``.\nboto3 is not a dev dependency, so the S3 test injects a fake module via\n``monkeypatch.setitem(sys.modules, ...)`` that records the ``put_object``\ncall.",
+        "test_function_count": 23
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_content_store.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 1649,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 53,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_control_evidence.py",
+      "published_sha256": "7c0d876960d06607a95501481279b6a6ee80106709d773997fe76ad138ec95ac",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "7c0d876960d06607a95501481279b6a6ee80106709d773997fe76ad138ec95ac",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.control_evidence"
+        ],
+        "module_docstring": null,
+        "test_function_count": 3
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_control_evidence.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 6339,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 169,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_control_protocol.py",
+      "published_sha256": "3c5a4f26b9364fd9311c0ab4ec09df6ed5ef5955e7a44bb1252a8810daf4b19b",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "3c5a4f26b9364fd9311c0ab4ec09df6ed5ef5955e7a44bb1252a8810daf4b19b",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.control_evidence",
+          "fabric.control_protocol"
+        ],
+        "module_docstring": null,
+        "test_function_count": 7
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_control_protocol.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 5313,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 129,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_coverage_manifest.py",
+      "published_sha256": "de6408cbdc39b053b3664286ded0025e6ed8d9a3138ba79217e1a22fe7dcb1a8",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all fake hook/import/version tests. Installed-active-qualified are distinct; unavailable metadata is mocked together with missing imports; installed but broken dependency remains FAILED. Fake hooks are not live OpenAI API or actual provider instrumentation. Content errors are not leaked.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "1a44c66cb7d116cc02a343537874a705d66d2254d746c867346fd3a0c05bdba0",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.auto_instrument",
+          "fabric.coverage_manifest"
+        ],
+        "module_docstring": "Installed, active, versioned and qualified are deliberately separate facts.",
+        "test_function_count": 9
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_coverage_manifest.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 11924,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 304,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_decision.py",
+      "published_sha256": "fc6b61c5fb2099265f5831a14a288162238fa8d5ea81d450bd64a693b25df9a4",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "fc6b61c5fb2099265f5831a14a288162238fa8d5ea81d450bd64a693b25df9a4",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.decision"
+        ],
+        "module_docstring": "Decision context manager behavior and passive activity recording.",
+        "test_function_count": 19
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_decision.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "recorder.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 244
+        }
+      ],
+      "bytes": 15785,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 380,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_deployment_policy.py",
+      "published_sha256": "f545a985ab9d68590761ee5930de5b7f0fa97af066269f668259000210230351",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read entire policy/protector and recorder-routing test file. Canonical policy digest/golden token, strict bounds, immutable mapping, key/scope separation, fail-closed transforms and overlapping planes are tested. Queue admission is intercepted to prove only selected protected bytes enter it; transform failure must never enqueue. This qualifies explicit customer callbacks only; golden tokens do not prove all cryptographic/security properties or automatic PII removal.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "f545a985ab9d68590761ee5930de5b7f0fa97af066269f668259000210230351",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.byte_evidence",
+          "fabric.content_store.local",
+          "fabric.deployment_policy"
+        ],
+        "module_docstring": "Privacy policy parity, failure safety and real byte-recorder routing.",
+        "test_function_count": 14
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_deployment_policy.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 9578,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 257,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_deployment_state.py",
+      "published_sha256": "2edeaa95f15fb35f42adcce7ee74e343c2e626b7cd59a4222bf15f6cf3aaa40f",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "2edeaa95f15fb35f42adcce7ee74e343c2e626b7cd59a4222bf15f6cf3aaa40f",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.deployment_policy",
+          "fabric.deployment_state",
+          "fabric.governed_store"
+        ],
+        "module_docstring": null,
+        "test_function_count": 10
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_deployment_state.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 24812,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 674,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_distributed_closure.py",
+      "published_sha256": "09443f982037db65d5963feb48f7d37a7c79d5b7d7293f14af4b0d63a6368133",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "09443f982037db65d5963feb48f7d37a7c79d5b7d7293f14af4b0d63a6368133",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.distributed_closure",
+          "fabric.evidence_attestation"
+        ],
+        "module_docstring": "Finite authenticated reference closure; fixtures do not attest infrastructure.",
+        "test_function_count": 37
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_distributed_closure.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "session.calls.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 105
+        }
+      ],
+      "bytes": 4705,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 118,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_enterprise_integration.py",
+      "published_sha256": "9194c3fce3f9714992d6ef1fe25c87fccf4aa3cf79d648408b3cb05ca1b957ed",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "9194c3fce3f9714992d6ef1fe25c87fccf4aa3cf79d648408b3cb05ca1b957ed",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.content_store.local",
+          "fabric.deployment_policy",
+          "fabric.enterprise",
+          "fabric.governed_store"
+        ],
+        "module_docstring": "Run user quickstart entrypoints against real local capture/storage paths.",
+        "test_function_count": 4
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_enterprise_integration.py",
+        "path": "qualification/python-test-contracts/contracts-001.json",
+        "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "recorder.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 479
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 480
+        }
+      ],
+      "bytes": 18267,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 513,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_enterprise_preflight.py",
+      "published_sha256": "30d53c9271a5a32b062e1d97ea826226c8b7ef79347fd5b43e9d16ce02e91dc6",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "30d53c9271a5a32b062e1d97ea826226c8b7ef79347fd5b43e9d16ce02e91dc6",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.byte_evidence",
+          "fabric.call_recorder",
+          "fabric.content_store.local",
+          "fabric.coverage_manifest",
+          "fabric.deployment_policy",
+          "fabric.enterprise_preflight",
+          "fabric.evidence_attestation",
+          "fabric.source_spool"
+        ],
+        "module_docstring": "Entry-point and actual loopback checks; no simulated production receipts.",
+        "test_function_count": 18
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_enterprise_preflight.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 3765,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 96,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_enterprise_reference.py",
+      "published_sha256": "98ee78854db308561abfed8886bf8c9bbf1f68db1528c4aa5cc9a4b413f91b3a",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "98ee78854db308561abfed8886bf8c9bbf1f68db1528c4aa5cc9a4b413f91b3a",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.byte_spool"
+        ],
+        "module_docstring": "The public reference command must exercise actual separate-process recovery.",
+        "test_function_count": 4
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_enterprise_reference.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 11225,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 345,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_evidence_attestation.py",
+      "published_sha256": "a2c6fb4bb4b182ed7ea2722aceaff555ed7957b4deacdeb2842288d9beea1705",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "a2c6fb4bb4b182ed7ea2722aceaff555ed7957b4deacdeb2842288d9beea1705",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.evidence_attestation"
+        ],
+        "module_docstring": "Attestations cannot promote self-reported identity or a later receipt stage.",
+        "test_function_count": 13
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_evidence_attestation.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 18475,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 462,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_execution.py",
+      "published_sha256": "1cec870e51238665f641c1d951b52997ed0abdc1290a7d91415c84888a50c7f7",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "1cec870e51238665f641c1d951b52997ed0abdc1290a7d91415c84888a50c7f7",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.execution"
+        ],
+        "module_docstring": "Tests for the optional ``fabric.execution`` correlation span.\n\nCovers: id minting vs supplied id, decision inheritance of\nexecution_id / workflow_id, back-compat for decisions opened outside any\nexecution, completed/failed lifecycle status, the async context-manager\npath, and contextvar isolation across nested / sequential executions.",
+        "test_function_count": 25
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_execution.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 33651,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 836,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_generic_interaction.py",
+      "published_sha256": "97c916ec2f835e98a4a01d865af5c7461782d3056ecee7ffa4d7ec86e1888ac9",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "97c916ec2f835e98a4a01d865af5c7461782d3056ecee7ffa4d7ec86e1888ac9",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._id_validators",
+          "fabric.decision",
+          "fabric.integrations.mcp"
+        ],
+        "module_docstring": "Generic interaction capture (spec 023).\n\nEverything here is GENERIC \u2014 surface-agnostic. The universal\n``record_interaction`` primitive captures ANY interaction kind; the\n:class:`fabric.Baseline`, taxonomy tags, and :func:`fabric.verify_signature`\nare cross-cutting capabilities that apply to any hashed thing / any\nartifact / any event; and the coverage loop self-reports what is being\ncaptured generically. Raw payload/metadata never land on the span.",
+        "test_function_count": 57
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_generic_interaction.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 58497,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 1534,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_governed_content.py",
+      "published_sha256": "e264905d8dfe660dc363d1e84966440afb04f4e933ecf76a3a47bce8c82b65b5",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "a69ed355829e36bc0b5dd9f0721cc845e13a80978c59a6e1ae1beec8ed897616",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._content",
+          "fabric._content_sink",
+          "fabric._content_writer",
+          "fabric.content_store"
+        ],
+        "module_docstring": "Governed-content capture tests (specs 028/029/032/033/034).\n\nCovers: explicit opt-in + fail-closed config, the bounded writer and its\ndurability modes (inline/process/spooled), capture coverage across the\nSDK surfaces, the transcript manifest lifecycle, and authorized\nresolution/export. All stores here are local \u2014 no mocks of Fabric's own\nlogic.",
+        "test_function_count": 74
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_governed_content.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "calls.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 550
+        },
+        {
+          "call": "calls.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 571
+        },
+        {
+          "call": "writer.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 693
+        },
+        {
+          "call": "writer.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 599
+        },
+        {
+          "call": "session.calls.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 757
+        }
+      ],
+      "bytes": 34040,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 878,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_governed_store.py",
+      "published_sha256": "ca13a865c8622b97429e20844d7c0d400e92508407d6bb04a2220b4d890868fe",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "ca13a865c8622b97429e20844d7c0d400e92508407d6bb04a2220b4d890868fe",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.content_store.base",
+          "fabric.deployment_policy",
+          "fabric.enterprise",
+          "fabric.governed_store",
+          "fabric.source_spool"
+        ],
+        "module_docstring": "Actual durable adapter and public capture integration, using local test grants.",
+        "test_function_count": 28
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_governed_store.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 4967,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 127,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_hardening.py",
+      "published_sha256": "cd763d275fa144b7685c9228a332817a41d03a7f72da22780192af3d0bacc5f7",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "cd763d275fa144b7685c9228a332817a41d03a7f72da22780192af3d0bacc5f7",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.memory",
+          "fabric.propagation",
+          "fabric.tracing"
+        ],
+        "module_docstring": "Regression tests for hardening fixes surfaced by adversarial stress testing.\n\nEach test pins a specific robustness gap found during pre-0.6.0 stress\ntesting so it cannot silently regress. None of these change the wire\ncontract for well-formed input \u2014 the conformance goldens are unaffected.",
+        "test_function_count": 7
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_hardening.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 8004,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 183,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_http_dispatch.py",
+      "published_sha256": "b2f68cb54d6122ed382875cb2939910ac637ebab6804b397ad83bb73acf0030d",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "b2f68cb54d6122ed382875cb2939910ac637ebab6804b397ad83bb73acf0030d",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.http_dispatch"
+        ],
+        "module_docstring": "Real final HTTP dispatch, receiver truth, retries, bypass and cancellation.",
+        "test_function_count": 6
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_http_dispatch.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 17710,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 474,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_id_validators.py",
+      "published_sha256": "5298fc1baeba48fe2a05f80184611560726f5f4e13bcf45872e6d6d9aa2c0d40",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "5298fc1baeba48fe2a05f80184611560726f5f4e13bcf45872e6d6d9aa2c0d40",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._id_validators"
+        ],
+        "module_docstring": "Tests for ``fabric._id_validators``.\n\nTwo guards live in that module and are tested here.\n\n``warn_if_pii_shaped`` acceptance criteria: email-shaped and\nphone-shaped identifier values emit a one-shot ``UserWarning``;\n``FABRIC_QUIET_PII_WARN=1`` suppresses; ``*_name`` fields are not\nchecked (they are explicitly human-readable by contract).\n\n``check_identifier`` covers placeholder rejection for the two partition\nkeys ``tenant_id`` / ``agent_id``. The acceptance half of that suite\nmatters as much as the rejection half: this is a public pre-1.0 API and\nthe accepted-identifier tests exist to prove we did not narrow what\nexisting users may pass.",
+        "test_function_count": 32
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_id_validators.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 13424,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 408,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_independent_feed.py",
+      "published_sha256": "1c4027066282a22b625ecf55d6fa12762eb16f3e6457a3af2a90af0540436461",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "1c4027066282a22b625ecf55d6fa12762eb16f3e6457a3af2a90af0540436461",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.evidence_attestation",
+          "fabric.independent_feed"
+        ],
+        "module_docstring": "Offline independent-feed contract and failure-state tests (spec 045).",
+        "test_function_count": 9
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_independent_feed.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 6836,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 212,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_independent_feed_adversarial.py",
+      "published_sha256": "8e4d0009f6dcb31777ffe29a1c4845221e2ad563bc0fe4debbb2dd36f509fdd7",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read fixture signer/resolver and every signed-mutation test. Numeric coercions, chunk/cursor contradiction and hostile outcomes reject before resolver calls. Callback error text is absent from output; aggregate limit rejects before reads. Fixture resolver and one signing key do not provide external-service trust.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "8e4d0009f6dcb31777ffe29a1c4845221e2ad563bc0fe4debbb2dd36f509fdd7",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.evidence_attestation",
+          "fabric.independent_feed"
+        ],
+        "module_docstring": "Independent review probes of signed but structurally contradictory feeds.",
+        "test_function_count": 6
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_independent_feed_adversarial.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 5074,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 131,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_independent_store.py",
+      "published_sha256": "356158726e41a39d42cad4fe5a3cfe82ad404e432836a0c436244d0fc4342c85",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "356158726e41a39d42cad4fe5a3cfe82ad404e432836a0c436244d0fc4342c85",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.independent_store"
+        ],
+        "module_docstring": "Local witness read authorization and path safety.",
+        "test_function_count": 8
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_independent_store.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 10415,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 293,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_mcp_integration.py",
+      "published_sha256": "9367c23598a649360d528f777723090f7268ceb42aa4a4866b5773393c45bdcd",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "9367c23598a649360d528f777723090f7268ceb42aa4a4866b5773393c45bdcd",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._calls",
+          "fabric.integrations.mcp"
+        ],
+        "module_docstring": "MCP tool-call instrumentation \u2014 traced_call_tool / InstrumentedMCPSession.\n\nNo real ``mcp`` dependency: a fake async session stands in for an\n``mcp.ClientSession``, and a fake result object mimics\n``CallToolResult`` (``.isError`` / ``.content``). Mirrors the\nasyncio.run() convention used by other async adapter tests (the repo\ndoes not enable pytest-asyncio markers).",
+        "test_function_count": 10
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_mcp_integration.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 9942,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 293,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_memory.py",
+      "published_sha256": "e05f0d0e76fdb3f4e0f7930fc31ea7504a2b91cda7e4d1d348c694725e241241",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "e05f0d0e76fdb3f4e0f7930fc31ea7504a2b91cda7e4d1d348c694725e241241",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.decision"
+        ],
+        "module_docstring": "Memory recording \u2014 span events + rolling aggregates.",
+        "test_function_count": 18
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_memory.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "result.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 64
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 199
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 220
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 256
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 267
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 287
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 299
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 308
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 358
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 393
+        },
+        {
+          "call": "source.flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 395
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 396
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 404
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 414
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 538
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 546
+        },
+        {
+          "call": "writer.drain",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 568
+        }
+      ],
+      "bytes": 21276,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 570,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_metadata_delivery.py",
+      "published_sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.metadata_delivery",
+          "fabric.source_spool"
+        ],
+        "module_docstring": "Real HTTP and process-termination checks for durable metadata replay.",
+        "test_function_count": 14
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_metadata_delivery.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 25642,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 705,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_propagation.py",
+      "published_sha256": "bf47b8d1f949dcab8f73ba2ba1b2dd2bcccbed721d48d1d0862ad73c6f2e85af",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "d0407f0d4c44ec5aef82277250779be827a5872e1e57a2720fba0dce1c23e611",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.propagation"
+        ],
+        "module_docstring": "Tests for W3C ``tracestate``-based Fabric context propagation.",
+        "test_function_count": 40
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_propagation.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "recorder.call",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 115
+        },
+        {
+          "call": "recorder.seal_source",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 118
+        }
+      ],
+      "bytes": 14180,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 395,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_qualified_run.py",
+      "published_sha256": "afde8009ce0f36c592b061f28f6e845eb0cdb83fc75b54f737522737d9d090c6",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read complete signed-fixture setup and every test. Exact receipt sets, independent byte readback, source seal/binding, route proof, revocation and missing evidence are tested. Complete verdict is only for the declared scope under fixture-authorized issuers; all authority roles share one synthetic key, so this does not establish real independent issuers or enumerate arbitrary detached work.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "afde8009ce0f36c592b061f28f6e845eb0cdb83fc75b54f737522737d9d090c6",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.byte_evidence",
+          "fabric.byte_resolver",
+          "fabric.call_reconcile",
+          "fabric.call_recorder",
+          "fabric.content_store.local",
+          "fabric.evidence_attestation",
+          "fabric.independent_feed",
+          "fabric.qualified_run",
+          "fabric.receipt_sets",
+          "fabric.source_spool"
+        ],
+        "module_docstring": "Signed fixture proofs exercise exact bounded verification, not deployment GO.",
+        "test_function_count": 19
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_qualified_run.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 11794,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 337,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_receipt_sets.py",
+      "published_sha256": "00dc448fd76d735acf324a0214bfc3ebee12f018c22622f2383e36281f8997f6",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "bafee1c2652009e969f909de924e1cc70a80da75e0bec65876696512c228a416",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.call_otlp",
+          "fabric.evidence_attestation",
+          "fabric.receipt_sets",
+          "fabric.synthetic_otlp"
+        ],
+        "module_docstring": "Receipt sets authenticate exact record identities, never aggregate counts.",
+        "test_function_count": 12
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_receipt_sets.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 3088,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 117,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_recorder_package_surface.py",
+      "published_sha256": "d291ff35abe28a56ff6c8f9a870057a635f48c5397e24de1caf04df397f945c7",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read entire file and exclusion sets. Checks root exports/runtime constructor and Decision method absence, forbidden extras and wheel/sdist exclusion configuration. Config assertions alone do not inspect a built artifact or execute the actual distribution.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "d291ff35abe28a56ff6c8f9a870057a635f48c5397e24de1caf04df397f945c7",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric"
+        ],
+        "module_docstring": "Release-boundary tests for the recorder-v1 Python package.",
+        "test_function_count": 4
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_recorder_package_surface.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 5957,
+      "deeper_semantic_review_required": false,
+      "findings": [
+        "PY-AUDIT-001"
+      ],
+      "focused_validation": {
+        "command": "pytest -q -o addopts= sdk/python/tests/test_recorder_wheel_qualifier.py",
+        "real_archives_structurally_qualified": true,
+        "result": "33 passed",
+        "tool_environment": "/workspace/fabric-reconstruction-venv"
+      },
+      "line_count": 170,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": false,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_recorder_wheel_qualifier.py",
+      "published_sha256": "18dc324723a0d1ebf3847370d939b237bdcb56259ed6d785bca91e54ce189918",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read entire file; authored and reviewed 22 missing-current-module cases and structural-scope assertions. Synthetic archives deliberately contain empty modules. Passing proves critical module presence and legacy scope exclusion, not module implementation or installed runtime behavior. Both real final archive hashes were separately checked with current qualifier.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "1385c1d70f1245c1b115714d9b5efd076b4c01da3bf5a79df7582e808159e495",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [],
+        "module_docstring": "Tests for exact recorder wheel qualification.",
+        "test_function_count": 8
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_recorder_wheel_qualifier.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 19706,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 476,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_reference_receipts.py",
+      "published_sha256": "7debbdd26bcd2bb252401e9cf79b91b04387ca53adac7520afd5b9cb2c28713e",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "9178c816dc1d3fd1a0426c34023cca76bd9920d1f2643b9a07c4278374155728",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.evidence_attestation",
+          "fabric.receipt_sets",
+          "fabric.reference_receipts",
+          "fabric.synthetic_otlp"
+        ],
+        "module_docstring": "Actual HTTP ingress, independent persistence, exact receipts and negatives.",
+        "test_function_count": 12
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_reference_receipts.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 5111,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 134,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_replay_metadata.py",
+      "published_sha256": "54e6269830844ee83671530505965636f2cdd213e59dc7db019b0ebf0b98e13f",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "54e6269830844ee83671530505965636f2cdd213e59dc7db019b0ebf0b98e13f",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric"
+        ],
+        "module_docstring": "Tests for Decision.record_replay_metadata().\n\nThe SDK assembles a versioned ``fabric.replay`` envelope from the\ndecision's accumulated state (checkpoint ids, suppress-behavior side\neffect ids) plus the optional host-supplied ``state_hash`` /\n``tool_result_hashes``. Emit-only: the SDK never reconstructs or\nreplays \u2014 see spec 021.",
+        "test_function_count": 8
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_replay_metadata.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 7326,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 205,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_retrieval.py",
+      "published_sha256": "48b61f40bac1de76ab66dfec78b7861b396c911a7e46aeea14bd759168318a3f",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "48b61f40bac1de76ab66dfec78b7861b396c911a7e46aeea14bd759168318a3f",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.decision"
+        ],
+        "module_docstring": "Retrieval recording \u2014 span events + rolling aggregates.",
+        "test_function_count": 14
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_retrieval.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 2119,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 69,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_route_closure_attestation.py",
+      "published_sha256": "1c74f8840566712686042dff5a7b0034238d4410730e2222d0caab6399ae9cee",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read entire test. A route-closure-purpose key verifies; replacing its permitted purpose with independent_witness refuses; a source subject cannot substitute. One generated Ed25519 fixture, not real platform route closure.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "1c74f8840566712686042dff5a7b0034238d4410730e2222d0caab6399ae9cee",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.evidence_attestation"
+        ],
+        "module_docstring": "Route closure has its own purpose; a witness key cannot substitute for it.",
+        "test_function_count": 1
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_route_closure_attestation.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 2198,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 57,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_security_dependency_floors.py",
+      "published_sha256": "253669ece7f54d2e6d4a680ff38ee484e42bceaf1d07d07a418fe0bcdab74f5b",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read all tests. Checks exact declared/locked minimum versions and installed metadata requirement markers for PyJWT, cryptography and urllib3. Passing confirms chosen version floors are encoded, not that any version is vulnerability-free or dependencies fully audited.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "253669ece7f54d2e6d4a680ff38ee484e42bceaf1d07d07a418fe0bcdab74f5b",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [],
+        "module_docstring": "Security floors must survive package metadata, not just CI resolution.",
+        "test_function_count": 4
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_security_dependency_floors.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 14322,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 376,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_side_effect.py",
+      "published_sha256": "2f9a017cd00bd2721e58604c3c607d5194624a23299b047e78aba29c4c10f5c6",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "2f9a017cd00bd2721e58604c3c607d5194624a23299b047e78aba29c4c10f5c6",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.decision"
+        ],
+        "module_docstring": "Side-effect recording \u2014 span events + rolling aggregates.",
+        "test_function_count": 21
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_side_effect.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "first.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 274
+        },
+        {
+          "call": "first.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 275
+        },
+        {
+          "call": "first.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 327
+        },
+        {
+          "call": "first.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 393
+        },
+        {
+          "call": "second.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 400
+        },
+        {
+          "call": "spool.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 416
+        },
+        {
+          "call": "first.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 427
+        },
+        {
+          "call": "second.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 436
+        },
+        {
+          "call": "spool.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 459
+        },
+        {
+          "call": "spool.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 482
+        },
+        {
+          "call": "spool.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 515
+        },
+        {
+          "call": "spool.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 535
+        }
+      ],
+      "bytes": 18553,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 544,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_source_spool.py",
+      "published_sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.source_spool"
+        ],
+        "module_docstring": "Synthetic metadata source spool: restart, loss and fail-closed recovery.",
+        "test_function_count": 20
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_source_spool.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "spool.seal_epoch",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 37
+        }
+      ],
+      "bytes": 4355,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 134,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_source_spool_readback.py",
+      "published_sha256": "af236647e5b89a16dbb88c6cf84513c7985142538f0622ddd3880233dda59b42",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read whole file. Cached seals are re-read after deletion, corruption, mode changes, symlink/hardlink/FIFO replacement, duplicate JSON fields and outstanding seal intent. Unsealed/wrong epoch and ancestor symlink reject. Local POSIX mutation fixtures do not exhaust races, filesystems or power loss.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "af236647e5b89a16dbb88c6cf84513c7985142538f0622ddd3880233dda59b42",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.source_spool"
+        ],
+        "module_docstring": "Fresh sealed readback must notice changes after a successful cached seal.",
+        "test_function_count": 4
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_source_spool_readback.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "assert_action_candidates": [
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 60
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 109
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 122
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 127
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 133
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 149
+        },
+        {
+          "call": "wrapper.force_flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 150
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 164
+        },
+        {
+          "call": "wrapper.force_flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 165
+        },
+        {
+          "call": "provider.force_flush",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 206
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 250
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 273
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 281
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 306
+        },
+        {
+          "call": "wrapper.export",
+          "classification": "syntactic_mutator_name_candidate_not_independent_CodeQL_alert",
+          "line": 330
+        }
+      ],
+      "bytes": 17054,
+      "deeper_semantic_review_required": false,
+      "findings": [],
+      "line_count": 398,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction",
+        "full_text_targeted_contract_review"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_span_protection.py",
+      "published_sha256": "7df0d69fb751938e7cbe6c5e5ae41be16202074640de81994b498ab7d0b8fdf3",
+      "review_limit": "Full text reviewed for the stated contract. Production environment, real external services, adversarial exhaustive coverage and dependency implementations remain outside this review.",
+      "review_observations": "Read full file. Synthetic canary is planted on name, resource, scope, attributes, links, status, events and tracestate. Protected export strips/hashes approved metadata without mutating originals; malformed fields/export exceptions fail closed. Raw opt-in and host-owned routes explicitly remain raw. Global install race/custom provider cannot be claimed protected. Tests use in-memory OTel spans and do not prove collector routes.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "e64b0e9c5cfb67d0af7b051c34dc7161ba55f504fdfc1482a1f560f5421a3c06",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric._span_protection",
+          "fabric.coverage_manifest",
+          "fabric.tracing"
+        ],
+        "module_docstring": "Content suppression at the managed exporter, independent of upstream flags.",
+        "test_function_count": 20
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_span_protection.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 27255,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 712,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_surface_logging.py",
+      "published_sha256": "116510424bff88cec32ea40bb48473fdd011cd5443ee99ae2681e6ea11239413",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "116510424bff88cec32ea40bb48473fdd011cd5443ee99ae2681e6ea11239413",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.integrations.mcp",
+          "fabric.propagation"
+        ],
+        "module_docstring": "Agent surface logging (spec 022).\n\nCovers the five \"ways an agent touches the outside world\" touch points:\nMCP server inventory, skills, sub-agent delegation, hooks, and file\naccess. Every touch point is a ``fabric.*`` span event carrying metadata\n+ SHA-256 hashes \u2014 never raw data. Each section asserts the exact event\nname + attributes, the rolling decision-span counter, the closed-vocab\nvalidation, and a privacy scan that plants a sensitive string and proves\nit is absent from the entire span tree.",
+        "test_function_count": 38
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_surface_logging.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 26131,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 703,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_synthetic_evidence.py",
+      "published_sha256": "3febf43d05b77e7f019a6e1d999947d623574829cd6c59e3c071fc2a8d67fb99",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "3febf43d05b77e7f019a6e1d999947d623574829cd6c59e3c071fc2a8d67fb99",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric.adapters.synthetic_evidence",
+          "fabric.source_spool",
+          "fabric.synthetic_otlp",
+          "fabric.synthetic_reconcile"
+        ],
+        "module_docstring": "Bounded synthetic adapters: compare observations with independent truth.",
+        "test_function_count": 11
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_synthetic_evidence.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 4960,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 140,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_synthetic_otlp.py",
+      "published_sha256": "ce61e21a40719af1c21953e54de585d6851ba39c7d9aa6a8b7d950ca73a3a037",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "ce61e21a40719af1c21953e54de585d6851ba39c7d9aa6a8b7d950ca73a3a037",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric.synthetic_otlp"
+        ],
+        "module_docstring": "The offline bridge never sends content or claims destination durability.",
+        "test_function_count": 6
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_synthetic_otlp.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "assert_action_candidates": [],
+      "bytes": 5494,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 144,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_python_ast_parse",
+        "automated_test_contract_extraction"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/tests/test_tracing.py",
+      "published_sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
+      "review_limit": "Complete bytes and AST read; assertions/expected-exception syntax inventoried. Except explicitly listed full-text reviews, test bodies, helper logic, mocking realism and source behavior were not fully semantically reviewed. Parameter expansion count not inferred. Passing tests do not establish exhaustive scenario coverage.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
+      "test_contract": {
+        "basis": "syntactic extraction, not proof of assertion sufficiency",
+        "fabric_imports": [
+          "fabric",
+          "fabric._version",
+          "fabric.tracing"
+        ],
+        "module_docstring": "``install_default_provider`` + ``get_tracer`` basics.",
+        "test_function_count": 8
+      },
+      "test_contract_details": {
+        "entry_path": "sdk/python/tests/test_tracing.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      }
+    },
+    {
+      "bytes": 304165,
+      "deeper_semantic_review_required": true,
+      "findings": [],
+      "line_count": 1712,
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_toml_parse"
+      ],
+      "parent_full_suite_evidence": {
+        "audited_file_matches_test_snapshot": true,
+        "log": "/workspace/fabric-qualification/python-frozen-final.log",
+        "reported_result": "1689 passed; 88.65 percent aggregate coverage",
+        "scope": "Parent-run suite; no claim it proves every behavior in this file."
+      },
+      "path": "sdk/python/uv.lock",
+      "published_sha256": "3780516d899d79e7fc07dcda0e4e14a749bd95d8904ab0f84b315d9be5d1f2e0",
+      "review_limit": "Parsed complete TOML package/dependency/hash inventory; manually inspected format/header and representative records only. No transitive source review, advisory lookup, remote archive hash download or all-platform resolver execution.",
+      "review_observations": "Parsed complete TOML package/dependency/hash inventory; manually inspected format/header and representative records only. No transitive source review, advisory lookup, remote archive hash download or all-platform resolver execution.",
+      "reviewer": "reconstruction",
+      "semantic_review_complete": false,
+      "sha256": "3780516d899d79e7fc07dcda0e4e14a749bd95d8904ab0f84b315d9be5d1f2e0",
+      "test_contract": {
+        "package_versions": [
+          {
+            "name": "annotated-types",
+            "version": "0.7.0"
+          },
+          {
+            "name": "anyio",
+            "version": "4.14.2"
+          },
+          {
+            "name": "anyio",
+            "version": "4.15.1"
+          },
+          {
+            "name": "attrs",
+            "version": "26.1.0"
+          },
+          {
+            "name": "certifi",
+            "version": "2026.4.22"
+          },
+          {
+            "name": "cffi",
+            "version": "2.0.0"
+          },
+          {
+            "name": "charset-normalizer",
+            "version": "3.4.7"
+          },
+          {
+            "name": "click",
+            "version": "8.1.8"
+          },
+          {
+            "name": "colorama",
+            "version": "0.4.6"
+          },
+          {
+            "name": "coverage",
+            "version": "7.13.5"
+          },
+          {
+            "name": "cryptography",
+            "version": "50.0.0"
+          },
+          {
+            "name": "googleapis-common-protos",
+            "version": "1.74.0"
+          },
+          {
+            "name": "h11",
+            "version": "0.16.0"
+          },
+          {
+            "name": "httpcore",
+            "version": "1.0.9"
+          },
+          {
+            "name": "httpx",
+            "version": "0.28.1"
+          },
+          {
+            "name": "httpx-sse",
+            "version": "0.4.3"
+          },
+          {
+            "name": "idna",
+            "version": "3.20"
+          },
+          {
+            "name": "importlib-metadata",
+            "version": "8.5.0"
+          },
+          {
+            "name": "iniconfig",
+            "version": "2.3.0"
+          },
+          {
+            "name": "jsonschema",
+            "version": "4.23.0"
+          },
+          {
+            "name": "jsonschema-specifications",
+            "version": "2025.9.1"
+          },
+          {
+            "name": "librt",
+            "version": "0.9.0"
+          },
+          {
+            "name": "mcp",
+            "version": "1.29.0"
+          },
+          {
+            "name": "mypy",
+            "version": "1.20.2"
+          },
+          {
+            "name": "mypy-extensions",
+            "version": "1.1.0"
+          },
+          {
+            "name": "opentelemetry-api",
+            "version": "1.41.0"
+          },
+          {
+            "name": "opentelemetry-exporter-otlp-proto-common",
+            "version": "1.41.0"
+          },
+          {
+            "name": "opentelemetry-exporter-otlp-proto-http",
+            "version": "1.41.0"
+          },
+          {
+            "name": "opentelemetry-instrumentation",
+            "version": "0.62b0"
+          },
+          {
+            "name": "opentelemetry-instrumentation-anthropic",
+            "version": "0.60.0"
+          },
+          {
+            "name": "opentelemetry-instrumentation-bedrock",
+            "version": "0.60.0"
+          },
+          {
+            "name": "opentelemetry-instrumentation-cohere",
+            "version": "0.60.0"
+          },
+          {
+            "name": "opentelemetry-instrumentation-langchain",
+            "version": "0.60.0"
+          },
+          {
+            "name": "opentelemetry-instrumentation-openai-v2",
+            "version": "2.4b0"
+          },
+          {
+            "name": "opentelemetry-proto",
+            "version": "1.41.0"
+          },
+          {
+            "name": "opentelemetry-sdk",
+            "version": "1.41.0"
+          },
+          {
+            "name": "opentelemetry-semantic-conventions",
+            "version": "0.62b0"
+          },
+          {
+            "name": "opentelemetry-semantic-conventions-ai",
+            "version": "0.5.1"
+          },
+          {
+            "name": "opentelemetry-util-genai",
+            "version": "0.4b0"
+          },
+          {
+            "name": "packaging",
+            "version": "26.1"
+          },
+          {
+            "name": "pathspec",
+            "version": "1.1.0"
+          },
+          {
+            "name": "pluggy",
+            "version": "1.6.0"
+          },
+          {
+            "name": "protobuf",
+            "version": "6.33.6"
+          },
+          {
+            "name": "pycparser",
+            "version": "3.0"
+          },
+          {
+            "name": "pydantic",
+            "version": "2.12.5"
+          },
+          {
+            "name": "pydantic-core",
+            "version": "2.41.5"
+          },
+          {
+            "name": "pydantic-settings",
+            "version": "2.15.0"
+          },
+          {
+            "name": "pygments",
+            "version": "2.20.0"
+          },
+          {
+            "name": "pyjwt",
+            "version": "2.15.1"
+          },
+          {
+            "name": "pytest",
+            "version": "9.0.3"
+          },
+          {
+            "name": "pytest-cov",
+            "version": "7.1.0"
+          },
+          {
+            "name": "python-dotenv",
+            "version": "1.2.2"
+          },
+          {
+            "name": "python-multipart",
+            "version": "0.0.32"
+          },
+          {
+            "name": "pywin32",
+            "version": "312"
+          },
+          {
+            "name": "pyyaml",
+            "version": "6.0.3"
+          },
+          {
+            "name": "referencing",
+            "version": "0.37.0"
+          },
+          {
+            "name": "requests",
+            "version": "2.33.1"
+          },
+          {
+            "name": "rpds-py",
+            "version": "0.30.0"
+          },
+          {
+            "name": "ruff",
+            "version": "0.15.11"
+          },
+          {
+            "name": "singleaxis-fabric",
+            "version": null
+          },
+          {
+            "name": "sse-starlette",
+            "version": "3.4.6"
+          },
+          {
+            "name": "starlette",
+            "version": "1.3.1"
+          },
+          {
+            "name": "tomli",
+            "version": "2.4.1"
+          },
+          {
+            "name": "types-jsonschema",
+            "version": "4.26.0.20260518"
+          },
+          {
+            "name": "types-pyyaml",
+            "version": "6.0.12.20260815"
+          },
+          {
+            "name": "typing-extensions",
+            "version": "4.15.0"
+          },
+          {
+            "name": "typing-inspection",
+            "version": "0.4.2"
+          },
+          {
+            "name": "urllib3",
+            "version": "2.8.0"
+          },
+          {
+            "name": "uvicorn",
+            "version": "0.46.0"
+          },
+          {
+            "name": "wrapt",
+            "version": "2.1.2"
+          },
+          {
+            "name": "zipp",
+            "version": "3.23.1"
+          }
+        ],
+        "top_level_keys": [
+          "package",
+          "requires-python",
+          "resolution-markers",
+          "revision",
+          "version"
+        ]
+      }
+    }
+  ],
+  "findings": [
+    {
+      "fix": "Require eleven current critical modules, add twenty-two missing-module wheel/sdist cases, explicitly label structural scope and runtime_behavior_verified=false.",
+      "id": "PY-AUDIT-001",
+      "paths": [
+        "sdk/python/scripts/qualify_recorder_wheel.py",
+        "sdk/python/tests/test_recorder_wheel_qualifier.py"
+      ],
+      "problem": "Structural qualifier accepted synthetic archives missing active standalone byte/call/durable/governed modules.",
+      "severity": "medium",
+      "status": "fixed_with_parent_authorization",
+      "validation": "33 focused tests passed; existing final wheel and sdist pass updated structural qualifier. Runtime installed-artifact smoke remains a separate gate."
+    },
+    {
+      "id": "PY-AUDIT-002",
+      "paths": [
+        "sdk/python/README.md"
+      ],
+      "problem": "Several relative custom-agent/spec links use ../../../ from sdk/python and escape the repository; they resolve to absent paths.",
+      "severity": "low",
+      "status": "fixed_with_parent_authorization",
+      "validation": "Corrected five links; all eight local README links resolve to existing in-repository paths, with no anchor fragments. No web request required."
+    }
+  ],
+  "input_inventory": {
+    "path": "/workspace/fabric-qualification/audit-uncovered-paths.txt",
+    "selected_file_count": 76,
+    "selected_prefix": "sdk/python/",
+    "sha256": "746bf3622e6d9ca858ba735e64f4f645d535d14a9358f12497465e86b0454279"
+  },
+  "method_semantics": {
+    "automated_test_contract_extraction": "Every named test function, line bounds, decorator, assertion predicate and expected-exception expression extracted. These are executable contract candidates, not proof they are sufficient.",
+    "complete_byte_read_sha256": "Every selected file read in full as bytes and hashed. This alone is inventory, not semantic review.",
+    "complete_json_parse": "Complete syntax/data shape parse; no external fact verification.",
+    "complete_python_ast_parse": "Entire source parsed with Python ast; syntax only.",
+    "complete_toml_parse": "Every TOML record parsed; no remote resolution or dependency source audit.",
+    "full_text_targeted_contract_review": "Complete displayed source/text read by reviewer, with specifically stated contract assessment. Does not claim full implementation, dependency or production semantics."
+  },
+  "schema_version": "fabric.cloud-audit-python-tests/v1",
+  "scope_limits": [
+    "Portable desktop audit ledger unavailable; this does not reconstruct its prior review status.",
+    "No CodeQL finding dismissed, privacy gate weakened or benchmark evidence removed.",
+    "Full semantic audit is not claimed for structurally extracted files.",
+    "A local signed fixture does not establish independent customer issuers, complete arbitrary background work or production GO.",
+    "Frozen parent test snapshot mismatch is preserved for edited qualifier/test files; those have separate focused validation."
+  ],
+  "source_head": "acf7fbf8d2950331559aadc67c4576375dc0ca57",
+  "status": "METHOD_LIMITED_AUDIT_NOT_SECURITY_ACCEPTANCE",
+  "summary": {
+    "assert_action_candidates": 92,
+    "files": 76,
+    "full_text_targeted_contract_reviews": 28,
+    "structural_only_files": 48,
+    "test_functions_extracted": 974
+  },
+  "test_contract_shards": [
+    {
+      "bytes": 292381,
+      "file_count": 34,
+      "path": "qualification/python-test-contracts/contracts-001.json",
+      "sha256": "0695c57d347e838607ae1be6653f394a58c9fe015c5e15599ee3c31162976a8d",
+      "test_function_count": 395
+    },
+    {
+      "bytes": 295296,
+      "file_count": 26,
+      "path": "qualification/python-test-contracts/contracts-002.json",
+      "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899",
+      "test_function_count": 451
+    },
+    {
+      "bytes": 101452,
+      "file_count": 8,
+      "path": "qualification/python-test-contracts/contracts-003.json",
+      "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69",
+      "test_function_count": 128
+    }
+  ]
+}

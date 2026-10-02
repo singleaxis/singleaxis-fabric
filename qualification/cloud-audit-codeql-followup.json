@@ -1,0 +1,212 @@
+{
+  "schema_version": "fabric.codeql-followup-audit/v1",
+  "source_scan": "qualification/cloud-2026-10-02/scan-locations-ee2b3dd.json",
+  "source_head": "ee2b3dd0e5a03e28ce84361685698f94a6b508c0",
+  "scope": "All CodeQL locations under scripts/ and examples/ in provided whole-query location inventory. Benchmark files excluded and unchanged; SDK findings owned elsewhere.",
+  "count_semantics": "9 in-scope location entries including duplicate multiple-definition reports; whole-query inventory has 87 CodeQL locations, whereas PR gate reported 67 alerts. No equivalence or current clean scan asserted.",
+  "entries": [
+    {
+      "scan_result_index": 12,
+      "rule_id": "py/multiple-definition",
+      "scan_location": {
+        "path": "examples/agent-orchestration/agent.py",
+        "line": 233
+      },
+      "source_sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "current_sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "current_differs_from_scanned_bytes": false,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "Tuple initialization assigns None to grep_out and _grep_rc before run_shell overwrites both. The next consumer uses grep_out from the actual subprocess. Redundant initialization is not an observed behavior/security bug; retained rather than cosmetic query-driven rewrite.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 13,
+      "rule_id": "py/multiple-definition",
+      "scan_location": {
+        "path": "examples/agent-orchestration/agent.py",
+        "line": 233
+      },
+      "source_sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "current_sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "current_differs_from_scanned_bytes": false,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "Tuple initialization assigns None to grep_out and _grep_rc before run_shell overwrites both. The next consumer uses grep_out from the actual subprocess. Redundant initialization is not an observed behavior/security bug; retained rather than cosmetic query-driven rewrite.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 14,
+      "rule_id": "py/import-and-import-from",
+      "scan_location": {
+        "path": "scripts/qualification/run_synthetic_agent_pilot.py",
+        "line": 26
+      },
+      "source_sha256": "404c8b771ab381d9391289fb2cffb5bec2e20bce9cb8d3fc4e1d87f573b01c8e",
+      "current_sha256": "6ed74ef441e5a7620cdd21e5d0f06443c50b2d2c60f4326a80c7fb2a34aff6d7",
+      "current_differs_from_scanned_bytes": true,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "Both imports have distinct uses: fabric.__file__ checks installed package provenance; directly imported classes implement capture. No name conflict or changed module binding observed. Retained.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 23,
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "scan_location": {
+        "path": "scripts/release/qualify_release.py",
+        "line": 426
+      },
+      "source_sha256": "4ed3f6ddf7c54fb510fd3270ec79c3d69192257461b7df05b8481daaf9e98e6f",
+      "current_sha256": "82896cec2d267534189cb2c4bd12f19bede1acdf21dbcfa276bfa040c231b47e",
+      "current_differs_from_scanned_bytes": true,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "Adjacent literals intentionally form one generated Python statement: chained version normalization and a comprehension filter for console entry points. Inserting a comma would break generated code semantics. Current generated literal lines compiled with dynamic assertions replaced by placeholders; structural smoke test also passes. No actual wheel install performed here.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 24,
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "scan_location": {
+        "path": "scripts/release/qualify_release.py",
+        "line": 430
+      },
+      "source_sha256": "4ed3f6ddf7c54fb510fd3270ec79c3d69192257461b7df05b8481daaf9e98e6f",
+      "current_sha256": "82896cec2d267534189cb2c4bd12f19bede1acdf21dbcfa276bfa040c231b47e",
+      "current_differs_from_scanned_bytes": true,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "Adjacent literals intentionally form one generated Python statement: chained version normalization and a comprehension filter for console entry points. Inserting a comma would break generated code semantics. Current generated literal lines compiled with dynamic assertions replaced by placeholders; structural smoke test also passes. No actual wheel install performed here.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 70,
+      "rule_id": "py/ineffectual-statement",
+      "scan_location": {
+        "path": "examples/enterprise-orchestration/run.py",
+        "line": 412
+      },
+      "source_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "current_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "current_differs_from_scanned_bytes": false,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "await task and await cancel_task wait for background activity/completion and cancellation propagation; awaited result is intentionally unused. These statements have execution effects. Existing enterprise orchestration offline regression suite passes; no source change warranted.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 71,
+      "rule_id": "py/ineffectual-statement",
+      "scan_location": {
+        "path": "examples/enterprise-orchestration/run.py",
+        "line": 437
+      },
+      "source_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "current_sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "current_differs_from_scanned_bytes": false,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "await task and await cancel_task wait for background activity/completion and cancellation propagation; awaited result is intentionally unused. These statements have execution effects. Existing enterprise orchestration offline regression suite passes; no source change warranted.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 82,
+      "rule_id": "py/empty-except",
+      "scan_location": {
+        "path": "scripts/tests/test_governed_node_e2e.py",
+        "line": 135
+      },
+      "source_sha256": "1aeadc35b9be04cc4389bdf781b5024eb22a8fc4a405df6c9ce85ed0ae5c87e5",
+      "current_sha256": "daac46677c7a0ce5cc90be9149ce5ebd2b6f82cca915bfdbb46f3bb9d1fb77a5",
+      "current_differs_from_scanned_bytes": true,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "Health polling intentionally tolerates transient OSError/ValueError, sleeps, checks monotonic deadline, then raises AssertionError if health never returns HTTP200. Exception is not converted into a final success. Current line moved because of separate queue-oracle fix; no source modification for this finding.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    },
+    {
+      "scan_result_index": 83,
+      "rule_id": "py/empty-except",
+      "scan_location": {
+        "path": "scripts/tests/test_s3_live.py",
+        "line": 68
+      },
+      "source_sha256": "7346a829e09060bf8eb0d25a95a829ec3b9a7712b81b5cfd53e9cc9cc66e333c",
+      "current_sha256": "7346a829e09060bf8eb0d25a95a829ec3b9a7712b81b5cfd53e9cc9cc66e333c",
+      "current_differs_from_scanned_bytes": false,
+      "methods": [
+        "targeted_semantic_review",
+        "caller_and_consumer_review",
+        "exact_byte_hash"
+      ],
+      "disposition": "reviewed_no_concrete_defect_at_reported_location",
+      "rationale": "BucketAlreadyOwnedByYou is an expected idempotent provisioning outcome. Other ClientError codes propagate except named AlreadyOwned/AlreadyExists; subsequent object operations and readback still exercise access and correctness. Explicit-client credential injection offline regression passes. No live S3 qualification performed; no suppression needed.",
+      "source_changed_for_this_followup": false,
+      "scanner_resolution": "not_claimed; remote rerun pending"
+    }
+  ],
+  "validation": [
+    {
+      "command": "/workspace/fabric-venv/bin/python -m pytest -q scripts/tests/test_release_qualification.py scripts/tests/test_enterprise_examples.py scripts/tests/test_s3_live_harness.py scripts/tests/test_governed_queue_probe.py scripts/tests/test_synthetic_sink_readback.py",
+      "result": "53 passed in 3.41s",
+      "boundary": "Offline focused suite; includes synthetic/fake clients. Not live Compose/S3 or installed wheel release validation."
+    },
+    {
+      "command": "AST extraction and compile of wheel smoke literal lines with dynamic assertion placeholders",
+      "result": "passed",
+      "boundary": "Confirms intentional concatenation creates valid Python syntax only."
+    },
+    {
+      "command": "git diff --name-only ee2b3dd0e5a03e28ce84361685698f94a6b508c0 -- benchmarks",
+      "result": [],
+      "boundary": "Empty: all tracked benchmark bytes match scanned source checkpoint."
+    }
+  ],
+  "changes": "No scripts or example code changed for these query findings. No cosmetic rewrite, exclusion, suppression or gate weakening.",
+  "limits": [
+    "Targeted semantic review, not a full fresh review of every line in each file.",
+    "Already modified files belong to previously authorized fixes; this ledger hashes their current bytes without claiming that those changes resolve unrelated findings.",
+    "No remote scanner rerun or alert dismissal performed."
+  ]
+}

@@ -115,3 +115,53 @@ def test_demo_config_uses_bounded_port_and_read_only_audit_mount() -> None:
 def test_demo_scripts_parse() -> None:
     for name in ("run.sh", "collect-audit-linux.sh"):
         subprocess.run(["bash", "-n", str(DEMO / name)], check=True, timeout=10)
+
+
+def test_reconstruction_stays_in_checkout_and_labels_synthetic_provenance() -> None:
+    import runpy
+
+    module = runpy.run_path(str(DEMO / "reconstruct.py"))
+    assert module["REPO"] == ROOT
+    assert (module["REPO"] / "sdk/python/src/fabric").is_dir()
+    events = module["_audit_join"](
+        [
+            {
+                "attributes": {
+                    "event_class": "audit",
+                    "audit.serial": "1",
+                    "audit.source": "logfile",
+                }
+            }
+        ]
+    )
+    assert events[0]["provenance"] == "synthetic-agent-shim"
+    assert (
+        "not independent kernel or auditd evidence"
+        in (DEMO / "reconstruct.py").read_text()
+    )
+
+
+def test_report_write_does_not_fabricate_a_process_execution() -> None:
+    import ast
+
+    module = ast.parse((DEMO / "agent.py").read_text())
+    emits = [
+        node
+        for node in ast.walk(module)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "emit_exec"
+    ]
+    assert len(emits) == 1  # Only run_shell, which actually spawns a process.
+
+
+def test_vendored_btf_header_digest_does_not_invent_source_provenance() -> None:
+    import hashlib
+    import json
+
+    bpf = ROOT / "components/host-emitter/bpf"
+    provenance = json.loads((bpf / "vmlinux.provenance.json").read_text())
+    header = (bpf / "vmlinux.h").read_bytes()
+    assert provenance["sha256"] == hashlib.sha256(header).hexdigest()
+    assert provenance["bytes"] == len(header)
+    assert provenance["source_btf_sha256"] is None

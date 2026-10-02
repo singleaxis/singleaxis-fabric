@@ -16,6 +16,7 @@ type auditEvent struct {
 	msec    int64
 	records []*auditRecord
 	expires time.Time
+	index   int // position in the expiry heap
 }
 
 func (e *auditEvent) has(typ int) bool {
@@ -51,12 +52,22 @@ type eventQueue []*auditEvent
 
 func (q eventQueue) Len() int           { return len(q) }
 func (q eventQueue) Less(i, j int) bool { return q[i].expires.Before(q[j].expires) }
-func (q eventQueue) Swap(i, j int)      { q[i], q[j] = q[j], q[i] }
-func (q *eventQueue) Push(x any)        { *q = append(*q, x.(*auditEvent)) }
+func (q eventQueue) Swap(i, j int) {
+	q[i], q[j] = q[j], q[i]
+	q[i].index = i
+	q[j].index = j
+}
+func (q *eventQueue) Push(x any) {
+	ev := x.(*auditEvent)
+	ev.index = len(*q)
+	*q = append(*q, ev)
+}
 func (q *eventQueue) Pop() any {
 	old := *q
 	n := len(old)
 	it := old[n-1]
+	old[n-1] = nil
+	it.index = -1
 	*q = old[:n-1]
 	return it
 }
@@ -64,11 +75,12 @@ func (q *eventQueue) Pop() any {
 // assembler groups audit records into events by serial and flushes on EOE
 // or timeout. Bounded so a malformed stream cannot grow memory without limit.
 type assembler struct {
-	pending   map[uint64]*auditEvent
-	queue     eventQueue
-	timeout   time.Duration
-	maxPend   int
-	droppedEO int // events evicted before completion
+	pending        map[uint64]*auditEvent
+	queue          eventQueue
+	timeout        time.Duration
+	maxPend        int
+	droppedEO      int    // events evicted before completion
+	droppedRecords uint64 // records omitted at the per-event bound
 }
 
 func newAssembler(timeout time.Duration, maxPending int) *assembler {
@@ -100,9 +112,15 @@ func (a *assembler) add(rec *auditRecord, now time.Time) *auditEvent {
 		heap.Push(&a.queue, ev)
 	}
 	if rec.typ != recEOE {
+		if len(ev.records) >= 256 {
+			// Retain only the bounded prefix and account for omitted records.
+			a.droppedRecords++
+			return nil
+		}
 		ev.records = append(ev.records, rec)
 	}
 	if rec.typ == recEOE {
+		heap.Remove(&a.queue, ev.index)
 		delete(a.pending, rec.serial)
 		return ev
 	}

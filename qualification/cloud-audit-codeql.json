@@ -1,0 +1,828 @@
+{
+  "schema_version": "fabric.cloud-audit-codeql/v1",
+  "source_head": "24e509319bb1f397465532365326f6b5ae3c8b55",
+  "status": "NO_GO_SECURITY_ACCEPTANCE_OPEN",
+  "scope": "Independent review of current source corresponding to requested CodeQL families; no scanner execution or alert dismissal",
+  "latest_gate_reported": {
+    "total": 58,
+    "ineffectual": 44,
+    "mixed_imports": 3,
+    "lazy_cycles": 3,
+    "pytest_contexts": 2,
+    "file_descriptors": 2,
+    "globals": 2,
+    "exception_handler": 1,
+    "high_cleartext": 1,
+    "parent_present": 43,
+    "parent_absent": 15,
+    "provenance": "Parent agent relay of existing PR body; exact latest annotations/SARIF unavailable"
+  },
+  "mapping_limits": [
+    "The local triage document lists the initial 165-alert branch superset, not exact membership of remaining58. Group alert IDs below refer to that initial ledger only.",
+    "No claim that local tests clear CodeQL or that reviewed findings are dismissed. Fresh CI scan and security-maintainer acceptance remain blocking.",
+    "No source edits, benchmark edits, query changes, thresholds, permissions or suppressions performed.",
+    "This targeted semantic review is not exhaustive review of all files or all failure paths."
+  ],
+  "triage_source": {
+    "path": "docs/codeql-capture-triage.md",
+    "sha256": "3d528ee73e714b01b5d16a7d431a9b5363daa320700f1f1517428abb70b5a9f9"
+  },
+  "concrete_runtime_defects_established": [],
+  "proposed_source_fixes": [],
+  "groups": [
+    {
+      "name": "descriptor_ownership",
+      "rules": [
+        "py/file-not-closed"
+      ],
+      "initial_ledger_alerts": [
+        {
+          "alert_id": 970,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/governed_store.py:388"
+        },
+        {
+          "alert_id": 969,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/governed_store.py:379"
+        },
+        {
+          "alert_id": 870,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/independent_store.py:93"
+        },
+        {
+          "alert_id": 869,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/independent_store.py:87"
+        },
+        {
+          "alert_id": 868,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/independent_store.py:82"
+        },
+        {
+          "alert_id": 854,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/byte_resolver.py:157"
+        },
+        {
+          "alert_id": 853,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/byte_resolver.py:154"
+        },
+        {
+          "alert_id": 852,
+          "rule": "py/file-not-closed",
+          "initial_location": "sdk/python/src/fabric/byte_resolver.py:146"
+        }
+      ],
+      "reviewed_paths": [
+        "sdk/python/src/fabric/governed_store.py",
+        "sdk/python/src/fabric/byte_resolver.py",
+        "sdk/python/src/fabric/independent_store.py",
+        "sdk/python/src/fabric/byte_spool.py"
+      ],
+      "observation": "Governed directory inventory is closed in reverse order in finally; lock and read FDs have separate finally cleanup. Both resolvers register each acquired FD immediately with ExitStack. Failed opens never produce owned FDs. Byte spool transfers the final directory to its owner and closes it on constructor failure/close. No ordinary-success/open-failure/read-failure leak established; close-syscall failure behavior was not exhaustively qualified.",
+      "disposition": "no_material_runtime_defect_established_not_dismissed"
+    },
+    {
+      "name": "lazy_imports",
+      "rules": [
+        "py/cyclic-import"
+      ],
+      "initial_ledger_alerts": [
+        {
+          "alert_id": 885,
+          "rule": "py/cyclic-import",
+          "initial_location": "sdk/python/src/fabric/coverage_manifest.py:195"
+        },
+        {
+          "alert_id": 884,
+          "rule": "py/cyclic-import",
+          "initial_location": "sdk/python/src/fabric/auto_instrument.py:243"
+        },
+        {
+          "alert_id": 883,
+          "rule": "py/cyclic-import",
+          "initial_location": "sdk/python/src/fabric/auto_instrument.py:45"
+        }
+      ],
+      "reviewed_paths": [
+        "sdk/python/src/fabric/auto_instrument.py",
+        "sdk/python/src/fabric/coverage_manifest.py"
+      ],
+      "observation": "The CoverageManifest import is TYPE_CHECKING-only. Cross-module runtime imports occur inside invoked functions after module initialization. Both fresh-process import orders followed by inspect_integrations(only=[], enable=False) succeeded; no partially initialized access established.",
+      "disposition": "no_material_runtime_defect_established_not_dismissed"
+    },
+    {
+      "name": "typed_protocols_and_awaits",
+      "rules": [
+        "py/ineffectual-statement"
+      ],
+      "initial_ledger_alerts": [
+        {
+          "alert_id": 964,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "examples/enterprise-orchestration/run.py:432"
+        },
+        {
+          "alert_id": 963,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "examples/enterprise-orchestration/run.py:407"
+        },
+        {
+          "alert_id": 962,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/reference_receipts.py:78"
+        },
+        {
+          "alert_id": 961,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/metadata_delivery.py:79"
+        },
+        {
+          "alert_id": 960,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/deployment_state.py:152"
+        },
+        {
+          "alert_id": 959,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/control_protocol.py:159"
+        },
+        {
+          "alert_id": 860,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/independent_feed.py:108"
+        },
+        {
+          "alert_id": 851,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:221"
+        },
+        {
+          "alert_id": 850,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:218"
+        },
+        {
+          "alert_id": 849,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:215"
+        },
+        {
+          "alert_id": 848,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:212"
+        },
+        {
+          "alert_id": 847,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:209"
+        },
+        {
+          "alert_id": 846,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:206"
+        },
+        {
+          "alert_id": 845,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:203"
+        },
+        {
+          "alert_id": 844,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:200"
+        },
+        {
+          "alert_id": 843,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:197"
+        },
+        {
+          "alert_id": 842,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:194"
+        },
+        {
+          "alert_id": 841,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:191"
+        },
+        {
+          "alert_id": 840,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:188"
+        },
+        {
+          "alert_id": 839,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:185"
+        },
+        {
+          "alert_id": 838,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:174"
+        },
+        {
+          "alert_id": 837,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:171"
+        },
+        {
+          "alert_id": 836,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:168"
+        },
+        {
+          "alert_id": 835,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:165"
+        },
+        {
+          "alert_id": 834,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:162"
+        },
+        {
+          "alert_id": 833,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:159"
+        },
+        {
+          "alert_id": 832,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/decision.py:156"
+        },
+        {
+          "alert_id": 828,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/tests/test_call_recorder.py:296"
+        },
+        {
+          "alert_id": 803,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:148"
+        },
+        {
+          "alert_id": 802,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:146"
+        },
+        {
+          "alert_id": 801,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:144"
+        },
+        {
+          "alert_id": 800,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:132"
+        },
+        {
+          "alert_id": 799,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:128"
+        },
+        {
+          "alert_id": 798,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:126"
+        },
+        {
+          "alert_id": 797,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:122"
+        },
+        {
+          "alert_id": 796,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:117"
+        },
+        {
+          "alert_id": 795,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:115"
+        },
+        {
+          "alert_id": 794,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:110"
+        },
+        {
+          "alert_id": 793,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:106"
+        },
+        {
+          "alert_id": 792,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:100"
+        },
+        {
+          "alert_id": 791,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:94"
+        },
+        {
+          "alert_id": 790,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:89"
+        },
+        {
+          "alert_id": 789,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:83"
+        },
+        {
+          "alert_id": 788,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:64"
+        },
+        {
+          "alert_id": 787,
+          "rule": "py/ineffectual-statement",
+          "initial_location": "sdk/python/src/fabric/content_store/base.py:62"
+        }
+      ],
+      "reviewed_paths": [
+        "sdk/python/src/fabric/content_store/base.py",
+        "sdk/python/src/fabric/decision.py",
+        "sdk/python/src/fabric/reference_receipts.py",
+        "sdk/python/src/fabric/metadata_delivery.py",
+        "sdk/python/src/fabric/deployment_state.py",
+        "sdk/python/src/fabric/control_protocol.py",
+        "sdk/python/src/fabric/independent_feed.py",
+        "examples/enterprise-orchestration/run.py",
+        "sdk/python/tests/test_call_recorder.py"
+      ],
+      "observation": "Ellipses are intentional structural Protocol members, not missing concrete recorder implementations. Example awaits join a scheduled task and consume cancellation. Test await task runs inside pytest.raises(CancelledError); changing to bare expressions would remove behavior. No mechanical rewrite or suppression performed.",
+      "disposition": "no_material_runtime_defect_established_not_dismissed"
+    },
+    {
+      "name": "mixed_imports",
+      "rules": [
+        "py/import-and-import-from"
+      ],
+      "initial_ledger_alerts": [
+        {
+          "alert_id": 882,
+          "rule": "py/import-and-import-from",
+          "initial_location": "sdk/python/tests/test_metadata_delivery.py:21"
+        },
+        {
+          "alert_id": 859,
+          "rule": "py/import-and-import-from",
+          "initial_location": "sdk/python/tests/test_independent_feed_adversarial.py:16"
+        },
+        {
+          "alert_id": 856,
+          "rule": "py/import-and-import-from",
+          "initial_location": "sdk/python/tests/test_source_spool.py:18"
+        },
+        {
+          "alert_id": 816,
+          "rule": "py/import-and-import-from",
+          "initial_location": "scripts/qualification/run_synthetic_agent_pilot.py:26"
+        },
+        {
+          "alert_id": 734,
+          "rule": "py/import-and-import-from",
+          "initial_location": "sdk/python/tests/test_recorder_package_surface.py:9"
+        },
+        {
+          "alert_id": 232,
+          "rule": "py/import-and-import-from",
+          "initial_location": "sdk/python/tests/test_tracing.py:34"
+        }
+      ],
+      "reviewed_paths": [
+        "sdk/python/tests/test_metadata_delivery.py",
+        "sdk/python/tests/test_source_spool.py",
+        "sdk/python/tests/test_independent_feed_adversarial.py",
+        "sdk/python/tests/test_recorder_package_surface.py",
+        "sdk/python/tests/test_tracing.py",
+        "scripts/qualification/run_synthetic_agent_pilot.py"
+      ],
+      "observation": "Module references support monkeypatching _write_atomic/_sync_directory/_MAX_TOTAL and tracing global state, root __all__ checks, or fabric.__file__ installed identity. Named imports provide separately called classes/functions. The forms do not create independent module instances.",
+      "disposition": "no_material_runtime_defect_established_not_dismissed"
+    },
+    {
+      "name": "exception_contexts_and_expected_conditions",
+      "rules": [
+        "py/unreachable-statement",
+        "py/empty-except"
+      ],
+      "initial_ledger_alerts": [
+        {
+          "alert_id": 968,
+          "rule": "py/empty-except",
+          "initial_location": "sdk/python/src/fabric/governed_store.py:386"
+        },
+        {
+          "alert_id": 967,
+          "rule": "py/empty-except",
+          "initial_location": "sdk/python/src/fabric/byte_spool.py:186"
+        },
+        {
+          "alert_id": 966,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_span_protection.py:178"
+        },
+        {
+          "alert_id": 965,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_capture_health.py:151"
+        },
+        {
+          "alert_id": 810,
+          "rule": "py/empty-except",
+          "initial_location": "scripts/tests/test_s3_live.py:68"
+        },
+        {
+          "alert_id": 809,
+          "rule": "py/empty-except",
+          "initial_location": "scripts/tests/test_governed_node_e2e.py:135"
+        },
+        {
+          "alert_id": 808,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_decision.py:302"
+        },
+        {
+          "alert_id": 807,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_calls.py:1161"
+        },
+        {
+          "alert_id": 806,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_calls.py:1140"
+        },
+        {
+          "alert_id": 805,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_calls.py:1119"
+        },
+        {
+          "alert_id": 804,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_calls.py:1098"
+        },
+        {
+          "alert_id": 370,
+          "rule": "py/unreachable-statement",
+          "initial_location": "sdk/python/tests/test_surface_logging.py:382"
+        }
+      ],
+      "reviewed_paths": [
+        "sdk/python/tests/test_capture_health.py",
+        "sdk/python/tests/test_span_protection.py",
+        "sdk/python/src/fabric/governed_store.py",
+        "sdk/python/src/fabric/byte_spool.py",
+        "scripts/tests/test_s3_live.py",
+        "scripts/tests/test_governed_node_e2e.py"
+      ],
+      "observation": "Current flagged capture-health/span-protection assertions follow exception-suppressing pytest.raises contexts and execute in passing tests. FileExistsError is followed by no-follow directory open; unknown exceptions still propagate. Node health polling is bounded and raises at timeout. S3 setup ignores expected existing bucket conditions within the explicitly local live-test profile; no live service was invoked for this review.",
+      "disposition": "no_material_runtime_defect_established_not_dismissed"
+    },
+    {
+      "name": "global_state",
+      "rules": [
+        "py/unused-global-variable"
+      ],
+      "initial_ledger_alerts": [
+        {
+          "alert_id": 748,
+          "rule": "py/unused-global-variable",
+          "initial_location": "sdk/python/src/fabric/tracing.py:95"
+        },
+        {
+          "alert_id": 747,
+          "rule": "py/unused-global-variable",
+          "initial_location": "sdk/python/src/fabric/_content_sink.py:41"
+        },
+        {
+          "alert_id": 746,
+          "rule": "py/unused-global-variable",
+          "initial_location": "sdk/python/src/fabric/_content_sink.py:40"
+        },
+        {
+          "alert_id": 745,
+          "rule": "py/unused-global-variable",
+          "initial_location": "sdk/python/src/fabric/_content_sink.py:39"
+        },
+        {
+          "alert_id": 226,
+          "rule": "py/unused-global-variable",
+          "initial_location": "sdk/python/src/fabric/tracing.py:105"
+        }
+      ],
+      "reviewed_paths": [
+        "sdk/python/src/fabric/tracing.py",
+        "sdk/python/src/fabric/_content_sink.py"
+      ],
+      "observation": "Tracing latch assignments are consumed through the global one-shot warning guard and tests reset that global deliberately. Three inherited content-ref constants appear unused housekeeping, not failed runtime work; no reason to edit parent-only declarations to change an alert count.",
+      "disposition": "no_material_runtime_defect_established_not_dismissed"
+    },
+    {
+      "name": "synthetic_plaintext_truth",
+      "rules": [
+        "py/clear-text-storage-sensitive-data"
+      ],
+      "initial_ledger_alerts": [
+        {
+          "alert_id": 878,
+          "rule": "py/clear-text-storage-sensitive-data",
+          "initial_location": "benchmarks/fabric-comparison/run.py:230"
+        }
+      ],
+      "reviewed_paths": [
+        "benchmarks/fabric-comparison/run.py"
+      ],
+      "observation": "The flagged artifact writes the hardcoded SYNTHETIC-PRIVATE-CANARY-3742 fixture as independently checked filesystem truth. This review does not establish production safety or approve cleartext user data. Frozen benchmark was neither executed nor modified; explicit security-owner acceptance of the high finding remains required.",
+      "disposition": "security_owner_decision_open"
+    }
+  ],
+  "files": [
+    {
+      "path": "sdk/python/src/fabric/governed_store.py",
+      "sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
+      "bytes": 42600,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "descriptor_ownership",
+        "exception_contexts_and_expected_conditions"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_resolver.py",
+      "sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+      "bytes": 12523,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "descriptor_ownership"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_store.py",
+      "sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+      "bytes": 4731,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "descriptor_ownership"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_spool.py",
+      "sha256": "d07ac1f8fbb638f5c1bb04683ade938a9c208bc3a6b2e90117f343ef5dd4c62b",
+      "bytes": 29884,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "descriptor_ownership",
+        "exception_contexts_and_expected_conditions"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/auto_instrument.py",
+      "sha256": "ddb634e99c4865d17f06ee36e58a2e4593489495a4855b625a6e7ad3b07d8371",
+      "bytes": 9156,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "lazy_imports"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/coverage_manifest.py",
+      "sha256": "0bf31e36c20601a4a50898233fd238a85e27a1f594921f48aed76e3dac408c89",
+      "bytes": 10219,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "lazy_imports"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "sha256": "e61e0610804f39c5289fce8b10d29cc7aef3d9734b9e8232033f2528bc7677a0",
+      "bytes": 5736,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/decision.py",
+      "sha256": "dcce8244931845d5315e910e191ddd23f27ef066279d382f45e6f45429379e49",
+      "bytes": 106357,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/reference_receipts.py",
+      "sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55",
+      "bytes": 32582,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/metadata_delivery.py",
+      "sha256": "90f711e348f182a1115ca14fa5dcb839951a4d3e136c31925a50bf333fbca2bb",
+      "bytes": 31775,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_state.py",
+      "sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
+      "bytes": 17212,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/control_protocol.py",
+      "sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
+      "bytes": 7401,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_feed.py",
+      "sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43",
+      "bytes": 16626,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "examples/enterprise-orchestration/run.py",
+      "sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
+      "bytes": 24389,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_call_recorder.py",
+      "sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+      "bytes": 14881,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "typed_protocols_and_awaits"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_metadata_delivery.py",
+      "sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
+      "bytes": 21276,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "mixed_imports"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_source_spool.py",
+      "sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
+      "bytes": 18553,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "mixed_imports"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_independent_feed_adversarial.py",
+      "sha256": "8e4d0009f6dcb31777ffe29a1c4845221e2ad563bc0fe4debbb2dd36f509fdd7",
+      "bytes": 6836,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "mixed_imports"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_recorder_package_surface.py",
+      "sha256": "d291ff35abe28a56ff6c8f9a870057a635f48c5397e24de1caf04df397f945c7",
+      "bytes": 3088,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "mixed_imports"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_tracing.py",
+      "sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
+      "bytes": 5494,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "mixed_imports"
+      ]
+    },
+    {
+      "path": "scripts/qualification/run_synthetic_agent_pilot.py",
+      "sha256": "404c8b771ab381d9391289fb2cffb5bec2e20bce9cb8d3fc4e1d87f573b01c8e",
+      "bytes": 25536,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "mixed_imports"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_capture_health.py",
+      "sha256": "94a7cc03c9141f70c18757e510fa4caf1e9a60c233631fdc554bcf379f2b012e",
+      "bytes": 6525,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "exception_contexts_and_expected_conditions"
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_span_protection.py",
+      "sha256": "e64b0e9c5cfb67d0af7b051c34dc7161ba55f504fdfc1482a1f560f5421a3c06",
+      "bytes": 17054,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "exception_contexts_and_expected_conditions"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_s3_live.py",
+      "sha256": "7346a829e09060bf8eb0d25a95a829ec3b9a7712b81b5cfd53e9cc9cc66e333c",
+      "bytes": 7618,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "exception_contexts_and_expected_conditions"
+      ]
+    },
+    {
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "sha256": "1aeadc35b9be04cc4389bdf781b5024eb22a8fc4a405df6c9ce85ed0ae5c87e5",
+      "bytes": 14613,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "exception_contexts_and_expected_conditions"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/tracing.py",
+      "sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759",
+      "bytes": 14300,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "global_state"
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_sink.py",
+      "sha256": "99ac24e2f3bcc3441bbb96532c2f906cc9aaf719111cb3e15ae188fda30a4f95",
+      "bytes": 13182,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "global_state"
+      ]
+    },
+    {
+      "path": "benchmarks/fabric-comparison/run.py",
+      "sha256": "8d12908c9927d52a83c378aa037b26136a63c59c3aa8b269a5a56be3b9c8efdc",
+      "bytes": 19655,
+      "method": "Targeted semantic review of current source and referenced alert location; not whole-file security acceptance",
+      "review_groups": [
+        "synthetic_plaintext_truth"
+      ]
+    }
+  ],
+  "executed_checks": [
+    {
+      "name": "targeted regression tests",
+      "command": "PYTHONPATH=sdk/python/src /workspace/fabric-venv/bin/python -m pytest -q --no-cov sdk/python/tests/test_governed_store.py sdk/python/tests/test_byte_resolver.py sdk/python/tests/test_independent_store.py sdk/python/tests/test_auto_instrument.py sdk/python/tests/test_coverage_manifest.py sdk/python/tests/test_capture_health.py sdk/python/tests/test_span_protection.py sdk/python/tests/test_call_recorder.py sdk/python/tests/test_recorder_package_surface.py sdk/python/tests/test_tracing.py sdk/python/tests/test_independent_feed_adversarial.py",
+      "result": "279 passed in 6.34s",
+      "evidence": "/tmp/fabric-codeql-followup-qualified.xml"
+    },
+    {
+      "name": "descriptor open failure probes",
+      "command": "PYTHONPATH=sdk/python/src /workspace/fabric-reconstruction-venv/bin/python /tmp/fabric-codeql-ownership-probe.py",
+      "result": "governed _directory, independent _read, byte resolver _read:11 open-failure positions each; zero leaked acquired descriptors",
+      "probe_sha256": "10cdf1e77e11e30a93d89972e6a06336e7a53db74ed2531e363b5979cb820849",
+      "limit": "Temporary probe is not a checked-in regression; existing byte_resolver read-failure regression included above."
+    },
+    {
+      "name": "lazy import order probes",
+      "result": "Two fresh subprocesses imported auto_instrument/coverage_manifest in opposite orders and called read-only inspect_integrations(only=[], enable=False); both passed"
+    }
+  ],
+  "earlier_check_outcomes": [
+    "Initial targeted249 tests passed; pytest returned failure solely because global85% coverage threshold cannot be met by that subset. Rerun explicitly disabled coverage for targeted regression, not repository configuration.",
+    "Expanded run in reconstruction venv:278passed,1failed because optional OTLP exporter dependency absent. Same full279 selection passed in preexisting OTLP-equipped fabric-venv. No source workaround or dependency change made."
+  ]
+}

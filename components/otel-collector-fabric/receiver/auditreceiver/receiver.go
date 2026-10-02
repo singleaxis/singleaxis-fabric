@@ -6,7 +6,6 @@ package auditreceiver
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -24,25 +23,28 @@ type logLike interface {
 }
 
 type auditReceiver struct {
-	cfg    *Config
-	logger *zap.Logger
-	next   consumer.Logs
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	asm    *assembler
-	dedup  *deduper
-	bucket *tokenBucket
-	conn   *auditConn
-	stats  recvStats
+	cfg     *Config
+	logger  *zap.Logger
+	next    consumer.Logs
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	asm     *assembler
+	dedup   *deduper
+	bucket  *tokenBucket
+	conn    *auditConn
+	stats   recvStats
+	durable *durableLog
 	// consume owns this bounded retry queue. It is intentionally not durable:
 	// a collector crash can still lose records queued here.
-	pending  []plog.Logs
-	retryAt  time.Time
-	backoff  time.Duration
-	gapRate  uint64
-	gapQueue uint64
-	gapAsm   uint64
-	seenAsm  int
+	pending        []plog.Logs
+	retryAt        time.Time
+	backoff        time.Duration
+	gapRate        uint64
+	gapQueue       uint64
+	gapAsm         uint64
+	seenAsm        int
+	seenAsmRecords uint64
+	gapAsmRecords  uint64
 }
 
 const maxPendingDeliveries = 4096
@@ -74,6 +76,17 @@ func newAuditReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) (*
 
 func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
 	ctx, r.cancel = context.WithCancel(context.Background())
+	if r.cfg.Source == "logfile" {
+		d, err := openDurableLog(r.cfg)
+		if err != nil {
+			r.cancel()
+			return err
+		}
+		r.durable = d
+		r.wg.Add(1)
+		go func() { defer r.wg.Done(); defer d.close(); r.runDurableLog(ctx, d) }()
+		return nil
+	}
 	var lines chan string
 	lines = make(chan string, 1024)
 
@@ -92,12 +105,7 @@ func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
 		}
 		r.wg.Add(1)
 		go r.readNetlink(ctx, lines)
-	case "logfile":
-		r.wg.Add(1)
-		go func() {
-			defer r.wg.Done()
-			tailFileObserved(ctx, r.cfg.LogPath, lines, r.noteSourceIssue)
-		}()
+
 	}
 
 	r.wg.Add(1)
@@ -105,15 +113,26 @@ func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
 	return nil
 }
 
-func (r *auditReceiver) Shutdown(context.Context) error {
+func (r *auditReceiver) Shutdown(ctx context.Context) error {
 	if r.cancel != nil {
 		r.cancel()
 	}
 	if r.conn != nil {
 		r.conn.close()
 	}
-	r.wg.Wait()
+	stopped := make(chan struct{})
+	go func() { r.wg.Wait(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("audit receiver: downstream did not stop within 5s; durable state remains locked and replayable")
+	}
 	r.logStats()
+	if r.durable != nil {
+		return r.durable.closeErr
+	}
 	return nil
 }
 
@@ -143,12 +162,12 @@ func (r *auditReceiver) readNetlink(ctx context.Context, out chan<- string) {
 			}
 			continue
 		}
-		// One netlink frame may carry multiple newline-separated records.
-		for _, line := range strings.Split(string(buf[:n]), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
+		lines, err := decodeAuditNetlink(buf[:n])
+		if err != nil {
+			r.noteSourceIssue("netlink_malformed_frame")
+			continue
+		}
+		for _, line := range lines {
 			select {
 			case out <- line:
 			case <-ctx.Done():
@@ -267,6 +286,10 @@ func (r *auditReceiver) enqueue(ctx context.Context, ld plog.Logs) {
 }
 
 func (r *auditReceiver) observeAssemblyLoss() {
+	if n := r.asm.droppedRecords; n > r.seenAsmRecords {
+		r.gapAsmRecords += n - r.seenAsmRecords
+		r.seenAsmRecords = n
+	}
 	if n := r.asm.droppedEO; n > r.seenAsm {
 		r.gapAsm += uint64(n - r.seenAsm)
 		r.seenAsm = n
@@ -300,6 +323,7 @@ func (r *auditReceiver) flushDeliveries(ctx context.Context) {
 		{"delivery_queue_overflow", &r.gapQueue},
 		{"rate_limited", &r.gapRate},
 		{"assembly_evicted", &r.gapAsm},
+		{"assembly_records_dropped", &r.gapAsmRecords},
 	} {
 		if *gap.count == 0 {
 			continue
@@ -366,6 +390,7 @@ func (r *auditReceiver) logStats() {
 		zap.Uint64("unreported_rate_gaps", r.gapRate),
 		zap.Uint64("unreported_delivery_gaps", r.gapQueue),
 		zap.Uint64("unreported_assembly_gaps", r.gapAsm),
+		zap.Uint64("unreported_assembly_record_gaps", r.gapAsmRecords),
 		zap.Uint64("unflushed_dedupe_repeats", unflushedDedupe),
 		zap.Int("unfinished_assembly_events", len(r.asm.pending)),
 		zap.Int("evicted_incomplete", r.asm.droppedEO),

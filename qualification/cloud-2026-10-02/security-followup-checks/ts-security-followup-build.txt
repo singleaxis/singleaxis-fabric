@@ -1,0 +1,27 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 build
+> tsup
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /workspace/singleaxis-fabric/sdk/typescript/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+CJS Build start
+CJS dist/index.cjs     216.86 KB
+CJS dist/index.cjs.map 119.55 KB
+CJS ⚡️ Build success in 71ms
+ESM dist/index.js     212.24 KB
+ESM dist/index.js.map 119.31 KB
+ESM ⚡️ Build success in 71ms
+DTS Build start
+DTS ⚡️ Build success in 1301ms
+DTS dist/index.d.ts  134.02 KB
+DTS dist/index.d.cts 134.02 KB
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

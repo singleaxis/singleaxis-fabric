@@ -1,0 +1,108 @@
+{
+  "source": "adapters.py",
+  "modes": {
+    "openinference-auto": {
+      "adapter_startup_physical_nonblank_code_lines": 7,
+      "counted_line_numbers": [
+        10,
+        11,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "startup_fragment": "            from openinference.instrumentation import TraceConfig\n            from openinference.instrumentation.openai import OpenAIInstrumentor\n            self.instrumentor = OpenAIInstrumentor()\n            self.instrumentor.instrument(\n                tracer_provider=provider,\n                config=TraceConfig(hide_inputs=True, hide_outputs=True),\n            )",
+      "application_dispatch_call_sites_changed": 0,
+      "application_startup_enable_sites": 1,
+      "requires_provider_exporter_setup": true,
+      "count_caveat": "Physical lines of this benchmark adapter, including imports and formatting; not minimal code, developer effort, or a whole product setup score."
+    },
+    "fabric-auto": {
+      "adapter_startup_physical_nonblank_code_lines": 11,
+      "counted_line_numbers": [
+        19,
+        20,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ],
+      "startup_fragment": "            from opentelemetry import trace\n            from fabric.auto_instrument import enable_auto_instrumentation\n            if trace.get_tracer_provider() is not provider:\n                trace.set_tracer_provider(provider)\n            enabled = enable_auto_instrumentation(\n                only=(\"openai\",), capture_content=False\n            )\n            if enabled != (\"openai\",):\n                raise RuntimeError(\n                    f\"Fabric OpenAI auto instrumentation unavailable: {enabled}\"\n                )",
+      "application_dispatch_call_sites_changed": 0,
+      "application_startup_enable_sites": 1,
+      "requires_provider_exporter_setup": true,
+      "count_caveat": "Physical lines of this benchmark adapter, including imports and formatting; not minimal code, developer effort, or a whole product setup score."
+    },
+    "fabric-explicit": {
+      "adapter_startup_physical_nonblank_code_lines": 32,
+      "counted_line_numbers": [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64
+      ],
+      "startup_fragment": "            from fabric import (\n                ByteEvidenceConfig,\n                ByteEvidenceRecorder,\n                CallRecorder,\n                LocalFilesystemContentStore,\n            )\n            from fabric.byte_evidence import BytePrivacyPolicy\n            roles = frozenset(\n                {\n                    \"model.request.messages\",\n                    \"model.output.messages\",\n                    \"tool.call.arguments\",\n                    \"tool.call.result\",\n                }\n            )\n            store = LocalFilesystemContentStore(\n                str(root / \"content\"), tenant_id=\"benchmark\"\n            )\n            self.writer = ByteEvidenceRecorder(\n                ByteEvidenceConfig(\n                    store=store,\n                    roles=roles,\n                    role_policies={r: BytePrivacyPolicy(mode=\"omit\") for r in roles},\n                )\n            )\n            self.recorder = CallRecorder(\n                self.writer,\n                run_id=\"benchmark\",\n                agent_id=\"benchmark\",\n                source_id=\"benchmark\",\n                tracer=self.tracer,\n            )",
+      "application_dispatch_call_sites_changed": 1,
+      "application_startup_enable_sites": 1,
+      "requires_provider_exporter_setup": true,
+      "count_caveat": "Physical lines of this benchmark adapter, including imports and formatting; not minimal code, developer effort, or a whole product setup score.",
+      "dispatch_wrapper_physical_nonblank_code_lines": 3
+    },
+    "otel-explicit": {
+      "adapter_startup_physical_nonblank_code_lines": 0,
+      "application_dispatch_call_sites_changed": 1,
+      "requires_provider_exporter_setup": true,
+      "count_caveat": "Uses common tracer; zero additional startup branch does not mean zero integration effort.",
+      "dispatch_wrapper_physical_nonblank_code_lines": 19
+    },
+    "none": {
+      "adapter_startup_physical_nonblank_code_lines": 0,
+      "application_dispatch_call_sites_changed": 0,
+      "requires_provider_exporter_setup": false,
+      "count_caveat": "Uses common tracer; zero additional startup branch does not mean zero integration effort."
+    }
+  },
+  "shared_application_fixture": "run.py invoke() is the one shared dispatch site. Provider/exporter/witness setup is common and excluded from adapter line counts. Tests and harness are excluded.",
+  "actual_environment_commands": [
+    "python -m venv /tmp/fabric-comparison-venv",
+    "pip install opentelemetry-sdk openinference-instrumentation-openai openai pydantic cryptography pytest",
+    "pip install opentelemetry-instrumentation-openai-v2>=0.30b0",
+    "pip install httpx",
+    "pip install opentelemetry-util-genai==0.4b0"
+  ],
+  "reproducible_consolidated_install": "pip install -r requirements.lock.txt"
+}

@@ -13,6 +13,7 @@ import pytest
 from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
 from fabric import Fabric, FabricConfig
 from fabric.memory import _sha256_hex
@@ -114,7 +115,9 @@ def test_tracestate_normal_ids_round_trip() -> None:
 
 def test_default_provider_attribute_length_is_bounded() -> None:
     exporter = InMemorySpanExporter()
-    provider = TracerProvider(span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN))
+    provider = TracerProvider(
+        sampler=ALWAYS_ON, span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN)
+    )
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     tracer = provider.get_tracer("test")
     with tracer.start_as_current_span("s") as span:

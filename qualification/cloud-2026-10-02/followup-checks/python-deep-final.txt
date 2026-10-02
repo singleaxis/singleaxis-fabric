@@ -1,0 +1,165 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.0.3, pluggy-1.6.0
+rootdir: /workspace/singleaxis-fabric/sdk/python
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-7.1.0, anyio-4.14.2
+collected 1721 items
+
+tests/test_adapters_crewai.py ............                               [  0%]
+tests/test_async.py ....                                                 [  0%]
+tests/test_auto_instrument.py .......................                    [  2%]
+tests/test_byte_boundary_adapter.py .....                                [  2%]
+tests/test_byte_evidence.py .................                            [  3%]
+tests/test_byte_resolver.py ..............................               [  5%]
+tests/test_byte_spool.py ............................                    [  6%]
+tests/test_call_batches.py ..........                                    [  7%]
+tests/test_call_otlp.py .......................                          [  8%]
+tests/test_call_privacy.py ....................                          [  9%]
+tests/test_call_reconcile.py ...................................         [ 12%]
+tests/test_call_recorder.py ............                                 [ 12%]
+tests/test_call_source_spool.py ......................                   [ 14%]
+tests/test_calls.py .................................................... [ 17%]
+.............................                                            [ 18%]
+tests/test_capture_capabilities.py ....                                  [ 18%]
+tests/test_capture_health.py ..........                                  [ 19%]
+tests/test_capture_identity.py ...............                           [ 20%]
+tests/test_capture_readback.py .......................                   [ 21%]
+tests/test_checkpoint.py ......                                          [ 22%]
+tests/test_client.py ............                                        [ 22%]
+tests/test_concurrency.py .....                                          [ 23%]
+tests/test_content_boundaries.py ........................                [ 24%]
+tests/test_content_store.py .........................                    [ 25%]
+tests/test_control_evidence.py ........                                  [ 26%]
+tests/test_control_protocol.py ...............................           [ 28%]
+tests/test_coverage_manifest.py ..........                               [ 28%]
+tests/test_decision.py ...................                               [ 29%]
+tests/test_deployment_policy.py ..................................       [ 31%]
+tests/test_deployment_state.py ..................................        [ 33%]
+tests/test_distributed_closure.py ...................................... [ 36%]
+............                                                             [ 36%]
+tests/test_enterprise_integration.py .....                               [ 37%]
+tests/test_enterprise_preflight.py ..................................... [ 39%]
+.....                                                                    [ 39%]
+tests/test_enterprise_reference.py .......                               [ 39%]
+tests/test_evidence_attestation.py ..................................... [ 42%]
+.................                                                        [ 42%]
+tests/test_execution.py .........................                        [ 44%]
+tests/test_generic_interaction.py ...................................... [ 46%]
+........................                                                 [ 48%]
+tests/test_governed_content.py ......................................... [ 50%]
+...................................................                      [ 53%]
+tests/test_governed_reconstruction.py .................................. [ 55%]
+..............                                                           [ 56%]
+tests/test_governed_store.py ........................................... [ 58%]
+...........................................................              [ 62%]
+tests/test_hardening.py .......                                          [ 62%]
+tests/test_http_dispatch.py ......                                       [ 62%]
+tests/test_id_validators.py ............................................ [ 65%]
+........................................................................ [ 69%]
+............                                                             [ 70%]
+tests/test_independent_feed.py .......................                   [ 71%]
+tests/test_independent_feed_adversarial.py ..................            [ 72%]
+tests/test_independent_store.py .....................                    [ 73%]
+tests/test_mcp_integration.py ..........                                 [ 74%]
+tests/test_memory.py ..................                                  [ 75%]
+tests/test_metadata_delivery.py ..................................       [ 77%]
+tests/test_propagation.py .............................................. [ 80%]
+...                                                                      [ 80%]
+tests/test_qualified_run.py ................................             [ 82%]
+tests/test_receipt_sets.py .................................             [ 84%]
+tests/test_recorder_package_surface.py ....                              [ 84%]
+tests/test_recorder_wheel_qualifier.py ................................. [ 86%]
+                                                                         [ 86%]
+tests/test_reference_receipts.py ............                            [ 86%]
+tests/test_replay_metadata.py ........                                   [ 87%]
+tests/test_retrieval.py ..............                                   [ 88%]
+tests/test_route_closure_attestation.py .                                [ 88%]
+tests/test_security_dependency_floors.py ....                            [ 88%]
+tests/test_side_effect.py .....................                          [ 89%]
+tests/test_source_spool.py ............................................  [ 92%]
+tests/test_source_spool_readback.py ...............                      [ 93%]
+tests/test_span_protection.py .........................................  [ 95%]
+tests/test_surface_logging.py .......................................... [ 98%]
+....                                                                     [ 98%]
+tests/test_synthetic_evidence.py .............                           [ 99%]
+tests/test_synthetic_otlp.py .........                                   [ 99%]
+tests/test_tracing.py ........                                           [100%]
+
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.14-final-0 _______________
+
+Name                                        Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------------------------------------------
+src/fabric/__init__.py                         25      0      0      0   100%
+src/fabric/_attributes.py                      71      0      4      0   100%
+src/fabric/_calls.py                          618     76    318     57    83%   187, 220, 316, 318, 412->415, 433-434, 436, 438-439, 441, 443, 445, 449, 451, 455, 457, 459, 461-468, 476, 481, 506, 572->582, 669-675, 703-705, 707, 709-713, 714->exit, 725-726, 728, 740, 763-772, 791, 798->802, 802->exit, 810, 813->exit, 832->841, 841->exit, 843, 845, 851-856, 875, 881, 883, 996-997, 999, 1034->1043, 1048, 1049->1051, 1098->1102, 1100->1102, 1127->1136, 1138, 1155->1164, 1166, 1214, 1218->exit, 1220, 1222, 1236, 1238
+src/fabric/_capture_health.py                  43      0      8      0   100%
+src/fabric/_content.py                        162      2     34      2    98%   115, 286
+src/fabric/_content_sink.py                   112     19     30      8    80%   155-165, 205-206, 224-227, 244-247, 267, 273-278, 287, 289->296, 302, 319, 346-347
+src/fabric/_content_writer.py                 448     54    136     30    85%   95, 97, 225-226, 274-275, 304-305, 314, 319->324, 325, 351, 381, 401-405, 423-425, 432-433, 484, 513, 525-526, 541, 549, 559, 571-572, 594-595, 605-606, 619, 632, 637, 640, 644, 647, 655-657, 672->671, 677-685, 693, 696->691, 712-713, 734-735, 780, 787->exit, 790-791
+src/fabric/_coverage_canary.py                121      1     10      0    99%   146
+src/fabric/_crosscut.py                        41      0     20      0   100%
+src/fabric/_hashes.py                          15      1      4      1    89%   34
+src/fabric/_id_validators.py                  113      3     48      2    97%   160-161, 172
+src/fabric/_span_protection.py                147      2     50      3    97%   278, 314, 357->351
+src/fabric/_version.py                          1      0      0      0   100%
+src/fabric/adapters/__init__.py                 0      0      0      0   100%
+src/fabric/adapters/byte_boundary.py           47      5     10      2    88%   42, 44, 100-102
+src/fabric/adapters/crewai.py                  48      0     12      0   100%
+src/fabric/adapters/synthetic_evidence.py     339     52    118     29    81%   84, 88, 110-112, 183, 332, 386-396, 434, 438, 456, 458, 460, 462, 471, 503-513, 515-517, 556, 565-566, 567->582, 582->585, 588-589, 623, 625-631, 656, 698, 701, 703, 710, 716, 718, 723, 757, 768-778, 785, 790, 805-815
+src/fabric/auto_instrument.py                  67      0     16      0   100%
+src/fabric/baseline.py                         38      0      8      0   100%
+src/fabric/byte_evidence.py                   369     23    188     25    91%   98, 100, 115, 128, 130, 136, 155, 158, 170, 210, 228, 286, 289->287, 300, 389, 485, 506, 535->533, 566, 587->591, 594, 606, 659, 679, 683, 713
+src/fabric/byte_resolver.py                   157     17     66     14    86%   113, 115, 142, 169->175, 176, 186, 188, 190, 208, 211, 214, 217, 252, 257, 260-261, 277-278
+src/fabric/byte_spool.py                      390     57    138     35    81%   74, 79-83, 120, 123, 125, 132, 134, 137, 173->175, 194, 196-198, 210, 224, 255, 257-259, 264, 280, 290-295, 299, 309, 341, 350, 354, 360, 364, 389, 396, 455, 527, 558->exit, 567, 569-573, 612, 627-637, 645-646, 651, 654, 662
+src/fabric/call_otlp.py                       147     12     78     13    89%   41, 72, 75, 80, 98->100, 126, 133, 139, 143, 228, 235, 238, 243
+src/fabric/call_reconcile.py                  306     33    198     27    88%   94, 99-100, 104, 106, 109, 118, 129-130, 136, 140, 142, 148-149, 173, 224-225, 243->254, 264, 276-277, 282, 303-304, 319-320, 372, 382, 384, 390, 425, 428, 468, 475
+src/fabric/call_recorder.py                   396     13    100      7    96%   115, 210-213, 343-344, 380-381, 461->452, 558, 603, 693, 746, 771->777
+src/fabric/capture_capabilities.py              8      0      2      0   100%
+src/fabric/capture_identity.py                 57      1     24      1    98%   109
+src/fabric/capture_readback.py                 68      0     34      0   100%
+src/fabric/checkpoint.py                       15      0      2      0   100%
+src/fabric/client.py                          171      3     46      6    96%   84->86, 86->88, 92->94, 103, 440, 484
+src/fabric/content_join.py                     35      1     24      1    97%   39
+src/fabric/content_store/__init__.py            4      0      0      0   100%
+src/fabric/content_store/base.py               55     10     16      7    76%   62->exit, 64->exit, 83, 89, 94, 100, 106, 110, 115, 117->exit, 122, 126, 128->exit, 132, 144->exit, 146->exit, 148->exit
+src/fabric/content_store/local.py             215     21     68     16    86%   57, 131, 160, 176, 179, 204, 212, 216, 220-221, 225-226, 266, 285, 300, 306, 309, 314, 324, 326-327
+src/fabric/content_store/s3.py                215    106     64     16    48%   64, 66, 72, 111, 114, 119, 121, 123, 128-147, 150-156, 159-161, 166-183, 188, 194, 196, 200, 202, 205, 219-224, 233-245, 249-250, 253-255, 260, 264, 268-272, 275-280, 293, 297-302, 305-316, 320-321, 325-326
+src/fabric/control_evidence.py                 40      0     16      0   100%
+src/fabric/control_protocol.py                 90      0     24      1    99%   159->exit
+src/fabric/coverage_manifest.py               101      5     30      4    93%   141-142, 149->151, 201, 206, 214
+src/fabric/decision.py                        764     27    296     52    92%   156->exit, 159->exit, 162->exit, 165->exit, 168->exit, 171->exit, 174->exit, 185->exit, 188->exit, 191->exit, 194->exit, 197->exit, 200->exit, 203->exit, 206->exit, 209->exit, 212->exit, 215->exit, 218->exit, 221->exit, 626, 628, 630, 676->678, 678->683, 933->944, 951->955, 953->955, 956, 959->961, 1068->1075, 1113, 1115, 1117, 1119-1121, 1207->1209, 1226, 1230, 1232, 1299->1301, 1302, 1313, 1315, 1317-1318, 1386, 1388, 1437, 1729, 1805, 2258, 2260, 2307, 2402
+src/fabric/deployment_policy.py               196      5     70      5    96%   39, 136, 245, 314, 333
+src/fabric/deployment_state.py                225      8     76      9    94%   112, 129, 150->exit, 201, 226, 237, 240, 268, 298
+src/fabric/distributed_closure.py             451     21    182     22    93%   102, 217, 227, 240, 370, 383, 396, 481, 626, 628, 636, 639, 738, 753, 762, 772, 793, 805, 824, 832, 835, 846->exit
+src/fabric/enterprise.py                       49      3     12      2    92%   100, 102-103
+src/fabric/enterprise_preflight.py            201     12     56     10    91%   96, 118, 120, 180, 301, 373-375, 449, 464, 476, 489, 542
+src/fabric/evidence_attestation.py            123      0     42      0   100%
+src/fabric/execution.py                       131      3     20      1    96%   348->351, 381-383
+src/fabric/governed_reconstruction.py          73      4     34      4    93%   52, 59, 82, 113
+src/fabric/governed_store.py                  497     14    190     13    96%   282, 286, 308-309, 363, 391, 443, 568, 612->616, 620->619, 697, 699, 794, 804, 813, 914
+src/fabric/http_dispatch.py                   205     11     42     11    91%   73, 75, 162, 173, 188, 212-214, 216->exit, 279->281, 326, 339-340, 364->exit, 367->369
+src/fabric/independent_feed.py                240     22    122     21    88%   108->exit, 165, 205, 209, 211, 217, 228, 231, 237, 239, 242, 284, 287, 289, 319, 325, 338, 353, 357, 359, 432-433, 455
+src/fabric/independent_store.py                63      1     22      2    96%   101->107, 119
+src/fabric/integrations/__init__.py             2      0      0      0   100%
+src/fabric/integrations/mcp.py                109      1     28      1    99%   373
+src/fabric/memory.py                           33      0      0      0   100%
+src/fabric/metadata_delivery.py               406     43    172     44    85%   79->exit, 117, 123, 131, 133, 135, 138-143, 152->154, 173, 216, 238, 246->227, 276, 283, 287, 296, 301, 364, 371, 378, 387, 391, 404, 418, 432, 434, 445, 464, 468, 480, 490, 511, 547, 572, 609, 628, 642, 645, 646->643, 709, 710->exit, 728, 735, 737->741
+src/fabric/propagation.py                     143      2     46      2    98%   219, 289
+src/fabric/qualified_run.py                   314     40    138     30    85%   135, 142, 145, 154, 161, 177, 180, 187, 195, 202, 218, 221, 223, 249, 252, 274, 284, 294, 314, 330, 340, 343, 392, 475, 515-516, 561, 573, 581, 584, 590-591, 608-609, 624-625, 639, 659-661
+src/fabric/receipt_sets.py                    166     15     80     14    88%   114, 190, 230, 237, 252, 263->270, 266-267, 296, 319, 322, 325, 327, 330, 332, 336
+src/fabric/reference_receipts.py              429     59    158     32    82%   73, 78->exit, 119, 121, 124, 128, 234, 264, 287, 291, 304, 322-331, 385, 422, 433-434, 446, 481, 484, 489, 495, 507-508, 545, 555->exit, 558->560, 585, 636, 642, 700-702, 707, 710, 714, 718, 723-744, 748
+src/fabric/resolver.py                        255     78    110     26    65%   113-116, 134, 144, 153, 155, 158, 160, 174, 177, 196, 207, 210-211, 220, 224->216, 226-232, 253, 284, 285->290, 308->307, 316, 318, 320->322, 322->326, 324->323, 327, 332, 335->338, 345-346, 351-361, 365-384, 388-401, 405-418, 422
+src/fabric/retrieval.py                        35      1      6      1    95%   89
+src/fabric/side_effect.py                      44      0      2      0   100%
+src/fabric/signing.py                          52      1      6      1    97%   48
+src/fabric/source_spool.py                    531     41    218     42    89%   148, 167, 171, 179, 215, 223, 263, 311, 322, 324, 326, 337, 340, 348, 351, 356, 359, 408, 421, 446, 455, 479, 483, 493, 495, 508, 510, 558, 566, 590, 628, 702, 711, 726->728, 807, 821, 823, 841, 845, 847, 909, 912
+src/fabric/synthetic_otlp.py                  144     17     60     13    85%   92, 109, 112, 119, 147, 150-151, 156, 160, 162, 247, 256, 259, 262, 273, 276, 279
+src/fabric/synthetic_reconcile.py             145     22     72     16    82%   55, 64, 66, 70, 76-77, 79, 82, 88-91, 126, 134, 179, 197, 205, 228, 244, 254, 301, 312
+src/fabric/taxonomy.py                         83      7     22      6    88%   96, 98, 101, 104, 108, 159, 165
+src/fabric/tracing.py                         103      7     44      2    94%   68, 89-96, 154-161
+---------------------------------------------------------------------------------------
+TOTAL                                       11507    982   4270    689    89%
+Required test coverage of 85% reached. Total coverage: 88.65%
+======================= 1721 passed in 141.68s (0:02:21) =======================

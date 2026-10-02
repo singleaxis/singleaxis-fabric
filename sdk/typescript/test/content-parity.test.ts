@@ -38,7 +38,25 @@ function loadFixtures(): ByteFixture[] {
 }
 
 describe("shared content byte/hash fixtures", () => {
-  for (const fixture of loadFixtures()) {
+  const fixtures = loadFixtures();
+  it("retains the complete committed byte-fixture inventory", () => {
+    expect(
+      fs
+        .readdirSync(fixturesDir)
+        .filter((name) => name.endsWith(".json"))
+        .sort(),
+    ).toEqual([
+      "ascii.json",
+      "empty-array.json",
+      "empty-object.json",
+      "empty-string.json",
+      "multiline.json",
+      "nested-json.json",
+      "unicode.json",
+    ]);
+    expect(fixtures).toHaveLength(7);
+  });
+  for (const fixture of fixtures) {
     it(`${fixture.name} canonicalizes to the pinned bytes + digest`, () => {
       const content = fixture.kind === "json" ? fixture.input : fixture.value;
       const mediaType = fixture.kind === "json" ? "application/json" : "text/plain";

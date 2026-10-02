@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, codex/synthetic-evidence-qualification-20260927]
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 2"
@@ -18,8 +18,12 @@ permissions:
 
 jobs:
   python:
-    name: Python SDK licenses
+    name: Python SDK licenses (${{ matrix.extra }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [otlp, openai, anthropic, bedrock, otel-langchain, cohere, mcp, signing]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -30,14 +34,14 @@ jobs:
           python -m venv /tmp/fabric-license-python
           . /tmp/fabric-license-python/bin/activate
           python -m pip install --upgrade pip
-          python -m pip install pip-licenses './sdk/python[otlp]'
+          python -m pip install pip-licenses './sdk/python[${{ matrix.extra }}]'
           mkdir -p raw
           pip-licenses --format=json \
             --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel hatchling hatch-vcs pathspec trove-classifiers \
-            > raw/python-sdk.json
+            > raw/python-${{ matrix.extra }}.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: recorder-license-python
+          name: recorder-license-python-${{ matrix.extra }}
           path: raw/
           retention-days: 14
 
@@ -57,6 +61,11 @@ jobs:
           mkdir -p raw
           npx --yes license-checker-rseidelsohn --production --json \
             --start sdk/typescript > raw/npm-typescript.json
+          # The optional S3 peer is a supported install surface but is not in
+          # the base lockfile. Scan it separately without changing that lock.
+          npm install --prefix sdk/typescript --no-save --package-lock=false --ignore-scripts '@aws-sdk/client-s3@>=3.0.0'
+          npx --yes license-checker-rseidelsohn --production --json \
+            --start sdk/typescript > raw/npm-typescript-s3.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: recorder-license-typescript
@@ -80,6 +89,7 @@ jobs:
         working-directory: components/otel-collector-fabric
         run: |
           "$(go env GOPATH)/bin/builder" --config ocb-config.yaml
+          sh ./upstream/build-patched-bearertokenauth.sh
           mkdir -p "${GITHUB_WORKSPACE}/raw"
           cd dist
           go mod download
@@ -130,10 +140,20 @@ jobs:
           mkdir -p build/recorder-license-report
           python scripts/license_check.py \
             --policy .github/license-allowlist.txt \
-            --pip 'sdk/python=raw/python-sdk.json' \
+            --pip 'sdk/python=raw/python-otlp.json' \
+            --pip 'sdk/python=raw/python-openai.json' \
+            --pip 'sdk/python=raw/python-anthropic.json' \
+            --pip 'sdk/python=raw/python-bedrock.json' \
+            --pip 'sdk/python=raw/python-otel-langchain.json' \
+            --pip 'sdk/python=raw/python-cohere.json' \
+            --pip 'sdk/python=raw/python-mcp.json' \
+            --pip 'sdk/python=raw/python-signing.json' \
             --npm 'sdk/typescript=raw/npm-typescript.json' \
+            --npm 'sdk/typescript=raw/npm-typescript-s3.json' \
             --go 'fabric-node=raw/go-fabric-node.csv' \
             --go 'fabricctl=raw/go-fabricctl.csv' \
+            --go 'fabric-gate=raw/go-fabric-gate.csv' \
+            --go 'host-emitter=raw/go-host-emitter.csv' \
             --ignore go.opentelemetry.io/collector/cmd/builder \
             --ignore @singleaxis/fabric \
             --ignore singleaxis-fabric \

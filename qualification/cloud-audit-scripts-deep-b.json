@@ -1,0 +1,742 @@
+{
+  "schema_version": "fabric.cloud-audit-scripts-deep/v1",
+  "partition": "b: alphabetical last28 of57 product python_ast_parse entries lacking full_text_review/authored_and_reviewed/targeted_section_review; first29 owned by collector_journey",
+  "status": "targeted_review_complete_remaining_security_and_live_qualification_open",
+  "source_changes": "Only parent-authorized missing-version and queue-probe/correlation fixes; benchmark/frozen evidence untouched.",
+  "executed_checks": [
+    {
+      "command": "pytest -q scripts/tests/test_verify_release_identity.py -k missing_typescript_versions",
+      "phase": "baseline",
+      "result": "1 failed, 8 deselected; missing versions wrongly accepted"
+    },
+    {
+      "command": "pytest -q scripts/tests/test_verify_release_identity.py scripts/tests/test_governed_queue_probe.py",
+      "phase": "fixed",
+      "result": "13 passed in0.34s"
+    },
+    {
+      "command": "ruff check/format four owned changed Python files",
+      "result": "clean/formatted"
+    }
+  ],
+  "findings": [
+    {
+      "id": "DEEP-B-01",
+      "status": "fixed_with_baseline_failing_regression",
+      "path": "scripts/verify_release_identity.py",
+      "finding": "Missing all three TypeScript JSON versions returned ok=True, errors=[] because _require_equal ignored falsey versions. Now missing required version is an error. Current repository versions were populated; no claim that published package identity was wrong.",
+      "evidence": "New test_missing_typescript_versions_fail_closed: baseline 1 failed; final combined suite13 passed."
+    },
+    {
+      "id": "DEEP-B-02",
+      "status": "fixed_offline_live_gate_not_run",
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "finding": "Queue privacy grep shell interpolated environment MARK, used mutable alpine:latest and masked every scan error. Replaced with Python scanner via literal argv, existing sink image immutable ID, --pull=never/network=none/read-only, error nonzero, symlink/nonregular rejection and chunk-boundary matching.",
+      "evidence": "Four offline regressions cover clean/leak/missing-root, symlink, literal shell marker/immutable image command and propagated scan failure. Real Docker qualification pending."
+    },
+    {
+      "id": "DEEP-B-03",
+      "status": "bounded_correlation_fix_limit_remains",
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "finding": "Restart test used only shared sink count increase. Now fresh unique fabric.request_id must reach sink after outage/restart; byte substring presence still not exact parsed receipt or arbitrary destination durability."
+    },
+    {
+      "id": "DEEP-B-04",
+      "status": "documented_scope_limit",
+      "paths": [
+        "scripts/tests/test_release_qualification.py",
+        "scripts/tests/test_npm_release_workflow.py",
+        "scripts/tests/test_recorder_release_boundary.py",
+        "scripts/verify_release_identity.py"
+      ],
+      "finding": "Mocked smoke install and substring workflow markers establish unit/declaration behavior, not remote CI execution, installed package/runtime safety or receipt authenticity. Additional exact-SHA workflows and artifact runtime qualification remain required."
+    },
+    {
+      "id": "DEEP-B-05",
+      "status": "documented_side_effect_and_scope",
+      "path": "scripts/tests/test_s3_live.py",
+      "finding": "When all four env vars and boto3 present, harness creates bucket if needed and writes random-prefixed synthetic objects without cleanup. Explicit credentials prevent ambient identity drift; common credentials do not prove cloud IAM tenant isolation. No live run performed in this review."
+    }
+  ],
+  "entries": [
+    {
+      "path": "scripts/tests/test_capture_measurements.py",
+      "sha256": "33d61e7514150af88500b36483af509705ccef75909b2f6107dc151a5443ed11",
+      "bytes": 1895,
+      "lines": 56,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed quantile units, alternating measured call order, preserved business results and invalid samples; explicit no-production-budget verdict. Unit fixtures do not establish production latency.",
+      "function_inventory": [
+        "test_latency_quantiles_have_explicit_units",
+        "test_measurement_counts_both_paths_without_overclaim",
+        "test_measurement_rejects_changed_application_results",
+        "test_invalid_latency_samples"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_check_changelog_keep_alive.py",
+      "sha256": "de50b36b7e2aca821c3f08e543c87b2edddbe562868e830dd33ae460fa73c6c4",
+      "bytes": 2879,
+      "lines": 91,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed temporary changelog mutations, stale HEAD link negatives and real-repo read-only check; no external publication.",
+      "function_inventory": [
+        "_write",
+        "test_keep_alive_complete_passes",
+        "test_missing_heading_fails",
+        "test_missing_link_ref_fails",
+        "test_link_ref_pointing_at_tag_not_head_fails",
+        "test_real_repo_changelog_passes"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_compose_security_bounds.py",
+      "sha256": "da1ccccd8967f48c13adf07b789529da4a6ac7b90c964295653e802ae15b380c",
+      "bytes": 6137,
+      "lines": 199,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed YAML/template receiver bounds and shell preflight invocation; Docker/df/nc replaced by tmp executables, inherited environment and ten-second bounds. Acceptance checks preflight syntax/token rules and estimates, not live enforcement.",
+      "function_inventory": [
+        "test_compose_and_chart_ship_identical_receiver_bounds",
+        "_write_executable",
+        "_preflight_environment",
+        "_write_collector_config",
+        "_run_preflight",
+        "test_preflight_token_file_edge_cases",
+        "test_preflight_rejects_missing_token_file",
+        "test_preflight_disk_estimate_uses_larger_receiver_bound_and_defaults"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_connector_contract.py",
+      "sha256": "0e7fa9cd68ed33aacf47a2ca040e10072eac51c9dd7c5f6194236484be03f863",
+      "bytes": 7527,
+      "lines": 201,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed explicit manifest inventory, digest/index/unknown field negatives, identity/auth mismatch and inferred eBPF claims; evidence-path existence is not evidence execution.",
+      "function_inventory": [
+        "_json",
+        "_schema",
+        "_document",
+        "test_repository_contract_and_all_pinned_fixtures_validate",
+        "test_released_manifest_set_is_explicit",
+        "test_byte_boundary_manifest_does_not_claim_automatic_or_authenticated_capture",
+        "test_shipped_connector_claims_follow_recorder_release_identity",
+        "test_negative_fixtures_fail_with_stable_code",
+        "test_digest_tampering_fails_closed",
+        "test_unpinned_json_artifact_fails_closed",
+        "test_schema_rejects_undeclared_capability_fields",
+        "test_authenticated_tenant_enforcement_requires_authenticated_ingress",
+        "test_nonillustrative_evidence_paths_exist_in_repository",
+        "test_ebpf_emitter_manifest_is_passive_and_honest"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_content_contracts.py",
+      "sha256": "d2a174d357931d7bd4daef912cc51dd83a6fef41c5322d40cb613321f8610827",
+      "bytes": 5678,
+      "lines": 157,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed closed content schema, sequence gaps, descriptor-status mismatches, digest/canonical-byte fixtures; contiguous fixture coverage not universal capture proof.",
+      "function_inventory": [
+        "_json",
+        "_schemas",
+        "test_all_pinned_content_contracts_validate",
+        "test_complete_manifest_covers_model_tool_model_flow",
+        "test_incomplete_manifest_marks_every_gap_explicitly",
+        "test_negative_fixtures_have_stable_failures",
+        "test_unknown_schema_version_fails_closed",
+        "test_manifest_rejects_unknown_fields",
+        "test_byte_fixtures_reproduce_pinned_digest",
+        "test_canonical_json_sorts_keys_and_omits_whitespace"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_custom_agent_node_pilot.py",
+      "sha256": "b4856105a6b4fb7178cf20738c26e61daf7aead3108c83c450493f9377eb876b",
+      "bytes": 2169,
+      "lines": 60,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed serialized OTLP fixture writing, identical duplicate replay vs conflicting duplicate, missing/extra identity and canary negatives; at inspected version arbitrary metadata/body/resource adversarial coverage absent. Collector agent owns subsequent expansion.",
+      "function_inventory": [
+        "record",
+        "expected",
+        "test_replay_deduplicates_only_matching_records",
+        "test_missing_and_extra_records_fail",
+        "test_canary_in_actual_sink_bytes_fails"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_data_plane_contracts.py",
+      "sha256": "a05a53870da01c9d7eebbab0faaea5fe768fd99e5c31932ecad997fd0b8445a8",
+      "bytes": 10808,
+      "lines": 265,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed causal cycles/order, provenance, governed URL rejection, destination-issued persistence and privacy-batch binding, exact-byte digest and index coverage negatives. Contract documents do not independently attest runtime delivery.",
+      "function_inventory": [
+        "_json",
+        "_schemas",
+        "test_all_pinned_data_plane_contracts_validate",
+        "test_activity_negative_fixtures_have_stable_failures",
+        "test_closed_activity_schema_rejects_unknown_fields",
+        "test_agentless_activity_may_omit_unobserved_correlation_ids",
+        "test_correlation_provenance_is_required_when_identifier_is_present",
+        "test_internal_causal_cycles_are_rejected_before_forward_reference_check",
+        "test_internal_causal_reference_must_resolve_to_an_earlier_event",
+        "test_free_text_and_url_like_governed_references_are_rejected",
+        "test_delivery_requires_destination_issued_persistence_proof",
+        "test_delivery_binds_privacy_assertion_to_batch",
+        "test_source_range_requires_first_not_after_last",
+        "test_current_privacy_assertion_does_not_claim_external_verification",
+        "test_privacy_export_cannot_be_allowed_after_prohibited_content",
+        "test_delivery_privacy_assertion_requires_digest_scope",
+        "test_manifest_digest_tampering_fails_closed",
+        "test_unpinned_contract_json_fails_closed",
+        "test_digest_scope_is_exact_file_bytes_not_parsed_json"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_enterprise_deployment.py",
+      "sha256": "8a7152df1b73b4581f48e4038d09a24b2f1494e480767b7b878134c2de82f455",
+      "bytes": 13567,
+      "lines": 344,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed static/default schema and Helm rendering positive/unsafe override matrix, tenant/workload bindings, TLS/mTLS, token projection, image digest, storage and restricted network peers; Helm absent skips render gate, attestation strings do not verify actual custody.",
+      "function_inventory": [
+        "test_default_values_validate_without_enabling_workload_auth",
+        "test_schema_does_not_allow_inline_credentials",
+        "test_production_profile_has_no_invented_image_or_attestation",
+        "helm",
+        "production_values",
+        "_render",
+        "_documents",
+        "_set",
+        "test_production_renders_workload_auth_without_evidence_only_rejection",
+        "test_production_rejects_tags_without_full_digest",
+        "test_production_rejects_unsafe_overrides",
+        "test_production_rejects_unrestricted_network_peers",
+        "test_existing_claim_requires_unambiguous_reviewed_storage",
+        "test_reserved_identity_annotations_cannot_be_overridden",
+        "test_subchart_workload_auth_is_not_a_production_label_shortcut"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_enterprise_examples.py",
+      "sha256": "fe9b1d95f5f5f369182219abe660ed1bd93ff125fed93766197750dcc71cad3f",
+      "bytes": 7202,
+      "lines": 190,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed actual local effect readback, exact HTTP reconciliation including equal-count wrong-route negative, bypass and stream loss, key/privacy/output preservation, closed worker plans/duplicate keys and optimized-Python refusal. Explicit NO_GO retained.",
+      "function_inventory": [
+        "_load",
+        "test_orchestration_real_effects_and_exact_http_attempts",
+        "test_starter_policy_runs_directly_without_storage_root",
+        "test_clean_all_original_policy_can_seal_metadata_without_production_claim",
+        "test_local_runner_accepts_parent_relative_new_output",
+        "test_untrusted_plan_cannot_change_worker_contract",
+        "test_reconciliation_cannot_substitute_wrong_route_with_equal_counts",
+        "test_examples_preserve_existing_output",
+        "test_duplicate_policy_key_is_rejected",
+        "test_optimized_orchestration_refuses_false_qualification"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_enterprise_integration_example.py",
+      "sha256": "45f71ea69951d65eb642c15f6ce8ed81fffd15ec7b42d2584791ff539ccbd02e",
+      "bytes": 5874,
+      "lines": 173,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed isolated CLI and doctor execution, encrypted content marker absence, journal counts, ephemeral custody limitation, business object/exception identity, failed-worker close ordering, unsupported transform rejection. Local readiness stays distinct from destination qualification.",
+      "function_inventory": [
+        "load",
+        "test_exact_integration_and_doctor_commands_pass_locally",
+        "test_shared_dispatch_preserves_result_and_exception_and_counts_unsupported",
+        "test_lifecycle_does_not_close_store_beneath_unsettled_worker",
+        "test_transform_requirements_are_not_silently_replaced_by_original_capture"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "sha256": "daac46677c7a0ce5cc90be9149ce5ebd2b6f82cca915bfdbb46f3bb9d1fb77a5",
+      "bytes": 16919,
+      "lines": 465,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Full original source and authorized final diff reviewed: unique Compose project cleanup, loopback probes, module Docker skip, actual SDK subprocess, final manifest readback, privacy sink/log/queue and restart checks. Replaced unsafe shell scan with controlled existing image scanner; outage now uses fresh request identifier. Live Docker execution not performed.",
+      "function_inventory": [
+        "_compose",
+        "_assert_queue_private",
+        "_compose_available",
+        "_sink",
+        "_sink_count",
+        "_sink_contains",
+        "_wait_node_health",
+        "node",
+        "_wait_delivery",
+        "_wait_contains",
+        "_run_governed_flow",
+        "test_governed_content_through_real_node",
+        "test_real_node_queue_survives_sink_outage_and_node_restart",
+        "test_synthetic_aeep_metadata_through_real_node"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_local_go_simulation.py",
+      "sha256": "e568a8519e7edc9491239ab20f47203ff1f6182ce39079d70a693145e03c2273",
+      "bytes": 2913,
+      "lines": 83,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed unsigned scope, local artifacts, verified sink flags, downgrade/false signature/network-policy assertions; manufactured production GO rejected in fixture cases.",
+      "function_inventory": [
+        "_fixture",
+        "test_clean_rehearsal_passes_without_production_go",
+        "test_missing_sink_or_fault_downgrade_fails_rehearsal",
+        "test_fake_signature_or_policy_enforcement_claim_fails_closed"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_npm_release_workflow.py",
+      "sha256": "da4349b12bbcdb6a3de0c16eba503eb34e9fe3058f284a0a50a04bd96f71ccee",
+      "bytes": 2207,
+      "lines": 63,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed static text matching of sole publisher, build-once qualified tarball hash/provenance and no checkout/rebuild publish job. Not workflow execution or complete YAML control-flow proof.",
+      "function_inventory": [
+        "_workflow_publishers",
+        "_job",
+        "test_release_workflow_is_the_only_npm_publisher",
+        "test_publish_job_consumes_qualified_tarball_without_rebuilding",
+        "test_package_is_built_once_and_attached_to_github_release"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_orchestration_demo_safety.py",
+      "sha256": "ef1ad842c6b9094a036be88be25b406cde99587fb4d873f2be45186a506c07dc",
+      "bytes": 5533,
+      "lines": 167,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed explicit isolated acknowledgement, mock occupied sink refusal, preservation of old evidence and owned container ID, auditctl noninvocation, shell parsing, reconstruction provenance and BTF-source unknown marker; mocks not kernel runtime qualification.",
+      "function_inventory": [
+        "_mock_command",
+        "test_demo_refuses_without_isolated_synthetic_acknowledgement",
+        "test_demo_preserves_old_output_and_never_removes_existing_container",
+        "test_broad_host_audit_helper_never_calls_auditctl",
+        "test_demo_config_uses_bounded_port_and_read_only_audit_mount",
+        "test_demo_scripts_parse",
+        "test_reconstruction_stays_in_checkout_and_labels_synthetic_provenance",
+        "test_report_write_does_not_fabricate_a_process_execution",
+        "test_vendored_btf_header_digest_does_not_invent_source_provenance"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_package_contracts.py",
+      "sha256": "d81114474afa18f71a9c0cc1ce41c14162401085437f4c0d0c5629345b3c17dd",
+      "bytes": 11987,
+      "lines": 324,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed deterministic tar metadata and hash inventory, explicit family/version allowlists, traversal/backslash/symlink/case collision, duplicate keys and unpinned bytes; file changes limited to temporary fixtures; symlink/case tests explicitly skip unsupported filesystems.",
+      "function_inventory": [
+        "_sha256",
+        "_policy",
+        "_scoped_policy",
+        "test_release_policy_requires_explicit_public_family_allowlist",
+        "test_release_policy_requires_exact_public_versions",
+        "_family",
+        "test_archive_is_deterministic_generic_and_has_fixed_metadata",
+        "test_missing_manifest_fails_closed",
+        "test_release_archive_contains_only_configured_public_families",
+        "test_release_archive_contains_only_configured_public_versions",
+        "test_unpinned_json_fails_closed",
+        "test_wrong_or_missing_digest_fails_closed",
+        "test_manifest_traversal_and_non_posix_paths_are_rejected",
+        "test_symlink_member_is_rejected",
+        "test_unsafe_and_case_colliding_members_are_rejected",
+        "test_duplicate_manifest_keys_are_rejected",
+        "test_release_policy_and_workflow_have_one_build_once_contract_path",
+        "test_repository_contract_tree_is_release_qualifiable"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_patched_bearer_build_cache.py",
+      "sha256": "1db74db35d8d3bd8ef3f4cd6175c9470dd0891685d8206c280bd9461b9717a00",
+      "bytes": 1978,
+      "lines": 56,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed copied build script and custom GOMODCACHE-with-spaces mock; safe refusal before modifying unmarked source, exact upstream fixture unchanged; no live dependency build claim.",
+      "function_inventory": [
+        "test_patched_build_discovers_custom_module_cache"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_qualified_call_pilot.py",
+      "sha256": "8910af325b31c129cd63a1080dd17ef3ca76347f0f18f05f753d473e5c32ebcb",
+      "bytes": 2518,
+      "lines": 82,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed fixture-only authorization, positive readback and negative verdict matrix, binary artifact/canary checks and preserve-existing-output refusal. No live receipt authority claim.",
+      "function_inventory": [
+        "_load",
+        "test_native_pilot_and_loss_matrix",
+        "test_pilot_preserves_existing_evidence",
+        "test_cli_requires_explicit_fixture_scope"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_recorder_contract.py",
+      "sha256": "9a72db86f2ebc91c46d7305170fd18624254ea515ad5a5b6d62aeaa1e3b460ff",
+      "bytes": 6818,
+      "lines": 204,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed schema-vs-stricter-validator distinction, identity mismatch, credential-shaped references, multiple/oversized documents, closed fields and exact pinned coverage. CLI-parity title tests Python behavior without invoking actual fabricctl.",
+      "function_inventory": [
+        "_json",
+        "_schema",
+        "_document",
+        "test_repository_contract_and_all_pinned_fixtures_validate",
+        "test_example_is_schema_valid_and_cli_valid",
+        "test_negative_fixtures_fail_with_stable_code",
+        "test_schema_alone_admits_cli_invalid_documents",
+        "test_recorder_id_must_equal_metadata_name",
+        "test_credential_shaped_references_are_rejected",
+        "test_namespaced_references_are_not_credential_shaped",
+        "test_multiple_documents_are_rejected",
+        "test_documents_over_one_mib_are_rejected",
+        "test_schema_rejects_unknown_fields",
+        "test_digest_tampering_fails_closed",
+        "test_unpinned_artifact_fails_closed",
+        "test_cli_parity_rules_track_fabricctl"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_recorder_release_boundary.py",
+      "sha256": "2d6b901b5eb77a511aa146131b8252da89fac1e2a30149a41a4359f0aa269ac2",
+      "bytes": 5119,
+      "lines": 144,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed static recorder-only policy/artifact inventories, required workflow markers, image entrypoint existence, forbidden processors and chart dependencies. Workflow/source markers are not compiled artifact security proof.",
+      "function_inventory": [
+        "test_release_policy_is_recorder_only",
+        "test_required_workflows_qualify_the_recorder_on_main",
+        "test_release_workflow_does_not_publish_legacy_runtime_artifacts",
+        "test_fabric_node_binary_manifest_contains_no_legacy_processors",
+        "test_fabric_node_image_boots_through_the_gate",
+        "test_umbrella_declares_only_collector_dependency"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_release_qualification.py",
+      "sha256": "4f2a518c2ed9e534534f16026a42b92ba19276887057921e663d4d518807d9e3",
+      "bytes": 13038,
+      "lines": 343,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed temporary synthetic wheels/tars/charts, required/forbidden paths, traversal, versions, smoke invocation mocked rather than real install, workflow evidence SHA/policy matching. Success fixture contains workflow name only, highlighting reliance on producer provenance.",
+      "function_inventory": [
+        "_policy",
+        "_chart",
+        "_metadata",
+        "_dist",
+        "test_release_versions",
+        "test_release_versions_reject_ambiguous_tags",
+        "test_stamp_and_verify_chart_preserves_vendor_version",
+        "test_python_artifacts_are_inspected_and_hashed",
+        "test_python_prerelease_metadata_and_pep440_expected_version_are_equivalent",
+        "test_python_wheel_smoke_exercises_installed_governed_runtime",
+        "test_packaged_chart_is_version_bound_and_hashed",
+        "test_wheel_missing_typed_marker_fails_closed",
+        "test_wheel_missing_fabricctl_entry_point_fails_closed",
+        "test_wheel_rejects_unexpected_top_level_content",
+        "test_wheel_rejects_forbidden_capability_path",
+        "test_wheel_rejects_unexpected_console_script",
+        "test_sdist_rejects_path_traversal",
+        "test_sdist_rejects_tests_and_duplicate_conformance_goldens",
+        "test_sdist_rejects_forbidden_capability_path",
+        "test_workflow_evidence_is_bound_to_sha_and_policy"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_release_workflow_evidence.py",
+      "sha256": "d60c4308f9be907974f39f248380cd742f1d57dd08b21e3853d67aa1ca8048f1",
+      "bytes": 3841,
+      "lines": 124,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed exact SHA/status/conclusion selection fixture, required unique workflows, all workflow queries, short SHA rejection and unweakened Semgrep flags; real GitHub calls mocked.",
+      "function_inventory": [
+        "_run",
+        "test_selects_latest_success_for_exact_sha",
+        "test_missing_or_non_success_evidence_fails_closed",
+        "test_policy_requires_unique_workflow_files",
+        "test_release_requires_production_profile_on_exact_sha",
+        "test_verify_queries_every_required_workflow",
+        "test_short_sha_is_rejected_before_query",
+        "test_semgrep_findings_fail_the_security_workflow"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_s3_live.py",
+      "sha256": "7346a829e09060bf8eb0d25a95a829ec3b9a7712b81b5cfd53e9cc9cc66e333c",
+      "bytes": 7618,
+      "lines": 226,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed four-env live gate, explicit client credential injection for both tenants, bucket provisioning and unique random object prefix, corruption/idempotence/namespace checks. Creates bucket/objects when enabled, leaves artifacts; skip means unexecuted, not live S3 pass; same principal tenant checks do not prove IAM separation.",
+      "function_inventory": [
+        "_make_store",
+        "store",
+        "s3_client",
+        "test_object_write_and_verified_read",
+        "test_descriptor_sidecar_written",
+        "test_manifest_write_and_alias",
+        "test_duplicate_write_is_idempotent",
+        "test_corrupted_preexisting_object_rejected",
+        "test_cross_tenant_uri_denied",
+        "test_tenant_namespace_isolated"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_s3_live_harness.py",
+      "sha256": "bf7883ba9e34b4ea23ae696cc773833d7d823fb87b55e73f8e5e970c99fd8ad7",
+      "bytes": 2121,
+      "lines": 63,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed fake explicit boto3 Session/client and forbidden ambient client path; confirms construction routing without real network or credential authentication.",
+      "function_inventory": [
+        "test_live_harness_injects_explicit_client_into_every_tenant"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_sol_local_stage.py",
+      "sha256": "abd02b60beb9fa7fbab7977fd187b3c735b69a50095dac76cc6c6e3c96329e3e",
+      "bytes": 4496,
+      "lines": 127,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed synthetic command/provider journals, artifact byte hashes, conservative unverified verdict and bypass/corrupt readback downgrades; fixtures are not actual subscription agent executions.",
+      "function_inventory": [
+        "_event",
+        "observed_run",
+        "test_complete_fixture_never_claims_verified",
+        "test_direct_bypass_and_corrupt_byte_lower_verdict"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_source_binding_readback.py",
+      "sha256": "253141f6624ca8226b19b39d4ea07d0a1835147142c51a75580e04e50fed8b8f",
+      "bytes": 2793,
+      "lines": 72,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed serialized exact expected record and missing/duplicate/forged tenant/body/extra/rejected negatives, report write only on success; grpc absence explicitly skips this module.",
+      "function_inventory": [
+        "fixture",
+        "test_exact_probe_record_readback",
+        "test_readback_differences_never_verify"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_synthetic_sink_readback.py",
+      "sha256": "732f403b1b111b3f1c039745180280122651ff4259213ad431e9bd15f5d56904",
+      "bytes": 2940,
+      "lines": 88,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed exact parsed record fixture, duplicate identity, role mismatch and actual byte-canary negatives; inspected version lacks arbitrary metadata/body/resource cases, concurrent collector owner expanding separately.",
+      "function_inventory": [
+        "_fixture",
+        "test_exact_parsed_sink_record",
+        "test_duplicate_id_is_not_exact_readback",
+        "test_role_mismatch_is_not_exact_readback",
+        "test_privacy_canary_is_rejected"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_verify_release_identity.py",
+      "sha256": "4cd72465db801717bb84dba5758e5b9db333cc062ef2868985fda3816f91127d",
+      "bytes": 10423,
+      "lines": 311,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Reviewed corrected/mismatched full temp tree fixtures, dependency lock hash, expected tag and static workflow marker negatives; new missing TypeScript version regression failed baseline and passes corrected verifier.",
+      "function_inventory": [
+        "_write",
+        "_materialize",
+        "test_reproduces_pre_contract_version_mismatches",
+        "test_accepts_corrected_coordinated_declarations",
+        "test_cli_emits_machine_readable_evidence",
+        "test_expected_tag_must_match_version",
+        "test_chart_lock_is_required",
+        "test_chart_lock_dependency_versions_must_match",
+        "test_chart_lock_digest_must_not_be_stale",
+        "test_release_workflows_must_cover_fabric_node_and_fabricctl",
+        "test_missing_typescript_versions_fail_closed"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/verify_release_identity.py",
+      "sha256": "2541d9faeaf4cc74bb5eeac0d7e4dccea48ecf0d9746ba75a8ad11cccc62f344",
+      "bytes": 21417,
+      "lines": 600,
+      "methods": [
+        "full_text_semantic_review",
+        "sha256_snapshot",
+        "python_ast_parse"
+      ],
+      "scope": "Full semantic review of read/regex/YAML-subset parsing, Helm digest/order/migration floors, source version equality, schema parity, JSON package inputs, static workflow markers, git source identity and CLI error exit. Missing JSON version fields accepted baseline; fixed equality guard. Reads only (git rev-parse), no deployment. Regex parsing/substring markers remain declaration checks, not actual build or workflow attestation.",
+      "function_inventory": [
+        "_read",
+        "_match_version",
+        "_require_semver",
+        "_require_equal",
+        "_semver_core",
+        "_chart_fields",
+        "_yaml_scalar",
+        "_umbrella_dependency_records",
+        "_lock_dependency_records",
+        "_helm_lock_digest",
+        "_source_commit",
+        "verify",
+        "main"
+      ],
+      "limits": "Review of this exact source snapshot; only separately identified executed tests are runtime evidence. Concurrent later edits require new review/hash."
+    },
+    {
+      "path": "scripts/tests/test_governed_queue_probe.py",
+      "sha256": "20e05ec429877ee51d83b3846de08ff4d6a7f4835b0d5321a4b37d62b5d2fca2",
+      "bytes": 2982,
+      "lines": 98,
+      "methods": [
+        "authored_and_reviewed",
+        "executed_focused_regressions"
+      ],
+      "scope": "Offline scanner error/no-match/leak and literal argument immutable-image regressions; does not require Docker execution."
+    }
+  ]
+}

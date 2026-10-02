@@ -1,7 +1,10 @@
 # Verify a Fabric recorder release
 
-Fabric qualifies exact publication artifacts before registry publication and
-emits `release-qualification.json`. Missing evidence, a mismatched version or
+Fabric qualifies the staged package artifacts and emits
+`release-qualification.json`. The publication workflow separately rebuilds OCI
+images from the tagged source after CI: the resulting signed image digest is
+not proof that those exact image bytes passed the earlier image scan.
+Missing evidence, a mismatched version or
 commit, unexpected package content, or a failed required workflow means the
 release is not approved for promotion.
 
@@ -58,15 +61,19 @@ substitute archive from the repository checkout.
 ## Verify OCI artifacts
 
 Resolve image and chart tags to immutable digests. Verify the Sigstore identity
-and issuer:
+and issuer. The expected identity below follows the tag-triggered
+`.github/workflows/release.yml` signing job; require that exact workflow and
+approved tag rather than any workflow in the repository:
 
 ```bash
+# Set the exact approved Git tag, including its leading v.
+RELEASE_TAG=vVERSION
 cosign verify ghcr.io/singleaxis/fabric-otelcol@sha256:IMAGE_DIGEST \
-  --certificate-identity-regexp='^https://github.com/singleaxis/singleaxis-fabric/' \
+  --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
 
 cosign verify ghcr.io/singleaxis/charts/fabric:VERSION@sha256:CHART_DIGEST \
-  --certificate-identity-regexp='^https://github.com/singleaxis/singleaxis-fabric/' \
+  --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
 ```
 

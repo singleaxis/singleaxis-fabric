@@ -14,6 +14,7 @@
 import { context, SpanStatusCode, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
+  AlwaysOnSampler,
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -44,6 +45,7 @@ beforeAll(() => {
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
   provider = new BasicTracerProvider({
+    sampler: new AlwaysOnSampler(),
     spanProcessors: [new SimpleSpanProcessor(exporter)],
   });
   trace.setGlobalTracerProvider(provider);

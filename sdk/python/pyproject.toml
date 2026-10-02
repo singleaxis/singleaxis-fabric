@@ -47,7 +47,13 @@ otlp = [
 # `FABRIC_CAPTURE_LLM_CONTENT=true` or
 # `enable_auto_instrumentation(capture_content=True)`.
 openai = [
-  "opentelemetry-instrumentation-openai-v2>=0.30b0",
+  # 2.4b0 imports genai.instruments removed in util-genai 1.2b0 and imports
+  # httpx even when the separately installed OpenAI SDK uses httpx2.
+  # Bound to the real-SDK loopback benchmark's verified dependency combination.
+  "opentelemetry-instrumentation-openai-v2==2.4b0",
+  "opentelemetry-util-genai==0.4b0",
+  "httpx>=0.28.1,<1",
+
 ]
 anthropic = [
   "opentelemetry-instrumentation-anthropic>=0.30b0",

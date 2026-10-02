@@ -93,6 +93,38 @@ Use `fabric.execution(...)` to correlate multiple decisions. `Decision` also
 captures retrieval, memory, side effects, checkpoints, delegation, MCP
 inventory, skills, hooks, file access and generic interactions.
 
+Callback failures in decision, execution, LLM and tool spans emit a fixed
+`Operation failed` exception diagnostic and a bounded error classification.
+Original exception messages, stacks and arbitrary error names are not passed to
+the host tracer provider; the original thrown value or rejected promise reason
+still reaches the caller. AbortError and TimeoutError classifications retain
+ERROR status. This protection covers these SDK-generated failure diagnostics;
+it is not a general exporter allowlist or Python recorder parity. Hosts remain
+responsible for protecting custom attributes, explicitly captured content and
+spans produced by other instrumentation before export.
+
+## Local capture health
+
+`decision.captureHealth` returns a fresh local snapshot with `scope:
+"decision_span_only"`, `recordingAtStart`, `droppedEvents`, and
+`droppedAttributes`. Its `status` is:
+
+- `disabled` when the decision span was not recording at creation
+- `partial` when public provider counters expose dropped events or attributes
+- `unverified` otherwise, including a recording span with zero observed drops
+
+Unavailable counters are `null`. Recording is checked at creation, so ending a
+recording span does not incorrectly mark it disabled. Final counters are checked
+after the span ends, including synchronous and asynchronous callback exits. The
+SDK emits a fixed, identifier-free warning once per affected status per process;
+logger failures do not change the application's return value or exception.
+
+This diagnostic does **not** prove complete capture or delivery. It does not
+cover child spans, event-attribute/value truncation, exporter or collector loss,
+uncalled instrumentation, or governed-content delivery. It does not change host
+sampling, span limits, or privacy settings. Retain the decision object if you
+need to inspect the snapshot after the callback completes.
+
 ## Opt-in exact-byte evidence (draft)
 
 The separate content-v2 `ByteEvidenceRecorder` stores **only bytes explicitly
@@ -129,6 +161,63 @@ not issue durable source or destination receipts, emit OTLP evidence events,
 build a run manifest, or prove run completeness. A process crash can lose
 pending content. Configure customer-controlled storage permissions, encryption,
 retention, and authorized resolution separately before production use.
+
+The TypeScript local store resolves trusted parent aliases once at construction
+(for example, system temporary-directory aliases). It rejects symlinks at the
+configured root, tenant directories, object files, and descriptor/manifest paths, including
+links introduced after construction. Customer-controlled ancestor directories
+and no adversarial concurrent namespace mutation are required. Node path
+checks do not pin ancestor directory handles; they do not protect against a
+concurrent attacker replacing an ancestor between checks and filesystem I/O.
+This limitation differs from the Python local store's directory-handle checks.
+
+### Role-specific protection before the byte queue
+
+Pass a validated `DeploymentPolicy` as `deploymentPolicy`, or a
+`ContentProtector` as `contentProtector`, to `ByteEvidenceRecorder`. The policy
+tenant must match the store. Protection runs before bytes enter the delivery
+queue; roles absent from the policy are omitted. These options apply only to
+this explicit byte-capture interface, not automatically to every SDK content
+path or third-party integration.
+
+- `omit` records no original bytes, digest, or length
+- `metadata_only` records the original length without bytes or an original digest
+- `redact` requires a synchronous customer-supplied redactor for each selected role
+- `tokenize` produces an irreversible, whole-object HMAC pseudonym using a
+  customer-supplied key of at least 32 bytes; it is scoped to policy, tenant,
+  workload, and role
+- `retain_original` explicitly permits original bytes and their digest
+
+Redacted/tokenized bytes require a same-tenant `reviewStore` with a different
+namespace from the original store. Transform errors, unsupported results, and
+oversized outputs become explicit failed/unsupported descriptors; original bytes
+are never used as a fallback. Derivatives carry their own stored digest and no
+original digest or length. Policy ID, version, digest, and workload bind the local
+descriptor to its configured capture policy; they do not prove independent
+authorization, encryption, residency, delivery, or completeness.
+
+Transforms execute synchronously on a bounded payload, so customers must keep
+redactors fast and test their correctness. Storage delivery remains asynchronous.
+Configuration errors are reported during setup; capture outcomes never authorize
+or reject the monitored action. This Node interface does not implement the Python
+authenticated local store, capability authority, or deployment-state registry.
+
+### Governed transcript contract compatibility
+
+Serialized content-v1 transcript manifests use `coverage.roles_enabled` and
+`coverage.roles_observed`, as required by the published contract. Observed roles
+include only pending, stored or truncated items. This corrects the earlier
+invalid top-level role fields; readers of that projection must use `coverage`.
+Memory direction and side-effect identity remain in their activity events;
+unsupported `direction` and `side_effect_id` descriptor binding keys are omitted.
+The `TranscriptManifest` accumulator retains its generic `toJSON()` return type.
+An empty observation window is explicit: `contentManifest.items` is empty and
+`contentManifestUri` is `undefined`; close writes no manifest, stamps no manifest
+reference and contributes no stored count. In metadata-only mode,
+`contentManifest` itself is `undefined`. Serializing an empty accumulator with
+`toJSON()` throws a no-observations error. No actions or role outcomes are
+invented. An explicitly captured empty string is still an observation and is
+stored normally. These corrections do not add durable recorder or Python parity.
 
 ## Propagation across services
 
@@ -188,3 +277,12 @@ npm test
 npm run build
 npm run test:package
 ```
+
+### Enterprise capture support boundary
+
+The shared deployment-policy/privacy/byte path is supported. Python's
+CallRecorder, source journal, encrypted durable byte spool, restartable metadata
+sender, governed local backend, authenticated configuration lifecycle/readback,
+and reference closure do not have TypeScript parity. See the
+[explicit SDK support matrix](../../docs/sdk-support-matrix.md). Neither SDK
+implements a portal or action enforcement runtime.

@@ -7,6 +7,8 @@ from __future__ import annotations
 import copy
 import base64
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -176,6 +178,297 @@ def test_content_status_and_representation_must_agree() -> None:
     descriptor["representation"] = "exact"
     descriptor["stored_byte_length"] = 5
     _assert_error(descriptor, "evidence.content.false_exact")
+
+
+def _protected_descriptor(mode: str) -> dict[str, Any]:
+    descriptor = _json("contracts/content/v2/valid/artifact-after.json")
+    descriptor.update(
+        policy_id="capture-policy",
+        policy_version=1,
+        policy_digest="sha256:" + "a" * 64,
+        privacy_mode=mode,
+        protection_status={
+            "retain_original": "retained",
+            "metadata_only": "withheld",
+            "omit": "withheld",
+            "redact": "redacted",
+            "tokenize": "tokenized",
+        }[mode],
+    )
+    if mode != "retain_original":
+        descriptor.pop("source_sha256")
+        if mode != "metadata_only":
+            descriptor.pop("source_byte_length")
+    if mode in {"omit", "metadata_only"}:
+        descriptor.update(status="not_captured", representation="unavailable")
+        for field in ("stored_sha256", "stored_byte_length", "ref"):
+            descriptor.pop(field)
+    elif mode in {"redact", "tokenize"}:
+        descriptor.update(
+            status="redacted",
+            representation=descriptor["protection_status"],
+            transformations=[mode],
+        )
+    return descriptor
+
+
+@pytest.mark.parametrize(
+    "mode", ["retain_original", "omit", "metadata_only", "redact", "tokenize"]
+)
+def test_protected_content_contract_modes_conform(mode: str) -> None:
+    validate_document(_protected_descriptor(mode), _schemas())
+
+
+@pytest.mark.parametrize("mode", ["omit", "metadata_only", "redact", "tokenize"])
+def test_private_modes_forbid_original_hashes(mode: str) -> None:
+    descriptor = _protected_descriptor(mode)
+    descriptor.update(source_sha256="sha256:" + "b" * 64, source_byte_length=4)
+    _assert_error(descriptor, "evidence.schema")
+
+
+@pytest.mark.parametrize("mode", ["omit", "redact", "tokenize"])
+def test_private_modes_do_not_disclose_original_length(mode: str) -> None:
+    descriptor = _protected_descriptor(mode)
+    descriptor["source_byte_length"] = 4
+    _assert_error(descriptor, "evidence.schema")
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "policy_digest",
+        "policy_id",
+        "policy_version",
+        "privacy_mode",
+        "protection_status",
+    ],
+)
+def test_deployment_protection_requires_complete_policy_binding(field: str) -> None:
+    descriptor = _protected_descriptor("tokenize")
+    descriptor.pop(field)
+    _assert_error(descriptor, "evidence.schema")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"protection_status": "retained"},
+        {"transformations": ["redact"]},
+        {"status": "stored"},
+        {"representation": "redacted"},
+    ],
+)
+def test_deployment_protection_cannot_claim_a_conflicting_outcome(
+    change: dict[str, Any],
+) -> None:
+    descriptor = _protected_descriptor("tokenize")
+    descriptor.update(change)
+    with pytest.raises(EvidenceContractError):
+        validate_document(descriptor, _schemas())
+
+
+def test_unbound_metadata_length_is_not_a_privacy_exception() -> None:
+    descriptor = _json("contracts/content/v2/valid/artifact-after.json")
+    descriptor.pop("source_sha256")
+    descriptor["representation"] = "assembled"
+    _assert_error(descriptor, "evidence.content.source_pair")
+
+
+@pytest.mark.parametrize(
+    "mode,plane",
+    [
+        ("retain_original", "original"),
+        ("redact", "derivative"),
+        ("tokenize", "derivative"),
+    ],
+)
+def test_local_content_reference_binds_tenant_workload_object_and_plane(
+    mode: str, plane: str
+) -> None:
+    descriptor = _protected_descriptor(mode)
+    descriptor["workload_id"] = "agent-1"
+    descriptor["ref"] = (
+        f"fabric-local://tenant-a/agent-1/{plane}/{descriptor['object_id']}"
+    )
+    validate_document(descriptor, _schemas())
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "fabric-local://tenant-b/agent-1/derivative/obj-1",
+        "fabric-local://tenant-a/agent-2/derivative/obj-1",
+        "fabric-local://tenant-a/agent-1/original/obj-1",
+        "fabric-local://tenant-a/agent-1/derivative/obj-2",
+        "fabric-local://tenant-a/agent-1/derivative/obj-1/extra",
+        "fabric-local://tenant-a/agent-1/derivative/../obj-1",
+        "fabric-local://tenant-a/agent-1/derivative/%6fbj-1",
+        "fabric-local://tenant-a/agent-1/derivative/obj-1?token=secret",
+        "fabric-local://secret@tenant-a/agent-1/derivative/obj-1",
+        "fabric-local://tenant-a:443/agent-1/derivative/obj-1",
+    ],
+)
+def test_local_content_reference_rejects_namespace_or_encoding_confusion(
+    ref: str,
+) -> None:
+    descriptor = _protected_descriptor("tokenize")
+    descriptor.update(workload_id="agent-1", object_id="obj-1", ref=ref)
+    with pytest.raises(EvidenceContractError):
+        validate_document(descriptor, _schemas())
+
+
+@pytest.mark.parametrize("field", ["workload_id", "policy_digest"])
+def test_local_content_reference_requires_workload_and_policy(field: str) -> None:
+    descriptor = _protected_descriptor("retain_original")
+    descriptor.update(
+        workload_id="agent-1",
+        ref=f"fabric-local://tenant-a/agent-1/original/{descriptor['object_id']}",
+    )
+    descriptor.pop(field)
+    _assert_error(descriptor, "evidence.schema")
+
+
+def test_node_emitted_protected_descriptors_conform(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    entry = REPO_ROOT / "sdk/typescript/dist/index.js"
+    if not node or not entry.is_file():
+        pytest.skip("Build the Node SDK to verify emitted protected descriptors")
+    script = r"""
+import fs from 'node:fs';
+import path from 'node:path';
+const { ByteEvidenceRecorder, ContentProtector, DeploymentPolicy,
+        LocalFilesystemContentStore } = await import(process.argv[1]);
+const input = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const root = process.argv[3];
+const records = [];
+for (const mode of ['retain_original', 'omit', 'metadata_only', 'redact', 'tokenize']) {
+  const policy = new DeploymentPolicy({...input, privacy: {'terminal.stdout': mode}});
+  const original = new LocalFilesystemContentStore(path.join(root, mode, 'original'), policy.tenant_id);
+  const review = new LocalFilesystemContentStore(path.join(root, mode, 'review'), policy.tenant_id);
+  const protector = new ContentProtector(policy, {
+    redactors: mode === 'redact' ? {'terminal.stdout': () => Buffer.from('[redacted]')} : undefined,
+    tokenizationKey: Buffer.alloc(32, 'k'),
+  });
+  const recorder = new ByteEvidenceRecorder({store: original, reviewStore: review,
+    contentProtector: protector, roles: new Set(['terminal.stdout']), queueMaxItems: 1});
+  for (let sequence = 0; sequence < 2; sequence++) {
+    records.push(JSON.parse(JSON.stringify(recorder.capture(Buffer.from('sensitive-value'), {
+      role: 'terminal.stdout', boundary: 'terminal', sourceId: 'sdk', sourceEpoch: 0,
+      sourceSequence: sequence,
+    }))));
+  }
+  await recorder.close();
+  records.push(...recorder.drainSettled());
+}
+process.stdout.write(JSON.stringify(records));
+"""
+    result = subprocess.run(
+        [
+            node,
+            "--input-type=module",
+            "-e",
+            script,
+            entry.as_uri(),
+            str(REPO_ROOT / "examples/enterprise/policy.local.json"),
+            str(tmp_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    descriptors = json.loads(result.stdout)
+    assert len(descriptors) == 20
+    assert {item["privacy_mode"] for item in descriptors} == {
+        "retain_original",
+        "omit",
+        "metadata_only",
+        "redact",
+        "tokenize",
+    }
+    for descriptor in descriptors:
+        validate_document(descriptor, _schemas())
+
+
+@pytest.mark.parametrize("mode", ["retain_original", "redact", "tokenize"])
+def test_python_governed_local_descriptors_conform(tmp_path: Path, mode: str) -> None:
+    if sys.version_info < (3, 11):
+        pytest.skip("the Python SDK requires Python 3.11 or newer")
+    pytest.importorskip("opentelemetry.sdk")
+    pydantic = pytest.importorskip("pydantic")
+    if int(pydantic.VERSION.split(".", 1)[0]) < 2:
+        pytest.skip("the Python SDK requires Pydantic 2")
+    sys.path.insert(0, str(REPO_ROOT / "sdk/python/src"))
+    from fabric import ByteEvidenceConfig, ByteEvidenceRecorder
+    from fabric.deployment_policy import ContentProtector, DeploymentPolicy
+    from fabric.governed_store import (
+        GovernedLocalContentStore,
+        LocalCapabilityAuthority,
+    )
+
+    value = _json("examples/enterprise/policy.local.json")
+    value["privacy"] = {"terminal.stdout": mode}
+    policy = DeploymentPolicy.from_dict(value)
+    authority = LocalCapabilityAuthority(b"synthetic-contract-test-key-00000")
+    capability = authority.issue(
+        policy=policy,
+        subject_id="test-worker",
+        permissions={
+            "write_original",
+            "write_derivative",
+            "read_original",
+            "read_derivative",
+        },
+    )
+    stores = [
+        GovernedLocalContentStore(
+            tmp_path,
+            policy=policy,
+            authority=authority,
+            capability=capability,
+            plane=plane,
+        )
+        for plane in ("original", "derivative")
+    ]
+    protector = ContentProtector(
+        policy,
+        redactors={"terminal.stdout": lambda _: b"[redacted]"}
+        if mode == "redact"
+        else None,
+        tokenization_key=b"k" * 32,
+    )
+    recorder = ByteEvidenceRecorder(
+        ByteEvidenceConfig(
+            store=stores[0],
+            review_store=stores[1],
+            deployment_policy=policy,
+            content_protector=protector,
+            roles=frozenset({"terminal.stdout"}),
+        )
+    )
+    try:
+        pending = recorder.capture(
+            b"sensitive-value",
+            role="terminal.stdout",
+            boundary="terminal",
+            source_id="sdk",
+            source_epoch=0,
+            source_sequence=0,
+        )
+        validate_document(pending, _schemas())
+        assert recorder.flush()
+        settled = recorder.get(pending["object_id"])
+        assert settled is not None
+        assert settled["status"] == (
+            "stored" if mode == "retain_original" else "redacted"
+        )
+        validate_document(settled, _schemas())
+        target = stores[0 if mode == "retain_original" else 1]
+        validate_document(target.read_descriptor(settled["ref"]), _schemas())
+    finally:
+        recorder.close()
+        for store in stores:
+            store.close()
 
 
 def test_capability_surface_cannot_claim_metadata_as_content() -> None:

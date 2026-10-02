@@ -63,6 +63,7 @@ class PilotTLS:
     node_cert: str | None = None
     node_key: str | None = None
     sink_ca: str | None = None
+    node_token_file: str | None = None
 
 
 def _json_bytes(value: object) -> bytes:
@@ -522,23 +523,13 @@ def _run_case(
                 expected_sink_records.append(
                     {
                         "event_name": projected_record["eventName"],
-                        "attributes": {
-                            key: attrs[key]
-                            for key in (
-                                "record_id",
-                                "role",
-                                "status",
-                                "content_object_id",
-                                "content_sha256",
-                                "source_id",
-                                "source_epoch",
-                                "source_sequence",
-                                "operation_id",
-                                "attempt_id",
-                                "tenant_id",
-                                "run_id",
-                            )
-                            if key in attrs
+                        "attributes": {key: str(value) for key, value in attrs.items()},
+                        "attribute_types": {
+                            item["key"]: {
+                                "stringValue": "string_value",
+                                "intValue": "int_value",
+                            }[next(iter(item["value"]))]
+                            for item in projected_record["attributes"]
                         },
                     }
                 )
@@ -548,6 +539,7 @@ def _run_case(
                 ca_cert_path=tls.node_ca,
                 client_cert_path=tls.node_cert,
                 client_key_path=tls.node_key,
+                bearer_token_path=tls.node_token_file,
             )
             assert receipt["receipt_stage"] == "node_accepted"
             assert receipt["rejected_count"] == 0
@@ -586,6 +578,7 @@ def main() -> int:
     parser.add_argument("--node-cert", help="test client certificate for HTTPS Node")
     parser.add_argument("--node-key", help="test client key for HTTPS Node")
     parser.add_argument("--sink-ca", help="trusted test CA for HTTPS sink")
+    parser.add_argument("--node-token-file", help="workload token file for HTTPS Node")
     parser.add_argument("--work-dir", type=Path, help="dedicated output directory")
     parser.add_argument(
         "--report-path", type=Path, help="write full digest/discrepancy report"
@@ -599,7 +592,9 @@ def main() -> int:
         parser.error("pilot must import an installed wheel, not repository source")
     if not TOOL.is_file():
         parser.error("synthetic tool fixture missing")
-    tls = PilotTLS(args.node_ca, args.node_cert, args.node_key, args.sink_ca)
+    tls = PilotTLS(
+        args.node_ca, args.node_cert, args.node_key, args.sink_ca, args.node_token_file
+    )
     if args.work_dir is None:
         with tempfile.TemporaryDirectory(prefix="fabric-agent-pilot-") as directory:
             cases = [

@@ -229,6 +229,7 @@ class S3ContentStore:
     def write_manifest(
         self, manifest: Mapping[str, Any], *, decision_id: str, manifest_id: str
     ) -> str:
+        check_safe_identifier("manifest_id", manifest_id)
         base = f"{self.prefix}{self.tenant_id}/manifests"
         key = f"{base}/{manifest_id}.json"
         body = (json.dumps(manifest, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -244,6 +245,7 @@ class S3ContentStore:
         return f"s3://{self.bucket}/{key}"
 
     def manifest_uri_for(self, manifest_id: str) -> str:
+        check_safe_identifier("manifest_id", manifest_id)
         key = f"{self.prefix}{self.tenant_id}/manifests/{manifest_id}.json"
         return f"s3://{self.bucket}/{key}"
 

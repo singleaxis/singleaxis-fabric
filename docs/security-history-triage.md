@@ -40,3 +40,26 @@ exceptions do not permit a new credential-shaped value. No Git history was
 rewritten and no provider alert was dismissed. These source/user classifications
 do not clear target-storage, source-identity, receipt, independent-pilot or
 production-owner acceptance gates.
+
+## Capture publication findings (2026-10-02)
+
+PR #165's full-history scan at commit
+`18ec69a4ddd6e5fdab7a097b30b34571096e708f` identified seven additional
+source-proven synthetic or non-value matches. The exact fingerprints are
+recorded in `.gitleaksignore`; they apply only to that commit, path, rule
+and line. Default detection, full-history scanning and security-owner
+acceptance remain in force. No provider credential or live access was tested.
+
+| Path / rule / line | Source evidence and classification |
+| --- | --- |
+| `.github/workflows/e2e-production-profile.yml` / `curl-auth-header` / 279 | Explicit deliberately wrong token in a negative authentication test that must return HTTP 401. It grants no access. |
+| `examples/enterprise-reference/run.py` / `generic-api-key` / 79 | Function signature contains an `Ed25519PrivateKey` parameter type, not a serialized private-key value. The service receives an ephemeral process-local key at execution. |
+| `benchmarks/fabric-comparison/run.py` / `generic-api-key` / 20 | Public synthetic privacy canary used only by loopback benchmark requests and disclosure assertions. |
+| `docs/protected-byte-spool.md` / `generic-api-key` / 19 | Documentation passes the variable `customer_spool_key`; no literal credential is present. |
+| `sdk/python/tests/test_deployment_policy.py` / `generic-api-key` / 22 | Deterministic public tokenization golden output for synthetic input; this is content-protection output, not an authentication bearer token. |
+| `sdk/python/tests/test_span_protection.py` / `generic-api-key` / 24 | Same public synthetic privacy canary used by metadata-disclosure regression tests. |
+| `sdk/typescript/test/deployment-policy.test.ts` / `generic-api-key` / 20 | Cross-language deterministic tokenization golden output matching the Python fixture; no service credential. |
+
+This classification does not provide production security acceptance. A fresh
+commit containing the same synthetic canary must still fail detection, proving
+that these exact historical fingerprints do not exempt future matches.

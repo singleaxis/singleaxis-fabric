@@ -8,6 +8,12 @@ owner: project-lead
 
 # 021 — ReplayMetadata envelope
 
+Current-boundary note (2026-10-02): the historical commercial-only
+reconstruction wording below concerns action replay and operational graph
+services. Current OSS libraries also provide authorized stored-byte resolution
+and offline evidence comparison. Those read-only capabilities do not execute
+agent actions or establish complete capture by themselves.
+
 > **Scope split.** This spec covers a single emit-only capture
 > primitive: a versioned `fabric.replay` span event that bundles the
 > metadata a replay engine needs to reconstruct a decision. The OSS

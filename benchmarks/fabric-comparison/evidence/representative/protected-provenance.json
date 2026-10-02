@@ -1,0 +1,34 @@
+{
+  "verified_at_utc": "2026-10-02T17:47:54.491180+00:00",
+  "fabric_source_sha256": "6c30a07e663971306b71cdadaa2f648017736e49be20c04696c2532a29252c5a",
+  "benchmark_file_identities": {
+    "test_benchmark.py": "c335941c4b5a59b54c74f4c76533f732083455696f10c36d18b289925202eb9e",
+    "exception_redaction.py": "1470ad340037f07a9b5a684b32fa11da126fb2d6feaf1f3d64792ccc5ee16feb",
+    "adapters.py": "8fd659e499437d8429926bdc118fbd1b5f818c25c263bd497deb4a42467268d6",
+    "run.py": "8d12908c9927d52a83c378aa037b26136a63c59c3aa8b269a5a56be3b9c8efdc",
+    "integration_cost.py": "46b7a1933967d9dc7e37a27d1891c23cbce212b3c7f2c307281929287fb028bb"
+  },
+  "source_matches_final_timed_run": true,
+  "regression_command": "PYTHONPATH=sdk/python/src <BENCHMARK_VENV>/bin/python -m pytest -q benchmarks/fabric-comparison/test_benchmark.py",
+  "regression_result": "15 passed in 14.18s",
+  "probes": {
+    "fabric-managed": {
+      "mode": "fabric-auto",
+      "managed_provider": true,
+      "exception_redaction_exporter": false,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "raw_canary_in_export": false
+    },
+    "openinference-redacted": {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": true,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "raw_canary_in_export": false
+    }
+  }
+}

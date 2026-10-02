@@ -18,6 +18,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import ReadableSpan
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 @pytest.fixture(scope="session")
 def span_exporter() -> InMemorySpanExporter:
     exporter = InMemorySpanExporter()
-    provider = TracerProvider()
+    provider = TracerProvider(sampler=ALWAYS_ON)
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     return exporter

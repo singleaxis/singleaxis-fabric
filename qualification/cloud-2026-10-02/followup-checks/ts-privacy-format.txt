@@ -1,0 +1,6 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 format
+> prettier --check .
+
+Checking formatting...
+All matched files use Prettier code style!

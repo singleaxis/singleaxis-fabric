@@ -1,0 +1,194 @@
+{
+  "mode": "openinference-auto",
+  "managed_provider": false,
+  "exception_redaction_exporter": true,
+  "fault": "none",
+  "setup_ms": 30.850766,
+  "workload_ms": 25.135664,
+  "flush_ms": 0.031257,
+  "truth_actions": 7,
+  "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+  "declared_scope_actions": 4,
+  "captured_local_records": 4,
+  "exported_spans": 4,
+  "error_records": 1,
+  "export_attempts": 4,
+  "failed_export_spans": 0,
+  "raw_canary_in_export": false,
+  "unwrapped_action_captured": false,
+  "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+  "captured_action_ids": [
+    [
+      "background",
+      "one"
+    ],
+    [
+      "model",
+      "success"
+    ],
+    [
+      "retry",
+      "first"
+    ],
+    [
+      "retry",
+      "second"
+    ]
+  ],
+  "independent_inventory_unmatched_action_ids": [
+    [
+      "bypass",
+      "one"
+    ],
+    [
+      "file",
+      "one"
+    ],
+    [
+      "process",
+      "one"
+    ]
+  ],
+  "recording_gaps": null,
+  "provider_model_attribute_spans": 3,
+  "token_usage_attribute_spans": 3,
+  "caller_attempt_attribute_spans": 0,
+  "policy_event_statuses": [],
+  "snapshot": null,
+  "spans": [
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0x4e0c66b9e71b0cf5424b9529a7d25168",
+        "span_id": "0x50a30f8d44e5cda2",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:45.276896Z",
+      "end_time": "2026-10-02T17:46:45.278893Z",
+      "status": {
+        "status_code": "OK"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "output.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"model:success\"}",
+        "llm.model_name": "benchmark-local",
+        "llm.token_count.total": 2,
+        "llm.token_count.prompt": 1,
+        "llm.token_count.completion": 1,
+        "llm.finish_reason": "stop",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0xea5256174c527d537db8de06e06b27cf",
+        "span_id": "0x5c66dec5915fbb9d",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:45.279644Z",
+      "end_time": "2026-10-02T17:46:45.281789Z",
+      "status": {
+        "status_code": "ERROR"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"retry:first\"}",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0xaa4b1f7f915954218def76218e71fa1b",
+        "span_id": "0x1f474379f80536ee",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:45.282439Z",
+      "end_time": "2026-10-02T17:46:45.284073Z",
+      "status": {
+        "status_code": "OK"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "output.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"retry:second\"}",
+        "llm.model_name": "benchmark-local",
+        "llm.token_count.total": 2,
+        "llm.token_count.prompt": 1,
+        "llm.token_count.completion": 1,
+        "llm.finish_reason": "stop",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "ChatCompletion",
+      "context": {
+        "trace_id": "0x16c5959096a4b80944c69b48f72aed88",
+        "span_id": "0x33f1d8b22cb3ba20",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.INTERNAL",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:46:45.297802Z",
+      "end_time": "2026-10-02T17:46:45.300513Z",
+      "status": {
+        "status_code": "OK"
+      },
+      "attributes": {
+        "llm.system": "openai",
+        "input.value": "__REDACTED__",
+        "output.value": "__REDACTED__",
+        "llm.invocation_parameters": "{\"model\": \"benchmark-local\", \"user\": \"background:one\"}",
+        "llm.model_name": "benchmark-local",
+        "llm.token_count.total": 2,
+        "llm.token_count.prompt": 1,
+        "llm.token_count.completion": 1,
+        "llm.finish_reason": "stop",
+        "openinference.span.kind": "LLM"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    }
+  ]
+}

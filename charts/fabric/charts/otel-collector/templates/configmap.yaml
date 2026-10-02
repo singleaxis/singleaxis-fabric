@@ -19,6 +19,9 @@ data:
             {{- if .Values.receiver.evidenceSourceBinding.enabled }}
             auth:
               authenticator: bearertokenauth/evidence_source
+            {{- else if .Values.receiver.workloadAuthentication.enabled }}
+            auth:
+              authenticator: bearertokenauth/workload
             {{- end }}
             # Bound per-request work: metadata-only records are small, so
             # 8 MiB is generous headroom that also bounds the worst-case
@@ -42,6 +45,9 @@ data:
             {{- if .Values.receiver.evidenceSourceBinding.enabled }}
             auth:
               authenticator: bearertokenauth/evidence_source
+            {{- else if .Values.receiver.workloadAuthentication.enabled }}
+            auth:
+              authenticator: bearertokenauth/workload
             {{- end }}
             # Zero-value timeouts let a client hold a connection open
             # mid-headers indefinitely; auth runs after the read.
@@ -64,6 +70,11 @@ data:
       {{- if .Values.receiver.evidenceSourceBinding.enabled }}
       bearertokenauth/evidence_source:
         filename: /etc/fabric/evidence-source/token
+        require_single_token: true
+      {{- end }}
+      {{- if .Values.receiver.workloadAuthentication.enabled }}
+      bearertokenauth/workload:
+        filename: /etc/fabric/workload-auth/token
         require_single_token: true
       {{- end }}
       {{- if .Values.exporter.sendingQueue.persistence.enabled }}
@@ -148,6 +159,9 @@ data:
         - health_check
         {{- if .Values.receiver.evidenceSourceBinding.enabled }}
         - bearertokenauth/evidence_source
+        {{- end }}
+        {{- if .Values.receiver.workloadAuthentication.enabled }}
+        - bearertokenauth/workload
         {{- end }}
         {{- if .Values.exporter.sendingQueue.persistence.enabled }}
         - file_storage/fabric

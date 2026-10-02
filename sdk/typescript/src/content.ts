@@ -9,7 +9,9 @@
  * `ContentResolver` (resolver.ts), and the `ContentRole` vocabulary.
  */
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+
+import { sha256BytesPrefixed } from "./hash.js";
 
 export const SCHEMA_CONTENT_OBJECT = "fabric.content-object/v1";
 export const SCHEMA_TRANSCRIPT_MANIFEST = "fabric.transcript-manifest/v1";
@@ -88,7 +90,7 @@ export function sortForJson(value: unknown): unknown {
 }
 
 export function sha256Prefixed(data: Uint8Array): string {
-  return "sha256:" + createHash("sha256").update(data).digest("hex");
+  return sha256BytesPrefixed(data);
 }
 
 /**
@@ -135,10 +137,9 @@ export function truncateBytes(data: Uint8Array, maxBytes: number): Uint8Array {
     return data;
   }
   let end = maxBytes;
-  while (end > 0 && ((data[end - 1] ?? 0) & UTF8_LEAD_OR_ASCII_MASK) === UTF8_CONTINUATION) {
-    end -= 1;
-  }
-  if (end > 0 && (data[end - 1] ?? 0) >= UTF8_LEAD_OR_ASCII_MASK) {
+  // Only back up when the first excluded byte continues a character.
+  // Looking at the last retained byte would discard a complete final rune.
+  while (end > 0 && ((data[end] ?? 0) & UTF8_LEAD_OR_ASCII_MASK) === UTF8_CONTINUATION) {
     end -= 1;
   }
   return data.subarray(0, end);
@@ -287,10 +288,16 @@ export class TranscriptManifest {
   }
 
   rolesObserved(): string[] {
-    return [...new Set(this.items.map((i) => i.role))].sort();
+    return [
+      ...new Set(this.items.filter((i) => DESCRIPTOR_STATUSES.has(i.status)).map((i) => i.role)),
+    ].sort();
   }
 
+  /** Serialize an observed transcript; an empty accumulator has no transcript. */
   toJSON(): Record<string, unknown> {
+    if (this.items.length === 0) {
+      throw new Error("Cannot serialize transcript manifest with no observations");
+    }
     const doc: Record<string, unknown> = {
       schema_version: SCHEMA_TRANSCRIPT_MANIFEST,
       manifest_id: this.manifest_id,
@@ -298,8 +305,10 @@ export class TranscriptManifest {
       agent_id: this.agent_id,
       decision_id: this.decision_id,
       producer: this.producer,
-      roles_enabled: [...this.roles_enabled].sort(),
-      roles_observed: this.rolesObserved(),
+      coverage: {
+        roles_enabled: [...this.roles_enabled].sort(),
+        roles_observed: this.rolesObserved(),
+      },
       items: this.items,
       completeness: this.completeness(),
     };

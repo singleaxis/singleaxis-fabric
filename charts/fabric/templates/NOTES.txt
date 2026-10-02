@@ -11,6 +11,7 @@ Runtime:
 {{- $otel := index .Values "otel-collector" | default dict }}
 Receiver TLS:  {{ ternary "required" "development/plaintext" (dig "receiver" "requireTLS" false $otel) }}
 Client certs:  {{ ternary "required" "not required" (dig "receiver" "requireClientCertificate" false $otel) }}
+Workload auth: {{ ternary "required (dedicated bearer credential)" "not enabled" (dig "receiver" "workloadAuthentication" "enabled" false $otel) }}
 Sampling:      unavailable in recorder v1 (accepted audit activity is not sampled)
 Debug export:  {{ ternary "ON (development only)" "OFF" (dig "debugExporter" "enabled" false $otel) }}
 
@@ -38,3 +39,7 @@ Check health:
 
 This release does not install runtime guardrails, prompt-time PII controls,
 judges, red-team runners, governance, or management services.
+
+Configuration acceptance is not production qualification. Identity and storage
+review references are operator assertions, not runtime proof of workload
+identity, encryption, capture completeness, or destination durable readback.

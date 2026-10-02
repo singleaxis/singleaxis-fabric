@@ -32,7 +32,6 @@ recorded in the clear.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -47,6 +46,8 @@ from fabric._attributes import (
 )
 from fabric._calls import ToolErrorCategory
 from fabric._crosscut import apply_cross_cutting
+
+from .._hashes import sha256_hex
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -67,7 +68,7 @@ def _sha256_hex(value: str) -> str:
     # ``surrogatepass`` keeps hashing total on lone UTF-16 surrogates,
     # matching the SDK-wide hash helper so a hash computed here is
     # byte-identical to one a record module would produce.
-    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(value)
 
 
 @runtime_checkable

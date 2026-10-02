@@ -64,7 +64,7 @@ will ask.
 - **Formatter:** `gofmt`.
 - **Linter:** `go vet` (golangci-lint optional locally).
 - **Tests:** standard library `testing`; `testify` where helpful.
-- **Modules:** `go mod`, `go.sum` committed; CI runs `go mod tidy -check`.
+- **Modules:** `go mod`, `go.sum` committed; use `go mod tidy -diff` for a non-mutating tidy check on the pinned toolchain.
 
 ### TypeScript
 
@@ -105,8 +105,9 @@ Minimum coverage bars on new code:
 
 ### Integration and end-to-end tests
 
-- `deploy/compose/qualify.sh` — live compose stack proving
-  authenticated ingress, protection, durable queue, and delivery.
+- `deploy/compose/qualify.sh` — local evaluation stack testing protection,
+  durable queue and controlled-sink delivery. This path is plaintext and
+  unauthenticated; it does not qualify authenticated production ingress.
 - `e2e.yml` kind job — Helm install on a real cluster, fsync sink,
   queue-survives-pod-restart proof.
 - `examples/harness-smoke` — SDK-to-node trace smoke.
@@ -167,8 +168,13 @@ candidate precedes promotion (`X.Y.Z-rc.N`).
 
 ### SBOM
 
-- SPDX and CycloneDX SBOMs per published image, generated with `syft`,
-  attached to the release.
+- Design target: SPDX and CycloneDX SBOMs per published image, generated
+  with `syft` and attached to the release.
+- Current implementation note (2026-10-02): the release workflow enables
+  BuildKit SBOM/provenance attestations and keyless OCI signatures; it does
+  not implement that dual-format `syft` attachment target. Publication also
+  rebuilds images after CI rather than promoting the exact scanned image
+  bytes. Do not claim the target or exact scanned-byte promotion as shipped.
 
 ### Contract packaging
 

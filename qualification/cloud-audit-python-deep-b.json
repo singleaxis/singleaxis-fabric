@@ -1,0 +1,4535 @@
+{
+  "completed_files": 24,
+  "date": "2026-10-02",
+  "files": [
+    {
+      "bytes": 18475,
+      "contract": "Optional execution context mints UUID4 or preserves supplied IDs, applies explicit-over-active-over-config correlation precedence, stamps attempt/retry fields, restores nested/sequential ContextVars, guards reentry and records completed/failed context lifecycle; async context uses same metadata.",
+      "limits": "Execution completed is context-manager lifecycle, not all detached producer/evidence closure. No concurrent detached child task, cross-process transport, physical retry or durable evidence proof in this file.",
+      "line_count": 462,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "In-memory spans, exact config/correlation values, exception identity/status and active_execution reads.",
+      "path": "sdk/python/tests/test_execution.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_execution.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 2,
+          "line": 49,
+          "name": "test_execution_mints_uuid4_when_id_absent"
+        },
+        {
+          "assertions": 5,
+          "line": 57,
+          "name": "test_execution_uses_supplied_id"
+        },
+        {
+          "assertions": 6,
+          "line": 68,
+          "name": "test_execution_span_shape"
+        },
+        {
+          "assertions": 1,
+          "line": 82,
+          "name": "test_execution_extra_attributes_stamped"
+        },
+        {
+          "assertions": 0,
+          "line": 90,
+          "name": "test_execution_attributes_reject_reserved_namespace"
+        },
+        {
+          "assertions": 11,
+          "line": 103,
+          "name": "test_execution_span_carries_all_seven_fields"
+        },
+        {
+          "assertions": 4,
+          "line": 128,
+          "name": "test_execution_attempt_fields_omitted_when_absent"
+        },
+        {
+          "assertions": 8,
+          "line": 142,
+          "name": "test_execution_attempt_defaults_from_config"
+        },
+        {
+          "assertions": 4,
+          "line": 166,
+          "name": "test_explicit_execution_attempt_param_beats_config"
+        },
+        {
+          "assertions": 4,
+          "line": 193,
+          "name": "test_decision_inside_execution_inherits_ids"
+        },
+        {
+          "assertions": 11,
+          "line": 206,
+          "name": "test_decision_inside_execution_inherits_attempt_metadata"
+        },
+        {
+          "assertions": 4,
+          "line": 236,
+          "name": "test_active_execution_attempt_overrides_config"
+        },
+        {
+          "assertions": 4,
+          "line": 263,
+          "name": "test_decision_with_attempt_config_no_execution_stamps_from_config"
+        },
+        {
+          "assertions": 4,
+          "line": 284,
+          "name": "test_explicit_decision_kwarg_beats_active_execution"
+        },
+        {
+          "assertions": 4,
+          "line": 300,
+          "name": "test_decision_outside_execution_uses_config"
+        },
+        {
+          "assertions": 4,
+          "line": 318,
+          "name": "test_decision_outside_execution_no_config_omits_ids"
+        },
+        {
+          "assertions": 2,
+          "line": 330,
+          "name": "test_active_execution_overrides_config"
+        },
+        {
+          "assertions": 5,
+          "line": 351,
+          "name": "test_execution_status_failed_on_exception"
+        },
+        {
+          "assertions": 2,
+          "line": 373,
+          "name": "test_execution_status_completed_on_success"
+        },
+        {
+          "assertions": 4,
+          "line": 385,
+          "name": "test_async_execution"
+        },
+        {
+          "assertions": 4,
+          "line": 408,
+          "name": "test_contextvar_resets_after_exit"
+        },
+        {
+          "assertions": 3,
+          "line": 417,
+          "name": "test_sequential_executions_do_not_leak"
+        },
+        {
+          "assertions": 5,
+          "line": 435,
+          "name": "test_nested_executions_restore_outer"
+        },
+        {
+          "assertions": 0,
+          "line": 452,
+          "name": "test_execution_rejects_reentry"
+        },
+        {
+          "assertions": 1,
+          "line": 461,
+          "name": "test_execution_is_exported"
+        }
+      ],
+      "sha256": "1cec870e51238665f641c1d951b52997ed0abdc1290a7d91415c84888a50c7f7",
+      "test_function_count": 25
+    },
+    {
+      "bytes": 33651,
+      "contract": "Manual arbitrary-kind interactions hash target by default and metadata always, allow explicit raw target, validate direction and omit optionals; baseline comparisons/taxonomy tags/HMAC and Ed25519 results stamp metadata; coverage notices deduplicate process-wide; embedded PII scans are bounded and recognize email/SSN/phone within UTF8 cap.",
+      "findings": [
+        "claim-limit: manual arbitrary-kind acceptance and cross-cutting key absence have stronger test names/comments than their assertions establish."
+      ],
+      "limits": "Arbitrary kind acceptance is not automatic observation of arbitrary activity, despite one test's completeness-guarantee comment. Coverage registry is self-reported and cannot discover missed instrumentation. Signature labels verify supplied digest only, not provenance; baseline/taxonomy do not enforce policy. Raw target opt-out, kinds/tags/names remain caller metadata. cross_cutting_absent_is_byte_identical checks key absence only, not complete byte identity.",
+      "line_count": 836,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Independent hashlib/HMAC, generated Ed25519 keys, in-memory full-span canary scans, fixture taxonomies and wall-clock bound checks plus manually supplied calls.",
+      "path": "sdk/python/tests/test_generic_interaction.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_generic_interaction.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 8,
+          "line": 87,
+          "name": "test_record_interaction_event_shape"
+        },
+        {
+          "assertions": 2,
+          "line": 109,
+          "name": "test_record_interaction_target_requires_explicit_raw_opt_out"
+        },
+        {
+          "assertions": 1,
+          "line": 120,
+          "name": "test_record_interaction_arbitrary_kind_is_captured"
+        },
+        {
+          "assertions": 0,
+          "line": 130,
+          "name": "test_record_interaction_kind_warns_on_pii_shape"
+        },
+        {
+          "assertions": 0,
+          "line": 144,
+          "name": "test_record_interaction_raw_target_warns_on_pii_shape"
+        },
+        {
+          "assertions": 0,
+          "line": 157,
+          "name": "test_record_interaction_redacted_target_does_not_warn"
+        },
+        {
+          "assertions": 6,
+          "line": 168,
+          "name": "test_record_interaction_optionals_omitted"
+        },
+        {
+          "assertions": 3,
+          "line": 182,
+          "name": "test_record_interaction_rolling_count_and_kinds"
+        },
+        {
+          "assertions": 1,
+          "line": 198,
+          "name": "test_record_interaction_accepts_all_directions"
+        },
+        {
+          "assertions": 0,
+          "line": 209,
+          "name": "test_record_interaction_rejects_bad_direction"
+        },
+        {
+          "assertions": 2,
+          "line": 218,
+          "name": "test_record_interaction_metadata_is_hashed_not_raw"
+        },
+        {
+          "assertions": 4,
+          "line": 230,
+          "name": "test_record_interaction_redacted_target"
+        },
+        {
+          "assertions": 3,
+          "line": 243,
+          "name": "test_record_interaction_no_raw_data_leak"
+        },
+        {
+          "assertions": 3,
+          "line": 273,
+          "name": "test_baseline_check_match_deviation_unknown"
+        },
+        {
+          "assertions": 3,
+          "line": 280,
+          "name": "test_baseline_load_from_dict_and_file"
+        },
+        {
+          "assertions": 0,
+          "line": 291,
+          "name": "test_baseline_load_rejects_non_object_json"
+        },
+        {
+          "assertions": 3,
+          "line": 298,
+          "name": "test_baseline_is_generic_across_surfaces"
+        },
+        {
+          "assertions": 2,
+          "line": 325,
+          "name": "test_baseline_check_stamps_name_and_status"
+        },
+        {
+          "assertions": 2,
+          "line": 336,
+          "name": "test_baseline_unknown_status_on_emitted_event"
+        },
+        {
+          "assertions": 0,
+          "line": 352,
+          "name": "test_record_interaction_rejects_bad_baseline_type"
+        },
+        {
+          "assertions": 1,
+          "line": 366,
+          "name": "test_tags_captured_on_interaction"
+        },
+        {
+          "assertions": 1,
+          "line": 375,
+          "name": "test_arbitrary_tags_always_allowed"
+        },
+        {
+          "assertions": 1,
+          "line": 385,
+          "name": "test_empty_tags_dropped"
+        },
+        {
+          "assertions": 0,
+          "line": 394,
+          "name": "test_tags_reject_non_string"
+        },
+        {
+          "assertions": 2,
+          "line": 403,
+          "name": "test_bundled_taxonomies_present"
+        },
+        {
+          "assertions": 7,
+          "line": 409,
+          "name": "test_taxonomy_validate_and_lookup"
+        },
+        {
+          "assertions": 2,
+          "line": 422,
+          "name": "test_taxonomy_validate_rejects_malformed_tag"
+        },
+        {
+          "assertions": 3,
+          "line": 428,
+          "name": "test_validate_tag_against_any_loaded_taxonomy"
+        },
+        {
+          "assertions": 2,
+          "line": 437,
+          "name": "test_taxonomy_drop_in_json_zero_code"
+        },
+        {
+          "assertions": 0,
+          "line": 451,
+          "name": "test_taxonomy_unknown_bundled_name_raises"
+        },
+        {
+          "assertions": 3,
+          "line": 463,
+          "name": "test_verify_signature_hmac_verified"
+        },
+        {
+          "assertions": 1,
+          "line": 473,
+          "name": "test_verify_signature_hmac_failed"
+        },
+        {
+          "assertions": 0,
+          "line": 479,
+          "name": "test_verify_signature_unknown_scheme_raises"
+        },
+        {
+          "assertions": 5,
+          "line": 484,
+          "name": "test_verify_signature_ed25519_verified_and_failed"
+        },
+        {
+          "assertions": 2,
+          "line": 511,
+          "name": "test_ed25519_degrades_cleanly_without_cryptography"
+        },
+        {
+          "assertions": 3,
+          "line": 524,
+          "name": "test_signature_check_stamps_results"
+        },
+        {
+          "assertions": 2,
+          "line": 546,
+          "name": "test_signature_failed_is_stamped_false"
+        },
+        {
+          "assertions": 1,
+          "line": 565,
+          "name": "test_signature_secret_never_on_span"
+        },
+        {
+          "assertions": 0,
+          "line": 583,
+          "name": "test_record_interaction_rejects_bad_signature_type"
+        },
+        {
+          "assertions": 4,
+          "line": 597,
+          "name": "test_coverage_fires_once_per_kind"
+        },
+        {
+          "assertions": 1,
+          "line": 611,
+          "name": "test_coverage_fires_for_each_new_kind"
+        },
+        {
+          "assertions": 1,
+          "line": 622,
+          "name": "test_coverage_is_process_wide_one_shot"
+        },
+        {
+          "assertions": 1,
+          "line": 634,
+          "name": "test_coverage_unclassified_deviation_signal"
+        },
+        {
+          "assertions": 1,
+          "line": 649,
+          "name": "test_coverage_deviation_with_tags_is_classified"
+        },
+        {
+          "assertions": 1,
+          "line": 673,
+          "name": "test_cross_cutting_on_skill"
+        },
+        {
+          "assertions": 1,
+          "line": 681,
+          "name": "test_cross_cutting_on_hook"
+        },
+        {
+          "assertions": 1,
+          "line": 689,
+          "name": "test_cross_cutting_on_file_access"
+        },
+        {
+          "assertions": 1,
+          "line": 707,
+          "name": "test_cross_cutting_on_delegation"
+        },
+        {
+          "assertions": 2,
+          "line": 718,
+          "name": "test_cross_cutting_on_tool_call"
+        },
+        {
+          "assertions": 1,
+          "line": 740,
+          "name": "test_cross_cutting_on_mcp_inventory"
+        },
+        {
+          "assertions": 1,
+          "line": 754,
+          "name": "test_cross_cutting_absent_is_byte_identical"
+        },
+        {
+          "assertions": 1,
+          "line": 769,
+          "name": "test_embedded_pii_scan_is_bounded_on_long_input"
+        },
+        {
+          "assertions": 1,
+          "line": 784,
+          "name": "test_embedded_email_scan_is_linear_when_prescreen_matches"
+        },
+        {
+          "assertions": 1,
+          "line": 795,
+          "name": "test_embedded_pii_scan_still_detects_within_cap"
+        },
+        {
+          "assertions": 1,
+          "line": 811,
+          "name": "test_embedded_pii_prescreens_keep_every_regex_shape"
+        },
+        {
+          "assertions": 2,
+          "line": 819,
+          "name": "test_embedded_pii_at_exact_8192_byte_boundary_is_detected"
+        },
+        {
+          "assertions": 2,
+          "line": 829,
+          "name": "test_embedded_pii_scan_limit_counts_utf8_bytes"
+        }
+      ],
+      "sha256": "97c916ec2f835e98a4a01d865af5c7461782d3056ecee7ffa4d7ec86e1888ac9",
+      "test_function_count": 57
+    },
+    {
+      "bytes": 59291,
+      "contract": "Legacy text/JSON governed-reference capture is explicit opt-in and role-scoped; canonicalization/frozen inputs, inline/process/spooled delivery, settlement registration races, durable cleanup, manifest revision reconciliation, tenant-safe references, corruption/deletion/absence and partial/truncated outcomes are exercised. Export resolves verified bytes and marks missing objects as integrity failure; concurrent decisions keep content distinct.",
+      "findings": [
+        "coverage-gap: test_writer_queue_exhaustion_reports_dropped does not require any dropped item and allows a no-overflow run.",
+        "coverage-gap: test_runtime_manifests_validate_against_contract does not construct pending case named in docstring."
+      ],
+      "limits": "This legacy ContentWriter path persists base64 content in owner-only JSON spool; it is distinct from newer encrypted ByteEvidenceRecorder spool and DeploymentPolicy prequeue protection. No real external model/tool/cloud store; S3 tests only constructor validation. Recovery test explicitly closes old writer and is not SIGKILL proof. Some tests permit fast delivery instead of forcing restart. Queue exhaustion test balances totals but does not require a drop occurred. Runtime schema test claims pending in docstring but builds stored/failed only. Manifest integrity verifies listed items, not completeness of arbitrary unobserved producers.",
+      "line_count": 1552,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Actual local filesystem content/manifests, independent expected bytes/canonical JSON/digests, controlled worker/store failures, spool record planting, generated schema validation and fresh writer/resolver instances.",
+      "path": "sdk/python/tests/test_governed_content.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_governed_content.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": false,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 2,
+          "line": 83,
+          "name": "test_metadata_only_is_default_and_writes_nothing"
+        },
+        {
+          "assertions": 2,
+          "line": 102,
+          "name": "test_env_content_mode_cannot_enable_governed"
+        },
+        {
+          "assertions": 2,
+          "line": 111,
+          "name": "test_env_content_mode_metadata_disables_configured_capture"
+        },
+        {
+          "assertions": 0,
+          "line": 120,
+          "name": "test_config_requires_store"
+        },
+        {
+          "assertions": 0,
+          "line": 125,
+          "name": "test_config_requires_roles"
+        },
+        {
+          "assertions": 0,
+          "line": 131,
+          "name": "test_config_rejects_unknown_roles"
+        },
+        {
+          "assertions": 0,
+          "line": 138,
+          "name": "test_config_rejects_bad_durability"
+        },
+        {
+          "assertions": 0,
+          "line": 143,
+          "name": "test_spooled_requires_spool_dir"
+        },
+        {
+          "assertions": 0,
+          "line": 148,
+          "name": "test_non_governed_store_rejected"
+        },
+        {
+          "assertions": 2,
+          "line": 162,
+          "name": "test_canonical_bytes_json_sorts_keys"
+        },
+        {
+          "assertions": 1,
+          "line": 173,
+          "name": "test_canonical_bytes_text_verbatim"
+        },
+        {
+          "assertions": 0,
+          "line": 178,
+          "name": "test_canonical_bytes_rejects_binary"
+        },
+        {
+          "assertions": 4,
+          "line": 204,
+          "name": "test_writer_inline_stores_synchronously"
+        },
+        {
+          "assertions": 2,
+          "line": 219,
+          "name": "test_writer_process_mode_buffers_then_flushes"
+        },
+        {
+          "assertions": 3,
+          "line": 228,
+          "name": "test_worker_cannot_settle_before_pending_registration"
+        },
+        {
+          "assertions": 4,
+          "line": 249,
+          "name": "test_writer_spooled_survives_restart"
+        },
+        {
+          "assertions": 8,
+          "line": 294,
+          "name": "test_spooled_flush_waits_for_durable_cleanup"
+        },
+        {
+          "assertions": 7,
+          "line": 327,
+          "name": "test_spool_cleanup_failure_remains_pending_until_recovery"
+        },
+        {
+          "assertions": 2,
+          "line": 355,
+          "name": "test_writer_queue_exhaustion_reports_dropped"
+        },
+        {
+          "assertions": 1,
+          "line": 373,
+          "name": "test_writer_submit_after_close_fails"
+        },
+        {
+          "assertions": 1,
+          "line": 380,
+          "name": "test_writer_permanent_failure_marks_failed"
+        },
+        {
+          "assertions": 3,
+          "line": 427,
+          "name": "test_model_tool_model_manifest_covers_all_roles"
+        },
+        {
+          "assertions": 2,
+          "line": 451,
+          "name": "test_refs_land_on_spans_never_raw_content"
+        },
+        {
+          "assertions": 3,
+          "line": 468,
+          "name": "test_partial_output_captured"
+        },
+        {
+          "assertions": 3,
+          "line": 490,
+          "name": "test_role_filter_marks_unselected_not_captured"
+        },
+        {
+          "assertions": 3,
+          "line": 503,
+          "name": "test_source_mutation_after_capture_is_frozen"
+        },
+        {
+          "assertions": 1,
+          "line": 526,
+          "name": "test_retrieval_memory_side_effect_context_capture"
+        },
+        {
+          "assertions": 3,
+          "line": 563,
+          "name": "test_oversized_payload_truncated_explicitly"
+        },
+        {
+          "assertions": 2,
+          "line": 595,
+          "name": "test_resolve_verified_bytes"
+        },
+        {
+          "assertions": 1,
+          "line": 603,
+          "name": "test_resolve_outside_configured_store_denied"
+        },
+        {
+          "assertions": 1,
+          "line": 609,
+          "name": "test_resolve_cross_tenant_denied"
+        },
+        {
+          "assertions": 2,
+          "line": 619,
+          "name": "test_resolve_traversal_denied"
+        },
+        {
+          "assertions": 1,
+          "line": 629,
+          "name": "test_resolve_missing_object"
+        },
+        {
+          "assertions": 1,
+          "line": 636,
+          "name": "test_resolve_corrupted_bytes"
+        },
+        {
+          "assertions": 0,
+          "line": 645,
+          "name": "test_corrupted_preexisting_object_rejected"
+        },
+        {
+          "assertions": 5,
+          "line": 671,
+          "name": "test_export_transcript_verified"
+        },
+        {
+          "assertions": 3,
+          "line": 691,
+          "name": "test_export_survives_deleted_object"
+        },
+        {
+          "assertions": 2,
+          "line": 708,
+          "name": "test_manifest_for_decision_alias"
+        },
+        {
+          "assertions": 0,
+          "line": 715,
+          "name": "test_resolver_requires_a_store"
+        },
+        {
+          "assertions": 4,
+          "line": 725,
+          "name": "test_pending_ref_resolves_as_missing_then_available"
+        },
+        {
+          "assertions": 3,
+          "line": 750,
+          "name": "test_manifest_written_on_decision_close"
+        },
+        {
+          "assertions": 2,
+          "line": 762,
+          "name": "test_submit_uses_utf8_boundary_safe_truncation"
+        },
+        {
+          "assertions": 3,
+          "line": 779,
+          "name": "test_manifest_role_constant_matches_contract"
+        },
+        {
+          "assertions": 0,
+          "line": 809,
+          "name": "test_unsafe_tenant_id_rejected"
+        },
+        {
+          "assertions": 1,
+          "line": 815,
+          "name": "test_safe_tenant_id_accepted"
+        },
+        {
+          "assertions": 1,
+          "line": 820,
+          "name": "test_local_tenant_root_stays_inside_configured_root"
+        },
+        {
+          "assertions": 0,
+          "line": 828,
+          "name": "test_client_rejects_store_tenant_mismatch"
+        },
+        {
+          "assertions": 0,
+          "line": 837,
+          "name": "test_s3_store_rejects_unsafe_tenant_and_prefix"
+        },
+        {
+          "assertions": 3,
+          "line": 846,
+          "name": "test_identical_content_two_tenants_stays_isolated"
+        },
+        {
+          "assertions": 1,
+          "line": 868,
+          "name": "test_governed_local_directories_are_owner_only"
+        },
+        {
+          "assertions": 2,
+          "line": 887,
+          "name": "test_resolve_missing_descriptor_is_unverified"
+        },
+        {
+          "assertions": 2,
+          "line": 900,
+          "name": "test_resolve_invalid_descriptor_is_unverified"
+        },
+        {
+          "assertions": 2,
+          "line": 914,
+          "name": "test_resolve_descriptor_tenant_mismatch_denied"
+        },
+        {
+          "assertions": 2,
+          "line": 957,
+          "name": "test_fast_store_cannot_settle_before_registration"
+        },
+        {
+          "assertions": 1,
+          "line": 968,
+          "name": "test_worker_settlement_reaches_the_manifest"
+        },
+        {
+          "assertions": 2,
+          "line": 980,
+          "name": "test_subscriber_count_returns_to_baseline"
+        },
+        {
+          "assertions": 3,
+          "line": 1003,
+          "name": "test_failed_item_carries_no_descriptor_or_ref"
+        },
+        {
+          "assertions": 2,
+          "line": 1020,
+          "name": "test_pending_to_failed_reconciliation"
+        },
+        {
+          "assertions": 2,
+          "line": 1050,
+          "name": "test_partial_output_stays_honest"
+        },
+        {
+          "assertions": 0,
+          "line": 1069,
+          "name": "test_runtime_manifests_validate_against_contract"
+        },
+        {
+          "assertions": 1,
+          "line": 1128,
+          "name": "test_decision_close_does_not_wait_on_object_delivery"
+        },
+        {
+          "assertions": 2,
+          "line": 1141,
+          "name": "test_manifest_ref_stamped_before_bytes_land"
+        },
+        {
+          "assertions": 3,
+          "line": 1154,
+          "name": "test_manifest_bytes_arrive_via_writer_not_close"
+        },
+        {
+          "assertions": 6,
+          "line": 1170,
+          "name": "test_concurrent_decisions_keep_manifests_and_content_distinct"
+        },
+        {
+          "assertions": 7,
+          "line": 1226,
+          "name": "test_spool_record_carries_full_identity"
+        },
+        {
+          "assertions": 3,
+          "line": 1273,
+          "name": "test_spool_permissions"
+        },
+        {
+          "assertions": 3,
+          "line": 1299,
+          "name": "test_recovery_processes_more_records_than_queue_capacity"
+        },
+        {
+          "assertions": 3,
+          "line": 1336,
+          "name": "test_corrupt_spool_entry_quarantined"
+        },
+        {
+          "assertions": 0,
+          "line": 1351,
+          "name": "test_queue_max_items_zero_rejected"
+        },
+        {
+          "assertions": 2,
+          "line": 1358,
+          "name": "test_recovered_manifest_reconciles_after_restart"
+        },
+        {
+          "assertions": 7,
+          "line": 1384,
+          "name": "test_recovered_object_reconciles_owning_manifest"
+        },
+        {
+          "assertions": 5,
+          "line": 1450,
+          "name": "test_stale_manifest_revision_cannot_delete_latest_spool"
+        },
+        {
+          "assertions": 3,
+          "line": 1488,
+          "name": "test_dropped_manifest_rewrite_does_not_suppress_accepted_revision"
+        },
+        {
+          "assertions": 1,
+          "line": 1519,
+          "name": "test_duplicate_recovery_is_idempotent"
+        },
+        {
+          "assertions": 5,
+          "line": 1537,
+          "name": "test_partial_output_preserves_payload_truncation"
+        }
+      ],
+      "sha256": "52dfc3c6aaf28f97efee4a70da1e0d2ea4e575ec85738f35a2276da1882bb558",
+      "test_function_count": 75
+    },
+    {
+      "bytes": 34040,
+      "contract": "Actual local policy-bound capabilities, closed descriptors, AES256GCM encrypted original/derivative storage, authorized stable readback/restart, permission separation, expiry, namespace/policy binding, role/protection consistency, retention/hold/delete no-resurrection, signed audit tamper and conflict/concurrency are tested. PolicyCaptureSession preserves delegate identity/errors and withholds raw/hash canaries for omit/metadata-only/redact/tokenize, including redactor failure.",
+      "limits": "Local shared-secret authority and synthetic clock, not external IAM/KMS, remote durable destination or independent authority. Store receipt explicitly production_qualified=false and independent_durability_proof=false; region_verified=false. Lifecycle tombstone plus read refusal is not physical media erasure guarantee. Delegated business effects are local functions; no actual paid provider or external approval/control.",
+      "line_count": 878,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Generated local grants/keys, independent expected binary bytes/digests, real owner-private file hierarchy, re-signed malicious envelopes/claims, direct file mutation, controlled clock and eight concurrent store handles.",
+      "path": "sdk/python/tests/test_governed_store.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_governed_store.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 17,
+          "line": 161,
+          "name": "test_protocol_durable_encrypted_roundtrip"
+        },
+        {
+          "assertions": 4,
+          "line": 187,
+          "name": "test_plaintext_is_explicit_development_only"
+        },
+        {
+          "assertions": 1,
+          "line": 224,
+          "name": "test_permission_separation"
+        },
+        {
+          "assertions": 1,
+          "line": 243,
+          "name": "test_expired_grant_denied_before_any_storage"
+        },
+        {
+          "assertions": 1,
+          "line": 264,
+          "name": "test_policy_and_identity_binding"
+        },
+        {
+          "assertions": 0,
+          "line": 275,
+          "name": "test_unknown_or_empty_permissions_rejected"
+        },
+        {
+          "assertions": 2,
+          "line": 280,
+          "name": "test_signed_claims_tamper_wrong_issuer_and_explicit_policy_permissions"
+        },
+        {
+          "assertions": 1,
+          "line": 343,
+          "name": "test_descriptor_rejected_before_persistence"
+        },
+        {
+          "assertions": 5,
+          "line": 352,
+          "name": "test_original_derivative_hard_namespace_separation"
+        },
+        {
+          "assertions": 12,
+          "line": 374,
+          "name": "test_hold_delete_retention_and_no_resurrection"
+        },
+        {
+          "assertions": 2,
+          "line": 403,
+          "name": "test_lifecycle_validation_and_nonexpired_purge"
+        },
+        {
+          "assertions": 2,
+          "line": 416,
+          "name": "test_conflicts_concurrency_and_tamper"
+        },
+        {
+          "assertions": 0,
+          "line": 439,
+          "name": "test_wrong_encryption_key_and_signed_bad_digest_fail_readback"
+        },
+        {
+          "assertions": 1,
+          "line": 464,
+          "name": "test_reference_traversal_rejected"
+        },
+        {
+          "assertions": 1,
+          "line": 473,
+          "name": "test_symlinks_and_hardlinks_rejected"
+        },
+        {
+          "assertions": 1,
+          "line": 510,
+          "name": "test_audit_tamper_refuses_mutation_and_read"
+        },
+        {
+          "assertions": 2,
+          "line": 524,
+          "name": "test_failed_object_replace_has_intent_no_completed_claim"
+        },
+        {
+          "assertions": 6,
+          "line": 534,
+          "name": "test_existing_call_recorder_records_actual_encrypted_bytes"
+        },
+        {
+          "assertions": 4,
+          "line": 563,
+          "name": "test_capture_auth_failure_does_not_change_application_result"
+        },
+        {
+          "assertions": 8,
+          "line": 579,
+          "name": "test_expired_reference_capability_becomes_a_passive_evidence_gap"
+        },
+        {
+          "assertions": 1,
+          "line": 606,
+          "name": "test_constructor_validation_closed_store_and_no_legacy_bypass"
+        },
+        {
+          "assertions": 1,
+          "line": 657,
+          "name": "test_descriptor_metadata_cannot_smuggle_plaintext"
+        },
+        {
+          "assertions": 12,
+          "line": 666,
+          "name": "test_public_policy_capture_routes_original_and_derivative_planes"
+        },
+        {
+          "assertions": 11,
+          "line": 715,
+          "name": "test_policy_session_preserves_delegate_and_keeps_withheld_secrets_out_of_evidence"
+        },
+        {
+          "assertions": 0,
+          "line": 796,
+          "name": "test_even_signed_invalid_closed_claims_are_rejected"
+        },
+        {
+          "assertions": 1,
+          "line": 807,
+          "name": "test_untrusted_files_and_metadata_require_closed_states"
+        },
+        {
+          "assertions": 0,
+          "line": 847,
+          "name": "test_signed_audit_from_another_scope_is_refused"
+        },
+        {
+          "assertions": 7,
+          "line": 859,
+          "name": "test_new_policy_version_writes_same_namespace_without_rebinding_old_objects"
+        }
+      ],
+      "sha256": "ca13a865c8622b97429e20844d7c0d400e92508407d6bb04a2220b4d890868fe",
+      "test_function_count": 28
+    },
+    {
+      "bytes": 4967,
+      "contract": "Surrogate-containing remember/tool inputs remain recordable; finite custom attributes pass while NaN and infinities fail; tracestate encoded size is capped; configured span attribute limit clips values.",
+      "findings": [
+        "coverage-gap: test_surrogate_hash_is_total_and_deterministic compares hash('plain') with itself despite its no-golden-drift comment."
+      ],
+      "limits": "Hash plain-text comparison is self-comparison and does not pin a golden hash. Provider limit test constructs TracerProvider directly, so it does not exercise install_default_provider. No external exporter or prequeue policy assertion.",
+      "line_count": 127,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Exported in-memory spans, exception expectations, deterministic repeated hash values, and directly constructed TracerProvider limits.",
+      "path": "sdk/python/tests/test_hardening.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_hardening.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 2,
+          "line": 35,
+          "name": "test_remember_with_lone_surrogate_does_not_crash"
+        },
+        {
+          "assertions": 2,
+          "line": 48,
+          "name": "test_tool_call_args_and_result_with_surrogate_do_not_crash"
+        },
+        {
+          "assertions": 3,
+          "line": 70,
+          "name": "test_surrogate_hash_is_total_and_deterministic"
+        },
+        {
+          "assertions": 0,
+          "line": 80,
+          "name": "test_set_attribute_rejects_non_finite_floats"
+        },
+        {
+          "assertions": 0,
+          "line": 99,
+          "name": "test_tracestate_rejects_oversized_value"
+        },
+        {
+          "assertions": 2,
+          "line": 106,
+          "name": "test_tracestate_normal_ids_round_trip"
+        },
+        {
+          "assertions": 1,
+          "line": 116,
+          "name": "test_default_provider_attribute_length_is_bounded"
+        }
+      ],
+      "sha256": "cd763d275fa144b7685c9228a332817a41d03a7f72da22780192af3d0bacc5f7",
+      "test_function_count": 7
+    },
+    {
+      "bytes": 8004,
+      "contract": "Physical local HTTP retries are distinct attempts; independent witness distinguishes observed dispatch from adapter bypass; stream exhaustion, early close, unconsumed stream and observer failures preserve business effects and honest pending/partial/cancelled states.",
+      "limits": "Controlled loopback HTTP only; no TLS or external provider/service committed-result proof. Local qualified completion explicitly remains production_complete=false. Several existing actions occur inside assertions; separate syntactic audit records those candidates.",
+      "line_count": 183,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Loopback IndependentHTTPWitness stores actual requests, compared against observer metadata, attempt identity and exact returned chunks; recorder stores final bytes.",
+      "path": "sdk/python/tests/test_http_dispatch.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_http_dispatch.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 5,
+          "line": 20,
+          "name": "test_physical_retries_and_direct_bypass_are_independently_visible"
+        },
+        {
+          "assertions": 8,
+          "line": 41,
+          "name": "test_actual_call_recorder_final_bytes_stream_and_partial_cancel"
+        },
+        {
+          "assertions": 4,
+          "line": 88,
+          "name": "test_unknown_route_event_cap_mutation_and_noop_observer_withhold"
+        },
+        {
+          "assertions": 4,
+          "line": 104,
+          "name": "test_transport_exception_and_unconsumed_stream_remain_unknown"
+        },
+        {
+          "assertions": 7,
+          "line": 118,
+          "name": "test_recorder_start_failure_noop_and_after_send_failure_preserve_http"
+        },
+        {
+          "assertions": 5,
+          "line": 174,
+          "name": "test_cancel_before_read_makes_no_physical_request"
+        }
+      ],
+      "sha256": "b2f68cb54d6122ed382875cb2939910ac637ebab6804b397ad83bb73acf0030d",
+      "test_function_count": 6
+    },
+    {
+      "bytes": 19151,
+      "contract": "PII-shaped identifiers warn; placeholder tenant/agent values reject or warn through explicit escape hatch; accepted opaque/unicode/long identifiers round-trip unchanged; other correlation/profile fields retain separate rules. Authorized follow-up removes raw PII-shaped value from warning while preserving field/shape/action guidance, suppression and strict-warning behavior; five canary variants plus strict escalation regression added.",
+      "findings": [
+        "fixed: raw email/phone/free-text PII-shaped value was embedded in warnings. Parent authorized narrow diagnostic-only change;190 focused tests plus Ruff check/format and source mypy passed. Whole-package coverage remains a separate full-suite gate."
+      ],
+      "limits": "Identifiers themselves remain accepted and emitted as caller metadata; diagnostic redaction does not redact metadata. Hypothetical name-object test never invokes SDK validator, so only establishes its fixture is not validated. Not tenant authorization enforcement.",
+      "line_count": 508,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Captured warnings and ValueError plus direct config field values across explicit acceptance/rejection matrices.",
+      "path": "sdk/python/tests/test_id_validators.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_id_validators.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": false,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 3,
+          "line": 46,
+          "name": "test_email_shaped_value_warns"
+        },
+        {
+          "assertions": 0,
+          "line": 54,
+          "name": "test_phone_shaped_value_warns"
+        },
+        {
+          "assertions": 5,
+          "line": 69,
+          "name": "test_pii_diagnostic_omits_raw_identifier_canaries"
+        },
+        {
+          "assertions": 3,
+          "line": 82,
+          "name": "test_pii_diagnostic_strict_warning_filter_remains_effective_and_private"
+        },
+        {
+          "assertions": 0,
+          "line": 93,
+          "name": "test_plain_opaque_id_does_not_warn"
+        },
+        {
+          "assertions": 0,
+          "line": 102,
+          "name": "test_none_and_empty_do_not_warn"
+        },
+        {
+          "assertions": 0,
+          "line": 109,
+          "name": "test_quiet_env_suppresses"
+        },
+        {
+          "assertions": 1,
+          "line": 121,
+          "name": "test_fabricconfig_warns_on_email_tenant_id"
+        },
+        {
+          "assertions": 1,
+          "line": 127,
+          "name": "test_fabricconfig_warns_on_phone_agent_id"
+        },
+        {
+          "assertions": 0,
+          "line": 133,
+          "name": "test_fabricconfig_plain_ids_do_not_warn"
+        },
+        {
+          "assertions": 0,
+          "line": 139,
+          "name": "test_fabricconfig_quiet_env_suppresses"
+        },
+        {
+          "assertions": 1,
+          "line": 160,
+          "name": "test_name_fields_never_checked"
+        },
+        {
+          "assertions": 1,
+          "line": 173,
+          "name": "test_one_shot_with_default_filter"
+        },
+        {
+          "assertions": 1,
+          "line": 189,
+          "name": "test_decision_warns_on_email_user_id"
+        },
+        {
+          "assertions": 1,
+          "line": 201,
+          "name": "test_decision_warns_on_phone_session_id"
+        },
+        {
+          "assertions": 0,
+          "line": 212,
+          "name": "test_decision_plain_ids_do_not_warn"
+        },
+        {
+          "assertions": 0,
+          "line": 252,
+          "name": "test_placeholder_tenant_id_is_rejected"
+        },
+        {
+          "assertions": 0,
+          "line": 265,
+          "name": "test_placeholder_agent_id_is_rejected"
+        },
+        {
+          "assertions": 0,
+          "line": 273,
+          "name": "test_placeholder_matching_is_case_insensitive"
+        },
+        {
+          "assertions": 0,
+          "line": 281,
+          "name": "test_placeholder_is_rejected_after_whitespace_strip"
+        },
+        {
+          "assertions": 0,
+          "line": 289,
+          "name": "test_empty_and_whitespace_only_still_rejected"
+        },
+        {
+          "assertions": 3,
+          "line": 297,
+          "name": "test_rejection_message_names_the_field_and_the_value"
+        },
+        {
+          "assertions": 0,
+          "line": 308,
+          "name": "test_from_env_rejects_placeholder_tenant"
+        },
+        {
+          "assertions": 2,
+          "line": 373,
+          "name": "test_realistic_identifiers_are_accepted"
+        },
+        {
+          "assertions": 3,
+          "line": 386,
+          "name": "test_no_length_or_charset_rule_is_imposed"
+        },
+        {
+          "assertions": 2,
+          "line": 397,
+          "name": "test_case_is_preserved_not_normalized"
+        },
+        {
+          "assertions": 1,
+          "line": 426,
+          "name": "test_copy_paste_marker_warns_but_is_accepted"
+        },
+        {
+          "assertions": 1,
+          "line": 436,
+          "name": "test_copy_paste_marker_warning_names_the_field"
+        },
+        {
+          "assertions": 1,
+          "line": 445,
+          "name": "test_allow_placeholder_env_downgrades_raise_to_warning"
+        },
+        {
+          "assertions": 0,
+          "line": 457,
+          "name": "test_allow_placeholder_env_only_honours_exactly_one"
+        },
+        {
+          "assertions": 0,
+          "line": 468,
+          "name": "test_allow_placeholder_env_does_not_disable_the_empty_check"
+        },
+        {
+          "assertions": 0,
+          "line": 480,
+          "name": "test_check_identifier_noops_on_empty_and_non_string"
+        },
+        {
+          "assertions": 1,
+          "line": 490,
+          "name": "test_check_identifier_is_not_applied_to_profile"
+        },
+        {
+          "assertions": 2,
+          "line": 498,
+          "name": "test_check_identifier_is_not_applied_to_execution_ids"
+        }
+      ],
+      "sha256": "2b4c9d79b926c90b64ff105d8fff5809042735872a396739fda5adf0e8b6fedb",
+      "test_function_count": 34
+    },
+    {
+      "bytes": 13424,
+      "contract": "Signed feed verifies pinned independent expectation, exact native cursor/attempt/role/outcome/byte inventories and binary/empty/chunk values; missing tail/attempt/role is incomplete, malformed/substituted/unauthorized feed invalid, absent readback unverified; preflight prevents byte reads.",
+      "limits": "Offline synthetic independent ledger fixture, not real provider ledger provenance or hardware trust; signing helper shares protocol canonicalization API. Resolver is in memory with bounded-read assertion, not customer storage.",
+      "line_count": 408,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Generated Ed25519 keys plus separately supplied expected attempts and synthetic resolver bytes; mutations re-signed to test pinned expectation independently from signature validity.",
+      "path": "sdk/python/tests/test_independent_feed.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_independent_feed.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 5,
+          "line": 221,
+          "name": "test_two_attempts_binary_empty_stream_and_metadata_only"
+        },
+        {
+          "assertions": 2,
+          "line": 241,
+          "name": "test_expected_native_ledger_not_derived_from_signed_feed"
+        },
+        {
+          "assertions": 2,
+          "line": 268,
+          "name": "test_exact_byte_mismatch_and_store_outage_are_distinct"
+        },
+        {
+          "assertions": 4,
+          "line": 278,
+          "name": "test_signature_preflight_and_missing_authority_prevent_reads"
+        },
+        {
+          "assertions": 2,
+          "line": 293,
+          "name": "test_noncanonical_and_duplicate_fields_rejected"
+        },
+        {
+          "assertions": 2,
+          "line": 327,
+          "name": "test_pinned_feed_identity_rejects_substitution"
+        },
+        {
+          "assertions": 5,
+          "line": 337,
+          "name": "test_revoked_expired_and_wrong_issuer_prevent_reads"
+        },
+        {
+          "assertions": 4,
+          "line": 354,
+          "name": "test_malformed_rows_and_document_bounds_are_rejected_before_reads"
+        },
+        {
+          "assertions": 3,
+          "line": 394,
+          "name": "test_resolver_binding_mismatch_and_absent_checkpoint_are_unverified"
+        }
+      ],
+      "sha256": "1c4027066282a22b625ecf55d6fa12762eb16f3e6457a3af2a90af0540436461",
+      "test_function_count": 9
+    },
+    {
+      "bytes": 5074,
+      "contract": "Authorized namespace reads enforce owner-only directories/files, bounded object IDs/read sizes, every-path permissions, no symlink/hardlink aliases, stable file identity and cross-tenant isolation; errors omit supplied canary/path.",
+      "limits": "One injected read race interleaving; no remote IAM, source attestation, filesystem power-loss or arbitrary race proof.",
+      "line_count": 131,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Real temporary POSIX file hierarchy plus injected read-time mutation and direct bytes comparisons.",
+      "path": "sdk/python/tests/test_independent_store.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_independent_store.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 2,
+          "line": 28,
+          "name": "test_binary_and_empty_reads"
+        },
+        {
+          "assertions": 0,
+          "line": 37,
+          "name": "test_unsafe_ids_rejected"
+        },
+        {
+          "assertions": 2,
+          "line": 46,
+          "name": "test_permissions_are_checked_each_read"
+        },
+        {
+          "assertions": 0,
+          "line": 60,
+          "name": "test_symlinks_are_rejected"
+        },
+        {
+          "assertions": 0,
+          "line": 73,
+          "name": "test_hardlink_oversize_and_other_tenant"
+        },
+        {
+          "assertions": 0,
+          "line": 89,
+          "name": "test_invalid_limits"
+        },
+        {
+          "assertions": 0,
+          "line": 99,
+          "name": "test_changed_during_read_is_unavailable"
+        },
+        {
+          "assertions": 0,
+          "line": 119,
+          "name": "test_shared_ancestor_symlink_and_broad_root_are_rejected"
+        }
+      ],
+      "sha256": "356158726e41a39d42cad4fe5a3cfe82ad404e432836a0c436244d0fc4342c85",
+      "test_function_count": 8
+    },
+    {
+      "bytes": 10415,
+      "contract": "Wrapper preserves fake-session results/arguments, records tool/server/transport/result counts, hashes args/results, omits raw canaries, maps isError and tolerates missing/unsized result content; uninstrumented methods delegate.",
+      "limits": "No installed MCP SDK/server, network or stdio transport, session exception/cancellation test in this file, or permission enforcement. Legacy helper comment about deny discipline is not demonstrated functionality.",
+      "line_count": 293,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Explicit fake async MCP session and result objects; exact JSON argument digest independently calculated; exported spans inspected.",
+      "path": "sdk/python/tests/test_mcp_integration.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_mcp_integration.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 10,
+          "line": 67,
+          "name": "test_traced_call_tool_happy_path"
+        },
+        {
+          "assertions": 3,
+          "line": 108,
+          "name": "test_traced_call_tool_error_result"
+        },
+        {
+          "assertions": 5,
+          "line": 128,
+          "name": "test_traced_call_tool_no_arguments"
+        },
+        {
+          "assertions": 1,
+          "line": 149,
+          "name": "test_traced_call_tool_unsized_content"
+        },
+        {
+          "assertions": 3,
+          "line": 170,
+          "name": "test_traced_call_tool_plain_result"
+        },
+        {
+          "assertions": 1,
+          "line": 189,
+          "name": "test_traced_call_tool_unserializable_result"
+        },
+        {
+          "assertions": 5,
+          "line": 209,
+          "name": "test_instrumented_session_call_tool"
+        },
+        {
+          "assertions": 2,
+          "line": 235,
+          "name": "test_instrumented_session_passthrough"
+        },
+        {
+          "assertions": 5,
+          "line": 253,
+          "name": "test_inventory_omits_empty_server_and_transport"
+        },
+        {
+          "assertions": 2,
+          "line": 277,
+          "name": "test_inventory_stamps_identified_server_and_transport"
+        }
+      ],
+      "sha256": "9367c23598a649360d528f777723090f7268ceb42aa4a4866b5773393c45bdcd",
+      "test_function_count": 10
+    },
+    {
+      "bytes": 9942,
+      "contract": "Memory records independently hash content; validate kinds/schema; aggregate remember/invalidate/forget metadata, optional fields, key/tags/TTL and returned tuples; raw contents absent exported spans/events.",
+      "limits": "No actual memory backend, TTL enforcement, deletion/erasure proof, or model-context provenance. Keys/tags remain caller metadata; forget marker and absence of content hash do not prove deletion. Hashes do not anonymize low-entropy values.",
+      "line_count": 293,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Independent hashlib golden value and in-memory span attributes/events.",
+      "path": "sdk/python/tests/test_memory.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_memory.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 5,
+          "line": 32,
+          "name": "test_from_content_hashes_the_content"
+        },
+        {
+          "assertions": 1,
+          "line": 44,
+          "name": "test_from_content_accepts_string_kind"
+        },
+        {
+          "assertions": 0,
+          "line": 49,
+          "name": "test_from_content_rejects_unknown_kind"
+        },
+        {
+          "assertions": 0,
+          "line": 54,
+          "name": "test_model_rejects_non_hex_content_hash"
+        },
+        {
+          "assertions": 0,
+          "line": 59,
+          "name": "test_model_rejects_extra_fields"
+        },
+        {
+          "assertions": 6,
+          "line": 71,
+          "name": "test_remember_emits_span_event"
+        },
+        {
+          "assertions": 4,
+          "line": 93,
+          "name": "test_remember_omits_optional_attrs_when_unset"
+        },
+        {
+          "assertions": 2,
+          "line": 114,
+          "name": "test_remember_updates_rolling_span_aggregates"
+        },
+        {
+          "assertions": 3,
+          "line": 134,
+          "name": "test_remember_returns_and_stores_record"
+        },
+        {
+          "assertions": 1,
+          "line": 144,
+          "name": "test_remember_never_exposes_raw_content_on_span"
+        },
+        {
+          "assertions": 2,
+          "line": 163,
+          "name": "test_from_content_carries_invalidates"
+        },
+        {
+          "assertions": 1,
+          "line": 174,
+          "name": "test_remember_emits_invalidates_attr"
+        },
+        {
+          "assertions": 1,
+          "line": 195,
+          "name": "test_remember_omits_invalidates_when_unset"
+        },
+        {
+          "assertions": 4,
+          "line": 215,
+          "name": "test_from_erase_has_no_content_hash"
+        },
+        {
+          "assertions": 5,
+          "line": 223,
+          "name": "test_forget_emits_erase_event"
+        },
+        {
+          "assertions": 3,
+          "line": 243,
+          "name": "test_forget_tenant_scope_marker"
+        },
+        {
+          "assertions": 3,
+          "line": 261,
+          "name": "test_forget_updates_erase_count"
+        },
+        {
+          "assertions": 2,
+          "line": 279,
+          "name": "test_forget_never_exposes_raw_content_on_span"
+        }
+      ],
+      "sha256": "e05f0d0e76fdb3f4e0f7930fc31ea7504a2b91cda7e4d1d348c694725e241241",
+      "test_function_count": 18
+    },
+    {
+      "bytes": 21276,
+      "contract": "Persisted metadata batches retain exact IDs and payload through real loopback429/503/lost ACK retries, source/sink restart and child-process exits at persist/send/result/cursor boundaries; partial/malformed200 never becomes full ACK; source pending/substitution, capacity, owner conflict, corrupted batch, fsync failure and temp recovery remain explicit and errors sanitized.",
+      "limits": "Node acceptance remains destination_durable=false. Test sink is not actual Fabric Collector. os._exit checkpoints and injected write failures do not exhaust machine power-loss/real fsync ordering. Some mutation calls still occur inside assert; previous syntactic ledger preserves candidates.",
+      "line_count": 570,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Independent HTTP sink writes received payload before response; file readback counts4101 then4103 exact IDs, stable batch hashes, source durable inventory and sender ack cursor. Selected failures injected at fixed checkpoints.",
+      "path": "sdk/python/tests/test_metadata_delivery.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_metadata_delivery.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 17,
+          "line": 188,
+          "name": "test_large_durable_inventory_http_loss_retry_and_both_process_restarts"
+        },
+        {
+          "assertions": 11,
+          "line": 250,
+          "name": "test_http_200_partial_or_invalid_is_never_full_ack"
+        },
+        {
+          "assertions": 3,
+          "line": 283,
+          "name": "test_valid_empty_or_zero_rejection_response"
+        },
+        {
+          "assertions": 9,
+          "line": 293,
+          "name": "test_timeout_then_permanent_rejection_persists_sanitized_evidence"
+        },
+        {
+          "assertions": 11,
+          "line": 340,
+          "name": "test_fresh_process_death_at_send_ack_cursor_boundaries"
+        },
+        {
+          "assertions": 9,
+          "line": 374,
+          "name": "test_source_inventory_excludes_pending_and_detects_readback_change"
+        },
+        {
+          "assertions": 4,
+          "line": 410,
+          "name": "test_capacity_rejection_is_visible_and_does_not_send"
+        },
+        {
+          "assertions": 2,
+          "line": 421,
+          "name": "test_cursor_cannot_lead_full_ack_ledger_and_owner_cannot_change"
+        },
+        {
+          "assertions": 2,
+          "line": 451,
+          "name": "test_batch_corruption_fails_closed"
+        },
+        {
+          "assertions": 5,
+          "line": 466,
+          "name": "test_background_worker_shutdown_is_bounded_during_blocked_transport"
+        },
+        {
+          "assertions": 0,
+          "line": 499,
+          "name": "test_transport_rejects_unsafe_endpoints"
+        },
+        {
+          "assertions": 1,
+          "line": 504,
+          "name": "test_duplicate_sender_owner_refused"
+        },
+        {
+          "assertions": 10,
+          "line": 515,
+          "name": "test_fsync_failure_cannot_publish_false_ack"
+        },
+        {
+          "assertions": 5,
+          "line": 555,
+          "name": "test_incomplete_uncommitted_temp_is_replayed_not_credited"
+        }
+      ],
+      "sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
+      "test_function_count": 14
+    },
+    {
+      "bytes": 25642,
+      "contract": "Fabric correlation fields round-trip through bounded W3C tracestate member, preserve vendor members and unicode identifiers, support legacy wire shape and precedence, reject wrong types/unbounded/deep/invalid payloads and contain decoder recursion; inject adds ambient traceparent and delegation lineage metadata.",
+      "limits": "Propagation values are unauthenticated caller-controlled correlation hints, not authorization/tenant attestation. Base64 is encoding, not privacy protection. No actual network hop, remote parent adoption, missing-hop reconciliation, parallel child lifecycle or durable closure proof.",
+      "line_count": 705,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Hand-built legacy encoded JSON plus generated carriers, direct extracted dataclass equality, real in-memory OTel span trace IDs and fake/real Decision interfaces.",
+      "path": "sdk/python/tests/test_propagation.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_propagation.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 1,
+          "line": 29,
+          "name": "test_round_trip_all_fields"
+        },
+        {
+          "assertions": 6,
+          "line": 42,
+          "name": "test_round_trip_optional_fields_none"
+        },
+        {
+          "assertions": 4,
+          "line": 55,
+          "name": "test_round_trip_with_workflow_and_execution"
+        },
+        {
+          "assertions": 6,
+          "line": 73,
+          "name": "test_round_trip_with_execution_retry_metadata"
+        },
+        {
+          "assertions": 4,
+          "line": 97,
+          "name": "test_round_trip_workflow_execution_none"
+        },
+        {
+          "assertions": 4,
+          "line": 115,
+          "name": "test_old_format_member_decodes_workflow_execution_as_none"
+        },
+        {
+          "assertions": 3,
+          "line": 136,
+          "name": "test_workflow_special_chars_survive_round_trip"
+        },
+        {
+          "assertions": 3,
+          "line": 151,
+          "name": "test_existing_tracestate_preserved_and_fabric_is_leftmost"
+        },
+        {
+          "assertions": 2,
+          "line": 161,
+          "name": "test_reinject_replaces_no_duplicate"
+        },
+        {
+          "assertions": 4,
+          "line": 170,
+          "name": "test_special_chars_survive_round_trip"
+        },
+        {
+          "assertions": 1,
+          "line": 188,
+          "name": "test_extract_returns_none_without_tracestate"
+        },
+        {
+          "assertions": 1,
+          "line": 192,
+          "name": "test_extract_returns_none_without_fabric_member"
+        },
+        {
+          "assertions": 3,
+          "line": 196,
+          "name": "test_extract_returns_none_on_garbage_member"
+        },
+        {
+          "assertions": 3,
+          "line": 205,
+          "name": "test_parse_tolerates_whitespace_and_malformed_entries"
+        },
+        {
+          "assertions": 1,
+          "line": 227,
+          "name": "test_extract_returns_none_on_wrong_shaped_payload"
+        },
+        {
+          "assertions": 1,
+          "line": 234,
+          "name": "test_extract_returns_none_on_wrong_attempt_shape"
+        },
+        {
+          "assertions": 3,
+          "line": 243,
+          "name": "test_32_member_cap_kept_and_fabric_present"
+        },
+        {
+          "assertions": 0,
+          "line": 254,
+          "name": "test_inject_raises_on_oversized_member"
+        },
+        {
+          "assertions": 1,
+          "line": 336,
+          "name": "test_inject_decision_round_trip"
+        },
+        {
+          "assertions": 1,
+          "line": 349,
+          "name": "test_inject_decision_carries_workflow_execution"
+        },
+        {
+          "assertions": 1,
+          "line": 372,
+          "name": "test_inject_decision_carries_execution_retry_metadata"
+        },
+        {
+          "assertions": 4,
+          "line": 403,
+          "name": "test_round_trip_with_decision_id"
+        },
+        {
+          "assertions": 3,
+          "line": 425,
+          "name": "test_round_trip_decision_id_none"
+        },
+        {
+          "assertions": 1,
+          "line": 437,
+          "name": "test_inject_decision_accepts_a_real_decision"
+        },
+        {
+          "assertions": 1,
+          "line": 453,
+          "name": "test_inject_decision_real_decision_with_workflow_execution"
+        },
+        {
+          "assertions": 1,
+          "line": 478,
+          "name": "test_inject_decision_real_decision_with_execution_retry_metadata"
+        },
+        {
+          "assertions": 4,
+          "line": 511,
+          "name": "test_inject_decision_real_decision_without_workflow_execution"
+        },
+        {
+          "assertions": 2,
+          "line": 533,
+          "name": "test_inject_writes_traceparent_for_active_span"
+        },
+        {
+          "assertions": 2,
+          "line": 550,
+          "name": "test_inject_without_active_span_writes_no_traceparent"
+        },
+        {
+          "assertions": 3,
+          "line": 559,
+          "name": "test_inject_decision_writes_traceparent"
+        },
+        {
+          "assertions": 2,
+          "line": 573,
+          "name": "test_delegate_carrier_writes_traceparent"
+        },
+        {
+          "assertions": 6,
+          "line": 591,
+          "name": "test_decision_accepts_extracted_context_and_stamps_lineage"
+        },
+        {
+          "assertions": 4,
+          "line": 625,
+          "name": "test_decision_context_explicit_ids_win"
+        },
+        {
+          "assertions": 0,
+          "line": 649,
+          "name": "test_decision_without_context_or_ids_still_fails"
+        },
+        {
+          "assertions": 2,
+          "line": 655,
+          "name": "test_decision_without_context_stamps_no_lineage"
+        },
+        {
+          "assertions": 1,
+          "line": 667,
+          "name": "test_extract_deep_untrusted_json_never_interrupts_caller"
+        },
+        {
+          "assertions": 1,
+          "line": 674,
+          "name": "test_extract_rejects_unbounded_or_wrong_typed_header"
+        },
+        {
+          "assertions": 1,
+          "line": 679,
+          "name": "test_extract_does_not_decode_oversized_member"
+        },
+        {
+          "assertions": 1,
+          "line": 688,
+          "name": "test_extract_rejects_excess_members_even_with_valid_fabric_context"
+        },
+        {
+          "assertions": 1,
+          "line": 696,
+          "name": "test_extract_contains_decoder_recursion_failure"
+        }
+      ],
+      "sha256": "d0407f0d4c44ec5aef82277250779be827a5872e1e57a2720fba0dce1c23e611",
+      "test_function_count": 40
+    },
+    {
+      "bytes": 11794,
+      "contract": "Exact per-record set identities/digests bind distinct source/node/destination accepted/durable stages; count-preserving substitutions, expired/revoked keys, malformed/duplicate entries reject. Metadata canonicalization normalizes order while rejecting raw/unknown/duplicate fields; governed policy changes change receipt digest and malformed binding rejects.",
+      "limits": "Valid signature establishes configured issuer statement, not physical storage by itself. Positive governed record is synthetic pending metadata, so no content readback or global completion proof; projector and normalizer are both SDK components.",
+      "line_count": 337,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Generated Ed25519 signing keys, independent receipt expectation, deliberate stage/ID/shape mutations and projected governed metadata.",
+      "path": "sdk/python/tests/test_receipt_sets.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_receipt_sets.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 3,
+          "line": 81,
+          "name": "test_exact_set"
+        },
+        {
+          "assertions": 1,
+          "line": 97,
+          "name": "test_missing_is_unverified"
+        },
+        {
+          "assertions": 1,
+          "line": 110,
+          "name": "test_count_preserving_substitution_and_stage_reuse_fail"
+        },
+        {
+          "assertions": 1,
+          "line": 128,
+          "name": "test_expiry"
+        },
+        {
+          "assertions": 2,
+          "line": 143,
+          "name": "test_revocation_and_tampered_signatures_fail"
+        },
+        {
+          "assertions": 1,
+          "line": 168,
+          "name": "test_canonical_order_and_duplicate_rejection"
+        },
+        {
+          "assertions": 0,
+          "line": 189,
+          "name": "test_invalid_entries"
+        },
+        {
+          "assertions": 2,
+          "line": 227,
+          "name": "test_metadata_normalizes_attribute_order_and_grouping"
+        },
+        {
+          "assertions": 0,
+          "line": 239,
+          "name": "test_metadata_rejects_unsafe_or_ambiguous_records"
+        },
+        {
+          "assertions": 0,
+          "line": 258,
+          "name": "test_duplicate_json_and_oversized_metadata_rejected"
+        },
+        {
+          "assertions": 2,
+          "line": 306,
+          "name": "test_governed_projected_metadata_preserves_exact_receipt_binding"
+        },
+        {
+          "assertions": 0,
+          "line": 320,
+          "name": "test_governed_receipt_metadata_rejects_invalid_binding"
+        }
+      ],
+      "sha256": "bafee1c2652009e969f909de924e1cc70a80da75e0bec65876696512c228a416",
+      "test_function_count": 12
+    },
+    {
+      "bytes": 19706,
+      "contract": "Independent loopback HTTP SQLite ingress deduplicates exact batches, forwards once/lost-ACK replay, signs fresh exact stage inventories, survives real separate-process SIGKILL/restart; rejects auth/scope/stage/key/expiry/tail/corruption, enforces byte/record capacity including empty aliases and shared-service concurrency, bounded partial-body timeout and owner-private DB.",
+      "limits": "Explicit actual_otlp_collector=false reference fixture. SIGKILL test compares recovered receipt expectation entries but does not cryptographically verify that particular restart proof; other same-file tests verify signatures. No production TLS/IAM/key custody/replicated storage guarantee.",
+      "line_count": 476,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Actual HTTP services and independent SQLite rows, generated signing keys, direct database tampering/deletion, independent expected entries, fresh service process after kill, two competing service instances.",
+      "path": "sdk/python/tests/test_reference_receipts.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_reference_receipts.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 10,
+          "line": 126,
+          "name": "test_independent_http_ingress_dedup_forward_and_fresh_restart"
+        },
+        {
+          "assertions": 7,
+          "line": 156,
+          "name": "test_scope_stage_revocation_key_swap_staleness_tail_and_corruption"
+        },
+        {
+          "assertions": 15,
+          "line": 215,
+          "name": "test_auth_scope_conflicts_capacity_and_commit_failures"
+        },
+        {
+          "assertions": 5,
+          "line": 250,
+          "name": "test_protected_object_adapter_readback_delete_and_tamper"
+        },
+        {
+          "assertions": 6,
+          "line": 290,
+          "name": "test_forward_lost_ack_replay_stable_and_role_scope_permissions"
+        },
+        {
+          "assertions": 5,
+          "line": 319,
+          "name": "test_actual_separate_process_sigkill_restart_receipts"
+        },
+        {
+          "assertions": 0,
+          "line": 374,
+          "name": "test_unsafe_database_permissions_and_symlink_refused"
+        },
+        {
+          "assertions": 2,
+          "line": 387,
+          "name": "test_http_partial_body_timeout_is_bounded"
+        },
+        {
+          "assertions": 9,
+          "line": 402,
+          "name": "test_empty_ingress_aliases_have_finite_budget_across_restart"
+        },
+        {
+          "assertions": 5,
+          "line": 423,
+          "name": "test_empty_metadata_batches_consume_record_capacity"
+        },
+        {
+          "assertions": 6,
+          "line": 434,
+          "name": "test_large_actual_inventory_requires_partitioned_receipts"
+        },
+        {
+          "assertions": 2,
+          "line": 467,
+          "name": "test_two_service_instances_cannot_overadmit_shared_capacity"
+        }
+      ],
+      "sha256": "9178c816dc1d3fd1a0426c34023cca76bd9920d1f2643b9a07c4278374155728",
+      "test_function_count": 12
+    },
+    {
+      "bytes": 5111,
+      "contract": "Emit correlation/version/state/tool/checkpoint metadata and collect only SUPPRESS side-effect keys; omit empty arrays.",
+      "limits": "SDK does not reconstruct or replay; no deterministic replay guarantee, independent state/tool hash resolution, or physical side effects. Service-like names are labels only.",
+      "line_count": 134,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Explicit synthetic decision records inspected via exported metadata.",
+      "path": "sdk/python/tests/test_replay_metadata.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_replay_metadata.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 3,
+          "line": 32,
+          "name": "test_emits_versioned_envelope"
+        },
+        {
+          "assertions": 1,
+          "line": 43,
+          "name": "test_execution_id_present_inside_execution"
+        },
+        {
+          "assertions": 1,
+          "line": 54,
+          "name": "test_execution_id_omitted_outside_execution"
+        },
+        {
+          "assertions": 1,
+          "line": 62,
+          "name": "test_checkpoint_ids_reflect_recorded_checkpoints"
+        },
+        {
+          "assertions": 2,
+          "line": 76,
+          "name": "test_suppressed_side_effect_ids_filter_only_suppress"
+        },
+        {
+          "assertions": 2,
+          "line": 102,
+          "name": "test_host_supplied_state_and_tool_result_hashes"
+        },
+        {
+          "assertions": 4,
+          "line": 116,
+          "name": "test_arrays_omitted_when_empty"
+        },
+        {
+          "assertions": 1,
+          "line": 127,
+          "name": "test_empty_tool_result_hashes_sequence_omitted"
+        }
+      ],
+      "sha256": "54e6269830844ee83671530505965636f2cdd213e59dc7db019b0ebf0b98e13f",
+      "test_function_count": 8
+    },
+    {
+      "bytes": 7326,
+      "contract": "Query records use independent SHA256 and validate source/schema; record result/hash/doc-ID/latency metadata, optional omission, aggregate sources and require active span; raw query fragments absent spans/events.",
+      "limits": "Caller-reported retrieval only, no actual retriever I/O, governed content resolution or proof selected chunks reached the model. Document IDs can intentionally differ in count from results.",
+      "line_count": 205,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Independent hashlib result and exported in-memory telemetry; malformed hash count raises.",
+      "path": "sdk/python/tests/test_retrieval.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_retrieval.py",
+        "path": "qualification/python-test-contracts/contracts-002.json",
+        "sha256": "214800cb180552ea7ae88e7496b0733291676641926d4dd93f4986c67a751899"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 6,
+          "line": 33,
+          "name": "test_from_query_hashes_the_query"
+        },
+        {
+          "assertions": 1,
+          "line": 47,
+          "name": "test_from_query_accepts_string_source"
+        },
+        {
+          "assertions": 0,
+          "line": 52,
+          "name": "test_from_query_rejects_unknown_source"
+        },
+        {
+          "assertions": 0,
+          "line": 57,
+          "name": "test_from_query_rejects_empty_query"
+        },
+        {
+          "assertions": 0,
+          "line": 62,
+          "name": "test_model_rejects_non_hex_query_hash"
+        },
+        {
+          "assertions": 0,
+          "line": 67,
+          "name": "test_model_rejects_extra_fields"
+        },
+        {
+          "assertions": 7,
+          "line": 81,
+          "name": "test_record_retrieval_emits_span_event"
+        },
+        {
+          "assertions": 0,
+          "line": 109,
+          "name": "test_record_retrieval_rejects_mismatched_hash_count"
+        },
+        {
+          "assertions": 5,
+          "line": 125,
+          "name": "test_record_retrieval_omits_optional_attrs_when_unset"
+        },
+        {
+          "assertions": 2,
+          "line": 147,
+          "name": "test_record_retrieval_updates_rolling_span_aggregates"
+        },
+        {
+          "assertions": 3,
+          "line": 167,
+          "name": "test_record_retrieval_returns_and_stores_record"
+        },
+        {
+          "assertions": 3,
+          "line": 177,
+          "name": "test_record_retrieval_never_exposes_raw_query_on_span"
+        },
+        {
+          "assertions": 0,
+          "line": 195,
+          "name": "test_record_retrieval_requires_live_span"
+        },
+        {
+          "assertions": 1,
+          "line": 202,
+          "name": "test_retrievals_empty_by_default"
+        }
+      ],
+      "sha256": "48b61f40bac1de76ab66dfec78b7861b396c911a7e46aeea14bd759168318a3f",
+      "test_function_count": 14
+    },
+    {
+      "bytes": 14322,
+      "contract": "Caller-reported side-effect records hash supplied request/result payloads, validate schema/enums/hash formats, aggregate counts/systems/types, preserve parent tool and supplied IDs or mint distinct UUID-shaped IDs; raw payload canaries absent spans/events.",
+      "findings": [
+        "claim-limit: side-effect status test names must not be used as independent physical effect or replay proof."
+      ],
+      "limits": "Default committed=True is caller-reported convention, not physical service witness. Tests named failed/rolled_back/replay_suppressed merely inspect committed/rollback_supported/replay_behavior flags; they do not prove rollback occurred or a replay engine suppressed effects. Requested/acknowledged/unknown state machine and independent service readback are outside this API/test contract.",
+      "line_count": 376,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Independent hashlib and explicit metadata values in in-memory events; no external service is invoked.",
+      "path": "sdk/python/tests/test_side_effect.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_side_effect.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 8,
+          "line": 30,
+          "name": "test_from_payloads_hashes_raw_payloads"
+        },
+        {
+          "assertions": 2,
+          "line": 54,
+          "name": "test_from_payloads_accepts_string_enums"
+        },
+        {
+          "assertions": 0,
+          "line": 65,
+          "name": "test_model_rejects_extra_fields"
+        },
+        {
+          "assertions": 0,
+          "line": 75,
+          "name": "test_model_rejects_bad_hash"
+        },
+        {
+          "assertions": 11,
+          "line": 85,
+          "name": "test_record_side_effect_emits_span_event"
+        },
+        {
+          "assertions": 3,
+          "line": 117,
+          "name": "test_record_side_effect_accepts_precomputed_hashes"
+        },
+        {
+          "assertions": 0,
+          "line": 140,
+          "name": "test_record_side_effect_rejects_ambiguous_payload_and_hash"
+        },
+        {
+          "assertions": 3,
+          "line": 155,
+          "name": "test_record_side_effect_updates_rolling_aggregates"
+        },
+        {
+          "assertions": 3,
+          "line": 170,
+          "name": "test_record_side_effect_returns_and_stores_record"
+        },
+        {
+          "assertions": 2,
+          "line": 184,
+          "name": "test_parent_tool_call_id_flows_onto_event_when_set"
+        },
+        {
+          "assertions": 2,
+          "line": 203,
+          "name": "test_parent_tool_call_id_absent_from_event_when_not_set"
+        },
+        {
+          "assertions": 1,
+          "line": 221,
+          "name": "test_parent_tool_call_id_flows_through_payload_path"
+        },
+        {
+          "assertions": 2,
+          "line": 242,
+          "name": "test_side_effect_id_minted_and_uuid_shaped"
+        },
+        {
+          "assertions": 2,
+          "line": 253,
+          "name": "test_side_effect_id_caller_supplied_is_honoured"
+        },
+        {
+          "assertions": 2,
+          "line": 267,
+          "name": "test_from_payloads_mints_and_honours_side_effect_id"
+        },
+        {
+          "assertions": 2,
+          "line": 286,
+          "name": "test_side_effect_state_committed"
+        },
+        {
+          "assertions": 2,
+          "line": 295,
+          "name": "test_side_effect_state_failed"
+        },
+        {
+          "assertions": 3,
+          "line": 309,
+          "name": "test_side_effect_state_rolled_back"
+        },
+        {
+          "assertions": 2,
+          "line": 325,
+          "name": "test_side_effect_state_replay_suppressed"
+        },
+        {
+          "assertions": 3,
+          "line": 339,
+          "name": "test_two_side_effects_get_distinct_ids"
+        },
+        {
+          "assertions": 3,
+          "line": 356,
+          "name": "test_record_side_effect_never_exposes_raw_payload_on_span"
+        }
+      ],
+      "sha256": "2f9a017cd00bd2721e58604c3c607d5194624a23299b047e78aba29c4c10f5c6",
+      "test_function_count": 21
+    },
+    {
+      "bytes": 18553,
+      "contract": "Durable metadata recovery increments epochs, exposes sequence gaps, bounds queue/index/quota, rejects corrupted/unsafe identities and fields, records explicit loss. Seal needs exact declared contiguous high-water inventory, no loss, disk/admission match and durable intent; late append invalidates seal in memory and restart.",
+      "limits": "Pre-fsync death can leave no recoverable record or gap, explicitly demonstrated; absence of journal gaps cannot establish complete run. Seal covers declared source ranges, not arbitrary undeclared producers. Permission failure test partly monkeypatches stat observation.",
+      "line_count": 544,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Temporary files read and deliberately corrupted/rehash-mutated, controlled worker gates, subprocess crash before write or after seal intent, injected fsync stages and recovered seal/gap inventories.",
+      "path": "sdk/python/tests/test_source_spool.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_source_spool.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 5,
+          "line": 72,
+          "name": "test_source_spool_fsync_recovery_and_new_epoch"
+        },
+        {
+          "assertions": 1,
+          "line": 92,
+          "name": "test_source_spool_recovery_exposes_missing_sequence_range"
+        },
+        {
+          "assertions": 4,
+          "line": 109,
+          "name": "test_crash_before_async_fsync_is_not_recoverable_without_external_truth"
+        },
+        {
+          "assertions": 4,
+          "line": 135,
+          "name": "test_source_spool_overflow_is_explicit_and_nonblocking"
+        },
+        {
+          "assertions": 3,
+          "line": 163,
+          "name": "test_source_spool_quota_write_failure_and_privacy"
+        },
+        {
+          "assertions": 0,
+          "line": 185,
+          "name": "test_source_spool_rejects_concurrent_owner_corruption_and_unsafe_entries"
+        },
+        {
+          "assertions": 0,
+          "line": 207,
+          "name": "test_source_spool_rejects_unsafe_root_and_identity"
+        },
+        {
+          "assertions": 2,
+          "line": 225,
+          "name": "test_source_spool_rejects_duplicate_positions_and_bounds_status_index"
+        },
+        {
+          "assertions": 1,
+          "line": 258,
+          "name": "test_source_spool_closed_metadata_rejects_unstructured_content"
+        },
+        {
+          "assertions": 7,
+          "line": 271,
+          "name": "test_seal_empty_epoch_and_recovery_of_unsealed_empty_epoch"
+        },
+        {
+          "assertions": 6,
+          "line": 292,
+          "name": "test_multisource_seal_survives_restart_and_accounts_for_capacity"
+        },
+        {
+          "assertions": 1,
+          "line": 319,
+          "name": "test_recovered_seal_fails_closed_on_disk_mismatch"
+        },
+        {
+          "assertions": 3,
+          "line": 378,
+          "name": "test_seal_detects_admission_time_substitution_and_declared_range"
+        },
+        {
+          "assertions": 1,
+          "line": 414,
+          "name": "test_seal_rejects_invalid_high_water"
+        },
+        {
+          "assertions": 2,
+          "line": 420,
+          "name": "test_seal_requires_contiguous_positions_and_no_loss"
+        },
+        {
+          "assertions": 3,
+          "line": 441,
+          "name": "test_seal_fsync_failure_never_recovers_as_verified"
+        },
+        {
+          "assertions": 2,
+          "line": 476,
+          "name": "test_seal_capacity_includes_intent_and_seal"
+        },
+        {
+          "assertions": 3,
+          "line": 489,
+          "name": "test_process_crash_after_intent_before_seal_is_unsealed"
+        },
+        {
+          "assertions": 1,
+          "line": 513,
+          "name": "test_seal_rejects_invalid_timeout"
+        },
+        {
+          "assertions": 5,
+          "line": 522,
+          "name": "test_late_append_during_seal_prevents_in_memory_success"
+        }
+      ],
+      "sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
+      "test_function_count": 20
+    },
+    {
+      "bytes": 27255,
+      "contract": "Manual skill/hook/file/delegation surfaces and fake MCP inventory emit expected closed metadata, counts, canonical hashes and optional omissions; privacy scans cover tool descriptions/schema/path; delegation depth restores on exceptions and failed injection does not advance counters; empty identifiers reject without counter drift.",
+      "limits": "No actual filesystem operation, child agent remote execution, skill/hook invocation, MCP wire transport or granted/exercised access witness. Tool names, skill/source names and other caller metadata are visible; raw-path opt-out intentionally emits path. The content privacy test passes only a precomputed hash into API, so it cannot test capture of raw file bytes. Closed delegation context is not all-producer completion.",
+      "line_count": 712,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Independent hashlib expected values, complete in-memory span-tree canary scans, fake asynchronous MCP listing session and explicit nested/async context managers.",
+      "path": "sdk/python/tests/test_surface_logging.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_surface_logging.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 8,
+          "line": 89,
+          "name": "test_mcp_inventory_event_shape"
+        },
+        {
+          "assertions": 1,
+          "line": 114,
+          "name": "test_mcp_inventory_def_hash_matches_canonical"
+        },
+        {
+          "assertions": 2,
+          "line": 134,
+          "name": "test_mcp_inventory_tools_hash_is_full_sha256"
+        },
+        {
+          "assertions": 2,
+          "line": 144,
+          "name": "test_mcp_inventory_counts_omitted_when_absent"
+        },
+        {
+          "assertions": 2,
+          "line": 153,
+          "name": "test_mcp_inventory_shadow_change_changes_hash"
+        },
+        {
+          "assertions": 2,
+          "line": 167,
+          "name": "test_mcp_inventory_no_raw_data_leak"
+        },
+        {
+          "assertions": 6,
+          "line": 205,
+          "name": "test_snapshot_inventory_auto_captures"
+        },
+        {
+          "assertions": 4,
+          "line": 221,
+          "name": "test_snapshot_inventory_tools_only_session"
+        },
+        {
+          "assertions": 2,
+          "line": 235,
+          "name": "test_mcp_inventory_object_tools"
+        },
+        {
+          "assertions": 6,
+          "line": 261,
+          "name": "test_record_skill_event_and_count"
+        },
+        {
+          "assertions": 3,
+          "line": 281,
+          "name": "test_record_skill_optionals_omitted"
+        },
+        {
+          "assertions": 1,
+          "line": 291,
+          "name": "test_record_skill_signed_false_is_stamped"
+        },
+        {
+          "assertions": 2,
+          "line": 299,
+          "name": "test_record_skill_rolling_count"
+        },
+        {
+          "assertions": 7,
+          "line": 315,
+          "name": "test_delegate_event_and_count"
+        },
+        {
+          "assertions": 2,
+          "line": 332,
+          "name": "test_delegate_default_protocol"
+        },
+        {
+          "assertions": 6,
+          "line": 340,
+          "name": "test_delegate_carrier_links_back_to_parent"
+        },
+        {
+          "assertions": 5,
+          "line": 355,
+          "name": "test_delegate_nesting_depth"
+        },
+        {
+          "assertions": 1,
+          "line": 376,
+          "name": "test_delegate_depth_pops_on_exception"
+        },
+        {
+          "assertions": 4,
+          "line": 386,
+          "name": "test_adelegate_async"
+        },
+        {
+          "assertions": 6,
+          "line": 406,
+          "name": "test_record_hook_event_and_count"
+        },
+        {
+          "assertions": 1,
+          "line": 430,
+          "name": "test_record_hook_accepts_all_phases"
+        },
+        {
+          "assertions": 0,
+          "line": 438,
+          "name": "test_record_hook_rejects_bad_phase"
+        },
+        {
+          "assertions": 3,
+          "line": 447,
+          "name": "test_record_hook_optionals_omitted"
+        },
+        {
+          "assertions": 7,
+          "line": 464,
+          "name": "test_record_file_access_hashes_path_by_default"
+        },
+        {
+          "assertions": 2,
+          "line": 486,
+          "name": "test_record_file_access_path_requires_explicit_raw_opt_out"
+        },
+        {
+          "assertions": 4,
+          "line": 497,
+          "name": "test_record_file_access_redacted_path"
+        },
+        {
+          "assertions": 1,
+          "line": 510,
+          "name": "test_record_file_access_all_operations"
+        },
+        {
+          "assertions": 0,
+          "line": 520,
+          "name": "test_record_file_access_rejects_bad_operation"
+        },
+        {
+          "assertions": 2,
+          "line": 529,
+          "name": "test_record_file_access_optionals_omitted"
+        },
+        {
+          "assertions": 1,
+          "line": 538,
+          "name": "test_record_file_access_rolling_count"
+        },
+        {
+          "assertions": 2,
+          "line": 547,
+          "name": "test_record_file_access_contents_never_on_span"
+        },
+        {
+          "assertions": 6,
+          "line": 564,
+          "name": "test_all_touch_points_no_raw_data_leak"
+        },
+        {
+          "assertions": 2,
+          "line": 617,
+          "name": "test_record_interaction_rejects_empty_identifiers"
+        },
+        {
+          "assertions": 1,
+          "line": 632,
+          "name": "test_record_skill_rejects_empty_identifiers"
+        },
+        {
+          "assertions": 1,
+          "line": 645,
+          "name": "test_record_hook_rejects_empty_name"
+        },
+        {
+          "assertions": 1,
+          "line": 656,
+          "name": "test_record_file_access_rejects_empty_path"
+        },
+        {
+          "assertions": 1,
+          "line": 669,
+          "name": "test_delegate_rejects_empty_identifiers"
+        },
+        {
+          "assertions": 3,
+          "line": 684,
+          "name": "test_delegate_counter_not_bumped_when_inject_fails"
+        }
+      ],
+      "sha256": "116510424bff88cec32ea40bb48473fdd011cd5443ee99ae2681e6ea11239413",
+      "test_function_count": 38
+    },
+    {
+      "bytes": 27158,
+      "contract": "Controlled loopback provider records exact binary request/reply/attempts and identifies direct bypass; bounded real child process captures argv/stdin/stdout/stderr, empty streams, cancellation/truncation and allowed artifact snapshots; store/capture failures preserve business result. Independent expected operation/byte inventory detects bypass/corruption/quota loss and never upgrades synthetic scope to complete.",
+      "limits": "Explicit source_identity_authenticated=false, pre_spool_crash_window_unverified=true and verdict=unverified even exact match. No PTY, arbitrary descendants/detached jobs, sandbox/container kernel observation, encrypted network inspection, production provider identity or actual Fabric Collector. Artifact observer sees only configured snapshots, not every partial write/rename. Timeout/cancellation terminates controlled child as requested by fixture; that is business adapter behavior, not passive recorder intervention.",
+      "line_count": 734,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Actual loopback HTTP server request list, actual Python subprocess stdout/stderr/returncode and directly read artifact bytes, independently constructed expected roles/outcomes, bounded local filesystem resolver and source restart.",
+      "path": "sdk/python/tests/test_synthetic_evidence.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_synthetic_evidence.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      },
+      "prior_contract_details_match_current_bytes": false,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 10,
+          "line": 108,
+          "name": "test_controlled_provider_records_exact_wire_body_and_direct_bypass_is_not_claimed"
+        },
+        {
+          "assertions": 5,
+          "line": 163,
+          "name": "test_recorder_write_failure_does_not_change_provider_or_terminal_result"
+        },
+        {
+          "assertions": 13,
+          "line": 225,
+          "name": "test_terminal_and_artifact_exact_binary_bytes_and_empty_stream"
+        },
+        {
+          "assertions": 4,
+          "line": 275,
+          "name": "test_terminal_overflow_and_cancel_are_explicit_and_do_not_change_action"
+        },
+        {
+          "assertions": 3,
+          "line": 310,
+          "name": "test_artifact_symlink_and_oversize_are_gaps"
+        },
+        {
+          "assertions": 3,
+          "line": 333,
+          "name": "test_artifact_modification_and_privacy_canary_stay_in_content_store"
+        },
+        {
+          "assertions": 0,
+          "line": 351,
+          "name": "test_rejects_remote_endpoint_and_cwd_escape"
+        },
+        {
+          "assertions": 10,
+          "line": 369,
+          "name": "test_authorized_resolution_and_reconciliation_never_false_complete"
+        },
+        {
+          "assertions": 9,
+          "line": 417,
+          "name": "test_source_spool_stage_recovery_and_quota_loss_lower_verdict"
+        },
+        {
+          "assertions": 4,
+          "line": 489,
+          "name": "test_unapproved_outcome_field_is_a_gap_not_a_metadata_secret"
+        },
+        {
+          "assertions": 19,
+          "line": 512,
+          "name": "test_local_shadow_pilot_reconciles_two_models_terminal_and_artifact"
+        },
+        {
+          "assertions": 2,
+          "line": 707,
+          "name": "test_terminal_deadline_after_child_closes_pipes"
+        }
+      ],
+      "sha256": "4cda692fd45bd0adad962bd8f7dcd1c0306bce9b90232e0f101abed60dbebdb5",
+      "test_function_count": 12
+    },
+    {
+      "bytes": 4960,
+      "contract": "Synthetic descriptor projection excludes body/ref and canaries; dropped bytes omit object hash and ID; malformed closed fields reject; HTTP partial success remains partial and destination_durable=false.",
+      "limits": "No real TLS handshake, actual Collector, durable destination or authorized content resolution.",
+      "line_count": 140,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "Captured JSON metadata and real loopback HTTP response; constructor validation for remote/TLS parameter requirements.",
+      "path": "sdk/python/tests/test_synthetic_otlp.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_synthetic_otlp.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 6,
+          "line": 52,
+          "name": "test_projection_exact_safe_fields_and_no_canary"
+        },
+        {
+          "assertions": 3,
+          "line": 64,
+          "name": "test_dropped_object_projects_loss_without_false_digest"
+        },
+        {
+          "assertions": 0,
+          "line": 89,
+          "name": "test_projection_rejects_invalid_event"
+        },
+        {
+          "assertions": 6,
+          "line": 96,
+          "name": "test_loopback_export_accounts_for_partial_success"
+        },
+        {
+          "assertions": 0,
+          "line": 129,
+          "name": "test_export_rejects_nonloopback_destination"
+        },
+        {
+          "assertions": 0,
+          "line": 134,
+          "name": "test_https_requires_verified_ca_and_client_identity"
+        }
+      ],
+      "sha256": "ce61e21a40719af1c21953e54de585d6851ba39c7d9aa6a8b7d950ca73a3a037",
+      "test_function_count": 6
+    },
+    {
+      "bytes": 5494,
+      "contract": "Resource defaults, install idempotence, exporter wrapping, no-exporter warnings, one-shot no-processor warning and meter provider forwarding.",
+      "findings": [
+        "coverage-gap: test_get_tracer_uses_sdk_identity does not assert SDK instrumentation scope identity/version."
+      ],
+      "limits": "The get_tracer SDK identity test checks non-None, not actual instrumentation scope name/version. Some tests directly remove environment variables and rely on test process isolation. No network exporter delivery/flush proof.",
+      "line_count": 144,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_test_contract_analysis"
+      ],
+      "oracle": "In-memory SDK provider and monkeypatched OTel factories/global provider reset.",
+      "path": "sdk/python/tests/test_tracing.py",
+      "prior_contract_details": {
+        "entry_path": "sdk/python/tests/test_tracing.py",
+        "path": "qualification/python-test-contracts/contracts-003.json",
+        "sha256": "768daa4a4bc1542c87ff11fc65d297335c40405a7355e98afa906bcfeff6dd69"
+      },
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "reviewed_test_functions": [
+        {
+          "assertions": 1,
+          "line": 42,
+          "name": "test_get_tracer_uses_sdk_identity"
+        },
+        {
+          "assertions": 3,
+          "line": 50,
+          "name": "test_install_default_provider_merges_resource_attributes"
+        },
+        {
+          "assertions": 1,
+          "line": 65,
+          "name": "test_install_default_provider_falls_back_to_sdk_name"
+        },
+        {
+          "assertions": 2,
+          "line": 73,
+          "name": "test_install_default_provider_refuses_re_install"
+        },
+        {
+          "assertions": 1,
+          "line": 86,
+          "name": "test_install_default_provider_warns_without_exporter"
+        },
+        {
+          "assertions": 4,
+          "line": 98,
+          "name": "test_install_default_provider_uses_otlp_env_endpoint"
+        },
+        {
+          "assertions": 2,
+          "line": 114,
+          "name": "test_get_tracer_warns_on_zero_processor_provider"
+        },
+        {
+          "assertions": 1,
+          "line": 132,
+          "name": "test_install_default_provider_accepts_meter_provider"
+        }
+      ],
+      "sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
+      "test_function_count": 8
+    },
+    {
+      "bytes": 304165,
+      "contract": "Lock format1/revision3 targets Python>=3.11 with15 platform/version marker partitions;71 package records include editable local project and public registry dependencies/extras/dev tools. All887 archive entries have HTTPS Python-hosted origin, positive size and syntactically valid SHA256; dependency names resolve to locked records.",
+      "limits": "Parsed complete lock-record review, not human line-by-line inspection of887 arbitrary digest literals. No artifact download/content verification, transitive implementation/advisory/license review, or all-platform marker satisfiability proof. Locked Ruff0.15.11 differs from CI0.13.0; source qualification separately uses CI tool version. Lock presence alone does not prove installability or security.",
+      "line_count": 1712,
+      "lock_record_review": {
+        "archive_count": 887,
+        "archive_origins": {
+          "https://files.pythonhosted.org": 887
+        },
+        "checks": "All records parsed; all dependency names resolve to some locked record; every archive URL uses HTTPS and has positive byte size and well-formed SHA256. No downloaded bytes verified; markers not resolved on every target.",
+        "header": {
+          "requires-python": ">=3.11",
+          "resolution-markers": [
+            "python_full_version >= '3.15' and sys_platform == 'win32'",
+            "python_full_version >= '3.15' and sys_platform == 'emscripten'",
+            "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+            "python_full_version == '3.14.*' and sys_platform == 'win32'",
+            "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+            "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+            "python_full_version == '3.13.*' and sys_platform == 'win32'",
+            "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+            "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+            "python_full_version == '3.12.*' and sys_platform == 'win32'",
+            "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+            "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+            "python_full_version < '3.12' and sys_platform == 'win32'",
+            "python_full_version < '3.12' and sys_platform == 'emscripten'",
+            "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'"
+          ],
+          "revision": 3,
+          "version": 1
+        },
+        "invalid_archive_metadata": [],
+        "package_count": 71,
+        "packages": [
+          {
+            "complete_record_sha256": "6dfda14a77a71bc94d62571d077ce892520e5bda17a7c53dddb49ae0ba580868",
+            "name": "annotated-types",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.7.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "d8a68415160c96242ca3240d54dd646488379e9e505a9c2f40c5defd4df58a9d",
+            "dependencies": [
+              {
+                "name": "idna"
+              },
+              {
+                "marker": "python_full_version < '3.13' or python_full_version >= '3.15'",
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "anyio",
+            "resolution-markers": [
+              "python_full_version == '3.14.*' and sys_platform == 'win32'",
+              "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+              "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+              "python_full_version == '3.13.*' and sys_platform == 'win32'",
+              "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+              "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+              "python_full_version == '3.12.*' and sys_platform == 'win32'",
+              "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+              "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+              "python_full_version < '3.12' and sys_platform == 'win32'",
+              "python_full_version < '3.12' and sys_platform == 'emscripten'",
+              "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'"
+            ],
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "4.14.2",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "ab6c058e1cd44be75212ab6c67a264c1e8cb3716c0e485959c3656ba2506403c",
+            "dependencies": [
+              {
+                "name": "idna"
+              }
+            ],
+            "name": "anyio",
+            "resolution-markers": [
+              "python_full_version >= '3.15' and sys_platform == 'win32'",
+              "python_full_version >= '3.15' and sys_platform == 'emscripten'",
+              "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'"
+            ],
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "4.15.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "433768967f76d7f7c4fd3a6625a476f385c6ed03e0111e706418d5c020dbddfb",
+            "name": "attrs",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "26.1.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "4838ce68747ab8a176f49ee77ec4964557bf6a173726c14454b2cfaea3629508",
+            "name": "certifi",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2026.4.22",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "bc4a154247beae420ab71c935c17abc046968fd3947737077a35c728ce84e0d6",
+            "dependencies": [
+              {
+                "marker": "implementation_name != 'PyPy'",
+                "name": "pycparser"
+              }
+            ],
+            "name": "cffi",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.0.0",
+            "wheel_count": 59
+          },
+          {
+            "complete_record_sha256": "64cc79dbf5e5b1add8008d6dc1b6793bb45f13412587ef7033de6bfc9f60ef2f",
+            "name": "charset-normalizer",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "3.4.7",
+            "wheel_count": 81
+          },
+          {
+            "complete_record_sha256": "2c5348a998b5b47cf4a67c08c0c5d0ce9ff93cc3353644c935260a0ff122b2f6",
+            "dependencies": [
+              {
+                "marker": "sys_platform == 'win32'",
+                "name": "colorama"
+              }
+            ],
+            "name": "click",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "8.1.8",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "e021d532ecc9e989f8bb5d1f12f5a15b87e84d5166110d539de72cc9bf867afc",
+            "name": "colorama",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.4.6",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "d5e9426a94a16e6edd1a1420dcba27c8b6a6086f8fcd82e096c33cac2d545e5e",
+            "name": "coverage",
+            "optional-dependencies": {
+              "toml": [
+                {
+                  "marker": "python_full_version <= '3.11'",
+                  "name": "tomli"
+                }
+              ]
+            },
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "7.13.5",
+            "wheel_count": 91
+          },
+          {
+            "complete_record_sha256": "3e12426b9454a12278d2f0957ecf98e17b756717727dedc469862f5544907e1f",
+            "dependencies": [
+              {
+                "marker": "platform_python_implementation != 'PyPy'",
+                "name": "cffi"
+              }
+            ],
+            "name": "cryptography",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "50.0.0",
+            "wheel_count": 45
+          },
+          {
+            "complete_record_sha256": "912b1e2c8a0bb0667ed72d331d70f92d6da9af10d4aa71313685f770b2438283",
+            "dependencies": [
+              {
+                "name": "protobuf"
+              }
+            ],
+            "name": "googleapis-common-protos",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.74.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "baf650d9d5d120b8de7cd4834aa2c9eb503e16c603dc0142de8afc8c0e721fcc",
+            "name": "h11",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.16.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "98592c90f430ae3e240a9ba1c73baddd23e3b2ebe5d0e401a6a337516d2326f9",
+            "dependencies": [
+              {
+                "name": "certifi"
+              },
+              {
+                "name": "h11"
+              }
+            ],
+            "name": "httpcore",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.0.9",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "2d25fc22cc556b6d9f20d1c8811abf5537e68233bcff96f3eace255a919bb052",
+            "dependencies": [
+              {
+                "marker": "python_full_version < '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.14.2"
+              },
+              {
+                "marker": "python_full_version >= '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.15.1"
+              },
+              {
+                "name": "certifi"
+              },
+              {
+                "name": "httpcore"
+              },
+              {
+                "name": "idna"
+              }
+            ],
+            "name": "httpx",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.28.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "62bc0149fb5aaf809b4bf88a64e7d98a1ee3ad048fdfa51e9e12b5e1c3f8d3e1",
+            "name": "httpx-sse",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.4.3",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "f868bf92ef3e86cbfca6f23a5d24428d80ce0d3ef736ef6b52df765d9320fcc6",
+            "name": "idna",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "3.20",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "4bde31038b7c5b50feaf86edc52f1950d3927e0a5f91556383b552177573cb49",
+            "dependencies": [
+              {
+                "name": "zipp"
+              }
+            ],
+            "name": "importlib-metadata",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "8.5.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "f55b18a45c022f7277b06813158eb4fb80ca889d70b9ea9fe45f57673dee1161",
+            "name": "iniconfig",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.3.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "92a3fca5bcc35d8bb44cb749b1773b44b42231c71365cbf426a320c1731d9931",
+            "dependencies": [
+              {
+                "name": "attrs"
+              },
+              {
+                "name": "jsonschema-specifications"
+              },
+              {
+                "name": "referencing"
+              },
+              {
+                "name": "rpds-py"
+              }
+            ],
+            "name": "jsonschema",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "4.23.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "2621b54cb2683370f8a1c72d38a228055bcc4a1d9e2c113cb66b8bbcdd55b44e",
+            "dependencies": [
+              {
+                "name": "referencing"
+              }
+            ],
+            "name": "jsonschema-specifications",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2025.9.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "620d6116c577e44a39793f3819b8ba784e6b990220c0b01d0dac0cebb0c08e53",
+            "name": "librt",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.9.0",
+            "wheel_count": 65
+          },
+          {
+            "complete_record_sha256": "1101186cd3fb31483b5c36f67786f7aa06aeb6291380f66d44e2848047a16d86",
+            "dependencies": [
+              {
+                "marker": "python_full_version < '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.14.2"
+              },
+              {
+                "marker": "python_full_version >= '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.15.1"
+              },
+              {
+                "name": "httpx"
+              },
+              {
+                "name": "httpx-sse"
+              },
+              {
+                "name": "jsonschema"
+              },
+              {
+                "name": "pydantic"
+              },
+              {
+                "name": "pydantic-settings"
+              },
+              {
+                "extra": [
+                  "crypto"
+                ],
+                "name": "pyjwt"
+              },
+              {
+                "name": "python-multipart"
+              },
+              {
+                "marker": "sys_platform == 'win32'",
+                "name": "pywin32"
+              },
+              {
+                "name": "sse-starlette"
+              },
+              {
+                "name": "starlette"
+              },
+              {
+                "name": "typing-extensions"
+              },
+              {
+                "name": "typing-inspection"
+              },
+              {
+                "marker": "sys_platform != 'emscripten'",
+                "name": "uvicorn"
+              }
+            ],
+            "name": "mcp",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.29.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "d02d98479a57f263f8d952a64e49703ffdd2abc448df44cdc36eaf171f1916af",
+            "dependencies": [
+              {
+                "marker": "platform_python_implementation != 'PyPy'",
+                "name": "librt"
+              },
+              {
+                "name": "mypy-extensions"
+              },
+              {
+                "name": "pathspec"
+              },
+              {
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "mypy",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.20.2",
+            "wheel_count": 36
+          },
+          {
+            "complete_record_sha256": "501d3011a7a561baf82e17639b23b6e5dad80e912df07dfb34f852bafe4c4b59",
+            "name": "mypy-extensions",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.1.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "98947c7f10d488b12f91537c2740e4357de1482f6fe862eef4c71a96ca22e709",
+            "dependencies": [
+              {
+                "name": "importlib-metadata"
+              },
+              {
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "opentelemetry-api",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.41.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "769fabedbc36a2368cfc25259a2c958cd5660a2d29a9cc0c7656125accf61d1f",
+            "dependencies": [
+              {
+                "name": "opentelemetry-proto"
+              }
+            ],
+            "name": "opentelemetry-exporter-otlp-proto-common",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.41.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "0b131e11d4425eb94d0ff3e0160b9f865a1447ba75b070631d188b9ddaeb2443",
+            "dependencies": [
+              {
+                "name": "googleapis-common-protos"
+              },
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-exporter-otlp-proto-common"
+              },
+              {
+                "name": "opentelemetry-proto"
+              },
+              {
+                "name": "opentelemetry-sdk"
+              },
+              {
+                "name": "requests"
+              },
+              {
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "opentelemetry-exporter-otlp-proto-http",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.41.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "6c6e287e5c81ca94ee4e7a84de46b4c11dc245036238a518d14b7f0d7d549796",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              },
+              {
+                "name": "packaging"
+              },
+              {
+                "name": "wrapt"
+              }
+            ],
+            "name": "opentelemetry-instrumentation",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.62b0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "d920db620287bee29c52a174d28abac44e0342e0cc21b5f272e55af2772eb4ca",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-instrumentation"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions-ai"
+              }
+            ],
+            "name": "opentelemetry-instrumentation-anthropic",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.60.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "7f8e86bfbe4ab77b58621a47f22c5a306d75001cd54da841679a9b4eb9155291",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-instrumentation"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions-ai"
+              }
+            ],
+            "name": "opentelemetry-instrumentation-bedrock",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.60.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "953288f868a0d5c89175fc224d10d2be76aea3cf0094a848a0098bd2851ec01e",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-instrumentation"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions-ai"
+              }
+            ],
+            "name": "opentelemetry-instrumentation-cohere",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.60.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "68a09967ea08526324b5a32f9482520fbf96431c43922bd85433262d83096858",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-instrumentation"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions-ai"
+              }
+            ],
+            "name": "opentelemetry-instrumentation-langchain",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.60.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "8597ed5aad3b10466a234005cb0341e6dd1abd9943549db23ae777333c0c4d6c",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-instrumentation"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              },
+              {
+                "name": "opentelemetry-util-genai"
+              }
+            ],
+            "name": "opentelemetry-instrumentation-openai-v2",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.4b0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "cf5d9c6dd0949ae6c3f50ab5091e2724eccdf0c43b280970fcafa96fbf87ab05",
+            "dependencies": [
+              {
+                "name": "protobuf"
+              }
+            ],
+            "name": "opentelemetry-proto",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.41.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "e374ea1c95fdeb798717371e176e0d34aec472fd4bbe2b2dbd7f24c7b3fb41df",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              },
+              {
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "opentelemetry-sdk",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.41.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "fd66fa4ae2d727069736d8c64601b1c138db099ff2dceea7518755e4b895a4cf",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "opentelemetry-semantic-conventions",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.62b0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "af07e15811c24dc0247cc78b2c9dc31981a8d7a6a2a9ee48d14874519a726fab",
+            "dependencies": [
+              {
+                "name": "opentelemetry-sdk"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              }
+            ],
+            "name": "opentelemetry-semantic-conventions-ai",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.5.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "6d5a8d133247648cfa42cdd6905dc535c3ddbf0b2800bd5a4039ddd281e34f67",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-instrumentation"
+              },
+              {
+                "name": "opentelemetry-semantic-conventions"
+              }
+            ],
+            "name": "opentelemetry-util-genai",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.4b0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "941a422e3033768cc81300b9515d554eaf34113d99c4ee7a03e3a2dedb044e88",
+            "name": "packaging",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "26.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "1b37b5a985ce9d28edaf86df8668d96b1050cdd4839b67b873d4b61214be74c8",
+            "name": "pathspec",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.1.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "90504f7563732cf098b94b355fd44a990d9949705b1493191c47b9e6e515b9bd",
+            "name": "pluggy",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.6.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "a02c3666406527126bd374b634ebf4a50cd56a3ca4355b0cf57a831de60a2eff",
+            "name": "protobuf",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "6.33.6",
+            "wheel_count": 7
+          },
+          {
+            "complete_record_sha256": "63d7dc5815c23e550fb9ac0f242cd8a8089ac3f7dba31b26144485ec437653c1",
+            "name": "pycparser",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "3.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "0e0e66d0de095d92c82446ab9b2f7a6f26c3db96da5f03937035a646a5527504",
+            "dependencies": [
+              {
+                "name": "annotated-types"
+              },
+              {
+                "name": "pydantic-core"
+              },
+              {
+                "name": "typing-extensions"
+              },
+              {
+                "name": "typing-inspection"
+              }
+            ],
+            "name": "pydantic",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.12.5",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "0fc8f4a75964554f59a4700c84e854bf0ac9309a966b20869e30e13be86e55c6",
+            "dependencies": [
+              {
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "pydantic-core",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.41.5",
+            "wheel_count": 86
+          },
+          {
+            "complete_record_sha256": "5097ea90a8aa638812a39a9ae67a9090e6f0bb02ce6859af5bb359689f1c89b0",
+            "dependencies": [
+              {
+                "name": "pydantic"
+              },
+              {
+                "name": "python-dotenv"
+              },
+              {
+                "name": "typing-inspection"
+              }
+            ],
+            "name": "pydantic-settings",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.15.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "43c5fd2cf8bbae4f0c648b081255f6f99f29ecdb36b129b218925d500a317b77",
+            "name": "pygments",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.20.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "e716405bffd14cc98e67759fb2a1960bf1515daf6aa50bcafa8e2e4648c724be",
+            "name": "pyjwt",
+            "optional-dependencies": {
+              "crypto": [
+                {
+                  "name": "cryptography"
+                }
+              ]
+            },
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.15.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "602bc34219f907aea9bc741611fe248d10ae10ad662c20022781bb707bfcc8f6",
+            "dependencies": [
+              {
+                "marker": "sys_platform == 'win32'",
+                "name": "colorama"
+              },
+              {
+                "name": "iniconfig"
+              },
+              {
+                "name": "packaging"
+              },
+              {
+                "name": "pluggy"
+              },
+              {
+                "name": "pygments"
+              }
+            ],
+            "name": "pytest",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "9.0.3",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "edcec158aef7f41fb04dc44fddd2794fcfbef5930693910d2c2011573fbac931",
+            "dependencies": [
+              {
+                "extra": [
+                  "toml"
+                ],
+                "name": "coverage"
+              },
+              {
+                "name": "pluggy"
+              },
+              {
+                "name": "pytest"
+              }
+            ],
+            "name": "pytest-cov",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "7.1.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "449c09085963fdb5f8245827c9d053b0703205a35512a949c7569e2e4c432f0a",
+            "name": "python-dotenv",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.2.2",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "d7c040491203756d3c7bf4d341cb39484237d60a16d54a7ba49cf6b09752dfb2",
+            "name": "python-multipart",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.0.32",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "4526ef968bfad9684b9c3e7aa2771eaeeaa082eab9bf2597717f2c230540c14c",
+            "name": "pywin32",
+            "sdist": false,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "312",
+            "wheel_count": 15
+          },
+          {
+            "complete_record_sha256": "a9b1026cece2b9c6a5e37b15a13c0a0290a5c0400bd01ccb033cbe1cf587aaa5",
+            "name": "pyyaml",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "6.0.3",
+            "wheel_count": 47
+          },
+          {
+            "complete_record_sha256": "e7f1b1bbcb9a65f9f1e417e08ac7a1f28c2cd990079b41a68ab1e10efa961960",
+            "dependencies": [
+              {
+                "name": "attrs"
+              },
+              {
+                "name": "rpds-py"
+              },
+              {
+                "marker": "python_full_version < '3.13'",
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "referencing",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.37.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "b3614e752a8cb41d55b1059cd1ecda927e5ac36d722e186165c85ffd12d4336d",
+            "dependencies": [
+              {
+                "name": "certifi"
+              },
+              {
+                "name": "charset-normalizer"
+              },
+              {
+                "name": "idna"
+              },
+              {
+                "name": "urllib3"
+              }
+            ],
+            "name": "requests",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.33.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "019f117d2820b905ae699555a019bc1c22922514ac1477764ab84cd015646ad8",
+            "name": "rpds-py",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.30.0",
+            "wheel_count": 100
+          },
+          {
+            "complete_record_sha256": "fa48838ee30659f7b323263a5ed1d0b22e117999a7bb66cf6c57b65bede7ded7",
+            "name": "ruff",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.15.11",
+            "wheel_count": 17
+          },
+          {
+            "complete_record_sha256": "54c97da960ef173af4af25a985775267557f052e84ee023d2fb50c9e26650563",
+            "dependencies": [
+              {
+                "name": "opentelemetry-api"
+              },
+              {
+                "name": "opentelemetry-sdk"
+              },
+              {
+                "name": "pydantic"
+              }
+            ],
+            "dev-dependencies": {
+              "dev": [
+                {
+                  "name": "cryptography"
+                },
+                {
+                  "name": "httpx"
+                },
+                {
+                  "name": "jsonschema"
+                },
+                {
+                  "name": "mypy"
+                },
+                {
+                  "name": "opentelemetry-exporter-otlp-proto-http"
+                },
+                {
+                  "name": "pytest"
+                },
+                {
+                  "name": "pytest-cov"
+                },
+                {
+                  "name": "pyyaml"
+                },
+                {
+                  "name": "ruff"
+                },
+                {
+                  "name": "types-jsonschema"
+                },
+                {
+                  "name": "types-pyyaml"
+                },
+                {
+                  "name": "urllib3"
+                }
+              ]
+            },
+            "metadata": {
+              "provides-extras": [
+                "anthropic",
+                "bedrock",
+                "cohere",
+                "mcp",
+                "openai",
+                "otel-langchain",
+                "otlp",
+                "signing"
+              ],
+              "requires-dev": {
+                "dev": [
+                  {
+                    "name": "cryptography",
+                    "specifier": ">=49"
+                  },
+                  {
+                    "name": "httpx",
+                    "specifier": ">=0.27"
+                  },
+                  {
+                    "name": "jsonschema",
+                    "specifier": ">=4.23"
+                  },
+                  {
+                    "name": "mypy",
+                    "specifier": ">=1.11.2"
+                  },
+                  {
+                    "name": "opentelemetry-exporter-otlp-proto-http",
+                    "specifier": ">=1.41"
+                  },
+                  {
+                    "name": "pytest",
+                    "specifier": ">=8.3"
+                  },
+                  {
+                    "name": "pytest-cov",
+                    "specifier": ">=5.0"
+                  },
+                  {
+                    "name": "pyyaml",
+                    "specifier": ">=6.0.2,<7.0"
+                  },
+                  {
+                    "name": "ruff",
+                    "specifier": ">=0.6.9"
+                  },
+                  {
+                    "name": "types-jsonschema",
+                    "specifier": ">=4.23"
+                  },
+                  {
+                    "name": "types-pyyaml",
+                    "specifier": ">=6.0.12"
+                  },
+                  {
+                    "name": "urllib3",
+                    "specifier": ">=2.8.0"
+                  }
+                ]
+              },
+              "requires-dist": [
+                {
+                  "marker": "extra == 'signing'",
+                  "name": "cryptography",
+                  "specifier": ">=49"
+                },
+                {
+                  "marker": "extra == 'openai'",
+                  "name": "httpx",
+                  "specifier": ">=0.28.1,<1"
+                },
+                {
+                  "marker": "extra == 'mcp'",
+                  "name": "mcp",
+                  "specifier": ">=1.0"
+                },
+                {
+                  "name": "opentelemetry-api",
+                  "specifier": ">=1.41"
+                },
+                {
+                  "marker": "extra == 'otlp'",
+                  "name": "opentelemetry-exporter-otlp-proto-http",
+                  "specifier": ">=1.41"
+                },
+                {
+                  "marker": "extra == 'anthropic'",
+                  "name": "opentelemetry-instrumentation-anthropic",
+                  "specifier": ">=0.30b0"
+                },
+                {
+                  "marker": "extra == 'bedrock'",
+                  "name": "opentelemetry-instrumentation-bedrock",
+                  "specifier": ">=0.30b0"
+                },
+                {
+                  "marker": "extra == 'cohere'",
+                  "name": "opentelemetry-instrumentation-cohere",
+                  "specifier": ">=0.30b0"
+                },
+                {
+                  "marker": "extra == 'otel-langchain'",
+                  "name": "opentelemetry-instrumentation-langchain",
+                  "specifier": ">=0.30b0"
+                },
+                {
+                  "marker": "extra == 'openai'",
+                  "name": "opentelemetry-instrumentation-openai-v2",
+                  "specifier": "==2.4b0"
+                },
+                {
+                  "name": "opentelemetry-sdk",
+                  "specifier": ">=1.41"
+                },
+                {
+                  "marker": "extra == 'openai'",
+                  "name": "opentelemetry-util-genai",
+                  "specifier": "==0.4b0"
+                },
+                {
+                  "name": "pydantic",
+                  "specifier": ">=2.8,<3.0"
+                },
+                {
+                  "marker": "extra == 'mcp'",
+                  "name": "pyjwt",
+                  "specifier": ">=2.15.0"
+                },
+                {
+                  "marker": "extra == 'otlp'",
+                  "name": "urllib3",
+                  "specifier": ">=2.8.0"
+                }
+              ]
+            },
+            "name": "singleaxis-fabric",
+            "optional-dependencies": {
+              "anthropic": [
+                {
+                  "name": "opentelemetry-instrumentation-anthropic"
+                }
+              ],
+              "bedrock": [
+                {
+                  "name": "opentelemetry-instrumentation-bedrock"
+                }
+              ],
+              "cohere": [
+                {
+                  "name": "opentelemetry-instrumentation-cohere"
+                }
+              ],
+              "mcp": [
+                {
+                  "name": "mcp"
+                },
+                {
+                  "name": "pyjwt"
+                }
+              ],
+              "openai": [
+                {
+                  "name": "httpx"
+                },
+                {
+                  "name": "opentelemetry-instrumentation-openai-v2"
+                },
+                {
+                  "name": "opentelemetry-util-genai"
+                }
+              ],
+              "otel-langchain": [
+                {
+                  "name": "opentelemetry-instrumentation-langchain"
+                }
+              ],
+              "otlp": [
+                {
+                  "name": "opentelemetry-exporter-otlp-proto-http"
+                },
+                {
+                  "name": "urllib3"
+                }
+              ],
+              "signing": [
+                {
+                  "name": "cryptography"
+                }
+              ]
+            },
+            "sdist": false,
+            "source": {
+              "editable": "."
+            },
+            "wheel_count": 0
+          },
+          {
+            "complete_record_sha256": "060601a3d20f8a9631ee93df23d5ae32eefb2a01d514541e6d5cd4d5b5fbcebb",
+            "dependencies": [
+              {
+                "marker": "python_full_version < '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.14.2"
+              },
+              {
+                "marker": "python_full_version >= '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.15.1"
+              },
+              {
+                "name": "starlette"
+              }
+            ],
+            "name": "sse-starlette",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "3.4.6",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "87e1ac4e23abb244f87fc901f825534a048b0c32cbcd4a05e389d02aa685fe11",
+            "dependencies": [
+              {
+                "marker": "python_full_version < '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.14.2"
+              },
+              {
+                "marker": "python_full_version >= '3.15'",
+                "name": "anyio",
+                "source": {
+                  "registry": "https://pypi.org/simple"
+                },
+                "version": "4.15.1"
+              },
+              {
+                "marker": "python_full_version < '3.13'",
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "starlette",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "1.3.1",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "a20d31de5ec46465b97e850f51f993cbd35be344fe9d236c588bfd8f916c61fb",
+            "name": "tomli",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.4.1",
+            "wheel_count": 46
+          },
+          {
+            "complete_record_sha256": "2989416058a6f54420df8fb18c5a0612564371dce70d4c978af4cabffd244548",
+            "dependencies": [
+              {
+                "name": "referencing"
+              }
+            ],
+            "name": "types-jsonschema",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "4.26.0.20260518",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "6e8a7803de64e37d802d245dc08938693a91ccc2a2413326cd4bd5e99bfad588",
+            "name": "types-pyyaml",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "6.0.12.20260815",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "cc88edf9ba0993460fb45f47b8d1d831d291e65d6db15c2dc6360289a25c8236",
+            "name": "typing-extensions",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "4.15.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "da5b3305106320a62890fb6abe8f118ea594b2b8ecc0577efeab274f724cdc2e",
+            "dependencies": [
+              {
+                "name": "typing-extensions"
+              }
+            ],
+            "name": "typing-inspection",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.4.2",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "24136ea09b15a94ad45cce6ceb957ea89c71295241811ee9c8a8bf7ab58ecff1",
+            "name": "urllib3",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.8.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "15ce65003f5833623757b2da0697a1cfc528bbddfba1cc588fd85b51de52ad94",
+            "dependencies": [
+              {
+                "name": "click"
+              },
+              {
+                "name": "h11"
+              }
+            ],
+            "name": "uvicorn",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "0.46.0",
+            "wheel_count": 1
+          },
+          {
+            "complete_record_sha256": "0ac66310c40605296e21bc5131ed5de5b9cc1da6198e1c7c218768cd43461c0e",
+            "name": "wrapt",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "2.1.2",
+            "wheel_count": 67
+          },
+          {
+            "complete_record_sha256": "6280ba10082307928c6ba256ba2c0d0a6e0296309e2a7ce7734f8a3eee5eb038",
+            "name": "zipp",
+            "sdist": true,
+            "source": {
+              "registry": "https://pypi.org/simple"
+            },
+            "version": "3.23.1",
+            "wheel_count": 1
+          }
+        ],
+        "unresolved_dependency_names": []
+      },
+      "methods": [
+        "complete_byte_read_sha256",
+        "complete_parsed_lock_contract_analysis"
+      ],
+      "oracle": "Complete TOML parse and deterministic per-package canonical record hashes; every package's dependency/extras/markers/version/source inspected in parsed view; archive metadata validated exhaustively.",
+      "path": "sdk/python/uv.lock",
+      "prior_contract_details": null,
+      "prior_contract_details_match_current_bytes": true,
+      "review_scope": "Entire file reviewed with method limits below; test helper fixtures, observable assertion contracts, independent oracle strength, privacy and false-completeness limits assessed. Dependency implementations are not exhaustively re-reviewed by this record.",
+      "sha256": "3780516d899d79e7fc07dcda0e4e14a749bd95d8904ab0f84b315d9be5d1f2e0"
+    }
+  ],
+  "method_limits": [
+    "Complete test-file text/contract review is not exhaustive verification of product semantics or third-party code.",
+    "Twenty-three Python test files fully read; uv.lock entirely parsed with each package dependency/marker/version/source assessed and all887 artifact metadata records validated. Arbitrary digest literals were not human-inspected individually.",
+    "Only the authorized PII diagnostic source/test fix changed code in this pass; full-suite and installed-package outcomes remain separately pinned qualification evidence.",
+    "Each oracle and unsupported proof is recorded explicitly; named test coverage alone is not treated as proof.",
+    "Prior contract shards retain historical immutable AST details; fresh file hashes and reviewed test-function inventory here supersede those details if bytes changed."
+  ],
+  "parent_ledger": {
+    "path": "qualification/cloud-audit-python-tests.json",
+    "sha256": "26cf616d94ff31be6c8a45f6a16d7280338606c78d2385eacc9af318306c50d6"
+  },
+  "reviewer": "reconstruction",
+  "schema_version": "fabric.cloud-audit-python-deep/v1",
+  "scope_paths": [
+    "sdk/python/tests/test_execution.py",
+    "sdk/python/tests/test_generic_interaction.py",
+    "sdk/python/tests/test_governed_content.py",
+    "sdk/python/tests/test_governed_store.py",
+    "sdk/python/tests/test_hardening.py",
+    "sdk/python/tests/test_http_dispatch.py",
+    "sdk/python/tests/test_id_validators.py",
+    "sdk/python/tests/test_independent_feed.py",
+    "sdk/python/tests/test_independent_store.py",
+    "sdk/python/tests/test_mcp_integration.py",
+    "sdk/python/tests/test_memory.py",
+    "sdk/python/tests/test_metadata_delivery.py",
+    "sdk/python/tests/test_propagation.py",
+    "sdk/python/tests/test_receipt_sets.py",
+    "sdk/python/tests/test_reference_receipts.py",
+    "sdk/python/tests/test_replay_metadata.py",
+    "sdk/python/tests/test_retrieval.py",
+    "sdk/python/tests/test_side_effect.py",
+    "sdk/python/tests/test_source_spool.py",
+    "sdk/python/tests/test_surface_logging.py",
+    "sdk/python/tests/test_synthetic_evidence.py",
+    "sdk/python/tests/test_synthetic_otlp.py",
+    "sdk/python/tests/test_tracing.py",
+    "sdk/python/uv.lock"
+  ],
+  "source_head": "0c057678eaa4d4b29217bccec2094dc196a34a18",
+  "status": "completed_declared_method",
+  "targeted_fix_validation": {
+    "command": "/workspace/fabric-venv/bin/python -m pytest --no-cov -q tests/test_id_validators.py tests/test_generic_interaction.py",
+    "initial_targeted_attempt": "190 passed, but invocation inherited whole-package85percent requirement and exited due18.06percent aggregate coverage. Targeted rerun used --no-cov; repository coverage policy unchanged.",
+    "mypy": "_id_validators.py passed",
+    "result": "190 passed in0.27s",
+    "ruff": "check and format --check passed on _id_validators.py/test_id_validators.py",
+    "source_sha256": "20bf9c47212783703a951ccd1f309bd574830aedd40c0eac9c1cddb9f237ba47"
+  },
+  "total_files": 24
+}

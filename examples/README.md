@@ -11,9 +11,9 @@ CAPTURE -> PROTECT -> DELIVER
 
 The SDK instruments your agent and emits OpenTelemetry spans; the Fabric
 Node protects the record with a default-deny field allowlist and delivers
-it to a destination you choose. The recorder never blocks, alters, or
-delays the monitored system — there are no judges, guardrails, policy
-engines, or management services in this stack.
+it to a destination you choose. Recording does not authorize or alter agent
+actions; instrumentation and export have measurable overhead. There are no
+judges, guardrails, policy engines, or management services in this stack.
 
 ## Recorder v1 examples
 

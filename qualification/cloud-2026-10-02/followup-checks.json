@@ -1,0 +1,117 @@
+{
+  "schema_version": "fabric.cloud-followup-checks/v1",
+  "python_runtime_commit": "0c057678eaa4d4b29217bccec2094dc196a34a18",
+  "python": {
+    "passed": 1721,
+    "coverage_percent": 88.65,
+    "source_hashes_unchanged_during_full_run": true,
+    "ci_mypy_version": "2.4.0",
+    "ci_otel_version": "1.45.0",
+    "ci_mypy_files_passed": 136
+  },
+  "typescript": {
+    "passed": 433,
+    "package_tests": 6,
+    "direct_callback_privacy_regressions": 53,
+    "artifact_smoke": [
+      "ESM",
+      "CommonJS",
+      "types"
+    ]
+  },
+  "installed_wheel_composed_journey": {
+    "status": "passed",
+    "source_loading": "installed_distribution",
+    "original_recorder_memory_required": false,
+    "independent_effects": 1,
+    "received_records": 8,
+    "unique_records": 4,
+    "resolved_objects": 2,
+    "matrix": "../composed-collector-capture-matrix.json"
+  },
+  "packages": [
+    {
+      "name": "singleaxis_fabric-0.8.0rc1-py3-none-any.whl",
+      "sha256": "8af2e8a74194fffda6318d71b00c4bc9b779ad5cbe8c31ed80a1a3a1eb9da37c",
+      "bytes": 306717
+    },
+    {
+      "name": "singleaxis_fabric-0.8.0rc1.tar.gz",
+      "sha256": "1f579b4d3e3ba47cbdfbb483dd1e27a3fb7f9bcfe9f2a22e3278d88c6b347d59",
+      "bytes": 260305
+    },
+    {
+      "name": "singleaxis-fabric-0.8.0-rc.1.tgz",
+      "sha256": "a1eba9718bf4738fdd9cb203a45cee6bc6df58946df1734ef13b959fe62a0190",
+      "bytes": 224270
+    }
+  ],
+  "logs": [
+    {
+      "path": "followup-checks/python-deep-final.txt",
+      "sha256": "e3495a553063031178623b82845e50be7a2cb8c6099b27578ac858155884c8e5",
+      "bytes": 17491
+    },
+    {
+      "path": "followup-checks/python-ci-mypy-after.txt",
+      "sha256": "b7bcac463232a13ea02b4c9c110e00cec7c4d018bea59e705d5b0ae2f732c318",
+      "bytes": 45
+    },
+    {
+      "path": "followup-checks/scripts-deep-final.txt",
+      "sha256": "5c8828df0b098f0074dfbb73822b4c2f53c151c517054f3a60999c327ce8e760",
+      "bytes": 2340
+    },
+    {
+      "path": "followup-checks/ts-privacy-test.txt",
+      "sha256": "07957de0d2faa71fe451859d16634232273ada14ba3d6d6242031117c8eb210a",
+      "bytes": 285,
+      "original_run_sha256": "3751550106a437f40e3716ceb45ca1783dcc5b746f218bd77fa0448955efc095",
+      "publication_transform": "EOF blank-line normalization only"
+    },
+    {
+      "path": "followup-checks/ts-privacy-build.txt",
+      "sha256": "a3d180fc3c9d1e0dddb4ee58ea24dd0db283ad0c1b2932e095c1a1e3987ec563",
+      "bytes": 599
+    },
+    {
+      "path": "followup-checks/ts-privacy-test-package.txt",
+      "sha256": "5037a4c0af3a4121d2675df4cb68ff54182f002f71de15c080253d3832e9b332",
+      "bytes": 629
+    },
+    {
+      "path": "followup-checks/ts-privacy-format.txt",
+      "sha256": "f3b286695cd05e3381b20fedca76494a567debcb49782e368630f1cc9c8c872e",
+      "bytes": 128
+    },
+    {
+      "path": "followup-checks/ts-privacy-package.txt",
+      "sha256": "97aba0fcff2a2d56a4fb38b3314bafdeffe9e24c91e309416b2389b639a839d4",
+      "bytes": 2083
+    },
+    {
+      "path": "followup-checks/ts-privacy-typecheck.txt",
+      "sha256": "3b9abb8924fbe67439690cfaeffd5da8379fdede90f325b861e1a8f63202d812",
+      "bytes": 58,
+      "original_run_sha256": "410b6492c41414053323cb9590efe6302ac3a9091fcf9bb8c49e4f782b3ba9b8",
+      "publication_transform": "EOF blank-line normalization only"
+    },
+    {
+      "path": "followup-checks/ts-privacy-lint.txt",
+      "sha256": "56be04b2a3b4228cc8db2dd41ccf6f160a58e0291ab55569203e2353abf76979",
+      "bytes": 49,
+      "original_run_sha256": "78f9a55534ba2ce3a6e8ad8b0dbd07a99f20673903fd9a5a0cb91dd7ab4f574c",
+      "publication_transform": "EOF blank-line normalization only"
+    }
+  ],
+  "scope": "Local and installed-artifact qualification only. Additional script/contract changes and new-head CI must be separately verified.",
+  "repository_scripts": {
+    "passed": 416,
+    "skipped": 50,
+    "skip_reasons": {
+      "helm_unavailable": 43,
+      "live_s3_not_configured": 7
+    },
+    "three_docker_tests": "previously attempted; local startup blocked by Docker Hub429; exact-head CI required"
+  }
+}

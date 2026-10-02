@@ -31,7 +31,17 @@
       "fabric/content_store/local.py",
       "fabric/content_store/s3.py",
       "fabric/py.typed",
-      "fabric/resolver.py"
+      "fabric/resolver.py",
+      "fabric/adapters/byte_boundary.py",
+      "fabric/byte_spool.py",
+      "fabric/client.py",
+      "fabric/content_join.py",
+      "fabric/decision.py",
+      "fabric/deployment_policy.py",
+      "fabric/governed_reconstruction.py",
+      "fabric/governed_store.py",
+      "fabric/metadata_delivery.py",
+      "fabric/source_spool.py"
     ],
     "allowed_wheel_package_roots": [
       "fabric"
@@ -85,7 +95,17 @@
       "src/fabric/content_store/local.py",
       "src/fabric/content_store/s3.py",
       "src/fabric/py.typed",
-      "src/fabric/resolver.py"
+      "src/fabric/resolver.py",
+      "src/fabric/adapters/byte_boundary.py",
+      "src/fabric/byte_spool.py",
+      "src/fabric/client.py",
+      "src/fabric/content_join.py",
+      "src/fabric/decision.py",
+      "src/fabric/deployment_policy.py",
+      "src/fabric/governed_reconstruction.py",
+      "src/fabric/governed_store.py",
+      "src/fabric/metadata_delivery.py",
+      "src/fabric/source_spool.py"
     ],
     "allowed_sdist_top_level": [
       "src",
