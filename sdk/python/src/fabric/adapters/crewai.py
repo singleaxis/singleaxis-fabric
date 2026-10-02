@@ -107,7 +107,7 @@ def attach_callbacks(decision: Decision) -> CrewCallbacks:
                     break
             decision.span.add_event("fabric.crewai.step", attributes=attrs)
         except Exception:
-            logger.warning("crewai step callback failed; skipping event", exc_info=True)
+            logger.warning("crewai step callback failed; skipping event")
 
     def _on_task(output: Any) -> None:
         try:
@@ -126,7 +126,7 @@ def attach_callbacks(decision: Decision) -> CrewCallbacks:
                 attrs["fabric.crewai.output_chars"] = len(raw)
             decision.span.add_event("fabric.crewai.task", attributes=attrs)
         except Exception:
-            logger.warning("crewai task callback failed; skipping event", exc_info=True)
+            logger.warning("crewai task callback failed; skipping event")
 
     return CrewCallbacks(step=_on_step, task=_on_task)
 

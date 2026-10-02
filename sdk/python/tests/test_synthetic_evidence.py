@@ -701,3 +701,34 @@ def test_local_shadow_pilot_reconciles_two_models_terminal_and_artifact(tmp_path
         server.shutdown()
         server.server_close()
         session.recorder.close()
+
+
+@pytest.mark.parametrize("cancel_requested", [False, True])
+def test_terminal_deadline_after_child_closes_pipes(tmp_path: Path, cancel_requested: bool) -> None:
+    session, _ = _session(tmp_path)
+    adapter = BoundedTerminalAdapter(session, allowed_cwd_root=str(tmp_path))
+    cancel = threading.Event()
+    timer = threading.Timer(0.1, cancel.set)
+    if cancel_requested:
+        timer.start()
+    try:
+        result = adapter.run(
+            [
+                sys.executable,
+                "-c",
+                "import os,time; os.close(0); os.close(1); os.close(2); time.sleep(0.7)",
+            ],
+            cwd=str(tmp_path),
+            stdin=b"",
+            operation_id="closed-pipes",
+            attempt_id="attempt-1",
+            timeout_s=10 if cancel_requested else 0.1,
+            cancel=cancel,
+        )
+        assert result.timed_out
+        assert result.returncode < 0
+    finally:
+        timer.cancel()
+        if cancel_requested:
+            timer.join()
+        _close_recorder(session)

@@ -1532,3 +1532,21 @@ def test_duplicate_recovery_is_idempotent(tmp_path: Path) -> None:
     writer2.close()
     uris = cfg.store.list_object_uris()
     assert len(uris) == 1
+
+
+def test_partial_output_preserves_payload_truncation(tmp_path: Path) -> None:
+    client = _client(tmp_path, payload_max_bytes=4)
+    with (
+        client.decision(session_id="s", request_id="r") as decision,
+        decision.llm_call(provider="p", model="m") as call,
+    ):
+        call.record_partial_output("abcdefgh")
+    client.flush_content(timeout_s=5)
+    manifest = _read_manifest(tmp_path / "store")
+    item = next(item for item in manifest["items"] if item["role"] == "model.output.messages")
+    assert item["status"] == "truncated"
+    assert item["descriptor"]["representation"] == "truncated"
+    assert item["descriptor"]["original_byte_length"] == 8
+    assert item["descriptor"]["byte_length"] == 4
+    assert item["status_reason"] == "partial output"
+    client.close()

@@ -163,7 +163,7 @@ class ContentSink:
                 )
             )
             return None
-        if representation is not None:
+        if representation is not None and descriptor.representation != "truncated":
             descriptor = ContentDescriptor(
                 **{**descriptor.to_json(), "representation": representation}
             )

@@ -31,6 +31,20 @@ def _client() -> Fabric:
     return Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
 
 
+def _block_instrumentor_imports(
+    monkeypatch: pytest.MonkeyPatch, *, allowed: tuple[str, ...] = ()
+) -> None:
+    """Model absent extras independently of packages installed in the test environment."""
+    original = builtins.__import__
+
+    def unavailable(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("opentelemetry.instrumentation.") and name not in allowed:
+            raise ImportError("instrumentor absent in fixture")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", unavailable)
+
+
 def _install_fake_instrumentor(
     monkeypatch: pytest.MonkeyPatch,
     module_name: str,
@@ -93,7 +107,8 @@ def test_no_extras_installed_returns_empty(monkeypatch: pytest.MonkeyPatch) -> N
 def test_one_extra_installed_enables_only_that(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Stub openai, leave others to ImportError naturally.
+    # Stub openai and explicitly model every other extra as unavailable.
+    _block_instrumentor_imports(monkeypatch, allowed=("opentelemetry.instrumentation.openai_v2",))
     counters = _install_fake_instrumentor(
         monkeypatch,
         "opentelemetry.instrumentation.openai_v2",
@@ -133,11 +148,11 @@ def test_only_filter_warns_on_unknown_name(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    _block_instrumentor_imports(monkeypatch)
     with caplog.at_level("WARNING", logger="fabric.auto_instrument"):
         enabled = enable_auto_instrumentation(only=["openai", "made-up-thing"])
     assert "made-up-thing" in caplog.text
-    # Real openai was not stubbed; it falls into the silent ImportError
-    # branch and isn't enabled.
+    # The fixture explicitly makes openai unavailable, even if installed.
     assert "openai" not in enabled
 
 

@@ -48,12 +48,46 @@ def test_email_shaped_value_warns() -> None:
         warn_if_pii_shaped("tenant_id", "bryan@example.test")
     assert len(record) == 1
     assert "tenant_id" in str(record[0].message)
-    assert "bryan@example.test" in str(record[0].message)
+    assert "bryan@example.test" not in str(record[0].message)
 
 
 def test_phone_shaped_value_warns() -> None:
     with pytest.warns(PIIShapedIdentifierWarning, match="phone"):
         warn_if_pii_shaped("user_id", "555-0100-9999")
+
+
+@pytest.mark.parametrize(
+    "value,embedded,shape",
+    [
+        ("PRIVATE-CANARY@example.test", False, "email"),
+        ("+15550109876", False, "phone number"),
+        ("PRIVATE-CANARY contact PRIVATE-CANARY@example.test", True, "email"),
+        ("PRIVATE-CANARY phone 555-010-9876", True, "phone number"),
+        ("PRIVATE-CANARY SSN 123-45-6789", True, "SSN"),
+    ],
+)
+def test_pii_diagnostic_omits_raw_identifier_canaries(
+    value: str, embedded: bool, shape: str
+) -> None:
+    with pytest.warns(PIIShapedIdentifierWarning) as record:
+        warn_if_pii_shaped("user_id", value, embedded=embedded)
+    assert len(record) == 1
+    message = str(record[0].message)
+    assert "user_id" in message and shape in message
+    assert "opaque ID" in message and "FABRIC_QUIET_PII_WARN=1" in message
+    assert value not in message and "PRIVATE-CANARY" not in message
+    assert "555-010-9876" not in message and "123-45-6789" not in message
+
+
+def test_pii_diagnostic_strict_warning_filter_remains_effective_and_private() -> None:
+    value = "PRIVATE-CANARY@example.test"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PIIShapedIdentifierWarning)
+        with pytest.raises(PIIShapedIdentifierWarning) as raised:
+            FabricConfig(tenant_id=value, agent_id="agent")
+    assert "tenant_id" in str(raised.value)
+    assert "email" in str(raised.value)
+    assert value not in str(raised.value)
 
 
 def test_plain_opaque_id_does_not_warn() -> None:

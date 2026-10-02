@@ -79,7 +79,7 @@ def test_projection_scrubs_all_surfaces_without_mutating_source() -> None:
     assert result.attributes["gen_ai.conversation.compacted"] is True
     assert "gen_ai.usage.output_tokens" not in result.attributes
     assert "gen_ai.request.stream" not in result.attributes
-    service_name = result.resource.attributes["service.name"]
+    service_name: object = result.resource.attributes["service.name"]
     assert isinstance(service_name, str)
     assert service_name.startswith("sha256:")
     assert result.resource.schema_url == ""
