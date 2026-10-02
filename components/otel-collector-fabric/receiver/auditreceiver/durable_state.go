@@ -45,10 +45,11 @@ type stateEnvelope struct {
 	State  json.RawMessage `json:"state"`
 }
 type durableLog struct {
-	cfg   *Config
-	lock  *os.File
-	file  *os.File
-	state durableState
+	cfg      *Config
+	lock     *os.File
+	file     *os.File
+	state    durableState
+	closeErr error
 	// Test seam for crash/fault boundaries; nil in production.
 	beforeReplace func() error
 	beforeVerify  func()
@@ -79,6 +80,7 @@ func openDurableLog(cfg *Config) (_ *durableLog, err error) {
 	defer func() {
 		if err != nil {
 			d.close()
+			err = errors.Join(err, d.closeErr)
 		}
 	}()
 	if err = lockState(d.lock); err != nil {
@@ -151,15 +153,15 @@ func validCursor(c logCursor) bool {
 }
 func (d *durableLog) close() {
 	if d.file != nil {
-		d.file.Close()
+		d.closeErr = errors.Join(d.closeErr, d.file.Close())
 		d.file = nil
 	}
 	if d.lock != nil {
-		d.lock.Close()
+		d.closeErr = errors.Join(d.closeErr, d.lock.Close())
 		d.lock = nil
 	}
 }
-func (d *durableLog) save(s durableState) error {
+func (d *durableLog) save(s durableState) (err error) {
 	body, err := json.Marshal(s)
 	if err != nil {
 		return err
@@ -176,14 +178,22 @@ func (d *durableLog) save(s durableState) error {
 	if err != nil {
 		return err
 	}
-	defer func() { f.Close(); os.Remove(tmp) }()
+	closed := false
+	defer func() {
+		if !closed {
+			err = errors.Join(err, f.Close())
+		}
+		os.Remove(tmp)
+	}()
 	if _, err = f.Write(raw); err != nil {
 		return err
 	}
 	if err = f.Sync(); err != nil {
 		return err
 	}
-	if err = f.Close(); err != nil {
+	err = f.Close()
+	closed = true
+	if err != nil {
 		return err
 	}
 	if d.beforeReplace != nil {

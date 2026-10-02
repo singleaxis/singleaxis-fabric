@@ -59,7 +59,8 @@ def journal(root: Path, count: int = 0) -> SyntheticSourceSpool:
         max_bytes=32 * 1024 * 1024,
     )
     for index in range(count):
-        assert result.append(event(index, result.epoch)) == "pending"
+        _assert_result_62 = result.append(event(index, result.epoch)) == "pending"
+        assert _assert_result_62
     assert result.flush(30)
     return result
 
@@ -207,7 +208,8 @@ def test_large_durable_inventory_http_loss_retry_and_both_process_restarts(
         by_id.setdefault(batch_id, set()).add(payload)
     assert all(len(payloads) == 1 for payloads in by_id.values())
     assert sink.ids() == {f"record-0-{index}" for index in range(4101)}
-    assert writer.close() and source.close()
+    _assert_result_210 = writer.close() and source.close()
+    assert _assert_result_210
     port = sink.server.server_port
     sink.close()
     sink.server = ThreadingHTTPServer(("127.0.0.1", port), sink._handler())
@@ -223,7 +225,8 @@ def test_large_durable_inventory_http_loss_retry_and_both_process_restarts(
         "record-1-0",
         "record-1-1",
     }
-    assert writer.close() and source.close()
+    _assert_result_226 = writer.close() and source.close()
+    assert _assert_result_226
 
 
 @pytest.mark.parametrize(
@@ -257,13 +260,15 @@ def test_http_200_partial_or_invalid_is_never_full_ack(
     assert health["ack_cursor"] == -1
     assert writer.manifest()["batches"][0]["result"]["rejected_count"] == rejected
     assert b"SECRET CANARY" not in b"".join(path.read_bytes() for path in writer.root.iterdir())
-    assert writer.close() and source.close()
+    _assert_result_260 = writer.close() and source.close()
+    assert _assert_result_260
     source = journal(tmp_path / "journal")
     writer = sender(tmp_path / "outbox", source, transport)
     assert writer.drain(1) is False
     assert len(transport.sent) == 2  # OTLP partial rejection is not retried blindly.
     assert writer.health()["ack_cursor"] == -1
-    assert writer.close() and source.close()
+    _assert_result_266 = writer.close() and source.close()
+    assert _assert_result_266
 
 
 @pytest.mark.parametrize(
@@ -281,7 +286,8 @@ def test_valid_empty_or_zero_rejection_response(tmp_path: Path, body: bytes) -> 
     writer = sender(tmp_path / "outbox", source, transport)
     assert writer.drain(5)
     assert writer.health()["destination_durable"] is False
-    assert writer.close() and source.close()
+    _assert_result_284 = writer.close() and source.close()
+    assert _assert_result_284
 
 
 def test_timeout_then_permanent_rejection_persists_sanitized_evidence(tmp_path: Path) -> None:
@@ -295,12 +301,14 @@ def test_timeout_then_permanent_rejection_persists_sanitized_evidence(tmp_path: 
     assert writer.manifest()["batches"][0]["result"]["attempts"] == 2
     assert transport.sent[0] == transport.sent[1]
     assert b"SECRET CANARY" not in b"".join(path.read_bytes() for path in writer.root.iterdir())
-    assert writer.close() and source.close()
+    _assert_result_298 = writer.close() and source.close()
+    assert _assert_result_298
     source = journal(tmp_path / "journal")
     writer = sender(tmp_path / "outbox", source, transport)
     assert not writer.drain(1)
     assert len(transport.sent) == 2
-    assert writer.close() and source.close()
+    _assert_result_303 = writer.close() and source.close()
+    assert _assert_result_303
 
 
 _CHILD = """
@@ -333,7 +341,8 @@ def test_fresh_process_death_at_send_ack_cursor_boundaries(
     tmp_path: Path, sink: PersistentSink, boundary: str
 ) -> None:
     source = journal(tmp_path / "journal", 5)
-    assert source.close()
+    _assert_result_336 = source.close()
+    assert _assert_result_336
     outbox = tmp_path / "outbox"
     outbox.mkdir(mode=0o700)
     proc = subprocess.run(  # noqa: S603 - fixed test program and local paths
@@ -358,7 +367,8 @@ def test_fresh_process_death_at_send_ack_cursor_boundaries(
     assert sink.ids() == {f"record-0-{index}" for index in range(5)}
     if boundary == "after_send":
         assert sink.requests[0] == sink.requests[1]
-    assert writer.close() and source.close()
+    _assert_result_361 = writer.close() and source.close()
+    assert _assert_result_361
 
 
 def test_source_inventory_excludes_pending_and_detects_readback_change(
@@ -374,7 +384,8 @@ def test_source_inventory_excludes_pending_and_detects_readback_change(
         return original(row)
 
     monkeypatch.setattr(source, "_write_event", blocked)
-    assert source.append(event(1)) == "pending"
+    _assert_result_377 = source.append(event(1)) == "pending"
+    assert _assert_result_377
     assert entered.wait(1)
     assert [row["record_id"] for row in source.durable_records()] == ["record-0-0"]
     transport = RecordingTransport()
@@ -392,7 +403,8 @@ def test_source_inventory_excludes_pending_and_detects_readback_change(
         source.durable_records()
     assert not writer.drain(1)
     assert writer.health()["errors"]
-    assert writer.close() and source.close()
+    _assert_result_395 = writer.close() and source.close()
+    assert _assert_result_395
 
 
 def test_capacity_rejection_is_visible_and_does_not_send(tmp_path: Path) -> None:
@@ -402,7 +414,8 @@ def test_capacity_rejection_is_visible_and_does_not_send(tmp_path: Path) -> None
     assert not writer.drain(1)
     assert writer.health()["errors"]
     assert transport.sent == []
-    assert writer.close() and source.close()
+    _assert_result_405 = writer.close() and source.close()
+    assert _assert_result_405
 
 
 def test_cursor_cannot_lead_full_ack_ledger_and_owner_cannot_change(tmp_path: Path) -> None:
@@ -410,7 +423,8 @@ def test_cursor_cannot_lead_full_ack_ledger_and_owner_cannot_change(tmp_path: Pa
     transport = RecordingTransport()
     writer = sender(tmp_path / "outbox", source, transport)
     writer.prepare()
-    assert writer.close()
+    _assert_result_413 = writer.close()
+    assert _assert_result_413
     cursor = {"index": 0}
     _write_atomic(
         writer.root / "cursor.json",
@@ -430,7 +444,8 @@ def test_cursor_cannot_lead_full_ack_ledger_and_owner_cannot_change(tmp_path: Pa
     transport.identity = "other-recipient"
     with pytest.raises(ValueError, match="recovery"):
         sender(writer.root, source, transport)
-    assert source.close()
+    _assert_result_433 = source.close()
+    assert _assert_result_433
 
 
 def test_batch_corruption_fails_closed(tmp_path: Path) -> None:
@@ -438,12 +453,14 @@ def test_batch_corruption_fails_closed(tmp_path: Path) -> None:
     transport = RecordingTransport()
     writer = sender(tmp_path / "outbox", source, transport)
     writer.prepare()
-    assert writer.close()
+    _assert_result_441 = writer.close()
+    assert _assert_result_441
     path = writer.root / "batch-000000000000.json"
     path.write_bytes(path.read_bytes().replace(b"record-0-0", b"record-9-9"))
     with pytest.raises(ValueError, match="recovery"):
         sender(writer.root, source, transport)
-    assert source.close()
+    _assert_result_446 = source.close()
+    assert _assert_result_446
 
 
 def test_background_worker_shutdown_is_bounded_during_blocked_transport(tmp_path: Path) -> None:
@@ -460,11 +477,14 @@ def test_background_worker_shutdown_is_bounded_during_blocked_transport(tmp_path
     writer.start()
     assert entered.wait(1)
     before = time.monotonic()
-    assert writer.close(0.02) is False
+    _assert_result_463 = writer.close(0.02) is False
+    assert _assert_result_463
     assert time.monotonic() - before < 0.5
     gate.set()
-    assert writer.close(2)
-    assert source.close()
+    _assert_result_466 = writer.close(2)
+    assert _assert_result_466
+    _assert_result_467 = source.close()
+    assert _assert_result_467
 
 
 @pytest.mark.parametrize(
@@ -487,7 +507,8 @@ def test_duplicate_sender_owner_refused(tmp_path: Path) -> None:
     writer = sender(tmp_path / "outbox", source, transport)
     with pytest.raises(BlockingIOError):
         sender(writer.root, source, transport)
-    assert writer.close() and source.close()
+    _assert_result_490 = writer.close() and source.close()
+    assert _assert_result_490
 
 
 @pytest.mark.parametrize("boundary", ["batch", "result", "cursor"])
@@ -518,7 +539,8 @@ def test_fsync_failure_cannot_publish_false_ack(
     assert failed
     assert writer.health()["all_node_accepted"] is False
     assert writer.health()["errors"] == ["source_or_outbox_unavailable"]
-    assert writer.close()
+    _assert_result_521 = writer.close()
+    assert _assert_result_521
     monkeypatch.setattr(module, "_write_atomic", original)
     writer = sender(tmp_path / "outbox", source, transport, batch_size=2)
     assert writer.drain(3)
@@ -526,7 +548,8 @@ def test_fsync_failure_cannot_publish_false_ack(
     assert b"PRIVATE CANARY" not in b"".join(path.read_bytes() for path in writer.root.iterdir())
     if boundary == "result":
         assert transport.sent[0] == transport.sent[1]
-    assert writer.close() and source.close()
+    _assert_result_529 = writer.close() and source.close()
+    assert _assert_result_529
 
 
 def test_incomplete_uncommitted_temp_is_replayed_not_credited(tmp_path: Path) -> None:
@@ -534,7 +557,8 @@ def test_incomplete_uncommitted_temp_is_replayed_not_credited(tmp_path: Path) ->
     transport = RecordingTransport()
     writer = sender(tmp_path / "outbox", source, transport)
     writer.prepare()
-    assert writer.close()
+    _assert_result_537 = writer.close()
+    assert _assert_result_537
     temporary = writer.root / (".result-000000000000.json." + "f" * 32 + ".tmp")
     temporary.touch(mode=0o600)
     temporary.write_bytes(b"{incomplete")
@@ -542,4 +566,5 @@ def test_incomplete_uncommitted_temp_is_replayed_not_credited(tmp_path: Path) ->
     assert writer.health()["ack_cursor"] == -1
     assert not temporary.exists()
     assert writer.drain(3)
-    assert writer.close() and source.close()
+    _assert_result_545 = writer.close() and source.close()
+    assert _assert_result_545

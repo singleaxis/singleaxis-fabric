@@ -602,7 +602,9 @@ def main() -> int:
         parser.error("pilot must import an installed wheel, not repository source")
     if not TOOL.is_file():
         parser.error("synthetic tool fixture missing")
-    tls = PilotTLS(args.node_ca, args.node_cert, args.node_key, args.sink_ca, args.node_token_file)
+    tls = PilotTLS(
+        args.node_ca, args.node_cert, args.node_key, args.sink_ca, args.node_token_file
+    )
     if args.work_dir is None:
         with tempfile.TemporaryDirectory(prefix="fabric-agent-pilot-") as directory:
             cases = [

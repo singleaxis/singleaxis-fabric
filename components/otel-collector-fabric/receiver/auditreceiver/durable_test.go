@@ -77,6 +77,23 @@ func stageAck(t *testing.T, d *durableLog, ld plog.Logs, end logCursor) {
 	}
 }
 
+func TestDurableCloseFailureIsRetainedAndReported(t *testing.T) {
+	cfg := durableConfig(t, "")
+	d := openTestDurable(t, cfg)
+	if err := d.lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	d.close()
+	if d.closeErr == nil {
+		t.Fatal("lock close failure was silently discarded")
+	}
+	r, _ := newTestReceiver(t, cfg)
+	r.durable = d
+	if err := r.Shutdown(t.Context()); err == nil {
+		t.Fatal("shutdown did not report the durable close failure")
+	}
+}
+
 func TestDurableStageReplayPrivacyAndAcceptedCursor(t *testing.T) {
 	cfg := durableConfig(t, execveLines+"\n")
 	r, _ := newTestReceiver(t, cfg)

@@ -184,6 +184,7 @@ class DurableByteSpool:
                     os.mkdir(part, mode=0o700, dir_fd=current)
                     os.fsync(current)
                 except FileExistsError:
+                    # The following O_NOFOLLOW open validates the existing directory.
                     pass
                 child = os.open(part, flags, dir_fd=current)
                 os.close(current)

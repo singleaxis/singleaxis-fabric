@@ -105,10 +105,12 @@ def test_session_close_reports_settlement(
         assert session.calls.call(b"input", lambda _: b"result") == b"result"
         if blocked:
             assert entered.wait(timeout=2.0)
-            assert session.close(timeout_s=0.0) is False
+            _assert_result_108 = session.close(timeout_s=0.0) is False
+            assert _assert_result_108
             assert session.report()["persistence_states"]["pending"] > 0
             release.set()
-        assert session.close() is True
+        _assert_result_111 = session.close() is True
+        assert _assert_result_111
         assert "pending" not in session.report()["persistence_states"]
     finally:
         release.set()

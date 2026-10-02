@@ -426,8 +426,10 @@ def test_persisted_proofs_survive_fresh_process_recovery(tmp_path: Path) -> None
     path = _directory(tmp_path)
     with ClosureEvidenceStore(str(path), scope=case.scope) as store:
         for proof in [*proofs, witness]:
-            assert store.append(proof) == "durable"
-        assert store.append(proofs[0]) == "durable"
+            _assert_result_429 = store.append(proof) == "durable"
+            assert _assert_result_429
+        _assert_result_430 = store.append(proofs[0]) == "durable"
+        assert _assert_result_430
         assert len(store.load()) == len(proofs) + 1
     script = """import json, sys
 from fabric.distributed_closure import ClosureEvidenceStore, ClosureScope
@@ -666,6 +668,7 @@ def test_lost_directory_fsync_ack_retries_exact_control_proof(
     with pytest.raises(OSError):
         store.append(proof)
     monkeypatch.setattr(os, "fsync", real)
-    assert store.append(proof) == "durable"
+    _assert_result_669 = store.append(proof) == "durable"
+    assert _assert_result_669
     assert store.load() == (proof,)
     store.close()

@@ -124,3 +124,18 @@ reference verification and customer target qualification.
 The core reference workload reconciles 80 metadata records and 40 protected
 objects for 20 actual final HTTP calls. These are finite local results, not a
 comparative market benchmark or customer throughput guarantee.
+
+## Publication follow-up validation
+
+The publishing Mac exposed concurrent lock creation failures in the governed
+store: a minimal eight-thread probe produced ENOENT with combined O_CREAT
+opens, while exclusive creation followed by existing-file opens completed
+20 trials without errors. The store now uses that atomic creation boundary
+with the same O_NOFOLLOW, private-file validation and flock enforcement.
+This qualifies that observed race fix, not every Mac/filesystem deployment.
+
+The frozen matched benchmark remains tied to initial PR commit
+`18ec69a4ddd6e5fdab7a097b30b34571096e708f`. Publication follow-ups correct
+CI tests/hygiene and close-error handling; they are not a rerun of the
+matched campaign. The current benchmark artifact index scopes itself to
+324 supplied files; 63 omitted stderr diagnostics are disclosed separately.

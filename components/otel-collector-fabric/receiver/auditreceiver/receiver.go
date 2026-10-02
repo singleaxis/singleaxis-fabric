@@ -129,6 +129,9 @@ func (r *auditReceiver) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("audit receiver: downstream did not stop within 5s; durable state remains locked and replayable")
 	}
 	r.logStats()
+	if r.durable != nil {
+		return r.durable.closeErr
+	}
 	return nil
 }
 

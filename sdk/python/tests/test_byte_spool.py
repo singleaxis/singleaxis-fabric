@@ -229,7 +229,8 @@ def test_process_death_at_atomic_fsync_boundaries(tmp_path: Path, mode: str) -> 
         assert reopened.health()["recovery_inventory_unverified"]
         assert not resumed.wait_durable(1)
         assert not reopened.all_durable([])
-        assert resumed.close(1)
+        _assert_result_232 = resumed.close(1)
+        assert _assert_result_232
     else:
         # A kernel-surviving rename can be recovered, but the original process
         # never acknowledged it durable. A machine/power-loss guarantee needs
@@ -259,8 +260,10 @@ def test_outage_recovers_same_id_and_bounded_shutdown(tmp_path: Path) -> None:
     assert recorder.wait_durable(2)
     assert recorder.delivery_state(initial["object_id"])["state"] == "durable"
     assert not recorder.flush(0.01)
-    assert not recorder.close(0.02)
-    assert spool.close(1)
+    _assert_result_262 = not recorder.close(0.02)
+    assert _assert_result_262
+    _assert_result_263 = spool.close(1)
+    assert _assert_result_263
     recovered = _recover(tmp_path)
     assert recovered["states"][initial["object_id"]]["state"] == "delivered"
 
@@ -290,7 +293,8 @@ def test_permanent_or_exhausted_loss_is_durable_and_sanitized(
     assert destination.calls == (2 if isinstance(failure, ConnectionError) else 1)
     assert recorder.get(initial["object_id"])["status"] == "failed"
     assert "private canary" not in json.dumps(spool.health()) + json.dumps(state)
-    assert recorder.close(1)
+    _assert_result_293 = recorder.close(1)
+    assert _assert_result_293
     recovered = _recover(tmp_path)
     assert recovered["states"][initial["object_id"]] == state
 
@@ -303,7 +307,8 @@ def test_capacity_loss_persists_health_and_never_claims_durable(tmp_path: Path) 
     assert recorder.delivery_state(initial["object_id"])["state"] == "lost"
     assert recorder.get(initial["object_id"])["status_reason"] == "spool_capacity_exhausted"
     assert spool.health()["admission_rejections"] == 1
-    assert recorder.close(1)
+    _assert_result_306 = recorder.close(1)
+    assert _assert_result_306
     recovered = _recover(tmp_path)
     assert recovered["ids"] == []
     assert recovered["health"]["admission_rejections"] == 1
@@ -311,7 +316,8 @@ def test_capacity_loss_persists_health_and_never_claims_durable(tmp_path: Path) 
     resumed, reopened, _ = _recorder(tmp_path)
     assert not resumed.wait_durable(1)
     assert not reopened.all_durable([])
-    assert resumed.close(1)
+    _assert_result_314 = resumed.close(1)
+    assert _assert_result_314
 
 
 def test_corrupted_payload_never_replays_or_becomes_complete(tmp_path: Path) -> None:
@@ -319,7 +325,8 @@ def test_corrupted_payload_never_replays_or_becomes_complete(tmp_path: Path) -> 
     initial = _capture(recorder)
     assert recorder.wait_durable(2)
     recorder.close(0.02)
-    assert spool.close(1)
+    _assert_result_322 = spool.close(1)
+    assert _assert_result_322
     entry = tmp_path / "spool" / (initial["object_id"] + ".spool")
     encrypted = entry.read_bytes()
     entry.write_bytes(encrypted[:-1] + bytes([encrypted[-1] ^ 1]))
@@ -331,7 +338,8 @@ def test_corrupted_payload_never_replays_or_becomes_complete(tmp_path: Path) -> 
     }
     assert fresh.health()["corrupt_entries"] == 1
     assert fresh.object_ids() == []
-    assert fresh.close(1)
+    _assert_result_334 = fresh.close(1)
+    assert _assert_result_334
 
 
 def test_blocked_destination_does_not_block_admission_or_shutdown(tmp_path: Path) -> None:
@@ -350,14 +358,16 @@ def test_blocked_destination_does_not_block_admission_or_shutdown(tmp_path: Path
         assert recorder.wait_durable(1)
         assert recorder.delivery_state(initial["object_id"])["state"] == "durable"
         start = time.monotonic()
-        assert not recorder.close(0.03)
+        _assert_result_353 = not recorder.close(0.03)
+        assert _assert_result_353
         assert time.monotonic() - start < 0.3
         assert not spool.health()["worker_stopped"]
         with pytest.raises(BlockingIOError):
             DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=KEY)
     finally:
         release.set()
-        assert spool.close(2)
+        _assert_result_360 = spool.close(2)
+        assert _assert_result_360
     assert _recover(tmp_path)["states"][initial["object_id"]]["state"] == "delivered"
 
 
@@ -381,21 +391,33 @@ def test_fsync_failure_is_visible_without_private_exception_text(
     assert CANARY.decode() not in json.dumps(spool.health()) + json.dumps(
         recorder.get(initial["object_id"])
     )
-    assert recorder.close(1)
+    _assert_result_384 = recorder.close(1)
+    assert _assert_result_384
     assert _recover(tmp_path)["health"]["persistence_faults"] > 0
     resumed, reopened, _ = _recorder(tmp_path)
     assert reopened.health()["recovery_inventory_unverified"]
     assert not resumed.wait_durable(1)
     assert not reopened.all_durable([])
-    assert resumed.close(1)
+    _assert_result_390 = resumed.close(1)
+    assert _assert_result_390
 
 
-def test_retention_removes_failed_protected_payload_but_keeps_loss(tmp_path: Path) -> None:
+def test_retention_removes_failed_protected_payload_but_keeps_loss(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     recorder, spool, _ = _recorder(
-        tmp_path, OutageStore(tmp_path / "store", PermissionError()), retention_s=0.1
+        tmp_path, OutageStore(tmp_path / "store", PermissionError()), retention_s=60
     )
     initial = _capture(recorder)
-    assert recorder.flush(2)
+    flushed = recorder.flush(2)
+    assert flushed
+    # Settle the permanent denial before advancing retention. A real 100 ms
+    # deadline can expire before the first attempt on a loaded CI runner.
+    settled = spool.flush(2)
+    assert settled
+    assert spool.state(initial["object_id"])["reason"] == "destination_denied"
+    expired_time = time.time() + 61
+    monkeypatch.setattr(time, "time", lambda: expired_time)
     deadline = time.monotonic() + 2
     while (
         spool._records[initial["object_id"]]["payload"] is not None and time.monotonic() < deadline
@@ -403,10 +425,12 @@ def test_retention_removes_failed_protected_payload_but_keeps_loss(tmp_path: Pat
         time.sleep(0.02)
     assert spool._records[initial["object_id"]]["payload"] is None
     assert spool.state(initial["object_id"])["state"] == "lost"
-    assert recorder.close(1)
+    _assert_result_406 = recorder.close(1)
+    assert _assert_result_406
     fresh = DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=KEY)
     assert fresh.state(initial["object_id"])["reason"] == "destination_denied"
-    assert fresh.close(1)
+    _assert_result_409 = fresh.close(1)
+    assert _assert_result_409
 
 
 def test_blocked_spool_fsync_does_not_block_capture_or_close(
@@ -432,12 +456,14 @@ def test_blocked_spool_fsync_does_not_block_capture_or_close(
         assert time.monotonic() - start < 0.3
         assert not recorder.wait_durable(0.02)
         start = time.monotonic()
-        assert not recorder.close(0.03)
+        _assert_result_435 = not recorder.close(0.03)
+        assert _assert_result_435
         assert time.monotonic() - start < 0.3
     finally:
         release.set()
         recorder._worker.join(2)
-        assert spool.close(2)
+        _assert_result_440 = spool.close(2)
+        assert _assert_result_440
     assert _recover(tmp_path)["states"][first["object_id"]]["state"] == "delivered"
 
 
@@ -466,7 +492,8 @@ def test_actual_fsync_failure_never_acknowledges_durable(
     assert not recorder.wait_durable(1)
     assert recorder.delivery_state(initial["object_id"])["durable"] is False
     assert spool.health()["persistence_faults"] > 0
-    assert recorder.close(1)
+    _assert_result_469 = recorder.close(1)
+    assert _assert_result_469
 
 
 def test_wrong_key_does_not_destroy_recoverable_inventory(tmp_path: Path) -> None:
@@ -474,12 +501,14 @@ def test_wrong_key_does_not_destroy_recoverable_inventory(tmp_path: Path) -> Non
     item = _capture(recorder)
     assert recorder.wait_durable(2)
     recorder.close(0.02)
-    assert spool.close(1)
+    _assert_result_477 = spool.close(1)
+    assert _assert_result_477
     before = {path.name: path.read_bytes() for path in (tmp_path / "spool").iterdir()}
     wrong = DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=b"x" * 32)
     assert wrong.health()["corrupt_entries"] >= 1
     assert wrong.state(item["object_id"])["state"] == "lost"
-    assert wrong.close(1)
+    _assert_result_482 = wrong.close(1)
+    assert _assert_result_482
     assert before == {path.name: path.read_bytes() for path in (tmp_path / "spool").iterdir()}
     assert _recover(tmp_path)["states"][item["object_id"]]["state"] == "delivered"
 
@@ -498,10 +527,12 @@ def test_retry_growth_is_reserved_bounded_and_updates_high_water(tmp_path: Path)
     health = spool.health()
     assert health["lost"] == 1 and health["admission_rejections"] == 0
     assert health["bytes"] <= health["high_water_bytes"] <= health["max_bytes"]
-    assert recorder.close(1)
+    _assert_result_501 = recorder.close(1)
+    assert _assert_result_501
     fresh = DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=KEY)
     assert fresh.health()["high_water_bytes"] == health["high_water_bytes"]
-    assert fresh.close(1)
+    _assert_result_504 = fresh.close(1)
+    assert _assert_result_504
 
 
 def test_deployment_privacy_replays_into_existing_governed_encrypted_stores(tmp_path: Path) -> None:
@@ -592,7 +623,8 @@ def test_deployment_privacy_replays_into_existing_governed_encrypted_stores(tmp_
     assert recorder.wait_durable(2)
     assert items["memory.write.content"]["status"] == "not_captured"
     recorder.close(0.05)
-    assert spool.close(1)
+    _assert_result_595 = spool.close(1)
+    assert _assert_result_595
     resumed_spool = DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=KEY)
     resumed = ByteEvidenceRecorder(
         ByteEvidenceConfig(
@@ -624,7 +656,8 @@ def test_deployment_privacy_replays_into_existing_governed_encrypted_stores(tmp_
     assert CANARY not in b"".join(
         path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()
     )
-    assert resumed.close(1)
+    _assert_result_627 = resumed.close(1)
+    assert _assert_result_627
 
 
 @pytest.mark.parametrize("pending", [False, True])
@@ -641,7 +674,8 @@ def test_deleted_committed_entry_keeps_recovery_unverified_across_restarts(
         assert recorder.flush(2)
     assert spool.health()["high_water_records"] == 2
     recorder.close(0.1)
-    assert spool.close(2)
+    _assert_result_644 = spool.close(2)
+    assert _assert_result_644
     missing_id = first["object_id"]
     (tmp_path / "spool" / (missing_id + ".spool")).unlink()
     for _ in range(2):
@@ -661,24 +695,28 @@ def test_deleted_committed_entry_keeps_recovery_unverified_across_restarts(
             )
         )
         assert not resumed.wait_durable(1)
-        assert resumed.close(2)
+        _assert_result_664 = resumed.close(2)
+        assert _assert_result_664
 
 
 def test_earlier_health_schema_still_detects_deleted_entry(tmp_path: Path) -> None:
     recorder, _spool, _ = _recorder(tmp_path)
     item = _capture(recorder)
     assert recorder.flush(2)
-    assert recorder.close(1)
+    _assert_result_671 = recorder.close(1)
+    assert _assert_result_671
     old = DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=KEY)
     legacy = old._read("health")
     legacy.pop("missing_durable_entries")
     old._replace("health", old._encode("health", legacy))
-    assert old.close(1)
+    _assert_result_676 = old.close(1)
+    assert _assert_result_676
     (tmp_path / "spool" / (item["object_id"] + ".spool")).unlink()
     recovered = DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=KEY)
     assert recovered.health()["missing_durable_entries"] == 1
     assert recovered.health()["corrupt_entries"] == 0
-    assert recovered.close(1)
+    _assert_result_681 = recovered.close(1)
+    assert _assert_result_681
 
 
 @pytest.mark.parametrize(
@@ -696,7 +734,8 @@ def test_each_persisted_unknown_counter_blocks_empty_recovered_durability(
     spool = DurableByteSpool(tmp_path / "spool", tenant_id="tenant", encryption_key=KEY)
     spool._health[counter] = 1
     spool._save_health()
-    assert spool.close(1)
+    _assert_result_699 = spool.close(1)
+    assert _assert_result_699
     for _ in range(2):
         recorder, recovered, _ = _recorder(tmp_path)
         assert recovered.object_ids() == []
@@ -704,4 +743,5 @@ def test_each_persisted_unknown_counter_blocks_empty_recovered_durability(
         assert recovered.health()["recovery_inventory_unverified"]
         assert not recovered.all_durable([])
         assert not recorder.wait_durable(1)
-        assert recorder.close(1)
+        _assert_result_707 = recorder.close(1)
+        assert _assert_result_707

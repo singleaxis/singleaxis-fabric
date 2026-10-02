@@ -125,8 +125,10 @@ def test_shared_dispatch_preserves_result_and_exception_and_counts_unsupported(
         assert any(row["status"] == "unsupported" for row in snapshot["events"])
         assert "PRIVATE_ERROR_NOT_METADATA" not in json.dumps(snapshot)
     finally:
-        assert capture.close()
-    assert capture.close()
+        _assert_result_128 = capture.close()
+        assert _assert_result_128
+    _assert_result_129 = capture.close()
+    assert _assert_result_129
 
 
 def test_lifecycle_does_not_close_store_beneath_unsettled_worker() -> None:
@@ -141,11 +143,14 @@ def test_lifecycle_does_not_close_store_beneath_unsettled_worker() -> None:
         ),
         store=SimpleNamespace(close=lambda: store_calls.append("close")),
     )
-    assert capture.close() is False
+    _assert_result_144 = capture.close() is False
+    assert _assert_result_144
     assert store_calls == []
     stopped[0] = True
-    assert capture.close() is True
-    assert capture.close() is True
+    _assert_result_147 = capture.close() is True
+    assert _assert_result_147
+    _assert_result_148 = capture.close() is True
+    assert _assert_result_148
     assert journal_calls == store_calls == ["close"]
 
 

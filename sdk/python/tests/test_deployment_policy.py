@@ -272,7 +272,8 @@ def test_real_recorder_routes_only_protected_bytes(
                     assert SECRET not in path.read_bytes()
                     assert hashlib.sha256(SECRET).hexdigest().encode() not in path.read_bytes()
     finally:
-        assert recorder.close()
+        _assert_result_275 = recorder.close()
+        assert _assert_result_275
 
 
 def test_recorder_rejects_ambiguous_policy_tenant_and_plane(tmp_path: Path) -> None:
@@ -375,4 +376,5 @@ def test_transform_failure_in_recorder_never_stores_input(
         assert "sensitive-value" not in json.dumps(item)
         assert not any(p.is_file() for p in tmp_path.rglob("*"))
     finally:
-        assert recorder.close()
+        _assert_result_378 = recorder.close()
+        assert _assert_result_378

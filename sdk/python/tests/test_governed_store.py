@@ -387,7 +387,8 @@ def test_hold_delete_retention_and_no_resurrection(setup: Any) -> None:
     receipts = store.purge_expired()
     assert len(receipts) == 1 and receipts[0]["state"] == "deleted"
     assert receipts[0]["stored_sha256"] is None
-    assert store.delete(uri)["state"] == "deleted"
+    _assert_result_390 = store.delete(uri)["state"] == "deleted"
+    assert _assert_result_390
     assert store.read_receipt(uri)["state"] == "deleted"
     assert not store.exists(uri)
     assert store.list_object_uris() == []
@@ -555,7 +556,8 @@ def test_existing_call_recorder_records_actual_encrypted_bytes(setup: Any) -> No
     assert all(e["status"] == "stored" for e in snapshot["events"])
     assert "secret" not in json.dumps(snapshot)
     assert "secret" not in json.dumps(store.audit_events())
-    assert recorder.close()
+    _assert_result_558 = recorder.close()
+    assert _assert_result_558
 
 
 def test_capture_auth_failure_does_not_change_application_result(setup: Any) -> None:
@@ -570,7 +572,8 @@ def test_capture_auth_failure_does_not_change_application_result(setup: Any) -> 
     snapshot = calls.snapshot()
     assert all(e["status"] == "failed" for e in snapshot["events"])
     assert not Path(store.root).exists()
-    assert writer.close()
+    _assert_result_573 = writer.close()
+    assert _assert_result_573
 
 
 def test_expired_reference_capability_becomes_a_passive_evidence_gap(setup: Any) -> None:
@@ -596,7 +599,8 @@ def test_expired_reference_capability_becomes_a_passive_evidence_gap(setup: Any)
         assert writer.flush()
         assert not Path(store.root).exists()
     finally:
-        assert writer.close()
+        _assert_result_599 = writer.close()
+        assert _assert_result_599
 
 
 def test_constructor_validation_closed_store_and_no_legacy_bypass(setup: Any) -> None:
@@ -702,7 +706,8 @@ def test_public_policy_capture_routes_original_and_derivative_planes(setup: Any)
             assert b"source secret" not in derivative.read(item["ref"])
             assert derivative.owns_uri(item["ref"])
             assert not original.owns_uri(item["ref"])
-    assert writer.close()
+    _assert_result_705 = writer.close()
+    assert _assert_result_705
 
 
 @pytest.mark.parametrize("mode", ["omit", "metadata_only", "redact", "tokenize"])
@@ -767,7 +772,8 @@ def test_policy_session_preserves_delegate_and_keeps_withheld_secrets_out_of_evi
         assert all(secret not in payload and original_hash not in payload for payload in evidence)
     finally:
         session.close()
-        assert spool.close()
+        _assert_result_770 = spool.close()
+        assert _assert_result_770
 
 
 @pytest.mark.parametrize(

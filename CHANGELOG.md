@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added the Python capture reference build with protected metadata export,
+  encrypted durable byte spool, journal-backed metadata replay, authenticated
+  reference receipts/readback, and conservative distributed closure.
+- Added versioned capture configuration, health/canary/readback interfaces,
+  auditd logfile cursor/recovery, developer guidance, and a matched local
+  benchmark with published synthetic evidence.
+
+### Changed
+
+- Documented Python reference support and the narrower TypeScript capture
+  subset, including target-specific production qualification gates.
+- Pinned the optional OpenAI instrumentation dependency combination verified
+  by the real-SDK loopback benchmark.
+- Enabled existing CI workflows for the exact #164 parent branch so the
+  stacked capture draft receives validation.
+
+### Known limitations
+
+- Production remains NO_GO pending target infrastructure and security-owner
+  acceptance. Local reference and benchmark evidence does not qualify a
+  customer deployment or establish universal performance superiority.
+- This capture build adds neither client portal UI nor action enforcement.
+
 ## [0.8.0-rc.1] - 2026-08-31
 
 ### Added

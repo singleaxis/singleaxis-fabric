@@ -384,6 +384,7 @@ class GovernedLocalContentStore:
                         os.mkdir(part, mode=0o700, dir_fd=opened[-1])
                         os.fsync(opened[-1])
                     except FileExistsError:
+                        # Open with O_NOFOLLOW below validates the existing directory.
                         pass
                 opened.append(os.open(part, flags, dir_fd=opened[-1]))
             if os.fstat(opened[-1]).st_mode & 0o077:
@@ -400,8 +401,15 @@ class GovernedLocalContentStore:
         with self._thread_lock, self._directory(create=create) as directory:
             flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
             if create:
-                flags |= os.O_CREAT
-            lock = os.open(".lock", flags, 0o600, dir_fd=directory)
+                # Concurrent O_CREAT opens can return ENOENT on macOS while
+                # the first lock file is installed. Claim creation atomically,
+                # then open an already-existing file without O_CREAT.
+                try:
+                    lock = os.open(".lock", flags | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory)
+                except FileExistsError:
+                    lock = os.open(".lock", flags, dir_fd=directory)
+            else:
+                lock = os.open(".lock", flags, dir_fd=directory)
             try:
                 self._check_file(lock, limit=0)
                 fcntl.flock(lock, fcntl.LOCK_EX)
@@ -696,7 +704,7 @@ class GovernedLocalContentStore:
         raise PermissionError("unscoped text writes are disabled; use governed byte descriptors")
 
     def put_bytes_object(self, descriptor: Mapping[str, Any], content: bytes) -> ContentRef:
-        claims = self._authorize("write_" + self.plane)
+        self._authorize("write_" + self.plane)
         if not isinstance(content, bytes) or len(content) > _MAX_OBJECT_BYTES:
             raise ValueError("content must be bytes within the 16 MiB local limit")
         value = self._validate_descriptor(descriptor, content)
@@ -809,7 +817,7 @@ class GovernedLocalContentStore:
             ) from None
 
     def _read_object(self, uri: str, *, content: bool) -> Any:
-        claims = self._authorize("read_" + self.plane)
+        self._authorize("read_" + self.plane)
         object_id = self._object_id(uri)
         with self._locked(create=False) as directory:
             claims = self._authorize("read_" + self.plane)
@@ -885,7 +893,7 @@ class GovernedLocalContentStore:
         hold_id: str | None = None,
         expired_only: bool = False,
     ) -> dict[str, Any]:
-        claims = self._authorize("lifecycle")
+        self._authorize("lifecycle")
         object_id = self._object_id(uri)
         if not _opaque(reason_code) or (hold_id is not None and not _opaque(hold_id)):
             raise ValueError("lifecycle reason and hold identifiers must be opaque")

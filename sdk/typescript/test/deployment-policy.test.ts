@@ -305,12 +305,17 @@ describe("Deployment-protected byte recorder", () => {
         for (const root of roots)
           for (const filename of fs.readdirSync(root, { recursive: true })) {
             const target = path.join(root, String(filename));
-            if (fs.statSync(target).isFile()) {
-              const bytes = fs.readFileSync(target);
-              expect(bytes.includes(SECRET)).toBe(false);
-              expect(
-                bytes.includes(Buffer.from(createHash("sha256").update(SECRET).digest("hex"))),
-              ).toBe(false);
+            const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+            try {
+              if (fs.fstatSync(fd).isFile()) {
+                const bytes = fs.readFileSync(fd);
+                expect(bytes.includes(SECRET)).toBe(false);
+                expect(
+                  bytes.includes(Buffer.from(createHash("sha256").update(SECRET).digest("hex"))),
+                ).toBe(false);
+              }
+            } finally {
+              fs.closeSync(fd);
             }
           }
       }
