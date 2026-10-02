@@ -73,6 +73,8 @@ _EXACT: dict[str, str] = {
     "bsd-3-clause": "BSD-3-Clause",
     "bsd 3-clause": "BSD-3-Clause",
     "bsd 3-clause license": "BSD-3-Clause",
+    # protobuf 7.36.2 wheel: verified metadata spelling against its LICENSE.
+    "3-clause bsd license": "BSD-3-Clause",
     'bsd 3-clause "new" or "revised" license (bsd-3-clause)': "BSD-3-Clause",
     "new bsd license": "BSD-3-Clause",
     "modified bsd license": "BSD-3-Clause",

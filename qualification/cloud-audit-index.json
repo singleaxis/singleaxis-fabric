@@ -17,6 +17,7 @@
     "cloud-audit-benchmarks.json",
     "cloud-audit-c8-network.json",
     "cloud-audit-chart-deep.json",
+    "cloud-audit-codeql-9adb613-dispositions.json",
     "cloud-audit-codeql-followup.json",
     "cloud-audit-codeql.json",
     "cloud-audit-compose-deep.json",
@@ -25,7 +26,9 @@
     "cloud-audit-final-paths.json",
     "cloud-audit-go-license-reconciliation.json",
     "cloud-audit-host.json",
+    "cloud-audit-independent-9adb613.json",
     "cloud-audit-independent-security-followup.json",
+    "cloud-audit-license-alias-provenance.json",
     "cloud-audit-license-independent.json",
     "cloud-audit-product.json",
     "cloud-audit-python-codeql-followup.json",
@@ -3654,10 +3657,12 @@
       "sha256": "8d12908c9927d52a83c378aa037b26136a63c59c3aa8b269a5a56be3b9c8efdc",
       "reviews": [
         "cloud-audit-benchmarks.json",
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json"
       ],
       "current_byte_reviews": [
         "cloud-audit-benchmarks.json",
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json"
       ]
     },
@@ -7304,11 +7309,13 @@
       "path": "examples/enterprise-orchestration/run.py",
       "sha256": "49cebcb0503d95698ee34b117e5af82b0cb43b7e1e5deda094629d68c4da4e3f",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-product.json",
         "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-product.json",
         "cloud-audit-scripts-security-followup.json"
@@ -7924,15 +7931,15 @@
     },
     {
       "path": "scripts/license_check.py",
-      "sha256": "7528a4dc27ef0efc05ef38965e690347a0fa6b7d936733a2861fae6995d96947",
+      "sha256": "ec29fe310aaabc2a0732c56e1bdf1e6edc87c1d73e1612b273c1f3155989bb7d",
       "reviews": [
         "cloud-audit-go-license-reconciliation.json",
+        "cloud-audit-license-alias-provenance.json",
         "cloud-audit-license-independent.json",
         "cloud-audit-root.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-go-license-reconciliation.json",
-        "cloud-audit-license-independent.json"
+        "cloud-audit-license-alias-provenance.json"
       ]
     },
     {
@@ -8117,12 +8124,14 @@
       "path": "scripts/qualification/run_synthetic_agent_pilot.py",
       "sha256": "6ed74ef441e5a7620cdd21e5d0f06443c50b2d2c60f4326a80c7fb2a34aff6d7",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-product.json",
         "cloud-audit-scripts-deep-a.json",
         "cloud-audit-scripts-security-followup.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-scripts-deep-a.json",
         "cloud-audit-scripts-security-followup.json"
       ]
@@ -8878,11 +8887,13 @@
       "path": "sdk/python/src/fabric/auto_instrument.py",
       "sha256": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json"
       ]
     },
@@ -8910,11 +8921,13 @@
       "path": "sdk/python/src/fabric/byte_resolver.py",
       "sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
@@ -9026,11 +9039,13 @@
       "path": "sdk/python/src/fabric/content_store/base.py",
       "sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json"
       ]
     },
@@ -9070,11 +9085,13 @@
       "path": "sdk/python/src/fabric/control_protocol.py",
       "sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
@@ -9096,12 +9113,14 @@
       "path": "sdk/python/src/fabric/decision.py",
       "sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-root.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json"
       ]
     },
@@ -9119,11 +9138,13 @@
       "path": "sdk/python/src/fabric/deployment_state.py",
       "sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-runtime-deep.json"
@@ -9183,11 +9204,13 @@
       "path": "sdk/python/src/fabric/governed_store.py",
       "sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
@@ -9209,11 +9232,13 @@
       "path": "sdk/python/src/fabric/independent_feed.py",
       "sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
@@ -9223,11 +9248,13 @@
       "path": "sdk/python/src/fabric/independent_store.py",
       "sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
@@ -9269,12 +9296,14 @@
       "path": "sdk/python/src/fabric/metadata_delivery.py",
       "sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-security-followup.json",
         "cloud-audit-security.json",
         "cloud-audit-semgrep-current.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-security-followup.json"
       ]
     },
@@ -9322,11 +9351,13 @@
       "path": "sdk/python/src/fabric/reference_receipts.py",
       "sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
@@ -9440,11 +9471,13 @@
       "path": "sdk/python/src/fabric/tracing.py",
       "sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-security.json"
@@ -9474,12 +9507,14 @@
       "path": "sdk/python/tests/test_adapters_crewai.py",
       "sha256": "f567e4af166b2f10130f1c9a3ae04780601a1d89aab672b98cd7a1c87851f6f3",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-runtime-deep.json"
@@ -9601,12 +9636,14 @@
       "path": "sdk/python/tests/test_call_recorder.py",
       "sha256": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
@@ -9629,11 +9666,13 @@
       "path": "sdk/python/tests/test_calls.py",
       "sha256": "a6983f1157bedf5b86fb776e73a3a074ed64a49949c5a7e50ff479775d582ca8",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
@@ -9653,11 +9692,13 @@
       "path": "sdk/python/tests/test_capture_health.py",
       "sha256": "94a7cc03c9141f70c18757e510fa4caf1e9a60c233631fdc554bcf379f2b012e",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
@@ -9779,11 +9820,13 @@
       "path": "sdk/python/tests/test_decision.py",
       "sha256": "fc6b61c5fb2099265f5831a14a288162238fa8d5ea81d450bd64a693b25df9a4",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-a.json",
         "cloud-audit-python-tests.json"
@@ -9972,11 +10015,13 @@
       "path": "sdk/python/tests/test_independent_feed_adversarial.py",
       "sha256": "8e4d0009f6dcb31777ffe29a1c4845221e2ad563bc0fe4debbb2dd36f509fdd7",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
@@ -10022,12 +10067,14 @@
       "path": "sdk/python/tests/test_metadata_delivery.py",
       "sha256": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
@@ -10072,11 +10119,13 @@
       "path": "sdk/python/tests/test_recorder_package_surface.py",
       "sha256": "d291ff35abe28a56ff6c8f9a870057a635f48c5397e24de1caf04df397f945c7",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json"
@@ -10164,12 +10213,14 @@
       "path": "sdk/python/tests/test_source_spool.py",
       "sha256": "c35f9f7e03feefb0b06212991bf0581e4660d2c4e6402a9e4fe14f0879f3c8a6",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
@@ -10190,12 +10241,14 @@
       "path": "sdk/python/tests/test_span_protection.py",
       "sha256": "73c8acfc40e1485ac3a7627d9658714b749c1f815d8cacb96e11886a12a1b0a2",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-tests.json",
         "cloud-audit-root.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-root.json"
       ]
@@ -10204,11 +10257,13 @@
       "path": "sdk/python/tests/test_surface_logging.py",
       "sha256": "116510424bff88cec32ea40bb48473fdd011cd5443ee99ae2681e6ea11239413",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
@@ -10216,17 +10271,16 @@
     },
     {
       "path": "sdk/python/tests/test_synthetic_evidence.py",
-      "sha256": "4cda692fd45bd0adad962bd8f7dcd1c0306bce9b90232e0f101abed60dbebdb5",
+      "sha256": "50bba1dc10f1f41653bff2daba602a05df9dc2ede006be53f04a42dfc46ce40f",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json",
         "cloud-audit-runtime-deep.json"
       ],
       "current_byte_reviews": [
-        "cloud-audit-python-codeql-followup.json",
-        "cloud-audit-python-deep-b.json",
-        "cloud-audit-runtime-deep.json"
+        "cloud-audit-codeql-9adb613-dispositions.json"
       ]
     },
     {
@@ -10245,12 +10299,14 @@
       "path": "sdk/python/tests/test_tracing.py",
       "sha256": "dd544c3f7602bd01f8f85c1b4be159e2422bf5b845d088223d13120d283950fb",
       "reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",
         "cloud-audit-python-tests.json"
       ],
       "current_byte_reviews": [
+        "cloud-audit-codeql-9adb613-dispositions.json",
         "cloud-audit-codeql.json",
         "cloud-audit-python-codeql-followup.json",
         "cloud-audit-python-deep-b.json",

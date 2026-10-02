@@ -145,9 +145,9 @@
     },
     {
       "path": "docs/cloud-qualification-2026-10-02.md",
-      "sha256": "074363fe900f11c3096f2ebf6daa35b34583f793ad0f93bacaa0b368626e4038",
+      "sha256": "b97559a00ee72c308aa72ed55cc82eb3e158ddc308794e00afd4cbe3dd6ba411",
       "method": "full_diff_review_against_executed_evidence",
-      "assessment": "Record security fixes, independent cleanup provenance, C8 fixture outcomes and explicit remaining decisions without changing product scope."
+      "assessment": "Root updated report against terminal9adb hosted results, exact76/60 findings, verified alias and unchangedMIT0 policy blocker; read-only process capability observation bounded to this executor."
     }
   ]
 }

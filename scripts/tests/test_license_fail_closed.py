@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parents[2]
         ("MIT OR Apache-2.0 AND GPL-3.0", True),
         ("GPL-3.0 AND (MIT OR Apache-2.0)", False),
         ("Apache Software License", True),
+        # Official protobuf7.36.2 wheel METADATA and LICENSE were compared;
+        # exact artifact URLs/hashes are retained in the provenance ledger.
+        ("3-Clause BSD License", True),
+        ("3-Clause BSD License WITH unknown-exception", False),
+        ("MIT-0", False),
         ("MIT License (MIT)", True),
     ],
 )

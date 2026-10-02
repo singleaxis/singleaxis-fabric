@@ -88,6 +88,30 @@ Final local checks, source hashes and rebuilt package identities for this
 follow-up are in [security follow-up checks](../qualification/cloud-2026-10-02/security-followup-checks.json).
 The final published head and terminal hosted results are recorded on draft PR165.
 
+At the [subsequent `9adb613` checkpoint](../qualification/cloud-2026-10-02/ci-checkpoint-9adb613.json),
+all Recorder CI jobs and both integration workflows passed. The read-only
+diagnostic verified exactly 60 PR annotations: one high, five warnings and
+54 notes. The complete scan contains 76 locations; every location and its
+current-source disposition is recorded in the
+[follow-up review](../qualification/cloud-audit-codeql-9adb613-dispositions.json).
+The TLS-fixture and TypeScript file-check high findings cleared; the frozen
+benchmark canary remains open. Clearing that query does not remove the
+documented TypeScript ancestor-namespace limitation.
+
+Expanded license inventories completed and exposed two unknown declarations:
+protobuf's exact scanner label `3-Clause BSD License`, and CFFI's distinct
+`MIT-0` identifier. The subsequent exact protobuf alias preserves the existing
+BSD-3-Clause policy. MIT-0 is deliberately not mapped to MIT or added to the
+allowlist; the repository policy requires conscious human review of a new
+license identifier. No dependency was pinned merely to avoid that review.
+
+The [executor capability observation](../qualification/cloud-2026-10-02/kernel-capability-observation.json)
+reads this process's effective and bounding sets. Both exclude CAP_BPF,
+CAP_PERFMON, CAP_SYS_ADMIN, CAP_AUDIT_CONTROL and CAP_AUDIT_READ; clang, bpftool
+and auditctl are absent. No capabilities or kernel settings were changed.
+This supports a local environment limitation, not a claim about every customer
+host, remote runner or possible future privileged deployment.
+
 The published reconstruction defect was independently reproduced: two stored
 descriptors and two journal object IDs, but four exported records with zero
 content joins and two historical pending statuses.

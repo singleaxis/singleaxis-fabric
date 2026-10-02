@@ -196,13 +196,15 @@ def test_recorder_write_failure_does_not_change_provider_or_terminal_result(
         root = tmp_path / "work"
         root.mkdir()
         terminal = BoundedTerminalAdapter(session, allowed_cwd_root=str(root))
-        result = terminal.run(
-            [
-                sys.executable,
-                "-c",
-                "import sys; sys.stdout.buffer.write(b'output\\x00'); "
+        program = "\n".join(
+            (
+                "import sys",
+                "sys.stdout.buffer.write(b'output\\x00')",
                 "sys.stderr.buffer.write(b'error\\xff')",
-            ],
+            )
+        )
+        result = terminal.run(
+            [sys.executable, "-c", program],
             cwd=str(root),
             stdin=b"input\x00",
             operation_id="terminal-fault",
