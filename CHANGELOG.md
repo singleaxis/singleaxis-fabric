@@ -28,6 +28,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Rejected TypeScript content-store symlink redirection and nonregular objects,
   while documenting its remaining ancestor-replacement race.
 - Bounded propagated context headers and rejected deeply nested malformed input.
+- Preserved truncated partial-output status, bounded terminal child lifetime
+  after pipe closure, and removed raw exception/identifier values from SDK
+  diagnostics.
+- Required exact protected readback and successful source-bound release evidence;
+  rejected incomplete artifact sets and cross-tenant nested descriptors.
+- Required durable governed modules in released Python artifacts and included
+  the Fabric gate in local license inventories; missing tools now fail the scan.
+- Aligned the draft evidence-event contract with closed governed-content
+  bindings and observed call lifecycle records.
+- Corrected Compose privacy/recovery checks and protocol TLS preflight, isolated
+  Helm test pods from runtime selectors, and preserved explicit zero PDB limits.
+- Corrected TypeScript transcript serialization against the published contract,
+  rejected oversized inbound context, handled partial local writes, and retained
+  pending spool bytes when recovered-manifest reconciliation fails.
+- Omitted empty transcript publication when no content observations exist;
+  an empty string remains an explicit content observation.
 - Corrected native audit netlink framing, rule structure/constants, architecture
   filters, control response matching and bounded assembly loss reporting.
 - Repaired the orchestration reconstruction root and synthetic audit provenance.

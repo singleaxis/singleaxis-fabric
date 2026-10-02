@@ -9,11 +9,10 @@ owner: project-lead
 # Spec 023 — Generic Interaction Capture
 
 **Depends on:** spec 022 (agent surface logging).
-**Goal:** make the OSS layer the **best generic product on the market for
-capturing *every* interaction an agentic system has** — not a fixed list of
-known surfaces, but a universal, extensible capture model with generic
-baseline / tagging / signature primitives that apply to *any* interaction,
-plus a coverage loop that tells you what you're not yet capturing.
+**Goal:** provide an extensible metadata API for interactions explicitly
+reported by an integration, with generic baseline, tagging and signature
+primitives. Observed-kind signals describe submitted activity; they cannot
+discover interactions that bypass instrumentation or prove complete coverage.
 
 ## Design principle: generic, not particular
 
@@ -107,8 +106,8 @@ result = fabric.verify_signature(artifact_hash, signature, public_key, scheme="e
 
 ## 5. The improvement loop (coverage signal)
 
-The product self-reports what it is *not* yet capturing first-class, so coverage
-converges toward "everything":
+The product reports submitted interaction kinds that lack first-class
+representation. This signal does not establish coverage of unobserved activity:
 
 - Fabric tracks the set of `kind`s seen via the generic `record_interaction`
   path (i.e. NOT one of the first-class specializations). The first time a new

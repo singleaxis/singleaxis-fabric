@@ -1,0 +1,408 @@
+{
+  "schema_version": "fabric.chart-deep-audit/v1",
+  "date": "2026-10-02",
+  "reviewed_head": "0c057678eaa4d4b29217bccec2094dc196a34a18",
+  "production_verdict": "NO_GO",
+  "scope": "All 34 tracked non-Markdown files under charts/fabric, including both hidden .helmignore files",
+  "method_semantics": "Every source/template/test/fixture/schema line displayed and read; cross-file consumer, validation and fixture relationships examined. Exact hashes inventory final bytes; full semantic read is not exhaustive correctness proof.",
+  "findings": [
+    {
+      "id": "C1",
+      "status": "partially_fixed",
+      "summary": "Helm health-test Pod no longer carries runtime name selector, preventing Collector Service/NetworkPolicy/PDB match; API token automount explicitly false.",
+      "remaining": "Production namespace deny-default still prevents health-test connectivity without separately approved scoped network rules. Mutable curl tag remains unqualified. No network policy broadened and no digest guessed."
+    },
+    {
+      "id": "C2",
+      "status": "fixed",
+      "summary": "Removed Helm default operator from schema-required minAvailable so explicit integer0 survives; default1 still comes from values.yaml. Added zero and percentage render regressions; execution awaits Helm CI."
+    }
+  ],
+  "verification": [
+    {
+      "method": "Draft7Validator.check_schema and direct recursive merge validation",
+      "result": "Both schemas valid; defaults, development and production+synthetic-fixture parent/child values valid; both invalid-values fixtures rejected. This is not Helm execution."
+    },
+    {
+      "method": "Dependency metadata comparison",
+      "result": "Parent, lock and vendored child agree on single dependency name and version; Helm lock digest not recomputed."
+    },
+    {
+      "method": "bash -n all seven shell scripts",
+      "result": "passed"
+    },
+    {
+      "method": "Helm execution",
+      "result": "Unavailable locally. Parent reports official download HTTP403 and prior CI059 Helm job passed; no bypass attempted, no new Helm/cluster runtime claim."
+    },
+    {
+      "method": "bash -n changed shell regressions; git diff --check charts/fabric",
+      "result": "passed; newly added helm template assertions not executable locally because Helm unavailable"
+    }
+  ],
+  "limits": [
+    "Only four parent-authorized chart template/test files changed after concrete findings reported; no production network rule broadened.",
+    "Render acceptance and operator review references do not qualify actual TLS/IAM/CNI/KMS/storage/destination behavior.",
+    "No local helm lint/template/package/test or Kubernetes/CNI execution performed."
+  ],
+  "files": [
+    {
+      "path": "charts/fabric/.helmignore",
+      "sha256": "fe5d7d67ba8cc4a538c1a8bd8eb36ec8f494e9bfba6c62e6e6e13e6444e57ee8",
+      "bytes": 441,
+      "method": "full_text_semantic_review",
+      "review": "Read every packaging exclusion; keeps vendored Collector while excluding historical sidecars and local tests/docs. Cross-checked package-boundary test.",
+      "limits": [
+        "Actual helm package archive not regenerated locally."
+      ]
+    },
+    {
+      "path": "charts/fabric/Chart.lock",
+      "sha256": "960e3be530bbed4bc8684dd3a55f6e8934f961280ce51da0b18cc2a5da4f036b",
+      "bytes": 197,
+      "method": "full_text_semantic_review",
+      "review": "Read exact dependency lock name, version, empty repository and stored digest. Dependency identity agrees with parent and vendored Collector Chart.yaml.",
+      "limits": [
+        "Stored lock digest not independently recomputed with Helm; no remote dependency resolution performed."
+      ]
+    },
+    {
+      "path": "charts/fabric/Chart.yaml",
+      "sha256": "a2f91d328fb49fc3de5d60eb79e148900e5a42bf03639a25085a0df05290142a",
+      "bytes": 1140,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed chart/app/Kubernetes versions, single vendored Collector dependency, enable condition and telemetry tag. No outside recorder dependency introduced.",
+      "limits": [
+        "Chart version metadata does not prove image identity or runtime qualification."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/.helmignore",
+      "sha256": "9a0b5691c213c20020cd0aebfd535ecfad67db46b4ffc0f423e167997f72954c",
+      "bytes": 136,
+      "method": "full_text_semantic_review",
+      "review": "Read all dependency packaging exclusions, including test/CI tooling; chart template hook under templates/tests remains shipped.",
+      "limits": [
+        "Packaging not re-executed locally."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/Chart.yaml",
+      "sha256": "e1e66973c7cc4dc846d4284f7cf9456c2506a7937f42140203c71714c7219616",
+      "bytes": 649,
+      "method": "full_text_semantic_review",
+      "review": "Read component versions/source/name and matched exact parent/lock dependency version.",
+      "limits": [
+        "Declared Kubernetes lower bound not cluster-qualified here."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/NOTES.txt",
+      "sha256": "75b0a89c74d31e4c4acd1c6f310b7912b9b69447382b47c246429d916f16d3d5",
+      "bytes": 761,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed passive scope, configured destination, persistent/memory queue distinction and destination-durability disclaimer.",
+      "limits": [
+        "Install output is intent, not evidence workload is running or all destinations support at-least-once delivery."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/_helpers.tpl",
+      "sha256": "712d18bc4d9d1524d4f9aa6015125c3060f743cd96842439f87b5f08a66551b6",
+      "bytes": 15818,
+      "method": "full_text_semantic_review",
+      "review": "Read every naming/image/receiver/network/exporter/queue invariant. Checked secret references, mutually exclusive ingress modes, fixed identity patterns, no debug for authenticated modes, TLS/export queue interactions and degenerate peers.",
+      "limits": [
+        "Requires approved source credential but ordinary workload labels are not authenticated against arbitrary telemetry identity fields.",
+        "Peer nonempty selectors can still be broad; local template checks do not establish network isolation.",
+        "Custom podLabels are not guarded against selector-label collisions; may cause rejected deployment or misleading selectors."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/configmap.yaml",
+      "sha256": "59cadb8f2935f07a58b860ee2c0ace859014fa5e4aa7777ea090861a40d88b39",
+      "bytes": 7528,
+      "method": "full_text_semantic_review",
+      "review": "Read every Collector receiver/extension/processor/exporter/service stanza and condition. Matched TLS/token file paths to volumes, both protocols to auth, logs/traces to guard, queue to storage and auth header to secret env.",
+      "limits": [
+        "Parent image entrypoint fabric-gate validates mounted configuration; chart passes --config to that entrypoint.",
+        "No metric pipeline; no destination durable-receipt claim.",
+        "8MiB request bound does not establish total recursive attribute work budget."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/deployment.yaml",
+      "sha256": "8e53abf25466adb78f75ca7a578913dc3d585738228136c6c61e1dbe77b4b0fb",
+      "bytes": 10044,
+      "method": "full_text_semantic_review",
+      "review": "Read full Deployment/StatefulSet switching, retention, labels/selectors, config checksums, security contexts, probes, env projection, secrets, PVCs and placement.",
+      "limits": [
+        "Retained per-replica PVC is not encryption or backup proof.",
+        "Existing claim constrained to single replica by helper.",
+        "Secret content changes do not affect ConfigMap checksum; runtime reload/rollout is external qualification."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/networkpolicy.yaml",
+      "sha256": "d4a743c5d20dee421e5d44e0582e93ff1d315afe9cc86be2530eed363daf1d96",
+      "bytes": 2414,
+      "method": "full_text_semantic_review",
+      "review": "Read ingress/health/DNS/exporter/additional egress rules and selector helper relationships. Default production health ingress absent; hook pod matches same policy before fix.",
+      "limits": [
+        "See C1.",
+        "DNS opens kube-system namespace port53 rather than a DNS pod selector; additional egressTo has no port restriction by design.",
+        "CNI/egress destination correspondence not live-qualified."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/poddisruptionbudget.yaml",
+      "sha256": "c48e9b26a8ba4a37461089c987d168edbdfbb2ee4d56adacb1bb1ed72cba285b",
+      "bytes": 589,
+      "method": "full_text_semantic_review",
+      "review": "Read replica-count gate, enabled flag, minAvailable default and selector matching; found zero-value mismatch with schema. Authorized fix renders schema-required minAvailable directly, preserving integer0 and percentage strings.",
+      "limits": [
+        "See C2.",
+        "PDB does not prove no telemetry loss or protect involuntary disruption."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/service.yaml",
+      "sha256": "9198f9902c731be7d83ce09ad420a03213365ecc9c03e8135b2e719f286b5952",
+      "bytes": 632,
+      "method": "full_text_semantic_review",
+      "review": "Read all port mappings and selector relationship to workload and test-hook labels; found hook inclusion.",
+      "limits": [
+        "See C1.",
+        "All three ports always rendered; values do not provide disable toggles despite values comment."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/serviceaccount.yaml",
+      "sha256": "47c5cb75b83e6ae6a10032b4885a520bae408a9327dce7158e1ee96d88b4ce2d",
+      "bytes": 370,
+      "method": "full_text_semantic_review",
+      "review": "Read optional account naming/annotations and explicit automount=false; runtime pod independently disables token mount.",
+      "limits": [
+        "Helm test pod uses default service account instead; see C1."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/templates/tests/test-connection.yaml",
+      "sha256": "0fa0ba554f633df85afefbe5d855ae0614068bc4552279a60c3ea73a6eae4d0b",
+      "bytes": 1678,
+      "method": "full_text_semantic_review",
+      "review": "Read whole hook pod, label helper, curl target/timeout, image, security context and lifecycle annotations. Cross-checked Service and NetworkPolicy selectors; concrete interference and production route failures found. Authorized fix removes runtime-name label, uses separate health-test component, and sets automountServiceAccountToken=false. Exact final template reread.",
+      "limits": [
+        "See C1.",
+        "Mutable curl tag and no resources; health is not authenticated capture/delivery proof.",
+        "No live helm test executed."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-durable-delivery.sh",
+      "sha256": "17cbf48d75796f99ef5c102594d6335e17fa2a1abbf152b07843553954dcdc95",
+      "bytes": 9222,
+      "method": "full_text_semantic_review",
+      "review": "Read entire default/memory/persistence/existing-PVC/profile render matrix and every negative queue/TLS/claim mutation; bash -n passed. Added focused render regressions for explicit zero and 50% PDB values; shell parses, Helm execution pending CI.",
+      "limits": [
+        "Static substring checks do not prove actual fsync crash recovery, backend durability or rendered config runtime acceptance."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-evidence-source-binding.sh",
+      "sha256": "3fae91f375a9915b710d15937da43172f871141b44742521d43b754083d19d91",
+      "bytes": 3991,
+      "method": "full_text_semantic_review",
+      "review": "Read default-absence, two-protocol bearer enforcement, secret projection, fixed binding and invalid-config cases; bash -n passed.",
+      "limits": [
+        "No live token authentication/source reconciliation performed by this script; render contract only."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-ingress-egress-security.sh",
+      "sha256": "323ab930ad892ce15c40e685e3bd9dd4abdb9af8428bf24eb44f9cacb106af6a",
+      "bytes": 13298,
+      "method": "full_text_semantic_review",
+      "review": "Read entire receiver limits/TLS/projection, peer rejection, health-scope, token mount and production mutation matrix; bash -n passed. Added focused hook component/name-selector/API-token render regressions; shell parses, Helm execution pending CI.",
+      "limits": [
+        "Substring assertions do not parse all Kubernetes structure or qualify CNI; does not test health hook selection/route."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/tests/test-recorder-boundary.sh",
+      "sha256": "376595b1d6aef741901a57e10c00fe747e5352ff7294fc866514aca6f9607560",
+      "bytes": 1182,
+      "method": "full_text_semantic_review",
+      "review": "Read rendered processor-chain check, forbidden runtime names and removed schema-key rejections; bash -n passed.",
+      "limits": [
+        "Single substring presence does not establish both pipelines independently; no live Collector startup in script."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/values.schema.json",
+      "sha256": "f814787793be6321e3b80e44364e0667d1501ee6fa1372d7205dcef0f01bd281",
+      "bytes": 16393,
+      "method": "full_text_semantic_review",
+      "review": "Read all closed chart value objects, required keys, bounds and intentionally extensible Kubernetes object definitions. Checked schema validity and merged defaults/profiles.",
+      "limits": [
+        "Native Kubernetes objects intentionally not fully validated; malformed selectors/resources/security settings still require Kubernetes validation.",
+        "PDB integer zero supported consistently after C2 fix.",
+        "Port uniqueness and duration ordering are not validated by schema."
+      ]
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/values.yaml",
+      "sha256": "dcab10e9b1c708b62364b20ac2df7701c237dc10b11748a5c305a72c7d0dea8d",
+      "bytes": 11416,
+      "method": "full_text_semantic_review",
+      "review": "Read all ingress, guard, exporter, queue, identity, secret, resources, probe, storage and network settings. Matched to schema and consumed template paths.",
+      "limits": [
+        "Development defaults are unauthenticated/plaintext and debug fallback.",
+        "Endpoint examples include plaintext remote example; production helper rejects it.",
+        "PDB comment overstates prevention of span loss: disruption availability is not losslessness."
+      ]
+    },
+    {
+      "path": "charts/fabric/profiles/shadow-dev.yaml",
+      "sha256": "232af6e0845ea674bb4b8c602b8e7f79b209001d8907a929e529f0e34a71a6f0",
+      "bytes": 736,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed explicit plaintext unauthenticated development posture, namespace creation and stdout fallback; deep-merged values validate.",
+      "limits": [
+        "Not safe across trust boundary; no durable destination configured."
+      ]
+    },
+    {
+      "path": "charts/fabric/profiles/shadow-production.yaml",
+      "sha256": "58bc3c053468b293e1f7836721e489744f57cfc4dc14e581949646bc3e20b8a7",
+      "bytes": 2920,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed every production override against required helper invariants: TLS/mTLS, workload credential reference, image digest placeholder, persistent fsync queue, infinite retry, no volatile batch/debug, explicit peers.",
+      "limits": [
+        "Blank operator inputs intentionally require completion before rendering.",
+        "Backpressure can delay synchronous telemetry senders; passive action behavior depends on SDK/exporter decoupling.",
+        "Assertions about credential provisioning/storage review remain operator metadata, not actual identity/encryption proof."
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/NOTES.txt",
+      "sha256": "93ccb43604b62ee5c9dfc6a75f1cf9fb37b2584b8554bd5f5cdb4122b42c5ad7",
+      "bytes": 2223,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed installed-summary, config status, no-destination warning, acceptance-versus-durability limits and health commands.",
+      "limits": [
+        "Rendered summary is configuration intent; default debug flag can display OFF while absent endpoint automatically uses debug fallback (warning does disclose stdout)."
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/_helpers.tpl",
+      "sha256": "5898da637e722b162f43b556d451d0f84ccc37569fc0f3a974343aace24edb0d",
+      "bytes": 7802,
+      "method": "full_text_semantic_review",
+      "review": "Read all helper definitions and production-required map, post-merge exact checks, full image digest check, tenant binding, storage selection/review and container security checks. Cross-checked defaults/profile/schema/test mutations.",
+      "limits": [
+        "Named production profile locks are configuration acceptance only.",
+        "Selector presence does not prove operator intent or actual CNI enforcement."
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/namespace.yaml",
+      "sha256": "ff58e24e47aa0a3d81dfd4403b97a7986ea3b7592f325b59d33957b26e02d5bd",
+      "bytes": 471,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed always-executed production validation includes and optional Namespace render, labels and annotations.",
+      "limits": [
+        "namespace.name may differ from Release.Namespace; no equality validation."
+      ]
+    },
+    {
+      "path": "charts/fabric/templates/networkpolicy.yaml",
+      "sha256": "615e01968da471de543c3cd25c5f55290ffe9ac49b9c08f13ef043c56ab162ff",
+      "bytes": 547,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed namespace-scoped all-pod ingress/egress default deny and Collector allow-policy interaction.",
+      "limits": [
+        "Applies to every pod in release namespace, including Helm hook pods; needs CNI enforcement.",
+        "See C1 health-hook route failure."
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/fixtures/production-assertions.yaml",
+      "sha256": "9086b30c05bd3cf8b930ef603ab2f4763e429983fc69c0ace28ba4e7de542f2d",
+      "bytes": 660,
+      "method": "full_text_semantic_review",
+      "review": "Read all synthetic release digest, credential and storage references; merged with production profile for schema validation.",
+      "limits": [
+        "Fixtures explicitly identify no live resources and are not approval/encryption evidence."
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/invalid-values/umbrella-toggle-type.yaml",
+      "sha256": "a1994254223aa4f8a2f44eb51e216378f2301dcc628639ccb16a543b183e41fe",
+      "bytes": 33,
+      "method": "full_text_semantic_review",
+      "review": "Read nonboolean enabled fixture and verified merged umbrella schema rejects it.",
+      "limits": []
+    },
+    {
+      "path": "charts/fabric/tests/invalid-values/umbrella-unknown-key.yaml",
+      "sha256": "7e839c1f64fda53a6c34f74732bfe0fd62ee2db69620e79402cca192fd3384fa",
+      "bytes": 30,
+      "method": "full_text_semantic_review",
+      "review": "Read misspelled toggle key fixture and verified merged umbrella schema rejects it.",
+      "limits": []
+    },
+    {
+      "path": "charts/fabric/tests/schema-validation.sh",
+      "sha256": "74922c094b53555bccc4d8087e0816e86861eff180f48371e2417734df93a67e",
+      "bytes": 7916,
+      "method": "full_text_semantic_review",
+      "review": "Read complete good-render and negative production-posture matrix, explicit peer overrides, mutation loop and package test chaining; bash -n passed.",
+      "limits": [
+        "Helm unavailable locally; no newly executed render claims.",
+        "reject_any confirms failure but not exact violated invariant."
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/test-package-boundary.sh",
+      "sha256": "8d10590d8e8e5c46906cd07993d07bd14714ce11eb50b22defb35cf5156f7857",
+      "bytes": 1443,
+      "method": "full_text_semantic_review",
+      "review": "Read package temp-directory lifecycle, archive listing/extraction, forbidden path/content checks and required Collector dependency check; bash -n passed.",
+      "limits": [
+        "No local packaging executed; checks are lexical forbidden-list coverage, not proof every possible unrelated runtime is excluded."
+      ]
+    },
+    {
+      "path": "charts/fabric/tests/test-values-schema.sh",
+      "sha256": "98fbf2a3029659e760f9ea745fa7c00d6d5403761c5f05100493db0e2e0f16e1",
+      "bytes": 2281,
+      "method": "full_text_semantic_review",
+      "review": "Read lint/default/profile render commands and expected negative values/schema errors; fixtures cross-validated directly and bash -n passed.",
+      "limits": [
+        "Direct JSON Schema checks do not reproduce Helm coalescing/template execution in every case."
+      ]
+    },
+    {
+      "path": "charts/fabric/values.schema.json",
+      "sha256": "f6317f15e0680cfde707723ceec5bd9d873a24239c5b6dcb6fe0c04ba1deae08",
+      "bytes": 2600,
+      "method": "full_text_semantic_review",
+      "review": "Read all properties/required/closed extension rules and definitions. Validated schema itself, merged profiles and both invalid fixtures; Collector object intentionally delegates validation.",
+      "limits": [
+        "Schema checks types/shape; production cross-field invariants are enforced by templates."
+      ]
+    },
+    {
+      "path": "charts/fabric/values.yaml",
+      "sha256": "f8cc7bb9f345da13b5543a51071500baf3fa2df83af603c5e3e6899aaa5c2cee",
+      "bytes": 1040,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed parent namespace/profile/tenant defaults, Collector toggle and dependency override key. Defaults schema-validated; defaults remain explicitly development-only.",
+      "limits": [
+        "Namespace.name is independent of Release.Namespace; differing values can create an unused namespace.",
+        "Destination absent means debug stdout, not durable audit."
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # Governed content contract v1
 
 Public, versioned schemas for Fabric's opt-in governed content path
-(draft specs [028–034](../../specs/)). These contracts describe the content
+(draft specs [028–034](../../../specs/)). These contracts describe the content
 objects the SDK writes to **customer-controlled storage**, the per-decision
 transcript manifest, and the export an authorized resolver produces. Raw
 content never enters OTLP; telemetry carries reference URIs and digests

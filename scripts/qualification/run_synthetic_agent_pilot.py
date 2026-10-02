@@ -523,23 +523,13 @@ def _run_case(
                 expected_sink_records.append(
                     {
                         "event_name": projected_record["eventName"],
-                        "attributes": {
-                            key: attrs[key]
-                            for key in (
-                                "record_id",
-                                "role",
-                                "status",
-                                "content_object_id",
-                                "content_sha256",
-                                "source_id",
-                                "source_epoch",
-                                "source_sequence",
-                                "operation_id",
-                                "attempt_id",
-                                "tenant_id",
-                                "run_id",
-                            )
-                            if key in attrs
+                        "attributes": {key: str(value) for key, value in attrs.items()},
+                        "attribute_types": {
+                            item["key"]: {
+                                "stringValue": "string_value",
+                                "intValue": "int_value",
+                            }[next(iter(item["value"]))]
+                            for item in projected_record["attributes"]
                         },
                     }
                 )

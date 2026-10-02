@@ -30,6 +30,7 @@ import {
   type DelegationContext,
 } from "../src/index.js";
 import { sha256Hex } from "../src/index.js";
+import { resetIdentifierWarningsForTesting } from "../src/id-validators.js";
 
 const exporter = new InMemorySpanExporter();
 let provider: BasicTracerProvider;
@@ -674,6 +675,7 @@ describe("recordInteraction PII-shape warnings", () => {
         d.recordInteraction("check user bryan@example.test", "input");
       });
       expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+      expect(spy.mock.calls.flat().join(" ")).not.toContain("bryan@example.test");
     } finally {
       spy.mockRestore();
     }
@@ -852,6 +854,8 @@ describe("installDefaultProvider", () => {
 });
 
 describe("recordInteraction PII scan bounds", () => {
+  // Each detection boundary needs a fresh process-local warning budget.
+  beforeEach(() => resetIdentifierWarningsForTesting());
   it("returns fast on a 64KiB no-match kind (quadratic regex regression)", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -887,6 +891,7 @@ describe("recordInteraction PII scan bounds", () => {
         d.recordInteraction("prefix " + "x".repeat(100) + " bryan@example.test", "input");
       });
       expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+      expect(spy.mock.calls.flat().join(" ")).not.toContain("bryan@example.test");
     } finally {
       spy.mockRestore();
     }
@@ -900,7 +905,9 @@ describe("recordInteraction PII scan bounds", () => {
         fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
           d.recordInteraction(`prefix ${pii} suffix`, "input");
         });
+        expect(spy.mock.calls.flat().join(" ")).not.toContain(pii);
         expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+        expect(spy.mock.calls.flat().join(" ")).not.toContain("bryan@example.test");
       } finally {
         spy.mockRestore();
       }
@@ -916,7 +923,9 @@ describe("recordInteraction PII scan bounds", () => {
       fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
         d.recordInteraction(value, "input");
       });
+      expect(spy.mock.calls.flat().join(" ")).not.toContain(value);
       expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+      expect(spy.mock.calls.flat().join(" ")).not.toContain("bryan@example.test");
     } finally {
       spy.mockRestore();
     }
@@ -930,7 +939,9 @@ describe("recordInteraction PII scan bounds", () => {
       fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
         d.recordInteraction(value, "input");
       });
+      expect(spy.mock.calls.flat().join(" ")).not.toContain(value);
       expect(spy.mock.calls.some((c) => String(c[0]).includes("interaction.kind"))).toBe(true);
+      expect(spy.mock.calls.flat().join(" ")).not.toContain("bryan@example.test");
     } finally {
       spy.mockRestore();
     }

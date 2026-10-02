@@ -24,7 +24,12 @@
     "passed": 303,
     "skipped": 51,
     "excluded_previously_attempted_blocked_module": "scripts/tests/test_governed_node_e2e.py",
-    "reason": "Docker Hub HTTP429 prevented three Compose tests startup"
+    "reason": "Docker Hub HTTP429 prevented three Compose tests startup",
+    "skip_reasons": {
+      "helm_unavailable": 43,
+      "live_s3_not_configured": 7,
+      "isolated_grpc_test_extra_absent": 1
+    }
   },
   "package_hashes": [
     {

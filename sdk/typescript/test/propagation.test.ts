@@ -299,3 +299,17 @@ describe("delegation carrier", () => {
     expect(carrier[TRACEPARENT_HEADER]).toContain(decisionSpan().spanContext().spanId);
   });
 });
+
+describe("inbound propagation resource bounds", () => {
+  it("rejects oversized vendor values before base64/JSON decoding", () => {
+    const value = Buffer.from(JSON.stringify({ t: "x".repeat(1000000), a: "a" })).toString(
+      "base64url",
+    );
+    expect(extract({ tracestate: `singleaxis=${value}` })).toBeUndefined();
+  });
+  it("rejects too many members and runtime nonstring headers", () => {
+    const value = Buffer.from(JSON.stringify({ t: "tenant", a: "agent" })).toString("base64url");
+    expect(extract({ tracestate: `${"vendor=x,".repeat(32)}singleaxis=${value}` })).toBeUndefined();
+    expect(extract({ tracestate: 123 as unknown as string })).toBeUndefined();
+  });
+});

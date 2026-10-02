@@ -295,6 +295,9 @@ class TranscriptManifest:
         return sorted({item.role for item in self.items if item.status in DESCRIPTOR_STATUSES})
 
     def to_json(self) -> dict[str, Any]:
+        """Serialize observed items; raise if no observations exist yet."""
+        if not self.items:
+            raise ValueError("cannot serialize transcript manifest with no observations")
         doc: dict[str, Any] = {
             "schema_version": SCHEMA_TRANSCRIPT_MANIFEST,
             "manifest_id": self.manifest_id,

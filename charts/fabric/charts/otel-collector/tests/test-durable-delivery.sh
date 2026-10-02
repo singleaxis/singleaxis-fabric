@@ -99,6 +99,14 @@ existing_render="$(helm template ci "${chart_dir}" \
 expect_contains "existing claim is mounted" "${existing_render}" "claimName: preprovisioned-queue"
 expect_not_contains "existing claim does not create claim template" "${existing_render}" "volumeClaimTemplates:"
 
+printf '\n=== Explicit disruption budget values ===\n'
+zero_pdb="$(helm template ci "${chart_dir}" --show-only templates/poddisruptionbudget.yaml \
+  --set replicaCount=2 --set podDisruptionBudget.minAvailable=0)"
+expect_contains "explicit zero disruption budget is preserved" "${zero_pdb}" "minAvailable: 0"
+percentage_pdb="$(helm template ci "${chart_dir}" --show-only templates/poddisruptionbudget.yaml \
+  --set replicaCount=2 --set-string podDisruptionBudget.minAvailable=50%)"
+expect_contains "percentage disruption budget is preserved" "${percentage_pdb}" "minAvailable: 50%"
+
 printf '\n=== Fail-loud unsafe combinations ===\n'
 expect_fail "TLS requirement rejects HTTP" "requires an https://" \
   --set exporter.endpoint=http://otlp.example.com \

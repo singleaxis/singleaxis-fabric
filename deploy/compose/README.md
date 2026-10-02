@@ -40,7 +40,7 @@ Run the restart/outage qualification:
 make qualify
 ```
 
-It proves that this configuration:
+It checks this configuration using fresh exported request markers:
 
 1. accepts a known trace;
 2. strips a non-allowlisted marker before export;
@@ -91,15 +91,12 @@ Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
 secrets/ingress.token>`. Requests without a valid token are rejected; there is
 no unauthenticated fallback.
 
-> **Token file format matters.** The pinned `bearertokenauth` extension
-> splits the token file on newlines and keeps empty entries — a trailing
-> newline or any blank line mints a `Bearer` prefix with an empty token as a valid
-> credential, which gRPC metadata preserves. Write the file with
-> `printf %s` (no trailing newline) as shown; `make preflight-prod` fails
-> on unsafe token files, and the image's `fabric-gate` entrypoint refuses
-> to boot on them and keeps watching while the collector runs — a mid-run
-> rotation to an unsafe file stops the recorder rather than reopening the
-> empty-credential bypass.
+> **Token file format matters.** Write one token with `printf %s` and no
+> trailing newline. The shipped patched bearer authenticator rejects malformed
+> or multiple entries on startup/reload; the unsafe empty-entry behavior of the
+> upstream extension is not the shipped contract. `make preflight-prod` and
+> `fabric-gate` also reject unsafe token files. The gate keeps watching during
+> execution; an unsafe rotation stops the recorder.
 
 To run the signed release image instead of building locally, verify the
 cosign signature per [`docs/verify-release.md`](../../docs/verify-release.md), then set
@@ -131,10 +128,12 @@ verified release identity. Static Compose checks are not Docker execution.
   header; `insecure_skip_verify` exists only for throwaway dev destinations.
 - The collector runs as nonroot with a read-only root filesystem, all
   capabilities dropped, and `no-new-privileges`.
-- This deployment proves the same thing `make qualify` proves at a different
-  trust posture: at-least-once delivery through a durable queue to a
-  destination the client controls. It does not prove destination-side durable
-  persistence, exactly-once delivery, or provide dashboards.
+- This deployment configures a durable queue and retry to a client-selected
+  destination. `make verify-prod` checks ingress health/authentication and
+  available queue metrics; it does not read back destination records or prove
+  privacy protection, durable destination persistence, or exactly-once delivery.
+  `make qualify` separately exercises the local evaluation sink using fresh
+  request markers; it does not qualify the production destination.
 - For plaintext development, keep using the evaluation profile (`make up`) on
   a trusted host instead of weakening the production overlay.
 
@@ -163,12 +162,15 @@ OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512  # default 512
 OTEL_BSP_SCHEDULE_DELAY=2000        # ms; default 5000
 ```
 
-The SDK does not flush automatically on exit — the host process must call
-`force_flush`/`shutdown` on the tracer provider during clean shutdown
-(`examples/reference-agent` shows the pattern). Agents that exit hard without
-flushing lose whatever was still buffered. Watch
-`otelcol_processor_dropped_spans` in the agent's metrics for source-side loss,
-and `otelcol_receiver_refused_spans` on the node for admission pressure.
+The Python OTel SDK provider registers a best-effort shutdown handler by
+default. Explicitly call `force_flush`/`shutdown` during orderly shutdown
+(`examples/reference-agent` shows the pattern), inspect their outcomes, and
+allow bounded time to finish. Neither an exit handler nor a flush proves
+destination durability; hard termination can lose buffered spans. Inspect
+source SDK/exporter diagnostics and any counters that the configured SDK
+actually exposes. `otelcol_*` metrics belong to the Collector, not the Python
+agent: monitor `otelcol_receiver_refused_spans` on the Node for admission
+pressure. A healthy Node cannot detect spans lost before they reach it.
 
 ## Honest limitations
 

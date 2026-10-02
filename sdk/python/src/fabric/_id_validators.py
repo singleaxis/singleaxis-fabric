@@ -292,7 +292,7 @@ def check_identifier(field_name: str, value: str) -> None:
         return
     if _is_sentinel(value):
         message = (
-            f"{field_name}={value!r} is a placeholder, not an identifier. "
+            f"{field_name} is a placeholder, not an identifier. "
             f"This value partitions every span, audit record and tenant "
             f"isolation check, so an unset variable here silently merges "
             f"unrelated data. Set a real {field_name}. "
@@ -304,7 +304,7 @@ def check_identifier(field_name: str, value: str) -> None:
         raise ValueError(message)
     if _is_copy_paste_marker(value):
         warnings.warn(
-            f"{field_name}={value!r} looks like an unedited copy-paste "
+            f"{field_name} looks like an unedited copy-paste "
             f"placeholder from the docs. It will be written onto every "
             f"emitted span as a real {field_name}.",
             PlaceholderIdentifierWarning,

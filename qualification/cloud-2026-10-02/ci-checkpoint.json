@@ -1,0 +1,55 @@
+{
+  "head": "059d54749c896cf6d93524b64668a27967123780",
+  "codeql_result_gate": {
+    "id": 111017078281,
+    "conclusion": "failure",
+    "annotations": 62,
+    "high": 2,
+    "warnings": 6,
+    "notes": 54
+  },
+  "codeql_language_workflow": {
+    "run_id": 37060820513,
+    "conclusion": "success"
+  },
+  "recorder_ci": {
+    "run_id": 37060820450,
+    "conclusion": "failure",
+    "failed_job": "Python formatting, lint, and types",
+    "reason": "mypy2.4.0 / OTel1.45.0 LabelValue alias narrow in test; fixed in follow-up with object annotation; full newer-env mypy pass"
+  },
+  "recorder_security": {
+    "run_id": 37060820526,
+    "conclusion": "failure",
+    "failed_job": "Released source SAST",
+    "findings": 5
+  },
+  "other_workflows": [
+    {
+      "name": "Recorder license compliance",
+      "run_id": 37060820458,
+      "conclusion": "success"
+    },
+    {
+      "name": "E2E kind smoke",
+      "run_id": 37060820482,
+      "conclusion": "success"
+    },
+    {
+      "name": "Synthetic production-profile qualification",
+      "run_id": 37060820530,
+      "conclusion": "success"
+    }
+  ],
+  "independent_local_sast_attempt": {
+    "version": "1.174.0",
+    "outcome": "rules_unavailable",
+    "error": "ProxyError: Tunnel connection failed: 403 Forbidden",
+    "no_alternate_route": true
+  },
+  "limits": [
+    "Counts and conclusions are read from exact-head check and workflow results, not inherited from published predecessor.",
+    "Current CodeQL annotation IDs and Semgrep rule locations could not be read through the available connector endpoint.",
+    "No workflow success is production approval."
+  ]
+}

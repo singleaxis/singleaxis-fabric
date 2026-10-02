@@ -93,6 +93,16 @@ Use `fabric.execution(...)` to correlate multiple decisions. `Decision` also
 captures retrieval, memory, side effects, checkpoints, delegation, MCP
 inventory, skills, hooks, file access and generic interactions.
 
+Callback failures in decision, execution, LLM and tool spans emit a fixed
+`Operation failed` exception diagnostic and a bounded error classification.
+Original exception messages, stacks and arbitrary error names are not passed to
+the host tracer provider; the original thrown value or rejected promise reason
+still reaches the caller. AbortError and TimeoutError classifications retain
+ERROR status. This protection covers these SDK-generated failure diagnostics;
+it is not a general exporter allowlist or Python recorder parity. Hosts remain
+responsible for protecting custom attributes, explicitly captured content and
+spans produced by other instrumentation before export.
+
 ## Local capture health
 
 `decision.captureHealth` returns a fresh local snapshot with `scope:
@@ -191,6 +201,23 @@ redactors fast and test their correctness. Storage delivery remains asynchronous
 Configuration errors are reported during setup; capture outcomes never authorize
 or reject the monitored action. This Node interface does not implement the Python
 authenticated local store, capability authority, or deployment-state registry.
+
+### Governed transcript contract compatibility
+
+Serialized content-v1 transcript manifests use `coverage.roles_enabled` and
+`coverage.roles_observed`, as required by the published contract. Observed roles
+include only pending, stored or truncated items. This corrects the earlier
+invalid top-level role fields; readers of that projection must use `coverage`.
+Memory direction and side-effect identity remain in their activity events;
+unsupported `direction` and `side_effect_id` descriptor binding keys are omitted.
+The `TranscriptManifest` accumulator retains its generic `toJSON()` return type.
+An empty observation window is explicit: `contentManifest.items` is empty and
+`contentManifestUri` is `undefined`; close writes no manifest, stamps no manifest
+reference and contributes no stored count. In metadata-only mode,
+`contentManifest` itself is `undefined`. Serializing an empty accumulator with
+`toJSON()` throws a no-observations error. No actions or role outcomes are
+invented. An explicitly captured empty string is still an observation and is
+stored normally. These corrections do not add durable recorder or Python parity.
 
 ## Propagation across services
 

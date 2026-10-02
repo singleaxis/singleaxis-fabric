@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+import fabric
 from fabric.byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder
 from fabric.call_recorder import CallRecorder
 from fabric.deployment_policy import DeploymentPolicy
@@ -62,6 +63,34 @@ def source_hashes() -> dict[str, str]:
     return {
         str(path.relative_to(repository)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(paths)
+    }
+
+
+def sdk_runtime() -> dict[str, Any]:
+    """Bind the package actually imported by this interpreter to reviewed bytes."""
+    if fabric.__file__ is None:
+        raise RuntimeError("Fabric package origin is unavailable")
+    package = Path(fabric.__file__).resolve().parent
+    checkout = Path(__file__).resolve().parents[2] / "sdk/python/src/fabric"
+    actual = {
+        str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(package.rglob("*.py"))
+    }
+    expected = {
+        str(path.relative_to(checkout)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(checkout.rglob("*.py"))
+    }
+    if not actual or actual != expected:
+        raise RuntimeError("imported SDK differs from the reviewed source checkout")
+    return {
+        "loading": "source_checkout"
+        if package == checkout
+        else "installed_distribution",
+        "package_root": str(package),
+        "matches_reviewed_python_sources": True,
+        "python_files": [
+            {"path": path, "sha256": digest} for path, digest in actual.items()
+        ],
     }
 
 
@@ -296,6 +325,7 @@ def consume(root: Path) -> None:
             "independent_effect_count": len(truth),
             "resolved_objects": len(objects),
             "fault_results": statuses,
+            "sdk_package_root": sdk_runtime()["package_root"],
         },
     )
 
@@ -419,6 +449,7 @@ service:
     ]
     binary_hash = hashlib.sha256(args.collector_binary.read_bytes()).hexdigest()
     provenance = source_hashes()
+    runtime = sdk_runtime()
     process = None
     try:
         with (root / "collector.log").open("wb") as log:
@@ -517,6 +548,8 @@ service:
             )
         if (
             source_hashes() != provenance
+            or sdk_runtime() != runtime
+            or consumer["sdk_package_root"] != runtime["package_root"]
             or hashlib.sha256(args.collector_binary.read_bytes()).hexdigest()
             != binary_hash
         ):
@@ -530,8 +563,9 @@ service:
                     {"path": path, "sha256": digest}
                     for path, digest in sorted(provenance.items())
                 ],
-                "sdk_loading": "source checkout via PYTHONPATH; installed wheel not tested",
-                "execution_command": "PYTHONPATH=sdk/python/src python scripts/qualification/run_composed_collector_journey.py --collector-binary components/otel-collector-fabric/dist/otelcol-fabric --evidence-dir NEW_DIRECTORY",
+                "sdk_loading": runtime["loading"],
+                "sdk_runtime": runtime,
+                "execution_command": "python scripts/qualification/run_composed_collector_journey.py --collector-binary components/otel-collector-fabric/dist/otelcol-fabric --evidence-dir NEW_DIRECTORY",
                 "build_command": "builder --config ocb-config.yaml && sh upstream/build-patched-bearertokenauth.sh",
                 "source_base_revision": subprocess.run(
                     ["git", "rev-parse", "HEAD"],

@@ -1017,13 +1017,13 @@ describe("durable spool", () => {
     return descriptor;
   }
 
-  it("spool record carries full identity and a checksum", () => {
+  it("spool record carries full identity and a checksum", async () => {
     const root = tmpRoot();
-    const writer = new ContentWriter(spoolConfig(root));
-    writer.submit(descriptor(), "payload", "d-9", "m-9", 3);
+    const writer = new ContentWriter(spoolConfig(root, { workerFlushIntervalMs: 60000 }));
+    expect(writer.submit(descriptor(), "payload", "d-9", "m-9", 3)).toBe(ContentStatus.PENDING);
     const files = fs.readdirSync(path.join(root, "spool")).filter((f) => f.endsWith(".json"));
-    // The worker may have drained already; if a record exists, inspect it.
-    if (files.length > 0) {
+    try {
+      expect(files).toHaveLength(1);
       const record = JSON.parse(
         fs.readFileSync(path.join(root, "spool", files[0] as string), "utf-8"),
       ) as Record<string, unknown>;
@@ -1048,8 +1048,10 @@ describe("durable spool", () => {
       expect(record["decision_id"]).toBe("d-9");
       expect(record["manifest_id"]).toBe("m-9");
       expect(record["manifest_item_sequence"]).toBe(3);
+      expect(record["checksum"]).toMatch(/^[0-9a-f]{64}$/);
+    } finally {
+      await writer.close();
     }
-    void writer.close();
   });
 
   it("recovers more records than the in-memory queue capacity", async () => {
@@ -1110,26 +1112,48 @@ describe("durable spool", () => {
   });
 
   it("reconciles a recovered manifest after restart", async () => {
+    const originalRoot = tmpRoot();
+    const originalConfig = spoolConfig(originalRoot, { workerFlushIntervalMs: 60000 });
+    const writer = new ContentWriter(originalConfig);
     const root = tmpRoot();
     const cfg = spoolConfig(root);
-    const writer = new ContentWriter(cfg);
     const doc = {
       schema_version: "fabric.transcript-manifest/v1",
       manifest_id: "m-restart",
       decision_id: "d-restart",
       tenant_id: "acme",
     };
-    writer.submitManifest(doc, "d-restart", "m-restart", "acme");
-    await writer.close();
-    // Delivered or still spooled — a recovered writer converges either way.
-    const recovered = new ContentWriter(cfg);
-    await recovered.flush(10);
-    await recovered.close();
+    try {
+      expect(writer.submitManifest(doc, "d-restart", "m-restart", "acme")).toBe(
+        ContentStatus.PENDING,
+      );
+      const files = fs.readdirSync(originalConfig.spoolDir).filter((f) => f.endsWith(".json"));
+      expect(files).toHaveLength(1);
+      expect(fs.existsSync(path.join(originalRoot, "acme", "manifests", "m-restart.json"))).toBe(
+        false,
+      );
+      // Preserve exactly the durable pending bytes at the crash boundary in an
+      // isolated restart destination. The original writer cannot populate it.
+      fs.mkdirSync(cfg.spoolDir, { recursive: true });
+      fs.copyFileSync(
+        path.join(originalConfig.spoolDir, files[0]!),
+        path.join(cfg.spoolDir, files[0]!),
+      );
+    } finally {
+      await writer.close();
+    }
     const manifestPath = path.join(root, "acme", "manifests", "m-restart.json");
-    const doc2 = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
-      manifest_id: string;
-    };
-    expect(doc2.manifest_id).toBe("m-restart");
+    expect(fs.existsSync(manifestPath)).toBe(false);
+    const recovered = new ContentWriter(cfg);
+    try {
+      const result = await recovered.flush(10);
+      expect(result.stored).toBe(1);
+      expect(result.pending).toBe(0);
+      expect(JSON.parse(fs.readFileSync(manifestPath, "utf-8"))).toEqual(doc);
+      expect(fs.readdirSync(cfg.spoolDir).filter((f) => f.endsWith(".json"))).toEqual([]);
+    } finally {
+      await recovered.close();
+    }
   });
 
   it("reconciles a recovered object into its owning manifest", async () => {

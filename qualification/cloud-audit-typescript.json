@@ -6,7 +6,7 @@
     "npm": "11.9.0"
   },
   "results": {
-    "vitest_passed": 380,
+    "vitest_passed": 433,
     "package_node_tests_passed": 6,
     "package_smoke": [
       "esm",
@@ -30,14 +30,16 @@
     },
     {
       "id": "TS-RAW-EXCEPTION",
-      "status": "remaining_privacy_limitation",
+      "status": "fixed_for_sdk_callback_failure_diagnostics",
       "paths": [
         "sdk/typescript/src/decision.ts",
         "sdk/typescript/src/execution.ts",
-        "sdk/typescript/src/tracing.ts"
+        "sdk/typescript/src/tracing.ts",
+        "sdk/typescript/test/exception-privacy.test.ts",
+        "sdk/typescript/README.md"
       ],
-      "evidence": "recordError/fail call span.recordException(err); provider installation has no metadata-only exporter wrapper.",
-      "remaining_limit": "Exception messages/stacks can reach host exporter; direct export is not uniformly metadata-only. No live external export performed."
+      "evidence": "Direct host InMemorySpanExporter reproduced eight sync/async decision, execution, LLM and tool canary leaks before the fix. 53 regression cases now verify static exception diagnostics, no original message/stack/arbitrary name, closed classification, preserved thrown/rejected values, AbortError/TimeoutError and hostile/non-Error inputs. Full SDK suite:433 passed.",
+      "remaining_limit": "Only SDK-generated callback failure diagnostics are protected here. No general exporter allowlist, protection for host/custom instrumentation attributes, or Python recorder parity is claimed; no live external export performed."
     },
     {
       "id": "TS-SPOOL-SETTLEMENT",
@@ -114,7 +116,7 @@
     },
     {
       "path": "sdk/typescript/README.md",
-      "sha256": "1c39348ee88c5781d1e16a402c129f7980c3fac05f20541a1b8b2ebf1aa341a7",
+      "sha256": "9b02e4b31c843bd97b1c5cdb0e983831bca8459d04477d0926dbdf233b58c59c",
       "methods": [
         "npm ci from lockfile",
         "format/lint/typecheck/build/test SDK gates",
@@ -122,9 +124,10 @@
         "manual relevant artifact/privacy scope inspection"
       ],
       "findings": [
-        "TS-LOCAL-SYMLINK"
+        "TS-LOCAL-SYMLINK",
+        "TS-RAW-EXCEPTION"
       ],
-      "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+      "review_note": "Reviewed scope statements for local store ancestor trust/concurrency and protected callback failure diagnostics. Explicitly excludes general exporter filtering and Python recorder parity."
     },
     {
       "path": "sdk/typescript/eslint.config.js",
@@ -287,7 +290,7 @@
     },
     {
       "path": "sdk/typescript/src/decision.ts",
-      "sha256": "26d99e0d1cbfb22bc0addfa0c55ef19168c937e17fe73f773272197043f7b7ca",
+      "sha256": "face9d87f38d5f886fc71e135f9472f69cc22e9851a509d4e06059c56a2bf52e",
       "methods": [
         "npm ci from lockfile",
         "format/lint/typecheck/build/test SDK gates",
@@ -297,7 +300,7 @@
       "findings": [
         "TS-RAW-EXCEPTION"
       ],
-      "review_note": "Selected capture-health, governed routing, hash/event surfaces and exception handling reviewed. captureHealth truthfully reports decision_span_only; raw Error is passed to span.recordException (privacy limitation). Not a full line-by-line review of 2092 lines."
+      "review_note": "Selected capture-health, governed routing, hash/event surfaces and callback error paths reviewed. Failure diagnostics now use a closed classification and static message without original exception data; caller failures survive. Not a full line-by-line review of the entire decision implementation."
     },
     {
       "path": "sdk/typescript/src/deployment-policy.ts",
@@ -313,7 +316,7 @@
     },
     {
       "path": "sdk/typescript/src/execution.ts",
-      "sha256": "26bc25ecec4dff4d6387266f7f7a4ab075ff68b759b3ea5cbb2a1a6587038f79",
+      "sha256": "470574cfa91e8161681d2d24b31835c1b5ddf82671664cca940440a5bedcf211",
       "methods": [
         "npm ci from lockfile",
         "format/lint/typecheck/build/test SDK gates",
@@ -323,7 +326,7 @@
       "findings": [
         "TS-RAW-EXCEPTION"
       ],
-      "review_note": "Reviewed callback exits and failure handling. Raw Error is passed to span.recordException; host exporter must protect before egress."
+      "review_note": "Reviewed callback exits and failure handling. Execution failed status retained; static diagnostic and guarded closed classification prevent original message/stack/name export, including cancellation-shaped failures. Caller values preserved."
     },
     {
       "path": "sdk/typescript/src/hash.ts",
@@ -423,7 +426,7 @@
       "findings": [
         "TS-RAW-EXCEPTION"
       ],
-      "review_note": "Reviewed full host-provider installation/no-op warning behavior. No exporter is shipped and no default protected exporter wrapper is inserted; host must protect raw exceptions/attributes."
+      "review_note": "Reviewed full host-provider installation/no-op warning behavior. No exporter is shipped and no general protected exporter wrapper is inserted. SDK callback failure diagnostics are now protected before provider access; host/custom attributes and other instrumentation still require host protection."
     },
     {
       "path": "sdk/typescript/src/validators.ts",
@@ -550,6 +553,20 @@
       ],
       "findings": [],
       "review_note": "Automated SDK/package qualification as applicable; not a line-by-line manual review."
+    },
+    {
+      "path": "sdk/typescript/test/exception-privacy.test.ts",
+      "sha256": "2d444406e46f8e8eb9d848e08d8ba4f1d94905bf8fb312d4b6a52728e9962c98",
+      "methods": [
+        "full manual semantic read and authored regression tests",
+        "pre-fix direct host exporter canary reproduction:8 failed",
+        "53 focused privacy/error cases including generated adversarial names",
+        "full SDK format/lint/types/build/test and package smoke"
+      ],
+      "findings": [
+        "TS-RAW-EXCEPTION"
+      ],
+      "review_note": "Checks actual InMemorySpanExporter finished spans without a protection wrapper. Covers sync/async four callback kinds, exact caller identity, expected finished-span counts, ERROR status, no stack, closed named classification, cancellation-shaped errors, hostile getters, revoked proxies, non-Error reasons and128 generated arbitrary names. No external export or general attribute allowlist claim."
     },
     {
       "path": "sdk/typescript/test/governed-content.test.ts",

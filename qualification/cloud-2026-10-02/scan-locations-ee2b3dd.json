@@ -1,0 +1,1115 @@
+{
+  "schema_version": "fabric.generated-scan-locations/v1",
+  "source_head": "ee2b3dd0e5a03e28ce84361685698f94a6b508c0",
+  "source": "Same-job generated SARIF summaries from authorized GitHub Actions logs; remote alerts API not used.",
+  "limits": [
+    "These are whole-scan locations, not the PR diff result set. CodeQL PR result gate reported 67 alerts (2 high,7 warnings,58 notes).",
+    "The first summary did not look up tool-extension rule metadata; default level and null security_severity here must not be treated as effective scanner severity. A corrected summary is in the follow-up."
+  ],
+  "results": [
+    {
+      "tool": "Semgrep OSS",
+      "rule_id": "python.lang.security.audit.insecure-file-permissions.insecure-file-permissions",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/_content_writer.py",
+          "line": 202
+        }
+      ]
+    },
+    {
+      "tool": "Semgrep OSS",
+      "rule_id": "python.lang.security.audit.insecure-file-permissions.insecure-file-permissions",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/local.py",
+          "line": 78
+        }
+      ]
+    },
+    {
+      "tool": "Semgrep OSS",
+      "rule_id": "python.lang.security.audit.httpsconnection-detected.httpsconnection-detected",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/http_dispatch.py",
+          "line": 75
+        }
+      ]
+    },
+    {
+      "tool": "Semgrep OSS",
+      "rule_id": "python.lang.security.audit.httpsconnection-detected.httpsconnection-detected",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/metadata_delivery.py",
+          "line": 173
+        }
+      ]
+    },
+    {
+      "tool": "Semgrep OSS",
+      "rule_id": "python.lang.security.audit.httpsconnection-detected.httpsconnection-detected",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/synthetic_otlp.py",
+          "line": 262
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "js/file-system-race",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/typescript/src/content-store.ts",
+          "line": 222
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/clear-text-storage-sensitive-data",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "benchmarks/fabric-comparison/run.py",
+          "line": 230
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/_content_sink.py",
+          "line": 39
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/_content_sink.py",
+          "line": 40
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/_content_sink.py",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/tracing.py",
+          "line": 95
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unused-global-variable",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/tracing.py",
+          "line": 105
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/multiple-definition",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "examples/agent-orchestration/agent.py",
+          "line": 233
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/multiple-definition",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "examples/agent-orchestration/agent.py",
+          "line": 233
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "scripts/qualification/run_synthetic_agent_pilot.py",
+          "line": 26
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_independent_feed_adversarial.py",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_metadata_delivery.py",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_recorder_package_surface.py",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_source_spool.py",
+          "line": 18
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/import-and-import-from",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_tracing.py",
+          "line": 34
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/cyclic-import",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/auto_instrument.py",
+          "line": 45
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/cyclic-import",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/auto_instrument.py",
+          "line": 243
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/cyclic-import",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/coverage_manifest.py",
+          "line": 195
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "scripts/release/qualify_release.py",
+          "line": 426
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "scripts/release/qualify_release.py",
+          "line": 430
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/implicit-string-concatenation-in-list",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_synthetic_evidence.py",
+          "line": 203
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/comparison-of-identical-expressions",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_client.py",
+          "line": 116
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unexpected-raise-in-special-method",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_adapters_crewai.py",
+          "line": 268
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 62
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 64
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 83
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 89
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 94
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 100
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 106
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 110
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 117
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 122
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 126
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 128
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 132
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 144
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 146
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/content_store/base.py",
+          "line": 148
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/control_protocol.py",
+          "line": 159
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 156
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 159
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 162
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 165
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 168
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 171
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 174
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 185
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 188
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 191
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 194
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 197
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 200
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 203
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 206
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 209
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 212
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 215
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 218
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/decision.py",
+          "line": 221
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/deployment_state.py",
+          "line": 152
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/independent_feed.py",
+          "line": 108
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/metadata_delivery.py",
+          "line": 79
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/reference_receipts.py",
+          "line": 78
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "examples/enterprise-orchestration/run.py",
+          "line": 412
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "examples/enterprise-orchestration/run.py",
+          "line": 437
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_call_recorder.py",
+          "line": 296
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/ineffectual-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_governed_reconstruction.py",
+          "line": 443
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_calls.py",
+          "line": 1098
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_calls.py",
+          "line": 1119
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_calls.py",
+          "line": 1140
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_calls.py",
+          "line": 1161
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_capture_health.py",
+          "line": 151
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_decision.py",
+          "line": 302
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_surface_logging.py",
+          "line": 382
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/unreachable-statement",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/tests/test_span_protection.py",
+          "line": 180
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/empty-except",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "scripts/tests/test_governed_node_e2e.py",
+          "line": 135
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/empty-except",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "scripts/tests/test_s3_live.py",
+          "line": 68
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/byte_resolver.py",
+          "line": 146
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/byte_resolver.py",
+          "line": 154
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/byte_resolver.py",
+          "line": 157
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/governed_store.py",
+          "line": 379
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/governed_store.py",
+          "line": 389
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/independent_store.py",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/independent_store.py",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "tool": "CodeQL",
+      "rule_id": "py/file-not-closed",
+      "level": "warning",
+      "security_severity": null,
+      "locations": [
+        {
+          "path": "sdk/python/src/fabric/independent_store.py",
+          "line": 93
+        }
+      ]
+    }
+  ]
+}

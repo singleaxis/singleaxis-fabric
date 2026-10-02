@@ -15,7 +15,7 @@ observable activity -> CAPTURE -> PROTECT -> DELIVER -> chosen destination
 | The application already emits OTLP | Route OTLP through Fabric Node | Existing spans and events, limited by upstream instrumentation |
 | A framework exposes hooks | Framework adapter | Only lifecycle events exposed by that framework |
 | A vendor exposes a gateway or webhook | Customer/vendor adapter | Only payloads and metadata exposed by that interface |
-| Traffic can be routed through a proxy | Telemetry gateway outside the request path | Protocol-visible activity; not hidden application state |
+| Traffic can be routed through a proxy | Customer-selected inline proxy emitting telemetry to Fabric Node | Protocol-visible activity; not hidden application state |
 
 Network discovery alone is not semantic reconstruction. An integration must
 publish its observed surfaces, ordering guarantees, identity source, content

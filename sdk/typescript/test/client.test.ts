@@ -8,7 +8,30 @@
  * `test_id_validators.py` suites.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { trace } from "@opentelemetry/api";
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-node";
+
+const exporter = new InMemorySpanExporter();
+const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+beforeAll(() => {
+  trace.setGlobalTracerProvider(provider);
+});
+beforeEach(() => exporter.reset());
+afterAll(async () => {
+  await provider.shutdown();
+  trace.disable();
+});
+function recordedIdentity(client: Fabric) {
+  client.decision({ sessionId: "session", requestId: "request" }, () => {});
+  const spans = exporter.getFinishedSpans();
+  expect(spans).toHaveLength(1);
+  return spans[0]!.attributes;
+}
 
 import { Fabric } from "../src/index.js";
 
@@ -23,21 +46,31 @@ function env(overrides: Record<string, string | undefined>): Record<string, stri
 describe("Fabric.fromEnv", () => {
   it("reads the three FABRIC_* variables", () => {
     const client = Fabric.fromEnv(env({ FABRIC_PROFILE: "permissive-dev" }));
-    // Surface the resolved identity through a decision span indirectly:
-    // identity fields land verbatim on the span attributes.
-    expect(client).toBeInstanceOf(Fabric);
+    expect(recordedIdentity(client)).toMatchObject({
+      "fabric.tenant_id": "acme",
+      "fabric.agent_id": "support-agent",
+      "fabric.profile": "permissive-dev",
+    });
   });
 
   it("strips whitespace from the values", () => {
     const client = Fabric.fromEnv(
-      env({ FABRIC_TENANT_ID: "  acme  ", FABRIC_AGENT_ID: "  bot  " }),
+      env({
+        FABRIC_TENANT_ID: "  acme  ",
+        FABRIC_AGENT_ID: "  bot  ",
+        FABRIC_PROFILE: "  custom  ",
+      }),
     );
-    expect(client).toBeInstanceOf(Fabric);
+    expect(recordedIdentity(client)).toMatchObject({
+      "fabric.tenant_id": "acme",
+      "fabric.agent_id": "bot",
+      "fabric.profile": "custom",
+    });
   });
 
   it("defaults profile to 'shadow'", () => {
     // No FABRIC_PROFILE — constructor default applies.
-    expect(Fabric.fromEnv(env({}))).toBeInstanceOf(Fabric);
+    expect(recordedIdentity(Fabric.fromEnv(env({})))["fabric.profile"]).toBe("shadow");
   });
 
   it("rejects an empty profile", () => {

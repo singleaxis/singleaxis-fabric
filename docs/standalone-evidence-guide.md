@@ -153,8 +153,21 @@ independently read SQLite effect after a deliberately lost acknowledgement and
 Collector SIGKILL/restart. Wrong tenant/policy/key, missing object and truncated
 envelope yielded explicit refusals. This is local functional evidence, not
 production authentication, external destination durability or source closure.
+The follow-up also ran this journey from a freshly installed Python wheel in a
+separate virtual environment with `PYTHONPATH` unset. The harness records the
+imported package location, verifies its Python file hashes against the reviewed
+checkout and checks the fresh consumer loaded that same installation. Use the
+wheel environment's Python and omit the `PYTHONPATH=...` prefix to reproduce
+that mode. This proves the tested artifact's local path, not customer deployment
+readiness.
 The output contains fixture keys and authorized synthetic content; keep it
 private. For the separate Compose path, use the [quickstart](quickstart.md) and
 `make qualify`. Consult the
 [qualification map](evidence-qualification-map.md) for omissions before describing
 a demonstration as complete.
+
+An empty legacy transcript accumulator means no content observations were
+recorded. Both SDKs leave its URI absent and publish no transcript; attempting
+to serialize that empty accumulator fails explicitly. Capturing an empty string
+produces a stored zero-byte content observation. Neither a closed transcript
+snapshot nor a normal root return proves that detached producers have finished.

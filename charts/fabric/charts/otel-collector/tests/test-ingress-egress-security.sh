@@ -173,6 +173,12 @@ default_workload="$(helm template ci "${chart_dir}" --show-only templates/deploy
 expect_contains "pod never automounts a service-account token" "${default_workload}" "automountServiceAccountToken: false"
 expect_contains "pod runs as the nonroot uid" "${default_workload}" "runAsUser: 65532"
 
+printf '\n=== Health-test isolation ===\n'
+health_test="$(helm template ci "${chart_dir}" --show-only templates/tests/test-connection.yaml)"
+expect_contains "health hook has distinct component label" "${health_test}" "app.kubernetes.io/component: health-test"
+expect_not_contains "health hook cannot match runtime Service selector" "${health_test}" "app.kubernetes.io/name:"
+expect_contains "health hook never mounts an API token" "${health_test}" "automountServiceAccountToken: false"
+
 printf '\n=== Shadow-production integration and locks ===\n'
 production_args=(
   --values "${profile}" --values "${umbrella_dir}/tests/fixtures/production-assertions.yaml"

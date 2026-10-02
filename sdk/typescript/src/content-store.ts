@@ -258,12 +258,17 @@ function atomicWriteBytes(target: string, data: Uint8Array): void {
   const tmp = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
   const fd = fs.openSync(tmp, "wx", 0o600);
   try {
-    fs.writeSync(fd, data);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  try {
+    try {
+      let offset = 0;
+      while (offset < data.length) {
+        const written = fs.writeSync(fd, data, offset, data.length - offset);
+        if (written <= 0) throw new Error("local content store write made no progress");
+        offset += written;
+      }
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, target);
   } catch (err) {
     try {

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -85,6 +86,83 @@ def _compose(
         text=True,
         timeout=900,
     )
+
+
+# Run the scanner in the already-running, digest-pinned sink image. A local
+# image ID plus --pull=never prevents a mutable helper tag or registry fallback.
+QUEUE_SCAN_CODE = r"""
+import json, os, pathlib, stat, sys
+try:
+    root = pathlib.Path(sys.argv[1])
+    needle = sys.argv[2].encode()
+    if not root.is_dir() or not needle:
+        raise ValueError("invalid scan input")
+    files = 0
+    found = False
+    def fail(error):
+        raise error
+    for directory, dirs, names in os.walk(root, followlinks=False, onerror=fail):
+        for name in dirs:
+            if (pathlib.Path(directory) / name).is_symlink():
+                raise ValueError("symlink directory")
+        for name in names:
+            path = pathlib.Path(directory) / name
+            if not stat.S_ISREG(path.lstat().st_mode):
+                raise ValueError("nonregular queue entry")
+            files += 1
+            with path.open("rb") as stream:
+                tail = b""
+                while chunk := stream.read(65536):
+                    block = tail + chunk
+                    found = found or needle in block
+                    tail = block[-(len(needle)-1):] if len(needle)>1 else b""
+    print(json.dumps({"scan_complete": True, "files": files, "found": found}))
+except Exception:
+    print("queue privacy scan failed", file=sys.stderr)
+    sys.exit(2)
+"""
+
+
+def _assert_queue_private(marker: str) -> None:
+    container = _compose("ps", "-q", "test-sink").stdout.strip()
+    if not re.fullmatch(r"[a-f0-9]{12,64}", container):
+        raise AssertionError("cannot identify controlled test sink container")
+    inspected = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Image}}", container],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    image_id = inspected.stdout.strip()
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", image_id):
+        raise AssertionError("cannot identify immutable test sink image")
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--pull=never",
+            "--network=none",
+            "--read-only",
+            "--cap-drop=ALL",
+            "-v",
+            f"{QUEUE_VOLUME}:/q:ro",
+            image_id,
+            "python",
+            "-c",
+            QUEUE_SCAN_CODE,
+            "/q",
+            marker,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    report = json.loads(result.stdout)
+    assert report["scan_complete"] is True
+    assert report["found"] is False, "raw content persisted in queue storage"
 
 
 def _compose_available() -> bool:
@@ -252,26 +330,7 @@ def test_governed_content_through_real_node(tmp_path: Path) -> None:
         text=True,
         timeout=30,
     )
-    queue_probe = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "-v",
-            f"{QUEUE_VOLUME}:/q:ro",
-            "alpine:latest",
-            "sh",
-            "-c",
-            f"grep -rl '{MARK}' /q 2>/dev/null || true",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert queue_probe.stdout.strip() == "", (
-        f"raw content persisted in queue storage: {queue_probe.stdout}"
-    )
+    _assert_queue_private(MARK)
 
     # Correlation intact: `_wait_contains` already proved the decision
     # span reached the sink carrying the SDK's decision id.
@@ -293,7 +352,18 @@ def test_governed_content_through_real_node(tmp_path: Path) -> None:
 def test_real_node_queue_survives_sink_outage_and_node_restart() -> None:
     """A local fsync-sink outage test, not an arbitrary destination receipt."""
     before = _sink_count()
-    payload = (COMPOSE_DIR / "fixtures" / "decision-summary.json").read_bytes()
+    document = json.loads(
+        (COMPOSE_DIR / "fixtures" / "decision-summary.json").read_bytes()
+    )
+    trace_id = uuid.uuid4().hex
+    for resource in document["resourceSpans"]:
+        for scope in resource["scopeSpans"]:
+            for span in scope["spans"]:
+                span["traceId"] = trace_id
+                for attribute in span["attributes"]:
+                    if attribute["key"] == "fabric.request_id":
+                        attribute["value"] = {"stringValue": "outage-" + trace_id}
+    payload = json.dumps(document).encode()
     _compose("stop", "test-sink")
     try:
         request = urllib.request.Request(
@@ -310,6 +380,7 @@ def test_real_node_queue_survives_sink_outage_and_node_restart() -> None:
     finally:
         _compose("start", "test-sink")
     assert _wait_delivery(before, timeout_s=120) > before
+    _wait_contains("outage-" + trace_id, timeout_s=120)
     assert not _sink_contains("MUST_NOT_LEAVE_FABRIC_NODE")
 
 
@@ -391,21 +462,4 @@ def test_synthetic_aeep_metadata_through_real_node() -> None:
     assert not _sink_contains(bad_id)
     assert not _sink_contains(canary)
     assert canary not in _compose("logs", "fabric-node").stdout
-    queue_probe = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "-v",
-            f"{QUEUE_VOLUME}:/q:ro",
-            "alpine:latest",
-            "sh",
-            "-c",
-            f"grep -rl '{canary}' /q 2>/dev/null || true",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert not queue_probe.stdout.strip()
+    _assert_queue_private(canary)

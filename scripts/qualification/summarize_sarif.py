@@ -19,9 +19,15 @@ def result_metadata(document: dict[str, Any]) -> list[dict[str, Any]]:
     records = []
     for run in document["runs"]:
         driver = run["tool"]["driver"]
-        rules = {rule["id"]: rule for rule in driver.get("rules", [])}
+        components = [driver, *run["tool"].get("extensions", [])]
+        rules = {
+            rule["id"]: rule
+            for component in components
+            for rule in component.get("rules", [])
+        }
         for result in run.get("results", []):
             rule_id = result["ruleId"]
+            rule = rules.get(rule_id, {})
             locations = []
             for location in result.get("locations", []):
                 physical = location["physicalLocation"]
@@ -35,10 +41,13 @@ def result_metadata(document: dict[str, Any]) -> list[dict[str, Any]]:
                 {
                     "tool": driver["name"],
                     "rule_id": rule_id,
-                    "level": result.get("level", "warning"),
-                    "security_severity": rules.get(rule_id, {})
-                    .get("properties", {})
-                    .get("security-severity"),
+                    "level": result.get(
+                        "level",
+                        rule.get("defaultConfiguration", {}).get("level", "warning"),
+                    ),
+                    "security_severity": rule.get("properties", {}).get(
+                        "security-severity"
+                    ),
                     "locations": locations,
                 }
             )

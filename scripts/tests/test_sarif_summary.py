@@ -67,3 +67,31 @@ def test_empty_scan_reports_no_findings() -> None:
         )
         == []
     )
+
+
+def test_extension_rule_defaults_supply_level_and_security_severity() -> None:
+    result = summary.result_metadata(
+        {
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {"name": "CodeQL"},
+                        "extensions": [
+                            {
+                                "rules": [
+                                    {
+                                        "id": "rule-2",
+                                        "defaultConfiguration": {"level": "note"},
+                                        "properties": {"security-severity": "7.0"},
+                                    }
+                                ]
+                            }
+                        ],
+                    },
+                    "results": [{"ruleId": "rule-2"}],
+                }
+            ]
+        }
+    )
+    assert result[0]["level"] == "note"
+    assert result[0]["security_severity"] == "7.0"

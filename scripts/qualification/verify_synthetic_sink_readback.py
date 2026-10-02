@@ -16,16 +16,18 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
 )
 
+try:
+    from otlp_readback_validation import (
+        protobuf_attributes,
+        validate_metadata_container,
+    )
+except ModuleNotFoundError:
+    from scripts.qualification.otlp_readback_validation import (
+        protobuf_attributes,
+        validate_metadata_container,
+    )
+
 CANARY = b"PILOT_SECRET_CANARY_do_not_export"
-
-
-def _attributes(record: Any) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for attribute in record.attributes:
-        kind = attribute.value.WhichOneof("value")
-        if kind in {"string_value", "int_value"}:
-            result[attribute.key] = str(getattr(attribute.value, kind))
-    return result
 
 
 def verify(report: dict[str, Any], sink_dir: Path) -> int:
@@ -62,15 +64,20 @@ def verify(report: dict[str, Any], sink_dir: Path) -> int:
         for resource in request.resource_logs:
             for scope in resource.scope_logs:
                 for record in scope.log_records:
-                    attrs = _attributes(record)
+                    attrs, types = protobuf_attributes(record)
                     record_id = attrs.get("record_id", "")
                     if record_id.startswith("evt-"):
                         if record_id not in expected:
                             raise AssertionError(
                                 f"unexpected evidence record: {record_id}"
                             )
+                        validate_metadata_container(resource, scope, record)
                         observed.setdefault(record_id, []).append(
-                            {"event_name": record.event_name, "attributes": attrs}
+                            {
+                                "event_name": record.event_name,
+                                "attributes": attrs,
+                                "attribute_types": types,
+                            }
                         )
     if set(observed) != set(expected):
         raise AssertionError(
@@ -86,6 +93,10 @@ def verify(report: dict[str, Any], sink_dir: Path) -> int:
         actual = matches[0]
         if actual["event_name"] != expected_record["event_name"]:
             raise AssertionError(f"event name mismatch for {record_id}")
+        if set(actual["attributes"]) != set(expected_record["attributes"]):
+            raise AssertionError(f"attribute keys mismatch for {record_id}")
+        if actual["attribute_types"] != expected_record.get("attribute_types"):
+            raise AssertionError(f"attribute types mismatch for {record_id}")
         for key, value in expected_record["attributes"].items():
             if actual["attributes"].get(key) != str(value):
                 raise AssertionError(f"{key} mismatch for {record_id}")

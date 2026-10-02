@@ -1,0 +1,349 @@
+{
+  "schema_version": "fabric.runtime-deep-audit/v1",
+  "date": "2026-10-02",
+  "reviewed_head": "059d54749c896cf6d93524b64668a27967123780",
+  "scope_source": "/workspace/fabric-qualification/python-runtime-deeper.txt",
+  "runtime_paths_reviewed": 24,
+  "production_verdict": "NO_GO",
+  "method_semantics": {
+    "full_text_semantic_review": "Every line displayed and read, cross-checked against identity/privacy/closure/error contracts and associated callsites. Exact final file hash recorded. Not proof of exhaustive defect absence.",
+    "targeted_regression_review_and_execution": "New regression reviewed and whole test module executed; pre-existing test file is not claimed newly read in full."
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "status": "fixed",
+      "summary": "Partial output assembled override erased truncated representation and settled as stored.",
+      "proof": "Four-byte cap on eight-byte text previously produced stored/assembled, original_byte_length=8; regression now requires truncated/truncated and retains partial output reason."
+    },
+    {
+      "id": "F2",
+      "status": "fixed",
+      "summary": "CrewAI callback failure tracebacks exposed raw exception content.",
+      "proof": "Hostile property exception synthetic canary appeared in warning; both callback handlers now log fixed text without exc_info; regression checks two warnings and absent canary/traceback."
+    },
+    {
+      "id": "F3",
+      "status": "fixed",
+      "summary": "Terminal timeout/cancellation stopped applying after child closed IO pipes.",
+      "proof": "Child closed descriptors then slept 0.7 seconds; timeout 0.1 returned success/timed_out false. Regression now verifies owned child termination for timeout and cancellation."
+    }
+  ],
+  "test_evidence": [
+    {
+      "command": "Focused pytest --no-cov on the four new cases before fixes",
+      "result": "4 failed for intended assertions after correcting test session/request fixture arguments."
+    },
+    {
+      "command": "PYTHONPATH=sdk/python/src /workspace/fabric-venv/bin/python -m pytest --no-cov -q sdk/python/tests/{test_governed_content,test_adapters_crewai,test_synthetic_evidence,test_calls,test_client,test_control_protocol,test_control_evidence,test_coverage_manifest,test_deployment_state,test_enterprise_preflight,test_synthetic_otlp}.py",
+      "result": "344 passed in 10.01s; focused run excludes global coverage threshold, no new overall-coverage claim."
+    },
+    {
+      "command": "ruff check six changed source/test files",
+      "result": "passed after import ordering correction"
+    },
+    {
+      "command": "ruff format six changed source/test files",
+      "result": "two tests formatted, remaining four unchanged"
+    }
+  ],
+  "limits": [
+    "Source changes limited to three parent-authorized reproduced defects; no dependency, control, live deployment or host security setting changes.",
+    "Prior Cleanup Library archive remains unavailable; this review does not restore portable ledger or claim historic audit completion.",
+    "Open per-path limits are not cleared by passing tests; parent owns complete-suite and composed-journey requalification."
+  ],
+  "files": [
+    {
+      "path": "sdk/python/src/fabric/__init__.py",
+      "sha256": "24b94a5ba262316313ba87077e324f65b1a69ae0ff39d396960d744739dce2d8",
+      "bytes": 3837,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed imports and public exports for initialization effects and scope. Existing control observations/protocols remain metadata interfaces; no controller dispatch installed.",
+      "limits": [
+        "Import review does not qualify optional third-party instrumentation."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_attributes.py",
+      "sha256": "6483d043354ddcb43ea8acd2879a89c9643fd738b44e413fc2c17ef1c791de7e",
+      "bytes": 10226,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed every constant, reserved-key check and helper. SDK identity namespaces reject ordinary caller attribute overwrites; explicit span escape hatch remains outside that guarantee.",
+      "limits": [
+        "Attribute name policy does not sanitize arbitrary values or authenticate identifiers."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_calls.py",
+      "sha256": "a8f79ae5d480cddc57eb5bc729e1def6235527b544ee6e4a9195c74656b21a47",
+      "bytes": 57493,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed complete LLM/tool lifecycle, exception/cancellation forwarding, raw-versus-governed capture exclusion, hashes, counters, metrics and partial-output callsite. Four-case regressions and existing call tests exercised downstream fix.",
+      "limits": [
+        "Explicit raw capture and host-owned OTel exception exporters remain outside metadata-only export protection.",
+        "Context object reuse preserves prior response/token fields; single-call use should be preferred; not independently reproduced as an exported-metric defect.",
+        "Numeric latency setters reject negatives but not NaN/infinity."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_content.py",
+      "sha256": "5efd1220bb04bfac5132c9260c90cae7629e7e2c3f1f8144a5861a5babde1a81",
+      "bytes": 10950,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed roles/statuses, canonical serialization, byte-safe truncation, descriptor construction, manifest sequence/index and JSON projection.",
+      "limits": [
+        "canonical_json accepts Python NaN/Infinity; application/json bytes can be nonstandard JSON.",
+        "surrogatepass accepts lone-surrogate byte sequences despite utf-8 encoding label; interoperability with strict UTF-8 consumers is not qualified.",
+        "Serialization happens before payload truncation and has no explicit recursive-depth or total-memory budget."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_sink.py",
+      "sha256": "cd7a97162f93c142844a9c20c7b55139cd4262f2421eb806657d2b8c3b95bec2",
+      "bytes": 13227,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed full capture/admission/settlement/manifest lifecycle and late-settlement locking. Fixed assembled override erasing truncated representation; focused regression failed before and passed after.",
+      "limits": [
+        "Fixed F1.",
+        "Unsupported serialization status_reason uses exception text; custom input behavior and custom store/span error logging are not a secret-scrubbing boundary.",
+        "Per-decision manifest growth is not given an independent item cap here."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_coverage_canary.py",
+      "sha256": "638116d31b9e252bc626b274b646fe7e667f2332d2900e1f0a18c8af83beaa84",
+      "bytes": 10619,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed local server fixture, dispatch witness, byte recorder/source spool lifecycle, gap/retry comparison and returned qualification claims.",
+      "limits": [
+        "Loopback same-process fixture is not independent production closure or provider-SDK qualification."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_crosscut.py",
+      "sha256": "7f16c9b02deff74b070a63e24d8551c5adfec16acb73c1b936c3d5244d1acce8",
+      "bytes": 4279,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed type checks, open-vocabulary tag normalization, baseline status and signature result stamping; these report observations and do not gate execution.",
+      "limits": [
+        "Docstring says baseline names are never placed on spans, but baseline.name is stamped at ATTR_BASELINE_NAME; documentation contradiction remains open.",
+        "Caller-supplied metadata values and tag volume remain caller controlled."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/_version.py",
+      "sha256": "c3d3719676d1474e7d47fcf9dc2a5a6375d99d88473fd62eeb147e9e5d09cf65",
+      "bytes": 195,
+      "method": "full_text_semantic_review",
+      "review": "Read complete static package version declaration; no runtime behavior or identity authority.",
+      "limits": [
+        "Version string alone does not prove artifact provenance."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/__init__.py",
+      "sha256": "816621fc33b31fe5b072342969f64535a2cd1378a23088740125fb05f5af0ed9",
+      "bytes": 286,
+      "method": "full_text_semantic_review",
+      "review": "Read complete adapter package declaration; no implicit adapter installation.",
+      "limits": [
+        "Optional adapter behavior reviewed in corresponding module."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/crewai.py",
+      "sha256": "6b4b5e00fd31b40aacfc46064f20721587c104a0c6fab180d55b32c18548f7d3",
+      "bytes": 5700,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed callback field selection, digest-only thought/output handling, passive exception swallowing and task metadata. Removed exception/stack logging from both failure handlers; canary regression verifies absence.",
+      "limits": [
+        "Fixed F2.",
+        "Tool and agent names remain caller-supplied metadata; adapter does not authenticate CrewAI or guarantee upstream hook coverage."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/synthetic_evidence.py",
+      "sha256": "be3e105748a4c702fe7ce13ce0f540d859388e081a255dc3122626b1759c068e",
+      "bytes": 32809,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed all synthetic session capture/outcome/journal/snapshot code, HTTP adapter, no-shell terminal IO and artifact observer. Fixed timeout/cancel lifetime after pipe EOF using child poll in loop condition; both focused cases failed before and pass after.",
+      "limits": [
+        "Fixed F3.",
+        "Synthetic session event/operation lists and HTTP response.read are not bounded; terminal returned stdout/stderr intentionally accumulate actual bytes beyond capture limit. Fixture scope only.",
+        "Inherited environment remains available to explicitly launched subprocess; approved_env restricts only additional overrides.",
+        "Artifact path checks use separate path validation and open; concurrent parent-directory replacement is outside safely qualified behavior. No hostile filesystem-race qualification performed.",
+        "Only owned child process group is signaled; no host/kernel/security settings changed."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_readback.py",
+      "sha256": "ed494f4ee33a2726d189bb5d23144fcf6450a7ec8261edbae842f44544fdb97d",
+      "bytes": 5954,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed bounded identifier/digest/capability validation, timestamp freshness, identity comparison and drift/unknown distinctions.",
+      "limits": [
+        "Readback compares caller reports; authentication is supplied externally and does not attest actual runtime state."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/checkpoint.py",
+      "sha256": "9e56c261ba46a328d2094c35245c00dcb972f15fd1e8a2e438692d1e7e42ae84",
+      "bytes": 1588,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed checkpoint construction, hash derivation and emitted minimal reference fields.",
+      "limits": [
+        "Snapshot is caller evidence; hashes do not prove independent source authenticity."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/client.py",
+      "sha256": "15cc558d74e555f7991ddad7840abea1ca0d7c146eacae7c75cb1866276dc43c",
+      "bytes": 21159,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed config stripping/placeholder checks, reserved defaults, tenant binding for governed stores, restrictive content-mode override, decision/execution context handoff and auto-instrument raw-capture exclusion.",
+      "limits": [
+        "Legacy content_store and host-owned tracer behavior remain separate from governed content_capture protection.",
+        "Configured identifiers are correlation/partition claims, not authentication."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/control_evidence.py",
+      "sha256": "51718507a1cf2bf3c63e98d68acd329baacf242aed81de9fc7f1bafaec8fce0e",
+      "bytes": 3062,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed all bounded IDs, policy version/digest bindings, decision enum, from_dict field closure and explicit unverified observation serialization.",
+      "limits": [
+        "No execution permission is produced. Existing observation type only; no controls added.",
+        "from_dict accepts constructor fields, not schema-decorated to_dict output; not a documented roundtrip contract."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/control_protocol.py",
+      "sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
+      "bytes": 7401,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed full request digest, reply/outcome validation, exact correlation checks, expiry evidence and Protocol declaration.",
+      "limits": [
+        "Metadata correlation is unverified caller evidence, explicitly not authorization. No network/dispatch/control implementation added."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/coverage_manifest.py",
+      "sha256": "0bf31e36c20601a4a50898233fd238a85e27a1f594921f48aed76e3dac408c89",
+      "bytes": 10219,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed distribution/version lookup, instrumentor activation flags, missing/failed/unknown handling, required rows and explicit enabling branch.",
+      "limits": [
+        "ACTIVE is upstream-reported registration, never production-qualified boundary capture.",
+        "Required-active can be vacuously true for no required integrations; production_qualified stays false."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_state.py",
+      "sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
+      "bytes": 17212,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed every local state/history transition, capability authorization, identity/digest/revision checks, nofollow regular-file reads, locking, fsync/replace and capacity failures.",
+      "limits": [
+        "History is unkeyed corruption detection, not authenticated audit; local host/filesystem administrator is explicitly excluded.",
+        "Applied/readback states are authorized caller observations, not runtime attestation; no rollout control implemented."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise.py",
+      "sha256": "ca809e111c2011ad509e025683cb727fb57f6caef31efb520b6e2d145e166775",
+      "bytes": 6503,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed policy-store digest binding, ContentProtector wiring, explicit call boundary recorder, bounded external observations and report/close semantics.",
+      "limits": [
+        "Report always NO_GO/not_qualified; caller-owned store/journal lifetimes and bounded/nonblocking redactors remain obligations.",
+        "No external control is evaluated or enforced."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise_preflight.py",
+      "sha256": "28d9928a23e1872d9529478c01d8d0c80ffaa87afad1a7abb4665be51049b4ba",
+      "bytes": 20589,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed complete CLI parsing, bounded inputs, fixed error reporting, policy-bound attestation verification, filesystem canary, declared scope/capacity, loss checks and conservative readiness verdicts.",
+      "limits": [
+        "LOCAL_READY permits unknown target-run evidence and is expressly fixture-scoped; production verdict remains NO_GO even with valid signed statements.",
+        "No live TLS/IAM/KMS/issuer/destination adapter qualification claimed."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/integrations/__init__.py",
+      "sha256": "24061aef81b8cd8cf0dfb59452d6327c3af3c304617749919eaf4114ce271060",
+      "bytes": 956,
+      "method": "full_text_semantic_review",
+      "review": "Read all integration exports/import wiring; no implicit network or control registration.",
+      "limits": [
+        "MCP adapter implementation belongs separate scoped review; export alone is not qualification."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_otlp.py",
+      "sha256": "ee82810ef19be5d0372d1e293f6ac488e194007fae25030d597261a90727045f",
+      "bytes": 11941,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed event projection allowlists, tenant/run binding, digest checks, credential-free loopback restriction, explicit TLS/mTLS, bounded bearer/response reads and partial-success accounting.",
+      "limits": [
+        "HTTP acceptance is never destination durability; retry_allowed false.",
+        "Loopback hostname relies on local name resolution; no hostile DNS qualification.",
+        "Integer sequences have no explicit int64 upper bound at this projection layer."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_reconcile.py",
+      "sha256": "a31dacc91113d4468342c2e4beb5457d11f18d0246e8cd9f74235dadc94b9b0d",
+      "bytes": 13421,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed resolver tenant/ref/path checks, stored-descriptor/digest/length agreement, stream ordering, source continuity, missing/unexpected object/outcome comparisons and final verdict.",
+      "limits": [
+        "Always partial or unverified; no complete verdict even without discrepancies.",
+        "Expected observations are externally supplied, unauthenticated; malformed offline structures may raise and input total size is not capped here."
+      ]
+    },
+    {
+      "path": "sdk/python/src/fabric/taxonomy.py",
+      "sha256": "d48967525a57ee180d59191b6b74fb578a70604f79acaf331bcc8d164cb83195",
+      "bytes": 7338,
+      "method": "full_text_semantic_review",
+      "review": "Reviewed open-vocabulary tag split/lookup, bundled and explicit-path loading, JSON metadata validation and filesystem discovery.",
+      "limits": [
+        "Explicit paths are caller-selected local inputs, not sandboxed; taxonomy membership is enrichment only, not authorization.",
+        "Taxonomy file size and entry count are not capped."
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_governed_content.py",
+      "sha256": "52dfc3c6aaf28f97efee4a70da1e0d2ea4e575ec85738f35a2276da1882bb558",
+      "bytes": 59291,
+      "method": "targeted_regression_review_and_execution",
+      "review": "Added and reviewed focused regressions for reproduced defects; executed entire module. Existing test module not newly claimed as full semantic read.",
+      "limits": [
+        "See test evidence; focused testing is not exhaustive defect absence."
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_adapters_crewai.py",
+      "sha256": "f567e4af166b2f10130f1c9a3ae04780601a1d89aab672b98cd7a1c87851f6f3",
+      "bytes": 10518,
+      "method": "targeted_regression_review_and_execution",
+      "review": "Added and reviewed focused regressions for reproduced defects; executed entire module. Existing test module not newly claimed as full semantic read.",
+      "limits": [
+        "See test evidence; focused testing is not exhaustive defect absence."
+      ]
+    },
+    {
+      "path": "sdk/python/tests/test_synthetic_evidence.py",
+      "sha256": "4cda692fd45bd0adad962bd8f7dcd1c0306bce9b90232e0f101abed60dbebdb5",
+      "bytes": 27158,
+      "method": "targeted_regression_review_and_execution",
+      "review": "Added and reviewed focused regressions for reproduced defects; executed entire module. Existing test module not newly claimed as full semantic read.",
+      "limits": [
+        "See test evidence; focused testing is not exhaustive defect absence."
+      ]
+    }
+  ]
+}

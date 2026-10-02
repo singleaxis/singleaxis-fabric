@@ -11,7 +11,7 @@
  * *look* like an email address or a phone number, those values silently
  * leave the process and ship to the trace backend with every decision —
  * a quiet PII leak that the developer never asked for. One warning per
- * (field, value) pair is emitted per process; set
+ * (field, shape) pair is emitted per process; set
  * `FABRIC_QUIET_PII_WARN=1` to suppress all such warnings. The intent is
  * *not* validation — opaque-but-email-shaped IDs are sometimes
  * intentional. The intent is to make the silent leak loud exactly once.
@@ -202,12 +202,17 @@ function isCopyPasteMarker(value: string): boolean {
 }
 
 // Warnings dedupe per process so a noisy-but-intentional identifier does
-// not flood stderr. Keyed on the full message (which embeds field+value),
-// matching Python's warnings-filter dedupe of the same call site.
+// not flood stderr. Messages contain field/shape only, never input values.
+// The cache itself is bounded for callers supplying arbitrary field names.
 const warnedMessages = new Set<string>();
 
+/** Reset process-local diagnostic deduplication for isolated tests. */
+export function resetIdentifierWarningsForTesting(): void {
+  warnedMessages.clear();
+}
+
 function warnOnce(message: string): void {
-  if (warnedMessages.has(message)) {
+  if (warnedMessages.has(message) || warnedMessages.size >= 128) {
     return;
   }
   warnedMessages.add(message);
@@ -230,13 +235,18 @@ function warnOnce(message: string): void {
  *
  * No-ops on a falsy `value` — the caller has already rejected those.
  */
+function diagnosticField(field: string): string {
+  return /^[A-Za-z][A-Za-z0-9_.]{0,79}$/.test(field) ? field : "identifier";
+}
+
 export function checkIdentifier(fieldName: string, value: string): void {
+  fieldName = diagnosticField(fieldName);
   if (!value || typeof value !== "string") {
     return;
   }
   if (isSentinel(value)) {
     const message =
-      `${fieldName}=${JSON.stringify(value)} is a placeholder, not an identifier. ` +
+      `${fieldName} is a placeholder, not an identifier. ` +
       `This value partitions every span, audit record and tenant ` +
       `isolation check, so an unset variable here silently merges ` +
       `unrelated data. Set a real ${fieldName}. ` +
@@ -249,7 +259,7 @@ export function checkIdentifier(fieldName: string, value: string): void {
   }
   if (isCopyPasteMarker(value)) {
     warnOnce(
-      `${fieldName}=${JSON.stringify(value)} looks like an unedited copy-paste ` +
+      `${fieldName} looks like an unedited copy-paste ` +
         `placeholder from the docs. It will be written onto every ` +
         `emitted span as a real ${fieldName}.`,
     );
@@ -302,7 +312,7 @@ export function warnIfPiiShaped(
   }
   if (matched !== null) {
     warnOnce(
-      `${fieldName}=${JSON.stringify(value)} looks like ${matched} — these will ` +
+      `${diagnosticField(fieldName)} looks like ${matched} — its value will ` +
         `appear in every emitted span, exporting PII to your trace ` +
         `backend. Consider an opaque ID instead and put the value in a ` +
         `separate non-emitted attribute. ` +

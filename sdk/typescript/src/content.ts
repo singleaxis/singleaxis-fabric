@@ -286,10 +286,16 @@ export class TranscriptManifest {
   }
 
   rolesObserved(): string[] {
-    return [...new Set(this.items.map((i) => i.role))].sort();
+    return [
+      ...new Set(this.items.filter((i) => DESCRIPTOR_STATUSES.has(i.status)).map((i) => i.role)),
+    ].sort();
   }
 
+  /** Serialize an observed transcript; an empty accumulator has no transcript. */
   toJSON(): Record<string, unknown> {
+    if (this.items.length === 0) {
+      throw new Error("Cannot serialize transcript manifest with no observations");
+    }
     const doc: Record<string, unknown> = {
       schema_version: SCHEMA_TRANSCRIPT_MANIFEST,
       manifest_id: this.manifest_id,
@@ -297,8 +303,10 @@ export class TranscriptManifest {
       agent_id: this.agent_id,
       decision_id: this.decision_id,
       producer: this.producer,
-      roles_enabled: [...this.roles_enabled].sort(),
-      roles_observed: this.rolesObserved(),
+      coverage: {
+        roles_enabled: [...this.roles_enabled].sort(),
+        roles_observed: this.rolesObserved(),
+      },
       items: this.items,
       completeness: this.completeness(),
     };

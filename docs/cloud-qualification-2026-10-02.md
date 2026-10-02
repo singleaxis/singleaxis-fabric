@@ -19,6 +19,27 @@ commits and its review ledger were **not restored or adopted**. This cloud work
 is independently implemented on the published parent. Reconcile those commits
 after a verified transfer; do not assume they are present here.
 
+The current Library materialization flow and bundled transfer helper were used,
+including one retry targeting `/workspace/fabric-handoffs/retry`. Both inputs
+returned `library file transfer failed: download failed`; no readable archive
+arrived. The tools did not report an explicit permission denial. The underlying
+download failure is unresolved; no alternate private URL or denied route was
+used. Neither supplied archive SHA-256 can be verified without its bytes.
+
+| Desktop logical change, as described in the handoff | Independent cloud status |
+|---|---|
+| Consolidate SDK hashing | Not adopted or independently reproduced |
+| Remove proven unused Go internals | Not adopted |
+| Move the legacy tailer into tests | Not adopted |
+| Repair license gate wiring and related docs | Independently repaired; desktop patch equivalence unverified |
+
+These are logical groupings from the handoff description; the four desktop
+commit boundaries could not be inspected. The cloud parent chain is
+`dd7e2683 → 18ec69a4 → acf7fbf8 → 24e50931 → 060dd983 → 059d5474 → 0c057678 → ee2b3dd0`.
+The last three commits are the first cloud checkpoint, each with the approved
+DCO. Follow-up commit `0c057678` protects diagnostics and truncation; subsequent
+follow-ups are descendants of it, not of the unavailable desktop checkpoint.
+
 The published reconstruction defect was independently reproduced: two stored
 descriptors and two journal object IDs, but four exported records with zero
 content joins and two historical pending statuses.
@@ -65,6 +86,32 @@ recheck are also retained for provenance.
 Python wheel/sdist and TypeScript ESM/CommonJS/type artifacts were built and
 checked. Artifact topology checks do not prove runtime coverage by themselves.
 
+The [follow-up check record](../qualification/cloud-2026-10-02/followup-checks.json)
+adds 1,721 passing Python tests with unchanged source hashes during the run,
+433 TypeScript tests, six package tests and a composed journey from a freshly
+installed Python wheel. The fresh consumer imported that installed package;
+its Python file hashes match the reviewed checkout. The same wrong-binding and
+corruption faults refused content, and the independent business-effect count
+remained one. This installed-artifact run supersedes the earlier source-only
+journey limitation; customer authentication and production qualification remain
+outside its scope.
+
+The [final local check record](../qualification/cloud-2026-10-02/final-checks.json)
+supersedes those earlier test totals: 1,754 Python tests with 88.79% coverage,
+453 TypeScript tests, six package tests and 457 repository tests passed.
+CI-version mypy passed 138 files. The final wheel and sdist passed both artifact
+inspectors; the installed wheel repeated the real Collector journey with the
+fresh consumer and fault refusals. File snapshots stayed unchanged during the
+full SDK runs. The record binds these tested working bytes by hash; its checkout
+head alone is not a claim that uncommitted changes were absent.
+
+The repository run skipped 43 unavailable Helm checks and seven unconfigured
+live-S3 checks, and excluded the three separately attempted Docker tests.
+Follow-up CI installs the TypeScript driver so emitted-manifest schema tests
+execute there as well. All 15 local pre-commit hooks and the pinned Markdown
+linter passed; Markdown used the registry package because npm blocked the hook's
+Git installation. No npm security setting was changed.
+
 The selected C0–C7, C9 and C10 fixture checks passed; C8 application-network
 semantics remains `NOT_IMPLEMENTED`. Each level retains explicit unimplemented
 scenarios. These fixture passes do not close all producers or qualify every
@@ -72,12 +119,22 @@ requested real-world boundary. Native Go checks and the actual Collector
 journey add separate evidence; live BPF and the Docker tests remain bounded as
 described below.
 
-TypeScript still exports raw exception messages/stacks through an externally
-owned span provider in some APIs. It does not have Python's managed metadata
-export protection or durable governed journal/reconstruction parity. Its local
-store now rejects symlink redirection and nonregular objects, but Node's path
-APIs do not close a concurrent ancestor-replacement race. Deployments must not
-claim uniform pre-persistence protection from the TypeScript subset.
+At that checkpoint, repository checks passed 303 tests and skipped 51:
+43 Helm render checks because Helm is absent, seven live-S3 checks because
+no endpoint, bucket or credentials are configured, and one source-binding test
+because its isolated gRPC extra was absent. That extra was installed for the
+follow-up and its regressions now execute. An attempt to install the
+CI-pinned Helm 3.15.0 binary from the official download endpoint received
+HTTP 403, so no alternate route was used. Three Docker Compose tests had been
+attempted separately and could not start because Docker Hub returned HTTP 429.
+
+The follow-up protects TypeScript decision/execution callback diagnostics,
+including LLM/tool wrappers, using a closed error classification and static
+message. Direct host-exporter canary regressions pass. This is not a general
+sanitizer for externally supplied spans and does not establish Python's managed
+export or durable governed journal/reconstruction parity. Its local store
+rejects symlink redirection and nonregular objects, but Node's path APIs do not
+close a concurrent ancestor-replacement race.
 
 ## Audit and remaining qualification
 
@@ -88,23 +145,53 @@ path to at least one declared review method. The adjacent cloud audit ledgers st
 per-file hashes, review methods, findings and limitations. Inventory, syntax
 checks, test execution and targeted semantic review are distinct. The missing
 desktop ledger prevents verification of its claimed 560 reviewed paths or
-reconciliation of the 475 deeper reviews. **An every-file deep audit is not
-complete:** 48 paths in the remaining Python ledger still have structural-only
-review, and other ledgers retain explicit targeted-review limits.
+reconciliation of the 475 deeper reviews. Follow-up ledgers now provide manual
+semantic review for those 48 Python test paths, the remaining runtime modules,
+documentation, scripts, charts and Compose files. Contract fixtures and frozen
+benchmark evidence use their declared structural, oracle and provenance checks.
+The index distinguishes current byte-matched reviews from historical entries.
+All 1,035 original paths now have a review reference matching their current
+bytes; the later TypeScript ledgers include all runtime files and test/config
+paths. All 326 benchmark paths remain unchanged, including the indexed evidence.
+Role-appropriate coverage of every original path does not mean exhaustive
+line-by-line security review of every file or of dependency implementations;
+targeted-review limits and open findings remain explicit.
 
 All 324 indexed benchmark artifacts retain their SHA-256 values; no benchmark
 measurements were rerun or attributed to this new runtime. The generated
 `vmlinux.h` bytes also remain unchanged. Its original BTF input provenance is
 unknown and is recorded as such.
 
-The published CodeQL result gate remains a security review blocker: the handoff
-and PR report 58 findings, including the synthetic raw benchmark canary. This
-executor could not retrieve the current annotation set through its available
-GitHub read endpoint. No finding was suppressed or dismissed. New-head CI must
-be evaluated separately from the earlier six successful workflow runs.
+The independently read CodeQL result gate for checkpoint `059d5474` failed with
+62 findings: two high, six warnings and 54 notes
+([check](https://github.com/singleaxis/singleaxis-fabric/runs/111017078281)).
+Its language-analysis workflow succeeded; that does not clear the result gate.
+The earlier 58 findings belong to `acf7fbf8`, not this checkpoint. Exact current
+annotation/alert endpoints are unavailable through the connector; finding
+identities must not be inferred from the old triage.
+
+The strengthened Semgrep source gate also failed with five findings. Its
+separate SARIF check reports four new warnings; these are different counts.
+An independent local rerun could not obtain the rules: the proxy returned
+HTTP 403 for `semgrep.dev`. No alternate route, finding suppression or gate
+reduction was used.
+
+The diagnostic checkpoint `ee2b3dd0` subsequently passed five workflows,
+including Recorder CI, license compliance and both integration workflows.
+Recorder security still failed with five Semgrep findings, and its separate
+CodeQL result gate reported 67 findings: two high, seven warnings and 58 notes.
+The [diagnostic record](../qualification/cloud-2026-10-02/diagnostic-checkpoint.json)
+distinguishes those PR findings from the 87 whole-scan CodeQL locations.
+The workflows now print rule IDs and locations from their own generated SARIF,
+without source snippets or messages; no remote alert API route is bypassed.
+Current findings can therefore be inspected despite the connector limitation.
+No findings are suppressed or accepted by this change. The final follow-up
+head must be scanned and assessed separately.
 
 Native auditreceiver unit/race checks and cross-compilation do not qualify live
-kernel capture. The full host emitter still needs generated BPF bindings and
-its compiler/toolchain. Docker is available, but Docker Hub rate limits blocked
-the existing Compose image-backed test setup; the composed journey instead
-builds the pinned Collector source and runs that real binary locally.
+kernel capture. The checkpoint CI generated BPF bindings and passed its host
+build and image checks, which remain distinct from a live kernel experiment.
+It also passed Helm and Docker-backed contract tests. Locally, Helm downloads
+were blocked and Docker Hub rate limits prevented the Compose image setup;
+the composed journey builds the pinned Collector and runs that real binary.
+Changed chart and Compose regressions require the follow-up head's CI results.

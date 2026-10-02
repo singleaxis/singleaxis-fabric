@@ -1,0 +1,37 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 package:qualified
+> node scripts/package-qualified.mjs --destination /workspace/fabric-qualification/npm-publication-final --smoke
+
+
+added 2 packages in 659ms
+singleaxis-fabric: no OpenTelemetry TracerProvider is configured; emitted telemetry will be silently dropped. Install one — e.g. `new NodeTracerProvider({spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())]})` registered with `provider.register({contextManager: new AsyncLocalStorageContextManager()})`, or via `installDefaultProvider({provider, contextManager})` — see the README's OpenTelemetry wiring section.
+singleaxis-fabric: decision span capture is disabled or has observed drops; captureHealth is local evidence only and does not verify complete capture or delivery.
+singleaxis-fabric: no OpenTelemetry TracerProvider is configured; emitted telemetry will be silently dropped. Install one — e.g. `new NodeTracerProvider({spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())]})` registered with `provider.register({contextManager: new AsyncLocalStorageContextManager()})`, or via `installDefaultProvider({provider, contextManager})` — see the README's OpenTelemetry wiring section.
+singleaxis-fabric: decision span capture is disabled or has observed drops; captureHealth is local evidence only and does not verify complete capture or delivery.
+{
+  "schema_version": "fabric.npm-package-qualification/v1",
+  "name": "@singleaxis/fabric",
+  "version": "0.8.0-rc.1",
+  "release_channel": "beta",
+  "filename": "singleaxis-fabric-0.8.0-rc.1.tgz",
+  "sha256": "b934e8225ea6b214c69905aa0a1473d703f4e71bbd9416ba9f15b3c5ce0425e0",
+  "integrity": "sha512-zN+m00h5JFlzwm55eEd5cLVMIA+vYYjmvdt1NNIILnfoZ4z0WSTliu+hG4ZiGUxonwTMq+NpXvTmTo1iZGmKwQ==",
+  "package_size": 226573,
+  "unpacked_size": 976792,
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist/index.cjs",
+    "dist/index.cjs.map",
+    "dist/index.d.cts",
+    "dist/index.d.ts",
+    "dist/index.js",
+    "dist/index.js.map",
+    "package.json"
+  ],
+  "smoke": [
+    "esm",
+    "cjs",
+    "types"
+  ]
+}

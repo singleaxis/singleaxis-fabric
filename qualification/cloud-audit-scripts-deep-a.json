@@ -1,0 +1,299 @@
+{
+  "schema_version": "fabric.cloud-audit-scripts-deep/v1",
+  "partition": "a_first_29_of_57_inclusive_governed_flow_driver",
+  "source_head": "0c057678eaa4d4b29217bccec2094dc196a34a18",
+  "source_state": "shared working tree; per-file hashes bind reviewed content, root publishes commit",
+  "status": "LOCAL_FIXES_VERIFIED_FRESH_CI_AND_SECURITY_ACCEPTANCE_OPEN",
+  "scope": "Full semantic read of assigned scripts after initial AST-only product ledger; synthetic fixture behavior preserved. No benchmarks changed.",
+  "reviewed_paths": [
+    {
+      "path": "deploy/compose/sink/otlp_sink.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "e199e489cdfa65858b64522018b40214a73fb83bc111244b33ae8831e6fced62",
+      "lines": 106,
+      "observation": "Controlled fsynced protobuf sink; reviews body/header handling, optional bearer, filename allocation, decompression and readback membership endpoint. Synthetic local sink is not a hardened public service; no payload/decompression limit and GET membership is unauthenticated. No production exposure executed."
+    },
+    {
+      "path": "scripts/check_changelog_keep_alive.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "9eec5894eb8803e2b6654036df6cd15660ce99cec6a559d85d4df7c446390e48",
+      "lines": 55,
+      "observation": "CI changelog keep-alive reads Git refs and changed paths through argv subprocess; excludes scoped non-product changes and requires release note content. No shell interpolation or remote write."
+    },
+    {
+      "path": "scripts/contracts/__init__.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "cc9d7ea3b1899a8b0cb4145b94079903d25a0f2c99d84f9c50bc11125c2b53f6",
+      "lines": 3,
+      "observation": "Package marker only; no import-time effects."
+    },
+    {
+      "path": "scripts/contracts/validate_connector_contract.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "df0d88689f2b5434d06a0a246f8b6a5543698149ea39fde7397fd567dec102cc",
+      "lines": 423,
+      "observation": "Pinned connector manifests, schema fixtures and stable error checks; local trusted repository inputs. No network or business effects. Intermediate-directory symlink trust is narrower than evidence validator."
+    },
+    {
+      "path": "scripts/contracts/validate_content_contracts.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "df22b7e7fa1cb396b6885e0818ecb8c6d3030d5092cebb44a32d7e88620390a9",
+      "lines": 432,
+      "observation": "Content descriptor/schema fixture validation and pinned digests; JSON read and deterministic checks only. Filesystem inputs assume trusted repository tree."
+    },
+    {
+      "path": "scripts/contracts/validate_data_plane_contracts.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "30954867d390bbf3f158ee794d29276d80078dc94962bb20044943829818930f",
+      "lines": 628,
+      "observation": "Data plane contract pins and examples checked locally; no execution of submitted fixture text, shell expansion or network."
+    },
+    {
+      "path": "scripts/contracts/validate_evidence_contracts.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "fa12a07fd298680e1d2f566b654cb44f6e7e6d498ef91ae2e89682d4fe764791",
+      "lines": 969,
+      "observation": "Evidence schemas, identity/causality positions, privacy/byte bindings, manifests and tombstones read fully. Rejects symlink ancestors and maps partial/unverified outcomes; no content replay."
+    },
+    {
+      "path": "scripts/contracts/validate_recorder_contract.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "eb2bd8565d100b613ed9f4816e3b1cae9e0db46cd0b195eae6850badfdb021f2",
+      "lines": 387,
+      "observation": "Recorder config/contracts fixture and digest validation is local and read-only; does not imply a running Recorder or authenticated remote receipt."
+    },
+    {
+      "path": "scripts/qualification/capture_measurements.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "859dccc52f2bea3a1b59d8dc034e2843e75eca6b63e51e59743d3a6d9362556a",
+      "lines": 89,
+      "observation": "Measurement helper computes bounded statistics and environment/process samples; distinguishes measured counters from unsupported runtime surfaces. No standalone delivery evidence."
+    },
+    {
+      "path": "scripts/qualification/check_secret_scan_baseline.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "ae4a8fa166a18424719ed7997c24bd358e31a237f8787e3b416b5a1e7537fa40",
+      "lines": 89,
+      "observation": "Secret-scan baseline checker compares scanner finding fingerprints/locations to explicit repository baseline; subprocess argv and no credential dumping reviewed. Baseline acceptance is not proof secrets absent."
+    },
+    {
+      "path": "scripts/qualification/check_source_binding.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "22768438c2fc866201005b190a29a83239d91fc2f75c00e6273daff02a087a0c",
+      "lines": 449,
+      "observation": "TLS source-binding qualifier sends deliberately synthetic forbidden fields to operator-selected endpoints and checks independent sink. Hardened HTTP transport to require HTTPS without userinfo/fragment and valid port, disable redirects, bound normal/error bodies to1MiB, and preserve supplied client TLS context. Mock transport tests exercise real urllib redirect machinery without external requests."
+    },
+    {
+      "path": "scripts/qualification/enterprise_preflight.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "3f0667439550c3c5009efbc20a4fb6460aeac1a6c6d34308f255ebe67fc44ab1",
+      "lines": 9,
+      "observation": "Enterprise preflight checks configured artifacts/tools/endpoints and renders qualification readiness; no production-GO claim or deployment performed by this audit."
+    },
+    {
+      "path": "scripts/qualification/project_sol_stage_to_fabric.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "e994ad50ca0ec86b3df94bc6cb22bc8639857413c71c70be5875d4bebfbf3187",
+      "lines": 278,
+      "observation": "Sol projection maps synthetic local stage evidence into Fabric metadata using governed store/keys and private outputs; declares partial/local scope. Does not rerun model or tool business effects."
+    },
+    {
+      "path": "scripts/qualification/run_client_byte_adapter_smoke.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "9b3595d1f428d9828b56a9a68b61ec4919f58f12349d1a5994a6c45ba9d09270",
+      "lines": 183,
+      "observation": "Byte adapter local smoke uses synthetic provider/tool input and local evidence directories. Assertion-driven fixture execution assumes normal Python execution; optimized-mode qualification was not established."
+    },
+    {
+      "path": "scripts/qualification/run_custom_agent_node_pilot.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "8186a2d094e06836d2558dc30aa3c06e692278f0254e7418741c50a74ecdd47a",
+      "lines": 283,
+      "observation": "Unique Compose project/image identity, installed wheel member comparison, owned resource cleanup and exact controlled readback reviewed. Fixed ignored resource/scope metadata, duplicate attribute keys, type collapse and empty expected set."
+    },
+    {
+      "path": "scripts/qualification/run_custom_agent_smoke.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "d76e357d88dc259e5864767e45aa59bacaa030d5cb14ff521bbc66902221f884",
+      "lines": 539,
+      "observation": "Custom-agent smoke captures synthetic HTTP/tool flows through installed SDK and private governed content; no inference or external paid provider needed. Governed policies and canary checks stay synthetic."
+    },
+    {
+      "path": "scripts/qualification/run_enterprise_local.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "b99f85bdd85eecb4a04f3501af0cb46d73407dd50799d1fb30ceb2e0580218ae",
+      "lines": 258,
+      "observation": "Enterprise local fixture starts bounded local providers and verifies local capture; assertion-driven orchestration assumes standard Python. Not a remotely authenticated receipt or enterprise deployment test."
+    },
+    {
+      "path": "scripts/qualification/run_qualified_call_pilot.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "533a27f78d0b1dedb93a1b935868d66135e007c4a6116068a2e33e3ad4e205a5",
+      "lines": 875,
+      "observation": "Qualified call pilot preserves fixture-only admission and local keys, coverage/receipt scope and offline reconstruction. Raw fixture byte corruption is deliberate fault injection into owned temporary evidence, not business replay."
+    },
+    {
+      "path": "scripts/qualification/run_sol_local_stage.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "af320d1b908bfff2381bb31e15bf62899823443fb914cf7dcb697e10d3fe50c3",
+      "lines": 546,
+      "observation": "Sol local stage explicit Codex synthetic rehearsal, workspace paths, proxy and transcript scope reviewed. Actual model execution/networked rehearsal was not invoked during this audit."
+    },
+    {
+      "path": "scripts/qualification/run_synthetic_agent_pilot.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "6ed74ef441e5a7620cdd21e5d0f06443c50b2d2c60f4326a80c7fb2a34aff6d7",
+      "lines": 649,
+      "observation": "Synthetic agent pilot explicit fixture behavior, local/selected Node transport and verification reviewed. Fixed expectation generator to bind complete projected attribute set and protobuf types; assertions remain normal-Python fixture constraints."
+    },
+    {
+      "path": "scripts/qualification/summarize_local_go_simulation.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "52c16099b85b055d71280f4341dbb19442f8680760b068f99fc9894586875911",
+      "lines": 138,
+      "observation": "Local Go simulation summarizes supplied local evidence and qualification limitations; no discovery/deployment, no claim that simulated path is production acceptance."
+    },
+    {
+      "path": "scripts/qualification/synthetic_agent_tool.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "3c1597a2fee6fc79ad7c0e3764f3722893073a86a432fba5e9ccea254868f010",
+      "lines": 66,
+      "observation": "Synthetic tool executes fixed local fixture business effect and emits synthetic evidence. Path/argument boundary reviewed; not a general arbitrary command executor."
+    },
+    {
+      "path": "scripts/qualification/verify_sol_sink_readback.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "fdf520e27d069aadab3b7efc0c34b005ca031f403cc85e98a025607ddcc8021b",
+      "lines": 118,
+      "observation": "Sol readback previously collapsed types/duplicate keys and ignored content outside record attributes. Fixed exact typed map plus body/resource/scope rejection; local controlled receipt remains metadata-only."
+    },
+    {
+      "path": "scripts/qualification/verify_synthetic_sink_readback.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "50c751a65724f9d015200584582ab0af6f823fd48aa8997919e2fef27adab17e",
+      "lines": 125,
+      "observation": "Synthetic readback previously compared attribute subset and ignored body/resource/scope. Reproduced false positive with non-canary content; fixed complete typed metadata and closed containers."
+    },
+    {
+      "path": "scripts/release/__init__.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "f896c89233a745c6c3fbc484661d3cd3edf6b5a9ad5c9b6e1642af9122a7a01c",
+      "lines": 3,
+      "observation": "Package marker only; no import-time effects."
+    },
+    {
+      "path": "scripts/release/package_contracts.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "bcc0a47281597299150f77bd19963a9576e6e216ac0aff55e7794a60425ddbaa",
+      "lines": 501,
+      "observation": "Archive packaging checks stable regular files, pins, scoped families, deterministic tar metadata and exclusive outputs. Reproduced missing configured v2 accepted when v1 present; fixed exact required version coverage."
+    },
+    {
+      "path": "scripts/release/qualify_release.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "82896cec2d267534189cb2c4bd12f19bede1acdf21dbcfa276bfa040c231b47e",
+      "lines": 614,
+      "observation": "Release archive/version/boundary checks reviewed. Reproduced failed wrong-SHA run accepted by saved evidence reader; fixed per-record successful completed exactSHA and run identity, one selected record per workflow. Local evidence remains an unsigned trust input."
+    },
+    {
+      "path": "scripts/release/verify_workflow_runs.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "8f072e85ec3b446be5fa7698718334fb28b2eb600e6785f62f648f141308817c",
+      "lines": 157,
+      "observation": "GitHub workflow reader uses argv gh invocation and exact SHA successful candidate filtering, deterministic latest successful rerun selection; local checks do not freshly authenticate a previously saved report. Network lookup was not executed in this review."
+    },
+    {
+      "path": "scripts/tests/_governed_flow_driver.py",
+      "review_method": "full_text_semantic_review",
+      "sha256": "ec88c708e97c9b598fff2bf21bc2b7ef72ee6f2fd3608b5f47988aad8674da40",
+      "lines": 110,
+      "observation": "Governed flow test driver uses explicit fixed synthetic phases and local content/metadata artifacts; assertion semantics and subprocess boundary reviewed. No real user workload replay or production destination exercised."
+    }
+  ],
+  "supplementary_authored_or_reviewed_paths": [
+    {
+      "path": "scripts/qualification/otlp_readback_validation.py",
+      "sha256": "0237b0d9ad9b34ee8003df958aac6a44d3567898e5ff087aa8b2489ea7b23105"
+    },
+    {
+      "path": "scripts/tests/test_readback_privacy.py",
+      "sha256": "267550699b9b9bacf1f4a3d6230eb36f18353cfb5632a397559d9ae9c0896621"
+    },
+    {
+      "path": "scripts/tests/test_synthetic_sink_readback.py",
+      "sha256": "29870192f20260be505c7378541a93f0bde277578710c87d5c59fbcc35056cbf"
+    },
+    {
+      "path": "scripts/tests/test_custom_agent_node_pilot.py",
+      "sha256": "9c80579e11a6c1094b3624147a13e66834f6a13b667c29dad87c649d246fb2b5"
+    },
+    {
+      "path": "scripts/tests/test_package_contracts.py",
+      "sha256": "da52c6afb6e5c51facd0daf952031962a0e4d8e71da8cd84ba58e2dae2999b34"
+    },
+    {
+      "path": "scripts/tests/test_release_qualification.py",
+      "sha256": "0fa67b6206742a66083fda42db9a08fac850c8e46982b26d5eb7e743129349bb"
+    },
+    {
+      "path": "scripts/qualification/check_source_binding.py",
+      "sha256": "22768438c2fc866201005b190a29a83239d91fc2f75c00e6273daff02a087a0c"
+    },
+    {
+      "path": "scripts/tests/test_source_binding_http.py",
+      "sha256": "262352a1fd736ebec09a3418c4fab10e84eb3ee079077f1a8867af44eae0b6a8"
+    }
+  ],
+  "confirmed_findings": [
+    {
+      "id": "READBACK_UNBOUND_CONTENT",
+      "before": "Matching ID/event with extra attribute and noncanary body was accepted by synthetic readback. Other readbacks ignored scope/resource content and collapsed attribute types/duplicate keys.",
+      "after": "All three controlled readbacks compare exact values/types and reject duplicate/unsupported attrs and body/resource/scope content. Synthetic expectations now contain entire projection.",
+      "status": "fixed_targeted_regressions_pass"
+    },
+    {
+      "id": "MISSING_CONFIGURED_VERSION",
+      "before": "Required v1+v2 accepted local tree containing onlyv1.",
+      "after": "All configured versions must exist; missingv2 fails and completev1+v2 passes.",
+      "status": "fixed_targeted_regressions_pass"
+    },
+    {
+      "id": "UNBOUND_WORKFLOW_RUN",
+      "before": "OuterSHA plus workflowname accepted failed record with wrong head_sha.",
+      "after": "Exactly one selected completed/success record per requiredworkflow with exactSHA and valid runID/URL; upstream multiple successful reruns remain supported by selection.",
+      "status": "fixed_targeted_regressions_pass"
+    },
+    {
+      "id": "TLS_QUALIFIER_CREDENTIAL_DESTINATION",
+      "before": "Operator URL could select HTTP and default urllib redirects could forward attached bearer. Response/error reads were unbounded.",
+      "after": "Fail-closed HTTPS URL validation before transport; redirect handler refuses forwarding; bounded reads and HTTPError cleanup; supplied SSLContext retained.",
+      "status": "fixed_mock_transport_regressions_pass"
+    }
+  ],
+  "validation": [
+    {
+      "command": "/workspace/fabric-venv/bin/python -m pytest -q -o addopts= scripts/tests/test_source_binding_http.py scripts/tests/test_source_binding_readback.py scripts/tests/test_readback_privacy.py scripts/tests/test_synthetic_sink_readback.py scripts/tests/test_custom_agent_node_pilot.py scripts/tests/test_sol_local_stage.py scripts/tests/test_package_contracts.py scripts/tests/test_release_qualification.py scripts/tests/test_release_workflow_evidence.py",
+      "result": "135 passed in0.47s; coverage disabled to preserve root full-suite coverage"
+    },
+    {
+      "command": "ruff check changed readback/release scripts and tests",
+      "result": "All checks passed"
+    },
+    {
+      "command": "/workspace/fabric-venv/bin/python /workspace/singleaxis-fabric/scripts/qualification/verify_synthetic_sink_readback.py --help from /tmp",
+      "result": "exit0; standalone helper import works"
+    },
+    {
+      "setup": "Installed grpcio1.84.0 into isolated /workspace/fabric-venv using UV_CACHE_DIR=/workspace/fabric-uv-cache; no repo dependency or pin changes. Initial TLS test collection lacked grpcio; actual final run included all TLS tests.",
+      "result": "HTTPS transport simulated in-process; invalidURL tests prove no opener built, all five redirect statuses prove exactly one original request, normal/error oversized bodies rejected."
+    }
+  ],
+  "limits": [
+    "No new Docker/remote Node, paid model, external destination, release publication or GitHub workflow lookup executed in this deep review.",
+    "Fresh CI and security-maintainer decision on remaining CodeQL gate are required; these local tests do not clear scanner findings.",
+    "Saved release evidence is structural validation of a local trust input, not a signed fresh GitHub attestation.",
+    "Controlled sink is synthetic/private fixture infrastructure, not a production network service.",
+    "Legacy assertion-driven smoke orchestrators were read but not qualified under python -O; normal invocation is assumed.",
+    "New TLS tests use fake network handler with real urllib redirect machinery; no new live mTLS handshake claimed. Existing client SSLContext passes through unchanged."
+  ]
+}

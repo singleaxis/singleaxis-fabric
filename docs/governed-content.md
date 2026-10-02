@@ -269,7 +269,10 @@ Not supported / not claimed:
 
 `capture_content` / `captureContent` emitted raw model/tool payloads
 onto spans — stripped by the Fabric Node's allowlist and never a
-governed evidence path. Governed mode does not reinterpret that flag:
-raw span emission stays opt-in and is still stripped at the collector;
-governed storage is configured independently via `contentCapture`.
-Existing metadata-only users see no behavior change.
+governed evidence path. Governed storage is configured explicitly with `content_capture` (Python) or
+`contentCapture` (TypeScript). The Python governed client rejects conflicting
+raw-span capture flags and raw-content auto-instrumentation environment options;
+do not enable both paths. TypeScript's legacy raw opt-ins require separate
+privacy review and are not Python parity. Fabric Node continues stripping raw
+content; customer-owned exporters and other instrumentation need their own
+protection. Existing metadata-only users see no behavior change.

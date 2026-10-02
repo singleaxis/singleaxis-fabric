@@ -9,9 +9,10 @@ authorize agent actions. Instrumentation still adds overhead and can encounter
 configuration, queue and storage failures. Protection depends on the API and
 export path selected. Python's governed byte path applies deployment policy
 before persistence; its legacy `masked_only` callback runs in the byte worker.
-TypeScript has a narrower implementation and can send raw exception messages
-and stacks to an externally owned span provider. Do not assume every export
-path is metadata-only.
+TypeScript has a narrower implementation. Its decision/execution callback
+diagnostics use a closed error classification and static message, including
+LLM/tool wrappers. It does not sanitize arbitrary spans supplied by an externally
+owned provider. Do not assume every export path is metadata-only.
 
 ## Authoritative specs
 

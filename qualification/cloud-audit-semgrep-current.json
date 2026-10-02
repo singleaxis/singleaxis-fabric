@@ -1,0 +1,236 @@
+{
+  "baseline_reproduction": {
+    "method": "Pre-fix temporary-directory experiment at diagnostic_revision with os.chmod forced to raise, plus a configured spool symlink pointing to an existing directory.",
+    "observed": [
+      "constructor accepted after permission failure with spool mode 0755",
+      "constructor followed configured symlink and changed target mode to 0700"
+    ],
+    "status": "Observed before fix; new committed regression contracts exercise rejection and private creation. No permanent business effects involved."
+  },
+  "changelog_rationale": "Fail closed when legacy content-spool directory privacy cannot be enforced; reject symlink/traversal roots before recovery, create new directories owner-private, and add real local TLS verification regression evidence without changing transport security APIs.",
+  "date": "2026-10-02",
+  "diagnostic_revision": "ee2b3dd0e5a03e28ce84361685698f94a6b508c0",
+  "files": [
+    {
+      "assessment": "Actual initialization defect fixed: mkdir formerly inherited the ambient umask and ignored chmod failure; a configured symlink root was followed. Directory mode 0700 itself is appropriate and is intentionally retained.",
+      "behavioral_tests": [
+        "test_spool_permission_failure_aborts_before_recovery_or_worker[False/True]",
+        "test_spool_symlink_refused_without_touching_target[False/True]",
+        "test_spool_cannot_change_root_or_traversal_permissions[/,/tmp/../]",
+        "test_spool_created_privately_before_chmod_under_permissive_umask"
+      ],
+      "bytes": 35477,
+      "changed_from_published": true,
+      "contract": [
+        "Convert the configured spool path to an absolute path and reject filesystem root or explicit parent traversal before any permission mutation.",
+        "Reuse content_store.local._directory: create each missing component with 0700 and traverse through O_DIRECTORY|O_NOFOLLOW directory descriptors.",
+        "Apply fchmod(0700) to the pinned spool descriptor and verify the resulting permission bits. An error aborts construction before recovery or worker startup.",
+        "Permission setup errors do not recover, discard, quarantine or upload existing evidence."
+      ],
+      "limits": [
+        "This is the legacy ContentWriter plaintext spool; it is not the separately implemented encrypted byte spool.",
+        "The descriptor is pinned only during initialization. Later legacy spool reads/writes/removals still use paths and require trusted, stable ancestor directories and namespace. This fix does not claim protection against a privileged or same-user adversary replacing those paths after initialization.",
+        "Tests execute on Linux with supported no-follow directory primitives. No Windows or macOS runtime result is claimed.",
+        "Already exposed historical bytes cannot be made retrospectively private by tightening the current directory mode.",
+        "No Semgrep rerun confirms closure. A rule matching any chmod-like operation may still report this intentionally retained 0700 operation."
+      ],
+      "line_count": 830,
+      "methods": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_dataflow_review",
+        "related_runtime_and_test_contract_review"
+      ],
+      "path": "sdk/python/src/fabric/_content_writer.py",
+      "published_line": 202,
+      "published_sha256": "df560fa0134dee7708798e47d6dfe6e1048edf238e4a72485dea266cfd43bd5c",
+      "rule_id_suffix_reported": "insecure-file-permissions",
+      "sha256": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4"
+    },
+    {
+      "assessment": "No defect identified at the reported operation. fchmod(0700) sets owner-only access on an already pinned directory. Keep finding open for security-owner adjudication; no source or gate change.",
+      "behavioral_tests": [
+        "tests/test_content_store.py",
+        "tests/test_governed_content.py"
+      ],
+      "bytes": 13384,
+      "changed_from_published": false,
+      "contract": [
+        "_directory traverses path components through no-follow directory descriptors and creates missing directories with mode 0700.",
+        "_atomic_write_bytes calls fchmod on the pinned directory, propagates failures, creates exclusive no-follow temporary files with 0600, fsyncs content, renames relative to the pinned descriptor and fsyncs the directory.",
+        "Existing content reads validate regular files with one hard link; governed content checks materialized hashes."
+      ],
+      "limits": [
+        "POSIX owner-only modes are not encryption, retention enforcement or protection from the file owner/root.",
+        "Configured root resolution is an explicit caller trust boundary. Existing ancestor permissions and same-user namespace access remain deployment responsibilities.",
+        "The reported chmod line is assessed in context; this is not a blanket security approval of the entire store or filesystem."
+      ],
+      "line_count": 328,
+      "methods": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_dataflow_review",
+        "related_runtime_and_test_contract_review"
+      ],
+      "path": "sdk/python/src/fabric/content_store/local.py",
+      "published_line": 78,
+      "published_sha256": "e0c5ed1376566081891e2884f821c453d84e7a476347966dc0df89138b8228ac",
+      "rule_id_suffix_reported": "insecure-file-permissions",
+      "sha256": "e0c5ed1376566081891e2884f821c453d84e7a476347966dc0df89138b8228ac"
+    },
+    {
+      "assessment": "No certificate-verification bypass identified. The call explicitly passes ssl.create_default_context(); real local TLS tests verify trusted success, wrong-CA rejection and hostname mismatch rejection. Keep finding open for security-owner adjudication.",
+      "behavioral_tests": [
+        "test_stdlib_https_verifies_certificate_chain_and_hostname[*-dispatch]"
+      ],
+      "bytes": 14601,
+      "changed_from_published": false,
+      "contract": [
+        "The default SERVER_AUTH context requires certificates and hostname verification; no verification-disable option is exposed.",
+        "One direct stdlib HTTP/1.1 request per physical call, no automatic redirect or retry, default socket timeout 5 seconds, caller-supplied headers and authentication.",
+        "Success test works with an intentionally invalid HTTPS_PROXY value, demonstrating direct routing rather than implicit proxy environment routing for this adapter."
+      ],
+      "limits": [
+        "This optional business HTTP adapter also permits caller-selected plaintext HTTP. Its declared URL is an observation boundary, not an egress authorization policy.",
+        "Caller-selected timeout and CA environment remain caller configuration; default socket timeout is not a total end-to-end deadline.",
+        "No custom client-certificate option, proxy support, HTTP/2, cloud IAM or public-service integration is qualified.",
+        "A successful TLS connection authenticates the configured peer according to trust configuration, not application truth or durable side effects."
+      ],
+      "line_count": 375,
+      "methods": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_dataflow_review",
+        "related_runtime_and_test_contract_review"
+      ],
+      "path": "sdk/python/src/fabric/http_dispatch.py",
+      "published_line": 75,
+      "published_sha256": "9c545641c4111f3ac05aba7f61b06a1d325efff4bca5ac0734e2a3afcd636500",
+      "rule_id_suffix_reported": "httpsconnection-detected",
+      "sha256": "9c545641c4111f3ac05aba7f61b06a1d325efff4bca5ac0734e2a3afcd636500"
+    },
+    {
+      "assessment": "No certificate-verification bypass identified. Constructor creates a verified context and send passes that context unchanged. Local tests demonstrate trusted success, a client certificate observed by the server, and rejection before HTTP for wrong CA/hostname. Keep finding open for security-owner adjudication.",
+      "behavioral_tests": [
+        "test_stdlib_https_verifies_certificate_chain_and_hostname[*-metadata]",
+        "tests/test_metadata_delivery.py"
+      ],
+      "bytes": 31775,
+      "changed_from_published": false,
+      "contract": [
+        "Endpoint policy permits HTTPS or explicit loopback HTTP /v1/logs; it rejects URL credentials, query and fragment.",
+        "Context uses ssl.create_default_context(cafile=...) and optionally loads the configured client certificate/key pair. TLS verification cannot be disabled through this API.",
+        "Timeout must be finite, positive and bounded; response reads are bounded and connections close in finally. Redirects are not followed.",
+        "Optional printable bearer token is kept in memory and excluded from the durable delivery identity. Receiving authentication policy remains customer controlled."
+      ],
+      "limits": [
+        "Optional client credentials do not prove every deployment enforces mTLS or bearer authentication. The local test server verifies a supplied client certificate but allows clients without one to support all three adapters.",
+        "Explicit loopback HTTP remains allowed, including a configured bearer token; this is a local trust boundary, not a claim of encrypted loopback transport.",
+        "No proxy environment routing, redirect credential forwarding, cloud IAM integration or real enterprise service is exercised.",
+        "An HTTP acceptance response alone is not destination durability or run completeness."
+      ],
+      "line_count": 743,
+      "methods": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_dataflow_review",
+        "related_runtime_and_test_contract_review"
+      ],
+      "path": "sdk/python/src/fabric/metadata_delivery.py",
+      "published_line": 173,
+      "published_sha256": "90f711e348f182a1115ca14fa5dcb839951a4d3e136c31925a50bf333fbca2bb",
+      "rule_id_suffix_reported": "httpsconnection-detected",
+      "sha256": "90f711e348f182a1115ca14fa5dcb839951a4d3e136c31925a50bf333fbca2bb"
+    },
+    {
+      "assessment": "No certificate-verification bypass identified. Explicit verified context plus client chain is required for the supported HTTPS fixture route. Actual TLS failures return the existing sanitized ValueError before any HTTP request. Keep finding open for security-owner adjudication.",
+      "behavioral_tests": [
+        "test_stdlib_https_verifies_certificate_chain_and_hostname[*-synthetic]",
+        "tests/test_synthetic_otlp.py"
+      ],
+      "bytes": 11941,
+      "changed_from_published": false,
+      "contract": [
+        "Only loopback hosts and exact /v1/logs are accepted; URL credentials/query/fragment are rejected.",
+        "HTTPS requires CA plus client certificate/key; context is ssl.create_default_context(cafile=...) followed by load_cert_chain.",
+        "Bearer authentication requires HTTPS, is bounded and validated; response size is bounded, partial rejection is checked, and connections close in finally.",
+        "The result explicitly sets destination_durable=False and retry_allowed=False. This helper is an offline fixture exporter, not a production durable sender."
+      ],
+      "limits": [
+        "Actual local TLS fixture only. No remote network, paid API, public CA service, enterprise IAM or production deployment was contacted.",
+        "The generic sanitized error intentionally does not expose TLS internals. Negative tests additionally assert zero requests at the independent server.",
+        "Client-certificate presence is verified by the fixture; universal server-side mTLS enforcement is not claimed."
+      ],
+      "line_count": 301,
+      "methods": [
+        "complete_byte_read_sha256",
+        "targeted_semantic_dataflow_review",
+        "related_runtime_and_test_contract_review"
+      ],
+      "path": "sdk/python/src/fabric/synthetic_otlp.py",
+      "published_line": 262,
+      "published_sha256": "ee82810ef19be5d0372d1e293f6ac488e194007fae25030d597261a90727045f",
+      "rule_id_suffix_reported": "httpsconnection-detected",
+      "sha256": "ee82810ef19be5d0372d1e293f6ac488e194007fae25030d597261a90727045f"
+    }
+  ],
+  "provenance": {
+    "finding_source": "Parent-provided authorized CI summary at diagnostic_revision; exact reported suffixes and locations recorded. Full SARIF messages were not copied or independently downloaded.",
+    "gate_status": "Unresolved. This source review and these tests do not mark any hosted security finding accepted or closed.",
+    "local_semgrep_log": "/workspace/fabric-qualification/semgrep-current.log",
+    "local_semgrep_status": "Blocked before scan: semgrep.dev /c/auto rule retrieval returned proxy tunnel 403 Forbidden. No denied route bypass or gate weakening attempted."
+  },
+  "regression_file": {
+    "bytes": 9945,
+    "contracts": [
+      "Two permission-enforcement failures (raised and ineffective fchmod) abort before recovery or worker start.",
+      "Configured spool symlink or symlink ancestor is rejected without modifying the outside target.",
+      "Filesystem root and explicit parent traversal cannot reach a permission mutation.",
+      "Isolated spawned process under umask 000 observes newly created directory modes immediately after mkdir and before fchmod: both 0700.",
+      "Nine TLS combinations: three adapters times trusted success, wrong CA and hostname mismatch. Independent local service records one request only for trusted success, and zero for rejected peers. Client certificates are observed for metadata and synthetic adapters."
+    ],
+    "fixture_limits": "Ephemeral locally generated synthetic certificates and loopback server; no external credentials/services. No claim about every TLS implementation, OS, key custody or production authorization policy.",
+    "new_cases": 16,
+    "path": "sdk/python/tests/test_semgrep_security_boundaries.py",
+    "sha256": "19ad103056a2014f02ad1ca6be551a69a4622d6941bd31430d5dc9e6b4c47a68"
+  },
+  "remaining_work": [
+    "Parent reruns full Python, CI-pinned lint/types, rebuilt wheel and actual Collector reconstruction journey at final exact head.",
+    "Hosted security gate remains authoritative; security owner must adjudicate audit-query findings using this evidence without any agent suppression or acceptance.",
+    "Deployment instructions must retain private dedicated spool path, trusted stable ancestor namespace and distinction between legacy plaintext spool and encrypted governed byte spool."
+  ],
+  "reviewer": "reconstruction worker",
+  "runtime": {
+    "http_client_source_sha256": "c2c0694155837d72fc710a4138e5d1e53ae1a652b117a2e23a5b1b0db527a0f9",
+    "openssl": "OpenSSL 3.5.8 25 Aug 2026",
+    "python": "3.12.14",
+    "ssl_source_sha256": "db62eeaae59c6e7087dcafb28087cd0bb092087381edc556f97c8cb614484380",
+    "stdlib_review": "Read create_default_context SERVER_AUTH and HTTPSConnection context handling in the installed Python runtime. SERVER_AUTH requires CERT_REQUIRED and check_hostname=True. Explicit CA or system defaults are loaded. Operator-controlled SSLKEYLOGFILE is a documented stdlib environment behavior, not overridden by these APIs."
+  },
+  "schema": "fabric.cloud-audit-semgrep-current/v1",
+  "scope": "Five reported Semgrep rule/location pairs only; one actual spool setup defect repaired, four contextual audit queries documented without suppression or automatic acceptance.",
+  "verification": [
+    {
+      "command": "/workspace/fabric-venv/bin/python -m pytest --no-cov -q tests/test_semgrep_security_boundaries.py tests/test_governed_content.py tests/test_content_store.py tests/test_http_dispatch.py tests/test_metadata_delivery.py tests/test_synthetic_otlp.py",
+      "cwd": "sdk/python",
+      "result": "182 passed in 22.65s"
+    },
+    {
+      "command": "/workspace/fabric-venv/bin/ruff check src/fabric/_content_writer.py tests/test_semgrep_security_boundaries.py",
+      "cwd": "sdk/python",
+      "result": "passed; parent owns CI-pinned 0.13.0 gate",
+      "version": "0.15.11"
+    },
+    {
+      "command": "/workspace/fabric-venv/bin/ruff format --check src/fabric/_content_writer.py tests/test_semgrep_security_boundaries.py",
+      "cwd": "sdk/python",
+      "result": "2 files already formatted",
+      "version": "0.15.11"
+    },
+    {
+      "command": "/workspace/fabric-venv/bin/mypy src/fabric/_content_writer.py tests/test_semgrep_security_boundaries.py",
+      "cwd": "sdk/python",
+      "result": "Success: no issues found in 2 source files"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ]
+}

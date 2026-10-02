@@ -59,6 +59,8 @@ def _fixture(
             }
         ]
     }
+    item = report["cases"][0]["expected_sink_records"][0]
+    item["attribute_types"] = {key: "string_value" for key in item["attributes"]}
     return report, sink_dir
 
 

@@ -1,0 +1,22 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 build
+> tsup
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /workspace/singleaxis-fabric/sdk/typescript/tsup.config.ts
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+CJS Build start
+CJS dist/index.cjs     215.54 KB
+CJS dist/index.cjs.map 118.96 KB
+CJS ⚡️ Build success in 72ms
+ESM dist/index.js     210.88 KB
+ESM dist/index.js.map 118.88 KB
+ESM ⚡️ Build success in 73ms
+DTS Build start
+DTS ⚡️ Build success in 1364ms
+DTS dist/index.d.ts  133.64 KB
+DTS dist/index.d.cts 133.64 KB

@@ -450,7 +450,14 @@ export class ContentWriter {
     try {
       const fd = fs.openSync(tmp, "w", 0o600);
       try {
-        fs.writeSync(fd, entry);
+        let offset = 0;
+        while (offset < entry.length) {
+          const written = fs.writeSync(fd, entry, offset, entry.length - offset);
+          if (!Number.isInteger(written) || written <= 0 || written > entry.length - offset) {
+            throw new Error("spool write made no valid progress");
+          }
+          offset += written;
+        }
         fs.fsyncSync(fd);
       } finally {
         fs.closeSync(fd);
@@ -594,6 +601,7 @@ export class ContentWriter {
       return;
     }
     task.attempts += 1;
+    let preserveSpool = false;
     try {
       if (task.kind === "manifest") {
         await this.config.store.writeManifest(
@@ -630,12 +638,13 @@ export class ContentWriter {
         try {
           await this.reconcileRecoveredObject(task, ContentStatus.FAILED);
         } catch {
-          // The object spool remains for a later restart/reconciliation.
+          // Failed reconciliation must leave the original bytes available to a later restart.
+          preserveSpool = true;
         }
       }
       this.settle(task, ContentStatus.FAILED);
     }
-    if (this.config.durability === "spooled") {
+    if (this.config.durability === "spooled" && !preserveSpool) {
       this.removeSpool(task);
     }
   }

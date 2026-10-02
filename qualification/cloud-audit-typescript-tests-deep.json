@@ -1,0 +1,446 @@
+{
+  "schema_version": "fabric.manual-audit/v1",
+  "scope": "All sdk/typescript non-src tracked configuration/package/documentation/scripts and test files, plus new exception and identifier diagnostic tests. Runtime src excluded and reviewed by other shards.",
+  "review_date": "2026-10-02",
+  "method_note": "Full text actually read for31 files; lockfile has exhaustive parsed integrity/provenance checks and manual interpretation, explicitly not a dependency-code or literal-line audit. Digests bind exact reviewed contents.",
+  "validation": {
+    "focused_command": "npm exec -- vitest run test/client.test.ts test/content-parity.test.ts test/governed-content.test.ts",
+    "focused_passed": 110,
+    "log": "/workspace/fabric-qualification/ts-deep-focused.log",
+    "previous_full_suite": {
+      "vitest": 433,
+      "node_package": 6,
+      "scope": "Before these test-strengthening changes and concurrent security-worker source/tests; not a claim of current final qualification. Root owns refreshed complete gates."
+    },
+    "contract_regressions": {
+      "native_passed": 80,
+      "cross_language_passed": 4,
+      "baseline_cross_language_failed": 3,
+      "cross_language_command": "/workspace/fabric-venv/bin/python -m pytest scripts/tests/test_typescript_content_contract.py -q",
+      "note": "Cross-language fixture rebuilds current SDK, then validates emitted memory/side-effect manifest/descriptors and mixed status manifest using existing Python schema+semantic validator; skips explicitly without Node or installed TS build tool."
+    }
+  },
+  "findings": [
+    {
+      "id": "TS-TEST-ENV-ASSERTIONS",
+      "status": "fixed_targeted_tests_pass",
+      "detail": "Construction-only fromEnv claims replaced by exported identity/profile assertions."
+    },
+    {
+      "id": "TS-TEST-SPOOL-ASSERTIONS",
+      "status": "fixed_targeted_tests_pass",
+      "detail": "Conditional zero-file pass removed and writer close awaited; restart now consumes copied pending durable bytes into empty isolated destination."
+    },
+    {
+      "id": "TS-TEST-FIXTURE-INVENTORY",
+      "status": "fixed_targeted_tests_pass",
+      "detail": "Exact seven-file inventory prevents silent loss of conformance fixtures."
+    },
+    {
+      "id": "TS-TEST-RESIDUAL-DEPTH",
+      "status": "remaining_test_limitations",
+      "detail": "Per-file limits retain timer thresholds, private-helper coupling, incomplete cleanup and weaker delegation/context/hash-shape assertions; no runtime defect inferred solely from missing assertion."
+    },
+    {
+      "id": "TS-PACKAGE-BOUNDS",
+      "status": "remaining_qualification_limitations",
+      "detail": "Packaging subprocesses lack timeouts, generated smoke content roots survive fixture cleanup, package README support-matrix relative link not shipped, and development engine floor exceeds package runtime floor."
+    },
+    {
+      "id": "TS-CONTENT-V1-PROJECTION",
+      "status": "fixed_targeted_tests_pass",
+      "detail": "Missing coverage, extra top-level role fields and forbidden memory/side-effect descriptor bindings reproduced against published schemas then corrected. Observed roles restricted to descriptor-bearing statuses. API signatures unchanged, invalid wire projection intentionally corrected."
+    },
+    {
+      "id": "TS-EMPTY-TRANSCRIPT",
+      "status": "fixed_targeted_tests_pass",
+      "detail": "Schema-invalid empty publication removed without inventing role outcomes or changing published contracts. Empty windows have no URI/reference/files/stored count; empty accumulator serialization rejects; explicit zero-byte text remains a real validated observation. Existing Python behavior reported to parent for separately owned correction."
+    }
+  ],
+  "files": [
+    {
+      "path": "sdk/typescript/.gitignore",
+      "sha256": "3e0683977cf4da81d88bf3ef8d2d5cf15a19e54102574330d24f3a4bc66e68a5",
+      "line_count": 5,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Excludes node_modules, dist, dist-package, tsbuildinfo and coverage from Git. Reviewed all five patterns against generated SDK outputs.",
+      "limits_and_findings": "Git ignores do not define the npm artifact allowlist or prevent already-tracked output."
+    },
+    {
+      "path": "sdk/typescript/.prettierignore",
+      "sha256": "925cfa6aa53985c544ac58e5705c0ee47e7f168da8f23e2b32811ea74de8426c",
+      "line_count": 4,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Excludes dist, node_modules and dist-package from formatting; source/tests/docs/config remain in the format gate.",
+      "limits_and_findings": "Generated artifacts need their independent package checks; formatting is not semantic verification."
+    },
+    {
+      "path": "sdk/typescript/.prettierrc.json",
+      "sha256": "d5f90f76c5b68ce7be5ba077813f97e1983511b8c314764537345a538c1261f4",
+      "line_count": 6,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Semicolons, double quotes, trailing commas and width100; complete formatting configuration read.",
+      "limits_and_findings": "No runtime or privacy contract; formatting cannot establish correctness."
+    },
+    {
+      "path": "sdk/typescript/LICENSE",
+      "sha256": "7ecd8ce1d30b8aa26232f5c7c878cca53bc273547ce52f1678f955154746e64f",
+      "line_count": 15,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read full fifteen-line Apache2.0 notice, license URL, warranty disclaimer and conditions reference; package manifest declares Apache-2.0.",
+      "limits_and_findings": "This is a short license notice referencing full terms, not the full Apache license text or a dependency-license audit."
+    },
+    {
+      "path": "sdk/typescript/README.md",
+      "sha256": "7cd83cb8eed629f6ac49fb17553080be9e121db8b5c7b49900b4b89b2d172652",
+      "line_count": 288,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read complete wiring/install, metadata defaults, explicit raw capture overrides, protected callback errors, captureHealth scope, process-memory byte recorder, local-store ancestor trust, role protection, propagation and SDK support boundary. Examples distinguish caller-reported bytes and required host provider/context manager. Read new compatibility note: required nested coverage projection, eligible observed statuses, unchanged accumulator/API signature and omitted unsupported descriptor binding keys with event metadata preserved. Read empty-window semantics: absent URI/no publication/no stored count, inspectable empty items, toJSON no-observations error, explicit empty string still captured.",
+      "limits_and_findings": "Not every example executed independently. Opening statement that protection happens in Fabric Node is broader than later SDK-local protection details. Root-relative support-matrix link resolves in repository but is not shipped with npm README; no general exporter allowlist, Python durable/capability parity, or cloud delivery proof."
+    },
+    {
+      "path": "sdk/typescript/eslint.config.js",
+      "sha256": "cecb166502e7dfd8b4725661191f6ebc5826580b50e36164320d91a33df074d9",
+      "line_count": 48,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read recommended JS plus TS parser/plugin composition, explicit Node globals and ignored generated dirs. no-explicit-any disabled and no-redeclare delegated to TypeScript.",
+      "limits_and_findings": "Rules are not type-aware project lint; explicit any is permitted. Lint does not prove error/egress safety."
+    },
+    {
+      "path": "sdk/typescript/package-lock.json",
+      "sha256": "f605dfa202214c34dd342f101c03acae8ee13ac790058d07dfbc14ab42999926",
+      "line_count": 4327,
+      "review_depth": "complete_metadata_checks_and_manual_provenance_review",
+      "methods": [
+        "complete parsed lock metadata checks and manual role-specific interpretation"
+      ],
+      "contracts": "Role-appropriate complete parsed metadata review: lockfile3,289 dependency records, all dev-marked, all HTTPS registry.npmjs.org archives; all sha512 integrity strings decode to64bytes. Root name/version/license/dev/engine/peer metadata matches package.json; esbuild0.28.1 override, OTel2.10/API1.9 and TS5.7.3/parser<5.8 compatibility inspected. esbuild and fsevents alone declare install scripts; seven license identifiers present.",
+      "limits_and_findings": "Automated exhaustive metadata checks plus manual dependency/provenance interpretation, not full literal line-by-line read, dependency source audit, signature verification, vulnerability scan, or execution of every optional platform binary. Lock hashes bind bytes but do not establish trustworthiness."
+    },
+    {
+      "path": "sdk/typescript/package.json",
+      "sha256": "12b6bd257fbeaa21dacbb452b7d1c2a227ca8a2646bc356c02922bc4979e6d04",
+      "line_count": 89,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read version/beta provenance registry, ESM/CJS conditional exports and declarations, exact dist/README/LICENSE shipping list, optional AWS peer, narrow OTel peer range, pinned development tools, esbuild override and all seven scripts.",
+      "limits_and_findings": "Node>=20.6 runtime claim exceeds versions tested here; current Vite/Rolldown development chain requires>=20.19 or>=22.12. AWS optional peer range is broad and live S3 was not exercised. package:qualified assumes build already performed."
+    },
+    {
+      "path": "sdk/typescript/scripts/package-qualified.mjs",
+      "sha256": "d8aa300069519ff9cd0622fb002b036dccadc6abf6f70b01f031625c22bd1147",
+      "line_count": 432,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read complete432-line qualifier: one npm pack with ignore-scripts, name/version/exact nine-file inventory, duplicate rejection, SHA1/SHA512/size comparison and SHA256 output; tar listing independently checked; all dist payloads scanned for forbidden control/evaluation tokens. Isolated ESM/CJS installed-artifact smoke verifies local governed capture/materialization/integrity plus missing AWS peer; NodeNext strict declaration smoke sets skipLibCheck=false.",
+      "limits_and_findings": "spawnSync npm/tar/node/tsc calls have no timeout; smoke temp content roots are outside fixture cleanup and remain on disk. Token matching proves absence of listed strings, not arbitrary equivalent functionality. Tar member types not independently checked. Build is a prerequisite despite opening Build and qualify wording; no paid/cloud export or byte-v2 runtime smoke."
+    },
+    {
+      "path": "sdk/typescript/test/async-callbacks.test.ts",
+      "sha256": "f1d8998d0de6d05f91d7662bcc6391e390d95000f5caaeaf8c0ea5c69974e684",
+      "line_count": 171,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read complete provider/context setup and teardown plus five tests: setters after awaited microtask, child parentSpanContext/trace identity, original rejected Error and ERROR event, and no premature sync span end.",
+      "limits_and_findings": "InMemory exporter and microtasks only; no delayed network/provider stream cancellation. Exception event existence alone is not privacy verification; dedicated exception-privacy suite covers payloads."
+    },
+    {
+      "path": "sdk/typescript/test/byte-evidence.test.ts",
+      "sha256": "b6cdf86abd5e36b6425195063395389e7c5edab08f98166868b1dcb2d97918a2",
+      "line_count": 260,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read exact invalid-UTF8/empty byte storage, mutation snapshot, distinct observation refs/object IDs and sequence sidecars; pending slow-store handoff; policy exclusion, payload/queue/index/source limits; failed delivery without ref/digest; identity/lineage/sequence rejection and v1/v2 tenant/digest/ref validation. Local roots cleaned after each case, recorder flush/close awaited.",
+      "limits_and_findings": "Slow store is100ms timer, not remote durability. Some expected hashes use runtime-generated descriptor fields rather than independent vectors, with empty-byte SHA as independent constant. Does not prove process-crash recovery or complete run closure."
+    },
+    {
+      "path": "sdk/typescript/test/canonical-hash.test.ts",
+      "sha256": "692d53e3f3fc141c893f1d3b1bb06d55fc3b8c1a1789cd0fa6085f2a573ba655",
+      "line_count": 89,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read fixed CPython-origin string vectors for ordering, escaping/Unicode/surrogates, negative zero, exponent formatting, safe/inexact integers, nested values; rejects nonfinite numbers and checks two independent object-hash constants.",
+      "limits_and_findings": "Pinned finite examples are not exhaustive numeric/cross-language equivalence; Python is not invoked by test. No arbitrary object/cycle fuzzing."
+    },
+    {
+      "path": "sdk/typescript/test/capture-health.test.ts",
+      "sha256": "c936ee4fe6508298f56849ec67fcf45b9c04af35bb1604133aecb35779f8afdd",
+      "line_count": 174,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read AlwaysOff/On samplers, event limits2/128, attribute overflow, independent snapshots, post-end counter proxy and hostile/unavailable getters; static warning no-private-ID checks; throwing logger must preserve sync error, async error and successful return. Providers shut down and mocks restored.",
+      "limits_and_findings": "Only decision-local public counters tested. No exporter delivery/collector loss, child span health or production completeness proof."
+    },
+    {
+      "path": "sdk/typescript/test/client.test.ts",
+      "sha256": "7144d3465901607868a98d845764c4935deb19f7a3c1ce7bd2a5b46c22969a7b",
+      "line_count": 176,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read complete env/sentinel/near-miss/placeholder escape-hatch/PII warning suite and strengthened provider fixture. Three formerly construction-only tests now require exactly one exported decision and assert tenant/agent/profile resolution, all whitespace trimming and shadow default; missing/blank values remain rejected.",
+      "limits_and_findings": "Warn-count tests do not alone prove privacy; new id-diagnostic-privacy tests complement them. Placeholder warning spy in first describe is not restored there; later describe restores mocks. Env supplied as dictionary tests mapping, not external shell loading."
+    },
+    {
+      "path": "sdk/typescript/test/content-boundaries.test.ts",
+      "sha256": "ef1535c384e0f2b83245e6e6a66a50c917956b9499730dd2875ab01abfc96f51",
+      "line_count": 153,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read all traversal ID cases for local and S3 rejection before I/O; trusted parent alias; initial/post-construction root/tenant/manifests/by-decision/meta/evidence swaps; read and ownsUri rejection; final object/descriptor/manifest symlinks preserve outside bytes. Temp roots cleaned.",
+      "limits_and_findings": "Deterministic between-operation swaps do not simulate hostile concurrent ancestor mutation; no openat parity claim. S3 coverage is validation before optional SDK access, not remote storage."
+    },
+    {
+      "path": "sdk/typescript/test/content-manifest-contract.test.ts",
+      "sha256": "eb281552b6b8973a9e7d722c8e3ca17cf7e57f5b86406b8577fc76a6278b2390",
+      "line_count": 156,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "full authored test read",
+        "native contract regression73tests with governed suite",
+        "actual schema+semantic cross-language suite3passed"
+      ],
+      "contracts": "Reads published manifest schema required/properties/additionalProperties fields; constructs all eight statuses with valid descriptor-bearing entries and asserts nested coverage includes only pending/stored/truncated roles, no old top-level projection, exact completeness. Also reviewed eight native tests total: empty accumulator rejects serialization; all three durability modes times success/error preserve caller outcome, expose empty items/absent URI, create no tenant files/spool entries, yield zero stored/pending, one span without manifest_ref and MISSING resolution for hypothetical URI. try/finally closes Fabric/provider and removes root.",
+      "limits_and_findings": "Native projection test is not full JSON Schema evaluation; cross-language test separately rebuilds current SDK and validates actual schemas/semantics. Empty-window behavior creates no actions; empty-string capture is separately schema-validated. Store-failure handling and process-crash durability are separate tests."
+    },
+    {
+      "path": "sdk/typescript/test/content-parity.test.ts",
+      "sha256": "ef98e81e1e4df897493ae7f9380de3fd179a26a828ebd3e4d493e718493c98e1",
+      "line_count": 71,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read shared JSON fixture loader, fatal UTF8 decode, pinned canonical text/length and independently computed node:crypto SHA256. Added exact seven filenames and count to prevent empty/partial fixture directory silently reducing qualification.",
+      "limits_and_findings": "Fixture metadata is trusted via TypeScript cast; does not validate fixture schema itself. Shared vectors do not execute Python in this suite or exhaust all JSON inputs."
+    },
+    {
+      "path": "sdk/typescript/test/deployment-policy.test.ts",
+      "sha256": "de3f85792640d5b4c01680c461edba0c571db89bf3e6f615a9834c27e300f2c5",
+      "line_count": 422,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read full policy canonical digest/snapshot/freeze, role/storage/retention/version/production declarations, HMAC known vector and tenant/workload/version/key separation; omit/metadata-only suppress original bytes/digest; redaction/tokenization failure and size bounds. End-to-end all five modes inspect stored bytes and every local file for raw-secret/digest absence, reject overlapping/wrong-tenant stores and malformed derivative descriptors.",
+      "limits_and_findings": "Synchronous synthetic redactors and local stores only; does not prove real redaction quality, authorization, encryption or residency. Runtime casts intentionally exercise invalid JS shapes. HMAC role separation not explicitly varied in this file despite title covering multiple scopes."
+    },
+    {
+      "path": "sdk/typescript/test/enums-validation.test.ts",
+      "sha256": "d2e763ff737cdb87b1d2cdb4029da12b0a9e7bb827192a05cd2151a27b037e68",
+      "line_count": 313,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read enum-member parameterizations plus rejected nonmembers; retrieval count/hash/latency, memory TTL, checkpoint trim, side-effect lengths, tags/scalars/finiteness, retry/idempotency/response IDs and provider/prompt consistency. Finished event attributes verify accepted values; expected exceptions verify rejected inputs.",
+      "limits_and_findings": "Accepted enum cases derive from exported vocab arrays, so simultaneous implementation/list drift could pass; other pinned vocab/contracts are needed. Many rejection assertions match message substrings without asserting span cleanup/privacy."
+    },
+    {
+      "path": "sdk/typescript/test/exception-privacy.test.ts",
+      "sha256": "2d444406e46f8e8eb9d848e08d8ba4f1d94905bf8fb312d4b6a52728e9962c98",
+      "line_count": 161,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read full newly authored53 tests: eight sync/async decision/execution/LLM/tool direct InMemory exporter canary checks with exact span counts and original throw identity; ten closed error classes per path including AbortError/TimeoutError; hostile/changing name getters, revoked proxies, non-Error reasons;128 generated arbitrary names and message/stack getters that throw. No protection wrapper between SDK and provider.",
+      "limits_and_findings": "Cancellation-shaped errors represent rejected callbacks, not an external AbortController lifecycle. Generated adversarial names are deterministic, not exhaustive fuzzing. Does not protect host attributes or third-party instrumentation."
+    },
+    {
+      "path": "sdk/typescript/test/governed-content.test.ts",
+      "sha256": "b050f10ae2f97fd3c61bb5c907aa2c0068f207741174837d776ef50d98de96fc",
+      "line_count": 1298,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read entire suite in three contiguous chunks and all authorized edits: config/env restriction, JSON/UTF8/truncation, tenant permission/isolation/integrity store behavior, bounded inline/process/spooled delivery, all capture surfaces, transcript materialization/denial/corruption,16 concurrent decisions, restart backlog/corruption/revision reconciliation. Strengthened identity test now requires one spool record with identity/checksum shape and awaited close; manifest restart copies real pending spool bytes before original close to isolated empty destination then requires stored1/pending0, exact document and spool removal.",
+      "limits_and_findings": "Temp roots are not cleaned; env CONTENT_MODE is deleted before tests rather than restored; one older restart test abandons a60000ms-timer writer instead of killing a process.350ms timing assertion against400ms store can flake under load. Private spool/deliver helpers in other cases bind fixtures to implementation. New restart test is a durable-byte snapshot, not OS kill/fsync power-loss proof. stored/flush still does not prove spool cleanup under removal failure."
+    },
+    {
+      "path": "sdk/typescript/test/hash.test.ts",
+      "sha256": "001d6349321c3e40d838b83303ccf258f759b30f2081298912424a4fdf9ee171",
+      "line_count": 29,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read three fixed SHA256 examples in two tests: synthetic email and golden tool argument/result strings match precomputed Python hashlib constants.",
+      "limits_and_findings": "Small string-vector set; hashing is pseudonymization, not encryption/anonymity. No dependency implementation audit."
+    },
+    {
+      "path": "sdk/typescript/test/id-diagnostic-privacy.test.ts",
+      "sha256": "dde3d2e0545a3e88f290e00bb037a903d227317a5dc495e40feb474beba32f95",
+      "line_count": 43,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read complete security-worker regression: different emails deduplicate by safe field/shape; embedded long input and unsafe field label do not appear and output remains bounded; placeholder throws without raw value, warning escape hatch remains, quiet mode yields no warning. Mocks/environment restored after each case.",
+      "limits_and_findings": "Second warning test checks absence/length without a positive warning-count assertion, so silent suppression could pass that particular case; first case requires exactly1warning. No general logger/exporter protection proof."
+    },
+    {
+      "path": "sdk/typescript/test/package-artifact.node.mjs",
+      "sha256": "2543e7ea9c4b2d023f97d745af336e561c512daed9c2ec30826653aa5b597439",
+      "line_count": 107,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read six Node tests: synthetic pack metadata exact inventory/integrity, unexpected file, altered bytes/version, all forbidden tokens, positive recorder payload; built ESM local store FIFO read in subprocess bounded2seconds and mkfifo2seconds, clean root, Windows skip.",
+      "limits_and_findings": "Metadata unit fixture is not a real tar; real archive qualified separately. FIFO case depends on Unix mkfifo and built dist. Negative metadata cases do not cover every validator branch such as duplicate paths or wrong SHA512 alone."
+    },
+    {
+      "path": "sdk/typescript/test/parity.test.ts",
+      "sha256": "03221e07c246f1b8febcda642653a0a3a78360fd6e264fcfc0260d1a9155f390",
+      "line_count": 938,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read entire938-line suite: delegation options/depth/context, reentrant mutation sentinel, metadata stamping, MCP normalization, LLM defaults/steps/cache/aliases/streaming, tool opt-in overrides, getter/return records, keyed coverage, PII scan timing/boundary/multibyte, error.type, replay lineage, reserved namespaces and provider installation. Global provider/context installed with final cleanup; warning spies use try/finally.",
+      "limits_and_findings": "Delegation throw test only asserts throw, does not observe restored depth; input_schema normalization test only checks hash shape, not equivalence. Provider-install case checks context.active defined but does not prove async propagation or dispose fresh provider/context. PII timing500ms depends on host load; full Python parity not established by test name."
+    },
+    {
+      "path": "sdk/typescript/test/primitives.test.ts",
+      "sha256": "4f0270322f7f8700a37ffd39185910885f1d78cab5dcec028ef25d612650e467",
+      "line_count": 381,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read full rolling count/set, retrieval/path/target hashing privacy, raw-output opt-in, hash validation, UUID and caller IDs, execution retry inheritance precedence, failed and completed status, side-effect distinct IDs. Exporter reset each test and provider shutdown.",
+      "limits_and_findings": "Same SDK hash helper is some expected-value oracle, supplemented by hash vector tests. ALS tests mostly synchronous plus one async completion; no concurrent execution identity-isolation stress here. UUID regex does not assert version or cryptographic entropy."
+    },
+    {
+      "path": "sdk/typescript/test/propagation.test.ts",
+      "sha256": "ef7edbc8418501932c23bd0d6a299b40c37e954647b49b36f1fd2ce17e6a1859",
+      "line_count": 315,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read complete base suite plus security-worker inbound-bound additions: optional/legacy/full identity roundtrip, special Unicode, vendor ordering/replacement/member cap, outbound oversized value, malformed/base64/shape/attempt rejection, active and explicit decision traceparent and delegation lineage. New tests reject million-character encoded identity,33members and runtime nonstring header.",
+      "limits_and_findings": "No actual HTTP hop; malformed-data assertions do not independently instrument decoder allocation to prove rejection timing. Global exporter reset only for delegation which selects first span; direct composition uses current decision context. No authorization implied by propagated tenant."
+    },
+    {
+      "path": "sdk/typescript/test/recorder-surface.test.ts",
+      "sha256": "77bec2ea3c784f2d7e7e89674e73c81b230a6737b345f0b690f53808629e37ea",
+      "line_count": 63,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read package-root runtime namespace and Decision-prototype forbidden lists; @ts-expect-error negative imports enforce absence of EvalOptions/GuardrailResult during typecheck; namespaced testing helper plus version/profile/cancelled/propagation public exports checked.",
+      "limits_and_findings": "Static forbidden names are a selected boundary contract; renamed equivalent forbidden behavior not ruled out. Runtime source imports complemented by packed-artifact scanning."
+    },
+    {
+      "path": "sdk/typescript/test/spool-recovery-regression.test.ts",
+      "sha256": "54b94bd7c5239e2134a65bbc0b44e77174871da74877fd53e361592ca0010a81",
+      "line_count": 133,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete text manual read including mock restoration and checksum fixture",
+        "security worker reports3pre-fix failures and targeted post-fix passes; final complete gate owned by root"
+      ],
+      "contracts": "Three tests: checksum-bound recovered object whose delivery and manifest reconciliation fail must retain original spool bytes; restarted healthy store materializes bytes/reconciles stored/removes spool. Mocked fs.writeSync3-byte writes complete checksum-valid record; later zero progress returns dropped with no temp/spool debris. Writer close awaited and mocks/root cleaned.",
+      "limits_and_findings": "Synthetic fixture role tool_result/source sdk are outside published content-v1 vocabulary, so this is writer byte/recovery behavior, not schema qualification. Planting spool and minimal manifest bypasses capture API. Same-process restart, no OS kill/fsync power-loss demonstration."
+    },
+    {
+      "path": "sdk/typescript/test/vocab.test.ts",
+      "sha256": "6049e69ef53ca93c3a9104c18b0e9112a45a43fc6801c5946fc0eb582160c148",
+      "line_count": 95,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read pinned four replay behaviors, exactly one exported decision helper and required event helper; accepted event attributes, non-scalar custom attribute and unknown behavior failure assertions.",
+      "limits_and_findings": "Small pinned vocabulary complement to dynamic enum tests; only two malformed cases, no exhaustive schema/protocol coverage."
+    },
+    {
+      "path": "sdk/typescript/tsconfig.json",
+      "sha256": "c456fb46fb1111e5a7da48581fecf1de27d52eaa84273d35cc5c64458869664a",
+      "line_count": 21,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read strict ES2022/ESNext Bundler config including unchecked-index, override and switch checks; src and test included with Node types, declarations and verbatimModuleSyntax.",
+      "limits_and_findings": "skipLibCheck=true skips dependency declarations in main typecheck; independent package smoke disables it. Bundler resolution alone does not verify Node consumers."
+    },
+    {
+      "path": "sdk/typescript/tsup.config.ts",
+      "sha256": "222681e1c47b4578645b91d7739afe4447133638f706578fbb8a14e588f1af49",
+      "line_count": 17,
+      "review_depth": "full_text_manual_semantic_review",
+      "methods": [
+        "complete file text read, including fixtures/assertions/setup/cleanup where applicable",
+        "manual contract, privacy/error/closure and false-pass assessment"
+      ],
+      "contracts": "Read single index entry, ESM+CJS, declarations, clean output, ES2022 and source maps configured without sourcesContent.",
+      "limits_and_findings": "Source locations remain in maps; disabling embedded text is not a secret scanner. Package boundary verified separately."
+    }
+  ]
+}

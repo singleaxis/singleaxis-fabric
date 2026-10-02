@@ -789,8 +789,9 @@ export class Decision implements DecisionLike {
     return this.contentSink?.transcript;
   }
 
-  /** The manifest's deterministic store URI (metadata mode:
-   * `undefined`). Computable before close with no store I/O — the bytes
+  /** The manifest's deterministic store URI (`undefined` in metadata mode
+   * or before any governed capture outcome is observed). Computable after
+   * the first outcome and before close with no store I/O — the bytes
    * arrive asynchronously; resolve the URI to learn actual delivery
    * state. */
   get contentManifestUri(): string | undefined {
@@ -1208,7 +1209,7 @@ export class Decision implements DecisionLike {
       const contentRef = this.governedCaptureContent(
         ContentRole.MEMORY_WRITE_CONTENT,
         options.content,
-        { bindings: { step_type: "memory", direction: "write" } },
+        { bindings: { step_type: "memory" } },
       );
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
@@ -1258,7 +1259,7 @@ export class Decision implements DecisionLike {
       const contentRef = this.governedCaptureContent(
         ContentRole.MEMORY_READ_CONTENT,
         options.content,
-        { bindings: { step_type: "memory", direction: "read" } },
+        { bindings: { step_type: "memory" } },
       );
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
@@ -1390,7 +1391,6 @@ export class Decision implements DecisionLike {
       // storage; the event carries only the references.
       const seBindings: Record<string, unknown> = {
         step_type: "side_effect",
-        side_effect_id: record.sideEffectId,
       };
       const requestRef = this.governedCaptureContent(
         ContentRole.SIDE_EFFECT_REQUEST,
@@ -1972,16 +1972,15 @@ function runAndEnd<T>(span: Span, fn: () => T): T {
   return result;
 }
 
-/** Record an exception + ERROR status on `span` (does not end it). */
+/** Record a protected diagnostic + ERROR status on `span` (does not end it). */
 function recordError(span: Span, err: unknown): void {
-  // `error.type` mirrors the GenAI error convention: the exception class
-  // name stamped alongside the ERROR status on every failure exit —
-  // decision, llm and tool spans alike (mirrors Python).
-  span.setAttribute(A.ATTR_ERROR_TYPE, errorName(err));
-  span.setStatus({ code: SpanStatusCode.ERROR, message: errorName(err) });
-  if (err instanceof Error) {
-    span.recordException(err);
-  }
+  const classification = errorName(err);
+  span.setAttribute(A.ATTR_ERROR_TYPE, classification);
+  span.setStatus({ code: SpanStatusCode.ERROR, message: classification });
+  span.addEvent("exception", {
+    "exception.type": classification,
+    "exception.message": "Operation failed",
+  });
 }
 
 /**
@@ -1998,8 +1997,26 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 }
 
 function errorName(err: unknown): string {
-  if (err instanceof Error) {
-    return err.name;
+  // Error names are user-controlled too. Never export arbitrary names or
+  // inspect messages/stacks; hostile property access must not mask the cause.
+  try {
+    if (err instanceof Error) {
+      const name = err.name;
+      switch (name) {
+        case "TypeError":
+        case "RangeError":
+        case "ReferenceError":
+        case "SyntaxError":
+        case "URIError":
+        case "EvalError":
+        case "AggregateError":
+        case "AbortError":
+        case "TimeoutError":
+          return name;
+      }
+    }
+  } catch {
+    // Uninspectable thrown values receive the same bounded fallback.
   }
   return "Error";
 }

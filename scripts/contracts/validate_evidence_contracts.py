@@ -286,6 +286,11 @@ def _validate_event(document: Mapping[str, Any]) -> None:
         raise EvidenceContractError(
             "evidence.event.ref", "$.content_ref", "reference must be credential-free"
         )
+    governed = "policy_digest" in document
+    if governed:
+        # The object ID identifies an observation, including failed or withheld
+        # capture. Only separate authorized readback proves availability.
+        return
     if document["event_name"] in {"agent.evidence.content", "agent.evidence.artifact"}:
         status = document["status"]
         if status in RESOLVABLE_STATUSES and not all(

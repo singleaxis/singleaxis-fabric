@@ -1,0 +1,12 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 test
+> vitest run
+
+
+ RUN  v4.1.11 /workspace/singleaxis-fabric/sdk/typescript
+
+
+ Test Files  17 passed (17)
+      Tests  433 passed (433)
+   Start at  20:51:20
+   Duration  1.88s (transform 735ms, setup 0ms, import 2.10s, tests 1.46s, environment 2ms)

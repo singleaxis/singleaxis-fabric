@@ -179,6 +179,158 @@
         "FIXED: shared wire vocabulary does not establish complete distributed reconstruction or feature parity",
         "FIXED: TypeScript raw exceptions and Python worker-side masking explicitly distinguished from governed prequeue protection"
       ]
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "c9d7de2c04ccc166fa619daea1ba87b4fd80b4b00709dc6851082fe4a8cb76f3",
+      "method": "Follow-up authored change and surrounding contract review; earlier whole-file/targeted methods retained in other ledgers",
+      "reviewer": "root",
+      "review_note": "Reviewed follow-up release notes against authored fixes and actual validation boundaries.",
+      "findings": []
+    },
+    {
+      "path": "contracts/evidence/v1/README.md",
+      "sha256": "9461c61d1734b38a01ad7fbff5137a473f6c95f0e3b648153728a465106559d6",
+      "method": "Follow-up authored change and surrounding contract review; earlier whole-file/targeted methods retained in other ledgers",
+      "reviewer": "root",
+      "review_note": "Reviewed new governed projection paragraph against optional closed schema and unchanged legacy contract requirements.",
+      "findings": []
+    },
+    {
+      "path": "sdk/README.md",
+      "sha256": "4cceb83f476464356fb996f690085d834278193fc37b7df0f457b83dea40b9f3",
+      "method": "Follow-up authored change and surrounding contract review; earlier whole-file/targeted methods retained in other ledgers",
+      "reviewer": "root",
+      "review_note": "Reviewed TypeScript callback diagnostic scope against protected error classification; arbitrary host spans remain outside protection claim.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/src/fabric/_id_validators.py",
+      "sha256": "2be1802e007b8ded3dfed1ab28146e28ce443bb4337d860f65ffa40283e2b9a3",
+      "method": "Follow-up authored change and surrounding contract review; earlier whole-file/targeted methods retained in other ledgers",
+      "reviewer": "root",
+      "review_note": "Reviewed warning and rejection diagnostics: raw PII/template values omitted, accept/reject/quiet behavior preserved. Identifier values in application metadata remain caller-controlled.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/tests/test_id_validators.py",
+      "sha256": "6e762c21e55d6ba74ca91b50bdd6ed7011ad3f45a493d576a61a0d82b92b0785",
+      "method": "Follow-up authored change and surrounding contract review; earlier whole-file/targeted methods retained in other ledgers",
+      "reviewer": "root",
+      "review_note": "Reviewed new PII/placeholder warning and error privacy oracles; tests exercise denied and downgraded paths without weakening identifier acceptance.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/tests/test_span_protection.py",
+      "sha256": "73c8acfc40e1485ac3a7627d9658714b749c1f815d8cacb96e11886a12a1b0a2",
+      "method": "Follow-up authored change and surrounding contract review; earlier whole-file/targeted methods retained in other ledgers",
+      "reviewer": "root",
+      "review_note": "Reviewed typing-only object annotation against unchanged isinstance and hashed-prefix assertions; reproduced CI mypy2.4.0 with OTel1.45.0.",
+      "findings": []
+    },
+    {
+      "path": ".github/workflows/codeql.yml",
+      "sha256": "5e570c7cc5fad10b614d37eed81997b5da5d2ec2ea5ebd45d06fff3b932d0c3b",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed added same-job SARIF location summary and output directory; query suite, upload and failure handling unchanged.",
+      "findings": []
+    },
+    {
+      "path": ".github/workflows/recorder-security.yml",
+      "sha256": "5a858464169b42425b99037bf332d74db8b919fb70f4a122632aefd14b3fd20c",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed --error preservation and always-run local result metadata summary; all released source paths and uploads unchanged.",
+      "findings": []
+    },
+    {
+      "path": ".github/workflows/recorder-ci.yml",
+      "sha256": "8159c02e32a905f4a72bfd4913259e607eec4478182d0b8690caa189918fb99d",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed pinned Node setup and lockfile install so real TypeScript emitted-document contract tests run in repository CI.",
+      "findings": []
+    },
+    {
+      "path": "scripts/qualification/summarize_sarif.py",
+      "sha256": "935a64484585175094586adef1009177de151cacc102f68db0d66911869ce4ba",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Authored closed metadata projection, extension/default severity lookup, and no-message/no-snippet reporting; tests exercise canary exclusion and rule defaults.",
+      "findings": []
+    },
+    {
+      "path": "scripts/tests/test_sarif_summary.py",
+      "sha256": "9dd2eaae0e822cbbe73e4853a8b580b1eb2fd5ead35cadfc9e863cf3dd0b4513",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed exact expected rule/location output, no private source/message content, empty results and extension rule metadata.",
+      "findings": []
+    },
+    {
+      "path": "scripts/tests/test_release_workflow_evidence.py",
+      "sha256": "9f41bf4f3fe46121b15ec8174a71d05ef31c4455e27f810a7f8a1e36a71bb30a",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed selecting scanner command by executable before unchanged --error/no-exclusion assertions; new diagnostic command does not replace scanner gate.",
+      "findings": []
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "0e9fa5ea7e2260fa89fef074c5f83310fde2be88261983e1c755eda5709a7b28",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed final follow-up notes against source corrections and test evidence, including no-observation semantics.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/src/fabric/_content.py",
+      "sha256": "14154ac9e767f720459ff614802e64ee35e973fe330860c424959d8707f607e8",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed empty-accumulator serialization refusal; existing canonical nonempty content contract unchanged.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_sink.py",
+      "sha256": "61955cf2de3f88d8f0135baa32e69b220420953731a1425a3632fe77724492ad",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed no-observation close before queue submission, optional URI, close timestamp and unchanged producer-closure limits.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/src/fabric/decision.py",
+      "sha256": "5ed580c66a39bcdc67ffec34e4b17cc4a3f952443cc7b0a54689a59e6a83b2cd",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed optional manifest URI documentation and unchanged public property type.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/tests/test_empty_content_manifest.py",
+      "sha256": "73f8ae5bef6f2b110cdeb7525560c5788964cea3c07c5a13adf9040ad04bdfd0",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Full text reviewed for independent filesystem, writer-count, span-ref, resolver and schema oracles across three durability modes; application errors preserved.",
+      "findings": []
+    },
+    {
+      "path": "sdk/python/tests/test_id_validators.py",
+      "sha256": "82ecdfca5066d14b936d7ec62de1e2b323794f6835bff827fbb91b04debf0185",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed strengthened field/remedy-without-value assertion and new positive/negative private placeholder diagnostics; original acceptance matrix retained.",
+      "findings": []
+    },
+    {
+      "path": "sdk/typescript/test/parity.test.ts",
+      "sha256": "b8e34c9eb425798efb2aa1afcbad850fac4bdb0c4a7bf1dab477d7acf1a98b04",
+      "method": "Full authored follow-up delta and surrounding contract review; earlier whole-file review methods remain separately recorded",
+      "reviewer": "root",
+      "review_note": "Reviewed fresh internal warning-cache budget per boundary test; all timing/UTF8/detection assertions retained and private-value absence added.",
+      "findings": []
     }
   ],
   "findings": [

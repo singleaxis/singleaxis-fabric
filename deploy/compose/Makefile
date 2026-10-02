@@ -55,9 +55,9 @@ up-prod: preflight-prod ## Start the production overlay (token auth + durable qu
 	$(COMPOSE) $(PROD_FILES) up -d --wait
 	@echo "Fabric Node OTLP/HTTP: http://localhost:$${FABRIC_OTLP_HTTP_PORT:-4318} (bearer token required)"
 	@echo "Internal metrics: http://localhost:$${FABRIC_METRICS_PORT:-8888}/metrics"
-	@echo "Run 'make verify-prod' to prove auth, delivery and queue health."
+	@echo "Run 'make verify-prod' to check ingress auth and available queue metrics."
 
-verify-prod: ## Verify a running production deployment end-to-end.
+verify-prod: ## Check production ingress; destination readback is separate.
 	@chmod +x verify-prod.sh 2>/dev/null || true
 	./verify-prod.sh
 
