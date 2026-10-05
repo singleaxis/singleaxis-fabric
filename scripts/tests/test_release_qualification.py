@@ -188,6 +188,7 @@ def test_python_wheel_smoke_exercises_installed_governed_runtime(
     assert calls[1][-1] == str(wheel.resolve())
     assert "--no-deps" not in calls[1]
     runtime_code = calls[2][-1]
+    compile(runtime_code, "installed-wheel-smoke", "exec")
     assert "ContentCaptureConfig" in runtime_code
     assert "record_context" in runtime_code
     assert "export_transcript" in runtime_code
@@ -332,7 +333,17 @@ def test_workflow_evidence_is_bound_to_sha_and_policy(tmp_path: Path) -> None:
         json.dumps(
             {
                 "commit_sha": sha,
-                "required_workflows": [{"workflow": "ci.yml"}],
+                "required_workflows": [
+                    {
+                        "workflow": "ci.yml",
+                        "head_sha": sha,
+                        "status": "completed",
+                        "conclusion": "success",
+                        "run_id": 123,
+                        "run_url": "https://github.com/example/fabric/actions/runs/123",
+                        "event": "push",
+                    }
+                ],
             }
         ),
         encoding="utf-8",
@@ -341,3 +352,46 @@ def test_workflow_evidence_is_bound_to_sha_and_policy(tmp_path: Path) -> None:
     with pytest.raises(qualify.QualificationError, match="commit SHA"):
         qualify._verify_workflow_evidence(evidence, "b" * 40, policy)
     assert policy_path.is_file()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["failure", "pending", "wrong_sha", "duplicate", "no_sha", "bool_id", "wrong_url"],
+)
+def test_workflow_evidence_rejects_invalid_run(tmp_path: Path, mutation: str) -> None:
+    _, policy = _policy(tmp_path)
+    sha = "a" * 40
+    record = {
+        "workflow": "ci.yml",
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 123,
+        "run_url": "https://github.com/example/fabric/actions/runs/123",
+        "event": "push",
+    }
+    records = [record]
+    if mutation == "failure":
+        record["conclusion"] = "failure"
+    elif mutation == "pending":
+        record["status"] = "in_progress"
+    elif mutation == "wrong_sha":
+        record["head_sha"] = "b" * 40
+    elif mutation == "duplicate":
+        records.append(
+            dict(
+                record,
+                run_id=124,
+                run_url="https://github.com/example/fabric/actions/runs/124",
+            )
+        )
+    elif mutation == "no_sha":
+        del record["head_sha"]
+    elif mutation == "bool_id":
+        record["run_id"] = True
+    else:
+        record["run_url"] = "https://github.com/example/fabric/actions/runs/999"
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"commit_sha": sha, "required_workflows": records}))
+    with pytest.raises(qualify.QualificationError):
+        qualify._verify_workflow_evidence(evidence, sha, policy)

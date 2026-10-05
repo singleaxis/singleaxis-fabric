@@ -9,6 +9,15 @@ your OTLP trace -> Fabric Node -> metadata protection -> fsync test sink
 It does not run guardrails, judges, red teams, policy enforcement, or a
 SingleAxis management service.
 
+For an existing Python codebase or a Docker-free local start, use the
+[smallest-integration quickstart](enterprise-testing-quickstart.md). It offers
+existing OTel reuse or one initialization plus a shared final-dispatch wrapper.
+The [durable reference campaign](../examples/enterprise-reference/README.md) is
+a separate, stronger qualification exercise rather than a mandatory app rewrite.
+
+See [agent developer best practices](agent-developer-best-practices.md) for
+retry/context/privacy/shutdown conventions using the same runnable example.
+
 ## Prerequisites
 
 - Docker with Compose
@@ -113,3 +122,12 @@ not a deployment mutation.
 - Choose an [integration model](integration-models.md) for an existing system.
 - Review [architecture](architecture.md) and the
   [recorder-v1 release gates](../specs/027-recorder-v1.md).
+
+
+### Python optional auto capture
+
+For a minimal upstream-SDK hook with a protected Fabric-managed export route,
+follow [Python auto capture: protected setup and limits](python-auto-capture-privacy.md).
+Install the provider before registration, inspect its current-process protection
+status and test the actual route. Upstream content flags alone do not remove raw
+provider exception text. Existing host exporters remain host-owned.

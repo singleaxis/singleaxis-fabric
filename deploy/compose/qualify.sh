@@ -31,50 +31,65 @@ restore_sink() {
 trap restore_sink EXIT
 trap 'exit 1' INT TERM HUP
 
-count() {
-  value="$(curl -fsS "http://${sink_address}/count" 2>/dev/null \
-    | sed -n 's/.*"count": *\([0-9][0-9]*\).*/\1/p')"
-  printf '%s' "${value:-0}"
+# The sink returns a deliberately narrow JSON shape. Reject unavailable,
+# malformed, or unexpected readback rather than interpreting it as absence.
+contains() {
+  response="$(curl --max-time 10 -fsS "http://${sink_address}/contains?needle=$1")" || return 1
+  response="$(printf '%s' "$response" | tr -d '[:space:]')"
+  case "$response" in
+    '{"found":true}') printf true ;;
+    '{"found":false}') printf false ;;
+    *) printf 'invalid sink readback\n' >&2; return 1 ;;
+  esac
 }
 
-wait_for_growth() {
-  baseline="$1"
+wait_for_request() {
   attempts=0
-  while [ "${attempts}" -lt 30 ]; do
-    current="$(count)"
-    if [ "${current}" -gt "${baseline}" ]; then
-      return 0
-    fi
+  while [ "$attempts" -lt 30 ]; do
+    observed="$(contains "$request_id")" || return 1
+    [ "$observed" = true ] && return 0
     attempts=$((attempts + 1))
     sleep 1
   done
-  printf 'sink count did not grow beyond %s\n' "${baseline}" >&2
+  printf 'fresh request marker not observed at sink\n' >&2
   return 1
 }
 
-before="$(count)"
-curl -fsS -X POST "http://${otlp_address}/v1/traces" \
-  -H 'Content-Type: application/json' --data-binary "@${fixture}" >/dev/null
-wait_for_growth "${before}"
+# A fresh exported request attribute correlates readback to this invocation.
+# This is a controlled-sink byte-marker check, not full OTLP reconstruction.
+request_id="req-qualify-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+[ "${#request_id}" -eq 44 ] || exit 1
+fixture_copy="$(mktemp)"
+cleanup() {
+  restore_sink
+  rm -f "$fixture_copy"
+}
+trap cleanup EXIT
+sed "s/req-curl/${request_id}/g" "$fixture" > "$fixture_copy"
+[ "$(contains "$request_id")" = false ] || exit 1
+curl --max-time 10 -fsS -X POST "http://${otlp_address}/v1/traces" \
+  -H 'Content-Type: application/json' --data-binary "@${fixture_copy}" >/dev/null
+wait_for_request
 
-if curl -fsS "http://${sink_address}/contains?needle=MUST_NOT_LEAVE_FABRIC_NODE" \
-  | grep -q '"found": true'; then
-  printf 'non-allowlisted marker crossed the Fabric Node boundary\n' >&2
+if [ "$(contains MUST_NOT_LEAVE_FABRIC_NODE)" != false ]; then
+  printf 'forbidden marker present or privacy readback failed\n' >&2
   exit 1
 fi
 printf 'PASS: default-deny export protection removed the forbidden marker\n'
 
-before_outage="$(count)"
-${compose} stop test-sink >/dev/null
+request_id="${request_id}-restart"
+sed "s/req-curl/${request_id}/g" "$fixture" > "$fixture_copy"
+[ "$(contains "$request_id")" = false ] || exit 1
 sink_stopped=1
-curl -fsS -X POST "http://${otlp_address}/v1/traces" \
-  -H 'Content-Type: application/json' --data-binary "@${fixture}" >/dev/null
-# Let batch hand the request to the persistent exporter queue while the sink is
+${compose} stop test-sink >/dev/null
+curl --max-time 10 -fsS -X POST "http://${otlp_address}/v1/traces" \
+  -H 'Content-Type: application/json' --data-binary "@${fixture_copy}" >/dev/null
+# Let the receiver hand the request to the persistent exporter queue while the sink is
 # unavailable, then restart Fabric Node to prove the queue is not memory-only.
 sleep 3
 ${compose} restart fabric-node >/dev/null
 ${compose} start test-sink >/dev/null
 sink_stopped=0
-wait_for_growth "${before_outage}"
-printf 'PASS: queued request survived destination outage and Fabric Node restart\n'
-printf 'NOTE: this proves at-least-once recovery to the controlled fsync sink, not exactly-once delivery or persistence semantics of arbitrary destinations.\n'
+wait_for_request
+printf 'PASS: fresh request marker observed after destination outage and Fabric Node restart\n'
+printf 'NOTE: this checks correlated recovery to the controlled fsync sink, not exactly-once delivery or persistence semantics of arbitrary destinations.\n'

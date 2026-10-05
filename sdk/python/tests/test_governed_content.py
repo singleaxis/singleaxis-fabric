@@ -1270,16 +1270,30 @@ def test_spool_record_carries_full_identity(tmp_path: Path) -> None:
     assert record["kind"] == "object"
 
 
-def test_spool_permissions(tmp_path: Path) -> None:
+def test_spool_permissions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _spool_config(tmp_path)
     writer = ContentWriter(cfg)
-    writer.submit(_descriptor(), "payload", decision_id="d-9")
-    dir_mode = stat.S_IMODE((tmp_path / "spool").stat().st_mode)
-    assert dir_mode == 0o700, f"spool dir mode {oct(dir_mode)}"
-    for spool_file in (tmp_path / "spool").glob("*.json"):
-        mode = stat.S_IMODE(spool_file.stat().st_mode)
+    # Retain the submitted record so delivery cannot race permission inspection.
+    allow_cleanup = threading.Event()
+    original_remove = writer._remove_spool
+
+    def held_cleanup(task: Any) -> bool:
+        if not allow_cleanup.wait(timeout=5):
+            return False
+        return original_remove(task)
+
+    monkeypatch.setattr(writer, "_remove_spool", held_cleanup)
+    try:
+        writer.submit(_descriptor(), "payload", decision_id="d-9")
+        dir_mode = stat.S_IMODE((tmp_path / "spool").stat().st_mode)
+        assert dir_mode == 0o700, f"spool dir mode {oct(dir_mode)}"
+        spool_files = list((tmp_path / "spool").glob("*.json"))
+        assert len(spool_files) == 1
+        mode = stat.S_IMODE(spool_files[0].stat().st_mode)
         assert mode == 0o600, f"spool file mode {oct(mode)}"
-    writer.close()
+    finally:
+        allow_cleanup.set()
+        writer.close()
 
 
 def test_recovery_processes_more_records_than_queue_capacity(tmp_path: Path) -> None:
@@ -1518,3 +1532,21 @@ def test_duplicate_recovery_is_idempotent(tmp_path: Path) -> None:
     writer2.close()
     uris = cfg.store.list_object_uris()
     assert len(uris) == 1
+
+
+def test_partial_output_preserves_payload_truncation(tmp_path: Path) -> None:
+    client = _client(tmp_path, payload_max_bytes=4)
+    with (
+        client.decision(session_id="s", request_id="r") as decision,
+        decision.llm_call(provider="p", model="m") as call,
+    ):
+        call.record_partial_output("abcdefgh")
+    client.flush_content(timeout_s=5)
+    manifest = _read_manifest(tmp_path / "store")
+    item = next(item for item in manifest["items"] if item["role"] == "model.output.messages")
+    assert item["status"] == "truncated"
+    assert item["descriptor"]["representation"] == "truncated"
+    assert item["descriptor"]["original_byte_length"] == 8
+    assert item["descriptor"]["byte_length"] == 4
+    assert item["status_reason"] == "partial output"
+    client.close()

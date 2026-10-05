@@ -16,7 +16,8 @@ import time
 import uuid
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 import grpc
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
@@ -89,18 +90,49 @@ def _request(
     return request, ids
 
 
+MAX_HTTP_RESPONSE_BYTES = 1024 * 1024
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _response_bytes(response) -> bytes:
+    body = response.read(MAX_HTTP_RESPONSE_BYTES + 1)
+    if len(body) > MAX_HTTP_RESPONSE_BYTES:
+        raise ValueError("source-binding HTTP response exceeds bounded size")
+    return body
+
+
 def _http(
     url: str, payload: bytes, context: ssl.SSLContext, bearer: str | None
 ) -> tuple[int, int]:
+    destination = urlsplit(url)
+    if (
+        destination.scheme != "https"
+        or not destination.hostname
+        or destination.username is not None
+        or destination.password is not None
+        or "#" in url
+    ):
+        raise ValueError(
+            "source-binding destination must be HTTPS without userinfo or fragment"
+        )
+    # Validate the port before constructing a request with credentials.
+    if destination.port is not None and not 1 <= destination.port <= 65535:
+        raise ValueError("source-binding destination has invalid port")
     headers = {"Content-Type": "application/x-protobuf"}
     if bearer is not None:
         headers["Authorization"] = bearer
     req = Request(url, data=payload, method="POST", headers=headers)
+    opener = build_opener(HTTPSHandler(context=context), _NoRedirect())
     try:
-        with urlopen(req, context=context, timeout=10) as response:
-            code, body = response.status, response.read()
+        with opener.open(req, timeout=10) as response:
+            code, body = response.status, _response_bytes(response)
     except HTTPError as error:
-        code, body = error.code, error.read()
+        with error:
+            code, body = error.code, _response_bytes(error)
     except URLError:
         return 0, 0
     rejected = 0

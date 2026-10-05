@@ -1,0 +1,1293 @@
+{
+  "schema_version": "fabric.host-audit/v1",
+  "date": "2026-10-02",
+  "base_head": "acf7fbf8d2950331559aadc67c4576375dc0ca57",
+  "scope": [
+    "components/host-emitter",
+    "components/otel-collector-fabric/receiver/auditreceiver",
+    "examples/agent-orchestration",
+    "deploy/auditd",
+    "related host qualification/demo tests",
+    "Remaining Collector distribution/build/upstream/processor files listed in audit-uncovered-paths.txt",
+    "components/README.md",
+    "deploy/kubernetes",
+    "specs/031-ebpf-host-emitter.md",
+    "contracts/connect/v1/manifests/ebpf-host-emitter.json"
+  ],
+  "production_verdict": "NO_GO",
+  "method_semantics": {
+    "sha256_inventory": "Read all bytes to hash; not full semantic review.",
+    "targeted_semantic_review": "Displayed source/config reviewed in component context; targeted review is not exhaustive verification.",
+    "generated_boundary_and_consumer_review": "Generated header boundary and consumers reviewed; full declarations not semantically audited.",
+    "go_mod_verify": "Downloaded module integrity verified against module cache checksums.",
+    "go_test_race_component_or_explicit_host_unit_files": "Auditreceiver whole package; host emitter explicit neutral files with existing bpf_stub.go, not Linux BPF.",
+    "full_text_semantic_review": "Entire displayed text read and reviewed in component/release context; not proof of exhaustive defect absence."
+  },
+  "test_evidence": [
+    {
+      "command": "go test ./... (auditreceiver)",
+      "result": "passed before final additional regressions; final race run subsumes unit tests"
+    },
+    {
+      "command": "go test -race ./... (auditreceiver)",
+      "result": "passed, 2.130s after control decoder and assembly changes"
+    },
+    {
+      "command": "go vet ./... (auditreceiver)",
+      "result": "passed"
+    },
+    {
+      "command": "go test -race main.go emitter.go otlp.go spool.go dedupe.go bpf_stub.go emitter_test.go spool_test.go (host-emitter)",
+      "result": "passed, 2.023s; explicitly bypasses Linux BPF loader using existing stub"
+    },
+    {
+      "command": "go vet main.go emitter.go otlp.go spool.go dedupe.go bpf_stub.go emitter_test.go spool_test.go (host-emitter)",
+      "result": "passed; same limited scope"
+    },
+    {
+      "command": "go test ./... (host-emitter Linux)",
+      "result": "blocked: emitObjects/loadEmitObjects generated bindings missing; clang and bpftool not installed"
+    },
+    {
+      "command": "go mod verify (both modules)",
+      "result": "all modules verified"
+    },
+    {
+      "command": "python -m pytest -q scripts/tests/test_orchestration_demo_safety.py scripts/tests/test_host_emitter_manifest.py scripts/tests/test_host_sensor_security_gates.py",
+      "result": "17 passed in0.15s"
+    },
+    {
+      "command": "ruff check changed demo Python and safety tests; git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "GOOS=linux GOARCH=arm64 go test -c -o /tmp/auditreceiver-arm64.test (auditreceiver)",
+      "result": "passed; compile only, not execution"
+    },
+    {
+      "command": "pytest -q scripts/tests/test_patched_bearer_build_cache.py; ruff check same test",
+      "result": "1 passed; Ruff passed"
+    },
+    {
+      "command": "sh components/otel-collector-fabric/tests/test-recorder-manifest.sh",
+      "result": "PASS exact current component inventory and module train"
+    },
+    {
+      "command": "GOPATH=/workspace/fabric-go/cache GOMODCACHE=/workspace/fabric-go/cache/pkg/mod GOCACHE=/workspace/fabric-go/build-cache GOMAXPROCS=2 sh upstream/build-patched-bearertokenauth.sh",
+      "result": "passed patched TestFabric suite, Collector rebuild and binary module-replacement assertion; SHA256 55e9afae08c551fee8d8659344a42f9294b4d7ee0cf2c664b751188078feb552"
+    },
+    {
+      "command": "bash tests/qualify-distribution-config.sh --binary dist/otelcol-fabric",
+      "result": "passed gated mTLS/protection/durable-export configuration startup plus prohibited pipeline/token refusals"
+    },
+    {
+      "command": "bash tests/qualify-distribution-config.sh --binary /tmp/<isolated-dir>/otelcol-fabric (symlink to rebuilt binary without sibling gate)",
+      "result": "passed bare configuration compatibility, warning no entrypoint enforcement; temporary symlink removed"
+    },
+    {
+      "command": "go test -race ./... (fabricguardprocessor after int64 fixture correction)",
+      "result": "passed, 1.029s"
+    },
+    {
+      "command": "/workspace/fabric-venv/bin/python -m pytest -q scripts/tests/test_connector_contract.py",
+      "result": "14 passed in 0.11s; reconstruction venv initial attempt lacked jsonschema, rerun used existing qualified environment"
+    }
+  ],
+  "toolchain": "/workspace/fabric-go/go/bin/go go1.25.1 linux/amd64",
+  "remaining_gates": [
+    "Portable cleanup archive/four commits/previous ledger were unavailable; no historical audit completion inferred.",
+    "No BPF generation, full host Linux compile, live netlink/audit rule, privileged Docker or runtime security/kernel change performed.",
+    "Source BTF digest/generator version unavailable; retained header digest does not recover original provenance.",
+    "Optional dedupe expired-entry overwrite remains unresolved; netlink defaults dedupe on.",
+    "Native production capture, destination durability, real model/remote worker coverage require separate qualification.",
+    "deploy/auditd/e2e-host-monitor.sh uses fixed Docker resource names; unsafe to run alongside pre-existing same-name resources without a separate isolation/ownership fix.",
+    "General guard nested-slice recursive depth/total-element budget remains open; transport input bounds do not replace aggregate recursive accounting.",
+    "Host DaemonSet template still requires environment-specific seccomp, node/workload scope and egress policy review."
+  ],
+  "entries": [
+    {
+      "path": "components/README.md",
+      "sha256": "f5446b8e3a6e7b74630f16c1355f2a63f6209c412b77a3ca7ab7e05ca46a4265",
+      "bytes": 1457,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/.gitignore",
+      "sha256": "c7dcae3f94424b9122a6cbf5bc8f9a6955c0df07fea10a072c782b2b776211db",
+      "bytes": 126,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/Dockerfile",
+      "sha256": "d777570a39dc3a52f04c94f4e3132c90755dbf67ac37f2553458bb1a232f2e4a",
+      "bytes": 1851,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/README.md",
+      "sha256": "eb082aae5b0dd592508ec23b2bd19a79c9cad352f009eb254b517e355ba240d8",
+      "bytes": 7806,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf.go",
+      "sha256": "4f5608d41b72ce5a5b8ca35261f18a0bbe860ccb17e00c2bb5992bf8ea815857",
+      "bytes": 4620,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Linux full build requires generated bindings absent in checkout; no kernel load performed."
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf/emit.bpf.c",
+      "sha256": "25787eaa7a77825be2cd6a92c359fd4b323489f58f4a06992456cdbab0404235",
+      "bytes": 6056,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf/gen.sh",
+      "sha256": "03e07e9ef8308c6d47e173a6ef97f739ed271f7a626fa19178771c8f06198b43",
+      "bytes": 491,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf/vmlinux.h",
+      "sha256": "6861f46ca59654cc75feb479edac9824e3a99bd8c5324706cd91cf7c63eab454",
+      "bytes": 3244794,
+      "methods": [
+        "sha256_inventory",
+        "generated_boundary_and_consumer_review"
+      ],
+      "findings": [
+        "Generated header preserved byte-for-byte; original BTF source digest/generator/extraction command unavailable.",
+        "Reviewed boundaries and consumers, not all152365 generated declaration lines."
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf/vmlinux.provenance.json",
+      "sha256": "0334af9590c86ffc4fc16590adcd8d121037b3f5c072578cdffb83236db62a06",
+      "bytes": 565,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "json_parse"
+      ],
+      "findings": [
+        "Records SHA256/size of retained generated header only; unknown original metadata explicitly null."
+      ]
+    },
+    {
+      "path": "components/host-emitter/bpf_stub.go",
+      "sha256": "27900d5dbe7b115beb2e6fc6b0f842666152638f1d77b8a22f06d4553b4b4a0f",
+      "bytes": 709,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Explicitly selected for platform-neutral unit test command; does not validate Linux BPF code."
+      ]
+    },
+    {
+      "path": "components/host-emitter/cgroup_linux.go",
+      "sha256": "467a09a7423aea439e6bd56ecb17e14b88bb8a07571c887e31950de136874041",
+      "bytes": 721,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/cgroup_other.go",
+      "sha256": "127848c53ee3b30d7758e1885dbc61d53428007305874e8cb46cb843c52cb35c",
+      "bytes": 255,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/dedupe.go",
+      "sha256": "9fcc44a1c8ce90e3bea0a56e24e6f6ad20409eafae3918d63c71679e69fc8bb2",
+      "bytes": 1868,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Optional dedupe can replace an expired entry before sweep and lose the preceding repeat summary; unresolved, disabled by default in host emitter and ignored by durable logfile mode."
+      ]
+    },
+    {
+      "path": "components/host-emitter/e2e-emitter.sh",
+      "sha256": "591e275e932a48e99b49f852aed5b5c58de3febab86a9f2bb96dfffdf4511c72",
+      "bytes": 3801,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Static review only; privileged all-host smoke intentionally not executed."
+      ]
+    },
+    {
+      "path": "components/host-emitter/emitter.go",
+      "sha256": "a724b7cbe50de7b420a1e7eee16b272d440cee88f29490067da615d117da8f34",
+      "bytes": 6523,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/emitter_test.go",
+      "sha256": "6749b9b76f7520f626ba6c8ddde57040e0f382ad2c524e26a16ef086191d5e97",
+      "bytes": 8866,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "go_test_race_component_or_explicit_host_unit_files"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/go.mod",
+      "sha256": "a1195d6cd517aa3f0e277b0000c89fa432b203ef80de00bde71d1aa02c7c1c77",
+      "bytes": 825,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/go.sum",
+      "sha256": "df774fda7324f8cf7779a8fdfb1885d414341e38b927a78e94724f518b3cca9f",
+      "bytes": 9969,
+      "methods": [
+        "sha256_inventory",
+        "go_mod_verify"
+      ],
+      "findings": [
+        "Module checksum verification passed; no dependency changes."
+      ]
+    },
+    {
+      "path": "components/host-emitter/main.go",
+      "sha256": "9bcca4a735fd58025d0b6cf96226e417766b5c78cb6301e820c1542f8e1c855d",
+      "bytes": 7081,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/otlp.go",
+      "sha256": "f6ef0a3407ff790f4736066a2dc3978b86265d0f8c339be95e4610a55a81d474",
+      "bytes": 3649,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/spool.go",
+      "sha256": "d78a8311af6b4d9dc40ac467bd3ef81405e0c5fa2ff1e17e21ae94b9ecfb93ee",
+      "bytes": 11229,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/host-emitter/spool_test.go",
+      "sha256": "27f4e6b83f3a76ac08f6b24e9c8e5a2479cfc4bdcf968bb4f802303d02fc8d14",
+      "bytes": 8580,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "go_test_race_component_or_explicit_host_unit_files"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/.dockerignore",
+      "sha256": "a55a066f9acc796c36d659a67f971506802a474e1cbb9008211ad9b3025000ff",
+      "bytes": 57,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/Dockerfile",
+      "sha256": "1074f0840876753058e20278b8f50f484c4550d2b122ac7871aac3536b062696",
+      "bytes": 3756,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/Makefile",
+      "sha256": "5be0ed4ef94eac9899b8bc8fcaf1b5c80c0715de9c212d487daa5bef6e3662f3",
+      "bytes": 1714,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/README.md",
+      "sha256": "fca1932bf4008a1a80ecc27ebb892e80fcdf9746a8391f4c3a3797d30341a67c",
+      "bytes": 4316,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Corrected launch example to fabric-gate, audit component inventory, bearer wiring and removed stale source-presence claim.",
+        "Plaintext unauthenticated all-interface example now explicitly isolated-development only."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/examples/config.yaml",
+      "sha256": "1304e276e32712c5182460c27ed9f4e66d96609ef298a44a9813c0f62a08e0e3",
+      "bytes": 1528,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Explicit isolated-development ingress warning added; runtime security settings unchanged."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/ocb-config.yaml",
+      "sha256": "3c441d97a41eb69a75d8cd515d506ea2336a0a7121cb040c7e58c8185a40e35b",
+      "bytes": 3045,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/allowlist.go",
+      "sha256": "213841321ba734b6a3787a682a01e87d7f3b38ab06f853b0e38bc0bb130dce8c",
+      "bytes": 13269,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full allowlist/extension-denial review; evidence class remains closed independent of operator extras.",
+        "General metadata keys and governed ref values are trusted metadata channels, not semantic content classifiers."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/call_evidence_test.go",
+      "sha256": "a6e94b36b18dfc656f3dda8e364654eacd0de78df35a21471a4282362648b5f5",
+      "bytes": 3221,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/config.go",
+      "sha256": "79ad4532529a3c9b7c3c2f28befde479b2cc51c2f63800e93507323a25b47867",
+      "bytes": 4075,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/doc.go",
+      "sha256": "6d91f50f19cf3752432d2a9a552c7318765fc39b4c8253fd2e4995b670455d80",
+      "bytes": 624,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/factory.go",
+      "sha256": "6fbf8c5615c117efa217a9168e3e48b1e7ac6e926db2c1e2cd91f278f9861491",
+      "bytes": 2173,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/factory_test.go",
+      "sha256": "ec7a28e286a584d6648da0c85904082f8d6bf641505b89e2100459f2ee902ba3",
+      "bytes": 1938,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/go.mod",
+      "sha256": "4de2e52f4f2b477f31c70e04a7711c8f4ad4d63e1dc3df184ba96aec533e56aa",
+      "bytes": 2410,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/go.sum",
+      "sha256": "19da99162f012dc360fbfe31de1d74a31e8460801e0b63e93881c79ae8b60b14",
+      "bytes": 10699,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/processor.go",
+      "sha256": "47f6804552d6144f9df9d049948510784dc64832f3bf3a0320452bff8d8a2468",
+      "bytes": 29305,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full851-line semantic review: binding prescan, strict evidence metadata, native text scrubbing, typed host metadata, dropped event/link counts and filtering inspected.",
+        "Open limitation: recursive nested slices have per-level element caps but no explicit nesting-depth or aggregate scalar budget; transport bounds do not establish a full recursive budget.",
+        "General non-evidence metadata values remain caller-controlled within allowed keys/size; this is not arbitrary-secret detection."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/processor_test.go",
+      "sha256": "5c0dcf9cd9324297a3af84ba5920b4662094b212bb12ba83ccbaa70da08b580c",
+      "bytes": 25719,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/source_binding_test.go",
+      "sha256": "eb207972375e4c959d79b0d35b049d0249ee17246aa3df48c8c5158598afc968",
+      "bytes": 4065,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/traces_test.go",
+      "sha256": "8597b32bcb9d1c9bfa56f15ab3fd7ee4532cbb23eddbeebef87b8835c8bd2731",
+      "bytes": 16963,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Fixed int64 setup support: input_tokens rejection regression previously omitted its input value.",
+        "Full trace privacy/topology/aggregate-counter regression read; final race run recorded separately."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/README.md",
+      "sha256": "8948fd56c15dbc209dc96596806d528b765faa00e295fb01e71f4a1a2312ecfb",
+      "bytes": 8208,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/assemble.go",
+      "sha256": "319735e2f390280d80ffef73467271c8da59ac9361c7ebb84cfcfa4d98c31556",
+      "bytes": 3364,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Cap at256 retained records per serial and count omitted records explicitly.",
+        "Netlink assembly still groups by serial; live reset/wrap behavior not qualified."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/assemble_test.go",
+      "sha256": "5ab0ebd8417167ae1c6d014222df9747cdcc5f58bb278a437e38cd49edc9867a",
+      "bytes": 3910,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "go_test_race_component_or_explicit_host_unit_files"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
+      "sha256": "c93e9d3c4d2aa8223310132c153732c7056c198a853c909bf785a2fce7d91275",
+      "bytes": 17856,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "go_test_race_component_or_explicit_host_unit_files"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/config.go",
+      "sha256": "5a970185c66073c9b9ca8610dbacb0dba9867450c26e94efc9f84c259fdf04e1",
+      "bytes": 4785,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/dedupe.go",
+      "sha256": "36009e816a2aa2fc7e6bacfc8f7b6611a385a51d6ebaef89cb793737213aef24",
+      "bytes": 2462,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Optional dedupe can replace an expired entry before sweep and lose the preceding repeat summary; unresolved, disabled by default in host emitter and ignored by durable logfile mode."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_logfile.go",
+      "sha256": "9061bd1fd32b11ec35c3aa980872804c6d1e7b1a67e4e0fed2d8fa337494f751",
+      "bytes": 15965,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_platform_linux.go",
+      "sha256": "fc7a2e805cc5e66cf1ea462ee7223d2f71c1883256324dc642fdeefb5efc5a10",
+      "bytes": 887,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_platform_other.go",
+      "sha256": "0be63451a2ab9bc72da42e43276bd3df79a39bc4ca3ff8b77017c5926cae6a3a",
+      "bytes": 537,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_state.go",
+      "sha256": "130f3166599e8dac1b4a84492138aaca80f4c674a515c845876ef1ec11297760",
+      "bytes": 7256,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_test.go",
+      "sha256": "03e7987b2ce773cc0bba9cbdd03ea416cf2ac61c9256b3083b3ec91ebfa80713",
+      "bytes": 21884,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "go_test_race_component_or_explicit_host_unit_files"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/errno.go",
+      "sha256": "f98ba7ef7ee1edb5e2e6c3cecba48e34f6768f2e7a3bc4b8d8c747ce69cb5988",
+      "bytes": 610,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/factory.go",
+      "sha256": "ef51f35d2b5910947d3cd42e862c2cddcf0871c741d09b8e50838db060084749",
+      "bytes": 1481,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/go.mod",
+      "sha256": "f67f50cb1379802f57505ea9ef1d7e0ceaa0d82085efb34f7108bc1a102eac95",
+      "bytes": 2202,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/go.sum",
+      "sha256": "0567edc7cf7d4f4a43969259d00b70fcc3ccfe448b2c55735a467daf34e43b54",
+      "bytes": 10746,
+      "methods": [
+        "sha256_inventory",
+        "go_mod_verify"
+      ],
+      "findings": [
+        "Module checksum verification passed; no dependency changes."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/logfile.go",
+      "sha256": "d90229befe437eb26acd25072c7ea2e701032ba4355ef9204efb74fadf778d4b",
+      "bytes": 2315,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Legacy volatile tail helper is exercised by tests; active logfile Start uses durable implementation."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_linux.go",
+      "sha256": "3d5183b2e5c3c7082156df64500fe9eb4346bbf8918a1d538bd4993e8fab4dbb",
+      "bytes": 10962,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Fixed native ABI syscall selection and architecture equality filter.",
+        "Corrected AUDIT_FILTER_EXIT=4/AUDIT_ALWAYS=2 against /usr/include/linux/audit.h.",
+        "Fixed audit_rule_data offsets and buffer overrun.",
+        "Decode bounded netlink frames with message type; detect MSG_TRUNC.",
+        "Control requests use separate socket, kernel sender validation, sequence/type checking, two-second receive timeout and eight-message bound.",
+        "Live kernel behavior remains unqualified."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_linux_test.go",
+      "sha256": "25ee96ba3ce10ae437c972396b006103dc71de45d7f8f4ee8d2795ce22b4c044",
+      "bytes": 4528,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "go_test_race_component_or_explicit_host_unit_files"
+      ],
+      "findings": [
+        "Regression tests cover native architectures, wire constants/layout, malformed frames, ACK/status sequence/type/error demultiplexing."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_other.go",
+      "sha256": "9bd40586062849dd51200f1ab5b9c4befda332b449bb63c8c106200ab06c1b2d",
+      "bytes": 853,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/parse.go",
+      "sha256": "8f97ee17f91ff9f596a826d4c88a30fa5e5a516bc838315188b7b61f8afb045e",
+      "bytes": 5490,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Unknown/compatibility ABI no longer falls back to x86_64 syscall table."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/receiver.go",
+      "sha256": "cea81469a3dc69ec6da74eac572b43ded4a23ae9b69da4efeb71ce9b0cd92e69",
+      "bytes": 10652,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Uses framed netlink decoder.",
+        "Exports assembly_records_dropped count and reports remaining count on shutdown.",
+        "Netlink replay queue is volatile; live completeness not claimed."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/translate.go",
+      "sha256": "771032aa6fecedfc58e205387b74d7d9e40340c3036dab4bd07e9aea08b2a6f2",
+      "bytes": 6032,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/tests/qualify-distribution-config.sh",
+      "sha256": "588e682bdbe6f7c9bb1c96a81526d4b1e800bd0ea6f86807bc78e1d029db31d7",
+      "bytes": 13070,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Full read and actual gated/bare binary execution passed; no telemetry delivery claimed.",
+        "Bare mode warns but passes without gate; only gated invocation enforces runtime constraints."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/tests/test-recorder-manifest.sh",
+      "sha256": "0aeae9bfb87fe54e532cc61ff7fc10e425ea5e71c76aa16f4eeeadfdb2c5cf6c",
+      "bytes": 5731,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Exact current component inventory and version train check executed successfully.",
+        "Inventory extraction is line-oriented grep/sed, not a general YAML parser despite introductory parsed-entry wording."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/README.md",
+      "sha256": "90150db37ed86b970478f368e1a9ebb042ca68af218bb7a82ee51ff06a6e0d7a",
+      "bytes": 2166,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/bearertokenauth-empty-tokens.patch",
+      "sha256": "f3159447794a242c6086feb3a61522d6c2cfad3b0607822967cdbf2739a6f4d6",
+      "bytes": 6056,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Read full patch; reject empty tokens, strict singleton file validation, reload revocation and projected-secret polling inspected.",
+        "Patched dependency TestFabric regressions executed by build helper."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/bearertokenauth_empty_tokens_test.go",
+      "sha256": "4ea9bc8e7cbf404b24146c1c9091ba753f4cdf340ae51d6e26595dba662d7682",
+      "bytes": 5447,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Full source/configuration semantic read completed; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/build-patched-bearertokenauth.sh",
+      "sha256": "30547bf10b263cb44112d714284ee386cd0f9eb9747b081236aacdbeca4ab700",
+      "bytes": 1969,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Fixed module discovery to go env GOMODCACHE; custom-cache regression passes.",
+        "Actual pinned distribution rebuilt with patched module tests and final build metadata replacement assertion."
+      ]
+    },
+    {
+      "path": "contracts/connect/v1/manifests/ebpf-host-emitter.json",
+      "sha256": "2674fa1f4af527ee23279961a68cd86245ae331146ec463c6429faf70b991ee1",
+      "bytes": 4984,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review",
+        "json_parse",
+        "pinned_manifest_digest_verification",
+        "connector_contract_tests"
+      ],
+      "findings": [
+        "Three tracepoints match emit.bpf.c; default file capture disabled, inference/partial field/spool/destination limitations match current implementation.",
+        "Default authentication none is consistent with TLS transport enabled but no default bearer or client certificate.",
+        "Capability summary BPF+PERFMON is not the complete supplied DaemonSet profile, which also includes SYS_RESOURCE and DAC_READ_SEARCH.",
+        "Declared Kubernetes>=1.29 compatibility was not independently executed or qualified here.",
+        "Pinned manifest bytes preserved; index SHA256 matches."
+      ]
+    },
+    {
+      "path": "deploy/auditd/README.md",
+      "sha256": "2af15c8dbf2b4eeb8dc7f136443aeb994f756ff5a8beed9c7be99a3461aac401",
+      "bytes": 4187,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "deploy/auditd/collector-e2e.yaml",
+      "sha256": "97a10dc4827729fa95d9dbcb3dc354c6105f8c8395d222e14f8d7349e5a2f038",
+      "bytes": 1111,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "deploy/auditd/collector-host-monitor-e2e-netlink.yaml",
+      "sha256": "46fd843dcdb65052891449be0ffca83551e9df8ae5fce2d6c4d726780b1f9679",
+      "bytes": 763,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Enables manage_rules for opt-in native test; not executed or production-qualified."
+      ]
+    },
+    {
+      "path": "deploy/auditd/e2e-host-monitor.sh",
+      "sha256": "db495f8cae6ca3f1001142fb80c458bca20a73255d920fee3ab521ad86f74a2d",
+      "bytes": 4826,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Synthetic fixture provenance corrected.",
+        "Not run: fixed container/network names and cleanup may remove a pre-existing same-name container; netlink config enables manage_rules. Use isolated disposable environment only."
+      ]
+    },
+    {
+      "path": "deploy/auditd/fabric.rules",
+      "sha256": "a05157bd108c46019d495621c591b279899c16c3ca14f8f4209d938979be2e08",
+      "bytes": 1550,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Removed b32 rules because receiver lacks compatibility ABI syscall tables.",
+        "Broad native rules are reference configuration, not loaded during audit."
+      ]
+    },
+    {
+      "path": "deploy/kubernetes/host-emitter-daemonset.yaml",
+      "sha256": "74af561cd3f7121ee24e423d9accffa0b9f3af29e40bfe8f02f4c78751ca3498",
+      "bytes": 4949,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Intentionally unusable image/scope placeholders, bounded caps, TLS credentials and private persistent host spool inspected.",
+        "No seccomp profile, pod-specific node scope or NetworkPolicy accompanies this template; static preflight is not full production qualification."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/.gitignore",
+      "sha256": "a888b9df89402a815bdb15d30c5280b090be11655ab4cc2299ce748d44cd6ed4",
+      "bytes": 5,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/README.md",
+      "sha256": "4b0049ad7c4475e01ecb4002885156be6cec2f7aea62105e444731afe2562a66",
+      "bytes": 5340,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/agent.py",
+      "sha256": "35fe0aea7ebbf018dacf62babe9bc7155857778512a213132432658149832d99",
+      "bytes": 13062,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Removed fabricated write_report exec event: report writing starts no process.",
+        "Openat fd remains a documented synthetic placeholder."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/audit_shim.py",
+      "sha256": "a02190eac1387ec901fa6a4583cc19815e46c19e9675511735f7eb1234bedcae",
+      "bytes": 5187,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Replaced false auditd byte-equivalence/all-fields-real claims with explicit synthetic provenance and field limitations."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/collect-audit-linux.sh",
+      "sha256": "331fd8f1a4f14c0d07e0dc599a72796a6b30464be607b7216327b8cf938a5f80",
+      "bytes": 619,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/collector.demo.yaml",
+      "sha256": "73b970de0851a08635357954306514d72a52433c00be46ce0ad84bdc77012008",
+      "bytes": 1217,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/data/deploy.log",
+      "sha256": "f14a60dc68444b0edaa47bb39fb7d9fb6bc08619e8db2d2a019ae447dc57c5fd",
+      "bytes": 1111,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/data/metrics.json",
+      "sha256": "a2633f7896bc551c8a6a38642f95b7b0bce8609e68f48e62cbbd74341c7a1b60",
+      "bytes": 347,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "json_parse"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/data/runbook.md",
+      "sha256": "bfdb23c44e5c7483618eee85a95886521425c5075eba8365c5dcde03d47fee48",
+      "bytes": 699,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/reconstruct.py",
+      "sha256": "447a7cf91f1d906d31c089067a0a622788d5a5893ef4a01505566a9eb7b15ed9",
+      "bytes": 13655,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Fixed checkout root parents[2] -> parents[1].",
+        "Explicit synthetic agent provenance in journal/events.",
+        "Removed empty-path match bonus; exec minimum now three actual subprocesses."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/run.sh",
+      "sha256": "742363c39d820934ec7dcd88c71d8f31d88157530667ae580d8e24488970d20c",
+      "bytes": 4444,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "bash_syntax_check"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/sink.py",
+      "sha256": "67325affc1ec1b7d208224d579d941a5b3ef2dea4b9a3760bd0b3ce9727f14fa",
+      "bytes": 5338,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Synthetic unauthenticated all-interface demo sink without fsync/receipts; existing isolation acknowledgment retained."
+      ]
+    },
+    {
+      "path": "examples/agent-orchestration/viewer/index.html",
+      "sha256": "09159253810963722ef7592ba6c7cca5398ce459adf70e8cc28dc66f1a2a93c9",
+      "bytes": 12546,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review"
+      ],
+      "findings": [
+        "Visible host labels now state synthetic agent-emitted provenance."
+      ]
+    },
+    {
+      "path": "scripts/qualification/check_host_emitter_manifest.py",
+      "sha256": "4c41f96c0f461c47f16ea9ca96fde9e91630390fd8a11d42532190624eef5b4f",
+      "bytes": 7647,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "scripts/tests/test_host_emitter_manifest.py",
+      "sha256": "4d90a952723779ebf46e1dd122eff84f9e4e8084fd59debe366681054749980b",
+      "bytes": 4052,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "scripts/tests/test_host_sensor_security_gates.py",
+      "sha256": "56e094e25446b76999e6e6f16f04109f385b1526176af15e8d1a51ac5be7a006",
+      "bytes": 1382,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "scripts/tests/test_orchestration_demo_safety.py",
+      "sha256": "ef1ad842c6b9094a036be88be25b406cde99587fb4d873f2be45186a506c07dc",
+      "bytes": 5533,
+      "methods": [
+        "sha256_inventory",
+        "targeted_semantic_review",
+        "python_ast_parse"
+      ],
+      "findings": [
+        "Reviewed within component context; no additional finding recorded."
+      ]
+    },
+    {
+      "path": "scripts/tests/test_patched_bearer_build_cache.py",
+      "sha256": "1db74db35d8d3bd8ef3f4cd6175c9470dd0891685d8206c280bd9461b9717a00",
+      "bytes": 1978,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "New regression verifies custom module cache with spaces independently of GOPATH and preserves unmarked-directory refusal."
+      ]
+    },
+    {
+      "path": "specs/031-ebpf-host-emitter.md",
+      "sha256": "93f2ba119e4776c4ec9998534f05d3dc67651a6bbb925efeb412ce64655972d6",
+      "bytes": 6634,
+      "methods": [
+        "sha256_inventory",
+        "full_text_semantic_review"
+      ],
+      "findings": [
+        "Removed every-syscall/io_uring coverage implications; corrected absent flags/sizes capture and path-only cgroup interface.",
+        "Exact cgroup ID match does not automatically include descendants; separately qualify workload topology."
+      ]
+    }
+  ]
+}

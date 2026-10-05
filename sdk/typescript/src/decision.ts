@@ -561,6 +561,34 @@ export function resetCoverageRegistry(): void {
   COVERAGE_SEEN.clear();
 }
 
+const CAPTURE_WARNED = new Set<string>();
+
+/** Reset local capture warnings for isolated tests. */
+export function resetCaptureHealthWarnings(): void {
+  CAPTURE_WARNED.clear();
+}
+
+/** Local evidence about this decision span, never a delivery/completeness receipt. */
+export interface DecisionCaptureHealth {
+  readonly status: "unverified" | "disabled" | "partial";
+  readonly scope: "decision_span_only";
+  readonly recordingAtStart: boolean | null;
+  readonly droppedEvents: number | null;
+  readonly droppedAttributes: number | null;
+}
+
+function droppedCount(
+  span: Span,
+  key: "droppedEventsCount" | "droppedAttributesCount",
+): number | null {
+  try {
+    const value = (span as unknown as Record<string, unknown>)[key];
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * One agent turn. Not safe to share across async tasks — open one
  * `Decision` per turn.
@@ -568,6 +596,7 @@ export function resetCoverageRegistry(): void {
 export class Decision implements DecisionLike {
   private readonly tracer: Tracer;
   private readonly span: Span;
+  private readonly recordingAtStart: boolean | null;
   private readonly identity: DecisionClientIdentity;
   // Rolling counters + distinct-value sets folded onto the decision span,
   // mirroring the Python SDK so the Telemetry Bridge can summarize a
@@ -611,6 +640,15 @@ export class Decision implements DecisionLike {
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
     this.span = span;
+    let recording: boolean | null = null;
+    try {
+      const value = span.isRecording();
+      if (typeof value === "boolean") recording = value;
+    } catch {
+      // Diagnostics must not change the monitored application's behavior.
+    }
+    this.recordingAtStart = recording;
+    void this.captureHealth;
     this.identity = identity;
     span.setAttribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION);
     span.setAttribute(ATTR_TENANT, identity.tenantId);
@@ -751,8 +789,9 @@ export class Decision implements DecisionLike {
     return this.contentSink?.transcript;
   }
 
-  /** The manifest's deterministic store URI (metadata mode:
-   * `undefined`). Computable before close with no store I/O — the bytes
+  /** The manifest's deterministic store URI (`undefined` in metadata mode
+   * or before any governed capture outcome is observed). Computable after
+   * the first outcome and before close with no store I/O — the bytes
    * arrive asynchronously; resolve the URI to learn actual delivery
    * state. */
   get contentManifestUri(): string | undefined {
@@ -1170,7 +1209,7 @@ export class Decision implements DecisionLike {
       const contentRef = this.governedCaptureContent(
         ContentRole.MEMORY_WRITE_CONTENT,
         options.content,
-        { bindings: { step_type: "memory", direction: "write" } },
+        { bindings: { step_type: "memory" } },
       );
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
@@ -1220,7 +1259,7 @@ export class Decision implements DecisionLike {
       const contentRef = this.governedCaptureContent(
         ContentRole.MEMORY_READ_CONTENT,
         options.content,
-        { bindings: { step_type: "memory", direction: "read" } },
+        { bindings: { step_type: "memory" } },
       );
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
@@ -1352,7 +1391,6 @@ export class Decision implements DecisionLike {
       // storage; the event carries only the references.
       const seBindings: Record<string, unknown> = {
         step_type: "side_effect",
-        side_effect_id: record.sideEffectId,
       };
       const requestRef = this.governedCaptureContent(
         ContentRole.SIDE_EFFECT_REQUEST,
@@ -1846,6 +1884,40 @@ export class Decision implements DecisionLike {
     });
   }
 
+  /**
+   * Local snapshot limited to the decision span. Zero drops never proves
+   * complete capture or delivery; child spans, exporter failures, and content
+   * delivery are outside this scope. Unsupported provider counters are null.
+   */
+  get captureHealth(): DecisionCaptureHealth {
+    const droppedEvents = droppedCount(this.span, "droppedEventsCount");
+    const droppedAttributes = droppedCount(this.span, "droppedAttributesCount");
+    const status =
+      this.recordingAtStart === false
+        ? "disabled"
+        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0
+          ? "partial"
+          : "unverified";
+    if (status !== "unverified" && !CAPTURE_WARNED.has(status)) {
+      CAPTURE_WARNED.add(status);
+      try {
+        console.warn(
+          "singleaxis-fabric: decision span capture is disabled or has observed drops; " +
+            "captureHealth is local evidence only and does not verify complete capture or delivery.",
+        );
+      } catch {
+        // A host logger must not break the monitored application.
+      }
+    }
+    return {
+      status,
+      scope: "decision_span_only",
+      recordingAtStart: this.recordingAtStart,
+      droppedEvents,
+      droppedAttributes,
+    };
+  }
+
   /** The live OTel span for this decision. */
   getSpan(): Span {
     return this.span;
@@ -1857,7 +1929,11 @@ export class Decision implements DecisionLike {
     // before the span ends. Pending items stay pending — an honest gap,
     // never claimed delivered (spec 032 §5).
     this.closeContent();
-    this.span.end();
+    try {
+      this.span.end();
+    } finally {
+      void this.captureHealth;
+    }
   }
 }
 
@@ -1896,16 +1972,15 @@ function runAndEnd<T>(span: Span, fn: () => T): T {
   return result;
 }
 
-/** Record an exception + ERROR status on `span` (does not end it). */
+/** Record a protected diagnostic + ERROR status on `span` (does not end it). */
 function recordError(span: Span, err: unknown): void {
-  // `error.type` mirrors the GenAI error convention: the exception class
-  // name stamped alongside the ERROR status on every failure exit —
-  // decision, llm and tool spans alike (mirrors Python).
-  span.setAttribute(A.ATTR_ERROR_TYPE, errorName(err));
-  span.setStatus({ code: SpanStatusCode.ERROR, message: errorName(err) });
-  if (err instanceof Error) {
-    span.recordException(err);
-  }
+  const classification = errorName(err);
+  span.setAttribute(A.ATTR_ERROR_TYPE, classification);
+  span.setStatus({ code: SpanStatusCode.ERROR, message: classification });
+  span.addEvent("exception", {
+    "exception.type": classification,
+    "exception.message": "Operation failed",
+  });
 }
 
 /**
@@ -1922,8 +1997,26 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
 }
 
 function errorName(err: unknown): string {
-  if (err instanceof Error) {
-    return err.name;
+  // Error names are user-controlled too. Never export arbitrary names or
+  // inspect messages/stacks; hostile property access must not mask the cause.
+  try {
+    if (err instanceof Error) {
+      const name = err.name;
+      switch (name) {
+        case "TypeError":
+        case "RangeError":
+        case "ReferenceError":
+        case "SyntaxError":
+        case "URIError":
+        case "EvalError":
+        case "AggregateError":
+        case "AbortError":
+        case "TimeoutError":
+          return name;
+      }
+    }
+  } catch {
+    // Uninspectable thrown values receive the same bounded fallback.
   }
   return "Error";
 }
@@ -1963,27 +2056,23 @@ export function runDecision<T>(
       result = fn(decision);
     } catch (err) {
       recordError(span, err);
-      decision.closeContent();
-      span.end();
+      decision.end();
       throw err;
     }
     if (isThenable(result)) {
       return result.then(
         (value) => {
-          decision.closeContent();
-          span.end();
+          decision.end();
           return value;
         },
         (err: unknown) => {
           recordError(span, err);
-          decision.closeContent();
-          span.end();
+          decision.end();
           throw err;
         },
       ) as T;
     }
-    decision.closeContent();
-    span.end();
+    decision.end();
     return result;
   });
 }

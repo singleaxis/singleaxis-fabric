@@ -3,12 +3,17 @@ kind: Pod
 metadata:
   name: {{ include "otel-collector.fullname" . }}-test-connection
   labels:
-    {{- include "otel-collector.labels" . | nindent 4 }}
+    # Omit the runtime name selector so this curl-only pod cannot become a
+    # Collector Service endpoint or match the runtime NetworkPolicy/PDB.
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: health-test
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
   annotations:
     # helm test lifecycle; delete on success so the pod doesn't linger.
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": hook-succeeded
 spec:
+  automountServiceAccountToken: false
   restartPolicy: Never
   securityContext:
     runAsNonRoot: true

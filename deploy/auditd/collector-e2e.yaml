@@ -16,6 +16,7 @@ receivers:
   audit:
     source: logfile
     log_path: /var/log/audit/audit.log
+    state_directory: /var/lib/fabric/audit
     rule_key: fabric
     exec: true
     connect: true

@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="0.322" timestamp="2026-10-02T20:01:39.053684+00:00" hostname="7ac370a64211"><testcase classname="tests.test_call_reconcile" name="test_sqlite_independent_committed_state_not_tool_success" time="0.221" /></testsuite></testsuites>

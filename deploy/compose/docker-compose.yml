@@ -27,7 +27,7 @@ services:
     ports:
       # Loopback-only: the /contains endpoint is a telemetry-search oracle and
       # must never be reachable off-host.
-      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_SINK_PORT:-8080}:8080"
+      - "127.0.0.1:${FABRIC_SINK_PORT:-8080}:8080"
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
@@ -54,12 +54,11 @@ services:
       - ./collector-config/collector.yaml:/etc/fabric-node/collector.yaml:ro
       - fabric-queue:/var/lib/fabric-node/queue
     ports:
-      # Loopback-only by default. Set FABRIC_BIND_ADDR=0.0.0.0 to accept OTLP
-      # from other hosts; this evaluation profile is plaintext and
-      # unauthenticated, so do that only on a trusted test network.
-      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
-      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
-      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_HEALTH_PORT:-13133}:13133"
+      # Evaluation stays on loopback: it is plaintext and unauthenticated.
+      # Cross-host ingress requires the separately reviewed secure profile.
+      - "127.0.0.1:${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
+      - "127.0.0.1:${FABRIC_HEALTH_PORT:-13133}:13133"
     depends_on:
       test-sink:
         condition: service_healthy

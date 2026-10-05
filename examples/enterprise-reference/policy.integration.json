@@ -1,0 +1,22 @@
+{
+  "schema_version": "fabric.deployment-policy/v1",
+  "policy_id": "synthetic-integration-example",
+  "policy_version": 1,
+  "tenant_id": "example-tenant",
+  "workload_id": "example-agent",
+  "privacy": {
+    "model.request.messages": "retain_original",
+    "model.output.messages": "retain_original",
+    "tool.call.arguments": "retain_original",
+    "tool.call.result": "retain_original"
+  },
+  "storage": {"backend": "local", "region": "local", "key_id": "ephemeral-demo-key"},
+  "retention": {"days": 1},
+  "required_integrations": ["fabric.call_recorder"],
+  "deployment": {
+    "profile": "local",
+    "image_digest": "local",
+    "tls_required": false,
+    "encrypted_store_required": true
+  }
+}

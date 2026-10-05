@@ -13,17 +13,17 @@ destination. SingleAxis Platform is optional.
 ## Included components
 
 - `fabricguard` — exact metadata allowlisting and native OTLP text scrubbing;
-- upstream OTLP receiver, memory limiter and optional development batch
+- upstream OTLP receiver and optional Linux audit receiver (netlink or durable logfile);
+- memory limiter and optional development batch
   processor;
 - OTLP/HTTP and local debug exporters;
 - health-check and persistent file-storage extensions;
 - the bearer-token auth extension is compiled in for non-Kubernetes
   deployments that terminate token-authenticated OTLP ingress without a
-  proxy; no shipped config wires it up by default.
+  proxy; the compose production overlay wires this extension.
 
 The recorder binary does not include policy, Presidio, prompt guard, sampling,
-judge, red-team, or management components. Their experimental source modules
-may remain elsewhere in the repository but are not compiled into this image.
+judge, red-team, or management components. Historical implementations remain in git and are not compiled into this image.
 
 Recorder configurations MUST NOT define `metrics` or `profiles` service
 pipelines: `fabricguard` only protects logs and traces, so any telemetry on
@@ -69,12 +69,14 @@ make qualify-image COLLECTOR_IMAGE=fabric-otelcol:pr
 
 ## Run
 
-The example uses environment-provided endpoint and authorization values:
+The example is for an isolated development environment: OTLP ingress listens
+on all interfaces without TLS or authentication. Export endpoint and authorization
+come from environment variables. Use the production profile below for protected ingress:
 
 ```bash
 export FABRIC_EXPORT_ENDPOINT=https://otlp.example.com
 export FABRIC_EXPORT_AUTH='Bearer <token>'
-./dist/otelcol-fabric --config examples/config.yaml
+./dist/fabric-gate --config examples/config.yaml
 ```
 
 Mount the file-storage directory on encrypted persistent storage. Production

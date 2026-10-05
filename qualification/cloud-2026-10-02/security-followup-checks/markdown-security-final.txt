@@ -1,0 +1,4 @@
+markdownlint-cli2 v0.13.0 (markdownlint v0.34.0)
+Finding: **/*.md !**/licenses/THIRD-PARTY-LICENSES.md !**/node_modules/** !**/_internal/** !**/.venv/** !**/venv/** !**/vendor/** !**/dist/** !**/build/** !**/site-packages/** !**/temp/** !**/tmp/**
+Linting: 136 file(s)
+Summary: 0 error(s)

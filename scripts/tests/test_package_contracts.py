@@ -322,3 +322,23 @@ def test_repository_contract_tree_is_release_qualifiable() -> None:
     assert members
     assert families
     assert all(versions for versions in families.values())
+
+
+def test_missing_one_of_multiple_required_versions_fails(tmp_path: Path) -> None:
+    contracts = tmp_path / "contracts"
+    _family(contracts, "activity", "v1")
+    with pytest.raises(QualificationError, match="versions are missing: v2"):
+        packaging.validate_contract_tree(
+            contracts,
+            manifest_name="manifest.json",
+            included_families=frozenset({"activity"}),
+            included_versions={"activity": frozenset({"v1", "v2"})},
+        )
+    _family(contracts, "activity", "v2")
+    _, families = packaging.validate_contract_tree(
+        contracts,
+        manifest_name="manifest.json",
+        included_families=frozenset({"activity"}),
+        included_versions={"activity": frozenset({"v1", "v2"})},
+    )
+    assert families == {"activity": ("v1", "v2")}

@@ -1,0 +1,25 @@
+{
+  "method": "Read own /proc/self/status and tool availability; no capability or kernel settings changes",
+  "effective": {
+    "CAP_SYS_RESOURCE": false,
+    "CAP_SYS_ADMIN": false,
+    "CAP_AUDIT_CONTROL": false,
+    "CAP_AUDIT_READ": false,
+    "CAP_PERFMON": false,
+    "CAP_BPF": false
+  },
+  "bounding": {
+    "CAP_SYS_RESOURCE": false,
+    "CAP_SYS_ADMIN": false,
+    "CAP_AUDIT_CONTROL": false,
+    "CAP_AUDIT_READ": false,
+    "CAP_PERFMON": false,
+    "CAP_BPF": false
+  },
+  "tools": {
+    "clang": null,
+    "bpftool": null,
+    "auditctl": null
+  },
+  "limits": "This process capability inventory does not establish all host or remote runner capabilities. No live BPF/audit program or kernel settings modified."
+}

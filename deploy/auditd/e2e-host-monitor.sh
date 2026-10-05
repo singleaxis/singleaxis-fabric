@@ -19,7 +19,8 @@ CFG="$HERE/collector-e2e.yaml"
 NET="fabric-audit-e2e"
 WORK="$(mktemp -d)"
 LOGDIR="$WORK/audit"
-mkdir -p "$LOGDIR"
+mkdir -p "$LOGDIR" "$WORK/audit-state"
+chmod 0700 "$WORK/audit-state"
 touch "$LOGDIR/audit.log"
 MARKER="fabric-e2e-marker-$$"
 
@@ -37,10 +38,11 @@ docker run -d --name fabric-audit-col --network "$NET" \
   --user 0 \
   -v "$CFG:/etc/otelcol/config.yaml:ro" \
   -v "$LOGDIR:/var/log/audit:ro" \
+  -v "$WORK/audit-state:/var/lib/fabric/audit:rw" \
   "$IMG" --config /etc/otelcol/config.yaml >/dev/null
 sleep 3
 
-# Append audit-format records to the tailed log — exactly what auditd writes.
+# Append synthetic audit-format fixtures; these are not independent auditd evidence.
 # Serials are unique; multi-record events share the serial.
 cat >> "$LOGDIR/audit.log" <<EOF
 type=SYSCALL msg=audit(1726000000.001:201): arch=c000003e syscall=59 success=yes exit=0 ppid=10 pid=42 auid=1000 uid=0 comm="$MARKER" exe="/tmp/$MARKER" key="fabric"

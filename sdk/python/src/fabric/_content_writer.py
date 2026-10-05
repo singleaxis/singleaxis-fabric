@@ -26,6 +26,7 @@ import json
 import logging
 import os
 import queue
+import stat
 import tempfile
 import threading
 import time
@@ -36,6 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from ._content import DESCRIPTOR_STATUSES, ContentDescriptor, ContentStatus
+from .content_store.local import _directory
 
 if TYPE_CHECKING:
     from .content_store.base import GovernedStore
@@ -196,10 +198,16 @@ class ContentWriter:
         # for capacity reasons (spec 032 §4).
         self._recovery_backlog: deque[_Task] = deque()
         if config.durability == "spooled":
-            self._spool_dir = Path(config.spool_dir or "")
-            self._spool_dir.mkdir(parents=True, exist_ok=True)
-            with contextlib.suppress(OSError):
-                os.chmod(self._spool_dir, 0o700)
+            self._spool_dir = Path(config.spool_dir or "").absolute()
+            if self._spool_dir == Path(self._spool_dir.anchor) or ".." in self._spool_dir.parts:
+                raise ValueError("spool_dir must be a dedicated directory without traversal")
+            # Create privately and reject symlinked ancestors before recovery
+            # can read content. Failure to enforce the mode is a setup error,
+            # never permission to start a worker with an exposed spool.
+            with _directory(self._spool_dir, create=True) as directory:
+                os.fchmod(directory, 0o700)
+                if stat.S_IMODE(os.fstat(directory).st_mode) != stat.S_IRWXU:
+                    raise PermissionError("spool_dir must enforce owner-only permissions")
             self._recover_spool()
         if config.durability in ("process", "spooled"):
             self._worker = threading.Thread(

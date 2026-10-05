@@ -1,0 +1,334 @@
+{
+  "schema_version": "fabric.compose-deep-audit/v1",
+  "date": "2026-10-02",
+  "source_checkpoint": "0c057678eaa4d4b29217bccec2094dc196a34a18",
+  "scope": "Remaining Compose non-Markdown backlog plus directly corrected README and new regression tests. Exact local hashes bind review only, not runtime qualification. Other agent validators untouched.",
+  "entries": [
+    {
+      "path": "deploy/compose/.env.example",
+      "baseline_sha256": "bb47355c5d150b48ee3ea62cc94e10193297ae832aded7255839719abbba41a2",
+      "sha256": "bb47355c5d150b48ee3ea62cc94e10193297ae832aded7255839719abbba41a2",
+      "bytes": 2564,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": []
+    },
+    {
+      "path": "deploy/compose/Makefile",
+      "baseline_sha256": "857eb21608a57271a236dc89cd36d88ef5a24a60a79bace1d54c06fc557bccb5",
+      "sha256": "dca85d3facfea3f152d68e096ea360a34303c0b1648cfde2b94bccd588236955",
+      "bytes": 3183,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-004",
+          "status": "corrected",
+          "detail": "Verification guidance now describes ingress checks and available queue metrics; reset remains intentionally destructive to evaluation volumes."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/docker-compose.yml",
+      "baseline_sha256": "e73fbc3b9428614caffd933f88a41b328f4d626314bdf028fdac3655a3c66b67",
+      "sha256": "e73fbc3b9428614caffd933f88a41b328f4d626314bdf028fdac3655a3c66b67",
+      "bytes": 2514,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": []
+    },
+    {
+      "path": "deploy/compose/docker-compose.production.yml",
+      "baseline_sha256": "4658761a7fb0353da44ed837311eb95e5204c70c6371ec1d1e777329480e1a4f",
+      "sha256": "4658761a7fb0353da44ed837311eb95e5204c70c6371ec1d1e777329480e1a4f",
+      "bytes": 4684,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-010",
+          "status": "open",
+          "detail": "Optional FABRIC_EXPORT_CA_FILE from .env example is not forwarded to Collector environment; uncommented ca_file therefore uses default path unless operator adds environment mapping. Egress header is environment-visible; ingress token remains file secret."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/tls/.gitignore",
+      "baseline_sha256": "240a3e0d37d2e86b614063f5347eb02d4f99ca6c254de6b82871ff8d95532a7d",
+      "sha256": "240a3e0d37d2e86b614063f5347eb02d4f99ca6c254de6b82871ff8d95532a7d",
+      "bytes": 14,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": []
+    },
+    {
+      "path": "deploy/compose/collector-config/collector.yaml",
+      "baseline_sha256": "605594f3f040358116035ba55cb9a6ea813ed1376a372c30d509b593bff95f66",
+      "sha256": "605594f3f040358116035ba55cb9a6ea813ed1376a372c30d509b593bff95f66",
+      "bytes": 1400,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": []
+    },
+    {
+      "path": "deploy/compose/collector-config/collector-production.yaml",
+      "baseline_sha256": "bec4eab6bb8654279702d15723505845abb951546a5d4ec0ef525c9caccb2016",
+      "sha256": "51ffa09927feba9c5b05d77e308cf064a08da43e7d1fad8fae1eb40d1046ece6",
+      "bytes": 6391,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-007",
+          "status": "corrected",
+          "detail": "Enabled require_single_token true: current patch rejects malformed/multiple/short token files on load/reload. Previously legacy mode only dropped empty entries; strict opt-in claim was inaccurate."
+        },
+        {
+          "id": "CMP-008",
+          "status": "open",
+          "detail": "Retry without elapsed limit is bounded by permanent exporter errors, queue capacity and disk availability; no independent source identity binding configured by this generic Compose profile."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/collector-config/collector-host-monitor.yaml",
+      "baseline_sha256": "174e2468d71ca35f8de06bfa52dd0263bb21ac01b992fc42248e49365b60fc59",
+      "sha256": "174e2468d71ca35f8de06bfa52dd0263bb21ac01b992fc42248e49365b60fc59",
+      "bytes": 1341,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-012",
+          "status": "open",
+          "detail": "Development host-monitor variant uses debug exporter and no durable queue; comment that everything else matches dev config is overbroad. Declared health extension is not enabled in service.extensions."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/fixtures/otlp-trace-service.proto",
+      "baseline_sha256": "1aff37ab0163a888dd2274b928bd12000648ab44f2ff3b52f817f26e6eee918a",
+      "sha256": "1aff37ab0163a888dd2274b928bd12000648ab44f2ff3b52f817f26e6eee918a",
+      "bytes": 474,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": []
+    },
+    {
+      "path": "deploy/compose/fixtures/decision-summary.json",
+      "baseline_sha256": "1ab46350005a0e1b961d4657b7881bdf2a2de28e14ccb5b2ae50f3d363d0f794",
+      "sha256": "1ab46350005a0e1b961d4657b7881bdf2a2de28e14ccb5b2ae50f3d363d0f794",
+      "bytes": 1422,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": []
+    },
+    {
+      "path": "deploy/compose/sink/otlp_sink.py",
+      "baseline_sha256": "e199e489cdfa65858b64522018b40214a73fb83bc111244b33ae8831e6fced62",
+      "sha256": "e199e489cdfa65858b64522018b40214a73fb83bc111244b33ae8831e6fced62",
+      "bytes": 4103,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-011",
+          "status": "open",
+          "detail": "Controlled fixture sink only: GET count/contains unauthenticated even with POST token, URL needles logged, no body/decompressed-size limit or read timeout, short body is not validated against Content-Length. Local fsync receipt is not schema/OTLP validation. Trusted synthetic-only network and storage assumed."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/preflight-prod.sh",
+      "baseline_sha256": "f95d548ad57d0f46609d7f73b08a73c954d8a21817ea540260931cda16701062",
+      "sha256": "de96514d154def58668b26fb08907b9378df94512a0b3718261ee7be60d4046d",
+      "bytes": 9462,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-003",
+          "status": "corrected",
+          "detail": "Non-loopback publication requires both shipped block-style OTLP protocol TLS stanzas; unsupported layout fails remote check. Certificate validity and actual runtime handshakes remain untested here."
+        },
+        {
+          "id": "CMP-005",
+          "status": "open",
+          "detail": "envget approximates Compose env syntax; empty exported values, interpolation and quoting may differ. Runtime gate/Compose validation remains necessary."
+        },
+        {
+          "id": "CMP-006",
+          "status": "open",
+          "detail": "Token format preliminary check allows short/multiple nonempty entries, while shipped strict authenticator rejects them; disk headroom uses project filesystem rather than actual Docker volume filesystem; Docker availability/version messages are not engine readiness proof."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/verify-prod.sh",
+      "baseline_sha256": "d85ead04fea43df9fd4b985577ab6550e327d447a9a3d5525e0525f51d346af4",
+      "sha256": "7a3989287c6c6b316fff875c799cf341ce0562da230b57feb3d693c97ba32605",
+      "bytes": 7547,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-004",
+          "status": "corrected",
+          "detail": "Final claim limited to ingress checks; gRPC optional and queue gauge visibility warning-only; no destination/privacy readback."
+        },
+        {
+          "id": "CMP-009",
+          "status": "open",
+          "detail": "TLS detection still infers common protocol mode from any TLS stanza; custom CA paths with spaces and curl config escaping of quote/backslash tokens are not handled robustly. Probes have no explicit timeout; ingress HTTP200 response body is not inspected for partial success."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/qualify.sh",
+      "baseline_sha256": "8d2b422a7891956a9211c2ecaa027a894296ac9960ff8a16bbbbf13c84f6a260",
+      "sha256": "be72633651908445a00d5aa8ad5542a04920493dff0d417b644893e22f0a9e2e",
+      "bytes": 3538,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-001",
+          "status": "corrected",
+          "detail": "Unavailable/malformed/privacy-positive sink replies fail closed; baseline offline tests reproduced five failures across privacy and TLS, now regression suite passes."
+        },
+        {
+          "id": "CMP-002",
+          "status": "corrected",
+          "detail": "Replaced aggregate-count growth with fresh unpredictable request attribute absent before submission and present after sink outage/restart; controlled-sink byte-marker correlation, not full OTLP decoding, independent effect witness, or general destination durability."
+        }
+      ]
+    },
+    {
+      "path": "deploy/compose/README.md",
+      "baseline_sha256": "4079e66b93eaf71110f04bd2afe1c652fd1bdc900a7fcfabcea926e4220e1f48",
+      "sha256": "e660519ebe93cf9552c87cb23649b38a423e930132aa06f9f2aa01fddbd032d4",
+      "bytes": 8413,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "review_focus": "Complete source/text review of deployment, privacy, authentication, failure and cleanup boundaries; not live deployment execution.",
+      "findings": [
+        {
+          "id": "CMP-004",
+          "status": "corrected",
+          "detail": "Separated evaluation marker-based recovery check from production ingress-only verification; production configuration alone does not prove destination delivery."
+        }
+      ]
+    },
+    {
+      "path": "scripts/tests/test_compose_deep_audit.py",
+      "baseline_sha256": null,
+      "sha256": "b3bddd39d72edb4f2b88ac3e0118301eadfd0f3b6c04ff4f33382046e91661e7",
+      "bytes": 3147,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review",
+        "offline_regression_execution"
+      ],
+      "review_status": "fully_read",
+      "findings": []
+    }
+  ],
+  "validation": [
+    {
+      "command": "/workspace/fabric-venv/bin/python -m pytest -q scripts/tests/test_compose_deep_audit.py scripts/tests/test_compose_security_bounds.py",
+      "status": "passed",
+      "result": "20 passed; fake Docker/curl tests; no Collector runtime"
+    },
+    {
+      "command": "docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.production.yml config --quiet",
+      "status": "passed",
+      "result": "Synthetic env values; merged syntax validation only, no image pull or services"
+    },
+    {
+      "command": "sh -n deploy/compose/preflight-prod.sh deploy/compose/qualify.sh deploy/compose/verify-prod.sh",
+      "status": "passed"
+    },
+    {
+      "command": "ruff check/format scripts/tests/test_compose_deep_audit.py; git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "live Compose restart/TLS/auth qualification",
+      "status": "unexecuted",
+      "result": "Local image pull blocked by registry 429 earlier; previous checkpoint CI production-profile success is separate evidence and does not validate these current changes."
+    },
+    {
+      "command": "shellcheck",
+      "status": "unexecuted",
+      "result": "Binary not available on PATH"
+    }
+  ],
+  "baseline_reproduction": {
+    "artifact": "/workspace/fabric-qualification/compose-deep-probes.json",
+    "result": "Mocked privacy readback failure and one-protocol TLS both incorrectly returned zero before fixes; additional compact true JSON missed by baseline grep. Artifact is local ephemeral evidence, not checked-in runtime result."
+  },
+  "limitations": [
+    "No customer production approval or certification.",
+    "No live Compose, real TLS handshakes, release image parity or destination readback executed for these changes.",
+    "Markers prove controlled sink correlation only; producer closure, external effects and remote durable receipts require independent evidence."
+  ]
+}

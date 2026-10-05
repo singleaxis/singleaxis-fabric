@@ -1,5 +1,6 @@
-# Recorder-only example. Supply certificate and queue paths appropriate to
-# your environment; use the Helm shadow-production profile for Kubernetes.
+# Isolated development example only: OTLP ingress is plaintext and unauthenticated
+# on all interfaces. Export TLS does not secure ingress. Do not expose this config
+# to untrusted networks; use Helm shadow-production for protected Kubernetes ingress.
 
 extensions:
   health_check:

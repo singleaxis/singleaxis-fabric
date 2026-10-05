@@ -16,11 +16,12 @@ receivers:
   audit:
     source: logfile
     log_path: /demo-audit/audit.log
+    state_directory: /demo-audit-state
     rule_key: fabric
     exec: true
     connect: true
     file_access: true
-    hash_file_paths: false
+    hash_file_paths: true
     manage_rules: false
     max_events_per_sec: 500
     dedupe_window: 0s

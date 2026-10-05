@@ -1,0 +1,68 @@
+.F...                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_live_harness_rejects_bucket_without_ownership[BucketAlreadyExists-False] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3bd6d11700>
+code = 'BucketAlreadyExists', allowed = False
+
+    @pytest.mark.parametrize(
+        ("code", "allowed"),
+        [
+            ("BucketAlreadyOwnedByYou", True),
+            ("BucketAlreadyExists", False),
+            ("AccessDenied", False),
+            ("", False),
+        ],
+    )
+    def test_live_harness_rejects_bucket_without_ownership(monkeypatch, code, allowed):
+        spec = importlib.util.spec_from_file_location(
+            "fabric_s3_bucket_ownership", Path(__file__).with_name("test_s3_live.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class ClientError(Exception):
+            def __init__(self):
+                self.response = {"Error": {"Code": code}}
+
+        error = ClientError()
+
+        class BucketAlreadyOwnedByYou(ClientError):
+            pass
+
+        def create_bucket(**kwargs):
+            raise error
+
+        client = SimpleNamespace(
+            create_bucket=create_bucket,
+            exceptions=SimpleNamespace(
+                ClientError=ClientError,
+                BucketAlreadyOwnedByYou=BucketAlreadyOwnedByYou,
+            ),
+        )
+        monkeypatch.setitem(
+            sys.modules,
+            "boto3",
+            SimpleNamespace(
+                session=SimpleNamespace(
+                    Session=lambda **kwargs: SimpleNamespace(
+                        client=lambda *args, **kwargs: client
+                    )
+                )
+            ),
+        )
+        stores = []
+        monkeypatch.setattr(module, "_make_store", lambda **kwargs: stores.append(kwargs))
+        if allowed:
+            module.store.__wrapped__()
+            assert len(stores) == 1
+            assert stores[0]["client"] is client
+        else:
+>           with pytest.raises(ClientError) as caught:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'test_s3_live_harness.test_live_harness_rejects_bucket_without_ownership.<locals>.ClientError'>
+
+/tmp/fabric-s3-before/test_s3_live_harness.py:68: Failed
+=========================== short test summary info ============================
+FAILED ../../tmp/fabric-s3-before/test_s3_live_harness.py::test_live_harness_rejects_bucket_without_ownership[BucketAlreadyExists-False]
+1 failed, 4 passed in 0.14s

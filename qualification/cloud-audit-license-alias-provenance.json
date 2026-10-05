@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "scope": "Exact protobuf scanner alias and cffi MIT-0 provenance following expanded inventory gate at 9adb613; no allowlist or dependency changes.",
+  "artifacts": [
+    {
+      "name": "protobuf",
+      "version": "7.36.2",
+      "metadata_source": "https://pypi.org/pypi/protobuf/7.36.2/json",
+      "wheel_url": "https://files.pythonhosted.org/packages/db/f3/3996583dd2906297a637af12114deddf7658af6e683fedb83be061983fb5/protobuf-7.36.2-cp310-abi3-manylinux2014_x86_64.whl",
+      "wheel_sha256": "89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2",
+      "pypi_digest_matched": true,
+      "wheel_metadata_path": "protobuf-7.36.2.dist-info/METADATA",
+      "wheel_metadata_sha256": "445916389cc3a87d5f815d763192372a17a221339d474cb661523157bf07d61c",
+      "wheel_license_path": "protobuf-7.36.2.dist-info/LICENSE",
+      "wheel_license_sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d",
+      "method": "Downloaded official version-specific PyPI metadata and listed wheel without installation; verified SHA-256 against PyPI; read wheel METADATA license fields and full LICENSE; compared license conditions with SPDX primary text."
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "metadata_source": "https://pypi.org/pypi/cffi/2.1.1/json",
+      "wheel_url": "https://files.pythonhosted.org/packages/b1/db/dceb9dd5b231e1da801793f8acc9f3c52a7e1afe40bb1aae37e02b0faad5/cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "wheel_sha256": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+      "pypi_digest_matched": true,
+      "wheel_metadata_path": "cffi-2.1.1.dist-info/METADATA",
+      "wheel_metadata_sha256": "558bafb9093a8e790175d9ecff9688382981d744877dad86fd6770db0f4dc918",
+      "wheel_license_path": "cffi-2.1.1.dist-info/licenses/LICENSE",
+      "wheel_license_sha256": "5ba24ddc57067f9249add644c3afc41a5d6dc37e23433ef759d95df370b0af63",
+      "method": "Downloaded official version-specific PyPI metadata and listed wheel without installation; verified SHA-256 against PyPI; read wheel METADATA license fields and full LICENSE; compared license conditions with SPDX primary text."
+    }
+  ],
+  "findings": [
+    {
+      "package": "protobuf==7.36.2",
+      "status": "corrected",
+      "metadata_label": "3-Clause BSD License",
+      "canonical": "BSD-3-Clause",
+      "source": "https://spdx.org/licenses/BSD-3-Clause.html",
+      "reason": "The wheel LICENSE contains the source attribution, binary attribution and non-endorsement conditions plus warranty disclaimer of BSD-3-Clause. It also preserves a generated-code ownership/support-library note. Only the exact scanner spelling is added; appended unknown exceptions remain rejected."
+    },
+    {
+      "package": "cffi==2.1.1",
+      "status": "open_policy_owner_decision",
+      "metadata_label": "MIT-0",
+      "canonical": "MIT-0",
+      "source": "https://spdx.org/licenses/MIT-0.html",
+      "reason": "Official wheel METADATA declares License-Expression: MIT-0; LICENSE names MIT No Attribution and contains its grant and disclaimer. This permissive license is distinct from MIT and absent from the existing ALLOW/ALLOW-LOG policy. No alias to MIT is valid. Gate must remain failing until a conscious human policy review explicitly accepts MIT-0, or the owner retains the current policy and blocked release. No dependency downgrade or pin is proposed.",
+      "limits": "Top-level LICENSE explicitly excepts separately stated file/directory licenses. This provenance check does not certify every bundled third-party obligation or replace release inventory/attribution review."
+    }
+  ],
+  "validation": {
+    "before_fix": "Focused three-case regression: exact protobuf spelling failed as expected; unknown-exception suffix and MIT-0 rejection passed.",
+    "after_fix": "69 passed in 3.65s: test_license_fail_closed.py, test_license_workflow.py, test_final_audit_regressions.py. Ruff check and format check passed on both changed Python files.",
+    "limits": "No live inventory rerun here; parent reported all expanded raw inventory jobs passed and gate had these two unknown identifiers. No policy approval or release qualification claimed."
+  },
+  "paths": [
+    {
+      "path": "scripts/license_check.py",
+      "sha256": "ec29fe310aaabc2a0732c56e1bdf1e6edc87c1d73e1612b273c1f3155989bb7d",
+      "method": "Targeted semantic review and focused adversarial regression; exact alias only, unchanged policy semantics.",
+      "findings": []
+    },
+    {
+      "path": "scripts/tests/test_license_fail_closed.py",
+      "sha256": "dae2ff8424d69e7bc5157f2fba7bde3f9ae976fca66e53c5e30b7d56f84f1abf",
+      "method": "Targeted semantic review and focused adversarial regression; exact alias only, unchanged policy semantics.",
+      "findings": []
+    }
+  ],
+  "policy": {
+    "path": ".github/license-allowlist.txt",
+    "sha256": "054cceb3e40e1027154c0ae0e144ea0052163e6f6981c845dcda50085f748895",
+    "modified": false
+  },
+  "evidence_location": "Downloaded source artifacts retained outside repository at /workspace/fabric-qualification/license-provenance; immutable wheel URLs and hashes above permit independent reproduction."
+}

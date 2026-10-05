@@ -1,0 +1,18 @@
+# Render-only fixtures. These references/digests identify no live resources and
+# must never be treated as approved release, credential or encryption evidence.
+otel-collector:
+  image:
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  receiver:
+    workloadAuthentication:
+      tenantId: customer-production
+      workloadId: example-agent
+      identityAttestationRef: fixture-identity-review
+      tokenSecret:
+        name: fixture-workload-token
+        key: token
+  exporter:
+    sendingQueue:
+      persistence:
+        storageClass: fixture-encrypted-storage
+        encryptionAttestationRef: fixture-storage-review

@@ -1,0 +1,225 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_stdlib_https_verifies_certificate_chain_and_hostname[none-dispatch] ___
+
+tls_server = {'ca': PosixPath('/tmp/pytest-of-agent/pytest-88/test_stdlib_https_verifies_cer0/ca.crt'), 'client_cert': PosixPath('/...lient_key': PosixPath('/tmp/pytest-of-agent/pytest-88/test_stdlib_https_verifies_cer0/client.key'), 'port': 41573, ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f47031b9370>
+adapter = 'dispatch', fault = 'none'
+
+    @pytest.mark.parametrize("adapter", ["dispatch", "metadata", "synthetic"])
+    @pytest.mark.parametrize("fault", ["none", "untrusted", "hostname"])
+    def test_stdlib_https_verifies_certificate_chain_and_hostname(
+        tls_server: dict[str, Any], monkeypatch: pytest.MonkeyPatch, adapter: str, fault: str
+    ) -> None:
+        # Direct connections deliberately do not adopt ambient proxy routing.
+        monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+        if fault == "none":
+>           _send_tls(adapter, tls_server, fault, monkeypatch)
+
+tests/test_semgrep_security_boundaries.py:258:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests/test_semgrep_security_boundaries.py:236: in _send_tls
+    return client.request("POST", endpoint, b"{}", operation_id="op", attempt_id="attempt")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/fabric/http_dispatch.py:150: in request
+    dispatch(body)
+src/fabric/http_dispatch.py:133: in dispatch
+    connection, response = self._open(method, url, payload, headers or {})
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/fabric/http_dispatch.py:89: in _open
+    connection.request(method, path, body=body, headers=dict(headers))
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1386: in request
+    self._send_request(method, url, body, headers, encode_chunked)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1432: in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1381: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1141: in _send_output
+    self.send(msg)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1085: in send
+    self.connect()
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1527: in connect
+    self.sock = self._context.wrap_socket(self.sock,
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/ssl.py:457: in wrap_socket
+    return self.sslsocket_class._create(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/ssl.py:1053: in _create
+    self.do_handshake()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <ssl.SSLSocket [closed] fd=-1, family=2, type=1, proto=6>, block = False
+
+    @_sslcopydoc
+    def do_handshake(self, block=False):
+        self._check_connected()
+        timeout = self.gettimeout()
+        try:
+            if timeout == 0.0 and block:
+                self.settimeout(None)
+>           self._sslobj.do_handshake()
+E           ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Missing Authority Key Identifier (_ssl.c:1010)
+
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/ssl.py:1331: SSLCertVerificationError
+___ test_stdlib_https_verifies_certificate_chain_and_hostname[none-metadata] ___
+
+tls_server = {'ca': PosixPath('/tmp/pytest-of-agent/pytest-88/test_stdlib_https_verifies_cer1/ca.crt'), 'client_cert': PosixPath('/...lient_key': PosixPath('/tmp/pytest-of-agent/pytest-88/test_stdlib_https_verifies_cer1/client.key'), 'port': 40299, ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f47031bbd40>
+adapter = 'metadata', fault = 'none'
+
+    @pytest.mark.parametrize("adapter", ["dispatch", "metadata", "synthetic"])
+    @pytest.mark.parametrize("fault", ["none", "untrusted", "hostname"])
+    def test_stdlib_https_verifies_certificate_chain_and_hostname(
+        tls_server: dict[str, Any], monkeypatch: pytest.MonkeyPatch, adapter: str, fault: str
+    ) -> None:
+        # Direct connections deliberately do not adopt ambient proxy routing.
+        monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+        if fault == "none":
+>           _send_tls(adapter, tls_server, fault, monkeypatch)
+
+tests/test_semgrep_security_boundaries.py:258:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests/test_semgrep_security_boundaries.py:246: in _send_tls
+    return transport.send(b"{}", "batch")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/fabric/metadata_delivery.py:191: in send
+    connection.request("POST", "/v1/logs", payload, headers)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1386: in request
+    self._send_request(method, url, body, headers, encode_chunked)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1432: in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1381: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1141: in _send_output
+    self.send(msg)
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1085: in send
+    self.connect()
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/http/client.py:1527: in connect
+    self.sock = self._context.wrap_socket(self.sock,
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/ssl.py:457: in wrap_socket
+    return self.sslsocket_class._create(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/ssl.py:1053: in _create
+    self.do_handshake()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <ssl.SSLSocket [closed] fd=-1, family=2, type=1, proto=6>, block = False
+
+    @_sslcopydoc
+    def do_handshake(self, block=False):
+        self._check_connected()
+        timeout = self.gettimeout()
+        try:
+            if timeout == 0.0 and block:
+                self.settimeout(None)
+>           self._sslobj.do_handshake()
+E           ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Missing Authority Key Identifier (_ssl.c:1010)
+
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/ssl.py:1331: SSLCertVerificationError
+__ test_stdlib_https_verifies_certificate_chain_and_hostname[none-synthetic] ___
+
+tls_server = {'ca': PosixPath('/tmp/pytest-of-agent/pytest-88/test_stdlib_https_verifies_cer2/ca.crt'), 'client_cert': PosixPath('/...lient_key': PosixPath('/tmp/pytest-of-agent/pytest-88/test_stdlib_https_verifies_cer2/client.key'), 'port': 34283, ...}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f4702ff2c30>
+adapter = 'synthetic', fault = 'none'
+
+    @pytest.mark.parametrize("adapter", ["dispatch", "metadata", "synthetic"])
+    @pytest.mark.parametrize("fault", ["none", "untrusted", "hostname"])
+    def test_stdlib_https_verifies_certificate_chain_and_hostname(
+        tls_server: dict[str, Any], monkeypatch: pytest.MonkeyPatch, adapter: str, fault: str
+    ) -> None:
+        # Direct connections deliberately do not adopt ambient proxy routing.
+        monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+        if fault == "none":
+>           _send_tls(adapter, tls_server, fault, monkeypatch)
+
+tests/test_semgrep_security_boundaries.py:258:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests/test_semgrep_security_boundaries.py:247: in _send_tls
+    return _export_projected_metadata(b"{}", [], endpoint, timeout_s=1, **tls_args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+payload = b'{}', ids = [], endpoint = 'https://127.0.0.1:34283/v1/logs'
+
+    def _export_projected_metadata(  # noqa: PLR0912
+        payload: bytes,
+        ids: list[str],
+        endpoint: str,
+        *,
+        timeout_s: float = 10.0,
+        ca_cert_path: str | None = None,
+        client_cert_path: str | None = None,
+        client_key_path: str | None = None,
+        bearer_token_path: str | None = None,
+    ) -> dict[str, Any]:
+        """One bounded offline POST shared by the closed metadata projectors."""
+        parsed = urlsplit(endpoint)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path != "/v1/logs"
+        ):
+            raise ValueError("synthetic OTLP endpoint must be loopback /v1/logs")
+        if timeout_s <= 0 or timeout_s > _MAX_TIMEOUT_S:
+            raise ValueError("invalid OTLP timeout")
+        headers = _bearer_headers(bearer_token_path, parsed.scheme)
+        tls_paths = (ca_cert_path, client_cert_path, client_key_path)
+        if parsed.scheme == "https" and any(not path for path in tls_paths):
+            raise ValueError("HTTPS synthetic OTLP requires CA and client certificate/key")
+        if parsed.scheme == "http" and any(path is not None for path in tls_paths):
+            raise ValueError("HTTP synthetic OTLP cannot accept TLS certificate options")
+        if parsed.scheme == "https":
+            if client_cert_path is None or client_key_path is None:
+                raise ValueError("HTTPS synthetic OTLP requires client certificate/key")
+            try:
+                context = ssl.create_default_context(cafile=ca_cert_path)
+                context.load_cert_chain(client_cert_path, client_key_path)
+            except Exception:
+                raise ValueError("OTLP TLS configuration failed") from None
+            connection: http.client.HTTPConnection = http.client.HTTPSConnection(
+                parsed.hostname, parsed.port or 443, timeout=timeout_s, context=context
+            )
+        else:
+            connection = http.client.HTTPConnection(
+                parsed.hostname, parsed.port or 80, timeout=timeout_s
+            )
+        try:
+            connection.request("POST", "/v1/logs", body=payload, headers=headers)
+            response = connection.getresponse()
+            if response.status != _HTTP_OK:
+                raise ValueError("OTLP Node did not accept metadata batch")
+            body = response.read(_MAX_RESPONSE_BYTES + 1)
+            if len(body) > _MAX_RESPONSE_BYTES:
+                raise ValueError("OTLP response too large")
+            result = json.loads(body) if body else {}
+            if not isinstance(result, dict):
+                raise ValueError("invalid OTLP response")
+            partial = result.get("partialSuccess", {})
+            rejected = partial.get("rejectedLogRecords", 0) if isinstance(partial, dict) else -1
+            if isinstance(rejected, str) and re.fullmatch(r"[0-9]+", rejected):
+                rejected = int(rejected)
+            if (
+                not isinstance(rejected, int)
+                or isinstance(rejected, bool)
+                or rejected < 0
+                or rejected > len(ids)
+            ):
+                raise ValueError("invalid OTLP partial success")
+            return {
+                "receipt_stage": "node_accepted" if rejected == 0 else "partial",
+                "submitted_record_ids": ids,
+                "rejected_count": rejected,
+                "destination_durable": False,
+                "retry_allowed": False,
+            }
+        except Exception:
+>           raise ValueError("OTLP metadata export failed") from None
+E           ValueError: OTLP metadata export failed
+
+src/fabric/synthetic_otlp.py:299: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_semgrep_security_boundaries.py::test_stdlib_https_verifies_certificate_chain_and_hostname[none-dispatch]
+FAILED tests/test_semgrep_security_boundaries.py::test_stdlib_https_verifies_certificate_chain_and_hostname[none-metadata]
+FAILED tests/test_semgrep_security_boundaries.py::test_stdlib_https_verifies_certificate_chain_and_hostname[none-synthetic]
+3 failed, 13 deselected in 2.28s

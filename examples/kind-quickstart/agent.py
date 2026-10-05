@@ -8,7 +8,8 @@ are exported over OTLP/HTTP to the Fabric Node collector that up.sh
 port-forwards to localhost:4318. The shadow-dev profile renders them on
 the collector's debug exporter, so `kubectl logs` shows them arriving.
 
-The SDK only records; it never blocks or alters the agent. Raw prompt
+The SDK only records; it does not authorize or alter agent actions.
+Instrumentation and export have overhead. Raw prompt
 and response text stay off the span — only hashed references and
 allowlisted metadata are emitted.
 

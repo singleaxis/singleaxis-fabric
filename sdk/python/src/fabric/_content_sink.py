@@ -25,6 +25,7 @@ from ._content import (
     ContentStatus,
     ManifestItem,
     TranscriptManifest,
+    _rfc3339_now,
 )
 from ._content_writer import ContentCaptureConfig, ContentWriter
 from ._version import __version__
@@ -35,10 +36,6 @@ if TYPE_CHECKING:
     from .content_store.base import GovernedStore
 
 _LOG = logging.getLogger("fabric.content")
-
-_CONTENT_REF = "fabric.content.ref"
-_CONTENT_REQUEST_REF = "fabric.content.request_ref"
-_CONTENT_RESULT_REF = "fabric.content.result_ref"
 
 
 class ContentSink:
@@ -163,7 +160,7 @@ class ContentSink:
                 )
             )
             return None
-        if representation is not None:
+        if representation is not None and descriptor.representation != "truncated":
             descriptor = ContentDescriptor(
                 **{**descriptor.to_json(), "representation": representation}
             )
@@ -327,7 +324,10 @@ class ContentSink:
         decision_span: Span | None,
         closed_at: str | None = None,
     ) -> str | None:
-        """Submit the manifest and stamp ``fabric.content.manifest_ref``.
+        """Submit an observed transcript and stamp ``fabric.content.manifest_ref``.
+
+        Zero observations retain only the local close timestamp and publish
+        nothing. This is a transcript snapshot, not producer-closure evidence.
 
         The stamped URI is deterministic — known before the bytes are
         delivered. Called at decision close, before the span ends, so the
@@ -336,7 +336,9 @@ class ContentSink:
         (spec 032 §5).
         """
         with self._manifest_lock:
-            self._manifest.closed_at = closed_at or self._manifest.closed_at
+            self._manifest.closed_at = closed_at or self._manifest.closed_at or _rfc3339_now()
+            if not self._manifest.items:
+                return None
             self._manifest_submitted = True
             self._submit_manifest()
             uri = self._manifest_uri
@@ -348,5 +350,5 @@ class ContentSink:
         return uri
 
     @property
-    def manifest_uri(self) -> str:
-        return self._manifest_uri
+    def manifest_uri(self) -> str | None:
+        return self._manifest_uri if self._manifest.items else None

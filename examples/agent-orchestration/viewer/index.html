@@ -93,7 +93,7 @@ const iv = J.integrity;
 $('b-verified').textContent = `verified ${iv.items_resolved_verified}/${iv.items_total}`;
 if (iv.items_resolved_verified !== iv.items_total) $('b-verified').className='badge bad';
 $('b-manifest').textContent = 'manifest ' + J.manifest.manifest_id.slice(0,12) + '…';
-$('b-host').textContent = `host: ${J.layers.host.events} audit events`;
+$('b-host').textContent = `synthetic host: ${J.layers.host.events} audit-format events`;
 if (J.uat_failures.length) {
   const f = document.createElement('span');
   f.className='badge bad'; f.textContent = `UAT: ${J.uat_failures.length} failures`;
@@ -231,7 +231,7 @@ function summaryView() {
               && e.role !== 'retrieval.query' && e.role !== 'retrieval.results');
   if (rest.length) h += '<h2>other captured content</h2>' + rest.map(entryHtml).join('');
 
-  h += '<h2>host layer — audit events</h2>';
+  h += '<h2>host layer — synthetic agent-emitted audit-format events</h2>';
   h += J.host_events.map(evHtml).join('') || '<div class="empty">none</div>';
   if (J.uat_failures.length)
     h += '<h2 class="gap">uat failures</h2>' + J.uat_failures.map(f=>`<div class="ev res-bad">${esc(f)}</div>`).join('');

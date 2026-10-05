@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "artifact": "vmlinux.h",
+  "sha256": "6861f46ca59654cc75feb479edac9824e3a99bd8c5324706cd91cf7c63eab454",
+  "bytes": 3244794,
+  "kind": "generated BTF C declarations",
+  "source_kernel_claim": "6.12 linuxkit (existing README claim; not independently verified)",
+  "source_btf_sha256": null,
+  "generator_version": null,
+  "generation_command": null,
+  "provenance_status": "historical source BTF and generation metadata unavailable; digest identifies checked-in bytes only",
+  "preservation": "header bytes unchanged during cloud audit"
+}

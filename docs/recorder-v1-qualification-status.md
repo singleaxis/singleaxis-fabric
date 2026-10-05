@@ -877,8 +877,10 @@ loss/sampling, independent-feed and durable-receipt structure, and false
 completeness verdicts. The Python and TypeScript SDKs now locally test an
 explicit opt-in content-v2 **byte** recorder: it persists caller-supplied
 bytes per observation in a tenant-bound local or S3-compatible store. Its
-bounded queue is process-memory only; it does not automatically intercept
-model/tool/terminal calls, produce run manifests or obtain durable
+default bounded queue is process-memory only; Python additionally provides an
+opt-in encrypted durable byte spool (see [SDK support matrix](sdk-support-matrix.md)).
+Neither path automatically intercepts
+model/tool/terminal calls, produces run manifests or obtains durable
 destination receipts. A separate offline synthetic adapter projects settled
 metadata to AEEP OTLP logs for a controlled loopback Node; it is not an
 automatic production publisher. The schemas are not an implemented
@@ -958,9 +960,12 @@ defaults to no intentional rate limiting or deduplication. Raw argv and paths
 are not spooled or exported; truncated argv/path fields are marked incomplete
 rather than mislabeled as full hashes. The guard has exact keys and closed
 values for host status metadata and strips raw path keys. The audit receiver
-has bounded in-memory retry and known-gap reporting, but **not** a durable
-receiver queue or persisted logfile cursor. Neither host path has passed a
-target-Linux BPF/kernel loss test or independent host-truth reconciliation.
+now has an explicit persistent logfile mode: private checkpoint/replay state,
+accepted cursor, stable record IDs, bounded source/rotation handling and
+fault/restart tests. Logfile configuration requires a dedicated persistent
+`state_directory`; see its migration guidance. Netlink remains bounded
+in-memory and non-replayable. Neither host path has passed a target-Linux
+BPF/kernel loss test or independent host-truth reconciliation here.
 
 The host-emitter DaemonSet is a fail-closed qualification template. A static
 preflight checks pinned image identity, scoped cgroup, TLS credentials and

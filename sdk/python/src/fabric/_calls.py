@@ -22,7 +22,6 @@ once the call returns. Setters write to both namespaces.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from collections.abc import Callable, Sequence
@@ -34,6 +33,7 @@ from typing import TYPE_CHECKING, Self
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from ._attributes import check_attribute_key
+from ._hashes import sha256_hex
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Histogram, Meter
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 def _sha256_hex(value: str) -> str:
     # surrogatepass: keep hashing total on lone surrogates (see memory._sha256_hex).
-    return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(value)
 
 
 # OpenTelemetry GenAI semantic conventions 1.42.0 (development).

@@ -423,12 +423,16 @@ def smoke_install_wheel(
                 "    LocalFilesystemContentStore,",
                 ")",
                 "d = distribution('singleaxis-fabric')",
-                "normalize = lambda value: (value.replace('-alpha.', 'a')"
-                ".replace('-beta.', 'b').replace('-rc.', 'rc'))",
+                "normalize = lambda value: (",
+                "    value.replace('-alpha.', 'a')",
+                "    .replace('-beta.', 'b').replace('-rc.', 'rc')",
+                ")",
                 f"assert normalize(d.version) == {normalized_expected_version!r}, d.version",
                 "assert d.locate_file('fabric/py.typed').is_file()",
-                "eps = sorted((e.name, e.value) for e in d.entry_points "
-                "if e.group == 'console_scripts')",
+                "eps = sorted(",
+                "    (e.name, e.value) for e in d.entry_points",
+                "    if e.group == 'console_scripts'",
+                ")",
                 f"assert eps == {expected_scripts!r}, eps",
                 "with TemporaryDirectory(prefix='fabric-wheel-runtime-') as directory:",
                 "    store = LocalFilesystemContentStore(directory, tenant_id='artifact-smoke')",
@@ -515,6 +519,35 @@ def _verify_workflow_evidence(
         raise QualificationError(
             "workflow evidence does not cover the exact release policy"
         )
+    # The producer selects one successful run per workflow, even when GitHub
+    # contains multiple reruns. The saved evidence must preserve that contract.
+    if len(records) != len(expected):
+        raise QualificationError(
+            "workflow evidence contains duplicate workflow records"
+        )
+    for record in records:
+        if (
+            record.get("head_sha") != sha
+            or record.get("status") != "completed"
+            or record.get("conclusion") != "success"
+        ):
+            raise QualificationError(
+                "workflow evidence requires completed/success records for the exact commit SHA"
+            )
+        run_id = record.get("run_id")
+        run_url = record.get("run_url")
+        if (
+            type(run_id) is not int
+            or run_id <= 0
+            or not isinstance(run_url, str)
+            or re.fullmatch(
+                rf"https://github\.com/[^/?#]+/[^/?#]+/actions/runs/{run_id}", run_url
+            )
+            is None
+            or not isinstance(record.get("event"), str)
+            or not record["event"]
+        ):
+            raise QualificationError("workflow evidence has invalid run identity")
     return records
 
 

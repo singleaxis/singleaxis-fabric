@@ -11,6 +11,7 @@
 import { context, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import {
+  AlwaysOnSampler,
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -41,6 +42,7 @@ beforeAll(() => {
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
   provider = new BasicTracerProvider({
+    sampler: new AlwaysOnSampler(),
     spanProcessors: [new SimpleSpanProcessor(exporter)],
   });
   trace.setGlobalTracerProvider(provider);
@@ -295,5 +297,19 @@ describe("delegation carrier", () => {
     expect(recovered.tenantId).toBe("acme");
     // The traceparent's span id is the parent's decision span id.
     expect(carrier[TRACEPARENT_HEADER]).toContain(decisionSpan().spanContext().spanId);
+  });
+});
+
+describe("inbound propagation resource bounds", () => {
+  it("rejects oversized vendor values before base64/JSON decoding", () => {
+    const value = Buffer.from(JSON.stringify({ t: "x".repeat(1000000), a: "a" })).toString(
+      "base64url",
+    );
+    expect(extract({ tracestate: `singleaxis=${value}` })).toBeUndefined();
+  });
+  it("rejects too many members and runtime nonstring headers", () => {
+    const value = Buffer.from(JSON.stringify({ t: "tenant", a: "agent" })).toString("base64url");
+    expect(extract({ tracestate: `${"vendor=x,".repeat(32)}singleaxis=${value}` })).toBeUndefined();
+    expect(extract({ tracestate: 123 as unknown as string })).toBeUndefined();
   });
 });

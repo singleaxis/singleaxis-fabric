@@ -1,0 +1,8 @@
+
+ RUN  v4.1.11 /workspace/singleaxis-fabric/sdk/typescript
+
+
+ Test Files  23 passed (23)
+      Tests  461 passed (461)
+   Start at  22:05:34
+   Duration  2.12s (transform 1.04s, setup 0ms, import 3.04s, tests 1.69s, environment 2ms)

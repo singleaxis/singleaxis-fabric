@@ -33,7 +33,7 @@ Expected output:
 ```
 emitted decision trace_id=...
 sink count: 4 -> 5
-done — the protected record reached the controlled sink
+done — controlled sink count grew; exact trace readback not checked
 ```
 
 You can also send the fixture trace directly and inspect the sink:
@@ -46,8 +46,10 @@ curl -fsS http://localhost:8080/count # OTLP requests the sink has fsynced
 
 ## What this proves (and does not)
 
-Proves: SDK spans flow SDK -> Fabric Node -> default-deny protection ->
-durable queue -> controlled sink.
+Checks: the configured SDK export ran and the controlled sink request count
+increased. Concurrent traffic can also increase that count; this smoke does
+not correlate the exact emitted trace or inspect its protected fields. Use
+`make qualify` and exact sink readback for stronger delivery evidence.
 
 Does not prove: exactly-once delivery, or durable persistence at an
 arbitrary OTLP destination — the sink's 200-after-fsync contract is a

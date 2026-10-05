@@ -9,6 +9,7 @@
 
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
 import {
+  AlwaysOnSampler,
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
@@ -22,7 +23,10 @@ const exporter = new InMemorySpanExporter();
 let provider: BasicTracerProvider;
 
 beforeAll(() => {
-  provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+  provider = new BasicTracerProvider({
+    sampler: new AlwaysOnSampler(),
+    spanProcessors: [new SimpleSpanProcessor(exporter)],
+  });
   trace.setGlobalTracerProvider(provider);
 });
 

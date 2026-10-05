@@ -1,0 +1,353 @@
+{
+  "scope": "All22 TypeScript SDK src/*.ts files, manual full-text runtime review; no claim of exhaustive proof or Python feature parity",
+  "reviewed_at": "2026-10-02",
+  "source_head_at_recording": "ee2b3dd0e5a03e28ce84361685698f94a6b508c0",
+  "source_state": "Shared authorized uncommitted hardening; per-path digests bind exact reviewed snapshots. Later source edits require refresh.",
+  "methods_limit": "Source semantic review plus focused regression evidence; not live paid API execution, kernel crash fault injection, or independent end-to-end completeness certification.",
+  "validation": {
+    "id_and_propagation_focused_tests": 58,
+    "spool_and_governed_boundary_focused_tests": 94,
+    "new_spool_regressions_failed_baseline": 3,
+    "new_id_regressions_failed_baseline": 3,
+    "new_propagation_regressions_failed_baseline": 2,
+    "typecheck": "passed after all owned changes",
+    "owned_eslint_prettier": "passed",
+    "full_final_typescript_gate": "parent coordinates after all owners freeze",
+    "spool_fixture_limit": "Spool regression uses noncanonical legacy role tool_result/source sdk; tests isolate durable byte/recovery behavior and do not establish descriptor schema validity. Separate actual-emission contract regressions belong to qualification owner.",
+    "parity_and_id_privacy_after_isolation_fix": 60,
+    "test_isolation": "PII boundary tests reset module warning cache before each case; all timing, scan-boundary and detection assertions preserved, raw-value absence assertions added. Three privacy tests still prove shape dedup and quiet behavior."
+  },
+  "findings": [
+    {
+      "id": "TS-ID-DIAGNOSTIC-PRIVACY",
+      "status": "fixed",
+      "evidence": "test/id-diagnostic-privacy.test.ts; no raw values in SDK ID warnings/placeholder diagnostics, bounded128 shape cache."
+    },
+    {
+      "id": "TS-INBOUND-HEADER-BOUND",
+      "status": "fixed",
+      "evidence": "test/propagation.test.ts; predecode256 value bound,32members,16448totalchars; malformed runtime type refusal."
+    },
+    {
+      "id": "TS-RECOVERED-SPOOL-LOSS",
+      "status": "fixed",
+      "evidence": "test/spool-recovery-regression.test.ts: failed reconciliation retains bytes; next writer independently read back exact object bytes and stored manifest after retry."
+    },
+    {
+      "id": "TS-SPOOL-SHORT-WRITE",
+      "status": "fixed",
+      "evidence": "Same test independently parses/checksums complete short-write spool; zero-progress publishes no record and reports dropped."
+    },
+    {
+      "id": "TS-LEGACY-MANIFEST-CONTRACT",
+      "status": "fixed_source_diff_reviewed",
+      "evidence": "Closed v1 coverage nesting and descriptor-status observed roles corrected; qualification owner reports80 native +4 actual-schema cross-language tests. Final full gate coordinated by parent."
+    },
+    {
+      "id": "TS-LEGACY-BINDING-CONTRACT",
+      "status": "fixed_source_diff_reviewed",
+      "evidence": "decision.ts removes noncanonical memory direction and side_effect_id descriptor binding keys; role/event metadata preserves semantics. Qualification owner actual-emission schema regressions cover these paths."
+    },
+    {
+      "id": "TS-EMPTY-OBSERVATION-WINDOW",
+      "status": "fixed_source_diff_reviewed",
+      "evidence": "content.ts refuses zero-item serialization; ContentSink uri/close return undefined without submission/stamp; Decision getter docs agree. Absence is not complete capture."
+    }
+  ],
+  "crash_behavior_limit": "Spool temp bytes fsynced before rename and directory fsync; failed writes clean temp, no pending success on partial writes. Failed recovered reconciliation preserves original record for restart. Real power-loss/kernel crash not exercised; leftover temps after abrupt kill may remain and unkeyed spool requires trusted storage.",
+  "files": [
+    {
+      "path": "sdk/typescript/src/attributes.ts",
+      "sha256": "8b25153827c99a9206f20712af8bbec4585e33618d3efa4dc14b7c743556f02a",
+      "bytes": 18132,
+      "lines": 336,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All constants and reserved-prefix guards; compared public recorder export surface.",
+      "findings_and_limits": "Reserved namespaces blocked at convenience entrypoints; explicit setAttribute escape hatch and caller metadata remain trusted."
+    },
+    {
+      "path": "sdk/typescript/src/byte-evidence.ts",
+      "sha256": "2ed6408498eddceb6f4e9dbd374dd7ed2b44f97efe33a1b3f5f385c88ed3d8ae",
+      "bytes": 18384,
+      "lines": 523,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All capture, operation sequence, descriptor, store/policy branches and state exposure.",
+      "findings_and_limits": "Explicit byte evidence only; mutable caller-visible objects and caller-supplied identity do not establish independent witness or Python reconstruction parity."
+    },
+    {
+      "path": "sdk/typescript/src/calls.ts",
+      "sha256": "ebee0f864648053049279d6a97e1a5f2b55c63766a29bcbc55782105bd4c7da6",
+      "bytes": 28949,
+      "lines": 754,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All LLM/tool construction, usage, retries, raw versus governed content and terminal callbacks.",
+      "findings_and_limits": "Raw captureContent opt-in can emit content directly; counters/retry metadata are supplied observations, not proof of physical attempts."
+    },
+    {
+      "path": "sdk/typescript/src/client.ts",
+      "sha256": "95e65d305513260c04d2d6396f6b500e869cc93a8129a6ce7e8dbddc024dfcba",
+      "bytes": 10892,
+      "lines": 265,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All environment/default merging, identity checks, content setup, execution/decision creation and shutdown.",
+      "findings_and_limits": "close discards writer FlushResult; callers need flushContent/status readback for pending/failure visibility. Host OTel configuration remains responsible for exports."
+    },
+    {
+      "path": "sdk/typescript/src/content-sink.ts",
+      "sha256": "742f56231bc203685e9e6f44e430334de4c2135889710a2501b990a3f7e361ce",
+      "bytes": 10941,
+      "lines": 326,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256",
+        "final_frozen_diff_review"
+      ],
+      "inspected_scope": "All role filtering, serialization, bounded truncation, descriptor creation, subscriber and manifest settlement. Final empty-window URI and close branches reviewed.",
+      "findings_and_limits": "Legacy payload path stores plaintext; raw error reasons can reach local manifest. Protection is not automatic across arbitrary host attributes. Zero observed items now yield no URI, manifest submission or reference stamp; this absence is not capture completeness."
+    },
+    {
+      "path": "sdk/typescript/src/content-store.ts",
+      "sha256": "02f08ec6eab2dd8ade4d94da3bbe4034a5d2d33f087863a946c2b9e887a46c9f",
+      "bytes": 30138,
+      "lines": 835,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All local path/link guards, atomic writes, descriptors/manifests, byte evidence and S3 operations; reread current short-write diff.",
+      "findings_and_limits": "Checked writes fix partial publication; Node path checks require trusted ancestors/no concurrent adversarial namespace mutation. S3 IAM and peer authentication external; exists collapses errors to false."
+    },
+    {
+      "path": "sdk/typescript/src/content-writer.ts",
+      "sha256": "09dae21dfc7eb234763fb29343c09c27c6b9b8bb377aed1545d4bdf74369f85c",
+      "bytes": 29735,
+      "lines": 870,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All config limits, task lifecycle, spool checksum/recovery/quarantine, retry, reconciliation and flush; authored/reviewed bounded durability fixes.",
+      "findings_and_limits": "Retains recovered record when reconciliation fails; short-write loop rejects invalid progress. Spool is plaintext/base64 with unkeyed checksum, trusted local ownership required. Cleanup errors may permit safe duplicate delivery; not a durable receipt proof."
+    },
+    {
+      "path": "sdk/typescript/src/content.ts",
+      "sha256": "8a86d26c105638e674a119f76075aae3b6a10bdae1ee3834dd22999ff759f922",
+      "bytes": 10347,
+      "lines": 330,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256",
+        "final_frozen_diff_review"
+      ],
+      "inspected_scope": "All canonical bytes, descriptor/truncation, manifest roles/completeness; reviewed coverage patch against existing v1 contract. Final empty-accumulator serialization refusal reviewed.",
+      "findings_and_limits": "Coverage nesting/descriptor-status observed roles corrected by qualification owner. JS canonical number representation not universal Python byte parity; validation of arbitrary caller bindings remains external. Empty accumulator now refuses serialization rather than emitting a schema-invalid or apparently complete transcript."
+    },
+    {
+      "path": "sdk/typescript/src/crosscut.ts",
+      "sha256": "b0b7557c2b2d50f95e06a5ef227f9231364f879a16188c3a0313850824c41e31",
+      "bytes": 5577,
+      "lines": 157,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All tags/baseline/signature normalization and attribute application.",
+      "findings_and_limits": "Signature verified and baseline results are host assertions, no cryptographic verification occurs here; free vocabulary/key identifiers require host privacy policy."
+    },
+    {
+      "path": "sdk/typescript/src/decision.ts",
+      "sha256": "ef8a9065a12727a46ef784146c0c5dcbab92a167fd1fa713b66a1653a21f065f",
+      "bytes": 79422,
+      "lines": 2109,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256",
+        "final_frozen_diff_review"
+      ],
+      "inspected_scope": "Entire implementation: callback lifecycle/ALS ownership, LLM/tool, retrieval/memory/side effect, delegation/interaction/file, capture-health and error handling. Final canonical-binding removal and empty-window URI getter documentation reviewed.",
+      "findings_and_limits": "Local callback completion excludes detached producers. Side-effect committed is caller-reported; retrieval does not prove consumed context; erase marker performs no deletion. Legacy memory direction/side_effect_id extra descriptor bindings removed to satisfy closed v1 contract; direction remains in role/event semantics and side-effect identity in event metadata."
+    },
+    {
+      "path": "sdk/typescript/src/deployment-policy.ts",
+      "sha256": "29b435d491baae63eadda46cb654295adad1fdc48b5a1396a30885869d12e9f8",
+      "bytes": 13680,
+      "lines": 365,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All schema/enum/role limits, policy snapshots, protection modes/redactor paths and output.",
+      "findings_and_limits": "Modes and missing-redactor handling prevent default raw fallback in this API; standalone policy does not force legacy content sink or arbitrary OTel paths through it."
+    },
+    {
+      "path": "sdk/typescript/src/execution.ts",
+      "sha256": "470574cfa91e8161681d2d24b31835c1b5ddf82671664cca940440a5bedcf211",
+      "bytes": 11465,
+      "lines": 316,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "Entire lifecycle, active context, retry identity and closed exception classification.",
+      "findings_and_limits": "Completed denotes callback return, not causal closure of detached work or remote commit. Caller retry metadata remains observational."
+    },
+    {
+      "path": "sdk/typescript/src/hash.ts",
+      "sha256": "25b241ffc37e5ac26ec00159bd18df7781c3ee4be575522cb25fb1c8cc17c8c8",
+      "bytes": 7248,
+      "lines": 201,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All SHA helpers, Python-compatible string/float formatting, recursive canonical object serialization and rejection branches.",
+      "findings_and_limits": "Cycles/deep inputs can throw; hashes not authentication; Python whole-valued floats are explicitly outside byte-exact JS contract."
+    },
+    {
+      "path": "sdk/typescript/src/id-validators.ts",
+      "sha256": "0ceb3ee62dc141353c04a25418fcbb0b1303df60aec48f65fba8af748ba712c1",
+      "bytes": 11619,
+      "lines": 322,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All required/optional ID checks, placeholder and PII-shape handling; authored bounded diagnostics/cache and regression. Internal non-barrel-exported warning reset helper reviewed for parity test isolation; production dedup unchanged.",
+      "findings_and_limits": "Automatic diagnostics now field+shape only, bounded and deduplicated; ID warnings do not sanitize identifiers or free-form metadata."
+    },
+    {
+      "path": "sdk/typescript/src/index.ts",
+      "sha256": "ae1077d33df034d239632c17964e5959af0ec42464276457bba910b0904a3268",
+      "bytes": 3786,
+      "lines": 160,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "Every exported symbol and namespace reviewed against imported implementation and recorder scope.",
+      "findings_and_limits": "Public exports include legacy content and optional policy APIs; exports do not establish fully integrated governed encrypted reconstruction."
+    },
+    {
+      "path": "sdk/typescript/src/propagation.ts",
+      "sha256": "9420c5e47c8ee1e2e34bea81ec27c9304e3573a733aaea8983e4d56b69cf554c",
+      "bytes": 16432,
+      "lines": 413,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All carrier/key parsing, trace context and encode/decode/inject/extract; authored predecode size/member/type guards.",
+      "findings_and_limits": "Inbound header/value/member work is bounded and malformed types refused. Correlation context is unauthenticated metadata, never tenant authorization."
+    },
+    {
+      "path": "sdk/typescript/src/recorder-attributes.ts",
+      "sha256": "2dc48e847566e88719bef040bc1cb80debb1fc9c42e6a5cdc7966b9d5862f8e7",
+      "bytes": 5674,
+      "lines": 216,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All explicit attribute exports compared with attributes.ts definitions.",
+      "findings_and_limits": "Closed public vocabulary is not an exporter/privacy allowlist; host can emit arbitrary custom OTel attributes."
+    },
+    {
+      "path": "sdk/typescript/src/resolver.ts",
+      "sha256": "c09a54ae26ed9c6f9dba408033066902aa11ddf0d8f664fab0910ce2f6ed6f19",
+      "bytes": 12979,
+      "lines": 369,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All legacy object/manifest lookup, store ownership, length/digest/representation checks and transcript export statuses.",
+      "findings_and_limits": "Legacy ContentResolver does not provide Python governed capability/encryption/journal resolver parity. Read errors/statuses are explicit, but some error strings are local caller-visible."
+    },
+    {
+      "path": "sdk/typescript/src/testing.ts",
+      "sha256": "9c3a3dc5bb47bf10321e89d63305bfb65c5aec788bed246b2e8fde0b5be62b8e",
+      "bytes": 522,
+      "lines": 12,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All testing namespace exports.",
+      "findings_and_limits": "Exposes warning/coverage reset helpers only; no production verification proof."
+    },
+    {
+      "path": "sdk/typescript/src/tracing.ts",
+      "sha256": "431e784b55ec5531605bf774ef0d61ac0cdfc1969b76e42b974ff286f19a91c9",
+      "bytes": 5503,
+      "lines": 129,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "All tracer/provider setup, optional imports and error reporting.",
+      "findings_and_limits": "Provider/exporter belongs to host; SDK configuration alone does not authenticate destination or prove collector receipt."
+    },
+    {
+      "path": "sdk/typescript/src/validators.ts",
+      "sha256": "8020eb53d9f81a9be78459ca2e107c1b2634b89967bd3212f002dbc46de2935a",
+      "bytes": 3331,
+      "lines": 95,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "Every scalar/finite/integer/length/enum/type guard and error renderer.",
+      "findings_and_limits": "Throws for malformed caller programming input; describe(string) includes invalid caller string in thrown errors. No automatic telemetry export path found after protected callback exception handling; caller error logging must apply privacy policy."
+    },
+    {
+      "path": "sdk/typescript/src/version.ts",
+      "sha256": "384eb08ed87237356b477971feeadeb7f78b09fe2b2689ab387e3894689cfa52",
+      "bytes": 741,
+      "lines": 19,
+      "methods": [
+        "full_text_review",
+        "manual_semantic_control_and_data_flow_review",
+        "current_sha256"
+      ],
+      "inspected_scope": "Entire SDK and GenAI schema identity constants compared with package metadata.",
+      "findings_and_limits": "Static instrumentation identity, not artifact authenticity or release qualification."
+    }
+  ],
+  "codeql_context": {
+    "artifact": "qualification/cloud-2026-10-02/scan-locations-ee2b3dd.json",
+    "disposition": "Filesystem check/use races remain open as expected; reviewed source requires trusted customer-owned namespace. No alert dismissal or suppression."
+  }
+}

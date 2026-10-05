@@ -9,9 +9,11 @@ enter the emitted OTLP document.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, TypeGuard
 
+from .content_join import CONTENT_JOIN_FIELDS, validate_content_join
 from .synthetic_otlp import (
     _MAX_EVENTS,
     _attribute,
@@ -88,6 +90,13 @@ def project_call_snapshot(  # noqa: PLR0912, PLR0915 - closed metadata validatio
     records = _records(projected)
     for event, record in zip(events, records, strict=True):
         extra = _call_fields(event)
+        validate_content_join(event)
+        extra.update({key: event[key] for key in sorted(CONTENT_JOIN_FIELDS) if key in event})
+        # The journal records admission before the asynchronous content writer
+        # settles. Preserve its opaque lookup even while that historical status
+        # is pending; only separate authorized readback can establish availability.
+        if "object_id" in event:
+            extra["content_object_id"] = _checked_id("object_id", event["object_id"])
         descriptor = event.get("descriptor")
         if isinstance(descriptor, dict):
             for key in (
@@ -105,6 +114,24 @@ def project_call_snapshot(  # noqa: PLR0912, PLR0915 - closed metadata validatio
             ):
                 if event.get(key) != descriptor.get(key):
                     raise ValueError("call content identity mismatch")
+            for key in CONTENT_JOIN_FIELDS - {"content_sha256", "content_byte_length"}:
+                if key == "representation" and descriptor.get("status") not in {
+                    "stored",
+                    "redacted",
+                }:
+                    # Failed persistence changes availability, not the original
+                    # privacy decision. Preserve the failure observation.
+                    continue
+                if key in event and event[key] != descriptor.get(key):
+                    raise ValueError("call content policy mismatch")
+        # The synthetic settled projection may already contain object/digest
+        # fields. Emit each key exactly once, rejecting disagreement.
+        existing = {item["key"]: item["value"] for item in record["attributes"]}
+        for key in tuple(extra):
+            if key in existing:
+                if existing[key] != _attribute(key, extra[key])["value"]:
+                    raise ValueError("call content binding mismatch")
+                del extra[key]
         record["attributes"].extend(_attribute(key, value) for key, value in extra.items())
     for phase, lifecycle in (("start", starts), ("outcome", operations)):
         for event in lifecycle:
@@ -181,3 +208,92 @@ def export_call_snapshot(
         client_key_path=client_key_path,
         bearer_token_path=bearer_token_path,
     )
+
+
+def project_call_snapshot_batches(
+    snapshot: dict[str, Any], *, batch_size: int = _MAX_EVENTS
+) -> list[tuple[bytes, list[str]]]:
+    """Validate and partition the live journal view without losing record identity.
+
+    This does not export, acknowledge, or requalify recovered epochs. Each batch
+    retains source ordering; a retry must use the same immutable snapshot.
+    All batches are validated before returning any, so malformed later records
+    cannot cause a partially emitted projection through this API.
+    """
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int):
+        raise ValueError("batch_size must be an integer")
+    if not 1 <= batch_size <= _MAX_EVENTS:
+        raise ValueError("batch_size exceeds projection bounds")
+    if snapshot.get("schema_version") != "fabric.call-recording/v1":
+        raise ValueError("unsupported call snapshot")
+    indexed: list[tuple[str, dict[str, Any]]] = []
+    identities: set[str] = set()
+    counters: set[tuple[str, int, int]] = set()
+    for group in ("starts", "events", "operations"):
+        records = snapshot.get(group, [])
+        if not isinstance(records, list):
+            raise ValueError("call record collections must be lists")
+        for record in records:
+            if not isinstance(record, dict):
+                raise ValueError("invalid call source record")
+            identity = _checked_id("record_id", record.get("record_id"))
+            source = _checked_id("source_id", record.get("source_id"))
+            epoch, sequence = record.get("source_epoch"), record.get("source_sequence")
+            if not _safe_counter(epoch) or not _safe_counter(sequence):
+                raise ValueError("invalid source counter")
+            counter = (source, epoch, sequence)
+            if identity in identities or counter in counters:
+                raise ValueError("duplicate call record identity or source sequence")
+            identities.add(identity)
+            counters.add(counter)
+            indexed.append((group, record))
+    indexed.sort(
+        key=lambda item: (item[1]["source_id"], item[1]["source_epoch"], item[1]["source_sequence"])
+    )
+    result: list[tuple[bytes, list[str]]] = []
+    for offset in range(0, len(indexed), batch_size):
+        window = indexed[offset : offset + batch_size]
+        partition = {
+            **snapshot,
+            **{
+                group: [record for name, record in window if name == group]
+                for group in ("starts", "events", "operations")
+            },
+        }
+        result.append(project_call_snapshot(partition))
+    if not indexed:
+        result.append(project_call_snapshot(snapshot))
+    return result
+
+
+def call_batch_manifest(
+    snapshot: dict[str, Any], *, batch_size: int = _MAX_EVENTS
+) -> dict[str, Any]:
+    """Content-free exact-set manifest for caller-managed retries/readback.
+
+    Digests bind the projected payloads, not durability. A destination must
+    independently acknowledge/read back the listed records. No receipts are
+    fabricated here; a cursor alone cannot be treated as delivery success.
+    """
+    batches = project_call_snapshot_batches(snapshot, batch_size=batch_size)
+    entries = [
+        {
+            "index": index,
+            "payload_sha256": hashlib.sha256(payload).hexdigest(),
+            "record_ids": ids,
+            "record_count": len(ids),
+        }
+        for index, (payload, ids) in enumerate(batches)
+    ]
+    canonical = json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "schema_version": "fabric.call-batch-manifest/v1",
+        "tenant_id": snapshot["tenant_id"],
+        "run_id": snapshot["run_id"],
+        "snapshot_digest": "sha256:" + hashlib.sha256(canonical).hexdigest(),
+        "batches": entries,
+        "record_count": sum(len(ids) for _, ids in batches),
+        "delivery_status": "not_sent",
+        "durability_status": "unverified",
+        "scope": "live_snapshot_only",
+    }

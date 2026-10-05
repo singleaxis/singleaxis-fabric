@@ -11,8 +11,9 @@ under the ``fabric.*`` namespace. Two distinct failure modes live here.
 leave the process and ship to the trace backend with every decision —
 a quiet PII leak that the developer never asked for. Called from
 :class:`fabric.client.FabricConfig` and :class:`fabric.decision.Decision`
-during construction. A single warning per ``(field_name, value)`` pair
-is emitted per process via Python's :mod:`warnings` default filter; set
+during construction. Warning text identifies only the field and PII shape,
+never the supplied value. Python's :mod:`warnings` default filter deduplicates
+that diagnostic at its emission site; set
 ``FABRIC_QUIET_PII_WARN=1`` to suppress all such warnings. Here the
 intent is *not* validation — opaque-but-email-shaped IDs are sometimes
 intentional. The intent is to make the silent leak loud exactly once, so
@@ -291,7 +292,7 @@ def check_identifier(field_name: str, value: str) -> None:
         return
     if _is_sentinel(value):
         message = (
-            f"{field_name}={value!r} is a placeholder, not an identifier. "
+            f"{field_name} is a placeholder, not an identifier. "
             f"This value partitions every span, audit record and tenant "
             f"isolation check, so an unset variable here silently merges "
             f"unrelated data. Set a real {field_name}. "
@@ -303,7 +304,7 @@ def check_identifier(field_name: str, value: str) -> None:
         raise ValueError(message)
     if _is_copy_paste_marker(value):
         warnings.warn(
-            f"{field_name}={value!r} looks like an unedited copy-paste "
+            f"{field_name} looks like an unedited copy-paste "
             f"placeholder from the docs. It will be written onto every "
             f"emitted span as a real {field_name}.",
             PlaceholderIdentifierWarning,
@@ -364,8 +365,8 @@ def warn_if_pii_shaped(field_name: str, value: str | None, *, embedded: bool = F
         )
     if matched is not None:
         warnings.warn(
-            f"{field_name}={value!r} looks like {matched} — these will appear "
-            f"in every emitted span, exporting PII to your trace backend. "
+            f"{field_name} looks like {matched} — its value will appear "
+            f"in emitted spans, potentially exporting PII to your trace backend. "
             f"Consider an opaque ID instead and put the value in a separate "
             f"non-emitted attribute. (suppress with FABRIC_QUIET_PII_WARN=1)",
             PIIShapedIdentifierWarning,

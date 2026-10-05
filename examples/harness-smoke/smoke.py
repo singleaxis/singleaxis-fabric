@@ -8,7 +8,7 @@ Exercises the path a real product would use:
     2. Build a Fabric client and run one recorded decision
        (retrieval + llm_call + tool_call + memory write).
     3. Poll the controlled sink's ``/count`` endpoint until the batch
-       lands — proving CAPTURE -> PROTECT -> DELIVER end to end.
+       count grows. This does not correlate the exact trace or verify its fields.
 
 Run ``make up`` in ``deploy/compose/`` first. The harness is plaintext
 and unauthenticated — local evaluation only. The sink is a controlled
@@ -113,7 +113,7 @@ def main() -> int:
 
     current = _wait_for_growth(baseline)
     print(f"sink count: {baseline} -> {current}")
-    print("done — the protected record reached the controlled sink")
+    print("done — controlled sink count grew; exact trace readback not checked")
     return 0
 
 

@@ -15,8 +15,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 
-import { createHash } from "node:crypto";
-import { sha256Hex } from "./hash.js";
+import { randomUUID } from "node:crypto";
+import { sha256BytesHex, sha256Hex } from "./hash.js";
 
 /** A reference to stored content: tenant-resolvable URI + integrity hash. */
 export interface ContentRef {
@@ -103,7 +103,7 @@ export interface GovernedStore {
 
 /** SHA-256 hex of the exact stored bytes — digest scope for objects. */
 export function contentHashBytes(data: Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex");
+  return sha256BytesHex(data);
 }
 
 const DIGEST_RE = /^[0-9a-f]{64}$/;
@@ -116,6 +116,40 @@ function checkedEvidenceObject(
 ): { objectId: string; digest: string } {
   const objectId = descriptor["object_id"];
   const digest = String(descriptor["stored_sha256"] ?? "").split(":", 2)[1] ?? "";
+  const hasPolicy = ["policy_digest", "policy_id", "policy_version", "protection_status"].some(
+    (key) => Object.hasOwn(descriptor, key),
+  );
+  const policyIdentityValid =
+    typeof descriptor["policy_digest"] === "string" &&
+    /^sha256:[0-9a-f]{64}$/.test(descriptor["policy_digest"]) &&
+    typeof descriptor["policy_id"] === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(descriptor["policy_id"]) &&
+    typeof descriptor["policy_version"] === "number" &&
+    Number.isSafeInteger(descriptor["policy_version"]) &&
+    descriptor["policy_version"] >= 1 &&
+    descriptor["policy_version"] <= 2147483647;
+  const exact =
+    descriptor["status"] === "stored" &&
+    descriptor["representation"] === "exact" &&
+    descriptor["source_byte_length"] === data.length &&
+    descriptor["source_sha256"] === descriptor["stored_sha256"] &&
+    (!hasPolicy ||
+      (policyIdentityValid &&
+        descriptor["privacy_mode"] === "retain_original" &&
+        descriptor["protection_status"] === "retained"));
+  const representation = descriptor["representation"];
+  const transform = representation === "redacted" ? "redact" : "tokenize";
+  const derivative =
+    descriptor["status"] === "redacted" &&
+    (representation === "redacted" || representation === "tokenized") &&
+    descriptor["privacy_mode"] === transform &&
+    descriptor["protection_status"] === representation &&
+    policyIdentityValid &&
+    !Object.hasOwn(descriptor, "source_sha256") &&
+    !Object.hasOwn(descriptor, "source_byte_length") &&
+    Array.isArray(descriptor["transformations"]) &&
+    descriptor["transformations"].length === 1 &&
+    descriptor["transformations"][0] === transform;
   if (
     descriptor["schema_version"] !== "fabric.content-object/v2" ||
     descriptor["tenant_id"] !== tenantId ||
@@ -124,10 +158,7 @@ function checkedEvidenceObject(
     !DIGEST_RE.test(digest) ||
     descriptor["stored_byte_length"] !== data.length ||
     contentHashBytes(data) !== digest ||
-    descriptor["status"] !== "stored" ||
-    descriptor["representation"] !== "exact" ||
-    descriptor["source_byte_length"] !== data.length ||
-    descriptor["source_sha256"] !== descriptor["stored_sha256"]
+    (!exact && !derivative)
   ) {
     throw new Error("invalid content-v2 descriptor or byte digest");
   }
@@ -158,22 +189,88 @@ export function assertSafeIdentifier(fieldName: string, value: string): string {
   return value;
 }
 
-/** Write `data` to `target` atomically: tmp + fsync + rename + dir fsync. */
-function atomicWriteBytes(target: string, data: Uint8Array): void {
-  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
-  fs.chmodSync(path.dirname(target), 0o700);
-  const tmp = path.join(
-    path.dirname(target),
-    `.${path.basename(target)}.${process.pid}.${Date.now()}.tmp`,
+/**
+ * Reject existing symlinks in a local path, including ancestors and leaf.
+ * Node has no directory-relative openat API: callers must control ancestors
+ * and exclude adversarial concurrent namespace mutation between these checks
+ * and filesystem operations. This is not a race-proof filesystem sandbox.
+ */
+function assertUnlinkedPath(target: string): void {
+  const absolute = path.resolve(target);
+  const root = path.parse(absolute).root;
+  let current = root;
+  const parts = absolute.slice(root.length).split(path.sep).filter(Boolean);
+  for (const [index, part] of parts.entries()) {
+    current = path.join(current, part);
+    let info: fs.Stats;
+    try {
+      info = fs.lstatSync(current);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw error;
+    }
+    if (info.isSymbolicLink()) throw new Error("local content store rejects symbolic links");
+    if (index < parts.length - 1 && !info.isDirectory())
+      throw new Error("local content store ancestor is not a directory");
+  }
+}
+
+function readLocalFile(target: string): Uint8Array {
+  assertUnlinkedPath(target);
+  // Pathname metadata can become stale before open. Only fstat on the
+  // opened descriptor determines whether the content is a regular file.
+  // O_NOFOLLOW rejects a swapped leaf link and O_NONBLOCK prevents FIFO
+  // substitution from blocking before that descriptor check.
+  const fd = fs.openSync(
+    target,
+    fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0),
   );
-  const fd = fs.openSync(tmp, "w", 0o600);
   try {
-    fs.writeSync(fd, data);
-    fs.fsyncSync(fd);
+    if (!fs.fstatSync(fd).isFile()) throw new Error("local content store requires a regular file");
+    return new Uint8Array(fs.readFileSync(fd));
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/** Resolve trusted system parent aliases once, but reject a linked store root. */
+function canonicalStoreRoot(root: string): string {
+  const requested = path.resolve(root);
   try {
+    if (fs.lstatSync(requested).isSymbolicLink())
+      throw new Error("local content store rejects symbolic links");
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+  let parent = path.dirname(requested);
+  const suffix = [path.basename(requested)];
+  while (!fs.existsSync(parent)) {
+    suffix.unshift(path.basename(parent));
+    parent = path.dirname(parent);
+  }
+  return path.join(fs.realpathSync(parent), ...suffix);
+}
+
+/** Write `data` to `target` atomically: tmp + fsync + rename + dir fsync. */
+function atomicWriteBytes(target: string, data: Uint8Array): void {
+  assertUnlinkedPath(target);
+  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+  assertUnlinkedPath(target);
+  fs.chmodSync(path.dirname(target), 0o700);
+  const tmp = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
+  const fd = fs.openSync(tmp, "wx", 0o600);
+  try {
+    try {
+      let offset = 0;
+      while (offset < data.length) {
+        const written = fs.writeSync(fd, data, offset, data.length - offset);
+        if (written <= 0) throw new Error("local content store write made no progress");
+        offset += written;
+      }
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, target);
   } catch (err) {
     try {
@@ -202,7 +299,10 @@ function safeName(value: string): string {
  * `<root>/<tenant>/<digest>` with descriptor sidecars under
  * `<root>/<tenant>/meta/` and manifests under
  * `<root>/<tenant>/manifests/`. Reads are confined to the tenant
- * namespace — a URI resolving outside it is rejected.
+ * namespace — a URI resolving outside it is rejected. Existing symlinks are
+ * rejected on each operation. The root and all ancestors must remain under
+ * customer control: concurrent malicious ancestor replacement is not protected
+ * by this Node implementation's path checks.
  */
 export class LocalFilesystemContentStore implements GovernedStore {
   readonly synchronous = true;
@@ -213,7 +313,7 @@ export class LocalFilesystemContentStore implements GovernedStore {
     readonly tenantId: string,
   ) {
     assertSafeIdentifier("tenantId", tenantId);
-    this.rootPath = path.resolve(root);
+    this.rootPath = canonicalStoreRoot(root);
     // Filesystem-level containment: the resolved tenant root must be
     // strictly inside the resolved configured root.
     const tenantRoot = path.resolve(this.tenantRoot());
@@ -223,7 +323,9 @@ export class LocalFilesystemContentStore implements GovernedStore {
   }
 
   private tenantRoot(): string {
-    return path.join(this.rootPath, this.tenantId);
+    const target = path.join(this.rootPath, this.tenantId);
+    assertUnlinkedPath(target);
+    return target;
   }
 
   private objectPath(digest: string): string {
@@ -244,14 +346,16 @@ export class LocalFilesystemContentStore implements GovernedStore {
       throw new Error("content bytes do not match descriptor digest");
     }
     const target = this.objectPath(digest);
+    assertUnlinkedPath(target);
     if (fs.existsSync(target)) {
-      if (contentHashBytes(new Uint8Array(fs.readFileSync(target))) !== digest) {
+      if (contentHashBytes(readLocalFile(target)) !== digest) {
         throw new CorruptedObjectError(`pre-existing object ${target} fails digest verification`);
       }
     } else {
       atomicWriteBytes(target, data);
     }
     const meta = path.join(this.tenantRoot(), "meta", `${digest}.json`);
+    assertUnlinkedPath(meta);
     if (!fs.existsSync(meta)) {
       atomicWriteBytes(meta, new TextEncoder().encode(JSON.stringify(descriptor, null, 2) + "\n"));
     }
@@ -271,8 +375,10 @@ export class LocalFilesystemContentStore implements GovernedStore {
     }
     const target = path.join(this.tenantRoot(), "evidence", objectId);
     const meta = path.join(this.tenantRoot(), "evidence", "meta", `${objectId}.json`);
+    assertUnlinkedPath(target);
+    assertUnlinkedPath(meta);
     if (fs.existsSync(target)) {
-      if (contentHashBytes(new Uint8Array(fs.readFileSync(target))) !== digest) {
+      if (contentHashBytes(readLocalFile(target)) !== digest) {
         throw new CorruptedObjectError(
           `pre-existing evidence object ${objectId} fails digest verification`,
         );
@@ -281,7 +387,10 @@ export class LocalFilesystemContentStore implements GovernedStore {
       atomicWriteBytes(target, data);
     }
     if (fs.existsSync(meta)) {
-      const existing = JSON.parse(fs.readFileSync(meta, "utf-8")) as Record<string, unknown>;
+      const existing = JSON.parse(new TextDecoder().decode(readLocalFile(meta))) as Record<
+        string,
+        unknown
+      >;
       if (JSON.stringify(existing) !== JSON.stringify(descriptor)) {
         throw new CorruptedObjectError(`pre-existing evidence descriptor ${objectId} differs`);
       }
@@ -292,6 +401,7 @@ export class LocalFilesystemContentStore implements GovernedStore {
   }
 
   writeManifest(manifest: Record<string, unknown>, decisionId: string, manifestId: string): string {
+    assertSafeIdentifier("manifestId", manifestId);
     const root = path.join(this.tenantRoot(), "manifests");
     const target = path.join(root, `${manifestId}.json`);
     atomicWriteBytes(target, new TextEncoder().encode(JSON.stringify(manifest, null, 2) + "\n"));
@@ -303,6 +413,7 @@ export class LocalFilesystemContentStore implements GovernedStore {
   }
 
   manifestUriFor(manifestId: string): string {
+    assertSafeIdentifier("manifestId", manifestId);
     return `file://${path.join(this.tenantRoot(), "manifests", `${manifestId}.json`)}`;
   }
 
@@ -325,6 +436,7 @@ export class LocalFilesystemContentStore implements GovernedStore {
     if (candidate !== boundary && !candidate.startsWith(boundary + path.sep)) {
       throw new Error(`uri escapes the configured store root: ${uri}`);
     }
+    assertUnlinkedPath(candidate);
     return candidate;
   }
 
@@ -346,16 +458,17 @@ export class LocalFilesystemContentStore implements GovernedStore {
     if (!fs.existsSync(target)) {
       throw new Error(`no such object: ${uri}`);
     }
-    return new Uint8Array(fs.readFileSync(target));
+    return readLocalFile(target);
   }
 
   readDescriptor(uri: string): Record<string, unknown> {
     const target = this.resolveUri(uri);
     const meta = path.join(path.dirname(target), "meta", `${path.basename(target)}.json`);
+    assertUnlinkedPath(meta);
     if (!fs.existsSync(meta)) {
       throw new Error(`no descriptor sidecar for ${uri}`);
     }
-    const value = JSON.parse(fs.readFileSync(meta, "utf-8")) as unknown;
+    const value = JSON.parse(new TextDecoder().decode(readLocalFile(meta))) as unknown;
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       throw new Error(`descriptor sidecar at ${uri} is not an object`);
     }
@@ -367,7 +480,7 @@ export class LocalFilesystemContentStore implements GovernedStore {
     if (!fs.existsSync(target)) {
       throw new Error(`no such manifest: ${uri}`);
     }
-    const value = JSON.parse(fs.readFileSync(target, "utf-8")) as unknown;
+    const value = JSON.parse(new TextDecoder().decode(readLocalFile(target))) as unknown;
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       throw new Error(`manifest is not a JSON object: ${uri}`);
     }
@@ -580,6 +693,7 @@ export class S3ContentStore implements GovernedStore {
     decisionId: string,
     manifestId: string,
   ): Promise<string> {
+    assertSafeIdentifier("manifestId", manifestId);
     const client = this.getClient();
     const key = `${this.prefix}${this.tenantId}/manifests/${manifestId}.json`;
     await client.send(
@@ -601,6 +715,7 @@ export class S3ContentStore implements GovernedStore {
   }
 
   manifestUriFor(manifestId: string): string {
+    assertSafeIdentifier("manifestId", manifestId);
     const key = `${this.prefix}${this.tenantId}/manifests/${manifestId}.json`;
     return `s3://${this.bucket}/${key}`;
   }

@@ -1,0 +1,2 @@
+fabric.tracing: no OpenTelemetry TracerProvider is configured; Fabric decision spans will have zero trace IDs and be dropped. Call fabric.install_default_provider(...) or wire OTel yourself before opening a Decision. See docs/quickstart.md step 2.
+{"status": "passed", "evidence": "/workspace/fabric-qualification/composed-collector-wheel-final-frozen/capture-matrix.json"}

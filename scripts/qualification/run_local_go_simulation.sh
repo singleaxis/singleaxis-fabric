@@ -50,6 +50,8 @@ k -n kube-system get daemonset kindnet -o json > "$evidence_dir/kindnet.json"
 
 docker build --platform linux/arm64 -t "$image" -f components/otel-collector-fabric/Dockerfile components/otel-collector-fabric
 kind load docker-image "$image" --name "$FABRIC_SIM_CLUSTER"
+image_digest="$(scripts/qualification/pin_kind_node_image.sh "$FABRIC_SIM_CLUSTER" "docker.io/library/$image")"
+printf '%s\n' "$image_digest" > "$evidence_dir/node-manifest-digest.txt"
 helm package charts/fabric --destination "$evidence_dir"
 chart="$(find "$evidence_dir" -maxdepth 1 -name 'fabric-*.tgz' -print -quit)"
 test -n "$chart"
@@ -70,6 +72,7 @@ openssl x509 -req -in "$cert_dir/client.csr" -CA "$cert_dir/ingress-ca.crt" -CAk
 openssl req -new -newkey rsa:2048 -noenc -subj '/CN=fabric-test-sink' -addext 'subjectAltName=DNS:fabric-test-sink,DNS:localhost,IP:127.0.0.1' -addext 'extendedKeyUsage=serverAuth' -keyout "$cert_dir/sink.key" -out "$cert_dir/sink.csr" >/dev/null 2>&1
 openssl x509 -req -in "$cert_dir/sink.csr" -CA "$cert_dir/sink-ca.crt" -CAkey "$cert_dir/sink-ca.key" -CAcreateserial -days 1 -sha256 -copy_extensions copy -out "$cert_dir/sink.crt" >/dev/null 2>&1
 printf 'Bearer %s' "$(openssl rand -hex 32)" > "$cert_dir/authorization"
+printf '%s' "$(openssl rand -hex 32)" > "$cert_dir/workload-token"
 
 k create namespace "$namespace"
 k -n "$namespace" create configmap fabric-test-sink --from-file=otlp_sink.py=deploy/compose/sink/otlp_sink.py
@@ -79,11 +82,12 @@ k -n "$namespace" create secret tls fabric-node-receiver-tls --cert="$cert_dir/n
 k -n "$namespace" create secret generic fabric-node-client-ca --from-file=ca.crt="$cert_dir/ingress-ca.crt"
 k -n "$namespace" create secret generic fabric-test-sink-ca --from-file=ca.crt="$cert_dir/sink-ca.crt"
 k -n "$namespace" create secret generic fabric-node-export-auth --from-file=authorization="$cert_dir/authorization"
+k -n "$namespace" create secret generic fabric-workload-token --from-file=token="$cert_dir/workload-token"
 for manifest in qualification/synthetic-slice/kind-production-sink-*.yaml; do
   k -n "$namespace" apply -f "$manifest"
 done
 k -n "$namespace" rollout status deployment/fabric-test-sink --timeout=180s
-helm install fabric-sim "$chart" --kubeconfig "$FABRIC_SIM_KUBECONFIG" --namespace "$namespace" --values charts/fabric/profiles/shadow-production.yaml --values qualification/synthetic-slice/kind-production-values.yaml --set tenant.id=synthetic-tenant --set "otel-collector.image.tag=$tag" --wait --timeout 5m
+helm install fabric-sim "$chart" --kubeconfig "$FABRIC_SIM_KUBECONFIG" --namespace "$namespace" --values charts/fabric/profiles/shadow-production.yaml --values qualification/synthetic-slice/kind-production-values.yaml --set tenant.id=synthetic-tenant --set "otel-collector.image.digest=$image_digest" --wait --timeout 5m
 k -n "$namespace" wait --for=condition=ready pods -l app.kubernetes.io/name=otel-collector --timeout=300s
 k -n "$namespace" get pvc -o yaml > "$evidence_dir/pvcs.yaml"
 
@@ -113,7 +117,7 @@ sleep 2
 probe='{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"synthetic policy probe"},"attributes":[{"key":"event_class","value":{"stringValue":"audit"}},{"key":"audit.syscall","value":{"stringValue":"execve"}},{"key":"audit.source","value":{"stringValue":"logfile"}},{"key":"record_id","value":{"stringValue":"sim-policy-probe"}}]}]}]}]}'
 count_before="$(curl -fsS --cacert "$cert_dir/sink-ca.crt" "https://localhost:$sink_port/count" | jq -r .count)"
 test "$count_before" -eq 0
-curl -fsS --cacert "$cert_dir/ingress-ca.crt" --cert "$cert_dir/client.crt" --key "$cert_dir/client.key" -H 'Content-Type: application/json' --data-binary "$probe" "https://localhost:$node_port/v1/logs" > "$evidence_dir/node-probe-ack.json"
+curl -fsS --cacert "$cert_dir/ingress-ca.crt" --cert "$cert_dir/client.crt" --key "$cert_dir/client.key" -H "Authorization: Bearer $(cat "$cert_dir/workload-token")" -H 'Content-Type: application/json' --data-binary "$probe" "https://localhost:$node_port/v1/logs" > "$evidence_dir/node-probe-ack.json"
 sleep 3
 count_blocked="$(curl -fsS --cacert "$cert_dir/sink-ca.crt" "https://localhost:$sink_port/count" | jq -r .count)"
 test "$count_blocked" -eq 0 || { echo 'default-deny did not block sink ingress' >&2; exit 1; }
@@ -131,6 +135,7 @@ printf '{"blocked_before":%s,"delivered_after":%s}\n' "$count_blocked" "$count_a
 "$evidence_dir/venv/bin/python" scripts/qualification/run_synthetic_agent_pilot.py \
   --node-url "https://localhost:$node_port/v1/logs" --node-ca "$cert_dir/ingress-ca.crt" \
   --node-cert "$cert_dir/client.crt" --node-key "$cert_dir/client.key" \
+  --node-token-file "$cert_dir/workload-token" \
   --sink-url "https://localhost:$sink_port" --sink-ca "$cert_dir/sink-ca.crt" \
   --report-path "$evidence_dir/pilot-report.json" \
   --work-dir "$evidence_dir/pilot-work"

@@ -1,0 +1,187 @@
+{
+  "schema_version": "fabric.go-license-reconciliation/v1",
+  "date": "2026-10-02",
+  "base_head": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "provenance": "Independent equivalent review/improvements from current cloud checkout. Desktop cleanup archive/commits were not restored or represented as restored.",
+  "production_verdict": "NO_GO",
+  "removed_paths": [
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/logfile.go",
+      "sha256": "d90229befe437eb26acd25072c7ea2e701032ba4355ef9204efb74fadf778d4b",
+      "replacement": "components/otel-collector-fabric/receiver/auditreceiver/logfile_legacy_test.go",
+      "replacement_sha256": "d90229befe437eb26acd25072c7ea2e701032ba4355ef9204efb74fadf778d4b",
+      "bytes_identical": true,
+      "reason": "Legacy implementation is test-only; exclude from shipped receiver compilation while retaining tests and attribution."
+    }
+  ],
+  "private_package_removals": [],
+  "private_package_reference_proof": {
+    "packages": [
+      "tools/fabricctl/internal/recorder",
+      "tools/fabricctl/internal/recorderinit"
+    ],
+    "production_importer": "tools/fabricctl/cmd/fabricctl/release_main.go imports both; recorderinit imports recorder",
+    "verification": "go list -deps ./cmd/fabricctl includes both internal packages; no truly unused tracked private Go packages found",
+    "files": [
+      {
+        "path": "tools/fabricctl/internal/recorder/open_regular_other.go",
+        "sha256": "2753125aea97e2a11efaaedac6c79076fe4d2049a129b4c34effa11108ad7298",
+        "method": "reference_and_build_graph_inventory_not_full_semantic_review"
+      },
+      {
+        "path": "tools/fabricctl/internal/recorder/open_regular_unix.go",
+        "sha256": "548e5ad1582916422c2e1371f618336daf9233c886253dbb45b4455cb10f757b",
+        "method": "reference_and_build_graph_inventory_not_full_semantic_review"
+      },
+      {
+        "path": "tools/fabricctl/internal/recorder/recorder.go",
+        "sha256": "2b26924042ae8dc06c7de4e9e2c8974fbdaf10684dea2bf2225db83e41078453",
+        "method": "reference_and_build_graph_inventory_not_full_semantic_review"
+      },
+      {
+        "path": "tools/fabricctl/internal/recorder/recorder_test.go",
+        "sha256": "51aa78b73483d06d0ea5bc95f525b1922f7735fccb814cc2c8b83dea6db927db",
+        "method": "reference_and_build_graph_inventory_not_full_semantic_review"
+      },
+      {
+        "path": "tools/fabricctl/internal/recorderinit/recorderinit.go",
+        "sha256": "536f7d3a72db57d5083134f3a3ac85fcf0c0437f9fead89980a851ae4781db4a",
+        "method": "reference_and_build_graph_inventory_not_full_semantic_review"
+      },
+      {
+        "path": "tools/fabricctl/internal/recorderinit/recorderinit_test.go",
+        "sha256": "c871da423b0f2668b8b308c39273bb72103c8d818b7ff219f8ae7a250e8fff7a",
+        "method": "reference_and_build_graph_inventory_not_full_semantic_review"
+      }
+    ]
+  },
+  "build_tag_review": "Legacy tailer has no build tags; _test.go inclusion is platform-independent. Receiver durable_platform/netlink linux versus !linux separation unchanged. Host BPF uses linux generated bindings and !linux stub; no generated BPF bytes modified.",
+  "test_evidence": [
+    {
+      "command": "receiver go test -race ./...; go vet ./...",
+      "result": "passed (race2.138s); native linux amd64 compilation exercised"
+    },
+    {
+      "command": "receiver GOOS=linux GOARCH=arm64 go test -c -o /tmp/fabric-auditreceiver-reconcile-arm64.test .",
+      "result": "passed compile only, no ARM64 execution"
+    },
+    {
+      "command": "fabricctl go list -deps ./cmd/fabricctl; go test -race ./...; go vet ./...",
+      "result": "both private packages present; tests/vet passed from cache"
+    },
+    {
+      "command": "host explicit neutral files with bpf_stub.go go test -race and go vet",
+      "result": "passed2.029s; no full Linux BPF/generated binding or live kernel claim"
+    },
+    {
+      "command": "license malformed/restrictive/precedence focused pre-fix cases",
+      "result": "9 expected failures,4 existing successes; separate duplicate-declaration test also failed before fix"
+    },
+    {
+      "command": "Focused license + orchestration demo tests",
+      "result": "63 passed in2.94s (license fail-closed/workflow/final-audit regressions plus orchestration demo safety). Ruff and shell syntax checks passed."
+    },
+    {
+      "command": "Benchmark SHA256 manifest verification",
+      "result": "324 entries match, no benchmark rerun or byte changes"
+    },
+    {
+      "command": "Independent-review fixes: focused license fail_closed/workflow/final_audit regression suite",
+      "result": "9 new cases failed before fixes; final66 passed3.41s including npm conjunctive array, grouping-escape prevention, all3 empty inventories, malformed shapes and nonexecutable helper. Ruff/bash-n/diff-check passed."
+    }
+  ],
+  "limits": [
+    "Full expanded external dependency/license inventories not executed locally; CI must scan and investigate unsupported exact aliases without weakening policy.",
+    "Scanner utility versions and optional dependency resolutions remain runtime-resolved; reports qualify supplied inventory, not all future resolutions.",
+    "No native BPF code generation or live kernel audit capture performed.",
+    "Generated source BTF provenance remains unknown as previously documented.",
+    "Receiver source/module hashes changed due test-only move; parent owns final release build/journey requalification.",
+    "Policy comment about hard DENY alongside permissive tokens predates valid SPDX OR choice semantics; valid alternative MIT OR GPL may pass on MIT branch. No license allowlist change; exact choice remains in report."
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/recorder-license.yml",
+      "sha256": "bf1e0cb09edb23cf6ee36cb4329dc77dc63c3273acb2ea7f457fa66c82ffd355",
+      "method": "full_text_semantic_review",
+      "review": "Reviewed six named released surfaces and patched Collector graph. Expanded Python isolated matrix to every published extra and optional S3 peer inventory; each raw file feeds existing public surface gate. Patched-build helper invoked through sh, preserving existing nonexecutable tracked mode."
+    },
+    {
+      "path": "scripts/license_scan.sh",
+      "sha256": "118b921b02ed581fd2c975aaa99739a83ebf55a2b315d8e84abcbb00768ad2f3",
+      "method": "full_text_semantic_review",
+      "review": "Reviewed local workflow equivalent, fail-closed tool preflight, temporary inventories and report gate; matches expanded optional surface/patch graph wiring. Patched-build helper invoked through sh, preserving existing nonexecutable tracked mode."
+    },
+    {
+      "path": "scripts/license_check.py",
+      "sha256": "7528a4dc27ef0efc05ef38965e690347a0fa6b7d936733a2861fae6995d96947",
+      "method": "full_text_semantic_review",
+      "review": "Read full scanner parsing, license normalization/expression semantics, deduplication, policy loading and reports. Fixed permissive substring fail-open, malformed expression acceptance, SPDX precedence and conflicting-declaration suppression. Policy allowlist unchanged. Independent review follow-up: npm array members grouped individually with balanced-member validation; each requested scanner inventory validates shape and nonempty before merge."
+    },
+    {
+      "path": ".github/license-allowlist.txt",
+      "sha256": "054cceb3e40e1027154c0ae0e144ea0052163e6f6981c845dcda50085f748895",
+      "method": "full_text_semantic_review",
+      "review": "Read existing policy and attribution/obligation intent. No licenses added or denial weakened."
+    },
+    {
+      "path": "scripts/tests/test_license_fail_closed.py",
+      "sha256": "cd549bf72bae381d071b0df25d5c31d8cf554c63541099c2108f571dad93acf7",
+      "method": "full_text_semantic_review_and_execution",
+      "review": "New adversarial CLI regressions cover restrictive/unknown prose, unsupported exception, malformed alternatives, valid OR precedence, exact aliases and conflicting declarations."
+    },
+    {
+      "path": "scripts/tests/test_license_workflow.py",
+      "sha256": "fd506c04f4f7acc148814a9d5530011f8b4d266ee1c48693db3eda445665fe5b",
+      "method": "full_text_semantic_review_and_execution",
+      "review": "Existing actual gate-argument regression plus manifest-vs-matrix coverage and optional S3 gate assertions; scanner fixture raw files updated for multiple inventories."
+    },
+    {
+      "path": "scripts/tests/test_final_audit_regressions.py",
+      "sha256": "123ec1de2051eb12865bfaeeaeb338927b7b9cb7ce8040c9c33cf6371e91111d",
+      "method": "targeted_license_fixture_review_and_execution",
+      "review": "Only license-scan fixture updated with external patched-build helper stub; real local shell and policy gate remain exercised. Whole test file executed; unrelated release tests not claimed newly semantically reviewed. Mock external helper mode0600 and sh utility explicitly reproduce nonexecutable-helper invocation contract."
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/logfile_legacy_test.go",
+      "sha256": "d90229befe437eb26acd25072c7ea2e701032ba4355ef9204efb74fadf778d4b",
+      "method": "byte_preserving_test_only_move",
+      "review": "Legacy tailFile/tailFileObserved only referenced by audit_test.go; production Start calls openDurableLog/runDurableLog. Exact bytes, Apache header and implementation preserved under _test.go."
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/receiver.go",
+      "sha256": "cea81469a3dc69ec6da74eac572b43ded4a23ae9b69da4efeb71ce9b0cd92e69",
+      "method": "targeted_callsite_and_build_graph_review",
+      "review": "Confirmed logfile production branch starts durable reader and has no legacy tailer references; normal go list excludes moved file."
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
+      "sha256": "c93e9d3c4d2aa8223310132c153732c7056c198a853c909bf785a2fce7d91275",
+      "method": "targeted_reference_review_and_execution",
+      "review": "Legacy-tail references at baseline lines392 and442 remain tested. Entire receiver package race tested and vetted."
+    },
+    {
+      "path": "examples/agent-orchestration/reconstruct.py",
+      "sha256": "447a7cf91f1d906d31c089067a0a622788d5a5893ef4a01505566a9eb7b15ed9",
+      "method": "targeted_path_provenance_recheck_and_regression_execution",
+      "review": "HERE.parents[1] resolves repository; existing event and journal labels remain synthetic-agent-shim and explicitly reject independent kernel/auditd provenance. No change required."
+    },
+    {
+      "path": "examples/agent-orchestration/audit_shim.py",
+      "sha256": "a02190eac1387ec901fa6a4583cc19815e46c19e9675511735f7eb1234bedcae",
+      "method": "targeted_provenance_recheck",
+      "review": "Existing documentation states application-emitted synthetic records, not independent kernel or byte-equivalent auditd evidence. No source changes."
+    },
+    {
+      "path": "components/host-emitter/bpf/vmlinux.h",
+      "sha256": "6861f46ca59654cc75feb479edac9824e3a99bd8c5324706cd91cf7c63eab454",
+      "method": "generated_bytes_preservation_hash",
+      "review": "Preserved generated header and attribution; no new source BTF provenance claim."
+    },
+    {
+      "path": "components/host-emitter/bpf/vmlinux.provenance.json",
+      "sha256": "0334af9590c86ffc4fc16590adcd8d121037b3f5c072578cdffb83236db62a06",
+      "method": "provenance_preservation_hash",
+      "review": "Preserved existing explicit unknown source BTF/generator qualification."
+    }
+  ]
+}

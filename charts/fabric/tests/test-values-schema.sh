@@ -22,7 +22,7 @@ expect_failure() {
 
 production_args=(
   "${chart_dir}"
-  --values "${chart_dir}/profiles/shadow-production.yaml"
+  --values "${chart_dir}/profiles/shadow-production.yaml" --values "${chart_dir}/tests/fixtures/production-assertions.yaml"
   --set tenant.id=customer-production
   --set otel-collector.exporter.endpoint=https://otlp.example.invalid
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'

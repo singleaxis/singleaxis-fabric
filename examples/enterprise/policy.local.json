@@ -1,0 +1,30 @@
+{
+  "schema_version": "fabric.deployment-policy/v1",
+  "policy_id": "local-example",
+  "policy_version": 1,
+  "tenant_id": "example-tenant",
+  "workload_id": "example-agent",
+  "privacy": {
+    "model.request.messages": "metadata_only",
+    "model.output.messages": "metadata_only",
+    "tool.call.arguments": "omit",
+    "tool.call.result": "metadata_only",
+    "terminal.stdout": "omit",
+    "terminal.stderr": "omit"
+  },
+  "storage": {
+    "backend": "local",
+    "region": "local",
+    "key_id": "local-example-key"
+  },
+  "retention": {
+    "days": 7
+  },
+  "required_integrations": ["fabric.call_recorder"],
+  "deployment": {
+    "profile": "local",
+    "image_digest": "local",
+    "tls_required": false,
+    "encrypted_store_required": false
+  }
+}

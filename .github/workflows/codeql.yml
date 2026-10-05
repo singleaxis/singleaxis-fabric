@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, codex/synthetic-evidence-qualification-20260927]
   schedule:
     # Sunday 06:00 UTC — off-hours and odd minute to dodge the
     # top-of-the-hour contention band on GitHub-hosted runners.
@@ -67,3 +67,29 @@ jobs:
         uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
         with:
           category: "/language:${{ matrix.language }}"
+          output: codeql-results
+          wait-for-processing: true
+
+      - name: Report generated finding locations
+        if: always()
+        run: python3 scripts/qualification/summarize_sarif.py codeql-results
+
+  pr-finding-membership:
+    name: CodeQL PR finding membership (read-only diagnostic)
+    needs: analyze
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Report exact completed PR check annotations
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CODEQL_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CODEQL_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/qualification/report_codeql_pr_annotations.py

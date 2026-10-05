@@ -33,6 +33,10 @@ def expected():
         "record-1": {
             "event_name": "agent.evidence.coverage",
             "attributes": {"record_id": "record-1", "result_status": "ok"},
+            "attribute_types": {
+                "record_id": "string_value",
+                "result_status": "string_value",
+            },
         }
     }
 

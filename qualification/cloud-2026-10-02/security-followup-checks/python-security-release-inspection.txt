@@ -1,0 +1,49 @@
+WARNING: The directory '/home/agent/.cache/pip' or its parent directory is not owned or is not writable by the current user. The cache has been disabled. Check the permissions and owner of that directory. If executing pip with sudo, you should use sudo's -H flag.
+Processing /workspace/fabric-qualification/python-security-dist/singleaxis_fabric-0.8.0rc1-py3-none-any.whl
+Collecting opentelemetry-api>=1.41 (from singleaxis-fabric==0.8.0rc1)
+  Downloading opentelemetry_api-1.45.0-py3-none-any.whl.metadata (1.4 kB)
+Collecting opentelemetry-sdk>=1.41 (from singleaxis-fabric==0.8.0rc1)
+  Downloading opentelemetry_sdk-1.45.0-py3-none-any.whl.metadata (1.6 kB)
+Collecting pydantic<3.0,>=2.8 (from singleaxis-fabric==0.8.0rc1)
+  Downloading pydantic-2.13.5-py3-none-any.whl.metadata (110 kB)
+Collecting typing-extensions>=4.5.0 (from opentelemetry-api>=1.41->singleaxis-fabric==0.8.0rc1)
+  Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting opentelemetry-semantic-conventions==0.66b0 (from opentelemetry-sdk>=1.41->singleaxis-fabric==0.8.0rc1)
+  Downloading opentelemetry_semantic_conventions-0.66b0-py3-none-any.whl.metadata (2.4 kB)
+Collecting annotated-types>=0.6.0 (from pydantic<3.0,>=2.8->singleaxis-fabric==0.8.0rc1)
+  Downloading annotated_types-0.8.0-py3-none-any.whl.metadata (15 kB)
+Collecting pydantic-core==2.46.5 (from pydantic<3.0,>=2.8->singleaxis-fabric==0.8.0rc1)
+  Downloading pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+Collecting typing-inspection>=0.4.2 (from pydantic<3.0,>=2.8->singleaxis-fabric==0.8.0rc1)
+  Downloading typing_inspection-0.4.4-py3-none-any.whl.metadata (2.6 kB)
+Downloading opentelemetry_api-1.45.0-py3-none-any.whl (60 kB)
+Downloading opentelemetry_sdk-1.45.0-py3-none-any.whl (140 kB)
+Downloading opentelemetry_semantic_conventions-0.66b0-py3-none-any.whl (206 kB)
+Downloading pydantic-2.13.5-py3-none-any.whl (472 kB)
+Downloading pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 73.5 MB/s eta 0:00:00
+Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+Installing collected packages: typing-extensions, annotated-types, typing-inspection, pydantic-core, opentelemetry-api, pydantic, opentelemetry-semantic-conventions, opentelemetry-sdk, singleaxis-fabric
+Successfully installed annotated-types-0.8.0 opentelemetry-api-1.45.0 opentelemetry-sdk-1.45.0 opentelemetry-semantic-conventions-0.66b0 pydantic-2.13.5 pydantic-core-2.46.5 singleaxis-fabric-0.8.0rc1 typing-extensions-4.16.0 typing-inspection-0.4.4
+fabric.tracing: no OpenTelemetry TracerProvider is configured; Fabric decision spans will have zero trace IDs and be dropped. Call fabric.install_default_provider(...) or wire OTel yourself before opening a Decision. See docs/quickstart.md step 2.
+Fabric decision span is not recording; local capture is disabled. Inspect Decision.capture_health and host sampling/provider configuration.
+[
+  {
+    "filename": "singleaxis_fabric-0.8.0rc1-py3-none-any.whl",
+    "sha256": "35a3d26dd231cd4969b75c074d109a78533ce7c4205b88694f3f79e02d25f4cd",
+    "name": "singleaxis-fabric",
+    "version": "0.8.0-rc.1",
+    "requires_python": ">=3.11",
+    "member_count": 76
+  },
+  {
+    "filename": "singleaxis_fabric-0.8.0rc1.tar.gz",
+    "sha256": "ed9d2a6c665850faff3e265a3bbe90af5aeedba2caeb216054064ca19a658c9c",
+    "name": "singleaxis-fabric",
+    "version": "0.8.0-rc.1",
+    "requires_python": ">=3.11",
+    "member_count": 77
+  }
+]

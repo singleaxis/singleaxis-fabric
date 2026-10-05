@@ -11,7 +11,7 @@ the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 046.
+next unused public number is 047.
 
 Spec [027](027-recorder-v1.md) is the authoritative product and release scope
 for the first stable OSS recorder. Specs describing capabilities outside

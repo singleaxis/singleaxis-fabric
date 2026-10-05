@@ -1,0 +1,708 @@
+{
+  "schema_version": "fabric.capture-acceptance-run/v1",
+  "production_verdict": "NO_GO",
+  "scope": "Selected local fixture assertions only; unimplemented target scenarios remain explicit",
+  "matrix_sha256": "d21accc20cd3e219e0ca8a55c9979ba0f32a2f0f48ebea86e477da04a947bad7",
+  "runner_sha256": "8f5332c3710cf3f444d65df533b26e84536038732b837f89c75284e1719b6c4e",
+  "scenarios": [
+    {
+      "level": "C0",
+      "scenario": "agent_root",
+      "expected_action": "Run agent(input) to output; raise, cancel and return unsupported serialization.",
+      "actual_boundary": "Explicit Python CallRecorder call/acall wrapper, preserving application outcomes.",
+      "identity_causality": "Run/source/call identity and parent call; root return is not producer closure.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent caller input/result and exception/cancellation observations.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 2,
+        "elapsed_seconds": 0.767,
+        "scope": "Explicit callable preserves result/exception/cancellation; unsupported serialization is marked."
+      },
+      "known_omissions": [
+        "Unwrapped root execution",
+        "Producer closure",
+        "Arbitrary object serialization"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C0/command.log",
+          "sha256": "df184e1384a1d41f53ef77ec2045c1c728488ca377dff284cad494d0d1091885"
+        },
+        {
+          "path": "C0/junit.xml",
+          "sha256": "0e4f7fd45c1b7a4461e6ee1042c081131e2aebcd1b867ae52e267b09f67c8d54",
+          "original_run_sha256": "e4e8b1b22f5c9b053667cfb360c07b09bbe1b04302b8b73688c8f95f593ac205",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/custom-agent-recording.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_recorder.py::test_exception_identity_retry_unsupported_and_absent_context",
+          "sdk/python/tests/test_call_recorder.py::test_async_parallel_agent_contexts_cancellation_and_streams"
+        ],
+        "tested_claim": "Explicit callable preserves result/exception/cancellation; unsupported serialization is marked.",
+        "not_implemented_scenarios": [
+          "Arbitrary agent framework root interception"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C0/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C0/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C0/junit.xml",
+        "sdk/python/tests/test_call_recorder.py::test_exception_identity_retry_unsupported_and_absent_context",
+        "sdk/python/tests/test_call_recorder.py::test_async_parallel_agent_contexts_cancellation_and_streams"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_call_recorder.py": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75"
+      }
+    },
+    {
+      "level": "C1",
+      "scenario": "model_attempts",
+      "expected_action": "Exercise distinct physical retries, complete and interrupted streams.",
+      "actual_boundary": "Explicit final dispatch with bytes and attempt identity; stream chunks only when observed.",
+      "identity_causality": "Operation versus physical attempt identity; chunk sequence and terminal state.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Native provider request ledger and original byte feed.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 3,
+        "elapsed_seconds": 0.866,
+        "scope": "Explicit physical attempts and stream closure with local delegates."
+      },
+      "known_omissions": [
+        "Hidden SDK retries",
+        "Hidden provider context",
+        "Unobserved interruption"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C1/command.log",
+          "sha256": "6cfee6194c810d1d888f113801b7f4407dbd50164d7589796f47f1c7a716fcaf"
+        },
+        {
+          "path": "C1/junit.xml",
+          "sha256": "e9f1042d3b64a820632a6ac668b908abfdb66565c50399f0972310c2239cec95",
+          "original_run_sha256": "045c29609d54d3cee03a790f92f94018e4b565ce9bd3190b3b2d87b465ff968d",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "specs/046-qualified-call-run-verification.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_recorder.py::test_sync_stream_pull_order_close_and_empty",
+          "sdk/python/tests/test_call_recorder.py::test_stream_error_and_unconsumed_close",
+          "sdk/python/tests/test_byte_boundary_adapter.py::test_exact_model_and_tool_bytes_retries_and_empty_context"
+        ],
+        "tested_claim": "Explicit physical attempts and stream closure with local delegates.",
+        "not_implemented_scenarios": [
+          "Live model provider hidden retries"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C1/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C1/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C1/junit.xml",
+        "sdk/python/tests/test_call_recorder.py::test_sync_stream_pull_order_close_and_empty",
+        "sdk/python/tests/test_call_recorder.py::test_stream_error_and_unconsumed_close",
+        "sdk/python/tests/test_byte_boundary_adapter.py::test_exact_model_and_tool_bytes_retries_and_empty_context"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_call_recorder.py": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+        "sdk/python/tests/test_byte_boundary_adapter.py": "cdcfa4dff9b7070bfcee0247b66a1fecbbc85f059b53c90a336d975105852a62"
+      }
+    },
+    {
+      "level": "C2",
+      "scenario": "tool_permissions",
+      "expected_action": "Record tool args/results/errors and existing permission attempt, grant and exercise.",
+      "actual_boundary": "Explicit tool wrapper plus externally supplied permission observations.",
+      "identity_causality": "Call/attempt and separately attributed permission decision identity.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Tool result/error witness and existing permission authority logs.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 2,
+        "elapsed_seconds": 0.565,
+        "scope": "Nested tool bytes/causal links and external observation cannot authorize an action."
+      },
+      "known_omissions": [
+        "No permission enforcement",
+        "Grant does not prove exercised action"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C2/command.log",
+          "sha256": "7e15266061ed0d31aa89e2241ce9ed802cf0173def79bf29c0398d727932d5d2"
+        },
+        {
+          "path": "C2/junit.xml",
+          "sha256": "90419bd552ee170aa225c28c3825660c85fe0ccec6c5be84a286bbb388bfeba1",
+          "original_run_sha256": "04a42135f4ab6a8cebe1f58040069bb29802953baafb04dbff960c3050948add",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/capture-control-compatibility.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_recorder.py::test_nested_exact_bytes_linked_to_call_and_safe_trace",
+          "sdk/python/tests/test_control_evidence.py::test_external_claim_is_never_action_authorization"
+        ],
+        "tested_claim": "Nested tool bytes/causal links and external observation cannot authorize an action.",
+        "not_implemented_scenarios": [
+          "Live permission authority attempted/granted/exercised reconciliation"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C2/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C2/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C2/junit.xml",
+        "sdk/python/tests/test_call_recorder.py::test_nested_exact_bytes_linked_to_call_and_safe_trace",
+        "sdk/python/tests/test_control_evidence.py::test_external_claim_is_never_action_authorization"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_call_recorder.py": "6f389f9eeaa420c26542edf42d15f091cc000382246249f3012f04aa57780b75",
+        "sdk/python/tests/test_control_evidence.py": "7c0d876960d06607a95501481279b6a6ee80106709d773997fe76ad138ec95ac"
+      }
+    },
+    {
+      "level": "C3",
+      "scenario": "remote_effects",
+      "expected_action": "Distinguish requested, acknowledged, committed and unknown effects.",
+      "actual_boundary": "Caller request/response and optional independently read destination state.",
+      "identity_causality": "Stable effect/attempt identity; lost acknowledgement remains ambiguous.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Authoritative service or database readback independent of recorder.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 1,
+        "elapsed_seconds": 0.666,
+        "scope": "Separate read-only SQLite readback rejects claimed-but-rolled-back write."
+      },
+      "known_omissions": [
+        "Tool success alone does not prove commit",
+        "Remote effects outside declared witness"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C3/command.log",
+          "sha256": "3a6504404ab639ac8fe2940ac1654603c072a999c0ae65ca7ef9701ab97a0954"
+        },
+        {
+          "path": "C3/junit.xml",
+          "sha256": "79e25b77fb7ee604d58c9aba7e06af6a70d51c71045fb856f50749b414377625",
+          "original_run_sha256": "6b1958d7435eed69c4cb4f0d78675431bff96e87de237a8fec775789316bd458",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/sdk-support-matrix.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_call_reconcile.py::test_sqlite_independent_committed_state_not_tool_success"
+        ],
+        "tested_claim": "Separate read-only SQLite readback rejects claimed-but-rolled-back write.",
+        "not_implemented_scenarios": [
+          "Remote service requested/acknowledged/committed/unknown witness"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C3/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C3/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C3/junit.xml",
+        "sdk/python/tests/test_call_reconcile.py::test_sqlite_independent_committed_state_not_tool_success"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_call_reconcile.py": "2c187aa5aacd75acc592a884df1ba9ea0dab3fa97b46d767cee792ff0d12b81d"
+      }
+    },
+    {
+      "level": "C4",
+      "scenario": "retrieval_memory",
+      "expected_action": "Capture actual retrieval/memory/context bytes and supplied provenance.",
+      "actual_boundary": "Explicit permitted content roles and application observations.",
+      "identity_causality": "Call/context source links supplied by producer; do not infer missing provenance.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent retrieval/memory result and actual context supplied to dispatch.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 1,
+        "elapsed_seconds": 0.465,
+        "scope": "Explicit supplied retrieval/memory/context roles persist under configured content policy."
+      },
+      "known_omissions": [
+        "Hidden model context",
+        "Implicit memory access",
+        "Provenance not supplied"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C4/command.log",
+          "sha256": "976ea3fe6dfa65b827ec05fc16bf49cec94d3fda3b2d6ad4719708e74a38b32d"
+        },
+        {
+          "path": "C4/junit.xml",
+          "sha256": "318484d70be7cab0df5c0f1d60f86a7fa37162cbcc875ad7ed132afe771f48e6",
+          "original_run_sha256": "ca7cf3114f709a196796fb9d613e3b74272015b222ea16a4dbb27e103b030096",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/capturing-interactions.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_governed_content.py::test_retrieval_memory_side_effect_context_capture"
+        ],
+        "tested_claim": "Explicit supplied retrieval/memory/context roles persist under configured content policy.",
+        "not_implemented_scenarios": [
+          "Independent live retrieval provenance",
+          "Hidden provider context"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C4/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C4/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C4/junit.xml",
+        "sdk/python/tests/test_governed_content.py::test_retrieval_memory_side_effect_context_capture"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_governed_content.py": "a69ed355829e36bc0b5dd9f0721cc845e13a80978c59a6e1ae1beec8ed897616"
+      }
+    },
+    {
+      "level": "C5",
+      "scenario": "delegation",
+      "expected_action": "Run parallel/delegated/background producers including missing and late children.",
+      "actual_boundary": "Context propagation plus optional authenticated distributed closure evidence.",
+      "identity_causality": "Registered sources, contiguous epochs, expected child joins and parent anchors.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Separate coordinator plan, lifecycle witness and joins.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 3,
+        "elapsed_seconds": 1.368,
+        "scope": "Missing/late joins reject closure; local source process restart campaign."
+      },
+      "known_omissions": [
+        "Root return alone",
+        "Undeclared workers",
+        "Shared-host witness independence"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C5/command.log",
+          "sha256": "bfe2b4eeda4b771affaa7df3f63d650cb327b75895450aae1f170ea21e51aef6"
+        },
+        {
+          "path": "C5/junit.xml",
+          "sha256": "922b2c8207bce4a10b5ac5473d5e8754401b030c4e1c93307a474270cc3bdf0d",
+          "original_run_sha256": "0dc2a7acf8eadefadfb7777e5d5fe45d270d529acfab03d982931baaf1675819",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/enterprise-distributed-closure.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_distributed_closure.py::test_detached_unjoined_child_is_not_finalized_by_parent_completion",
+          "sdk/python/tests/test_distributed_closure.py::test_child_declared_after_parent_closure_invalidates_old_proof",
+          "sdk/python/tests/test_distributed_closure.py::test_reference_campaign_runs_real_source_process_restart"
+        ],
+        "tested_claim": "Missing/late joins reject closure; local source process restart campaign.",
+        "not_implemented_scenarios": [
+          "Remote scheduler and independent production witness"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C5/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C5/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C5/junit.xml",
+        "sdk/python/tests/test_distributed_closure.py::test_detached_unjoined_child_is_not_finalized_by_parent_completion",
+        "sdk/python/tests/test_distributed_closure.py::test_child_declared_after_parent_closure_invalidates_old_proof",
+        "sdk/python/tests/test_distributed_closure.py::test_reference_campaign_runs_real_source_process_restart"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_distributed_closure.py": "09443f982037db65d5963feb48f7d37a7c79d5b7d7293f14af4b0d63a6368133"
+      }
+    },
+    {
+      "level": "C6",
+      "scenario": "shell",
+      "expected_action": "Exercise subprocess stdin/stdout/stderr, descendants and detached children; PTY only when supported.",
+      "actual_boundary": "BoundedTerminalAdapter explicit child; optional scoped host metadata.",
+      "identity_causality": "Explicit child and parent links; unknown descendants stay unknown.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent process lifecycle and terminal byte observer.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 2,
+        "elapsed_seconds": 0.716,
+        "scope": "Bounded local terminal bytes, overflow and cancellation."
+      },
+      "known_omissions": [
+        "General PTY unsupported",
+        "Arbitrary detached descendants unqualified",
+        "No universal shell session capture"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C6/command.log",
+          "sha256": "95d1b84fbee7021823149cdb8fa68be6e6175dcdacb7db00ebbe6b1f65801141"
+        },
+        {
+          "path": "C6/junit.xml",
+          "sha256": "6648d18a8441b0e76a6c36433fd7613a78e7ec914e36ddc609d1070b6fcb5773",
+          "original_run_sha256": "75dc99d732839710762cfa49d4ea4066e83615ce09e366f178f00abf1928e3a0",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/sdk-support-matrix.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_synthetic_evidence.py::test_terminal_and_artifact_exact_binary_bytes_and_empty_stream",
+          "sdk/python/tests/test_synthetic_evidence.py::test_terminal_overflow_and_cancel_are_explicit_and_do_not_change_action"
+        ],
+        "tested_claim": "Bounded local terminal bytes, overflow and cancellation.",
+        "not_implemented_scenarios": [
+          "General PTY",
+          "Arbitrary shell descendants",
+          "Detached child lifecycle capture"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C6/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C6/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C6/junit.xml",
+        "sdk/python/tests/test_synthetic_evidence.py::test_terminal_and_artifact_exact_binary_bytes_and_empty_stream",
+        "sdk/python/tests/test_synthetic_evidence.py::test_terminal_overflow_and_cancel_are_explicit_and_do_not_change_action"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_synthetic_evidence.py": "3febf43d05b77e7f019a6e1d999947d623574829cd6c59e3c071fc2a8d67fb99"
+      }
+    },
+    {
+      "level": "C7",
+      "scenario": "files_stores",
+      "expected_action": "Observe explicit files/store effects including partial writes and renames.",
+      "actual_boundary": "Allowlisted artifact observation and selected state readback.",
+      "identity_causality": "Named object/version/effect identity and before/after evidence where supplied.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Fresh authoritative file/database content and transaction observation.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 2,
+        "elapsed_seconds": 0.565,
+        "scope": "Explicit artifact modification and failed atomic object replacement cannot claim completed mutation."
+      },
+      "known_omissions": [
+        "Arbitrary filesystem coverage",
+        "Unobserved partial writes/renames",
+        "Readback alone not full history"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C7/command.log",
+          "sha256": "fa665775964cf05a4b8c9ca6f3bb541d55819b03a8e9277e22b2aa4799804700"
+        },
+        {
+          "path": "C7/junit.xml",
+          "sha256": "b0c0ac50602e8770d10ff3adbfb9adcc4d088c328511bb5e5247116f26d70fd6",
+          "original_run_sha256": "fd48e51d440dfc2a0b15f649ba1fe41fa2abe2a712f63976f78d52711fa8707b",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/agent-activity-coverage.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_synthetic_evidence.py::test_artifact_modification_and_privacy_canary_stay_in_content_store",
+          "sdk/python/tests/test_governed_store.py::test_failed_object_replace_has_intent_no_completed_claim"
+        ],
+        "tested_claim": "Explicit artifact modification and failed atomic object replacement cannot claim completed mutation.",
+        "not_implemented_scenarios": [
+          "Arbitrary partial writes and renames",
+          "Uninstrumented stores"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C7/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C7/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C7/junit.xml",
+        "sdk/python/tests/test_synthetic_evidence.py::test_artifact_modification_and_privacy_canary_stay_in_content_store",
+        "sdk/python/tests/test_governed_store.py::test_failed_object_replace_has_intent_no_completed_claim"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_synthetic_evidence.py": "3febf43d05b77e7f019a6e1d999947d623574829cd6c59e3c071fc2a8d67fb99",
+        "sdk/python/tests/test_governed_store.py": "ca13a865c8622b97429e20844d7c0d400e92508407d6bb04a2220b4d890868fe"
+      }
+    },
+    {
+      "level": "C8",
+      "scenario": "network",
+      "expected_action": "Compare connection attempts with actual application requests and encrypted traffic.",
+      "actual_boundary": "Optional host connection metadata plus explicit application boundary capture.",
+      "identity_causality": "Host process/connection versus application attempt identities need actual correlation.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent application/service ledger and scoped network witness.",
+      "observed_result": null,
+      "known_omissions": [
+        "TLS/SSH plaintext unavailable to host metadata",
+        "Connection success not semantic effect"
+      ],
+      "status": "NOT_IMPLEMENTED",
+      "evidence": [],
+      "source_references": [
+        "docs/sdk-support-matrix.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [],
+        "tested_claim": "No scoped live host/TLS network scenario is implemented in this runner.",
+        "not_implemented_scenarios": [
+          "Host connection/application correlation",
+          "TLS/SSH semantics",
+          "Live network witness"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      }
+    },
+    {
+      "level": "C9",
+      "scenario": "sandbox_restart",
+      "expected_action": "Restart containers/sandboxes and source epochs; inject collector loss and ephemeral storage loss.",
+      "actual_boundary": "Source journal/spool recovery and explicit loss counters; target host/container tests separate.",
+      "identity_causality": "Source/epoch/sequence continuity and terminal high water.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent lifecycle supervisor and pre-established operation inventory.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 2,
+        "elapsed_seconds": 0.465,
+        "scope": "Offline epoch/loss verification with fixture truth; no live container qualification."
+      },
+      "known_omissions": [
+        "Pre-fsync gap",
+        "Ephemeral volume deletion",
+        "Native kernel/source loss unqualified"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C9/command.log",
+          "sha256": "05969f68db42c0d80b5f203b4c913fe621ff8643af5b714630e061a4653df4b3"
+        },
+        {
+          "path": "C9/junit.xml",
+          "sha256": "99d6e0e039d266160c7f80de44fcaec12217e1809b36d286d303ca2e83df2b74",
+          "original_run_sha256": "71f46646ac869dbb2fa2b0afd71d70832cfa7fb8a863e65f95c0f5a2c59dfd98",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "specs/038-capture-boundary-and-loss-qualification.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_distributed_closure.py::test_unknown_prefsync_source_truth_cannot_disappear_at_restart",
+          "sdk/python/tests/test_distributed_closure.py::test_recovered_source_epochs_complete_only_with_all_independent_truth"
+        ],
+        "tested_claim": "Offline epoch/loss verification with fixture truth; no live container qualification.",
+        "not_implemented_scenarios": [
+          "Container/sandbox lifecycle",
+          "Collector process loss",
+          "Ephemeral storage deletion"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C9/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C9/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C9/junit.xml",
+        "sdk/python/tests/test_distributed_closure.py::test_unknown_prefsync_source_truth_cannot_disappear_at_restart",
+        "sdk/python/tests/test_distributed_closure.py::test_recovered_source_epochs_complete_only_with_all_independent_truth"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_distributed_closure.py": "09443f982037db65d5963feb48f7d37a7c79d5b7d7293f14af4b0d63a6368133"
+      }
+    },
+    {
+      "level": "C10",
+      "scenario": "remote_workers",
+      "expected_action": "Exercise remote workers, duplicates, partitions and independently read results.",
+      "actual_boundary": "Metadata retry/ack ledger and optional distributed closure; destination-specific readback.",
+      "identity_causality": "Stable record identity, exact duplicate reconciliation, worker epoch joins.",
+      "privacy": "Explicit per-role policy; DeploymentPolicy byte path protects pre-queue; BytePrivacyPolicy masked_only callback is worker-side. No raw OTLP bodies; independently check stores, logs and queues.",
+      "independent_ground_truth": "Independent worker/service authority and fresh destination readback.",
+      "observed_result": {
+        "exit_code": 0,
+        "test_cases": 2,
+        "elapsed_seconds": 7.787,
+        "scope": "Local HTTP ACK-loss/retry/restart and duplicate-versus-conflict closure."
+      },
+      "known_omissions": [
+        "Local reference is not remote qualification",
+        "Customer IAM/KMS/retention",
+        "Unobserved reachable routes"
+      ],
+      "status": "LOCAL_FIXTURE_PASSED",
+      "evidence": [
+        {
+          "path": "C10/command.log",
+          "sha256": "e984fd70899984aa9cddbac7ced3efe12ff137e35874e549b6b2df08f3d8d57f"
+        },
+        {
+          "path": "C10/junit.xml",
+          "sha256": "96623c5074c6774b9bc880b8559f24228512d3757d00d4203947f3d133fa45bb",
+          "original_run_sha256": "f0b2a0c1e9ff120f7be219513ff6832148d8532f52c755f3418ee9351c8c51fc",
+          "publication_transform": "Append trailing newline to JUnit XML; test content unchanged."
+        }
+      ],
+      "source_references": [
+        "docs/enterprise-distributed-closure.md"
+      ],
+      "typescript": "Narrower byte/explicit telemetry support; no Python CallRecorder, durable journal/spool, delivery ledger or closure parity.",
+      "acceptance": {
+        "pytest_nodes": [
+          "sdk/python/tests/test_metadata_delivery.py::test_large_durable_inventory_http_loss_retry_and_both_process_restarts",
+          "sdk/python/tests/test_distributed_closure.py::test_duplicate_transport_delivery_idempotent_but_epoch_equivocation_fails"
+        ],
+        "tested_claim": "Local HTTP ACK-loss/retry/restart and duplicate-versus-conflict closure.",
+        "not_implemented_scenarios": [
+          "Remote workers and real partitions",
+          "Cloud destination independent durability"
+        ],
+        "independent_truth_scope": "Local fixture-owned expectations/readbacks only; same-host administrator trust boundary."
+      },
+      "command": [
+        "/workspace/fabric-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "--no-cov",
+        "-o",
+        "addopts=",
+        "-o",
+        "cache_dir=/workspace/fabric-qualification/capture-acceptance-1/C10/cache",
+        "--basetemp=/workspace/fabric-qualification/capture-acceptance-1/C10/fixtures",
+        "--junitxml=/workspace/fabric-qualification/capture-acceptance-1/C10/junit.xml",
+        "sdk/python/tests/test_metadata_delivery.py::test_large_durable_inventory_http_loss_retry_and_both_process_restarts",
+        "sdk/python/tests/test_distributed_closure.py::test_duplicate_transport_delivery_idempotent_but_epoch_equivocation_fails"
+      ],
+      "source_hashes": {
+        "sdk/python/tests/test_metadata_delivery.py": "3c6226c1bc31e6c50963fcf74d1d590c786e014121f4668fb3079a10e467527d",
+        "sdk/python/tests/test_distributed_closure.py": "09443f982037db65d5963feb48f7d37a7c79d5b7d7293f14af4b0d63a6368133"
+      }
+    }
+  ]
+}

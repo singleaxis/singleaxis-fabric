@@ -1,0 +1,171 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "fabric.deployment-policy/v1"
+    },
+    "policy_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "policy_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "tenant_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "workload_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "privacy": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+      },
+      "additionalProperties": {
+        "enum": [
+          "metadata_only",
+          "omit",
+          "redact",
+          "tokenize",
+          "retain_original"
+        ]
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "const": "local"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[ -~]+$"
+        }
+      },
+      "required": [
+        "backend",
+        "region",
+        "key_id"
+      ]
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 36500
+        }
+      },
+      "required": [
+        "days"
+      ]
+    },
+    "required_integrations": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "enum": [
+            "local",
+            "production"
+          ]
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^(local|sha256:[0-9a-f]{64})$"
+        },
+        "tls_required": {
+          "type": "boolean"
+        },
+        "encrypted_store_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile",
+        "image_digest",
+        "tls_required",
+        "encrypted_store_required"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "policy_id",
+    "policy_version",
+    "tenant_id",
+    "workload_id",
+    "privacy",
+    "storage",
+    "retention",
+    "required_integrations",
+    "deployment"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/deployment-policy/v1/deployment-policy-v1.schema.json",
+  "title": "Local deployment capture privacy policy",
+  "description": "Public configuration only. Do not place keys, credentials or content in policy. Configuration is not certification of controls.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "deployment": {
+            "properties": {
+              "profile": {
+                "const": "production"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "deployment": {
+            "properties": {
+              "image_digest": {
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "tls_required": {
+                "const": true
+              },
+              "encrypted_store_required": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

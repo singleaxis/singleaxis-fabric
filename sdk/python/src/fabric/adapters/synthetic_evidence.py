@@ -543,7 +543,9 @@ class BoundedTerminalAdapter:
         deadline = time.monotonic() + timeout_s
         timed_out = False
         termination_started_at: float | None = None
-        while selector.get_map():
+        # Pipe EOF does not imply child exit: keep deadline/cancellation active
+        # until the owned child is reaped, including after all pipes close.
+        while selector.get_map() or process.poll() is None:
             if not timed_out and (time.monotonic() >= deadline or (cancel and cancel.is_set())):
                 timed_out = True
                 termination_started_at = time.monotonic()

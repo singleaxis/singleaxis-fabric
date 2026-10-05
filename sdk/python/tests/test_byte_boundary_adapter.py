@@ -203,9 +203,14 @@ def test_recorder_failure_does_not_change_delegate_and_bypass_is_partial(
         raise OSError("content store unavailable")
 
     monkeypatch.setattr(session.recorder, "capture", broken_capture)
+    previous_event_count = len(session.snapshot()["events"])
     assert adapter.call(b"fault", send, operation_id="op-3", attempt_id="try-1") == b"reply:fault"
     failed_events = cast(list[dict[str, Any]], session.snapshot()["events"])
-    assert all(event["status"] == "failed" for event in failed_events[-2:])
+    assert len(failed_events) == previous_event_count + 2
+    assert [(event["role"], event["status"]) for event in failed_events[-2:]] == [
+        ("model.request.messages", "failed"),
+        ("model.output.messages", "failed"),
+    ]
     closed = session.recorder.close()
     assert closed
 

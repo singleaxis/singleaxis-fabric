@@ -31,6 +31,20 @@ def _client() -> Fabric:
     return Fabric(FabricConfig(tenant_id="acme", agent_id="bot"))
 
 
+def _block_instrumentor_imports(
+    monkeypatch: pytest.MonkeyPatch, *, allowed: tuple[str, ...] = ()
+) -> None:
+    """Model absent extras independently of packages installed in the test environment."""
+    original = builtins.__import__
+
+    def unavailable(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("opentelemetry.instrumentation.") and name not in allowed:
+            raise ImportError("instrumentor absent in fixture")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", unavailable)
+
+
 def _install_fake_instrumentor(
     monkeypatch: pytest.MonkeyPatch,
     module_name: str,
@@ -47,6 +61,8 @@ def _install_fake_instrumentor(
     counters: dict[str, int] = {"instrumented": 0}
 
     class FakeInstrumentor:
+        is_instrumented_by_opentelemetry = True
+
         def instrument(self) -> None:
             if raise_on_instrument:
                 raise RuntimeError("upstream broke")
@@ -91,7 +107,8 @@ def test_no_extras_installed_returns_empty(monkeypatch: pytest.MonkeyPatch) -> N
 def test_one_extra_installed_enables_only_that(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Stub openai, leave others to ImportError naturally.
+    # Stub openai and explicitly model every other extra as unavailable.
+    _block_instrumentor_imports(monkeypatch, allowed=("opentelemetry.instrumentation.openai_v2",))
     counters = _install_fake_instrumentor(
         monkeypatch,
         "opentelemetry.instrumentation.openai_v2",
@@ -131,11 +148,11 @@ def test_only_filter_warns_on_unknown_name(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    _block_instrumentor_imports(monkeypatch)
     with caplog.at_level("WARNING", logger="fabric.auto_instrument"):
         enabled = enable_auto_instrumentation(only=["openai", "made-up-thing"])
     assert "made-up-thing" in caplog.text
-    # Real openai was not stubbed; it falls into the silent ImportError
-    # branch and isn't enabled.
+    # The fixture explicitly makes openai unavailable, even if installed.
     assert "openai" not in enabled
 
 
@@ -230,13 +247,12 @@ def test_content_capture_via_env_flag(monkeypatch: pytest.MonkeyPatch) -> None:
         assert os.environ.get(var) == "true"
 
 
-def test_content_capture_does_not_clobber_explicit_env(
+def test_content_capture_false_overrides_upstream_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(_CONTENT_CAPTURE_ENV_VARS[0], "operator-set-value")
     enable_auto_instrumentation(only=[])
-    # setdefault leaves the operator's value alone.
-    assert os.environ[_CONTENT_CAPTURE_ENV_VARS[0]] == "operator-set-value"
+    assert os.environ[_CONTENT_CAPTURE_ENV_VARS[0]] == "false"
 
 
 # ---------- Fabric.enable_auto_instrumentation passthrough ----------
@@ -262,3 +278,61 @@ def test_fabric_enable_auto_instrumentation_delegates(
 @pytest.fixture(autouse=True)
 def _reimport_auto_instrument() -> None:
     importlib.reload(sys.modules["fabric.auto_instrument"])
+
+
+@pytest.mark.parametrize("error", [ImportError, RuntimeError])
+def test_import_diagnostics_do_not_include_third_party_error_content(
+    monkeypatch: Any, caplog: Any, error: Any
+) -> None:
+    original = builtins.__import__
+
+    def broken(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "opentelemetry.instrumentation.openai_v2":
+            raise error("SYNTHETIC-PRIVATE-CANARY")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", broken)
+    with caplog.at_level("DEBUG", logger="fabric.auto_instrument"):
+        assert enable_auto_instrumentation(only=["openai"]) == ()
+    assert "SYNTHETIC-PRIVATE-CANARY" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.parametrize("stage", ["constructor", "instrument"])
+def test_registration_diagnostics_do_not_include_third_party_error_content(
+    monkeypatch: Any, caplog: Any, stage: str
+) -> None:
+    class Broken:
+        def __init__(self) -> None:
+            if stage == "constructor":
+                raise RuntimeError("SYNTHETIC-PRIVATE-CANARY")
+
+        def instrument(self) -> None:
+            raise RuntimeError("SYNTHETIC-PRIVATE-CANARY")
+
+    module = types.ModuleType("opentelemetry.instrumentation.openai_v2")
+    module.OpenAIInstrumentor = Broken  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    assert enable_auto_instrumentation(only=["openai"]) == ()
+    assert "SYNTHETIC-PRIVATE-CANARY" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+@pytest.mark.parametrize("active", [False, None])
+def test_tuple_does_not_report_unverified_or_noop_activation(monkeypatch: Any, active: Any) -> None:
+    class Noop:
+        is_instrumented_by_opentelemetry = active
+
+        def instrument(self) -> None:
+            pass
+
+    module = types.ModuleType("opentelemetry.instrumentation.openai_v2")
+    module.OpenAIInstrumentor = Noop  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    assert enable_auto_instrumentation(only=["openai"]) == ()
+
+
+@pytest.mark.parametrize("value", ["false", "true", 0, 1])
+def test_upstream_content_opt_in_requires_actual_boolean(value: Any) -> None:
+    with pytest.raises(ValueError, match="capture_content"):
+        enable_auto_instrumentation(only=[], capture_content=value)
