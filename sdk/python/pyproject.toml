@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25.0"]
+requires = ["hatchling>=1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
@@ -29,7 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 otlp = [
-  "opentelemetry-exporter-otlp-proto-http>=1.41",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.0",
   "urllib3>=2.8.0",
 ]
 # Auto-instrumentation extras for popular LLM SDK families. Each
@@ -51,29 +51,29 @@ openai = [
   # httpx even when the separately installed OpenAI SDK uses httpx2.
   # Bound to the real-SDK loopback benchmark's verified dependency combination.
   "opentelemetry-instrumentation-openai-v2==2.4b0",
-  "opentelemetry-util-genai==0.4b0",
+  "opentelemetry-util-genai==1.2b0",
   "httpx>=0.28.1,<1",
 
 ]
 anthropic = [
-  "opentelemetry-instrumentation-anthropic>=0.30b0",
+  "opentelemetry-instrumentation-anthropic>=0.62.4",
 ]
 bedrock = [
-  "opentelemetry-instrumentation-bedrock>=0.30b0",
+  "opentelemetry-instrumentation-bedrock>=0.62.4",
 ]
 otel-langchain = [
-  "opentelemetry-instrumentation-langchain>=0.30b0",
+  "opentelemetry-instrumentation-langchain>=0.62.4",
 ]
 cohere = [
-  "opentelemetry-instrumentation-cohere>=0.30b0",
+  "opentelemetry-instrumentation-cohere>=0.62.4",
 ]
 # Optional MCP (Model Context Protocol) tool-call instrumentation. The
 # `fabric.integrations.mcp` module duck-types the client session via a
 # local Protocol, so it imports without this extra; the extra only
 # pulls the real `mcp` package in for users wiring it to a live server.
 mcp = [
-  "mcp>=1.0",
-  "PyJWT>=2.15.0",
+  "mcp>=2.2.0",
+  "PyJWT>=2.15.1",
 ]
 # Optional generic signature verification (spec 023 §4). The
 # `fabric.verify_signature` ed25519 path uses `cryptography` when present
@@ -81,25 +81,25 @@ mcp = [
 # needs nothing here. This extra pulls the real primitive in for users who
 # want ed25519 verification.
 signing = [
-  "cryptography>=49",
+  "cryptography>=50.0.2",
 ]
 [dependency-groups]
 dev = [
-  "pytest>=8.3",
-  "pytest-cov>=5.0",
-  "ruff>=0.6.9",
-  "mypy>=1.11.2",
-  "jsonschema>=4.23",
-  "types-jsonschema>=4.23",
-  "PyYAML>=6.0.2,<7.0",
-  "types-PyYAML>=6.0.12",
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
+  "ruff>=0.16.10",
+  "mypy>=2.4.0",
+  "jsonschema>=4.26.0",
+  "types-jsonschema>=4.26.0.20260518",
+  "PyYAML>=6.0.3,<7.0",
+  "types-PyYAML>=6.0.12.20260906",
   "httpx>=0.27",
-  "opentelemetry-exporter-otlp-proto-http>=1.41",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.0",
   "urllib3>=2.8.0",
   # cryptography exercises the real ed25519 path in the generic
   # signature-verification tests (spec 023); without it ed25519 degrades
   # to verified=False and those asserts are skipped.
-  "cryptography>=49",
+  "cryptography>=50.0.2",
 ]
 
 [project.urls]
