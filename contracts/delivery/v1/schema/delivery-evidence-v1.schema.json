@@ -30,8 +30,8 @@
           "properties": {"artifact": {"$ref": "#/$defs/repositoryPath"}, "sha256": {"$ref": "#/$defs/sha256"}, "digest_scope": {"const": "exact_file_bytes"}}
         },
         "privacy_assertion": {
-          "type": "object", "required": ["assertion_id", "artifact", "sha256"], "additionalProperties": false,
-          "properties": {"assertion_id": {"$ref": "#/$defs/uuid"}, "artifact": {"$ref": "#/$defs/repositoryPath"}, "sha256": {"$ref": "#/$defs/sha256"}}
+          "type": "object", "required": ["assertion_id", "artifact", "sha256", "digest_scope"], "additionalProperties": false,
+          "properties": {"assertion_id": {"$ref": "#/$defs/uuid"}, "artifact": {"$ref": "#/$defs/repositoryPath"}, "sha256": {"$ref": "#/$defs/sha256"}, "digest_scope": {"const": "exact_file_bytes"}}
         }
       }
     },

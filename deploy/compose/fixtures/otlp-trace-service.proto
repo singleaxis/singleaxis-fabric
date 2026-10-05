@@ -1,0 +1,13 @@
+// Minimal local descriptor for verify-prod.sh's unauthenticated gRPC probe.
+// The empty request is wire-compatible with OTLP's ExportTraceServiceRequest;
+// authentication rejects it before the receiver decodes the message.
+syntax = "proto3";
+
+package opentelemetry.proto.collector.trace.v1;
+
+service TraceService {
+  rpc Export(ExportTraceServiceRequest) returns (ExportTraceServiceResponse);
+}
+
+message ExportTraceServiceRequest {}
+message ExportTraceServiceResponse {}

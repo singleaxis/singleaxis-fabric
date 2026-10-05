@@ -27,6 +27,16 @@ otelCollector:
 
 otel-collector:
   replicaCount: 2
+  # Pinned image identity is required by this profile. RECOMMENDED: supply
+  # an immutable digest instead —
+  #   --set otel-collector.image.digest=sha256:<64-hex>
+  # An explicit non-latest tag (below) is accepted; "latest" and the empty
+  # appVersion fallback are rejected at render time.
+  image:
+    tag: "0.8.0-rc.1"
+    # A mutable tag must re-resolve on every start; IfNotPresent could keep a
+    # stale (or moved) local image. With image.digest set this is a no-op.
+    pullPolicy: Always
   receiver:
     requireTLS: true
     requireClientCertificate: true

@@ -5,8 +5,8 @@ description: |
   observable AI activity. Capture, protect, and deliver without changing
   or delaying the monitored system.
 type: application
-version: 0.8.0-rc.2
-appVersion: "0.8.0-rc.2"
+version: 0.8.0-rc.1
+appVersion: "0.8.0-rc.1"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - ai-observability
@@ -24,13 +24,15 @@ annotations:
   category: Compliance
   licenses: Apache-2.0
 
-# Fabric Node v1 deliberately packages one runtime: the Fabric Collector.
-# Other source charts remain in the repository for compatibility and research,
-# but they are not dependencies or customer-facing toggles of this release.
+# Fabric Node v1 packages exactly one runtime: the Fabric Collector. The
+# vendored otel-collector subchart is the only dependency.
 dependencies:
   - name: otel-collector
     version: 0.4.0
     condition: otelCollector.enabled
+    # Vendored dependency: the subchart source ships under charts/ and is the
+    # only released dependency. Do NOT run `helm dependency update` — an empty
+    # repository must not be resolved or replaced by a remote chart.
     repository: ""
     tags:
       - telemetry

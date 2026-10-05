@@ -27,11 +27,11 @@ extra that could silently select CrewAI's transitive dependency graph.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from .._hashes import sha256_hex
 from ..decision import Decision
 
 if TYPE_CHECKING:
@@ -41,8 +41,13 @@ logger = logging.getLogger("fabric.adapters.crewai")
 
 
 def _sha256(value: str) -> str:
-    """Return a correlation-safe digest without retaining raw CrewAI content."""
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    """Return a correlation-safe digest without retaining raw CrewAI content.
+
+    Delegates to :func:`fabric._hashes.sha256_hex` (``surrogatepass``) so a
+    lone UTF-16 surrogate in hostile event text cannot raise
+    ``UnicodeEncodeError`` inside the host's callback path.
+    """
+    return sha256_hex(value)
 
 
 @dataclass(frozen=True)

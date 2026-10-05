@@ -4,8 +4,8 @@
 """Verify that every shipped Fabric artifact identifies one release.
 
 ``VERSION`` is the authoritative release identity. Ecosystem package versions
-that have a different meaning (Helm chart package versions and Langfuse's
-upstream app version) are governed by the explicit compatibility rules below.
+that have a different meaning (Helm chart package versions) are governed by
+the explicit compatibility rules below.
 The JSON report is intended for CI evidence and release automation.
 """
 

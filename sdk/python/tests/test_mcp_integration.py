@@ -30,6 +30,7 @@ from fabric.integrations.mcp import (
     FABRIC_MCP_SERVER,
     FABRIC_MCP_TRANSPORT,
     InstrumentedMCPSession,
+    record_mcp_inventory,
     traced_call_tool,
 )
 
@@ -118,7 +119,8 @@ def test_traced_call_tool_error_result(span_exporter: InMemorySpanExporter) -> N
     )
     attrs = dict(span.attributes or {})
     assert attrs[FABRIC_TOOL_ERROR] is True
-    assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "mcp_tool_error"
+    # MCP ``isError`` results map to the canonical tool error category.
+    assert attrs[FABRIC_TOOL_ERROR_CATEGORY] == "server_error"
     # error results still record their content count
     assert attrs[FABRIC_TOOL_RESULT_COUNT] == 1
 
@@ -246,3 +248,46 @@ def test_instrumented_session_passthrough() -> None:
         assert wrapped.server_version == "1.2.3"
         close_result = wrapped.close()
         assert close_result == "closed"
+
+
+def test_inventory_omits_empty_server_and_transport(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """A snapshot with no identified server/transport must omit those
+    attributes rather than stamp empty strings."""
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        inv = record_mcp_inventory(
+            dec,
+            server=None,
+            transport=None,
+            tools=[{"name": "read_file"}, {"name": "write_file"}],
+        )
+
+    assert inv.server is None
+    assert inv.transport is None
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    event = next(e for e in span.events if e.name == "fabric.mcp.inventory")
+    attrs = dict(event.attributes or {})
+    assert FABRIC_MCP_SERVER not in attrs
+    assert FABRIC_MCP_TRANSPORT not in attrs
+    assert attrs["fabric.mcp.tool_count"] == 2
+
+
+def test_inventory_stamps_identified_server_and_transport(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        record_mcp_inventory(
+            dec,
+            server="fs-mcp",
+            transport="stdio",
+            tools=[{"name": "read_file"}],
+        )
+
+    span = next(s for s in span_exporter.get_finished_spans() if s.name == "fabric.decision")
+    event = next(e for e in span.events if e.name == "fabric.mcp.inventory")
+    attrs = dict(event.attributes or {})
+    assert attrs[FABRIC_MCP_SERVER] == "fs-mcp"
+    assert attrs[FABRIC_MCP_TRANSPORT] == "stdio"

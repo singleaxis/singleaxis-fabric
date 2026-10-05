@@ -1,0 +1,133 @@
+{
+  "contract": "singleaxis.fabric.content",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {
+      "path": "schema/content-object-v1.schema.json",
+      "role": "schema:content-object-v1",
+      "sha256": "f3814aabaaaa60e68771b6edeeae291cdda656fad30ef7202a148d041efae69e",
+      "expectation": "schema"
+    },
+    {
+      "path": "schema/transcript-export-v1.schema.json",
+      "role": "schema:transcript-export-v1",
+      "sha256": "b699145edc40b07623cc2a3ce12059d40eca9002bd63884d0ce6f5da9e566e85",
+      "expectation": "schema"
+    },
+    {
+      "path": "schema/transcript-manifest-v1.schema.json",
+      "role": "schema:transcript-manifest-v1",
+      "sha256": "046ada471085ea0fa2fee3c85c3e33ae5566676d2bc08ec0c47deef2151b9a51",
+      "expectation": "schema"
+    },
+    {
+      "path": "valid/content-object-model-request.json",
+      "role": "valid:content-object-model-request",
+      "sha256": "ddad316e82199058527386c9091fba983aed36a8fa9d4ebc8ddd799bdce95321",
+      "expectation": "valid"
+    },
+    {
+      "path": "valid/transcript-export-complete.json",
+      "role": "valid:transcript-export-complete",
+      "sha256": "c0d1d5dd8de9d50625fe66b715c055dbb2a0cc428a00911273791411b3fb3745",
+      "expectation": "valid"
+    },
+    {
+      "path": "valid/transcript-manifest-complete.json",
+      "role": "valid:transcript-manifest-complete",
+      "sha256": "ad316783e77da0f2c38b58dde0ed03976e05d53491b1b6f55a000b4b4317da84",
+      "expectation": "valid"
+    },
+    {
+      "path": "valid/transcript-manifest-incomplete.json",
+      "role": "valid:transcript-manifest-incomplete",
+      "sha256": "39a4b7e7ce9b9801d86757adefe5db5248138a68a8831bcd10cbe00476033c6d",
+      "expectation": "valid"
+    },
+    {
+      "path": "fixtures/bytes/ascii.json",
+      "role": "bytes-fixture:ascii",
+      "sha256": "1d5b86c72b1722b1b75d0608be3094d2674d5c250d9736e89c6a4fa4470c9296",
+      "expectation": "fixture"
+    },
+    {
+      "path": "fixtures/bytes/empty-array.json",
+      "role": "bytes-fixture:empty-array",
+      "sha256": "ca1b9411028bd7c1ca681c69b7252bc9023f7c1d8b19fac3858fbd4a17fb0772",
+      "expectation": "fixture"
+    },
+    {
+      "path": "fixtures/bytes/empty-object.json",
+      "role": "bytes-fixture:empty-object",
+      "sha256": "2b064050436156f5aa47fb95ba63adafcefdab1440b6bde66afb16a2d0115cf1",
+      "expectation": "fixture"
+    },
+    {
+      "path": "fixtures/bytes/empty-string.json",
+      "role": "bytes-fixture:empty-string",
+      "sha256": "ed8210c17a4a0e601ab964d1b30bc886f9b03d4ed2cb254425ff4881b91d0696",
+      "expectation": "fixture"
+    },
+    {
+      "path": "fixtures/bytes/multiline.json",
+      "role": "bytes-fixture:multiline",
+      "sha256": "7cae3c399f63001913cb990d0c08ff08b7c3b3040561e70a7515a440aa0590f1",
+      "expectation": "fixture"
+    },
+    {
+      "path": "fixtures/bytes/nested-json.json",
+      "role": "bytes-fixture:nested-json",
+      "sha256": "8c3909f7bc500a4af0b9c16c3a0d864d27c600ba34c4dce91bae1d22115bebac",
+      "expectation": "fixture"
+    },
+    {
+      "path": "fixtures/bytes/unicode.json",
+      "role": "bytes-fixture:unicode",
+      "sha256": "d698959d23e3f76b8a75c271c7532fe6d6d710a8004433e358c124c14f2ae23c",
+      "expectation": "fixture"
+    },
+    {
+      "path": "invalid/content-object-truncated-no-length.json",
+      "role": "invalid:content-object-truncated-no-length",
+      "sha256": "c597338159d39456c3aae0f1ee9adf9279b0b10fb912ae5c69b4be06a1560fa2",
+      "expectation": "invalid",
+      "expected_error": "content.schema.invalid"
+    },
+    {
+      "path": "invalid/transcript-manifest-completeness-mismatch.json",
+      "role": "invalid:transcript-manifest-completeness-mismatch",
+      "sha256": "d6b36296cab37823ae3d5e308a98406bb5c47b155b7df86a98820c55400f8309",
+      "expectation": "invalid",
+      "expected_error": "content.manifest.completeness"
+    },
+    {
+      "path": "invalid/transcript-manifest-missing-descriptor.json",
+      "role": "invalid:transcript-manifest-missing-descriptor",
+      "sha256": "d341ae24f7f993527f0d72a9dffa39b7a43e87ac0ce5b947238761c996387f50",
+      "expectation": "invalid",
+      "expected_error": "content.schema.invalid"
+    },
+    {
+      "path": "invalid/transcript-manifest-sequence-gap.json",
+      "role": "invalid:transcript-manifest-sequence-gap",
+      "sha256": "00ac8b4f2c039fe9bd77f691b54b6b88890ff0238c23edc2b26b2b33b270e8c2",
+      "expectation": "invalid",
+      "expected_error": "content.manifest.sequence"
+    },
+    {
+      "path": "invalid/transcript-manifest-stray-descriptor.json",
+      "role": "invalid:transcript-manifest-stray-descriptor",
+      "sha256": "9a7983a970a0c0dbf295b38678c970209db836d7c9630e411b396f9de07a5b05",
+      "expectation": "invalid",
+      "expected_error": "content.schema.invalid"
+    },
+    {
+      "path": "invalid/transcript-manifest-descriptor-status-mismatch.json",
+      "role": "invalid:transcript-manifest-descriptor-status-mismatch",
+      "sha256": "43dd0506d39b4f50357309785c4434650996bd3b43481439690f5b70fb94d627",
+      "expectation": "invalid",
+      "expected_error": "content.manifest.descriptor"
+    }
+  ]
+}

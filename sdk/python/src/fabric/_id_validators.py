@@ -85,6 +85,96 @@ ENV_ALLOW_PLACEHOLDER = "FABRIC_ALLOW_PLACEHOLDER_IDS"
 _LIKELY_EMAIL = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _LIKELY_PHONE = re.compile(r"^\+?\d{7,15}$|^\+?\d[\d -]{8,}\d$")
 
+# Embedded variants for free-form text fields (interaction kind, raw target):
+# PII shows up INSIDE the string there, so anchored matches would miss it.
+# Email stays distinctive (requires @ + dotted TLD). SSN needs separators so
+# plain digit runs like ``id.12345678`` don't flag. Phone requires separators
+# or a leading ``+`` for the same reason.
+_LIKELY_SSN_EMBEDDED = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+_LIKELY_PHONE_EMBEDDED = re.compile(r"\+\d[\d -]{8,}\d|\b\d{3}[-. ]\d{3}[-. ]\d{4}\b")
+
+# Embedded scanning must stay cheap on adversarial input: an unanchored
+# ``[...]+@`` regex retries from every start position, which is ~quadratic
+# on long no-match strings and would stall the instrumented agent — exactly
+# the interference this SDK promises never to cause. Two bounds keep it
+# linear-or-small: (1) the scan window is capped at ``max_field_bytes``
+# (the Node truncates anything longer anyway, so PII past the cap never
+# crosses the boundary), and (2) a literal-substring prescreen skips each
+# pattern when its mandatory character is absent (the common case).
+_EMBEDDED_SCAN_LIMIT = 8192
+_EMAIL_LOCAL_CHARS = frozenset("._%+-")
+_MIN_EMAIL_TLD_LETTERS = 2
+_UTF8_ONE_BYTE_MAX = 0x7F
+_UTF8_TWO_BYTE_MAX = 0x7FF
+_UTF8_THREE_BYTE_MAX = 0xFFFF
+
+
+def _utf8_prefix(value: str, max_bytes: int) -> str:
+    """Return the longest prefix whose UTF-8 representation fits the bound."""
+    used = 0
+    chars: list[str] = []
+    for char in value:
+        codepoint = ord(char)
+        size = (
+            1
+            if codepoint <= _UTF8_ONE_BYTE_MAX
+            else 2
+            if codepoint <= _UTF8_TWO_BYTE_MAX
+            else 3
+            if codepoint <= _UTF8_THREE_BYTE_MAX
+            else 4
+        )
+        if used + size > max_bytes:
+            break
+        chars.append(char)
+        used += size
+    return "".join(chars)
+
+
+def _is_ascii_alnum(char: str) -> bool:
+    return "a" <= char.lower() <= "z" or "0" <= char <= "9"
+
+
+def _contains_embedded_email(value: str) -> bool:
+    """Match the embedded-email shape in one pass without regex retries."""
+    local_run = 0
+    in_domain = False
+    domain_length = 0
+    suffix_letters = 0
+    suffix_active = False
+
+    for char in value:
+        local_char = _is_ascii_alnum(char) or char in _EMAIL_LOCAL_CHARS
+        if char == "@":
+            in_domain = local_run > 0
+            domain_length = 0
+            suffix_letters = 0
+            suffix_active = False
+            local_run = 0
+            continue
+
+        if in_domain:
+            domain_char = _is_ascii_alnum(char) or char in ".-"
+            if not domain_char:
+                in_domain = False
+                suffix_active = False
+            else:
+                if char == ".":
+                    suffix_active = domain_length > 0
+                    suffix_letters = 0
+                elif suffix_active:
+                    if "a" <= char.lower() <= "z":
+                        suffix_letters += 1
+                        if suffix_letters >= _MIN_EMAIL_TLD_LETTERS:
+                            return True
+                    else:
+                        suffix_active = False
+                domain_length += 1
+
+        local_run = local_run + 1 if local_char else 0
+
+    return False
+
 
 _SENTINEL_VALUES: frozenset[str] = frozenset(
     {
@@ -230,7 +320,7 @@ class PIIShapedIdentifierWarning(UserWarning):
     """
 
 
-def warn_if_pii_shaped(field_name: str, value: str | None) -> None:
+def warn_if_pii_shaped(field_name: str, value: str | None, *, embedded: bool = False) -> None:
     """Emit a one-shot stderr warning if ``value`` looks like PII.
 
     Called from :class:`fabric.client.FabricConfig.__post_init__` and
@@ -242,27 +332,42 @@ def warn_if_pii_shaped(field_name: str, value: str | None) -> None:
 
     No-ops when ``value`` is falsy, when ``value`` is not a string,
     or when ``FABRIC_QUIET_PII_WARN=1`` is set in the environment.
+
+    ``embedded=True`` searches for PII-shaped substrings instead of
+    requiring the whole value to match — use it for free-form text
+    fields (``interaction.kind``, a raw ``interaction.target``) where an
+    email, SSN, or formatted phone number would appear embedded in
+    longer caller-controlled text.
     """
     if not value or not isinstance(value, str):
         return
     if os.environ.get(ENV_QUIET) == "1":
         return
-    if _LIKELY_EMAIL.match(value):
-        warnings.warn(
-            f"{field_name}={value!r} looks like an email — these will appear "
-            f"in every emitted span, exporting PII to your trace backend. "
-            f"Consider an opaque ID instead and put the email in a separate "
-            f"non-emitted attribute. (suppress with FABRIC_QUIET_PII_WARN=1)",
-            PIIShapedIdentifierWarning,
-            stacklevel=3,
+    if embedded:
+        scan = _utf8_prefix(value, _EMBEDDED_SCAN_LIMIT)
+        has_digit = any(ch.isdigit() for ch in scan)
+        patterns = []
+        matched = "an email" if "@" in scan and _contains_embedded_email(scan) else None
+        if has_digit and "-" in scan:
+            patterns.append((_LIKELY_SSN_EMBEDDED, "an SSN"))
+        if has_digit and ("+" in scan or "-" in scan or "." in scan or " " in scan):
+            patterns.append((_LIKELY_PHONE_EMBEDDED, "a phone number"))
+        if matched is None:
+            matched = next((label for pattern, label in patterns if pattern.search(scan)), None)
+    else:
+        matched = (
+            "an email"
+            if _LIKELY_EMAIL.match(value)
+            else "a phone number"
+            if _LIKELY_PHONE.match(value)
+            else None
         )
-    elif _LIKELY_PHONE.match(value):
+    if matched is not None:
         warnings.warn(
-            f"{field_name}={value!r} looks like a phone number — these will "
-            f"appear in every emitted span, exporting PII to your trace "
-            f"backend. Consider an opaque ID instead and put the phone in a "
-            f"separate non-emitted attribute. "
-            f"(suppress with FABRIC_QUIET_PII_WARN=1)",
+            f"{field_name}={value!r} looks like {matched} — these will appear "
+            f"in every emitted span, exporting PII to your trace backend. "
+            f"Consider an opaque ID instead and put the value in a separate "
+            f"non-emitted attribute. (suppress with FABRIC_QUIET_PII_WARN=1)",
             PIIShapedIdentifierWarning,
             stacklevel=3,
         )

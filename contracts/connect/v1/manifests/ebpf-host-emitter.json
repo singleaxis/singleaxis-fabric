@@ -1,0 +1,76 @@
+{
+  "schema_version": "singleaxis.fabric.connect-capability/v1",
+  "connector_id": "singleaxis.fabric.ebpf-host-emitter",
+  "display_name": "SingleAxis Fabric eBPF Host Emitter",
+  "release": {"version": "0.8.0-rc.1", "maturity": "beta", "distribution": "container"},
+  "implementation": {"kind": "ebpf_discovery", "deployment_modes": ["daemonset", "host_agent"]},
+  "compatibility": {
+    "activity_contract": null,
+    "fabric_versions": ">=0.8.0-rc.1,<1.0.0",
+    "runtimes": ["Linux kernel >=5.8 with BTF (CO-RE)", "Kubernetes >=1.29 or OCI runtime with CAP_BPF+CAP_PERFMON"],
+    "protocols": ["eBPF tracepoints (sched_process_exec, sys_enter_connect, sys_enter_openat)", "OTLP/gRPC logs"]
+  },
+  "observation": {
+    "semantic_surfaces": [
+      {"surface": "process_lifecycle", "source": "kernel_inferred"},
+      {"surface": "network_flow", "source": "kernel_inferred"},
+      {"surface": "file_access_metadata", "source": "kernel_inferred"}
+    ],
+    "decision_semantics": "none",
+    "coverage_basis": "Configured kernel tracepoints observe selected exec/connect/openat activity inside the configured cgroup scope, including actions outside SDK instrumentation. Ring-buffer loss, sensor downtime, unsupported paths and scoping errors prevent an every-action guarantee. File access is off by default because openat volume is host-scale."
+  },
+  "control": {
+    "interposition": "passive_probe",
+    "agent_runtime_actions": [],
+    "telemetry_pipeline_actions": []
+  },
+  "content": {
+    "raw_content_behavior": "hash_only",
+    "default_raw_capture": false,
+    "pre_egress_redaction": "built_in",
+    "sensitive_field_allowlist": true
+  },
+  "identity": {
+    "source": "process_network_inference",
+    "strength": "inferred",
+    "tenant_partitioning": "not_available"
+  },
+  "authentication": {
+    "ingress_supported": ["none"],
+    "ingress_default": "none",
+    "egress_supported": ["none", "bearer_token", "mtls"],
+    "egress_default": "none",
+    "credential_handling": "The emitter optionally reads a bearer-token file or a client certificate/key pair. TLS is the default; an explicit development-only insecure transport setting rejects bearer tokens and TLS files."
+  },
+  "context_propagation": {
+    "w3c_tracecontext": {"receive": false, "inject": false, "preserve": false},
+    "baggage": "unsupported",
+    "correlation_limitations": [
+      "Kernel events carry pid/ppid/cgroup and timestamps — they are not span edges. Joining them to agent traces is inferred provenance, never causal.",
+      "Encrypted traffic yields metadata only: peer address, port, timing — never payload or trace headers.",
+      "Cgroup-to-workload attribution depends on the operator supplying the correct cgroup_path; mis-scoped filters observe the wrong boundary."
+    ]
+  },
+  "data_egress": {
+    "network_egress": true,
+    "protocols": ["OTLP/gRPC"],
+    "transport_security": "operator_configurable",
+    "destinations": "operator_configured",
+    "default_destination": "configured EMIT_ENDPOINT (Fabric Node)"
+  },
+  "verification_evidence": [
+    {"type": "unit_test", "path": "components/host-emitter/emitter_test.go", "claim": "Covers minimized event translation, incomplete argv/path status, cgroup-scope validation, TLS configuration rejection, dedupe collapse, and rate limiting."},
+    {"type": "integration_test", "path": "components/host-emitter/e2e-emitter.sh", "claim": "Linux Docker BPF capture test script; it must pass against the exact release image before live coverage is claimed and has not been qualified by local macOS tests."}
+  ],
+  "known_blind_spots": [
+    "Cannot identify prompts, completions, tool arguments, tool results, policy verdicts, or decision boundaries — kernel metadata only.",
+    "Requires CAP_BPF+CAP_PERFMON and kernel >=5.8 with BTF; the container runs read-only mounts and refuses to start on kernels that lack support.",
+    "Encrypted traffic prevents payload or trace-header inspection — peer/timing metadata only.",
+    "openat (file_access) is host-scale volume and off by default; enabling it without cgroup scoping can exceed emit budgets.",
+    "Attribution to a logical agent depends on correct cgroup_path; all_host=true is an explicit opt-in and widens collection to the whole node.",
+    "An adversarial workload with kernel-level access is outside this threat model — the emitter observes the host it runs on and cannot defend the kernel itself.",
+    "The emitter has a bounded fsynced source spool with at-least-once replay and stable record IDs, but neither source fsync nor OTLP acceptance proves durable destination storage.",
+    "Spool exhaustion causes a visible sensor stop; activity while the sensor is down or before a kernel loss count is durably queued cannot be reconstructed by this source.",
+    "Only configured tracepoints and cgroup scope are observed; kernel ring-buffer loss and partial argv/path capture require explicit incomplete status and independent reconciliation."
+  ]
+}

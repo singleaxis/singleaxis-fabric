@@ -1,7 +1,0 @@
-{
-  "schema_version": "fabricctl.bundle-build/v1",
-  "status": "pass",
-  "readiness": "verified",
-  "bundle_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-  "artifacts": ["a", "b", "c", "d", "e", "f"]
-}

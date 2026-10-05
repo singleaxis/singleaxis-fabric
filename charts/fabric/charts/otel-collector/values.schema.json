@@ -67,10 +67,21 @@
     "receiver": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requireTLS", "requireClientCertificate", "tls"],
+      "required": ["requireTLS", "requireClientCertificate", "evidenceSourceBinding", "tls"],
       "properties": {
         "requireTLS": {"type": "boolean"},
         "requireClientCertificate": {"type": "boolean"},
+        "evidenceSourceBinding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "tenantId", "sourceId", "tokenSecret"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "tenantId": {"type": "string", "maxLength": 128, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"},
+            "sourceId": {"type": "string", "maxLength": 128, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"},
+            "tokenSecret": {"$ref": "#/definitions/secretKeyReference"}
+          }
+        },
         "tls": {
           "type": "object",
           "additionalProperties": false,
@@ -250,7 +261,7 @@
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo"],
+      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo", "monitoringNamespaceSelector"],
       "properties": {
         "enabled": {"type": "boolean"},
         "requireExplicitIngress": {"type": "boolean"},
@@ -265,7 +276,11 @@
             "ports": {"type": "array", "items": {"$ref": "#/definitions/networkPolicyPort"}}
           }
         },
-        "egressTo": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}}
+        "egressTo": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}},
+        "monitoringNamespaceSelector": {
+          "$ref": "#/definitions/kubernetesObject",
+          "description": "Optional LabelSelector for the monitoring namespace allowed to reach the health port. Empty means no health ingress rule (default deny)."
+        }
       }
     }
   },

@@ -121,11 +121,22 @@ def _fake_boto3(recorder: dict[str, Any]) -> ModuleType:
         recorder["body"] = Body
         return {"ETag": "etag-1"}
 
-    def client(service: str, region_name: str | None = None) -> SimpleNamespace:
+    def client(
+        service: str,
+        region_name: str | None = None,
+        endpoint_url: str | None = None,
+    ) -> SimpleNamespace:
         recorder["service"] = service
         recorder["region_name"] = region_name
+        recorder["endpoint_url"] = endpoint_url
         recorder["clients"] = recorder.get("clients", 0) + 1
-        return SimpleNamespace(put_object=put_object)
+        return SimpleNamespace(
+            put_object=put_object,
+            head_object=lambda Bucket, Key: recorder.setdefault("head", (Bucket, Key)),  # noqa: N803
+            get_object=lambda Bucket, Key: {  # noqa: N803
+                "Body": SimpleNamespace(read=lambda: recorder.get("body", b""))
+            },
+        )
 
     module.client = client  # type: ignore[attr-defined]
     return module
@@ -151,17 +162,17 @@ def test_s3_put_calls_put_object_and_returns_s3_ref(monkeypatch: pytest.MonkeyPa
 def test_s3_custom_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3(recorder))
-    store = S3ContentStore(bucket="b", prefix="custom/path/")
+    store = S3ContentStore(bucket="content-bucket", prefix="custom/path/")
     ref = store.put("hi")
     digest = _sha256("hi")
     assert recorder["key"] == f"custom/path/{digest}"
-    assert ref.uri == f"s3://b/custom/path/{digest}"
+    assert ref.uri == f"s3://content-bucket/custom/path/{digest}"
 
 
 def test_s3_client_is_lazy_and_reused(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3(recorder))
-    store = S3ContentStore(bucket="b")
+    store = S3ContentStore(bucket="content-bucket")
     assert "clients" not in recorder  # no client at construction
     store.put("one")
     store.put("two")
@@ -172,7 +183,7 @@ def test_s3_client_is_lazy_and_reused(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_s3_close_is_noop_and_clears_handle(monkeypatch: pytest.MonkeyPatch) -> None:
     recorder: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3(recorder))
-    store = S3ContentStore(bucket="b")
+    store = S3ContentStore(bucket="content-bucket")
     store.put("x")
     store.close()  # must not raise
     # A subsequent put re-creates the client (close cleared the handle).
@@ -182,13 +193,13 @@ def test_s3_close_is_noop_and_clears_handle(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_s3_satisfies_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3({}))
-    assert isinstance(S3ContentStore(bucket="b"), ContentStore)
+    assert isinstance(S3ContentStore(bucket="content-bucket"), ContentStore)
 
 
 def test_s3_missing_dep_raises_on_put(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "boto3", None)
-    store = S3ContentStore(bucket="b")
-    with pytest.raises(ImportError, match=r"singleaxis-fabric\[aws\]"):
+    store = S3ContentStore(bucket="content-bucket")
+    with pytest.raises(ImportError, match=r"pip install boto3"):
         store.put("x")
 
 
@@ -206,3 +217,116 @@ def test_fabric_exposes_content_store(tmp_path: Path) -> None:
     store = LocalFilesystemContentStore(root=str(tmp_path))
     client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
     assert client.content_store is store
+
+
+# --------------------------------------------------------------------------- #
+# Governed content refs on events (dual-pipeline wiring)
+# --------------------------------------------------------------------------- #
+
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E402
+    InMemorySpanExporter,
+)
+
+
+def _decision_span(exporter: InMemorySpanExporter) -> Any:
+    return next(s for s in exporter.get_finished_spans() if s.name == "fabric.decision")
+
+
+def test_remember_stamps_content_ref_when_store_configured(
+    tmp_path: Path,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """With a store configured, ``remember`` writes content off-trace and
+    the event carries the ``fabric.content.ref`` URI — never raw bytes."""
+    store = LocalFilesystemContentStore(root=str(tmp_path))
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
+    content = "raw memory content worth auditing"
+    with client.decision(session_id="s", request_id="r") as d:
+        d.remember(kind="semantic", key="k", content=content)
+
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
+    attrs = dict(event.attributes or {})
+    ref = store.put(content)  # same digest -> same URI
+    assert attrs["fabric.content.ref"] == ref.uri
+    assert content not in repr(attrs)
+
+
+def test_recall_stamps_content_ref_when_store_configured(
+    tmp_path: Path,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path))
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
+    with client.decision(session_id="s", request_id="r") as d:
+        d.recall(kind="episodic", key="k", content="recalled bytes")
+
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.content.ref"] == store.put("recalled bytes").uri
+
+
+def test_side_effect_stamps_request_and_result_refs(
+    tmp_path: Path,
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path))
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"), content_store=store)
+    with client.decision(session_id="s", request_id="r") as d:
+        d.record_side_effect(
+            "api_mutation",
+            target_system="crm",
+            operation="case.update",
+            request_payload='{"case": "1"}',
+            result_payload='{"ok": true}',
+        )
+
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.side_effect")
+    attrs = dict(event.attributes or {})
+    assert attrs["fabric.content.request_ref"] == store.put('{"case": "1"}').uri
+    assert attrs["fabric.content.result_ref"] == store.put('{"ok": true}').uri
+
+
+def test_no_content_ref_without_store(span_exporter: InMemorySpanExporter) -> None:
+    """Pure hash-only mode unchanged: no store -> no content ref attrs."""
+    client = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
+    with client.decision(session_id="s", request_id="r") as d:
+        d.remember(kind="semantic", key="k", content="c")
+        d.record_side_effect(
+            "api_mutation", target_system="crm", operation="op", request_payload="p"
+        )
+
+    span = _decision_span(span_exporter)
+    for event in span.events:
+        attrs = dict(event.attributes or {})
+        assert "fabric.content.ref" not in attrs
+        assert "fabric.content.request_ref" not in attrs
+        assert "fabric.content.result_ref" not in attrs
+
+
+def test_content_ref_store_failure_warns_but_does_not_raise(
+    span_exporter: InMemorySpanExporter,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A store failure must not break the agent's path: the event still
+    lands (without a ref) and the gap is loud in the logs."""
+
+    class _BrokenStore:
+        def put(self, content: str, *, key_hint: str | None = None) -> ContentRef:
+            raise RuntimeError("store unavailable")
+
+        def get(self, ref: ContentRef) -> str:
+            raise RuntimeError("store unavailable")
+
+    client = Fabric(
+        FabricConfig(tenant_id="t", agent_id="a"),
+        content_store=_BrokenStore(),  # type: ignore[arg-type]
+    )
+    with (
+        caplog.at_level("WARNING", logger="fabric.decision"),
+        client.decision(session_id="s", request_id="r") as d,
+    ):
+        d.remember(kind="semantic", key="k", content="c")
+
+    event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
+    assert "fabric.content.ref" not in dict(event.attributes or {})
+    assert any("content store" in r.message for r in caplog.records)

@@ -1,5 +1,3 @@
-//go:build !legacy
-
 // Copyright 2026 AI5Labs Research OPC Private Limited
 // SPDX-License-Identifier: Apache-2.0
 
@@ -76,6 +74,10 @@ func TestDefaultReleaseBinaryContainsOnlyRecorderCommands(t *testing.T) {
 		[]byte("Assurance level"),
 		[]byte("bundle build"),
 		[]byte("management origin"),
+		[]byte("kubectl"),
+		[]byte("helm "),
+		[]byte("OperationPlan"),
+		[]byte("pairing"),
 	} {
 		if bytes.Contains(payload, marker) {
 			t.Fatalf("release executable contains non-recorder capability marker %q", marker)

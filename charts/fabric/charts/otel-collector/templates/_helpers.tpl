@@ -75,6 +75,60 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if and $clientCA.name (not $clientCA.key) -}}
 {{- fail "receiver.tls.clientCASecret.name requires receiver.tls.clientCASecret.key" -}}
 {{- end -}}
+{{- $binding := $r.evidenceSourceBinding -}}
+{{- if $binding.enabled -}}
+{{- if not $r.requireTLS -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires receiver.requireTLS=true" -}}
+{{- end -}}
+{{- if not $server.name -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires receiver.tls.serverCertificateSecret.name" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $binding.tenantId) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid nonempty tenantId" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $binding.sourceId) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid nonempty sourceId" -}}
+{{- end -}}
+{{- if or (gt (len $binding.tokenSecret.name) 63) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $binding.tokenSecret.name)) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid tokenSecret.name for an existing Secret" -}}
+{{- end -}}
+{{- if not (regexMatch "^[A-Za-z0-9._-]+$" $binding.tokenSecret.key) -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires a valid nonempty tokenSecret.key" -}}
+{{- end -}}
+{{- if not .Values.exporter.requireTLS -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires exporter.requireTLS=true for the approved HTTPS destination" -}}
+{{- end -}}
+{{- if .Values.debugExporter.enabled -}}
+{{- fail "receiver.evidenceSourceBinding.enabled=true requires debugExporter.enabled=false" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Every NetworkPolicyPeer an operator supplies must name an explicit
+restriction. An empty peer ({}) selects all sources/destinations, and an
+ipBlock of 0.0.0.0/0 or ::/0 is equivalent to no policy; both silently
+bypass the explicit-peers model, so they are rejected at render time.
+*/}}
+{{- define "otel-collector.validatePeers" -}}
+{{- range $i, $peer := .peers -}}
+{{- if or (not (kindIs "map" $peer)) (eq (len $peer) 0) -}}
+{{- fail (printf "%s[%d] is an empty peer, which selects all sources/destinations; name an explicit podSelector, namespaceSelector, or ipBlock" $.field $i) -}}
+{{- end -}}
+{{- if hasKey $peer "ipBlock" -}}
+{{- $block := index $peer "ipBlock" -}}
+{{- if not (kindIs "map" $block) -}}
+{{- fail (printf "%s[%d].ipBlock must be an object with a cidr" $.field $i) -}}
+{{- end -}}
+{{- $cidr := index $block "cidr" | default "" | toString | trim -}}
+{{- if eq $cidr "" -}}
+{{- fail (printf "%s[%d].ipBlock.cidr is required" $.field $i) -}}
+{{- end -}}
+{{- if or (eq $cidr "0.0.0.0/0") (eq $cidr "::/0") -}}
+{{- fail (printf "%s[%d] uses world CIDR %s, which is equivalent to no policy; name a specific CIDR or selector" $.field $i $cidr) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "otel-collector.validateNetworkPolicy" -}}
@@ -83,6 +137,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $hasIngressPeers := gt (len $np.ingressFrom) 0 -}}
 {{- $hasPeers := gt (len $ee.to) 0 -}}
 {{- $hasPorts := gt (len $ee.ports) 0 -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $np.ingressFrom "field" "networkPolicy.ingressFrom") -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $ee.to "field" "networkPolicy.exporterEgress.to") -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $np.egressTo "field" "networkPolicy.egressTo") -}}
+{{- if and (kindIs "map" $np.monitoringNamespaceSelector) (gt (len $np.monitoringNamespaceSelector) 0) -}}
+{{- if and (empty (index $np.monitoringNamespaceSelector "matchLabels")) (empty (index $np.monitoringNamespaceSelector "matchExpressions")) -}}
+{{- fail "networkPolicy.monitoringNamespaceSelector must name matchLabels or matchExpressions; an empty selector would open the health port to every namespace" -}}
+{{- end -}}
+{{- end -}}
 {{- if $np.requireExplicitIngress -}}
 {{- if not $np.enabled -}}
 {{- fail "networkPolicy.requireExplicitIngress=true requires networkPolicy.enabled=true" -}}

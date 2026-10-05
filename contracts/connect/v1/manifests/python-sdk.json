@@ -2,7 +2,7 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.python-sdk",
   "display_name": "SingleAxis Fabric Python SDK",
-  "release": {"version": "0.8.0-rc.2", "maturity": "beta", "distribution": "python-package"},
+  "release": {"version": "0.8.0-rc.1", "maturity": "beta", "distribution": "python-package"},
   "implementation": {"kind": "in_process_sdk", "deployment_modes": ["application"]},
   "compatibility": {
     "activity_contract": null,

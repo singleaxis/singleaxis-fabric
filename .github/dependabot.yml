@@ -10,55 +10,10 @@ updates:
   # Python packages — one entry per pyproject.toml location.
   # Single-maintainer project: cap per-ecosystem PRs at 5 and group
   # dev-only deps to reduce churn.
-  - package-ecosystem: "pip"
-    directory: "/components/presidio-sidecar"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels: ["dependencies", "python", "presidio-sidecar"]
-    groups:
-      dev-dependencies:
-        dependency-type: "development"
 
-  - package-ecosystem: "pip"
-    directory: "/components/nemo-sidecar"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels: ["dependencies", "python", "nemo-sidecar"]
-    groups:
-      dev-dependencies:
-        dependency-type: "development"
 
-  - package-ecosystem: "pip"
-    directory: "/components/langfuse-bootstrap"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels: ["dependencies", "python", "langfuse-bootstrap"]
-    groups:
-      dev-dependencies:
-        dependency-type: "development"
 
-  - package-ecosystem: "pip"
-    directory: "/components/redteam-runner"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels: ["dependencies", "python", "redteam-runner"]
-    groups:
-      dev-dependencies:
-        dependency-type: "development"
 
-  - package-ecosystem: "pip"
-    directory: "/components/update-agent"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels: ["dependencies", "python", "update-agent"]
-    groups:
-      dev-dependencies:
-        dependency-type: "development"
 
   - package-ecosystem: "pip"
     directory: "/sdk/python"
@@ -91,7 +46,14 @@ updates:
         dependency-type: "development"
 
   - package-ecosystem: "gomod"
-    directory: "/"
+    directory: "/tools/fabricctl"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "go"]
+
+  - package-ecosystem: "gomod"
+    directory: "/components/otel-collector-fabric/processor/fabricguardprocessor"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

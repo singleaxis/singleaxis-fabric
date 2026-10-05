@@ -24,7 +24,9 @@ record a customer-owned backend can consume.
 - Python and TypeScript capture SDKs;
 - Fabric Node OTLP receiver and exact metadata protection;
 - persistent queue and customer-selected OTLP delivery;
-- `fabricctl` local setup, validation, diagnostics, and receipts;
+- `fabricctl` local initialization, configuration validation and digesting;
+  its initialization receipt says only that local preparation occurred, not
+  that a deployment or destination durably received evidence;
 - release checksums, provenance, image SBOM attestation, and conformance tests.
 
 These parts remain open because customers must be able to audit what observes
@@ -56,13 +58,13 @@ Fabric can still record outcomes produced by a customer's existing control
 systems. Recording an observed decision is not the same as owning or executing
 that decision.
 
-## Repository migration
+## Release boundary
 
 This public repository predates the recorder-first boundary. Historical source
-for judges, sidecars, policy, assurance, management, or Relay may remain visible
-while migration is completed. Recorder-v1 qualification must prove that such
-source is not compiled into the Fabric Node, bundled in the Helm chart, exposed
-as a stable SDK API, included in public contract archives, or published as a
-recorder runtime artifact.
+for judges, sidecars, policy, assurance, management, and Relay was removed from
+the working tree; its design history remains in Git. Artifact-content tests
+must continue to prove that none of those capabilities is compiled into Fabric
+Node, bundled in the Helm chart, exposed as a stable SDK API, included in
+public contract archives, or published as a recorder runtime artifact.
 
 The authoritative release scope is [spec 027](../specs/027-recorder-v1.md).

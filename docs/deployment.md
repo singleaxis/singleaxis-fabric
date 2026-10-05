@@ -63,6 +63,30 @@ described in the chart README. Kubernetes NetworkPolicy cannot match a DNS name
 or prove that a CIDR belongs to the configured URL; route through an approved
 egress gateway when that is the organization's control point.
 
+Operational notes:
+
+- **Dedicated namespace.** Install into a namespace used only by the
+  recorder. `networkPolicy.denyDefault` selects every pod in the release
+  namespace, so co-located workloads lose pod-to-pod traffic unless a
+  subchart policy opens it. When `namespace.create=true`,
+  `namespace.name` must equal the release namespace (`--namespace`) —
+  resources are always rendered into the release namespace.
+- **Pinned image.** `shadow-production` rejects the `latest` tag and the
+  empty-tag appVersion fallback. Prefer
+  `--set otel-collector.image.digest=sha256:<64-hex>`; an explicit
+  non-latest `otel-collector.image.tag` is accepted.
+- **Peer rules.** Every NetworkPolicy peer in `ingressFrom`,
+  `exporterEgress.to`, and `egressTo` must be non-empty and must not use a
+  world CIDR (`0.0.0.0/0`, `::/0`); such entries are equivalent to no
+  policy and are rejected at render time. The health extension is not
+  exposed by NetworkPolicy by default — kubelet probes are node traffic.
+  To let a monitoring stack scrape it, set
+  `otel-collector.networkPolicy.monitoringNamespaceSelector`.
+- **Pull secrets.** Set `otel-collector.imagePullSecrets`; there is no
+  parent-level `imagePullSecrets` key.
+- **`helm test` is dev-only.** The bundled test pod matches no ingress
+  peer under `shadow-production`; run it under `shadow-dev` only.
+
 ## Production invariants
 
 `shadow-production` must render only when all of these are true:
@@ -78,6 +102,10 @@ egress gateway when that is the organization's control point.
 - retry has no finite maximum elapsed time for retryable failures;
 - the debug exporter is disabled;
 - the audit path is not sampled;
+- the Collector Service is ClusterIP (no NodePort/LoadBalancer exposure);
+- the Collector image is pinned by digest or explicit non-latest tag;
+- the pod runs as non-root and cannot escalate privileges;
+- every declared network peer is non-empty and non-world;
 - default-deny network policy and explicit workload ingress and destination
   egress are enabled.
 

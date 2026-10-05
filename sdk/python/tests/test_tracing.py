@@ -78,3 +78,65 @@ def test_install_default_provider_refuses_re_install(
     second = install_default_provider(service_name="second")
     assert first is second
     assert second.resource.attributes["service.name"] == "first"
+
+
+# -- exporter visibility: no silent telemetry drop -------------------------
+
+
+def test_install_default_provider_warns_without_exporter(
+    _reset_tracer_provider: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """No exporter + no OTLP env = a loud warning, not a silent drop."""
+    os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
+    os.environ.pop("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", None)
+    with caplog.at_level("WARNING", logger="fabric"):
+        install_default_provider()
+    assert any("no span processor" in r.message for r in caplog.records)
+
+
+def test_install_default_provider_uses_otlp_env_endpoint(
+    _reset_tracer_provider: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With OTEL_EXPORTER_OTLP_ENDPOINT set and no exporter given, the
+    install default-constructs an OTLP exporter so the env var works."""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+    provider = install_default_provider()
+    processors = provider._active_span_processor._span_processors
+    assert len(processors) == 1
+    exporter = getattr(processors[0], "span_exporter", None)
+    assert type(exporter).__name__ == "OTLPSpanExporter"
+
+
+def test_get_tracer_warns_on_zero_processor_provider(
+    _reset_tracer_provider: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A real TracerProvider with no span processors must not defeat the
+    silent-drop warning: get_tracer() flags it once."""
+    from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
+
+    trace.set_tracer_provider(TracerProvider())  # zero processors
+    with caplog.at_level("WARNING", logger="fabric"):
+        get_tracer()
+    assert any("no span processors" in r.message for r in caplog.records)
+    # One-shot: a second call does not repeat the warning.
+    caplog.clear()
+    get_tracer()
+    assert not caplog.records
+
+
+def test_install_default_provider_accepts_meter_provider(
+    _reset_tracer_provider: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``meter_provider=`` is installed on the global metrics API so the
+    gen_ai.client.* instruments actually record."""
+    from opentelemetry import metrics  # noqa: PLC0415
+    from opentelemetry.sdk.metrics import MeterProvider  # noqa: PLC0415
+
+    calls: list[object] = []
+    monkeypatch.setattr(metrics, "set_meter_provider", calls.append)
+    install_default_provider(exporter=InMemorySpanExporter(), meter_provider=MeterProvider())
+    assert len(calls) == 1

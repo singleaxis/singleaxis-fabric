@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import threading
 from contextlib import (
@@ -55,13 +56,16 @@ from contextlib import (
 )
 from dataclasses import dataclass
 from types import TracebackType
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Protocol, Self
 from uuid import UUID, uuid4
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from ._attributes import (
     ATTR_AGENT,
+    ATTR_CONTENT_REF,
+    ATTR_CONTENT_REQUEST_REF,
+    ATTR_CONTENT_RESULT_REF,
     ATTR_COVERAGE_KIND,
     ATTR_COVERAGE_REASON,
     ATTR_COVERAGE_SUGGESTION,
@@ -69,6 +73,7 @@ from ._attributes import (
     ATTR_DELEGATION_DEPTH,
     ATTR_DELEGATION_PROTOCOL,
     ATTR_DELEGATION_TO_AGENT,
+    ATTR_ERROR_TYPE,
     ATTR_EXECUTION,
     ATTR_EXECUTION_ATTEMPT,
     ATTR_EXECUTION_ATTEMPT_ID,
@@ -107,8 +112,16 @@ from ._attributes import (
     ATTR_TENANT,
     ATTR_WORKFLOW,
     SCHEMA_VERSION,
+    check_attribute_key,
+    check_attribute_keys,
 )
 from ._calls import LLMCall, ToolCall
+from ._content import (
+    ContentRole,
+    TranscriptManifest,
+    _rfc3339_now,
+)
+from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values
 from ._id_validators import warn_if_pii_shaped
@@ -123,9 +136,84 @@ from .signing import SignatureCheck
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 
-    from opentelemetry.trace import Span
+    from opentelemetry.metrics import Meter
+    from opentelemetry.trace import Span, Tracer
 
-    from .client import Fabric
+    from ._content_writer import ContentCaptureConfig, ContentWriter
+    from .content_store import ContentStore
+
+
+class _ConfigLike(Protocol):
+    """Configuration fields consumed by a decision, without importing the client."""
+
+    @property
+    def extra(self) -> dict[str, str]: ...
+
+    @property
+    def workflow_id(self) -> str | None: ...
+
+    @property
+    def execution_id(self) -> str | None: ...
+
+    @property
+    def execution_attempt_id(self) -> str | None: ...
+
+    @property
+    def execution_attempt(self) -> int | None: ...
+
+    @property
+    def execution_retry_reason(self) -> str | None: ...
+
+    @property
+    def execution_retry_previous_attempt_id(self) -> str | None: ...
+
+
+class _ClientLike(Protocol):
+    """The exact client surface consumed by a decision.
+
+    ``Fabric`` satisfies this interface structurally. Keeping the dependency
+    one-way lets type checking inspect both modules without an import cycle.
+    """
+
+    @property
+    def config(self) -> _ConfigLike: ...
+
+    @property
+    def tracer(self) -> Tracer: ...
+
+    @property
+    def meter(self) -> Meter: ...
+
+    @property
+    def tenant_id(self) -> str: ...
+
+    @property
+    def agent_id(self) -> str: ...
+
+    @property
+    def profile(self) -> str: ...
+
+    @property
+    def agent_name(self) -> str: ...
+
+    @property
+    def agent_version(self) -> str | None: ...
+
+    @property
+    def agent_description(self) -> str | None: ...
+
+    @property
+    def content_store(self) -> ContentStore | None: ...
+
+    @property
+    def content_capture(self) -> ContentCaptureConfig | None: ...
+
+    @property
+    def content_writer(self) -> ContentWriter | None: ...
+
+    @property
+    def content_roles(self) -> frozenset[str]: ...
+
 
 # Explicitly re-export the shared leaf constants pulled in from
 # ``_attributes`` so ``from fabric.decision import ATTR_*`` / ``SCHEMA_VERSION``
@@ -144,8 +232,14 @@ __all__ = [
     "ATTR_SCHEMA_VERSION",
     "ATTR_TENANT",
     "ATTR_WORKFLOW",
+    "FILE_OPERATIONS",
+    "HOOK_PHASES",
+    "INTERACTION_DIRECTIONS",
     "SCHEMA_VERSION",
+    "DelegationContext",
 ]
+
+_LOG = logging.getLogger("fabric.decision")
 
 SPAN_NAME = "fabric.decision"
 
@@ -162,6 +256,13 @@ ATTR_REQUEST = "fabric.request_id"
 # SDK mint a uuid4. This is the lineage anchor used for reconstruction and
 # cross-service propagation.
 ATTR_DECISION_ID = "fabric.decision_id"
+# Sub-agent-delegation lineage stamped on a child decision opened from a
+# propagated :class:`~fabric.propagation.FabricContext` (see
+# ``Fabric.decision(context=...)``): the delegating agent and the parent
+# decision that handed off across the service boundary. Emitted only when
+# the decision is opened from a propagated context.
+ATTR_PARENT_AGENT_ID = "fabric.parent_agent_id"
+ATTR_PARENT_DECISION_ID = "fabric.parent_decision_id"
 ATTR_USER = "fabric.user_id"
 ATTR_RETRIEVAL_COUNT = "fabric.retrieval_count"
 ATTR_RETRIEVAL_SOURCES = "fabric.retrieval_sources"
@@ -179,7 +280,7 @@ ATTR_CHECKPOINT_COUNT = "fabric.checkpoint_count"
 # reconstruct a decision. ``metadata_version`` is the envelope's own
 # version, independent of ``SCHEMA_VERSION``, so the envelope can evolve
 # without bumping the wire schema. Emit-only: the SDK assembles + emits
-# this; it never reconstructs or replays (spec 012/003).
+# this; it never reconstructs or replays — that is downstream's job.
 ATTR_REPLAY_METADATA_VERSION = "fabric.replay.metadata_version"
 ATTR_REPLAY_EXECUTION_ID = "fabric.replay.execution_id"
 ATTR_REPLAY_DECISION_ID = "fabric.replay.decision_id"
@@ -251,10 +352,11 @@ class DelegationContext:
     """The handle yielded by :meth:`Decision.delegate` / :meth:`Decision.adelegate`.
 
     Exposes the cross-service carrier the host passes to the sub-agent
-    (``carrier`` — a ``tracestate``-bearing header dict already injected
-    with this decision's :class:`~fabric.propagation.FabricContext` and
-    ``parent_agent_id`` set to the delegating agent), the structured
-    ``context`` it encodes, and the recorded delegation metadata
+    (``carrier`` — a header dict carrying the W3C ``traceparent`` +
+    ``tracestate`` already injected with this decision's
+    :class:`~fabric.propagation.FabricContext` and ``parent_agent_id``
+    set to the delegating agent), the structured ``context`` it encodes,
+    and the recorded delegation metadata
     (``to_agent`` / ``protocol`` / ``depth``).
     """
 
@@ -289,9 +391,9 @@ class Decision(AbstractContextManager["Decision"]):
     def __init__(
         self,
         *,
-        client: Fabric,
-        session_id: str,
-        request_id: str,
+        client: _ClientLike,
+        session_id: str | None,
+        request_id: str | None,
         user_id: str | None,
         attributes: dict[str, str],
         decision_id: str | None = None,
@@ -299,6 +401,7 @@ class Decision(AbstractContextManager["Decision"]):
         workflow_id: str | None = None,
         workflow_name: str | None = None,
         conversation_compacted: bool = False,
+        parent_context: FabricContext | None = None,
     ) -> None:
         if not session_id:
             raise ValueError("session_id is required")
@@ -338,7 +441,18 @@ class Decision(AbstractContextManager["Decision"]):
         self._resolved_execution_retry_reason: str | None = None
         self._resolved_execution_retry_previous_attempt_id: str | None = None
         self._user_id = user_id
-        self._extra_attrs = dict(attributes)
+        # Caller-supplied extras sit on top of the client-level
+        # ``FabricConfig.extra`` defaults (explicit per-decision keys win
+        # on collision). Reserved ``fabric.*`` / ``gen_ai.*`` keys are
+        # rejected so a caller cannot clobber SDK-owned identity —
+        # ``FabricConfig.extra`` itself is validated at config build time.
+        self._extra_attrs = check_attribute_keys({**client.config.extra, **attributes})
+        # Delegation lineage: when the decision is opened from a
+        # ``FabricContext`` recovered via ``fabric.propagation.extract``,
+        # ``__enter__`` stamps ``fabric.parent_agent_id`` /
+        # ``fabric.parent_decision_id`` so the child's spans link back to
+        # the delegating parent across the service boundary.
+        self._parent_context = parent_context
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
         self._retrievals: list[RetrievalRecord] = []
@@ -374,6 +488,10 @@ class Decision(AbstractContextManager["Decision"]):
         # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
         # rejection; shared by the sync and async context-manager paths.
         self._state = "new"
+        # Governed content (spec 028/029): lazily built per-decision sink
+        # accumulating manifest items; ``None`` forever in metadata mode.
+        self._content_sink: ContentSink | None = None
+        self._started_at_rfc3339: str | None = None
 
     # -- concurrency overlap guard ---------------------------------------
 
@@ -473,6 +591,7 @@ class Decision(AbstractContextManager["Decision"]):
                 "turn (do not re-enter or reuse the same instance)"
             )
         self._state = "open"
+        self._started_at_rfc3339 = _rfc3339_now()
         tracer = self._client.tracer
         # We own exception recording, so disable the tracer's automatic
         # handler to avoid duplicate exception events.
@@ -535,6 +654,21 @@ class Decision(AbstractContextManager["Decision"]):
         self._span.set_attribute(ATTR_REQUEST, self._request_id)
         if self._user_id is not None:
             self._span.set_attribute(ATTR_USER, self._user_id)
+        # Delegation lineage from a propagated context. ``parent_agent_id``
+        # names the delegating agent when the upstream carried one (a
+        # ``delegate`` carrier); for a plain hand-off the upstream's own
+        # ``agent_id`` is the causal parent, so fall back to it.
+        if self._parent_context is not None:
+            parent_agent = self._parent_context.parent_agent_id or (
+                self._parent_context.agent_id or None
+            )
+            if parent_agent is not None:
+                self._span.set_attribute(ATTR_PARENT_AGENT_ID, parent_agent)
+            if self._parent_context.decision_id is not None:
+                self._span.set_attribute(
+                    ATTR_PARENT_DECISION_ID,
+                    self._parent_context.decision_id,
+                )
         for key, value in self._extra_attrs.items():
             self._span.set_attribute(key, value)
         return self
@@ -548,8 +682,17 @@ class Decision(AbstractContextManager["Decision"]):
         if self._span is None or self._cm is None:  # pragma: no cover
             return None
         if exc is not None:
+            # ``error.type`` mirrors the GenAI error convention; it also
+            # covers non-``Exception`` exits (CancelledError & friends),
+            # which we already record so cancellations stay visible.
+            self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
             self._span.record_exception(exc)
+        # Governed content: write the transcript manifest and stamp its
+        # ref before the span ends. Pending items stay pending — honest
+        # gap, never claimed delivered (spec 032 §5).
+        if self._content_sink is not None:
+            self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
         result = self._cm.__exit__(exc_type, exc, tb)
         self._span = None
         self._cm = None
@@ -703,6 +846,151 @@ class Decision(AbstractContextManager["Decision"]):
         """All external mutations recorded on this decision, in emission order."""
         return tuple(self._side_effects)
 
+    # -- governed content references --------------------------------------
+    #
+    # When a :class:`~fabric.content_store.ContentStore` is configured on
+    # the :class:`~fabric.client.Fabric` client, recorder paths that
+    # receive raw content write it to the tenant-controlled store and
+    # stamp the returned content-addressed URI on the emitted event
+    # (``fabric.content.ref`` / ``fabric.content.request_ref`` /
+    # ``fabric.content.result_ref``). The trace stream then carries a
+    # governed reference an auditor can resolve out-of-band — never the
+    # raw bytes. Without a store every event stays byte-identical.
+
+    def _store_content_ref(self, content: str, *, key_hint: str | None = None) -> str | None:
+        """Write ``content`` to the configured store; return its ref URI.
+
+        ``None`` when no :class:`~fabric.content_store.ContentStore` is
+        configured. ``key_hint`` forwards the caller's logical key (e.g.
+        the memory ``key``) for stores that organize by hint. A store
+        failure warns and returns ``None`` — passive recording must never
+        break the agent's path because the evidence pipeline hiccuped.
+        """
+        store = self._client.content_store
+        if store is None:
+            return None
+        try:
+            return store.put(content, key_hint=key_hint).uri
+        except Exception:
+            _LOG.warning(
+                "fabric.decision: content store put() failed; emitting the "
+                "event without a content ref",
+                exc_info=True,
+            )
+            return None
+
+    # -- governed content (spec 028/029) -----------------------------------
+    #
+    # When ``content_capture`` is configured on the client, capture calls
+    # serialize content to canonical bytes, hand it to the async writer,
+    # and land an ordered manifest item. The returned ref is deterministic
+    # (store namespace + digest) so spans carry the final URI while
+    # delivery is still pending — the manifest is the reconciliation point.
+
+    def _governed_sink(self) -> ContentSink | None:
+        """Lazily build the per-decision governed-content sink."""
+        if self._content_sink is not None:
+            return self._content_sink
+        writer = self._client.content_writer
+        config = self._client.content_capture
+        if writer is None or config is None:
+            return None
+        sink = ContentSink(
+            config=config,
+            writer=writer,
+            tenant_id=self._client.tenant_id,
+            agent_id=self._client.agent_id,
+            decision_id=self._decision_id,
+            roles_enabled=self._client.content_roles,
+        )
+        span = self._span
+        if span is not None:
+            ctx = span.get_span_context()
+            sink.bind(
+                trace_id=f"{ctx.trace_id:032x}" if ctx.trace_id else None,
+                span_id=f"{ctx.span_id:016x}" if ctx.span_id else None,
+                execution_id=self._resolved_execution_id,
+                session_id=self._session_id,
+                request_id=self._request_id,
+                workflow_id=self._resolved_workflow_id,
+                started_at=self._started_at_rfc3339,
+            )
+        self._content_sink = sink
+        return sink
+
+    def _content_bindings(self, extra: Mapping[str, object] | None) -> dict[str, object]:
+        """Decision-level descriptor bindings + caller-supplied step links."""
+        bindings: dict[str, object] = {"decision_id": self._decision_id}
+        span = self._span
+        if span is not None:
+            trace_id = span.get_span_context().trace_id
+            if trace_id != 0:
+                bindings["trace_id"] = f"{trace_id:032x}"
+        if self._resolved_execution_id is not None:
+            bindings["execution_id"] = self._resolved_execution_id
+        bindings["session_id"] = self._session_id
+        bindings["request_id"] = self._request_id
+        if extra:
+            bindings.update(extra)
+        return bindings
+
+    def _governed_capture(
+        self,
+        role: str | ContentRole,
+        content: object,
+        *,
+        media_type: str | None = None,
+        bindings: Mapping[str, object] | None = None,
+        links: Mapping[str, object] | None = None,
+        status_reason: str | None = None,
+        representation: str | None = None,
+    ) -> str | None:
+        """Capture one governed content object; return its ref or ``None``.
+
+        ``None`` means the role is outside the capture policy, governed
+        mode is off, or ``content`` is ``None`` — the caller emits no ref
+        attribute then. Never raises into the agent path: failures land
+        as explicit manifest statuses.
+        """
+        if content is None:
+            return None
+        sink = self._governed_sink()
+        if sink is None:
+            return None
+        return sink.capture(
+            role,
+            content,
+            media_type=media_type,
+            bindings=self._content_bindings(bindings),
+            links=links,
+            status_reason=status_reason,
+            representation=representation,
+        )
+
+    @property
+    def governed_capture(self) -> bool:
+        """True when governed content capture is configured on the client."""
+        return self._client.content_capture is not None
+
+    def _reject_raw_capture(self, capture_content: bool) -> None:
+        if capture_content and self.governed_capture:
+            raise ValueError("raw span capture is incompatible with protected content capture")
+
+    @property
+    def content_manifest(self) -> TranscriptManifest | None:
+        """The in-progress transcript manifest, or ``None`` (metadata mode)."""
+        sink = self._content_sink
+        return sink.manifest if sink is not None else None
+
+    @property
+    def content_manifest_uri(self) -> str | None:
+        """The manifest's deterministic store URI (metadata mode: ``None``).
+
+        Computable before close with no store I/O — the bytes arrive
+        asynchronously; resolve the URI to learn actual delivery state."""
+        sink = self._content_sink
+        return sink.manifest_uri if sink is not None else None
+
     # -- retrieval --------------------------------------------------------
 
     def record_retrieval(
@@ -713,6 +1001,7 @@ class Decision(AbstractContextManager["Decision"]):
         result_count: int,
         result_hashes: Sequence[str] | None = None,
         source_document_ids: Sequence[str] | None = None,
+        results: Sequence[object] | None = None,
         latency_ms: int | None = None,
         data_source_id: str | None = None,
         provider: str | None = None,
@@ -731,9 +1020,32 @@ class Decision(AbstractContextManager["Decision"]):
         ``DecisionSummary`` wire event without replaying every event.
 
         Raw query text is hashed locally and is never placed on the
-        span.
+        span. ``results`` supplies the ordered result content for governed
+        capture (spec 028): the caller-supplied result objects are stored
+        as one ``retrieval.results`` object; the event carries its ref.
+        A recorded retrieval result proves the caller received it — not
+        that the model consumed it; the recorded effective request is the
+        evidence for that.
         """
 
+        self._reject_raw_capture(capture_content)
+        # Governed captures happen outside the overlap sentinel.
+        retrieval_bindings = {"step_type": "retrieval"}
+        query_ref = None
+        results_ref = None
+        if self.governed_capture:
+            query_ref = self._governed_capture(
+                ContentRole.RETRIEVAL_QUERY,
+                query,
+                bindings=retrieval_bindings,
+            )
+            if results is not None:
+                results_ref = self._governed_capture(
+                    ContentRole.RETRIEVAL_RESULTS,
+                    list(results),
+                    media_type="application/json",
+                    bindings=retrieval_bindings,
+                )
         with self._exclusive():
             record = RetrievalRecord.from_query(
                 source=source,
@@ -761,6 +1073,9 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.retrieval.source_document_ids"] = record.source_document_ids
             if record.latency_ms is not None:
                 event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
+            retrieval_ref = results_ref or query_ref
+            if retrieval_ref is not None:
+                event_attrs[ATTR_CONTENT_REF] = retrieval_ref
             span.add_event("fabric.retrieval", attributes=event_attrs)
             semantic_name = f"retrieval {data_source_id}" if data_source_id else "retrieval"
             with self._client.tracer.start_as_current_span(
@@ -821,9 +1136,24 @@ class Decision(AbstractContextManager["Decision"]):
         produce byte-identical events.
 
         Raw content is hashed locally and is never placed on the
-        span.
+        span. When a :class:`~fabric.content_store.ContentStore` is
+        configured on the client, the content is also written there and
+        the event carries the returned ``fabric.content.ref`` URI — a
+        governed reference, not the raw bytes.
         """
-
+        self._reject_raw_capture(capture_content)
+        # The store write happens outside the overlap sentinel — it is
+        # (possibly remote) I/O and touches no per-decision state. Under
+        # governed mode the capture enqueues through the async writer and
+        # lands a manifest item; the legacy inline store is used otherwise.
+        if self.governed_capture:
+            content_ref = self._governed_capture(
+                ContentRole.MEMORY_WRITE_CONTENT,
+                content,
+                bindings={"step_type": "memory_write"},
+            )
+        else:
+            content_ref = self._store_content_ref(content, key_hint=key)
         with self._exclusive():
             record = MemoryRecord.from_content(
                 kind=kind,
@@ -858,6 +1188,8 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
             if record.invalidates is not None:
                 event_attrs["fabric.memory.invalidates"] = record.invalidates
+            if content_ref is not None:
+                event_attrs[ATTR_CONTENT_REF] = content_ref
             span.add_event("fabric.memory", attributes=event_attrs)
             with self._client.tracer.start_as_current_span(
                 "create_memory", kind=SpanKind.CLIENT
@@ -901,9 +1233,20 @@ class Decision(AbstractContextManager["Decision"]):
         ``DecisionSummary`` wire event independently.
 
         Raw content is hashed locally and is never placed on the
-        span.
+        span. When a :class:`~fabric.content_store.ContentStore` is
+        configured on the client, the content is also written there and
+        the event carries the returned ``fabric.content.ref`` URI.
         """
-
+        self._reject_raw_capture(capture_content)
+        # Store write outside the overlap sentinel (see ``remember``).
+        if self.governed_capture:
+            content_ref = self._governed_capture(
+                ContentRole.MEMORY_READ_CONTENT,
+                content,
+                bindings={"step_type": "memory_read"},
+            )
+        else:
+            content_ref = self._store_content_ref(content, key_hint=key)
         with self._exclusive():
             record = MemoryRecord.from_recall(
                 kind=kind,
@@ -931,6 +1274,8 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.source is not None:
                 event_attrs["fabric.memory.source"] = record.source
+            if content_ref is not None:
+                event_attrs[ATTR_CONTENT_REF] = content_ref
             span.add_event("fabric.memory", attributes=event_attrs)
             with self._client.tracer.start_as_current_span(
                 "search_memory", kind=SpanKind.CLIENT
@@ -1053,13 +1398,48 @@ class Decision(AbstractContextManager["Decision"]):
         event so a mutation can be referenced for replay-suppression /
         rollback lineage. Pass ``side_effect_id`` explicitly for
         idempotent re-emission of the same side effect.
-        """
 
+        When a :class:`~fabric.content_store.ContentStore` is configured
+        on the client, each supplied payload is also written there and the
+        event carries the returned ``fabric.content.request_ref`` /
+        ``fabric.content.result_ref`` URIs — governed references, never
+        the raw bytes.
+        """
+        if request_payload is not None and request_hash is not None:
+            raise ValueError("pass either request_payload or request_hash, not both")
+        if result_payload is not None and result_hash is not None:
+            raise ValueError("pass either result_payload or result_hash, not both")
+        # Store writes happen outside the overlap sentinel — they are
+        # (possibly remote) I/O and touch no per-decision state. Under
+        # governed mode captures enqueue through the async writer.
+        side_bindings = {"step_type": "side_effect"}
+        if self.governed_capture:
+            request_ref = (
+                self._governed_capture(
+                    ContentRole.SIDE_EFFECT_REQUEST,
+                    request_payload,
+                    bindings=side_bindings,
+                )
+                if request_payload is not None
+                else None
+            )
+            result_ref = (
+                self._governed_capture(
+                    ContentRole.SIDE_EFFECT_RESULT,
+                    result_payload,
+                    bindings=side_bindings,
+                )
+                if result_payload is not None
+                else None
+            )
+        else:
+            request_ref = (
+                self._store_content_ref(request_payload) if request_payload is not None else None
+            )
+            result_ref = (
+                self._store_content_ref(result_payload) if result_payload is not None else None
+            )
         with self._exclusive():
-            if request_payload is not None and request_hash is not None:
-                raise ValueError("pass either request_payload or request_hash, not both")
-            if result_payload is not None and result_hash is not None:
-                raise ValueError("pass either result_payload or result_hash, not both")
             if request_payload is not None or result_payload is not None:
                 record = SideEffectRecord.from_payloads(
                     effect_type=effect_type,
@@ -1123,6 +1503,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
             if record.parent_tool_call_id is not None:
                 event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
+            if request_ref is not None:
+                event_attrs[ATTR_CONTENT_REQUEST_REF] = request_ref
+            if result_ref is not None:
+                event_attrs[ATTR_CONTENT_RESULT_REF] = result_ref
             span.add_event("fabric.side_effect", attributes=event_attrs)
             return record
 
@@ -1210,7 +1594,7 @@ class Decision(AbstractContextManager["Decision"]):
           (the decision does not track child tool spans, so the host
           passes these).
 
-        Emit-only boundary (spec 012/003): the SDK assembles and emits
+        Emit-only boundary: the SDK assembles and emits
         this envelope; it never reconstructs, orchestrates, or replays a
         decision — that is the commercial layer.
 
@@ -1256,6 +1640,7 @@ class Decision(AbstractContextManager["Decision"]):
         target: str,
         *,
         direction: str | None = None,
+        payload: str | None = None,
         payload_hash: str | None = None,
         metadata: Mapping[str, object] | None = None,
         redact_target: bool = True,
@@ -1299,6 +1684,9 @@ class Decision(AbstractContextManager["Decision"]):
             target: what was touched (URL / host / table / path / topic).
             direction: optional ``"inbound"`` / ``"outbound"`` /
                 ``"internal"``. Other values raise :class:`ValueError`.
+            payload: optional raw payload text — governed-captured to the
+                configured store (``interaction.payload`` role) when
+                governed mode is on; never placed on the span.
             payload_hash: optional caller-supplied hash of the payload.
             metadata: optional scalar metadata dict; hashed, never raw.
             redact_target: hash ``target`` instead of recording it readable;
@@ -1308,9 +1696,24 @@ class Decision(AbstractContextManager["Decision"]):
             signature: optional generic signature verification.
 
         Raises:
-            ValueError: if ``direction`` is not a known value.
+            ValueError: if ``kind`` or ``target`` is empty, or if
+                ``direction`` is not a known value.
         """
+        if payload is not None and payload_hash is not None:
+            raise ValueError("pass either payload or payload_hash, not both")
+        payload_ref = self._governed_capture(
+            ContentRole.INTERACTION_PAYLOAD,
+            payload,
+            bindings={"step_type": "interaction"},
+        )
         with self._exclusive():
+            if not kind:
+                raise ValueError("kind is required")
+            if not target:
+                raise ValueError("target is required")
+            warn_if_pii_shaped("interaction.kind", kind, embedded=True)
+            if not redact_target:
+                warn_if_pii_shaped("interaction.target", target, embedded=True)
             if direction is not None and direction not in INTERACTION_DIRECTIONS:
                 raise ValueError(
                     f"unknown interaction direction {direction!r}; must be one of "
@@ -1337,6 +1740,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = require_sha256_hex(
                     "payload_hash", payload_hash
                 )
+            elif payload is not None:
+                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = _sha256_hex(payload)
+            if payload_ref is not None:
+                event_attrs[ATTR_CONTENT_REF] = payload_ref
             if metadata:
                 # Canonicalize then hash the whole dict — raw metadata
                 # (which may carry secrets) never lands on the span.
@@ -1350,6 +1757,34 @@ class Decision(AbstractContextManager["Decision"]):
 
             # Improvement loop: a one-shot, low-rate coverage signal.
             self._emit_coverage_signals(kind, resolved.baseline_status, resolved.has_tags)
+
+    def record_context(
+        self,
+        name: str,
+        content: str | object,
+        *,
+        media_type: str | None = None,
+        description: str | None = None,
+    ) -> str | None:
+        """Capture an explicitly supplied context object (file, doc, blob).
+
+        Emits a ``fabric.interaction`` event with ``kind="context.file"``
+        and the target hashed by default, then governed-captures the
+        content under the ``context.file`` role (text or JSON in v1).
+        Returns the content ref URI, or ``None`` when governed mode is off
+        or the role is outside the capture policy. Binary/multimodal
+        content is outside v1 scope — pass text/JSON only.
+        """
+        if not name:
+            raise ValueError("name is required")
+        target = description or name
+        self.record_interaction("context.file", target, metadata=None)
+        return self._governed_capture(
+            ContentRole.CONTEXT_FILE,
+            content,
+            media_type=media_type,
+            bindings={"step_type": "context"},
+        )
 
     def _emit_coverage_signals(
         self, kind: str, baseline_status: str | None, has_tags: bool
@@ -1423,8 +1858,15 @@ class Decision(AbstractContextManager["Decision"]):
             source: optional origin (registry, path, URL).
             manifest_hash: optional hash of the prompt+tools bundle.
             signed: optional — was the manifest signature valid?
+
+        Raises:
+            ValueError: if ``name`` or ``version`` is empty.
         """
         with self._exclusive():
+            if not name:
+                raise ValueError("name is required")
+            if not version:
+                raise ValueError("version is required")
             span = self.span
             self._skill_count += 1
             span.set_attribute(ATTR_SKILL_COUNT, self._skill_count)
@@ -1464,15 +1906,18 @@ class Decision(AbstractContextManager["Decision"]):
         tracestate inject), so the async variant reuses this directly.
         """
         with self._exclusive():
+            if not to_agent:
+                raise ValueError("to_agent is required")
+            if not protocol:
+                raise ValueError("protocol is required")
             span = self.span
-            self._delegation_count += 1
-            self._delegation_depth += 1
-            depth = self._delegation_depth
-            span.set_attribute(ATTR_DELEGATION_COUNT, self._delegation_count)
 
             # Build the carrier the sub-agent extracts. It carries this
             # decision's identity with ``parent_agent_id`` set to the
-            # delegating agent so the child's spans link back.
+            # delegating agent so the child's spans link back. All
+            # fallible work (inject + cross-cutting resolution) happens
+            # BEFORE the counters move, so a raise here cannot leak an
+            # incremented delegation_count / depth with no matching event.
             context = FabricContext(
                 tenant_id=self.tenant_id,
                 agent_id=self.agent_id,
@@ -1492,6 +1937,7 @@ class Decision(AbstractContextManager["Decision"]):
             carrier: dict[str, str] = {}
             inject(carrier, context)
 
+            depth = self._delegation_depth + 1
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 ATTR_DELEGATION_TO_AGENT: to_agent,
@@ -1499,6 +1945,9 @@ class Decision(AbstractContextManager["Decision"]):
                 ATTR_DELEGATION_DEPTH: depth,
             }
             apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            self._delegation_count += 1
+            self._delegation_depth += 1
+            span.set_attribute(ATTR_DELEGATION_COUNT, self._delegation_count)
             span.add_event("fabric.delegation", attributes=event_attrs)
             return DelegationContext(
                 to_agent=to_agent,
@@ -1543,6 +1992,9 @@ class Decision(AbstractContextManager["Decision"]):
             tags: optional open-vocabulary taxonomy tags (spec 023 §3).
             baseline: optional generic baseline comparison (spec 023 §2).
             signature: optional generic signature verification (spec 023 §4).
+
+        Raises:
+            ValueError: if ``to_agent`` or ``protocol`` is empty.
         """
         ctx = self._open_delegation(
             to_agent, protocol=protocol, tags=tags, baseline=baseline, signature=signature
@@ -1611,9 +2063,12 @@ class Decision(AbstractContextManager["Decision"]):
             output_hash: optional hash of the value leaving the hook.
 
         Raises:
-            ValueError: if ``phase`` is not in :data:`HOOK_PHASES`.
+            ValueError: if ``name`` is empty or ``phase`` is not in
+                :data:`HOOK_PHASES`.
         """
         with self._exclusive():
+            if not name:
+                raise ValueError("name is required")
             if phase not in HOOK_PHASES:
                 raise ValueError(
                     f"unknown hook phase {phase!r}; must be one of {sorted(HOOK_PHASES)}"
@@ -1670,9 +2125,12 @@ class Decision(AbstractContextManager["Decision"]):
                 defaults to ``True``.
 
         Raises:
-            ValueError: if ``operation`` is not in :data:`FILE_OPERATIONS`.
+            ValueError: if ``path`` is empty or ``operation`` is not in
+                :data:`FILE_OPERATIONS`.
         """
         with self._exclusive():
+            if not path:
+                raise ValueError("path is required")
             if operation not in FILE_OPERATIONS:
                 raise ValueError(
                     f"unknown file operation {operation!r}; must be one of "
@@ -1802,6 +2260,7 @@ class Decision(AbstractContextManager["Decision"]):
             input_messages=input_messages,
             tool_definitions=tool_definitions,
             capture_content=capture_content,
+            governed_capture=self._governed_capture,
             step_id=step_id,
             step_type=step_type,
             step_attempt_id=step_attempt_id,
@@ -1883,6 +2342,7 @@ class Decision(AbstractContextManager["Decision"]):
             description=description,
             agent_name=self._client.agent_name,
             capture_content=capture_content,
+            governed_capture=self._governed_capture,
             step_id=step_id,
             step_type=step_type,
             step_attempt_id=step_attempt_id,
@@ -1902,8 +2362,15 @@ class Decision(AbstractContextManager["Decision"]):
         list, or ``None`` raises :class:`TypeError` with the offending
         key — OTel itself silently drops unsupported types or warns
         depending on SDK configuration; the SDK fails loud instead.
+
+        Keys under the reserved ``fabric.*`` / ``gen_ai.*`` namespaces are
+        rejected (:class:`ValueError`) — they are SDK-owned, and a caller
+        override would silently clobber identity attributes such as
+        ``fabric.tenant_id`` or ``fabric.decision_id``. The raw
+        :attr:`span` escape hatch remains for deliberate overrides.
         """
         with self._exclusive():
+            check_attribute_key(key)
             # bool first because isinstance(True, int) is True
             if not isinstance(value, (bool, str, int, float)):
                 raise TypeError(

@@ -63,8 +63,8 @@ In scope:
   design flaws)
 - The published container images
 - The Helm chart and its default configuration
-- The Audit Bridge's ingress endpoint on the SingleAxis SaaS, when used
-  via the documented protocol
+- The Fabric Node ingress endpoint, when deployed via the documented
+  production overlay or production Helm profile
 
 Out of scope:
 
@@ -80,21 +80,32 @@ Out of scope:
 Fabric is architected around the following non-negotiable properties.
 Issues that undermine any of these will be treated as critical:
 
-1. **Data residency** — raw agent traces, retrieved context, and user
-   content never egress the tenant VPC by default.
-2. **Sanitization-before-egress** — the Telemetry Bridge is the only
-   component with egress to SingleAxis SaaS; all content it emits must
-   pass the redaction pipeline and schema allowlist.
-3. **Signed updates** — all remotely-delivered configuration (policies,
-   rubrics, charts) is signed; tenants verify signatures before apply.
-4. **Least-privileged identity** — agent identity, tool permissions, and
-   Fabric component identity are distinct and enforced.
-5. **Auditable decisions** — every decision that materially affects an
-   agent's behaviour is recorded as a Decision Graph node with tamper-
-   evident lineage.
+1. **Protection before egress** — every record crossing the customer
+   boundary passes the `fabricguard` exact-key metadata allowlist inside
+   the Fabric Node; raw prompts, tool payloads, memory values, and user
+   content are never exported.
+2. **Metadata-only export** — caller-controlled free-form channels (log
+   bodies, severity text, span/link tracestate, status messages, event
+   names, resource entity refs) are cleared or normalized to a fixed
+   vocabulary; content survives only as SHA-256 hashes or governed
+   references. This guarantee holds on traces and logs pipelines only; the
+   image's `fabric-gate` entrypoint refuses to boot a config that defines
+   any other pipeline (bare-binary builds rely on
+   `qualify-distribution-config.sh`).
+3. **Durable, authenticated delivery** — ingress is authenticated
+   (bearer token in the compose overlay, mTLS in the production Helm
+   profile); delivery uses a persistent fsync queue with
+   retry-until-success and at-least-once semantics.
+4. **Passive non-interference** — the recorder must never block, alter,
+   or delay the monitored system. Release artifacts contain no
+   enforcement, judge, guardrail, policy, red-team, or management
+   capability — enforced by artifact-content tests, not just defaults.
+5. **Tamper-evident supply chain** — release images and charts are
+   cosign-signed with SLSA build provenance; dependencies are
+   digest-pinned and license-gated.
 
-See [`specs/004-telemetry-bridge.md`](specs/004-telemetry-bridge.md) and
-[`specs/010-development-standards.md`](specs/010-development-standards.md).
+See [`specs/027-recorder-v1.md`](specs/027-recorder-v1.md) for the
+authoritative recorder scope.
 
 ## Release signing and provenance
 

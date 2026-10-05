@@ -12,6 +12,7 @@ reliably deliver a verifiable record to a destination you choose.
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/singleaxis/singleaxis-fabric/badge)](https://securityscorecards.dev/viewer/?uri=github.com/singleaxis/singleaxis-fabric)
 
 [Quickstart](docs/quickstart.md) ·
+[Custom-agent recording](docs/custom-agent-recording.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
 [Recorder v1 specification](specs/027-recorder-v1.md) ·
@@ -29,16 +30,39 @@ Agent or existing telemetry
             SingleAxis Fabric OSS
 ```
 
-- **Capture** accepts OpenTelemetry from Fabric SDKs, framework adapters, an
-  existing collector, or a customer integration.
+- **Capture** records explicitly instrumented model and tool calls, or accepts
+  existing OpenTelemetry from SDKs, collectors and customer integrations.
 - **Protect** applies a metadata-only export allowlist before telemetry crosses
   the customer boundary. Raw prompts, responses, tool payloads, headers,
   credentials, and tokens are denied by default.
 - **Deliver** buffers and retries protected telemetry to the customer's own
   OTLP backend, a private SingleAxis deployment, or SingleAxis Platform.
 
-The default deployment is passive shadow monitoring. Fabric does not block,
-alter, or delay the monitored AI system.
+The default deployment is passive shadow recording. Recording failures must
+not block or change the agent's action. Storage and delivery run outside the
+monitored call path; instrumentation still has CPU/memory overhead that must
+be measured for the deployment.
+
+## What data can be recorded
+
+Tracing alone records the timeline and relationships between calls, not their
+full contents. With explicit opt-in, the Python custom-agent recorder also
+stores the actual input, output, context and ordered stream bytes supplied at
+your agent's call boundary in a separate customer-controlled content store.
+Calls retain agent, parent-call, operation and attempt identities, including
+parallel work, retries, failures and cancellation.
+
+Connect it at your existing dispatcher's final model/tool send and receive
+points; no particular agent framework is required. See
+[custom-agent integration](docs/custom-agent-recording.md) and
+[privacy choices](docs/custom-agent-recording-privacy.md). Configure separate
+access for original evidence and masked review copies. Masked or withheld
+content cannot be treated as the original bytes.
+
+Fabric does not automatically observe every reachable tool, remote machine
+or database. A tool result records what the agent received; proving an
+external change also requires the system's own records. The
+[coverage inventory](docs/agent-activity-coverage.md) identifies these limits.
 
 ## What ships
 
@@ -66,9 +90,8 @@ CAPTURE -> PROTECT ->      MONITOR -> EVALUATE ->       ENFORCE
 DELIVER                    GOVERN
 ```
 
-Older implementations may remain visible in repository source history while
-they are migrated. They are not compiled into recorder binaries, bundled in the
-recorder chart, or enabled by the installer.
+Removed capabilities remain in Git history only. Recorder artifact-content
+tests prevent them from entering SDK packages, binaries, charts or installers.
 
 ## Start locally
 
@@ -93,7 +116,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 install_default_provider(
     service_name="claims-assistant",
     exporter=OTLPSpanExporter(
-        endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]
+        endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] + "/v1/traces"
     ),
 )
 
@@ -158,12 +181,19 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and
 
 ## Project status
 
-Recorder v1 is being qualified for enterprise testing. Treat release candidates
-as pre-production until the published qualification report confirms privacy,
-durability, restart, retry, duplicate-delivery, and fail-closed profile tests.
-See the current [qualification status](docs/recorder-v1-qualification-status.md)
-for the distinction between implemented behavior, public contracts, and checks
-that require the tagged release CI environment.
+Recorder v1 is a pre-production release candidate. A bounded synthetic
+model/tool/file workflow has passed installed-package and Linux Kubernetes
+tests, including source restart, missing-record detection, authenticated
+ingress and protected delivery. This is not universal capture or approval
+for a critical production deployment.
+
+Production qualification remains **NO-GO** until the declared deployment has
+independent complete records, the required delivery/storage proofs, tested
+privacy and retention controls, and named owner approval. The
+[qualification status](docs/recorder-v1-qualification-status.md) records exact
+artifacts, passed tests and remaining engineering and deployment work. Use
+the [pinned-install guide](docs/install.md) for deployment preparation;
+unreviewed source and an unpinned package are not a qualified release.
 
 Apache-2.0. Contributions require DCO sign-off; see
 [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,0 +1,7 @@
+{
+  "name": "multiline",
+  "kind": "text",
+  "value": "line one\nline two\n",
+  "byte_length": 18,
+  "sha256": "sha256:e9024f1a07d29d52ad3aa5e1a18e94db1f3a9fd32b89e39d47c472cd99071e13"
+}

@@ -49,6 +49,32 @@ identities. An OTLP or HTTP success means destination acceptance; it does not
 prove durable persistence unless the destination separately provides that
 evidence.
 
+The optional host-emitter DaemonSet is a **qualification template**, not a
+production-ready install. Its zero image digest and empty workload cgroup are
+intentional stop conditions. Pin the exact tested image digest, select the
+approved workload cgroup and nodes, provision the credential Secret, and
+pre-provision `/var/lib/fabric-host-emitter` as a mode-0700 directory owned by
+the emitter UID on
+customer-approved encrypted persistent storage. The mounted source spool is
+distinct from the Node queue and governed-content store. Size it for the
+measured maximum outage and alert on backlog, corruption, quota exhaustion,
+kernel loss and fatal exit. Do not enable source rate limiting for a
+complete-source claim.
+
+Run the static rendered-manifest gate with the independently approved image
+identity:
+
+```sh
+python scripts/qualification/check_host_emitter_manifest.py \
+  deploy/kubernetes/host-emitter-daemonset.yaml \
+  --expected-image 'ghcr.io/singleaxis/fabric-host-emitter@sha256:<approved-64-hex-digest>'
+```
+
+The shipped template must fail this gate until filled. A passing static gate
+does **not** prove Secret validity, disk encryption, cgroup coverage, kernel
+compatibility, delivery, or loss accounting; those need target-cluster tests
+and independent source reconciliation under specs 038–039.
+
 ## Release and supply-chain controls
 
 Recorder release policy permits only these public artifacts:
@@ -79,4 +105,11 @@ for:
 9. applicable legal, privacy, residency, and records-management obligations.
 
 See [deployment](deployment.md), [auditor checklist](auditor-checklist.md), and
-[qualification status](recorder-v1-qualification-status.md).
+[qualification status](recorder-v1-qualification-status.md). For terminal,
+SSH, sandbox, database, and artifact capture claims, also use the
+[agent-activity coverage and production gates](agent-activity-coverage.md).
+The proposed critical-enterprise evidence qualification is specified by
+[bounded deployment and control applicability](../specs/037-bounded-enterprise-deployment-and-controls.md),
+[capture and source-loss tests](../specs/038-capture-boundary-and-loss-qualification.md),
+and [storage, exact-artifact and shadow-pilot gates](../specs/039-storage-release-and-shadow-pilot.md).
+These specs are draft; they do not constitute a current go decision.

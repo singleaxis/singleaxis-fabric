@@ -1,8 +1,8 @@
 ---
 title: Development, Testing & Release Standards
 status: accepted
-revision: 2
-last_updated: 2026-07-25
+revision: 3
+last_updated: 2026-09-15
 owner: project-lead
 ---
 
@@ -11,14 +11,14 @@ owner: project-lead
 ## Summary
 
 Fabric is intended to be open-sourced, audited by enterprise security
-teams, and trusted by regulators. This spec fixes the engineering
-standards — languages, tooling, testing coverage, CI gates, supply-
-chain practices, release signing — that the project commits to
-before the first public release.
+teams, and deployed inside customer trust boundaries. This spec fixes
+the engineering standards — languages, tooling, testing coverage, CI
+gates, supply-chain practices, release signing — that the project
+commits to for the recorder-v1 line.
 
 Where we cut corners, we document it. Where we raise the bar beyond
-typical OSS projects, we also document it — because regulatory
-reviewers will ask.
+typical OSS projects, we also document it — because security reviewers
+will ask.
 
 ## Goals
 
@@ -34,217 +34,148 @@ reviewers will ask.
 
 - Exhaustive style guide. Linters enforce style; this spec defines
   what linters run, not what they enforce.
-- Component-specific standards. Individual components may add
-  stricter requirements (noted in their own READMEs); they cannot
-  relax project-wide standards.
+- Platform-side standards. Monitoring, evaluation, and governance of
+  delivered records belong to SingleAxis Platform, outside this
+  repository.
 
 ## Languages and runtimes
 
 | Language | Version | Use |
 |----------|---------|-----|
-| Python | 3.12+ | Judges, Graph Builder, SDK (primary), Bridge, Admin UI backend |
-| Go | 1.22+ | Telemetry Bridge (high-throughput path), Update Agent helpers |
-| TypeScript | 5.5+ | Admin UI frontend, future web artefacts |
-| Rust | — | Not currently used; reserved for performance-critical paths if needed |
-
-Rationale: Python is the agent ecosystem's lingua franca; Go is the
-Kubernetes ecosystem's lingua franca and fits the Bridge's
-throughput needs; TypeScript is the unavoidable UI choice.
+| Python | 3.11+ | `sdk/python`, `scripts/`, `examples/` |
+| Go | 1.22+ | `tools/fabricctl`, `fabricguardprocessor`, `gate` |
+| TypeScript | 5.5+ | `sdk/typescript` |
+| Rust | — | Not used |
 
 ## Tooling
 
 ### Python
 
-- **Package manager:** `uv` for speed; `pip` remains supported for
-  contributors who prefer it.
-- **Formatter:** `ruff format` (on save, in CI).
-- **Linter:** `ruff check` with the Fabric base config
-  (`ruff.toml`).
-- **Type checker:** `mypy --strict` on all new code. Existing code
-  migrates to strict over time.
-- **Test runner:** `pytest`.
-- **Test coverage:** `pytest-cov` with `coverage.py`.
-- **Dependency audit:** `pip-audit` in CI on every PR.
+- **Package manager:** `uv` (`uv.lock` committed); `pip` remains
+  supported for contributors.
+- **Formatter:** `ruff format`.
+- **Linter:** `ruff check` with the project config.
+- **Type checker:** `mypy --strict` on `sdk/python/src`.
+- **Test runner:** `pytest` with `pytest-cov`.
+- **Dependency audit:** `pip-audit` / `osv-scanner` in CI.
 
 ### Go
 
-- **Formatter:** `gofmt` + `goimports`.
-- **Linter:** `golangci-lint` with the Fabric config.
-- **Tests:** standard library `testing`; `testify` for assertions
-  when helpful.
-- **Modules:** `go mod` with a tidy-on-save commit hook.
+- **Formatter:** `gofmt`.
+- **Linter:** `go vet` (golangci-lint optional locally).
+- **Tests:** standard library `testing`; `testify` where helpful.
+- **Modules:** `go mod`, `go.sum` committed; CI runs `go mod tidy -check`.
 
 ### TypeScript
 
-- **Package manager:** `pnpm`.
+- **Package manager:** `npm` (`package-lock.json` committed).
 - **Formatter:** `prettier`.
-- **Linter:** `eslint` with the Fabric config.
-- **Tests:** `vitest` for unit, `playwright` for browser.
+- **Linter:** `eslint`.
+- **Tests:** `vitest`; package-artifact smoke tests run under Node.
 
 ### Helm / Kubernetes
 
-- **Lint:** `helm lint` + `kubeconform`.
-- **Schema:** every chart must ship a `values.schema.json`.
-- **Security scan:** `checkov` + `kube-score` in CI.
+- **Lint:** `helm lint` on the umbrella chart and the vendored
+  `otel-collector` subchart.
+- **Schema:** both charts ship `values.schema.json` with
+  `additionalProperties: false`; `tests/test-values-schema.sh` proves
+  schema rejection paths including the `invalid-values/` fixtures.
+- **Boundary tests:** `tests/*.sh` render-time assertions that only
+  recorder components can render and removed surfaces cannot.
 
-### Markdown
+### Markdown / docs
 
-- **Lint:** `markdownlint-cli` with the project config.
-- **Link check:** `lychee` in CI, weekly cron.
+- **Lint:** `markdownlint-cli2` (`.markdownlint-cli2.jsonc`).
+- **Truthfulness:** `scripts/tests/test_recorder_documentation_scope.py`
+  scans maintained docs for stale capability claims.
 
 ## Testing taxonomy
 
-Every component has four levels of test:
-
 ### Unit tests
 
-Fast, isolated, deterministic. Test a single function or class. No
-network, no file system beyond `tmp_path`, no real databases.
+Fast, isolated, deterministic. No network, no file system beyond
+`tmp_path`, no real services.
 
 Minimum coverage bars on new code:
 
 - **Line coverage:** 80%
 - **Branch coverage:** 70%
-- **Critical paths** (redaction, signing, rubric loading,
-  escalation state machine): 95% line, 90% branch
+- **Critical paths** (allowlist filtering, hashing, persistent queue
+  recovery, ingress auth, identity propagation): 95% line, 90% branch
 
-PRs that drop overall coverage are flagged; drops must be
-justified in the PR description and signed off by a maintainer.
+### Integration and end-to-end tests
 
-### Property-based tests
+- `deploy/compose/qualify.sh` — live compose stack proving
+  authenticated ingress, protection, durable queue, and delivery.
+- `e2e.yml` kind job — Helm install on a real cluster, fsync sink,
+  queue-survives-pod-restart proof.
+- `examples/harness-smoke` — SDK-to-node trace smoke.
+- `fabricctl` — init → validate → digest coverage in Go tests.
 
-Used for:
-
-- Redaction pipelines (`hypothesis` for Python)
-- Signature / cryptographic code
-- Schema validators
-- State machines (escalation, Update Agent)
-
-Property tests verify invariants over random input rather than
-specific cases. Required for any code that processes adversarial
-or unbounded inputs.
-
-### Integration tests
-
-Components talk to real dependencies (real Postgres, real NATS).
-Run in CI with ephemeral containers via `testcontainers` (Python)
-or `dockertest` (Go).
-
-Required for:
-
-- Every cross-component interaction
-- Every external API contract (to SingleAxis ingest, to LLM
-  endpoints)
-- Every database schema migration
-
-### End-to-end tests
-
-Full `fabric-system` stack stood up in a `kind` cluster in CI. A
-synthetic agent exercises the complete decision flow: input,
-guardrails, retrieval, judge, escalation, resume, bundle export.
-
-Required for:
-
-- Every release candidate
-- PRs touching the chart, escalation workflow, or bridge
+Required for every release candidate, and for PRs touching the chart,
+the collector distribution, or the deploy overlay.
 
 ### Security tests
 
-- **SAST:** `bandit` (Python), `gosec` (Go), `semgrep` across all.
-- **Secrets scanning:** `gitleaks` in CI and pre-commit.
-- **Container scanning:** `trivy` on every published image.
-- **Adversarial prompt suite:** Fabric's own suite of injection and
-  jailbreak attempts run against shipped judge prompts and
-  guardrail rails. Regressions here are release-blocking.
+- **Secrets:** `gitleaks` (CI + pre-commit).
+- **Vulnerabilities:** `trivy` fs + `osv-scanner --lockfile-only` over
+  `sdk/python`, `sdk/typescript`, `tools/fabricctl`, and the processor
+  module.
+- **Boundary regression:** artifact-content tests that would fail if
+  removed capabilities (guardrails, judges, red-team, policy,
+  management, relay, sidecars) reappeared in any release surface.
 
 ## CI gates
 
-Every pull request must pass, in order:
+Every pull request must pass:
 
-1. **DCO check** — every commit has `Signed-off-by:` trailer
+1. **DCO check** — every commit has a `Signed-off-by:` trailer
 2. **Commit lint** — conventional-commit format
-3. **Pre-commit** — formatters, linters, whitespace, file-size
-   limits, gitleaks
-4. **Type check** — `mypy` (Python), `tsc --noEmit` (TS)
-5. **Unit tests** — all components, parallelised
-6. **Property tests** — for components that have them
-7. **Integration tests** — with containerised dependencies
-8. **SAST + secrets + container scans**
-9. **Chart lint** — `helm lint` + `kubeconform` + `checkov`
+3. **actionlint** — workflow syntax
+4. **Type check** — `mypy` (Python), `tsc --noEmit` (TS), `go vet`
+5. **Unit tests** — all components
+6. **Repository tests** — `scripts/tests` (contracts, boundary,
+   documentation scope, release identity)
+7. **Helm** — lint, schema tests, boundary tests
+8. **Security** — gitleaks, trivy, osv-scanner, codeql
+9. **License** — `scripts/license_check.py` against
+   `.github/license-allowlist.txt`
 10. **Coverage check** — no regression beyond threshold
-11. **Docs build** — markdown lint + link check + spec schema
-    validation
-12. **License check** — SPDX headers present; dependency licences
-    allowed
 
-For PRs that modify the chart, escalation workflow, or bridge,
-additional gate:
+For PRs that modify the chart, collector, or deploy overlay:
 
-13. **End-to-end test** — full cluster smoke test
-
-PRs remain red until all gates pass. Gate failures print
-actionable remediation guidance.
+11. **End-to-end** — kind cluster smoke (`e2e.yml`)
 
 ## Release engineering
 
 ### Versioning
 
-[Semantic Versioning](https://semver.org/). Before 1.0.0, minor
-bumps may contain breaking changes (documented in the changelog);
-after 1.0.0, standard SemVer applies.
-
-Each release has a version line in the umbrella chart
-(`Chart.yaml`), a tag in Git, and a GitHub Release.
-
-### Release cadence
-
-- Patch releases as needed for correctness or security
-- Minor releases monthly (target)
-- Major releases when breaking changes accumulate
-
-Each release is preceded by a release candidate (`X.Y.Z-rc.N`)
-published at least 7 days before promotion, unless it is a critical
-security release.
+[Semantic Versioning](https://semver.org/). Before 1.0.0, minor bumps
+may contain breaking changes (documented in the changelog). Each release
+candidate precedes promotion (`X.Y.Z-rc.N`).
 
 ### Signing
 
-- **Container images** signed with `cosign` using a long-lived
-  Fabric signing key, rotated annually. Key lineage documented in
-  `SECURITY.md` and the release notes.
-- **Helm charts** signed (`.prov` provenance file) and the chart
-  `.tgz` signed with `cosign`.
-- **Python / Go binaries** attached to GitHub Releases are signed.
-- **Git tags** signed with a maintainer's OpenPGP key.
-
-### Provenance (SLSA)
-
-Target: SLSA level 3 for the release build by 0.3.0.
-
-Until then:
-
-- Builds run in a pinned, public GitHub Actions workflow with
-  provenance attestations (`actions/attest-build-provenance`).
-- Reproducible build scripts published so third parties can verify.
+- **Container images** signed with `cosign` (keyless via Fulcio), at the
+  pushed digest.
+- **Helm chart OCI artifact** signed with `cosign` at
+  `name:version@digest`.
+- **SLSA build provenance** via `actions/attest-build-provenance` for
+  images and release tarballs.
+- No long-lived signing keys — keyless identity bound to the CI OIDC
+  flow.
 
 ### SBOM
 
-Each release ships:
+- SPDX and CycloneDX SBOMs per published image, generated with `syft`,
+  attached to the release.
 
-- SPDX JSON SBOM per published image
-- CycloneDX JSON SBOM per published image
-- Umbrella SPDX SBOM for the chart
+### Contract packaging
 
-Generated with `syft`. Attached to the GitHub Release and pushed to
-the container registry alongside the images.
-
-### Vulnerability response
-
-See `SECURITY.md`. Summary:
-
-- Advisories published via GitHub Security Advisory
-- CVEs requested for confirmed vulnerabilities
-- Patch releases for supported versions
-- Disclosure timeline: 90 days default, shorter for active exploits
+`scripts/release/package_contracts.py` produces the contract archive
+from `scripts/release/release-policy.json` (public families:
+`activity/v2`, `connect/v1`, `delivery/v1`, `privacy/v1`,
+`recorder/v1`) plus `SHA256SUMS.contracts`.
 
 ## Dependency governance
 
@@ -252,103 +183,79 @@ See `SECURITY.md`. Summary:
 
 A new dependency requires:
 
-1. A maintainer-approved PR with:
-   - The dependency's name, version, SPDX licence
-   - A rationale (why we can't reasonably write it ourselves or use
-     an already-included alternative)
-   - Its SBOM position (which subpackage includes it)
-   - An initial `osv-scanner` report
-2. The dependency must have an OSI-approved licence compatible
-   with Apache-2.0 (we accept: Apache-2.0, MIT, BSD-2/3, MPL-2.0,
-   ISC; we require review for: LGPL; we reject: GPL-3, AGPL-3,
-   SSPL, Elastic).
+1. A maintainer-approved PR with the dependency's name, version, SPDX
+   licence, rationale, and SBOM position.
+2. A licence on `.github/license-allowlist.txt` — the gate is
+   fail-closed (unlisted licences fail).
+3. `osv-scanner` clean at the pinned version.
+4. Prefer versions published at least 7 days ago; no floating ranges.
 
 ### Pinning
 
-- Python: `uv`'s `requirements.lock` committed.
+- Python: `uv.lock` committed.
 - Go: `go.sum` committed.
-- TypeScript: `pnpm-lock.yaml` committed.
-- Helm: subchart versions pinned in `Chart.yaml`.
+- TypeScript: `package-lock.json` committed.
+- Helm: subchart versions pinned via `Chart.lock`.
+- GitHub Actions: pinned by full SHA.
+- Container base images: digest-pinned.
 
 ### Auto-update
 
-Dependabot (or Renovate) opens PRs weekly. Each update PR runs the
-full CI pipeline including adversarial test suite. Maintainers
-review and merge.
-
-### Supply-chain attacks
-
-- Dependencies pinned to exact versions (no `~` or `^`).
-- `npm`, `pip`, and `go` use verified checksums.
-- Typosquatting / dependency-confusion protection via scoped /
-  namespaced registries where applicable.
+Dependabot opens weekly PRs per real manifest directory
+(`tools/fabricctl`, the processor module, `sdk/typescript`,
+`sdk/python`, docker, github-actions). Each update PR runs the full CI
+pipeline.
 
 ## SPDX headers
 
-Every source file carries a SPDX header:
+Every source file carries:
 
 ```
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 AI5Labs Research OPC Private Limited
 ```
 
-Enforced by a pre-commit hook.
-
 ## Documentation standards
 
 - Every component has a `README.md` (overview, dev setup, tests)
 - Every public API has doc comments
 - Every spec follows the structure in `specs/000-overview.md`
-- User-facing docs (in `docs/`) are built from the specs and
-  component READMEs; not separately maintained
-- ADRs (Architecture Decision Records) live as specs, not a
-  separate directory
+- Stale-spec convention: superseded specs carry a `superseded` status
+  and a do-not-implement banner (see specs 001, 025)
+- ADRs live as specs, not a separate directory
+- Documentation truthfulness is tested: claims about shipped
+  capabilities must match code (`test_recorder_documentation_scope.py`)
 
 ## Code review
 
 - Minimum one maintainer approval
 - PR author does not merge their own PR
-- PRs touching `SECURITY`-labelled code require a security
-  maintainer approval (see `CONTRIBUTING.md`)
+- PRs touching the protection processor, auth wiring, or release
+  packaging require a security maintainer approval (see CODEOWNERS)
 - Stale PRs (no activity 14 days) may be closed with a note
 
 ## Backward compatibility
 
-Pre-1.0.0: best-effort, breaking changes documented in changelog.
-
-Post-1.0.0:
-
-- Public APIs (SDK, REST, GraphQL, chart values) are stable within
-  a major version.
-- Breaking changes require a major bump and a 6-month deprecation
-  window for the old behaviour.
-- Decision Graph schema is versioned independently; within a major,
-  readers tolerate a window of consumer-visible changes.
+Pre-1.0.0: best-effort; breaking changes documented in the changelog.
+The public contract families version independently (`v1`/`v2` dirs
+under `contracts/`); wire compatibility between SDK releases is
+preserved by the shared vocabulary tests in `contracts/activity`.
 
 ## Observability of Fabric itself
 
-Every Fabric component emits:
-
-- Prometheus metrics (`fabric_<component>_*`)
-- OTel traces (tracing its own operations)
-- Structured logs (JSON by default; `logfmt` available)
-
-Metrics are documented in the component's README; a consolidated
-Grafana dashboard ships in `charts/fabric/dashboards/`.
+The Fabric Node exposes collector self-metrics (Prometheus reader,
+`:8888` in the compose production overlay) covering exporter queue
+depth, send failures, and processor counters — the operator-facing
+reliability surface. Health is on `:13133`. No Grafana dashboards ship;
+destination-side monitoring is the customer's backend.
 
 ## Open questions
 
-- **Q1.** Do we target SLSA level 3 from 0.1.0, accepting the build
-  complexity, or start at level 2 and ramp? *Resolver: project
-  lead + security maintainer. Deadline: before 0.1.0.*
-- **Q2.** Should we adopt `pants` / `bazel` for the monorepo build
-  as component count grows, or stay on per-component native
-  tooling? *Resolver: platform maintainer. Deadline: review at
-  0.3.0.*
-- **Q3.** Minimum supported Kubernetes version — we currently say
-  1.29; should we pin tighter (last two minor versions) or looser
-  (everything with working NetworkPolicy)? *Resolver: platform
-  maintainer. Deadline: before 0.1.0.*
+- **Q1.** Byte-bounded persistent queues — `sizer: bytes` is not
+  available at collector v0.150; revisit on the v0.16x train.
+- **Q2.** gRPC ingress authentication is covered by the same
+  `bearertokenauth` extension as HTTP but is not yet exercised live in
+  the compose verify script beyond the grpcurl probe.
 
 ## References
 
@@ -357,4 +264,3 @@ Grafana dashboard ships in `charts/fabric/dashboards/`.
 - [SPDX](https://spdx.dev/)
 - [CycloneDX](https://cyclonedx.org/)
 - [OSV](https://osv.dev/)
-- [OpenSSF Scorecard](https://securityscorecards.dev/)

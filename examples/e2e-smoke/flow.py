@@ -1,15 +1,14 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Live OTLP span-landing flow for the kind E2E smoke.
+"""Live OTLP span-landing flow for local end-to-end checks.
 
 Runs a deterministic Fabric :class:`Decision` and exports the spans it
-emits over OTLP/HTTP to the in-cluster otel-collector. Paired with the
-``.github/workflows/e2e.yml`` ``kind cluster install + smoke`` job, which
-port-forwards the collector's OTLP receiver to ``FABRIC_OTLP_ENDPOINT``
-and then scrapes the collector pod's stdout (debug exporter, verbosity
-``detailed``) for the ``fabric.decision`` span plus a child span and key
-``fabric.*`` attributes. This is the only test in the repo that proves a
-real SDK Decision flows SDK -> OTLP -> collector and lands intact.
+emits over OTLP/HTTP to a running collector (e.g. the compose stack or a
+port-forwarded kind pod). Set ``FABRIC_OTLP_ENDPOINT`` (including the
+``/v1/traces`` path) to point at the receiver. The CI e2e job
+(``.github/workflows/e2e.yml``) uses its own fixture + fsync sink path
+rather than this script; this is the manual SDK -> OTLP -> collector
+landing check.
 
 Unlike the unit suite (in-memory exporter), this script wires a real
 ``TracerProvider`` with a ``SimpleSpanProcessor`` so each span is
@@ -26,7 +25,6 @@ It prints the hex trace id it emitted on stdout.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import sys
 
@@ -39,7 +37,6 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from fabric import (
     Fabric,
     FabricConfig,
-    GuardrailNotConfiguredError,
     RetrievalSource,
 )
 
@@ -84,15 +81,6 @@ def _run_decision(fabric: Fabric) -> str:
         request_id=REQUEST_ID,
         user_id="e2e-user",
     ) as decision:
-        # Guardrails are optional in this smoke — the assertion is about
-        # observability, not the sidecar. Run guard_input only if a chain
-        # is configured; otherwise the SDK fails loud, which we swallow.
-        # No guardrail chain is wired in this smoke; the subject under
-        # test is observability (span landing), so a missing chain is
-        # expected and benign.
-        with contextlib.suppress(GuardrailNotConfiguredError):
-            decision.guard_input("hello from the e2e smoke")
-
         # Child LLM span with fixed (fake) usage — no network LLM call.
         with decision.llm_call(
             provider="e2e-fake",
@@ -125,12 +113,11 @@ def _run_decision(fabric: Fabric) -> str:
 def main() -> int:
     provider = _build_provider()
     fabric = Fabric(
-        FabricConfig(tenant_id=TENANT_ID, agent_id=AGENT_ID, profile="permissive-dev"),
+        FabricConfig(tenant_id=TENANT_ID, agent_id=AGENT_ID),
     )
     try:
         trace_id = _run_decision(fabric)
     finally:
-        fabric.close()
         # Belt-and-braces: SimpleSpanProcessor exports on span-end, but
         # force_flush guarantees the OTLP request completes before exit.
         provider.force_flush()

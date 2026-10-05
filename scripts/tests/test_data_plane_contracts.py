@@ -21,6 +21,7 @@ from contracts.validate_data_plane_contracts import (  # noqa: E402
     validate_activity_sequence,
     validate_data_plane_contracts,
     validate_delivery_evidence,
+    validate_privacy_assertion,
 )
 
 
@@ -44,7 +45,7 @@ def _schemas(
 
 def test_all_pinned_data_plane_contracts_validate() -> None:
     validated = validate_data_plane_contracts(REPO_ROOT)
-    assert len(validated) == 13
+    assert len(validated) == 14
     assert "activity/valid/shadow-execution.json" in validated
     assert "privacy/valid/metadata-only-assertion.json" in validated
     assert "delivery/valid/audit-delivery.json" in validated
@@ -193,6 +194,31 @@ def test_current_privacy_assertion_does_not_claim_external_verification() -> Non
     assertion = _json("contracts/privacy/v1/valid/metadata-only-assertion.json")
     assert assertion["verification"] == {"status": "unverified"}
     assert assertion["processor"]["identity"]["provenance"] == "self_reported"
+
+
+def test_privacy_export_cannot_be_allowed_after_prohibited_content() -> None:
+    _, privacy_schema, _ = _schemas()
+    document = _json(
+        "contracts/privacy/v1/invalid/prohibited-content-export-allowed.json"
+    )
+    with pytest.raises(DataPlaneContractError) as caught:
+        validate_privacy_assertion(document, privacy_schema)
+    assert caught.value.code == "privacy.prohibited_content.export_allowed"
+
+
+def test_delivery_privacy_assertion_requires_digest_scope() -> None:
+    activity_schema, privacy_schema, delivery_schema = _schemas()
+    document = copy.deepcopy(_json("contracts/delivery/v1/valid/audit-delivery.json"))
+    del document["batch"]["privacy_assertion"]["digest_scope"]
+    with pytest.raises(DataPlaneContractError) as caught:
+        validate_delivery_evidence(
+            document,
+            delivery_schema,
+            repo_root=REPO_ROOT,
+            activity_schema=activity_schema,
+            privacy_schema=privacy_schema,
+        )
+    assert caught.value.code == "data-plane.schema.invalid"
 
 
 def test_manifest_digest_tampering_fails_closed(tmp_path: Path) -> None:

@@ -27,7 +27,7 @@ licence.
 Every commit must be signed off:
 
 ```bash
-git commit -s -m "feat(recorder): preserve source correlation"
+git commit -s -m "feat(fabricguard): normalize raw event names"
 ```
 
 This appends a `Signed-off-by:` trailer using your configured Git identity.
@@ -54,8 +54,9 @@ Accepted types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`,
 `ci`, `chore`, `revert`. Breaking changes must include `!` after the type
 and a `BREAKING CHANGE:` footer.
 
-Scope should identify the recorder component (`capture`, `collector`, `delivery`,
-`charts`, `sdk-python`, `sdk-typescript`, etc.).
+Scope should identify the component (`otel-collector-fabric`,
+`fabricguard`, `sdk-python`, `sdk-typescript`, `fabricctl`, `charts`,
+`contracts`, `deploy`, etc.).
 
 ## Branching and merge strategy
 
@@ -66,10 +67,6 @@ Scope should identify the recorder component (`capture`, `collector`, `delivery`
   in its body — the squash commit becomes `main`'s HEAD, which the
   push-event DCO check inspects (per-commit sign-offs are not carried
   over into the squash automatically).
-- The squash body must contain real line breaks before the trailer. Do not pass
-  escaped text such as `\n\nSigned-off-by: ...`; GitHub stores that as literal
-  text, which is not a valid DCO trailer. Confirm the resulting `main` commit
-  passes the push-event DCO job before tagging a release.
 - A PR may not be merged by its author.
 
 ## Code standards
@@ -114,7 +111,7 @@ Every PR must include tests appropriate to the change:
 |-------------|-------------------|
 | Bug fix | Regression test that fails on `main`, passes on branch |
 | New feature | Unit tests + integration test if it crosses components |
-| Redaction / guardrail logic | Unit + property-based tests (adversarial inputs) |
+| Allowlist / protection logic | Unit + property-based tests (adversarial inputs) |
 | Schema change | Migration test + backward-compat test |
 | Helm value / config | Chart render test + kubeconform pass |
 
@@ -126,12 +123,12 @@ overall coverage will be flagged; reductions must be justified.
 Any PR touching the following is automatically labelled `security-review`
 and requires approval from a security maintainer:
 
-- Redaction pipeline (`components/presidio-sidecar`)
-- Guardrail libraries (`sdk/*/guardrails`)
-- Cryptographic boundaries (envelope encryption, mTLS, signing)
+- The metadata allowlist and content-filtering rules
+  (`components/otel-collector-fabric/processor/fabricguardprocessor`)
+- Cryptographic boundaries (mTLS, token auth, signing, hashing rules)
 - Dependency updates that cross a major version or touch crypto
-- Escalation / resume webhooks
-- Any code that egresses the tenant VPC
+- Export/egress configuration and delivery semantics
+- Any code that egresses the customer boundary
 
 See [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 

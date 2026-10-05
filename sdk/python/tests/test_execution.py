@@ -81,10 +81,20 @@ def test_execution_span_shape(span_exporter: InMemorySpanExporter) -> None:
 
 def test_execution_extra_attributes_stamped(span_exporter: InMemorySpanExporter) -> None:
     client = _client()
-    with client.execution(execution_id="exec-1", attributes={"fabric.custom": "v"}):
+    with client.execution(execution_id="exec-1", attributes={"acme.custom": "v"}):
         pass
     span = _spans_by_name(span_exporter, EXECUTION_SPAN)[0]
-    assert _attr(span, "fabric.custom") == "v"
+    assert _attr(span, "acme.custom") == "v"
+
+
+def test_execution_attributes_reject_reserved_namespace() -> None:
+    """Reserved fabric.* / gen_ai.* keys are SDK-owned and cannot be
+    overridden via caller-supplied attributes."""
+    client = _client()
+    with pytest.raises(ValueError, match="reserved namespace"):
+        client.execution(execution_id="e", attributes={"fabric.tenant_id": "evil"})
+    with pytest.raises(ValueError, match="reserved namespace"):
+        client.execution(execution_id="e", attributes={"gen_ai.system": "x"})
 
 
 # -- attempt / retry metadata on the execution span ------------------------

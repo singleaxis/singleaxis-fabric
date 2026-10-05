@@ -16,12 +16,12 @@ business days (best-effort, not an SLA).
 ## Commercial support
 
 Enterprise support — SLAs, a named contact, CVE-response guarantees,
-LTS branches, deployment assistance, and the commercial control plane —
+LTS branches, deployment assistance, and the SingleAxis Platform —
 is available from SingleAxis.
 
 | Tier | What you get |
 |---|---|
-| **Implementation** | Fixed-scope engagement to deploy Fabric in your cluster, instrument your agents, author policies, train your team. |
+| **Implementation** | Fixed-scope engagement to deploy Fabric in your cluster, instrument your agents, wire your destination, train your team. |
 | **Enterprise** | Production SLA, CVE-response SLA, LTS branch with extended security support, named TAM, procurement docs (SBOM/BOM, DPA, sub-processor list). |
 
 Contact: **bryan@singleaxis.ai** · https://fabric.singleaxis.ai

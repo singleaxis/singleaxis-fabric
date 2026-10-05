@@ -28,10 +28,18 @@ spec:
           port: {{ .Values.service.ports.otlpGrpc }}
         - protocol: TCP
           port: {{ .Values.service.ports.otlpHttp }}
-    # Health check probe traffic from kubelet (no source restriction).
-    - ports:
+    # The health extension is not opened by default: kubelet probes are node
+    # traffic and are not governed by NetworkPolicy on most CNIs. Operators
+    # whose monitoring stack scrapes the health port can opt in by naming the
+    # monitoring namespace via networkPolicy.monitoringNamespaceSelector.
+    {{- with .Values.networkPolicy.monitoringNamespaceSelector }}
+    - from:
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+      ports:
         - protocol: TCP
-          port: {{ .Values.service.ports.health }}
+          port: {{ $.Values.service.ports.health }}
+    {{- end }}
   egress:
     # DNS to kube-system.
     - to:

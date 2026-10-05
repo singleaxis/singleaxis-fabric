@@ -163,6 +163,37 @@ def test_python_artifacts_are_inspected_and_hashed(tmp_path: Path) -> None:
     assert all(len(record["sha256"]) == 64 for record in records)
 
 
+def test_python_prerelease_metadata_and_pep440_expected_version_are_equivalent() -> (
+    None
+):
+    assert qualify.normalize_python_version("0.8.0-rc.1") == "0.8.0rc1"
+    assert qualify.normalize_python_version("0.8.0-beta.2") == "0.8.0b2"
+    assert qualify.normalize_python_version("0.8.0") == "0.8.0"
+
+
+def test_python_wheel_smoke_exercises_installed_governed_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wheel = next(_dist(tmp_path).glob("*.whl"))
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, check: bool) -> None:
+        assert check is True
+        calls.append(command)
+
+    monkeypatch.setattr(qualify.subprocess, "run", fake_run)
+    qualify.smoke_install_wheel(wheel, "1.2.3", {"fabricctl": "fabric.cli:main"})
+
+    assert len(calls) == 3
+    assert calls[1][-1] == str(wheel.resolve())
+    assert "--no-deps" not in calls[1]
+    runtime_code = calls[2][-1]
+    assert "ContentCaptureConfig" in runtime_code
+    assert "record_context" in runtime_code
+    assert "export_transcript" in runtime_code
+    assert "integrity" in runtime_code
+
+
 def test_packaged_chart_is_version_bound_and_hashed(tmp_path: Path) -> None:
     package = tmp_path / "fabric-1.2.3.tgz"
     content = b'apiVersion: v2\nname: fabric\nversion: 1.2.3\nappVersion: "1.2.3"\n'

@@ -4,7 +4,7 @@
 
 An :class:`Execution` is an **optional outer correlation + lifecycle**
 span. It does **not** drive, schedule, or reconstruct anything — that is
-the commercial layer's job (spec 012). All the OSS SDK does is *emit* a
+the downstream platform's job. All the OSS SDK does is *emit* a
 canonical ``fabric.execution`` span and stamp the execution-correlation
 metadata that any :class:`~fabric.decision.Decision` opened inside it
 inherits, so a run of related decisions correlates without the host
@@ -62,6 +62,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from ._attributes import (
     ATTR_AGENT,
+    ATTR_ERROR_TYPE,
     ATTR_EXECUTION,
     ATTR_EXECUTION_ATTEMPT,
     ATTR_EXECUTION_ATTEMPT_ID,
@@ -72,6 +73,7 @@ from ._attributes import (
     ATTR_TENANT,
     ATTR_WORKFLOW,
     SCHEMA_VERSION,
+    check_attribute_keys,
 )
 
 if TYPE_CHECKING:
@@ -92,6 +94,10 @@ class _ConfigLike(Protocol):
     @property
     def workflow_id(self) -> str | None:
         """The default workflow id an execution falls back to."""
+
+    @property
+    def extra(self) -> dict[str, str]:
+        """Client-level default attributes stamped under caller extras."""
 
     @property
     def execution_attempt_id(self) -> str | None:
@@ -256,7 +262,12 @@ class Execution(AbstractContextManager["Execution"]):
             if execution_retry_previous_attempt_id is not None
             else config.execution_retry_previous_attempt_id
         )
-        self._extra_attrs = dict(attributes or {})
+        # Caller extras sit on top of the client-level ``FabricConfig.extra``
+        # defaults (explicit keys win on collision). Reserved
+        # ``fabric.*`` / ``gen_ai.*`` keys are rejected so a caller cannot
+        # clobber SDK-owned identity; config-level extras were already
+        # validated at ``FabricConfig`` build time.
+        self._extra_attrs = check_attribute_keys({**config.extra, **(attributes or {})})
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
         self._token: contextvars.Token[_ActiveExecution | None] | None = None
@@ -328,6 +339,7 @@ class Execution(AbstractContextManager["Execution"]):
             return None
         if exc is not None:
             self._span.set_attribute(ATTR_EXECUTION_STATUS, STATUS_FAILED)
+            self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
             self._span.record_exception(exc)
         else:

@@ -171,7 +171,22 @@ def qualify(path: Path) -> dict[str, object]:
 
     canonical_payloads = {_canonical_member(name): data for name, data in payloads.items()}
     canonical_members = {_canonical_member(name) for name in members}
-    required = {"fabric/__init__.py", "fabric/client.py", "fabric/decision.py"}
+    # The governed-content surface ships in every release artifact — a
+    # package missing these modules is not a qualified recorder build.
+    required = {
+        "fabric/__init__.py",
+        "fabric/client.py",
+        "fabric/decision.py",
+        "fabric/_content.py",
+        "fabric/_content_sink.py",
+        "fabric/_content_writer.py",
+        "fabric/content_store/__init__.py",
+        "fabric/content_store/base.py",
+        "fabric/content_store/local.py",
+        "fabric/content_store/s3.py",
+        "fabric/resolver.py",
+        "fabric/adapters/byte_boundary.py",
+    }
     missing = required.difference(canonical_members)
     if missing:
         raise ValueError(f"{kind} is missing recorder modules: {sorted(missing)}")

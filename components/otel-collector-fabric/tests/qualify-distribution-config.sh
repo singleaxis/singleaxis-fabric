@@ -110,12 +110,22 @@ receivers:
     protocols:
       grpc:
         endpoint: 127.0.0.1:4317
+        max_recv_msg_size_mib: 8
+        max_concurrent_streams: 64
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
         tls:
           cert_file: ${config_root}/server.crt
           key_file: ${config_root}/server.key
           client_ca_file: ${config_root}/ca.crt
       http:
         endpoint: 127.0.0.1:4318
+        read_header_timeout: 5s
+        read_timeout: 30s
+        idle_timeout: 120s
+        max_request_body_size: 8388608
         tls:
           cert_file: ${config_root}/server.crt
           key_file: ${config_root}/server.key
@@ -129,9 +139,6 @@ processors:
     event_class_attribute: event_class
     drop_unknown_classes: true
     max_field_bytes: 8192
-  batch:
-    timeout: 1s
-    send_batch_size: 32
 
 exporters:
   otlp_http/fabric:
@@ -145,6 +152,7 @@ exporters:
     sending_queue:
       enabled: true
       queue_size: 32
+      block_on_overflow: true
       storage: file_storage/fabric
     retry_on_failure:
       enabled: true
@@ -158,11 +166,11 @@ service:
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, batch]
+      processors: [memory_limiter, fabricguard]
       exporters: [otlp_http/fabric]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, fabricguard, batch]
+      processors: [memory_limiter, fabricguard]
       exporters: [otlp_http/fabric]
 EOF
 chmod 0644 "${runtime}/config.yaml"
@@ -176,14 +184,44 @@ chmod 0644 "${runtime}/config.yaml"
   || fail "both OTLP receivers must declare key_file"
 [[ "$(grep -c 'client_ca_file:' "${runtime}/config.yaml")" -eq 2 ]] \
   || fail "both OTLP receivers must require client certificates"
+grep -q 'max_recv_msg_size_mib: 8' "${runtime}/config.yaml" \
+  || fail "gRPC receiver must cap messages at 8 MiB"
+grep -q 'max_concurrent_streams: 64' "${runtime}/config.yaml" \
+  || fail "gRPC receiver must cap concurrent streams"
+grep -q 'min_time: 10s' "${runtime}/config.yaml" \
+  || fail "gRPC receiver must enforce keepalive spacing"
+grep -q 'max_request_body_size: 8388608' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must cap request bodies at 8 MiB"
+grep -q 'read_header_timeout: 5s' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must bound header reads"
+grep -q 'read_timeout: 30s' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must bound request reads"
+grep -q 'idle_timeout: 120s' "${runtime}/config.yaml" \
+  || fail "HTTP receiver must bound idle connections"
 grep -q '^  otlp_http/fabric:' "${runtime}/config.yaml" \
   || fail "otlp_http/fabric exporter is missing"
 grep -q '^  file_storage/fabric:' "${runtime}/config.yaml" \
   || fail "file-storage extension is missing"
 grep -q 'storage: file_storage/fabric' "${runtime}/config.yaml" || fail "persistent queue binding is missing"
-processor="fabricguard"
-count="$(grep -o "${processor}" "${runtime}/config.yaml" | wc -l | tr -d ' ')"
-[[ "${count}" -ge 3 ]] || fail "${processor} is not configured and wired into both pipelines"
+grep -q 'block_on_overflow: true' "${runtime}/config.yaml" \
+  || fail "exporter must apply backpressure via block_on_overflow (default false drops records)"
+if grep -n 'batch' "${runtime}/config.yaml" >/dev/null; then
+  fail "qualified config must not contain a volatile pre-queue batch processor"
+fi
+# The guard only processes logs and traces. A qualified config must not
+# define metrics or profiles pipelines, which would bypass the allowlist.
+pipeline_names="$(awk '
+    /^  pipelines:/ { inblock=1; next }
+    inblock && /^  [^ ]/ { inblock=0 }
+    inblock && /^    [a-z_]+:/ { sub(":$", "", $1); print $1 }
+  ' "${runtime}/config.yaml" | sort)"
+[[ "${pipeline_names}" == "$(printf 'logs\ntraces')" ]] \
+  || fail "qualified config must define only logs and traces pipelines, got: ${pipeline_names}"
+# shellcheck disable=SC2043 # Kept as a loop-shaped inventory assertion.
+for processor in fabricguard; do
+  count="$(grep -o "${processor}" "${runtime}/config.yaml" | wc -l | tr -d ' ')"
+  [[ "${count}" -ge 3 ]] || fail "${processor} is not configured and wired into both pipelines"
+done
 
 if [[ "${mode}" == "image" ]]; then
   container_name="fabric-config-test-${RANDOM}-${RANDOM}"
@@ -203,7 +241,19 @@ if [[ "${mode}" == "image" ]]; then
     sleep 1
   done
 else
-  "${artifact}" --config="${runtime}/config.yaml" >"${runtime}/collector.log" 2>&1 &
+  # Binary mode still exercises the enforcement path: when dist/ carries
+  # fabric-gate next to the collector, boot through it (the gate resolves
+  # the sibling binary itself). A bare collector without its gate is
+  # qualified but flagged — the runtime invariants are then unenforced.
+  gate_bin="$(dirname "${artifact}")/fabric-gate"
+  launcher="${artifact}"
+  if [[ -x "${gate_bin}" ]]; then
+    launcher="${gate_bin}"
+  else
+    printf '%s WARN: %s not found; qualifying the bare collector without entrypoint enforcement\n' \
+      "${prefix}" "${gate_bin}" >&2
+  fi
+  "${launcher}" --config="${runtime}/config.yaml" >"${runtime}/collector.log" 2>&1 &
   collector_pid="$!"
   for _ in 1 2 3 4 5; do
     if ! kill -0 "${collector_pid}" 2>/dev/null; then
@@ -219,6 +269,65 @@ for prohibited in fabricredact fabricpolicy fabricsampler; do
     fail "recorder config unexpectedly contains ${prohibited}"
   fi
 done
+
+# The shipped image's fabric-gate entrypoint must refuse configurations the
+# recorder cannot protect: non-traces/logs pipelines bypass fabricguard, and
+# a newline-terminated token file mints an empty "Bearer " credential under
+# the pinned bearertokenauth extension. Binary mode cannot exercise this
+# (the gate wraps the image, not the collector artifact).
+if [[ "${mode}" == "image" ]]; then
+  badcfg="${runtime}/gate-reject.yaml"
+  gate_expect_refusal() {
+    local name="$1" why="$2"; shift 2
+    docker run -d --name "${name}" "$@" "${artifact}" \
+      --config=/fabric-config-test/bad.yaml >/dev/null \
+      || fail "could not start gate test container: ${name}"
+    sleep 2
+    local state
+    state="$(docker inspect --format '{{.State.Status}}' "${name}" 2>/dev/null || true)"
+    if [[ "${state}" == "running" ]]; then
+      docker rm -f "${name}" >/dev/null 2>&1 || true
+      fail "image booted despite ${why}; fabric-gate did not refuse"
+    fi
+    docker logs "${name}" 2>&1 | grep -q "fabric-gate" \
+      || { docker rm -f "${name}" >/dev/null 2>&1 || true; fail "rejected ${why} produced no fabric-gate refusal message"; }
+    docker rm -f "${name}" >/dev/null 2>&1 || true
+  }
+
+  sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal "${container_name}-gate" "a metrics pipeline" \
+    --network none \
+    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
+
+  # Unsafe token material: same config plus a newline-terminated token file.
+  printf 'tok3n\n' >"${runtime}/bad.token"
+  sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: /fabric-config-test/bad.token|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal "${container_name}-token" "a trailing-newline token file" \
+    --network none \
+    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
+  printf '%s PASS: image entrypoint refused unprotected pipelines and unsafe token material\n' "${prefix}"
+elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
+  # Binary mode: the same refusal invariants run through dist/fabric-gate,
+  # which resolves the sibling collector and exits non-zero before exec.
+  gate_bin="$(dirname "${artifact}")/fabric-gate"
+  badcfg="${runtime}/gate-reject.yaml"
+  gate_expect_refusal_bin() {
+    local why="$1"
+    if "${gate_bin}" --config="${badcfg}" >/dev/null 2>&1; then
+      fail "fabric-gate accepted ${why}"
+    fi
+  }
+  sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal_bin "a metrics pipeline"
+  printf 'tok3n\n' >"${runtime}/bad.token"
+  sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: '"${runtime}"'/bad.token|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal_bin "a trailing-newline token file"
+  printf '%s PASS: fabric-gate binary refused unprotected pipelines and unsafe token material\n' "${prefix}"
+fi
 
 printf '%s PASS: recorder artifact accepted mTLS ingress, protection, and durable OTLP/HTTP export\n' "${prefix}"
 printf '%s NOTE: configuration compatibility only; no telemetry delivery was attempted\n' "${prefix}"

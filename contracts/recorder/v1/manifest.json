@@ -1,6 +1,7 @@
 {
   "contract": "singleaxis.fabric.recorder",
   "version": "v1",
+  "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema.json",
     "sha256": "f5821678e263bff7c08c5b6082c79e94edc041fde647616014dca053d1350e2f"
@@ -8,7 +9,20 @@
   "fixtures": [
     {
       "path": "example.yaml",
-      "sha256": "50ddbb6264a595c9db2e82f4de0dac8ace8ded55f345c904d055817a475ac52a"
+      "sha256": "50ddbb6264a595c9db2e82f4de0dac8ace8ded55f345c904d055817a475ac52a",
+      "expectation": "valid"
+    },
+    {
+      "path": "invalid/recorder-id-mismatch.yaml",
+      "sha256": "353419e4f3950f79d7b1902c27b49e1633966556021649368bc389f49e7dda2e",
+      "expectation": "invalid",
+      "expected_error": "recorder.identity.recorder_id_mismatch"
+    },
+    {
+      "path": "invalid/credential-shaped-reference.yaml",
+      "sha256": "3f202fbc07937a6bdf28de735c10c7b5d16512c9cd6a47372184f4af00892bd7",
+      "expectation": "invalid",
+      "expected_error": "recorder.reference.credential_shape"
     }
   ]
 }

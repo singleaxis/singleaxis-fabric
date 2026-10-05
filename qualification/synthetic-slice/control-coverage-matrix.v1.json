@@ -1,0 +1,41 @@
+{
+  "schema_version": "fabric.synthetic-control-coverage/v1",
+  "scope_id": "synthetic-model-terminal-artifact-v1",
+  "scope_revision": 1,
+  "result": "NO_GO",
+  "last_evidence_commit": "9bcc4396f4d4f2218e89a36f5ca4ee780171c876",
+  "linux_evidence": [
+    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36705361682",
+    "https://github.com/singleaxis/singleaxis-fabric/actions/runs/36705361799"
+  ],
+  "current_local_evidence": {
+    "spec": "046",
+    "test_date": "2026-10-01",
+    "wheel_sha256": "3233f673de8722361c6528df6932d870ea16380a808cf71257c0f17c00366a77",
+    "qualification": "installed-wheel-offline-fixture-only",
+    "operations": 4,
+    "byte_objects": 15,
+    "negative_tests": 24,
+    "verdict": "verified_complete_for_declared_scope",
+    "production_status": "NO_GO",
+    "issuer_qualification": "fixture-only-not-live-provider-node-or-storage"
+  },
+  "controls": [
+    {"id": "BD-01", "owner": "customer-platform", "status": "unverified", "required_test": "route-inventory-and-direct-bypass"},
+    {"id": "ID-01", "owner": "recorder-platform", "status": "dedicated-single-source-auth-and-spoof-rejection-linux-tested-multisource-fixture-unbound", "required_test": "approved-per-source-credential-mapping-and-source-receipts"},
+    {"id": "CA-01", "owner": "recorder-engineering", "status": "qualified-feed-to-byte-and-operation-installed-wheel-locally-tested-live-issuer-unverified", "required_test": "qualified-live-independent-producer-and-customer-pilot"},
+    {"id": "CA-02", "owner": "recorder-engineering", "status": "metadata-seal-restart-tail-loss-installed-wheel-linux-tested-pre-fsync-unverified", "required_test": "authenticated-source-receipt-and-independent-prefsync-operation-accounting"},
+    {"id": "PR-01", "owner": "customer-privacy", "status": "dedicated-source-sink-log-persistent-queue-canaries-linux-tested-target-stores-unverified", "required_test": "target-all-surface-secret-canary"},
+    {"id": "ST-01", "owner": "customer-storage", "status": "local-store-tests-only", "required_test": "tenant-encryption-corruption-readback"},
+    {"id": "ST-02", "owner": "customer-records", "status": "unverified", "required_test": "retention-backup-restore-key-rotation"},
+    {"id": "DL-01", "owner": "recorder-and-destination", "status": "four-exact-signed-receipt-set-verifier-locally-tested-live-receipt-issuers-unverified", "required_test": "real-stage-issuance-and-target-durable-readback"},
+    {"id": "OP-01", "owner": "customer-operations", "status": "unverified", "required_test": "alarm-recovery-and-incident-drill"},
+    {"id": "RL-01", "owner": "release-engineering", "status": "same-sha-wheel-chart-node-kind-tested-not-one-frozen-release", "required_test": "same-sha-installed-artifact-e2e"},
+    {"id": "EV-01", "owner": "independent-reviewer", "status": "offline-bounded-signed-fixture-verdict-tested-not-live-independent-pilot", "required_test": "witnessed-customer-pilot-with-qualified-live-issuers"}
+  ],
+  "coverage": [
+    {"source": "provider-http-1", "boundary": "provider_bound", "operations": ["request", "response", "retry", "cancel"], "roles": ["interaction.payload", "model.request.messages", "model.output.messages"], "independent_truth": "controlled-provider-ledger", "status": "request-response-retry-linux-tested-cancel-and-bypass-unverified"},
+    {"source": "terminal-1", "boundary": "terminal", "operations": ["exec", "stdin", "stdout", "stderr", "exit", "signal"], "roles": ["terminal.argv", "terminal.stdin", "terminal.stdout", "terminal.stderr", "interaction.payload"], "independent_truth": "terminal-fixture-ledger", "status": "binary-stream-linux-tested-overflow-cancel-local-only-passivity-unverified"},
+    {"source": "artifact-1", "boundary": "tool", "operations": ["create", "modify"], "roles": ["artifact.before", "artifact.after"], "independent_truth": "filesystem-pre-post-inventory", "status": "create-modify-binary-linux-tested-symlink-oversize-local-only-passivity-unverified"}
+  ]
+}
