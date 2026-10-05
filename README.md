@@ -12,6 +12,7 @@ reliably deliver a verifiable record to a destination you choose.
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/singleaxis/singleaxis-fabric/badge)](https://securityscorecards.dev/viewer/?uri=github.com/singleaxis/singleaxis-fabric)
 
 [Quickstart](docs/quickstart.md) ·
+[Existing-codebase integration](docs/enterprise-testing-quickstart.md) ·
 [Custom-agent recording](docs/custom-agent-recording.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
@@ -42,6 +43,12 @@ The default deployment is passive shadow recording. Recording failures must
 not block or change the agent's action. Storage and delivery run outside the
 monitored call path; instrumentation still has CPU/memory overhead that must
 be measured for the deployment.
+
+The opt-in Python [durable reference build](examples/enterprise-reference/README.md)
+adds protected byte replay, journal-backed metadata delivery and independently
+readable local receipt services. See the [support matrix](docs/sdk-support-matrix.md)
+and [validation boundary](docs/enterprise-reference-validation.md); local
+qualification does not establish universal or production capture completeness.
 
 ## What data can be recorded
 

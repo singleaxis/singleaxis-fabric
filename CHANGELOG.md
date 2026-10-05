@@ -8,6 +8,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added the Python capture reference build with protected metadata export,
+  encrypted durable byte spool, journal-backed metadata replay, authenticated
+  reference receipts/readback, and conservative distributed closure.
+- Added versioned capture configuration, health/canary/readback interfaces,
+  auditd logfile cursor/recovery, developer guidance, and a matched local
+  benchmark with published synthetic evidence.
+- Added durable governed-content joins and fresh authorized reconstruction
+  with policy, identity, representation, digest and length validation.
+- Added an actual Collector crash/restart/readback fixture and a C0–C10
+  acceptance runner that records executed checks and unsupported scenarios.
+- Added a controlled HTTP semantics fixture with physical retries, error
+  responses, independent effect readback and fresh authorized derivative reads.
+
+### Fixed
+
+- Confined Python local content adapter operations through no-follow directory
+  descriptors, including replacements after initialization.
+- Rejected TypeScript content-store symlink redirection and nonregular objects,
+  while documenting its remaining ancestor-replacement race.
+- Bounded propagated context headers and rejected deeply nested malformed input.
+- Preserved truncated partial-output status, bounded terminal child lifetime
+  after pipe closure, and removed raw exception/identifier values from SDK
+  diagnostics.
+- Required exact protected readback and successful source-bound release evidence;
+  rejected incomplete artifact sets and cross-tenant nested descriptors.
+- Required durable governed modules in released Python artifacts and included
+  the Fabric gate in local license inventories; missing tools now fail the scan.
+- Aligned the draft evidence-event contract with closed governed-content
+  bindings and observed call lifecycle records.
+- Corrected Compose privacy/recovery checks and protocol TLS preflight, isolated
+  Helm test pods from runtime selectors, and preserved explicit zero PDB limits.
+- Corrected TypeScript transcript serialization against the published contract,
+  rejected oversized inbound context, handled partial local writes, and retained
+  pending spool bytes when recovered-manifest reconciliation fails.
+- Omitted empty transcript publication when no content observations exist;
+  an empty string remains an explicit content observation.
+- Corrected native audit netlink framing, rule structure/constants, architecture
+  filters, control response matching and bounded assembly loss reporting.
+- Repaired the orchestration reconstruction root and synthetic audit provenance.
+- Included host-emitter and entrypoint-gate inventories in license enforcement.
+- Made missing-instrumentor and asynchronous permission tests deterministic
+  without weakening their assertions.
+- Verified effective local directory permissions before persistence and made
+  TLS minimums explicit without reducing stronger platform defaults.
+- Rejected malformed, restrictive, conflicting and missing license inventories;
+  expanded scans to published optional dependencies and the patched Collector.
+- Used opened file descriptors for TypeScript file-type decisions and rejected
+  unowned S3 bucket names in the live qualification harness.
+
+### Changed
+
+- Documented Python reference support and the narrower TypeScript capture
+  subset, including target-specific production qualification gates.
+- Pinned the optional OpenAI instrumentation dependency combination verified
+  by the real-SDK loopback benchmark.
+- Enabled existing CI workflows for the exact #164 parent branch so the
+  stacked capture draft receives validation.
+
+### Known limitations
+
+- Production remains NO_GO pending target infrastructure and security-owner
+  acceptance. Local reference and benchmark evidence does not qualify a
+  customer deployment or establish universal performance superiority.
+- This capture build adds neither client portal UI nor action enforcement.
+
 ## [0.8.0-rc.1] - 2026-08-31
 
 ### Added

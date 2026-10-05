@@ -1,0 +1,3 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 typecheck
+> tsc --noEmit

@@ -12,8 +12,8 @@ owner: project-lead
 
 ## Goal
 
-Extend the OSS SDK so it logs **every way an agent touches the outside world**,
-not just decisions/LLM/tool/retrieval/memory/side-effects. Add five touch
+Extend the OSS SDK with explicit observations beyond
+decisions/LLM/tool/retrieval/memory/side-effects. Add five touch
 points: **MCP server inventory · skills · sub-agent delegation · hooks · file
 access.** Logging only (OSS); threat analysis on top is Commercial.
 
@@ -91,7 +91,7 @@ d.record_hook(name, phase, *, modified=False, input_hash=None, output_hash=None)
 ## 5. File access (new `Decision.record_file_access`)
 
 ```python
-d.record_file_access(path, operation, *, content_hash=None, size_bytes=None, redact_path=False)
+d.record_file_access(path, operation, *, content_hash=None, size_bytes=None, redact_path=True)
 ```
 
 - `operation`: `read | write | delete | append`.
@@ -100,9 +100,9 @@ d.record_file_access(path, operation, *, content_hash=None, size_bytes=None, red
   `fabric.file.content_hash` (optional — hash of contents), `fabric.file.size_bytes`,
   `fabric.file.path_redacted` (bool).
 - **Privacy:** the file's *contents* are never on the span — only a hash. The
-  *path* is captured readable by default but `redact_path=True` hashes it (for
-  sensitive paths like `/patients/jane/record.pdf`). Profiles MAY default
-  `redact_path=True`.
+  *path* is hashed by default (`redact_path=True`). An explicitly authorized
+  `redact_path=False` records the path locally on the span; Fabric Node still
+  excludes the raw path from its protected export allowlist.
 - Rolling attribute `fabric.file_access_count`.
 
 ## Implementation notes
@@ -112,8 +112,8 @@ d.record_file_access(path, operation, *, content_hash=None, size_bytes=None, red
   emit a span event, update a rolling count attribute, use `_sha256_hex` for
   hashing.
 - Add new `ATTR_*` constants in `sdk/python/src/fabric/_attributes.py`.
-- Async variants where natural (delegation), matching the existing
-  `aguard_*`/`aevaluate_policy` pattern.
+- Async variants where supported must retain the same passive recording
+  semantics. Removed guardrail/evaluation APIs are not implementation templates.
 - `mypy --strict`, `ruff` clean, full pytest suite green, coverage ≥85%.
 
 ## Conformance

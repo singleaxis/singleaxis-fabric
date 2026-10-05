@@ -73,6 +73,8 @@ _EXACT: dict[str, str] = {
     "bsd-3-clause": "BSD-3-Clause",
     "bsd 3-clause": "BSD-3-Clause",
     "bsd 3-clause license": "BSD-3-Clause",
+    # protobuf 7.36.2 wheel: verified metadata spelling against its LICENSE.
+    "3-clause bsd license": "BSD-3-Clause",
     'bsd 3-clause "new" or "revised" license (bsd-3-clause)': "BSD-3-Clause",
     "new bsd license": "BSD-3-Clause",
     "modified bsd license": "BSD-3-Clause",
@@ -123,8 +125,8 @@ _EXACT: dict[str, str] = {
     "mozilla public license, v. 2.0": "MPL-2.0",
 }
 
-# Substring heuristics (lower-cased), applied only when no exact match is found.
-# Order matters: more-specific copyleft families before the generic catch-alls.
+# Restrictive substring heuristics only. Permissive labels require exact
+# reviewed aliases; prose containing "MIT" or "Apache" is not a license grant.
 _SUBSTR: list[tuple[str, str]] = [
     ("agpl", "AGPL"),
     ("affero", "AGPL"),
@@ -135,19 +137,6 @@ _SUBSTR: list[tuple[str, str]] = [
     ("server side public", "SSPL"),
     ("sspl", "SSPL"),
     ("business source", "BSL-1.1"),
-    ("apache", "Apache-2.0"),
-    ("bsd-3", "BSD-3-Clause"),
-    ("bsd 3", "BSD-3-Clause"),
-    ("bsd-2", "BSD-2-Clause"),
-    ("bsd 2", "BSD-2-Clause"),
-    ("bsd", "BSD-3-Clause"),
-    ("mit", "MIT"),
-    ("isc", "ISC"),
-    ("mozilla", "MPL-2.0"),
-    ("mpl", "MPL-2.0"),
-    ("python software foundation", "Python-2.0"),
-    ("unlicense", "Unlicense"),
-    ("zlib", "Zlib"),
 ]
 
 # Tokens that mean "no license info" -> stay UNKNOWN (fail-closed).
@@ -204,7 +193,7 @@ def _split_top_level(expr: str, op: str) -> list[str]:
                 continue
         i += 1
     parts.append(expr[start:])
-    return [p.strip() for p in parts if p.strip()]
+    return [p.strip() for p in parts]
 
 
 # ---------------------------------------------------------------------------
@@ -248,8 +237,9 @@ class Policy:
         return None
 
     def _classify_token(self, token: str) -> tuple[str, str, str]:
+        # Restrictive qualifiers must not disappear during normalization.
         nt = normalize_token(token)
-        hit = self._denied(nt)
+        hit = self._denied(token) or self._denied(nt)
         if hit:
             return ("DENY", nt, f"{nt} matched DENY '{hit}'")
         if nt in self.allow:
@@ -260,6 +250,8 @@ class Policy:
 
     def _classify_expr(self, expr: str) -> tuple[str, str, str]:
         expr = expr.strip()
+        if not expr:
+            raise ValueError("missing license expression operand")
         # Unwrap a fully-enclosing paren group.
         while expr.startswith(("(", "[")) and expr.endswith((")", "]")):
             inner = expr[1:-1]
@@ -279,18 +271,11 @@ class Policy:
             else:
                 break
 
-        # AND binds the whole thing conjunctively: every part must pass.
-        and_parts = _split_top_level(expr, "AND")
-        if len(and_parts) > 1:
-            results = [self._classify_expr(p) for p in and_parts]
-            spdx = " AND ".join(r[1] for r in results)
-            for d in ("DENY", "UNKNOWN", "ALLOW-LOG"):
-                bad = next((r for r in results if r[0] == d), None)
-                if bad:
-                    return (d, spdx, bad[2])
-            return ("ALLOW", spdx, "")
+        if not expr:
+            raise ValueError("missing license expression operand")
 
-        # OR is a choice: any acceptable operand satisfies the gate.
+        # OR has lower precedence than AND; split it first. Any acceptable
+        # complete operand satisfies a valid alternative-license expression.
         or_parts = _split_top_level(expr, "OR")
         if len(or_parts) > 1:
             results = [self._classify_expr(p) for p in or_parts]
@@ -304,6 +289,27 @@ class Policy:
                 return ("DENY", spdx, bad[2])
             return ("UNKNOWN", spdx, "no acceptable operand in choice")
 
+        # AND binds the whole thing conjunctively: every part must pass.
+        and_parts = _split_top_level(expr, "AND")
+        if len(and_parts) > 1:
+            results = [self._classify_expr(p) for p in and_parts]
+            spdx = " AND ".join(r[1] for r in results)
+            for d in ("DENY", "UNKNOWN", "ALLOW-LOG"):
+                bad = next((r for r in results if r[0] == d), None)
+                if bad:
+                    return (d, spdx, bad[2])
+            return ("ALLOW", spdx, "")
+
+        # Scanner prose is accepted only as an exact reviewed alias. Otherwise
+        # a leaf must be an SPDX-shaped ID (optionally WITH an exception ID).
+        # Invalid leaves cannot be hidden inside a permissive OR alternative.
+        key = _WS.sub(" ", expr).lower()
+        if key not in _EXACT and not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9.+-]*(?:\s+WITH\s+[A-Za-z0-9][A-Za-z0-9.+-]*)?",
+            expr,
+            re.IGNORECASE,
+        ):
+            raise ValueError("invalid license expression operand")
         return self._classify_token(expr)
 
     def classify(self, raw_license: str) -> tuple[str, str, str]:
@@ -314,8 +320,21 @@ class Policy:
         """
         if not (raw_license or "").strip():
             return ("UNKNOWN", "UNKNOWN", "no license metadata")
-        disp, spdx, detail = self._classify_expr(raw_license)
-        return (disp, spdx, detail)
+        # Validate grouping before evaluating alternatives; malformed syntax
+        # cannot be rescued by one permissive operand of an OR expression.
+        stack: list[str] = []
+        for character in raw_license:
+            if character in "([":
+                stack.append(character)
+            elif character in ")]":
+                if not stack or stack.pop() != {")": "(", "]": "["}[character]:
+                    return ("UNKNOWN", raw_license, "malformed license expression")
+        if stack:
+            return ("UNKNOWN", raw_license, "malformed license expression")
+        try:
+            return self._classify_expr(raw_license)
+        except ValueError:
+            return ("UNKNOWN", raw_license, "malformed license expression")
 
 
 # ---------------------------------------------------------------------------
@@ -347,9 +366,19 @@ def parse_pip_licenses(surface: str, path: str) -> list[Dep]:
     """pip-licenses --format=json: list of {Name, Version, License, ...}."""
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
+    if not isinstance(data, list):
+        raise ValueError("pip inventory must be an array")
     deps = []
     for row in data:
+        if not isinstance(row, dict):
+            raise ValueError("pip inventory row must be an object")
         name = row.get("Name", "")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("pip inventory row requires a package name")
+        if not isinstance(row.get("Version", ""), str) or not isinstance(
+            row.get("License", ""), str
+        ):
+            raise ValueError("pip version and license must be strings")
         # Skip the package itself if it shows up as first-party.
         lic = row.get("License", "") or ""
         # pip-licenses joins multiple classifiers with "; ".
@@ -364,8 +393,12 @@ def parse_go_licenses(surface: str, path: str) -> list[Dep]:
         for row in csv.reader(fh):
             if not row:
                 continue
+            if len(row) != 3 or not row[0].strip():
+                raise ValueError(
+                    "Go inventory requires package, URL and license columns"
+                )
             module = row[0].strip()
-            lic = row[2].strip() if len(row) >= 3 else ""
+            lic = row[2].strip()
             deps.append(Dep(surface, "go", module, "", lic))
     return deps
 
@@ -374,15 +407,39 @@ def parse_license_checker(surface: str, path: str) -> list[Dep]:
     """license-checker --json: {"name@version": {licenses, ...}}."""
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
+    if not isinstance(data, dict):
+        raise ValueError("npm inventory must be an object")
     deps = []
     for pkg, meta in data.items():
+        if not isinstance(pkg, str) or not pkg.strip() or not isinstance(meta, dict):
+            raise ValueError("npm inventory requires named package objects")
         name, _, version = pkg.rpartition("@")
         if not name:  # scoped pkg like @scope/x@1.0 -> rpartition handles it
             name = pkg
         lic = meta.get("licenses", "")
         if isinstance(lic, list):
-            lic = " AND ".join(str(x) for x in lic)
-        deps.append(Dep(surface, "npm", name, version, str(lic)))
+            if not lic or any(
+                not isinstance(item, str) or not item.strip() for item in lic
+            ):
+                raise ValueError(
+                    "npm license array requires nonempty string expressions"
+                )
+            # Validate each member's grouping before wrapping. Otherwise an
+            # unmatched parenthesis could escape its conjunctive array slot.
+            for item in lic:
+                stack: list[str] = []
+                for character in item:
+                    if character in "([":
+                        stack.append(character)
+                    elif character in ")]":
+                        if not stack or stack.pop() != {")": "(", "]": "["}[character]:
+                            raise ValueError("malformed npm license array member")
+                if stack:
+                    raise ValueError("malformed npm license array member")
+            lic = " AND ".join(f"({item})" for item in lic)
+        if not isinstance(lic, str):
+            raise ValueError("npm license must be a string or string array")
+        deps.append(Dep(surface, "npm", name, version, lic))
     return deps
 
 
@@ -465,10 +522,9 @@ def write_markdown(
     lines.append(f"Generated: {now}")
     lines.append("")
     lines.append(
-        "This is a procurement-grade inventory of every third-party "
-        "dependency bundled or pulled by SingleAxis Fabric across all four "
-        "dependency surfaces (Python SDK, Python components/sidecars, the Go "
-        "OpenTelemetry collector, and the TypeScript SDK), together with the "
+        "This report inventories the third-party dependencies found in the "
+        "supplied recorder scans (Python SDK, TypeScript SDK, Fabric Node, "
+        "recorder CLI, image entrypoint gate, and host emitter), together with the "
         "license-compatibility disposition under the policy in "
         "[`.github/license-allowlist.txt`](../../.github/license-allowlist.txt)."
     )
@@ -534,7 +590,15 @@ def _collect(args_list: list[str], parser, ecosystem_parser) -> list[Dep]:
         surface, _, path = spec.partition("=")
         if not os.path.exists(path):
             parser.error(f"input file not found: {path}")
-        deps.extend(ecosystem_parser(surface.strip(), path))
+        if not surface.strip():
+            parser.error("inventory surface must be nonempty")
+        try:
+            inventory = ecosystem_parser(surface.strip(), path)
+        except (OSError, ValueError, TypeError, csv.Error) as exc:
+            parser.error(f"invalid inventory for {surface.strip()}: {exc}")
+        if not inventory:
+            parser.error(f"empty inventory for {surface.strip()}: {path}")
+        deps.extend(inventory)
     return deps
 
 
@@ -601,12 +665,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("error: no dependencies parsed from any input", file=sys.stderr)
         return 2
 
-    # Deduplicate identical (ecosystem, name, version) rows that show up under
-    # multiple surfaces (e.g. pydantic in both the SDK and a component).
+    # Deduplicate identical declarations only. Conflicting scanner metadata for
+    # the same version must retain every obligation, not let an earlier allowed
+    # row conceal a denied declaration from another optional-install inventory.
     seen: dict[tuple, Dep] = {}
     for d in deps:
         d.disposition, d.spdx, d.detail = policy.classify(d.raw_license)
-        k = (d.surface, *d.key())
+        k = (d.surface, *d.key(), d.raw_license)
         seen.setdefault(k, d)
     deps = list(seen.values())
     deps.sort(key=lambda d: (d.surface, d.ecosystem, d.name.lower(), d.version))

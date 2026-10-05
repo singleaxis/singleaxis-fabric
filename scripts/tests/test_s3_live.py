@@ -39,10 +39,25 @@ pytestmark = pytest.mark.skipif(
 TENANT = "s3-live-tenant"
 
 
+def _make_store(*, prefix: str, tenant_id: str, client: object) -> object:
+    """Bind test provisioning and every store operation to the same credentials."""
+    from fabric.content_store import S3ContentStore
+
+    result = S3ContentStore(
+        bucket=BUCKET,
+        prefix=prefix,
+        tenant_id=tenant_id,
+        endpoint_url=ENDPOINT,
+    )
+    # This live harness intentionally uses the existing injectable test client.
+    # Do not let boto3's ambient default credential chain select another account.
+    result._client = client
+    return result
+
+
 @pytest.fixture(scope="module")
 def store() -> object:
     boto3 = pytest.importorskip("boto3", reason="optional boto3 extra not installed")
-    from fabric.content_store import S3ContentStore
 
     session = boto3.session.Session(
         aws_access_key_id=ACCESS, aws_secret_access_key=SECRET
@@ -50,28 +65,21 @@ def store() -> object:
     client = session.client("s3", endpoint_url=ENDPOINT)
     try:
         client.create_bucket(Bucket=BUCKET)
-    except client.exceptions.BucketAlreadyOwnedByYou:
-        pass
     except client.exceptions.ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") not in (
-            "BucketAlreadyOwnedByYou",
-            "BucketAlreadyExists",
-        ):
+        # A globally occupied name does not establish that this fixture owns
+        # the bucket. Do not continue with any object writes in that case.
+        if exc.response.get("Error", {}).get("Code") != "BucketAlreadyOwnedByYou":
             raise
-    return S3ContentStore(
-        bucket=BUCKET,
+    return _make_store(
         prefix=f"fabric-e2e/{uuid.uuid4().hex[:8]}/",
         tenant_id=TENANT,
-        endpoint_url=ENDPOINT,
+        client=client,
     )
 
 
 @pytest.fixture(scope="module")
 def s3_client(store: object) -> object:
-    boto3 = pytest.importorskip("boto3")
-    return boto3.session.Session(
-        aws_access_key_id=ACCESS, aws_secret_access_key=SECRET
-    ).client("s3", endpoint_url=ENDPOINT)
+    return store._get_client()
 
 
 def test_object_write_and_verified_read(store: object, s3_client: object) -> None:
@@ -185,13 +193,10 @@ def test_cross_tenant_uri_denied(store: object) -> None:
 
 def test_tenant_namespace_isolated(store: object, s3_client: object) -> None:
     """Two tenants under one prefix share nothing — keys are namespaced."""
-    from fabric.content_store import S3ContentStore
-
-    other = S3ContentStore(
-        bucket=BUCKET,
+    other = _make_store(
         prefix=store.prefix,
         tenant_id="s3-live-other",
-        endpoint_url=ENDPOINT,
+        client=s3_client,
     )
     from fabric._content import ContentDescriptor
 

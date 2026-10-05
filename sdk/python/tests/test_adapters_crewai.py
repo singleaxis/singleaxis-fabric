@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 from types import SimpleNamespace
 
+import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import Fabric, FabricConfig
@@ -260,3 +261,18 @@ def test_task_callback_never_raises_into_host(
     with client.decision(session_id="s", request_id="r") as dec:
         hooks = attach_callbacks(dec)
         hooks.task(_HostileOutput())
+
+
+def test_callback_failure_logs_no_exception_content(caplog: pytest.LogCaptureFixture) -> None:
+    class Hostile:
+        def __getattr__(self, name: str) -> object:
+            raise ValueError("SYNTHETIC_PRIVATE_EXCEPTION_CANARY")
+
+    with _client().decision(session_id="s", request_id="r") as decision:
+        hooks = attach_callbacks(decision)
+        hooks.step(Hostile())
+        hooks.task(Hostile())
+    records = [record for record in caplog.records if record.name == "fabric.adapters.crewai"]
+    assert len(records) == 2
+    assert "SYNTHETIC_PRIVATE_EXCEPTION_CANARY" not in caplog.text
+    assert all(record.exc_info is None for record in records)

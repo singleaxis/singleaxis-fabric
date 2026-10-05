@@ -85,7 +85,11 @@ func (r *auditReceiver) translate(ev *auditEvent) (plog.LogRecord, string, bool)
 		// the raw cmdline hex. We hash whichever is present and never export
 		// the arguments themselves.
 		if ex := ev.find(recExecve); ex != nil {
-			attrs.PutStr("process.command_args_sha256", argvHash(ex))
+			if hash := argvHash(ex); hash != "" {
+				attrs.PutStr("process.command_args_sha256", hash)
+			} else {
+				attrs.PutStr("audit.event", "command_args_incomplete")
+			}
 		} else if pt := ev.find(recProctitle); pt != nil {
 			if raw, err := decodeProctitle(pt.fields["proctitle"]); err == nil {
 				sum := sha256.Sum256(raw)
@@ -140,7 +144,17 @@ func (c *Config) classEnabled(class string) bool {
 // unnecessary because the value is evidence, not readability.
 func argvHash(ex *auditRecord) string {
 	var sb strings.Builder
-	argc, _ := strconv.Atoi(ex.fields["argc"])
+	argc, err := strconv.Atoi(ex.fields["argc"])
+	// Reject malformed or sparse argv inventories before allocating or looping.
+	// Audit input is untrusted and may advertise an arbitrarily large argc.
+	if err != nil || argc < 0 || argc > len(ex.fields) {
+		return ""
+	}
+	for i := 0; i < argc; i++ {
+		if _, ok := ex.fields["a"+strconv.Itoa(i)]; !ok {
+			return ""
+		}
+	}
 	for i := 0; i < argc; i++ {
 		if i > 0 {
 			sb.WriteByte(0)

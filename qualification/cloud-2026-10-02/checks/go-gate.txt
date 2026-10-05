@@ -1,0 +1,2 @@
+ok  	github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/gate	1.048s
+all modules verified

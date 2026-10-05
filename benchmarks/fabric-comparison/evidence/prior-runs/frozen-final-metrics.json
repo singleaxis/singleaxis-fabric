@@ -1,0 +1,3598 @@
+{
+  "matched_pair_deltas": {
+    "fabric-explicit minus otel-explicit": {
+      "median_delta_ms": -0.03005900000000139,
+      "unpaired_bootstrap_95pct_ms": [
+        -1.6859070000000003,
+        1.5249489999999994
+      ]
+    },
+    "fabric-auto minus openinference-auto": {
+      "median_delta_ms": -0.18838699999999875,
+      "unpaired_bootstrap_95pct_ms": [
+        -5.844504999999998,
+        1.2610780000000013
+      ]
+    }
+  },
+  "source_changed_during_run": false,
+  "workload_truth_identical_across_normal_modes": true,
+  "fabric_source_sha256": "6c970824c6758ee01faa87c06c45d8d1e6c147a25ef3780072de46d077fb2a14",
+  "fabric_file_identities": {
+    "__init__.py": "24b94a5ba262316313ba87077e324f65b1a69ae0ff39d396960d744739dce2d8",
+    "_attributes.py": "6483d043354ddcb43ea8acd2879a89c9643fd738b44e413fc2c17ef1c791de7e",
+    "_calls.py": "a8f79ae5d480cddc57eb5bc729e1def6235527b544ee6e4a9195c74656b21a47",
+    "_capture_health.py": "509d73b2edcfc26352a690adba93ea1ac741991bb46b911f8a63e25de3f2ddf1",
+    "_content.py": "5efd1220bb04bfac5132c9260c90cae7629e7e2c3f1f8144a5861a5babde1a81",
+    "_content_sink.py": "99ac24e2f3bcc3441bbb96532c2f906cc9aaf719111cb3e15ae188fda30a4f95",
+    "_content_writer.py": "df560fa0134dee7708798e47d6dfe6e1048edf238e4a72485dea266cfd43bd5c",
+    "_coverage_canary.py": "638116d31b9e252bc626b274b646fe7e667f2332d2900e1f0a18c8af83beaa84",
+    "_crosscut.py": "7f16c9b02deff74b070a63e24d8551c5adfec16acb73c1b936c3d5244d1acce8",
+    "_hashes.py": "e8745a85117d6df98218c88a54a3c88d0162a13b922df6f8993c54a935668eb2",
+    "_id_validators.py": "addb9f70d45fd302ddd7c5be5c144bb21f878e1783834584133dbdd5152778d4",
+    "_span_protection.py": "79dcad824d3c7e1fe480e62c18488459fda51406016e5acfe73f374655a99310",
+    "_version.py": "c3d3719676d1474e7d47fcf9dc2a5a6375d99d88473fd62eeb147e9e5d09cf65",
+    "adapters/__init__.py": "816621fc33b31fe5b072342969f64535a2cd1378a23088740125fb05f5af0ed9",
+    "adapters/byte_boundary.py": "ef0c2904f9613a9eb836209489af887084d1e6ea18c3056fda503adaeb6945c9",
+    "adapters/crewai.py": "0dbacfae44c222addb3dfa3ff1c767ee37fdf8eb6a8e52198c75211a6c2933e8",
+    "adapters/synthetic_evidence.py": "56cf83935fdf16a65a3e3d1964f9118cf2995acfdeaec424ff116fb2d0cc9797",
+    "auto_instrument.py": "ddb634e99c4865d17f06ee36e58a2e4593489495a4855b625a6e7ad3b07d8371",
+    "baseline.py": "7d24cd6af37fec37663ec6e5bca055d5dd97f66fb3898db7d25e7214ec937416",
+    "byte_evidence.py": "fc6b362d2037bf6111d4f49e2f8874222808956985bbe07c74112994d1b15d67",
+    "byte_resolver.py": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+    "byte_spool.py": "a28afbd7e18baaf35a35047d7c0896d47ef9b609796cd0341a5ca4cf641df2cd",
+    "call_otlp.py": "93994b48825edf223e295e09d18a4de69cab81987fa30ae069bd6d3d151c1e9e",
+    "call_reconcile.py": "ab5585931fe9ac785f0d4a460d4181631fca2bfefe981192f7535e4fdd7aed54",
+    "call_recorder.py": "e5dfa770b7310876830213c2dfbac32c030c450248c208c6ac67fd722339ca8e",
+    "capture_capabilities.py": "93862fe96fdbae3c9dbdb9783ed0feb57c0a8f2edb60dfc909143f517e222479",
+    "capture_identity.py": "b1f9095c36788de5a749b5439e3306916c36ab57e326fcae4ece30ff6d447ae2",
+    "capture_readback.py": "ed494f4ee33a2726d189bb5d23144fcf6450a7ec8261edbae842f44544fdb97d",
+    "checkpoint.py": "9e56c261ba46a328d2094c35245c00dcb972f15fd1e8a2e438692d1e7e42ae84",
+    "client.py": "15cc558d74e555f7991ddad7840abea1ca0d7c146eacae7c75cb1866276dc43c",
+    "content_store/__init__.py": "ca2672014d96fbd0f9bf0ae94654428b1bd2d17aef5306d12065cbc7b0f24808",
+    "content_store/base.py": "e61e0610804f39c5289fce8b10d29cc7aef3d9734b9e8232033f2528bc7677a0",
+    "content_store/local.py": "7141256365d023abff2a6d247c7d3adb8102cf6a039d9cc7c0fed4d0ebe6b7e7",
+    "content_store/s3.py": "647800d3e41128bb0e970bf1b77b62da3f7ef85c36aecf14ff29ab39353a99a2",
+    "control_evidence.py": "51718507a1cf2bf3c63e98d68acd329baacf242aed81de9fc7f1bafaec8fce0e",
+    "control_protocol.py": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
+    "coverage_manifest.py": "0bf31e36c20601a4a50898233fd238a85e27a1f594921f48aed76e3dac408c89",
+    "decision.py": "dcce8244931845d5315e910e191ddd23f27ef066279d382f45e6f45429379e49",
+    "deployment_policy.py": "a570bf5e43c3069f948d564b94328e30d765efdc94d05a148f99bba6de60f11a",
+    "deployment_state.py": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
+    "distributed_closure.py": "8e2201c18d375ba61525ce7db46a34e5da1a3b64098986c7b613235b561fb340",
+    "enterprise.py": "ca809e111c2011ad509e025683cb727fb57f6caef31efb520b6e2d145e166775",
+    "enterprise_preflight.py": "28d9928a23e1872d9529478c01d8d0c80ffaa87afad1a7abb4665be51049b4ba",
+    "evidence_attestation.py": "35cad659b014d6a6162b928a1f4b6b6f2b531990df04d59c6d666fc9d24a72cd",
+    "execution.py": "95553fa4a764b4a0ec0ee990c5c578afdd9626d11f0ef251a71e4d3ed1ee0d2c",
+    "governed_store.py": "9131debf645f4bd744328faacefe628f1ca5f08b14d06742cad046fecded4573",
+    "http_dispatch.py": "9c545641c4111f3ac05aba7f61b06a1d325efff4bca5ac0734e2a3afcd636500",
+    "independent_feed.py": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43",
+    "independent_store.py": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+    "integrations/__init__.py": "24061aef81b8cd8cf0dfb59452d6327c3af3c304617749919eaf4114ce271060",
+    "integrations/mcp.py": "624f3ff3446a5fcbc9273742d7b47d9c6cc80db86671ae06c953f5786a21a272",
+    "memory.py": "a2980e60f0d915ffdf1ce84f29cb0d4492cedf072837d62554265a1c0f01d2ca",
+    "metadata_delivery.py": "90f711e348f182a1115ca14fa5dcb839951a4d3e136c31925a50bf333fbca2bb",
+    "propagation.py": "a64a5e817c6acf903e316debc1fe4710380798f6ec6d85e911faeb8ff34d07f9",
+    "qualified_run.py": "fff8850fcd68550d9fe0d055ff3dc9e405f5d1155a24bef028f33216fee7e3df",
+    "receipt_sets.py": "f919d53f36e478a5c1404e6ae8c3ac77bdc2c86166a2d57bc823fd9dcb32f071",
+    "reference_receipts.py": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55",
+    "resolver.py": "664b4a0084c383b14ba3dc51c9b18c9408710bbf85db31ab4582b37c3be94a07",
+    "retrieval.py": "3d33466ccad9f9fec5fad1ac46d4d396c37782211ff4ecc3f8dc8f3c47c529a7",
+    "side_effect.py": "5e51c018665f4eea2be91ac314750d005ebc531dafb9f61fb8c38d93771959be",
+    "signing.py": "79b9313dead9bc25a1442e4652d72a68b48109ca3ec14be4a9f2e3c0d2d9ec0a",
+    "source_spool.py": "9ec80f3209dff10b34e3fd9acb84a49baa44e254b0ab587ef5800bf2ae39836d",
+    "synthetic_otlp.py": "ee82810ef19be5d0372d1e293f6ac488e194007fae25030d597261a90727045f",
+    "synthetic_reconcile.py": "a31dacc91113d4468342c2e4beb5457d11f18d0246e8cd9f74235dadc94b9b0d",
+    "taxonomy.py": "d48967525a57ee180d59191b6b74fb578a70604f79acaf331bcc8d164cb83195",
+    "tracing.py": "52c2cc17eb3b1dde0cac382291cec5e6b787eeeefa42ab265d78b60943ab72c5"
+  },
+  "benchmark_file_identities": {
+    "test_benchmark.py": "c335941c4b5a59b54c74f4c76533f732083455696f10c36d18b289925202eb9e",
+    "exception_redaction.py": "1470ad340037f07a9b5a684b32fa11da126fb2d6feaf1f3d64792ccc5ee16feb",
+    "adapters.py": "8fd659e499437d8429926bdc118fbd1b5f818c25c263bd497deb4a42467268d6",
+    "run.py": "8d12908c9927d52a83c378aa037b26136a63c59c3aa8b269a5a56be3b9c8efdc",
+    "integration_cost.py": "46b7a1933967d9dc7e37a27d1891c23cbce212b3c7f2c307281929287fb028bb"
+  },
+  "sampler": "ALWAYS_ON",
+  "warmup_provider_calls": 1,
+  "schema_version": "fabric.matched-comparison/v1",
+  "scope": "Python SDK instrumentation only; no Phoenix/Langfuse/Datadog backend or kernel evaluation",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "packages": {
+    "openai": "3.24.0",
+    "openinference-instrumentation-openai": "0.1.63",
+    "opentelemetry-sdk": "1.45.0",
+    "opentelemetry-instrumentation-openai-v2": "2.4b0",
+    "pydantic": "2.13.5",
+    "opentelemetry-util-genai": "0.4b0",
+    "httpx": "0.28.1"
+  },
+  "seed": 8432,
+  "summary": {
+    "none": {
+      "samples": 11,
+      "median_ms": 22.539275,
+      "min_ms": 19.482847,
+      "max_ms": 35.682307,
+      "mean_ms": 23.918602454545454,
+      "stdev_ms": 4.70400742204005,
+      "captured_local_records": [
+        0
+      ],
+      "declared_scope_actions": 0,
+      "raw_canary_in_export": false,
+      "median_overhead_percent_vs_none": 0.0
+    },
+    "otel-explicit": {
+      "samples": 11,
+      "median_ms": 24.484468,
+      "min_ms": 22.357595,
+      "max_ms": 35.523185,
+      "mean_ms": 25.301014636363636,
+      "stdev_ms": 3.611399342111926,
+      "captured_local_records": [
+        6
+      ],
+      "declared_scope_actions": 6,
+      "raw_canary_in_export": false,
+      "median_overhead_percent_vs_none": 8.630237662923946,
+      "unpaired_bootstrap_median_delta_ms_95pct": [
+        -2.3397879999999986,
+        4.2803889999999996
+      ]
+    },
+    "fabric-explicit": {
+      "samples": 11,
+      "median_ms": 24.454409,
+      "min_ms": 22.230884,
+      "max_ms": 32.90601,
+      "mean_ms": 25.171133363636365,
+      "stdev_ms": 3.0962948628248985,
+      "captured_local_records": [
+        6
+      ],
+      "declared_scope_actions": 6,
+      "raw_canary_in_export": false,
+      "median_overhead_percent_vs_none": 8.49687489948101,
+      "unpaired_bootstrap_median_delta_ms_95pct": [
+        -1.9415240000000011,
+        4.311630000000001
+      ]
+    },
+    "fabric-auto": {
+      "samples": 11,
+      "median_ms": 26.352343,
+      "min_ms": 21.282299,
+      "max_ms": 32.793534,
+      "mean_ms": 26.104112,
+      "stdev_ms": 3.5586823422557687,
+      "captured_local_records": [
+        4
+      ],
+      "declared_scope_actions": 4,
+      "raw_canary_in_export": true,
+      "median_overhead_percent_vs_none": 16.917438560024678,
+      "unpaired_bootstrap_median_delta_ms_95pct": [
+        -2.065854999999999,
+        6.690887
+      ]
+    },
+    "openinference-auto": {
+      "samples": 11,
+      "median_ms": 26.54073,
+      "min_ms": 22.79968,
+      "max_ms": 32.996365,
+      "mean_ms": 27.644982545454546,
+      "stdev_ms": 3.5605747798218577,
+      "captured_local_records": [
+        4
+      ],
+      "declared_scope_actions": 4,
+      "raw_canary_in_export": true,
+      "median_overhead_percent_vs_none": 17.75325515128592,
+      "unpaired_bootstrap_median_delta_ms_95pct": [
+        0.06665800000000033,
+        9.437085
+      ]
+    }
+  },
+  "measurements": [
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 31.620897,
+      "workload_ms": 28.590581,
+      "flush_ms": 0.060571,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.302976,
+      "workload_ms": 23.795866,
+      "flush_ms": 0.027712,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "export-first-failure",
+      "setup_ms": 94.04559,
+      "workload_ms": 34.271792,
+      "flush_ms": 0.031047,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 3,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 1,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 96.293949,
+      "workload_ms": 26.967444,
+      "flush_ms": 0.024937,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.156015,
+      "workload_ms": 25.645912,
+      "flush_ms": 0.024808,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 84.055263,
+      "workload_ms": 22.622375,
+      "flush_ms": 0.021242,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 31.964625,
+      "workload_ms": 32.996365,
+      "flush_ms": 0.023255,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 36.291857,
+      "workload_ms": 28.722055,
+      "flush_ms": 0.020721,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 32.630626,
+      "workload_ms": 25.344612,
+      "flush_ms": 0.021021,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.149235,
+      "workload_ms": 24.564996,
+      "flush_ms": 0.041884,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 32.110153,
+      "workload_ms": 25.427407,
+      "flush_ms": 0.048683,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 31.618261,
+      "workload_ms": 26.54073,
+      "flush_ms": 0.020561,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 32.202953,
+      "workload_ms": 26.580644,
+      "flush_ms": 0.022223,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 94.637537,
+      "workload_ms": 24.183488,
+      "flush_ms": 0.023315,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 33.885328,
+      "workload_ms": 24.307819,
+      "flush_ms": 0.048062,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.142164,
+      "workload_ms": 23.902458,
+      "flush_ms": 0.020191,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 30.976875,
+      "workload_ms": 24.588187,
+      "flush_ms": 0.0596,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 30.681209,
+      "workload_ms": 23.730284,
+      "flush_ms": 0.044887,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 85.200525,
+      "workload_ms": 21.282299,
+      "flush_ms": 0.021502,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "fault": "crash-before-flush",
+      "exit_code": 23,
+      "truth_actions": 7,
+      "exported_spans": 0,
+      "restart_replay": "not configured in matched in-memory tier"
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 30.46332,
+      "workload_ms": 26.316001,
+      "flush_ms": 0.0203,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.162385,
+      "workload_ms": 23.368068,
+      "flush_ms": 0.024106,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.142535,
+      "workload_ms": 25.332604,
+      "flush_ms": 0.021783,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 86.689595,
+      "workload_ms": 23.239089,
+      "flush_ms": 0.024437,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.143346,
+      "workload_ms": 22.539275,
+      "flush_ms": 0.024396,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 104.168319,
+      "workload_ms": 27.52605,
+      "flush_ms": 0.031077,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 32.414662,
+      "workload_ms": 22.230884,
+      "flush_ms": 0.049545,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 88.686348,
+      "workload_ms": 23.642771,
+      "flush_ms": 0.021993,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.142866,
+      "workload_ms": 27.014613,
+      "flush_ms": 0.020671,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 32.191733,
+      "workload_ms": 26.532285,
+      "flush_ms": 0.049775,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.139841,
+      "workload_ms": 20.204079,
+      "flush_ms": 0.022574,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.161664,
+      "workload_ms": 26.249343,
+      "flush_ms": 0.024697,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 34.61787,
+      "workload_ms": 31.97636,
+      "flush_ms": 0.022895,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 32.762033,
+      "workload_ms": 24.454409,
+      "flush_ms": 0.051177,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 100.444663,
+      "workload_ms": 30.95876,
+      "flush_ms": 0.030526,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 91.541186,
+      "workload_ms": 26.352343,
+      "flush_ms": 0.022504,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 36.287191,
+      "workload_ms": 32.811949,
+      "flush_ms": 0.025529,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.15263,
+      "workload_ms": 20.968275,
+      "flush_ms": 0.024317,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.177688,
+      "workload_ms": 24.484468,
+      "flush_ms": 0.021462,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.154322,
+      "workload_ms": 24.911583,
+      "flush_ms": 0.022595,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 41.176876,
+      "workload_ms": 25.187057,
+      "flush_ms": 0.059389,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.154893,
+      "workload_ms": 23.306124,
+      "flush_ms": 0.022384,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.158539,
+      "workload_ms": 35.523185,
+      "flush_ms": 0.020772,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.201363,
+      "workload_ms": 35.682307,
+      "flush_ms": 0.030145,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.170347,
+      "workload_ms": 27.213311,
+      "flush_ms": 0.029475,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "export-first-failure",
+      "setup_ms": 33.943973,
+      "workload_ms": 79.97379,
+      "flush_ms": 0.02683,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 3,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 1,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "export-first-failure",
+      "setup_ms": 46.749151,
+      "workload_ms": 79.29057,
+      "flush_ms": 0.06005,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 5,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 1,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 121.862013,
+      "workload_ms": 32.793534,
+      "flush_ms": 0.03338,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "fault": "crash-before-flush",
+      "exit_code": 23,
+      "truth_actions": 7,
+      "exported_spans": 0,
+      "restart_replay": "not configured in matched in-memory tier"
+    },
+    {
+      "mode": "fabric-auto",
+      "fault": "crash-before-flush",
+      "exit_code": 23,
+      "truth_actions": 7,
+      "exported_spans": 0,
+      "restart_replay": "not configured in matched in-memory tier"
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "export-first-failure",
+      "setup_ms": 0.155234,
+      "workload_ms": 54.153782,
+      "flush_ms": 0.024036,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 5,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 1,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 89.00875,
+      "workload_ms": 27.577079,
+      "flush_ms": 0.023025,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 4,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.136216,
+      "workload_ms": 22.357595,
+      "flush_ms": 0.016746,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 28.510106,
+      "workload_ms": 22.79968,
+      "flush_ms": 0.018097,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 32.046966,
+      "workload_ms": 22.58074,
+      "flush_ms": 0.03294,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 30.149146,
+      "workload_ms": 22.879089,
+      "flush_ms": 0.037726,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "fabric-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 29.562261,
+      "workload_ms": 32.90601,
+      "flush_ms": 0.034242,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": 0,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": [
+        "not_captured"
+      ]
+    },
+    {
+      "mode": "openinference-auto",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 29.04983,
+      "workload_ms": 23.474127,
+      "flush_ms": 0.018778,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 4,
+      "captured_local_records": 4,
+      "exported_spans": 4,
+      "error_records": 1,
+      "export_attempts": 4,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": true,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "process",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 3,
+      "token_usage_attribute_spans": 3,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.140752,
+      "workload_ms": 21.474653,
+      "flush_ms": 0.023275,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "otel-explicit",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.203116,
+      "workload_ms": 23.117669,
+      "flush_ms": 0.021142,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 6,
+      "captured_local_records": 6,
+      "exported_spans": 6,
+      "error_records": 1,
+      "export_attempts": 6,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "bypass",
+          "one"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 6,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.137197,
+      "workload_ms": 19.482847,
+      "flush_ms": 0.017066,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    },
+    {
+      "mode": "openinference-auto",
+      "fault": "crash-before-flush",
+      "exit_code": 23,
+      "truth_actions": 7,
+      "exported_spans": 0,
+      "restart_replay": "not configured in matched in-memory tier"
+    },
+    {
+      "mode": "none",
+      "managed_provider": false,
+      "exception_redaction_exporter": false,
+      "fault": "none",
+      "setup_ms": 0.133501,
+      "workload_ms": 20.276557,
+      "flush_ms": 0.023586,
+      "truth_actions": 7,
+      "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+      "declared_scope_actions": 0,
+      "captured_local_records": 0,
+      "exported_spans": 0,
+      "error_records": 0,
+      "export_attempts": 0,
+      "failed_export_spans": 0,
+      "raw_canary_in_export": false,
+      "unwrapped_action_captured": false,
+      "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+      "captured_action_ids": [],
+      "independent_inventory_unmatched_action_ids": [
+        [
+          "background",
+          "one"
+        ],
+        [
+          "bypass",
+          "one"
+        ],
+        [
+          "file",
+          "one"
+        ],
+        [
+          "model",
+          "success"
+        ],
+        [
+          "process",
+          "one"
+        ],
+        [
+          "retry",
+          "first"
+        ],
+        [
+          "retry",
+          "second"
+        ]
+      ],
+      "recording_gaps": null,
+      "provider_model_attribute_spans": 0,
+      "token_usage_attribute_spans": 0,
+      "caller_attempt_attribute_spans": 0,
+      "policy_event_statuses": []
+    }
+  ]
+}

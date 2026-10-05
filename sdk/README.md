@@ -4,11 +4,15 @@ Client libraries that agents import in-process to emit recorder telemetry
 — OpenTelemetry spans and span events carrying Fabric's metadata-only
 vocabulary — to a Fabric Node or any OTLP endpoint.
 
-The SDK is passive instrumentation: it records what the agent did without
-blocking, altering, or deciding anything. There are no guardrails, policy
-gates, judges, or escalation primitives in these packages — raw prompts,
-tool payloads, and memory content are reduced to hashes or governed
-references before export.
+The SDK observes execution and existing permission decisions; it does not
+authorize agent actions. Instrumentation still adds overhead and can encounter
+configuration, queue and storage failures. Protection depends on the API and
+export path selected. Python's governed byte path applies deployment policy
+before persistence; its legacy `masked_only` callback runs in the byte worker.
+TypeScript has a narrower implementation. Its decision/execution callback
+diagnostics use a closed error classification and static message, including
+LLM/tool wrappers. It does not sanitize arbitrary spans supplied by an externally
+owned provider. Do not assume every export path is metadata-only.
 
 ## Authoritative specs
 
@@ -21,13 +25,15 @@ references before export.
 
 | Language | Status | Mechanism |
 |----------|--------|-----------|
-| [`python`](python/) | Shipping | Native in-process, OTLP exporter |
-| [`typescript`](typescript/) | Shipping | Native in-process, OTLP exporter |
+| [`python`](python/) | Reference implementation; target qualification required | Explicit capture, governed byte store, journal and OTLP delivery |
+| [`typescript`](typescript/) | Narrower subset; target qualification required | Explicit in-process metadata and content adapters |
 
-Both packages emit the identical wire vocabulary — a swarm mixing Python
-and TypeScript agents reconstructs as one trace because delegation
-propagates `traceparent` plus Fabric parent identity across the process
-boundary.
+Both packages use a shared subset of the wire vocabulary. Instrumented
+delegation propagates `traceparent` and Fabric parent identity across a process
+boundary. This links observed work; it does not establish complete distributed
+capture, producer closure or Python/TypeScript feature parity. See the
+[support matrix](../docs/sdk-support-matrix.md) and
+[standalone guide](../docs/standalone-evidence-guide.md).
 
 ## API surface (preview)
 
@@ -82,8 +88,9 @@ with fabric.decision(
         call_sub_agent(headers=ctx.carrier)
 ```
 
-Every SDK method emits OTel spans / span events with allowlisted
-attributes only. The host must flush the tracer provider
+The APIs emit OTel spans and span events for their supported boundaries.
+Use the documented managed export protection where available and independently
+inspect privacy at the destination. The host must flush the tracer provider
 (`provider.force_flush()` / `provider.shutdown()`) on clean termination —
 the SDK does not flush implicitly on process exit.
 

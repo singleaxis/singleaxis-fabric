@@ -9,7 +9,7 @@ metadata:
 spec:
   # Keep at least one collector pod available so the audit-trail
   # span stream isn't dropped during node drains.
-  minAvailable: {{ .Values.podDisruptionBudget.minAvailable | default 1 }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   selector:
     matchLabels:
       {{- include "otel-collector.selectorLabels" . | nindent 6 }}

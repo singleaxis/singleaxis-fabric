@@ -9,7 +9,7 @@ pass() { pass_count=$((pass_count + 1)); printf 'ok %02d - %s\n' "${pass_count}"
 
 production_args=(
   "${chart_dir}"
-  --values "${chart_dir}/profiles/shadow-production.yaml"
+  --values "${chart_dir}/profiles/shadow-production.yaml" --values "${chart_dir}/tests/fixtures/production-assertions.yaml"
   --set tenant.id=customer-production
   --set otel-collector.exporter.endpoint=https://otlp.example.invalid
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
@@ -52,23 +52,23 @@ render_ok "shadow-dev renders" "${chart_dir}" --values "${chart_dir}/profiles/sh
 render_ok "shadow-production renders with customer-owned references" "${production_args[@]}"
 
 reject "production requires tenant identity" "requires tenant.id" \
-  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --values "${chart_dir}/tests/fixtures/production-assertions.yaml" \
   --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 reject "production requires destination" "exporter.endpoint is empty" \
-  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --set tenant.id=test \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --values "${chart_dir}/tests/fixtures/production-assertions.yaml" --set tenant.id=customer-production \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 reject "production requires explicit egress peer" "requires an operator-supplied networkPolicy.exporterEgress.to peer" \
-  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
-  --set tenant.id=test --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --values "${chart_dir}/tests/fixtures/production-assertions.yaml" \
+  --set tenant.id=customer-production --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
   --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 
 reject "production requires explicit ingress peer" "requires an operator-supplied networkPolicy.ingressFrom peer" \
-  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
-  --set tenant.id=test --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --values "${chart_dir}/tests/fixtures/production-assertions.yaml" \
+  --set tenant.id=customer-production --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
@@ -90,7 +90,7 @@ for case in \
   'cluster-internal service:otel-collector.service.type:NodePort' \
   'non-root pod:otel-collector.podSecurityContext.runAsNonRoot:false' \
   'no privilege escalation:otel-collector.securityContext.allowPrivilegeEscalation:true' \
-  'pinned image tag:otel-collector.image.tag:latest' \
+  'immutable image digest:otel-collector.image.digest:' \
   'deny-default:networkPolicy.denyDefault:false'; do
   IFS=: read -r label path value <<<"${case}"
   reject_any "production pins ${label}" \
@@ -99,12 +99,12 @@ done
 
 reject "production pins the Collector Service to ClusterIP" "otel-collector.service.type" \
   "${production_args[@]}" --set otel-collector.service.type=LoadBalancer
-reject "production rejects an empty image tag" "pinned Collector image" \
-  "${production_args[@]}" --set otel-collector.image.tag=
+reject "production rejects tag-only image identity" "pinned Collector image" \
+  "${production_args[@]}" --set otel-collector.image.tag=release-1 --set otel-collector.image.digest=
 # An empty ingress peer must not merge with the indexed --set used in
 # production_args, so this case passes the full flag set explicitly.
 reject "production rejects an empty ingress peer" "empty peer" \
-  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
+  "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --values "${chart_dir}/tests/fixtures/production-assertions.yaml" \
   --set tenant.id=customer-production \
   --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
   --set-json 'otel-collector.networkPolicy.ingressFrom=[{}]' \

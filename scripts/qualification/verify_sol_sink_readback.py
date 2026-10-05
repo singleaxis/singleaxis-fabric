@@ -15,24 +15,20 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
 )
 
+try:
+    from otlp_readback_validation import (
+        json_attributes,
+        protobuf_attributes,
+        validate_metadata_container,
+    )
+except ModuleNotFoundError:
+    from scripts.qualification.otlp_readback_validation import (
+        json_attributes,
+        protobuf_attributes,
+        validate_metadata_container,
+    )
+
 CANARY = b"FABRIC_SYNTHETIC_SECRET_DO_NOT_EXPORT"
-
-
-def _json_attributes(record: dict[str, Any]) -> dict[str, str]:
-    values = {}
-    for attribute in record["attributes"]:
-        value = attribute["value"]
-        values[attribute["key"]] = str(value.get("stringValue", value.get("intValue")))
-    return values
-
-
-def _protobuf_attributes(record: Any) -> dict[str, str]:
-    values = {}
-    for attribute in record.attributes:
-        kind = attribute.value.WhichOneof("value")
-        if kind in {"string_value", "int_value"}:
-            values[attribute.key] = str(getattr(attribute.value, kind))
-    return values
 
 
 def verify(projection: Path, sink_dir: Path) -> dict[str, Any]:
@@ -42,13 +38,14 @@ def verify(projection: Path, sink_dir: Path) -> dict[str, Any]:
     for resource in document["resourceLogs"]:
         for scope in resource["scopeLogs"]:
             for record in scope["logRecords"]:
-                attrs = _json_attributes(record)
+                attrs, types = json_attributes(record)
                 record_id = attrs["record_id"]
                 if record_id in expected:
                     raise ValueError("duplicate projected record ID")
                 expected[record_id] = {
                     "event_name": record["eventName"],
                     "attributes": attrs,
+                    "attribute_types": types,
                 }
     if not expected:
         raise ValueError("empty projected evidence set")
@@ -72,11 +69,16 @@ def verify(projection: Path, sink_dir: Path) -> dict[str, Any]:
         for resource in request.resource_logs:
             for scope in resource.scope_logs:
                 for record in scope.log_records:
-                    attrs = _protobuf_attributes(record)
+                    attrs, types = protobuf_attributes(record)
                     record_id = attrs.get("record_id")
                     if record_id in expected:
+                        validate_metadata_container(resource, scope, record)
                         observed.setdefault(record_id, []).append(
-                            {"event_name": record.event_name, "attributes": attrs}
+                            {
+                                "event_name": record.event_name,
+                                "attributes": attrs,
+                                "attribute_types": types,
+                            }
                         )
     missing = set(expected) - set(observed)
     if missing:

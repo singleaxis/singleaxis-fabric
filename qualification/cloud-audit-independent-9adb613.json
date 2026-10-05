@@ -1,0 +1,23 @@
+{
+  "schema_version": "fabric.independent-9adb-review/v1",
+  "scope": "Independent protobuf exact-alias proof/test review and complete CodeQL76/exactPR60 disposition correspondence; no runtime edits.",
+  "alias_review": {
+    "status": "passed",
+    "source_artifact": "qualification/cloud-audit-license-alias-provenance.json",
+    "source_artifact_sha256": "d3ab2459f6354ef65e7d15221ef3eb10ec05a865b72d4479d68c78ab0cf5ca87",
+    "methods": [
+      "Read complete protobuf wheel LICENSE and metadata License field",
+      "Verified wheel SHA against retained official PyPI JSON and extracted METADATA/LICENSE bytes against wheel archive and provenance hashes",
+      "Verified current alias/test/policy hashes against provenance ledger",
+      "Reviewed exact alias diff and three tests; suffixed unknown exception fails and MIT-0 remains unapproved"
+    ],
+    "limits": "Independent comparison of retained official artifacts; no repeat network download or full dependency scan. No policy approval or blanket bundled-license certification."
+  },
+  "codeql_review": {
+    "path": "qualification/cloud-audit-codeql-9adb613-dispositions.json",
+    "sha256": "8e8830fa17a45cbdbd481fd1158a4755a3d9aabdf710c543cd49bd985db522f6",
+    "status": "76current/scanned file identities and60exactPR memberships verified without mismatches; independent_verification appended"
+  },
+  "validation": "82 tests passed in7.19s, comprising69license tests and13synthetic evidence tests.",
+  "changes": "Only review metadata updated; no runtime/test/policy edits by independent reviewer."
+}

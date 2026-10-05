@@ -1,0 +1,276 @@
+{
+  "fresh_readback": {
+    "objects": 7,
+    "permission": {
+      "attempted": "read_derivative",
+      "exercised": true,
+      "granted": "local capability"
+    },
+    "representation": "redacted",
+    "wrong_tenant": "denied"
+  },
+  "production_verdict": "NO_GO",
+  "runtime": {
+    "loading": "installed_distribution",
+    "matches_reviewed_checkout": true,
+    "sdk_origin": "/workspace/fabric-wheel-venv/lib/python3.12/site-packages/fabric"
+  },
+  "scenarios": [
+    {
+      "actual_boundary": "opt-in FinalHTTPAdapter HTTP/1.1 application bodies; receiver socket peer metadata independently observed",
+      "expected_action": "503 then explicit retry 200; two physical requests",
+      "identity_causality": "same operation retry with distinct attempt IDs; response witness ID joins successful response; lost-response join uses test-supplied operation/attempt, not authenticated source identity",
+      "independent_ground_truth": "service.sqlite requests transaction committed before response; independently queried outside recorder",
+      "known_omissions": [
+        "No host/kernel packet collection",
+        "No TLS execution or encrypted/uninstrumented plaintext recovery",
+        "No HTTP/2, redirects, automatic retries or general network coverage",
+        "Same-host fixture administrator trust; no production service attestation",
+        "Recorder labels HTTP calls model; does not infer tool permissions"
+      ],
+      "level": "C8",
+      "observed_result": {
+        "remote_effect": {
+          "acknowledged": true,
+          "committed": "no business effect requested",
+          "requested": true,
+          "unknown": false
+        },
+        "service_requests": 2,
+        "statuses": [
+          503,
+          200
+        ]
+      },
+      "permission_observations": {
+        "service_action": {
+          "attempted": true,
+          "exercised": true,
+          "granted": "unknown; fixture has no authorization service"
+        }
+      },
+      "privacy": {
+        "persistence": "synthetic raw canary absent from all retained evidence files",
+        "prequeue": "DeploymentPolicy redact; 7 actual handoffs inspected",
+        "readback": {
+          "objects": 7,
+          "permission": {
+            "attempted": "read_derivative",
+            "exercised": true,
+            "granted": "local capability"
+          },
+          "representation": "redacted",
+          "wrong_tenant": "denied"
+        }
+      },
+      "scenario": "physical-retry",
+      "status": "LOCAL_FIXTURE_PASSED"
+    },
+    {
+      "actual_boundary": "opt-in FinalHTTPAdapter HTTP/1.1 application bodies; receiver socket peer metadata independently observed",
+      "expected_action": "HTTP400 body returned and captured; transport completes",
+      "identity_causality": "same operation retry with distinct attempt IDs; response witness ID joins successful response; lost-response join uses test-supplied operation/attempt, not authenticated source identity",
+      "independent_ground_truth": "service.sqlite requests transaction committed before response; independently queried outside recorder",
+      "known_omissions": [
+        "No host/kernel packet collection",
+        "No TLS execution or encrypted/uninstrumented plaintext recovery",
+        "No HTTP/2, redirects, automatic retries or general network coverage",
+        "Same-host fixture administrator trust; no production service attestation",
+        "Recorder labels HTTP calls model; does not infer tool permissions"
+      ],
+      "level": "C8",
+      "observed_result": {
+        "body_readback": "redacted",
+        "remote_effect": {
+          "acknowledged": true,
+          "committed": false,
+          "requested": true,
+          "unknown": false
+        },
+        "status": 400
+      },
+      "permission_observations": {
+        "service_action": {
+          "attempted": true,
+          "exercised": true,
+          "granted": "unknown; fixture has no authorization service"
+        }
+      },
+      "privacy": {
+        "persistence": "synthetic raw canary absent from all retained evidence files",
+        "prequeue": "DeploymentPolicy redact; 7 actual handoffs inspected",
+        "readback": {
+          "objects": 7,
+          "permission": {
+            "attempted": "read_derivative",
+            "exercised": true,
+            "granted": "local capability"
+          },
+          "representation": "redacted",
+          "wrong_tenant": "denied"
+        }
+      },
+      "scenario": "http-error-response",
+      "status": "LOCAL_FIXTURE_PASSED"
+    },
+    {
+      "actual_boundary": "opt-in FinalHTTPAdapter HTTP/1.1 application bodies; receiver socket peer metadata independently observed",
+      "expected_action": "service commits once then closes without response; caller remains ambiguous",
+      "identity_causality": "same operation retry with distinct attempt IDs; response witness ID joins successful response; lost-response join uses test-supplied operation/attempt, not authenticated source identity",
+      "independent_ground_truth": "service.sqlite requests transaction committed before response; independently queried outside recorder",
+      "known_omissions": [
+        "No host/kernel packet collection",
+        "No TLS execution or encrypted/uninstrumented plaintext recovery",
+        "No HTTP/2, redirects, automatic retries or general network coverage",
+        "Same-host fixture administrator trust; no production service attestation",
+        "Recorder labels HTTP calls model; does not infer tool permissions"
+      ],
+      "level": "C8",
+      "observed_result": {
+        "caller_effect_state": "unknown",
+        "effect_count_before_and_after_readback": [
+          1,
+          1
+        ],
+        "exception_type": "RemoteDisconnected",
+        "independent_effect_state": "committed",
+        "remote_effect": {
+          "acknowledged": false,
+          "committed": "independent SQLite witness only",
+          "requested": true,
+          "unknown": "caller cannot establish commit from transport failure"
+        }
+      },
+      "permission_observations": {
+        "service_action": {
+          "attempted": true,
+          "exercised": true,
+          "granted": "unknown; fixture has no authorization service"
+        }
+      },
+      "privacy": {
+        "persistence": "synthetic raw canary absent from all retained evidence files",
+        "prequeue": "DeploymentPolicy redact; 7 actual handoffs inspected",
+        "readback": {
+          "objects": 7,
+          "permission": {
+            "attempted": "read_derivative",
+            "exercised": true,
+            "granted": "local capability"
+          },
+          "representation": "redacted",
+          "wrong_tenant": "denied"
+        }
+      },
+      "scenario": "lost-response-after-commit",
+      "status": "LOCAL_FIXTURE_PASSED"
+    }
+  ],
+  "schema_version": "fabric.c8-network-qualification/v1",
+  "service_requests": [
+    {
+      "attempt": "one",
+      "connection": "('127.0.0.1', 39442)",
+      "effect": 0,
+      "id": "cb7fa109bbdb4f5d8593cbcbe1dc6d48",
+      "operation": "retry",
+      "status": 503
+    },
+    {
+      "attempt": "two",
+      "connection": "('127.0.0.1', 39454)",
+      "effect": 0,
+      "id": "b662bd1541e846fcbfca2c121dd19643",
+      "operation": "retry",
+      "status": 200
+    },
+    {
+      "attempt": "one",
+      "connection": "('127.0.0.1', 39466)",
+      "effect": 0,
+      "id": "f18105961fb24b7ab3039e21163f03bf",
+      "operation": "http-error",
+      "status": 400
+    },
+    {
+      "attempt": "one",
+      "connection": "('127.0.0.1', 39478)",
+      "effect": 1,
+      "id": "3f4ad1a3ff6b4545b14f00f2a179ac2e",
+      "operation": "lost-response",
+      "status": 200
+    }
+  ],
+  "source_hashes": {
+    "scripts/qualification/run_c8_network_journey.py": "0090214bc7aeccbb2c20c3ec37a42c60cb7d7b1de8f55956efd0d6c8f93cbd49",
+    "sdk/python/src/fabric/__init__.py": "24b94a5ba262316313ba87077e324f65b1a69ae0ff39d396960d744739dce2d8",
+    "sdk/python/src/fabric/_attributes.py": "6483d043354ddcb43ea8acd2879a89c9643fd738b44e413fc2c17ef1c791de7e",
+    "sdk/python/src/fabric/_calls.py": "57ff50593fba6694d9855e4a53ed5e0e80d9c21914f3d6e6ebd2f5c2589fe54d",
+    "sdk/python/src/fabric/_capture_health.py": "509d73b2edcfc26352a690adba93ea1ac741991bb46b911f8a63e25de3f2ddf1",
+    "sdk/python/src/fabric/_content.py": "14154ac9e767f720459ff614802e64ee35e973fe330860c424959d8707f607e8",
+    "sdk/python/src/fabric/_content_sink.py": "6ab766f44bc9ab3643ecea32f06b8a3a3f37c1bfb9ee02e3f3f2acfcbfb1420a",
+    "sdk/python/src/fabric/_content_writer.py": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4",
+    "sdk/python/src/fabric/_coverage_canary.py": "638116d31b9e252bc626b274b646fe7e667f2332d2900e1f0a18c8af83beaa84",
+    "sdk/python/src/fabric/_crosscut.py": "7f16c9b02deff74b070a63e24d8551c5adfec16acb73c1b936c3d5244d1acce8",
+    "sdk/python/src/fabric/_hashes.py": "e8745a85117d6df98218c88a54a3c88d0162a13b922df6f8993c54a935668eb2",
+    "sdk/python/src/fabric/_id_validators.py": "2be1802e007b8ded3dfed1ab28146e28ce443bb4337d860f65ffa40283e2b9a3",
+    "sdk/python/src/fabric/_instrumentation_registry.py": "9242c9b422904eefecb4a76d429df23e073a0a8bb3331462c3e996a6ace8132c",
+    "sdk/python/src/fabric/_span_protection.py": "ec11ba41a5dd1a7f02f73d5884b3968c7276a0531316882a30299780e3e9812a",
+    "sdk/python/src/fabric/_version.py": "c3d3719676d1474e7d47fcf9dc2a5a6375d99d88473fd62eeb147e9e5d09cf65",
+    "sdk/python/src/fabric/adapters/__init__.py": "816621fc33b31fe5b072342969f64535a2cd1378a23088740125fb05f5af0ed9",
+    "sdk/python/src/fabric/adapters/byte_boundary.py": "ef0c2904f9613a9eb836209489af887084d1e6ea18c3056fda503adaeb6945c9",
+    "sdk/python/src/fabric/adapters/crewai.py": "6b4b5e00fd31b40aacfc46064f20721587c104a0c6fab180d55b32c18548f7d3",
+    "sdk/python/src/fabric/adapters/synthetic_evidence.py": "be3e105748a4c702fe7ce13ce0f540d859388e081a255dc3122626b1759c068e",
+    "sdk/python/src/fabric/auto_instrument.py": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7",
+    "sdk/python/src/fabric/baseline.py": "7d24cd6af37fec37663ec6e5bca055d5dd97f66fb3898db7d25e7214ec937416",
+    "sdk/python/src/fabric/byte_evidence.py": "fc6b362d2037bf6111d4f49e2f8874222808956985bbe07c74112994d1b15d67",
+    "sdk/python/src/fabric/byte_resolver.py": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e",
+    "sdk/python/src/fabric/byte_spool.py": "d07ac1f8fbb638f5c1bb04683ade938a9c208bc3a6b2e90117f343ef5dd4c62b",
+    "sdk/python/src/fabric/call_otlp.py": "29c8af72af21b2d6f78cd4e0e34a720cdb9e0819a7019fffb8d57582c448131f",
+    "sdk/python/src/fabric/call_reconcile.py": "ab5585931fe9ac785f0d4a460d4181631fca2bfefe981192f7535e4fdd7aed54",
+    "sdk/python/src/fabric/call_recorder.py": "d2145abed359ad88eee5188ea85b5685300742f22030c6fa25928eeda37a0f26",
+    "sdk/python/src/fabric/capture_capabilities.py": "2081d08291d7b7069481d6f0ecea4473033fa5b7bf489d90cb310d6ce7d6894f",
+    "sdk/python/src/fabric/capture_identity.py": "b1f9095c36788de5a749b5439e3306916c36ab57e326fcae4ece30ff6d447ae2",
+    "sdk/python/src/fabric/capture_readback.py": "ed494f4ee33a2726d189bb5d23144fcf6450a7ec8261edbae842f44544fdb97d",
+    "sdk/python/src/fabric/checkpoint.py": "9e56c261ba46a328d2094c35245c00dcb972f15fd1e8a2e438692d1e7e42ae84",
+    "sdk/python/src/fabric/client.py": "15cc558d74e555f7991ddad7840abea1ca0d7c146eacae7c75cb1866276dc43c",
+    "sdk/python/src/fabric/content_join.py": "c35e647fec5e318193163f2fa79b69c3fc1ac6b90756ca94cb3f2af547a4a477",
+    "sdk/python/src/fabric/content_store/__init__.py": "ca2672014d96fbd0f9bf0ae94654428b1bd2d17aef5306d12065cbc7b0f24808",
+    "sdk/python/src/fabric/content_store/base.py": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262",
+    "sdk/python/src/fabric/content_store/local.py": "3dea808e391722ba49bd11d9b7932d9c054dd9ca0f2cb20a87d6c5d27ee06319",
+    "sdk/python/src/fabric/content_store/s3.py": "647800d3e41128bb0e970bf1b77b62da3f7ef85c36aecf14ff29ab39353a99a2",
+    "sdk/python/src/fabric/control_evidence.py": "51718507a1cf2bf3c63e98d68acd329baacf242aed81de9fc7f1bafaec8fce0e",
+    "sdk/python/src/fabric/control_protocol.py": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2",
+    "sdk/python/src/fabric/coverage_manifest.py": "c70ad95c2faca0ace8c6429aa737d0ae0470c0b1a0707a7d7745169263674338",
+    "sdk/python/src/fabric/decision.py": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d",
+    "sdk/python/src/fabric/deployment_policy.py": "a570bf5e43c3069f948d564b94328e30d765efdc94d05a148f99bba6de60f11a",
+    "sdk/python/src/fabric/deployment_state.py": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279",
+    "sdk/python/src/fabric/distributed_closure.py": "8e2201c18d375ba61525ce7db46a34e5da1a3b64098986c7b613235b561fb340",
+    "sdk/python/src/fabric/enterprise.py": "ca809e111c2011ad509e025683cb727fb57f6caef31efb520b6e2d145e166775",
+    "sdk/python/src/fabric/enterprise_preflight.py": "28d9928a23e1872d9529478c01d8d0c80ffaa87afad1a7abb4665be51049b4ba",
+    "sdk/python/src/fabric/evidence_attestation.py": "35cad659b014d6a6162b928a1f4b6b6f2b531990df04d59c6d666fc9d24a72cd",
+    "sdk/python/src/fabric/execution.py": "95553fa4a764b4a0ec0ee990c5c578afdd9626d11f0ef251a71e4d3ed1ee0d2c",
+    "sdk/python/src/fabric/governed_reconstruction.py": "ca023620285e9927d338c084be144a835a650246528b128b0b66019180e957ed",
+    "sdk/python/src/fabric/governed_store.py": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8",
+    "sdk/python/src/fabric/http_dispatch.py": "d8deb3ce738e15085ba943e706eeb49907469a7d93f87b52167b0e0550aac1b4",
+    "sdk/python/src/fabric/independent_feed.py": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43",
+    "sdk/python/src/fabric/independent_store.py": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d",
+    "sdk/python/src/fabric/integrations/__init__.py": "24061aef81b8cd8cf0dfb59452d6327c3af3c304617749919eaf4114ce271060",
+    "sdk/python/src/fabric/integrations/mcp.py": "e6450367e3e52f38ed11ac4ccfce56c518333894531221623e036c8788f784ce",
+    "sdk/python/src/fabric/memory.py": "b9e0c1b0eb609026bd8fc74c041c47b085d09936b92508b9df8ffee5fbac056f",
+    "sdk/python/src/fabric/metadata_delivery.py": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95",
+    "sdk/python/src/fabric/propagation.py": "d3d8595bc84acfcb144c942cffbb746f516eaa96b3f471ab93d28f29a33027cb",
+    "sdk/python/src/fabric/qualified_run.py": "fff8850fcd68550d9fe0d055ff3dc9e405f5d1155a24bef028f33216fee7e3df",
+    "sdk/python/src/fabric/receipt_sets.py": "3aed96820500699fce98f5dd00eb08ed1f57b88d4ee5f8f251c014a402d56646",
+    "sdk/python/src/fabric/reference_receipts.py": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55",
+    "sdk/python/src/fabric/resolver.py": "664b4a0084c383b14ba3dc51c9b18c9408710bbf85db31ab4582b37c3be94a07",
+    "sdk/python/src/fabric/retrieval.py": "1cc21e6d0b99a5d8e2e110ac51a5cecfeba9d37c6b6f7dfa6b12fc0c37542997",
+    "sdk/python/src/fabric/side_effect.py": "2acecfceed8bd848f3daa310c22c9e0f8646edd1b84c6de1576012debddb22c8",
+    "sdk/python/src/fabric/signing.py": "79b9313dead9bc25a1442e4652d72a68b48109ca3ec14be4a9f2e3c0d2d9ec0a",
+    "sdk/python/src/fabric/source_spool.py": "53235747df40f2ac0d2c519e3795122b08377a02926dad9f1a54f8aaf93ba644",
+    "sdk/python/src/fabric/synthetic_otlp.py": "dfabda633f4ab6b02b8f7a4054be031cf810284935c4de28cb6b674a00371131",
+    "sdk/python/src/fabric/synthetic_reconcile.py": "a31dacc91113d4468342c2e4beb5457d11f18d0246e8cd9f74235dadc94b9b0d",
+    "sdk/python/src/fabric/taxonomy.py": "d48967525a57ee180d59191b6b74fb578a70604f79acaf331bcc8d164cb83195",
+    "sdk/python/src/fabric/tracing.py": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759"
+  }
+}

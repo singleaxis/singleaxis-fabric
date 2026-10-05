@@ -181,6 +181,7 @@ def export_synthetic_snapshot(
     ca_cert_path: str | None = None,
     client_cert_path: str | None = None,
     client_key_path: str | None = None,
+    bearer_token_path: str | None = None,
 ) -> dict[str, Any]:
     """Post settled metadata to a controlled loopback Node, off the action path.
 
@@ -196,6 +197,7 @@ def export_synthetic_snapshot(
         ca_cert_path=ca_cert_path,
         client_cert_path=client_cert_path,
         client_key_path=client_key_path,
+        bearer_token_path=bearer_token_path,
     )
 
 
@@ -254,6 +256,7 @@ def _export_projected_metadata(  # noqa: PLR0912
             raise ValueError("HTTPS synthetic OTLP requires client certificate/key")
         try:
             context = ssl.create_default_context(cafile=ca_cert_path)
+            context.minimum_version = max(context.minimum_version, ssl.TLSVersion.TLSv1_2)
             context.load_cert_chain(client_cert_path, client_key_path)
         except Exception:
             raise ValueError("OTLP TLS configuration failed") from None

@@ -124,13 +124,13 @@ def truncate_bytes(data: bytes, max_bytes: int) -> bytes:
 
     if len(data) <= max_bytes:
         return data
-    cut = data[:max_bytes]
-    # Strip trailing UTF-8 continuation / incomplete lead bytes.
-    while cut and (cut[-1] & _UTF8_LEAD_OR_ASCII_MASK) == _UTF8_CONTINUATION:
-        cut = cut[:-1]
-    if cut and cut[-1] >= _UTF8_LEAD_OR_ASCII_MASK:
-        cut = cut[:-1]
-    return cut
+    # Only retreat when the first excluded byte continues a codepoint.
+    # Inspecting the last retained byte would discard a complete character
+    # whenever the limit lands immediately after its final continuation byte.
+    end = max(0, max_bytes)
+    while end and (data[end] & _UTF8_LEAD_OR_ASCII_MASK) == _UTF8_CONTINUATION:
+        end -= 1
+    return data[:end]
 
 
 def _rfc3339_now() -> str:
@@ -295,6 +295,9 @@ class TranscriptManifest:
         return sorted({item.role for item in self.items if item.status in DESCRIPTOR_STATUSES})
 
     def to_json(self) -> dict[str, Any]:
+        """Serialize observed items; raise if no observations exist yet."""
+        if not self.items:
+            raise ValueError("cannot serialize transcript manifest with no observations")
         doc: dict[str, Any] = {
             "schema_version": SCHEMA_TRANSCRIPT_MANIFEST,
             "manifest_id": self.manifest_id,

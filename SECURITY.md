@@ -80,10 +80,12 @@ Out of scope:
 Fabric is architected around the following non-negotiable properties.
 Issues that undermine any of these will be treated as critical:
 
-1. **Protection before egress** — every record crossing the customer
-   boundary passes the `fabricguard` exact-key metadata allowlist inside
-   the Fabric Node; raw prompts, tool payloads, memory values, and user
-   content are never exported.
+1. **Protection before Node egress** — traces and logs routed through
+   Fabric Node pass its exact-key metadata allowlist before export. Raw
+   prompts, tool payloads and memory values are denied on that route.
+   Opt-in content capture uses separately authorized customer storage;
+   its privacy, encryption and access controls must be configured and
+   qualified independently. Arbitrary host exporters remain host-owned.
 2. **Metadata-only export** — caller-controlled free-form channels (log
    bodies, severity text, span/link tracestate, status messages, event
    names, resource entity refs) are cleared or normalized to a fixed
@@ -95,29 +97,39 @@ Issues that undermine any of these will be treated as critical:
 3. **Durable, authenticated delivery** — ingress is authenticated
    (bearer token in the compose overlay, mTLS in the production Helm
    profile); delivery uses a persistent fsync queue with
-   retry-until-success and at-least-once semantics.
-4. **Passive non-interference** — the recorder must never block, alter,
-   or delay the monitored system. Release artifacts contain no
+   indefinite transient retry and at-least-once semantics after durable
+   admission. Finite capacity, pre-admission loss and terminal rejection
+   remain explicit failure boundaries; acceptance is not destination durability.
+4. **Passive non-interference** — recording does not authorize or alter
+   monitored actions. Instrumentation and synchronous privacy transforms
+   have overhead; exporter backpressure and shutdown must be kept off the
+   application critical path and measured in the target deployment.
+   Release artifacts contain no
    enforcement, judge, guardrail, policy, red-team, or management
    capability — enforced by artifact-content tests, not just defaults.
-5. **Tamper-evident supply chain** — release images and charts are
-   cosign-signed with SLSA build provenance; dependencies are
-   digest-pinned and license-gated.
+5. **Tamper-evident supply chain** — the release workflow configures
+   cosign signatures for images and charts, and build provenance for images
+   and CLI archives. Verify each published artifact and its provenance; a
+   workflow definition alone is not proof a particular release passed.
 
 See [`specs/027-recorder-v1.md`](specs/027-recorder-v1.md) for the
 authoritative recorder scope.
 
 ## Release signing and provenance
 
-Starting at `0.1.0`:
+The current [release workflow](.github/workflows/release.yml) configures:
 
 - Container images signed with [Sigstore cosign](https://www.sigstore.dev/)
   (keyless via Fulcio).
 - Helm chart artifacts signed with Sigstore cosign.
-- [SLSA](https://slsa.dev/) level 3 build provenance attestations for
-  images and release tarballs.
-- Software Bill of Materials (SBOM) in SPDX and CycloneDX formats, per
-  release.
+- BuildKit provenance and SBOM generation for container images, plus GitHub
+  build-provenance attestations for images and `fabricctl` archives. This
+  repository does not establish a SLSA level 3 assessment or promise that
+  every release artifact has both SPDX and CycloneDX SBOMs.
+
+Image publication rebuilds from the CI-qualified source commit; it does not
+promote the exact previously scanned image bytes. Verify the published digest
+and repeat required artifact checks before relying on a deployment claim.
 
 Helm chart `.prov` provenance files are a roadmap item for a future
 minor release — cosign signing of the OCI artifact is the current path.

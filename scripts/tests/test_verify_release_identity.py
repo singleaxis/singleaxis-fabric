@@ -292,3 +292,20 @@ def test_release_workflows_must_cover_fabric_node_and_fabricctl(tmp_path: Path) 
     assert not result.ok
     assert "release workflow lacks fabricctl cross-platform packaging" in message
     assert "CI lacks Fabric Node PR image scan" in message
+
+
+def test_missing_typescript_versions_fail_closed(tmp_path: Path) -> None:
+    _materialize(tmp_path, "corrected")
+    for relative in ("package.json", "package-lock.json"):
+        path = tmp_path / "sdk/typescript" / relative
+        value = json.loads(path.read_text())
+        value.pop("version", None)
+        if "packages" in value:
+            value["packages"][""].pop("version", None)
+        path.write_text(json.dumps(value))
+    result = verify(tmp_path, "0.7.0")
+    assert not result.ok
+    assert (
+        len([error for error in result.errors if "missing required version" in error])
+        == 3
+    )

@@ -16,10 +16,10 @@ allowlist), spec 027 (recorder-v1 scope), `contracts/connect/v1`.
 auditd consumption covers the syscall layer only where auditd exists and its
 ruleset cooperates. It misses: hosts with no auditd (minimal container
 images), container-scoped filtering (auditd rules are host-wide), high event
-rates (text-pipeline serialization), and known bypasses (io_uring syscalls,
-short-lived process races). The eBPF emitter is the same connector role at
-kernel fidelity: observe every exec/connect/open inside the **agent's
-boundary** on hosts where auditd is absent, insufficient, or bypassable.
+rates (text-pipeline serialization). The eBPF emitter provides a separate
+collection path for the three configured tracepoints below inside an explicit
+cgroup scope. It does not cover every syscall, io_uring operation, or other
+bypass path, and does not establish complete observation of an agent.
 
 ## What we are building
 
@@ -50,7 +50,7 @@ kernel tracepoints ──► perf/ringbuf ──► fabric-host-emitter (DaemonS
 |---|---|---|
 | `sched/sched_process_exec` | pid, ppid, filename, comm | exec event |
 | `syscalls/sys_enter_connect` | pid, sockaddr (inet host:port) | connect event |
-| `syscalls/sys_enter_openat` | pid, filename, flags | file event — **config-gated off by default** |
+| `syscalls/sys_enter_openat` | pid, filename | file event — **config-gated off by default** |
 
 Deliberately **not** used: LSM hooks, packet drops, kprobe-fiddled paths —
 the emitter is read-only by construction (passive promise; smallest blast
@@ -71,12 +71,12 @@ full value.
 
 ## The eBPF-only capability: in-kernel cgroup scoping
 
-`cgroup_filter` config takes a cgroup path or ID; the BPF program calls
+`EMIT_CGROUP_PATH` takes a cgroup path, resolved to its inode ID; the BPF program calls
 `bpf_get_current_cgroup_id()` and drops events outside the target cgroup
 **in-kernel**, before they surface. On multi-tenant hosts this is the
 difference between an approved deployment and a rejected one — the sensor
-only ever sees the agent's boundary. `all_host: true` is an explicit opt-in
-with a warning.
+matches that exact configured cgroup ID; descendants require separate
+qualification. `EMIT_ALL_HOST=true` is an explicit opt-in.
 
 ## Safety controls
 
@@ -116,7 +116,7 @@ with a warning.
 - Kernel ≥ 5.8 with BTF for CO-RE; unsupported kernels are rejected, not
   silently downgraded.
 - No semantic/decision layer — same inference caveat as spec 030.
-- Encrypted traffic: metadata only (peer, timing, sizes) — never content.
+- Encrypted traffic: metadata only (peer and timing) — never content.
 - Attribution to a logical "agent" is deployment-dependent (cgroup or PID
   namespace mapping); record the method as provenance.
 - An adversarial workload with kernel-level access is outside this threat

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import json
+from typing import Any
 
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
@@ -661,3 +662,44 @@ def test_decision_without_context_stamps_no_lineage(
     attrs = dict(span.attributes or {})
     assert "fabric.parent_agent_id" not in attrs
     assert "fabric.parent_decision_id" not in attrs
+
+
+def test_extract_deep_untrusted_json_never_interrupts_caller() -> None:
+    encoded = base64.urlsafe_b64encode(b"[" * 10000 + b"0" + b"]" * 10000).decode().rstrip("=")
+    result = extract({TRACESTATE_HEADER: f"{FABRIC_KEY}={encoded}"})
+    assert result is None
+
+
+@pytest.mark.parametrize("header", [None, 42, "x" * 20000, ",".join("v=x" for _ in range(33))])
+def test_extract_rejects_unbounded_or_wrong_typed_header(header: Any) -> None:
+    result = extract({TRACESTATE_HEADER: header})
+    assert result is None
+
+
+def test_extract_does_not_decode_oversized_member(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_decode(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("unbounded input reached JSON decoder")
+
+    monkeypatch.setattr(json, "loads", unexpected_decode)
+    result = extract({TRACESTATE_HEADER: f"{FABRIC_KEY}=" + "a" * 257})
+    assert result is None
+
+
+def test_extract_rejects_excess_members_even_with_valid_fabric_context() -> None:
+    carrier: dict[str, str] = {}
+    inject(carrier, FabricContext(tenant_id="tenant", agent_id="agent"))
+    carrier[TRACESTATE_HEADER] += "," + ",".join("v=x" for _ in range(MAX_MEMBERS))
+    result = extract(carrier)
+    assert result is None
+
+
+def test_extract_contains_decoder_recursion_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    carrier: dict[str, str] = {}
+    inject(carrier, FabricContext(tenant_id="tenant", agent_id="agent"))
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        raise RecursionError("synthetic decoder failure")
+
+    monkeypatch.setattr(json, "loads", fail)
+    result = extract(carrier)
+    assert result is None

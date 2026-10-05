@@ -123,7 +123,9 @@ def _require_equal(
     errors: list[str],
 ) -> None:
     artifacts.append(Artifact(label, version, "coordinated-runtime/exact"))
-    if version and version != expected:
+    if not version:
+        errors.append(f"{label}: missing required version")
+    elif version != expected:
         errors.append(f"{label}={version!r}; expected coordinated release {expected!r}")
 
 

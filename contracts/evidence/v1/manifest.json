@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
-    {"path": "schema/evidence-event-v1.schema.json", "sha256": "2e248ad139c27f40c2c27d6deaddcfe7ba7d82e4d15557f24c75e1fabcacb10b", "expectation": "schema", "expected_error": null},
+    {"path": "schema/evidence-event-v1.schema.json", "sha256": "36bef6161a6c1149e0cb6bccd7847671525193395be1f0abcc7eaae2659eeb83", "expectation": "schema", "expected_error": null},
     {"path": "schema/run-manifest-v1.schema.json", "sha256": "23835dfafd5dc629c682bd4510cdf144bba51820a117200adc190448ae6026f8", "expectation": "schema", "expected_error": null},
     {"path": "schema/source-capability-v1.schema.json", "sha256": "618e28c592273751363b3b886bac432ab28a338fab88ca7a73a4cec270235b12", "expectation": "schema", "expected_error": null},
     {"path": "valid/artifact-event.json", "sha256": "ccf840241fbf50791eae63560d74163a5d8b1a3b6ad41654fc8499785b52b79d", "expectation": "valid", "expected_error": null},

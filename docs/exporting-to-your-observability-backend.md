@@ -44,6 +44,9 @@ helm upgrade --install fabric charts/fabric \
 - an operator-created Secret containing the complete outbound authorization
   value;
 - persistent file storage with fsync for the sending queue;
+- an explicit StorageClass or existing PVC and `encryptionAttestationRef`;
+- a full sha256 image pin and a tenant-matched workload credential boundary
+  (mTLS plus dedicated bearer token and credential-review reference);
 - blocking overflow behavior and indefinite retry for retryable failures;
 - default-deny networking with an explicit destination peer and port;
 - no debug exporter and no audit sampling.
@@ -57,7 +60,10 @@ kubectl --namespace fabric-system create secret generic fabric-node-export-auth 
 ```
 
 Install with an approved endpoint and egress route as described in
-[Deployment](deployment.md). If a backend requires a vendor-specific header,
+[Deployment](deployment.md). Review references record operator assertions; they
+do not enable or verify storage encryption, per-record identity or durable
+readback. Incoming raw content remains denied; approved originals and masked
+derivatives belong in separately governed SDK content storage. If a backend requires a vendor-specific header,
 set `otel-collector.exporter.auth.headerName` and retain that reviewed value in
 the deployment record.
 

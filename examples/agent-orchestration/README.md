@@ -94,3 +94,16 @@ Demo artifacts only: no evaluation, judging, governance UI, independent
 system audit or full-run verdict. The viewer is a read-only local renderer
 for one synthetic run; policy, enforcement and fleet features stay out of
 scope per `AGENTS.md`.
+
+
+### Audit replay state in this demo
+
+The logfile receiver now requires durable state. `run.sh` mounts the run's
+private `audit-state/` directory read-write at `/demo-audit-state`, alongside
+the existing read-only synthetic audit input. That state survives collector
+container replacement within the same run directory; each newly created demo
+run intentionally gets a new source/state identity. The receiver hashes file
+paths, uses stable replay IDs, and emits checkpoint/loss metadata. This remains
+synthetic-source evidence, not native auditd qualification or proof that the
+demo sink durably retained records. Production migration and limits are in the
+[audit receiver README](../../components/otel-collector-fabric/receiver/auditreceiver/README.md).

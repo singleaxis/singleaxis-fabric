@@ -39,13 +39,10 @@ extensions:
   bearertokenauth:
     # Server-side authenticator: every OTLP request must carry
     # "Authorization: Bearer <token>". The token file is a Compose secret;
-    # multiple accepted tokens can be listed via `tokens:` instead.
-    # WARNING (upstream v0.150.0 quirk): the file is split on newlines and
-    # EMPTY entries are kept -- a trailing newline or blank line mints
-    # "Bearer " (empty token) as a valid credential on gRPC. The token file
-    # must contain only non-blank lines and NO trailing newline;
-    # preflight-prod.sh fails on unsafe files and the image's fabric-gate
-    # entrypoint refuses to boot on them.
+    # Exactly one 32-4096-byte printable ASCII token, without whitespace.
+    # The patched authenticator rejects malformed files on load and reload;
+    # the entrypoint gate adds startup and ongoing file checks.
+    require_single_token: true
     filename: /run/secrets/fabric_ingress_token
 
 receivers:

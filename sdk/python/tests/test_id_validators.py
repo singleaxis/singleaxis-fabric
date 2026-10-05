@@ -48,12 +48,46 @@ def test_email_shaped_value_warns() -> None:
         warn_if_pii_shaped("tenant_id", "bryan@example.test")
     assert len(record) == 1
     assert "tenant_id" in str(record[0].message)
-    assert "bryan@example.test" in str(record[0].message)
+    assert "bryan@example.test" not in str(record[0].message)
 
 
 def test_phone_shaped_value_warns() -> None:
     with pytest.warns(PIIShapedIdentifierWarning, match="phone"):
         warn_if_pii_shaped("user_id", "555-0100-9999")
+
+
+@pytest.mark.parametrize(
+    "value,embedded,shape",
+    [
+        ("PRIVATE-CANARY@example.test", False, "email"),
+        ("+15550109876", False, "phone number"),
+        ("PRIVATE-CANARY contact PRIVATE-CANARY@example.test", True, "email"),
+        ("PRIVATE-CANARY phone 555-010-9876", True, "phone number"),
+        ("PRIVATE-CANARY SSN 123-45-6789", True, "SSN"),
+    ],
+)
+def test_pii_diagnostic_omits_raw_identifier_canaries(
+    value: str, embedded: bool, shape: str
+) -> None:
+    with pytest.warns(PIIShapedIdentifierWarning) as record:
+        warn_if_pii_shaped("user_id", value, embedded=embedded)
+    assert len(record) == 1
+    message = str(record[0].message)
+    assert "user_id" in message and shape in message
+    assert "opaque ID" in message and "FABRIC_QUIET_PII_WARN=1" in message
+    assert value not in message and "PRIVATE-CANARY" not in message
+    assert "555-010-9876" not in message and "123-45-6789" not in message
+
+
+def test_pii_diagnostic_strict_warning_filter_remains_effective_and_private() -> None:
+    value = "PRIVATE-CANARY@example.test"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", PIIShapedIdentifierWarning)
+        with pytest.raises(PIIShapedIdentifierWarning) as raised:
+            FabricConfig(tenant_id=value, agent_id="agent")
+    assert "tenant_id" in str(raised.value)
+    assert "email" in str(raised.value)
+    assert value not in str(raised.value)
 
 
 def test_plain_opaque_id_does_not_warn() -> None:
@@ -260,14 +294,15 @@ def test_empty_and_whitespace_only_still_rejected(value: str) -> None:
         FabricConfig(tenant_id=value, agent_id="a")
 
 
-def test_rejection_message_names_the_field_and_the_value() -> None:
+def test_rejection_message_names_the_field_and_remedy_without_value() -> None:
     """The error has to be actionable from a container log line alone:
-    which field, what value was seen, and how to override."""
+    which field is misconfigured and how to override, without disclosing it."""
     with pytest.raises(ValueError) as err:
         FabricConfig(tenant_id="undefined", agent_id="a")
     message = str(err.value)
     assert "tenant_id" in message
-    assert "'undefined'" in message
+    assert "undefined" not in message
+    assert "placeholder" in message
     assert "FABRIC_ALLOW_PLACEHOLDER_IDS" in message
 
 
@@ -472,3 +507,31 @@ def test_check_identifier_is_not_applied_to_execution_ids() -> None:
     )
     assert config.execution_attempt_id == "undefined"
     assert config.execution_id == "${RUN_ID}"
+
+
+@pytest.mark.parametrize(
+    "value", ["${private-person@example.invalid}", "<private-person@example.invalid>"]
+)
+@pytest.mark.parametrize("allow", [False, True])
+def test_placeholder_diagnostic_omits_supplied_value(
+    monkeypatch: pytest.MonkeyPatch, value: str, allow: bool
+) -> None:
+    monkeypatch.setenv("FABRIC_ALLOW_PLACEHOLDER_IDS", "1" if allow else "0")
+    if allow:
+        with pytest.warns(
+            PlaceholderIdentifierWarning, match="tenant_id is a placeholder"
+        ) as record:
+            check_identifier("tenant_id", value)
+        diagnostic = str(record[0].message)
+    else:
+        with pytest.raises(ValueError, match="tenant_id is a placeholder") as error:
+            check_identifier("tenant_id", value)
+        diagnostic = str(error.value)
+    assert "private-person" not in diagnostic
+    assert "example.invalid" not in diagnostic
+
+
+def test_copy_paste_diagnostic_identifies_field_without_value() -> None:
+    with pytest.warns(PlaceholderIdentifierWarning, match="tenant_id looks like") as record:
+        check_identifier("tenant_id", "REPLACE_ME")
+    assert "REPLACE_ME" not in str(record[0].message)

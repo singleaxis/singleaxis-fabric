@@ -37,3 +37,12 @@ complete verdict. Its trust policy must be outside the untrusted manifest.
 Fabric's host-emitter `log.record.uid` and loss summary are useful dedupe and
 gap signals, but do not alone establish AEEP `record_id`, epoch/sequence,
 source health, or a complete run verdict.
+
+The draft event projection also accepts the SDK's closed call lifecycle fields
+and governed content bindings. Governed bindings are all-or-none and identify
+content by opaque object ID plus tenant, workload, source and policy context;
+they carry no storage URI. Transformed or withheld modes cannot carry original
+content digests or lengths. Legacy reference-bearing events retain their existing
+validation rules. A pending, failed or withheld observation does not establish
+stored bytes, an access grant, or completeness; authorized store readback and
+independent delivery evidence remain separate requirements.

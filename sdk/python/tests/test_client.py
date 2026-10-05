@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from unittest.mock import Mock
 
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import NoOpTracer
 
 from fabric import DEFAULT_PROFILE, Fabric, FabricConfig
 
@@ -111,9 +113,14 @@ def test_config_validates_fields() -> None:
         FabricConfig(tenant_id="t", agent_id="a", execution_attempt_id=" ")
 
 
-def test_tracer_property_is_reused() -> None:
+def test_tracer_property_is_reused(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracer = NoOpTracer()
+    factory = Mock(return_value=tracer)
+    monkeypatch.setattr("fabric.client.get_tracer", factory)
     client = Fabric(FabricConfig(tenant_id="t", agent_id="a"))
-    assert client.tracer is client.tracer
+    for _ in range(3):
+        assert client.tracer is tracer
+    factory.assert_called_once_with()
 
 
 # -- v0.4: workflow_id / execution_id propagation ---------------------

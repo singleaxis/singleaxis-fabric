@@ -160,8 +160,22 @@ fi
 
 receiver_tls_enabled() {
   [ -f "${COLLECTOR_CONFIG}" ] || return 1
-  sed -n '/^receivers:/,/^processors:/p' "${COLLECTOR_CONFIG}" \
-    | grep -q '^[[:space:]]*tls:'
+  # Inspect the shipped block-style layout only. Unrecognized layouts fail
+  # closed for remote publication; this is not a general YAML parser.
+  awk '
+    /^receivers:$/ { receivers=1; next }
+    receivers && /^[^ ]/ { receivers=0 }
+    receivers && /^  otlp:$/ { otlp=1; next }
+    receivers && /^  [^ ]/ { otlp=0 }
+    receivers && otlp && /^    protocols:$/ { protocols=1; next }
+    receivers && otlp && /^    [^ ]/ { protocols=0 }
+    receivers && otlp && protocols && /^      (grpc|http):$/ {
+      protocol=$1; sub(/:$/, "", protocol); next
+    }
+    receivers && otlp && protocols && /^      [^ ]/ { protocol="" }
+    receivers && otlp && protocols && /^        tls: *$/ { tls[protocol]=1 }
+    END { exit !(tls["grpc"] && tls["http"]) }
+  ' "${COLLECTOR_CONFIG}"
 }
 
 if receiver_tls_enabled; then
@@ -172,16 +186,16 @@ if receiver_tls_enabled; then
     bad "tls: stanzas enabled but ${tlsdir}/{server.crt,server.key} missing"
   fi
 else
-  ok "receiver TLS disabled (loopback-only deployment is consistent with this)"
+  ok "both receiver TLS stanzas not verified (loopback-only publication required)"
 fi
 
 # --- bind address sanity ------------------------------------------------------
 bind="${FABRIC_BIND_ADDR:-127.0.0.1}"
 if [ "${bind}" != "127.0.0.1" ]; then
   if receiver_tls_enabled; then
-    ok "non-loopback bind (${bind}) with TLS enabled"
+    ok "non-loopback bind (${bind}) with TLS enabled for both HTTP and gRPC"
   else
-    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but receiver TLS is disabled"
+    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but TLS is not verified for both HTTP and gRPC"
   fi
 else
   ok "OTLP ports bind loopback only"
@@ -206,4 +220,4 @@ if [ "${fail}" -ne 0 ]; then
   printf 'Preflight FAILED -- resolve the items above before make up-prod\n' >&2
   exit 1
 fi
-printf 'Preflight passed -- safe to run make up-prod\n'
+printf 'Preflight checks passed -- runtime certificate/configuration validation still required\n'

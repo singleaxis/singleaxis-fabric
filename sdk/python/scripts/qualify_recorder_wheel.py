@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Qualify an exact Python recorder wheel or source distribution."""
+"""Check critical module presence and scope boundaries in an exact SDK archive.
+
+This structural qualification does not execute the artifact or prove that its
+module contents work. Installed-artifact smoke tests remain a separate gate.
+"""
 
 from __future__ import annotations
 
@@ -186,6 +190,17 @@ def qualify(path: Path) -> dict[str, object]:
         "fabric/content_store/s3.py",
         "fabric/resolver.py",
         "fabric/adapters/byte_boundary.py",
+        "fabric/byte_evidence.py",
+        "fabric/byte_resolver.py",
+        "fabric/byte_spool.py",
+        "fabric/call_recorder.py",
+        "fabric/call_otlp.py",
+        "fabric/source_spool.py",
+        "fabric/metadata_delivery.py",
+        "fabric/content_join.py",
+        "fabric/deployment_policy.py",
+        "fabric/governed_store.py",
+        "fabric/governed_reconstruction.py",
     }
     missing = required.difference(canonical_members)
     if missing:
@@ -240,6 +255,8 @@ def qualify(path: Path) -> dict[str, object]:
         "size": len(artifact_bytes),
         "member_count": len(members),
         "qualified": True,
+        "qualification_scope": "critical_module_presence_and_legacy_exclusion",
+        "runtime_behavior_verified": False,
     }
 
 

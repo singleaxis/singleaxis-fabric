@@ -22,6 +22,19 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
 )
 
+try:
+    from otlp_readback_validation import (
+        json_attributes,
+        protobuf_attributes,
+        validate_metadata_container,
+    )
+except ModuleNotFoundError:
+    from scripts.qualification.otlp_readback_validation import (
+        json_attributes,
+        protobuf_attributes,
+        validate_metadata_container,
+    )
+
 CANARY = b"CUSTOM_AGENT_PRIVATE_CANARY"
 
 
@@ -36,17 +49,17 @@ def expected_records(path: Path) -> dict[str, dict[str, object]]:
     for resource in json.loads(path.read_bytes())["resourceLogs"]:
         for scope in resource["scopeLogs"]:
             for record in scope["logRecords"]:
-                attributes = {
-                    item["key"]: str(next(iter(item["value"].values())))
-                    for item in record["attributes"]
-                }
+                attributes, types = json_attributes(record)
                 identifier = attributes["record_id"]
                 if identifier in result:
                     raise AssertionError("duplicate expected metadata record")
                 result[identifier] = {
                     "event_name": record["eventName"],
                     "attributes": attributes,
+                    "attribute_types": types,
                 }
+    if not result:
+        raise AssertionError("empty projected evidence set")
     return result
 
 
@@ -56,6 +69,8 @@ def readback(
     *,
     allow_other_runs: bool = False,
 ) -> int:
+    if not expected:
+        raise AssertionError("empty expected evidence set")
     observed: dict[str, list[dict[str, object]]] = {}
     expected_runs = {item["attributes"].get("run_id") for item in expected.values()}
     for path in directory.glob("*.otlp"):
@@ -67,15 +82,7 @@ def readback(
         for resource in request.resource_logs:
             for scope in resource.scope_logs:
                 for record in scope.log_records:
-                    if record.body.WhichOneof("value") is not None:
-                        raise AssertionError("evidence OTLP body must be empty")
-                    attributes = {}
-                    for item in record.attributes:
-                        kind = item.value.WhichOneof("value")
-                        if kind in {"string_value", "int_value"}:
-                            attributes[item.key] = str(getattr(item.value, kind))
-                        else:
-                            raise AssertionError("unexpected evidence attribute type")
+                    attributes, types = protobuf_attributes(record)
                     identifier = attributes.get("record_id")
                     if identifier not in expected:
                         if (
@@ -84,10 +91,12 @@ def readback(
                         ):
                             continue
                         raise AssertionError("unexpected evidence record at sink")
+                    validate_metadata_container(resource, scope, record)
                     observed.setdefault(identifier, []).append(
                         {
                             "event_name": record.event_name,
                             "attributes": attributes,
+                            "attribute_types": types,
                         }
                     )
     if set(observed) != set(expected):

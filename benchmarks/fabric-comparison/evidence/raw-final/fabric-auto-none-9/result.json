@@ -1,0 +1,194 @@
+{
+  "mode": "fabric-auto",
+  "managed_provider": false,
+  "exception_redaction_exporter": false,
+  "fault": "none",
+  "setup_ms": 78.545665,
+  "workload_ms": 19.946496,
+  "flush_ms": 0.016545,
+  "truth_actions": 7,
+  "truth_semantic_sha256": "a3aaa340c58f523a9c6acc2a10f53b585128afc37e4698ffd9d840bb38b2c5d8",
+  "declared_scope_actions": 4,
+  "captured_local_records": 4,
+  "exported_spans": 4,
+  "error_records": 1,
+  "export_attempts": 4,
+  "failed_export_spans": 0,
+  "raw_canary_in_export": true,
+  "unwrapped_action_captured": false,
+  "automatic_unwrapped_gap_signal": "none observed; independent inventory required",
+  "captured_action_ids": [],
+  "independent_inventory_unmatched_action_ids": [
+    [
+      "background",
+      "one"
+    ],
+    [
+      "bypass",
+      "one"
+    ],
+    [
+      "file",
+      "one"
+    ],
+    [
+      "model",
+      "success"
+    ],
+    [
+      "process",
+      "one"
+    ],
+    [
+      "retry",
+      "first"
+    ],
+    [
+      "retry",
+      "second"
+    ]
+  ],
+  "recording_gaps": null,
+  "provider_model_attribute_spans": 4,
+  "token_usage_attribute_spans": 3,
+  "caller_attempt_attribute_spans": 0,
+  "policy_event_statuses": [],
+  "snapshot": null,
+  "spans": [
+    {
+      "name": "chat benchmark-local",
+      "context": {
+        "trace_id": "0x012934f16ef0850f425aa56a71af6c6c",
+        "span_id": "0x278a37b87e1abbd5",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:02.625990Z",
+      "end_time": "2026-10-02T17:07:02.627778Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "benchmark-local",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "benchmark-local",
+        "gen_ai.response.finish_reasons": [
+          "stop"
+        ],
+        "gen_ai.response.id": "chatcmpl-local",
+        "gen_ai.usage.input_tokens": 1,
+        "gen_ai.usage.output_tokens": 1
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "chat benchmark-local",
+      "context": {
+        "trace_id": "0xeb6835da1a2b772b4b26789188b7d6cc",
+        "span_id": "0x8e2fa8d006376610",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:02.628132Z",
+      "end_time": "2026-10-02T17:07:02.629566Z",
+      "status": {
+        "status_code": "ERROR",
+        "description": "Error code: 503 - {'error': {'message': 'synthetic transient error SYNTHETIC-PRIVATE-CANARY-3742', 'type': 'server_error', 'code': 'retry'}}"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "benchmark-local",
+        "gen_ai.system": "openai",
+        "error.type": "InternalServerError"
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "chat benchmark-local",
+      "context": {
+        "trace_id": "0x7aa7bb4ccc851645f32a3d8ae469616b",
+        "span_id": "0x366d1344f9ead77d",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:02.629874Z",
+      "end_time": "2026-10-02T17:07:02.631426Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "benchmark-local",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "benchmark-local",
+        "gen_ai.response.finish_reasons": [
+          "stop"
+        ],
+        "gen_ai.response.id": "chatcmpl-local",
+        "gen_ai.usage.input_tokens": 1,
+        "gen_ai.usage.output_tokens": 1
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    },
+    {
+      "name": "chat benchmark-local",
+      "context": {
+        "trace_id": "0xa962d4ed4ba5458d2039700dd59ecb05",
+        "span_id": "0xdb3b5fd35d4d195d",
+        "trace_state": "[]"
+      },
+      "kind": "SpanKind.CLIENT",
+      "parent_id": null,
+      "start_time": "2026-10-02T17:07:02.643088Z",
+      "end_time": "2026-10-02T17:07:02.645336Z",
+      "status": {
+        "status_code": "UNSET"
+      },
+      "attributes": {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": "benchmark-local",
+        "gen_ai.system": "openai",
+        "gen_ai.response.model": "benchmark-local",
+        "gen_ai.response.finish_reasons": [
+          "stop"
+        ],
+        "gen_ai.response.id": "chatcmpl-local",
+        "gen_ai.usage.input_tokens": 1,
+        "gen_ai.usage.output_tokens": 1
+      },
+      "events": [],
+      "links": [],
+      "resource": {
+        "attributes": {
+          "service.name": "matched-local-benchmark"
+        },
+        "schema_url": ""
+      }
+    }
+  ]
+}

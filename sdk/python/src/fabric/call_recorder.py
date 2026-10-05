@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from opentelemetry import trace
 
 from .byte_evidence import ByteEvidenceRecorder
+from .content_join import CONTENT_JOIN_FIELDS, capture_content_binding
 from .source_spool import _MAX_SEAL_TIMEOUT_S, SyntheticSourceSpool
 from .tracing import get_tracer
 
@@ -172,7 +173,8 @@ class CallRecorder:
     def _journal(self, event: dict[str, Any]) -> None:
         if self.source_spool is None:
             return
-        # Only closed scalar metadata is submitted. Content refs/bytes and
+        # Only closed scalar metadata is submitted. Opaque object joins and
+        # policy bindings survive restart; content refs/bytes and
         # exception strings never enter the journal. Outcome has its own
         # closed validator in SyntheticSourceSpool.
         fields = {
@@ -198,7 +200,7 @@ class CallRecorder:
             "streaming",
             "stream_id",
             "chunk_index",
-        }
+        } | CONTENT_JOIN_FIELDS
         try:
             status = self.source_spool.append(
                 {key: value for key, value in event.items() if key in fields}
@@ -329,7 +331,11 @@ class CallRecorder:
                     chunk_index=chunk_index,
                 )
                 with self._lock:
-                    event.update(object_id=descriptor["object_id"], status=descriptor["status"])
+                    event.update(
+                        object_id=descriptor["object_id"],
+                        status=descriptor["status"],
+                        **capture_content_binding(descriptor),
+                    )
             except Exception:
                 with self._lock:
                     event.update(status="failed", status_reason="recorder_exception")
@@ -464,6 +470,11 @@ class CallRecorder:
             "source_epoch": self.source_epoch,
             "source_epoch_persisted": self.source_spool is not None,
             "source_identity_authenticated": False,
+            # A terminal wrapped call cannot enumerate work a delegate may
+            # schedule later, including inherited-context tasks and threads.
+            "producer_closure": "unknown",
+            "all_observed_calls_finished": bool(calls)
+            and all(call["status"] in {"ok", "error", "cancelled"} for call in calls),
             "source_high_water": {self.source_id: high_water},
             "source_high_water_basis": "assigned_in_process",
             "source_metadata_seal": self.source_spool.current_seal() if self.source_spool else None,

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Post-deploy verification for the client-VM production overlay.
-# Proves: collector healthy, unauthenticated OTLP rejected, authenticated
-# OTLP accepted, persistent queue engaged, metrics endpoint serving.
+# Checks HTTP health/auth acceptance and, when available, gRPC rejection
+# and queue metrics. Does not prove protection or destination delivery.
 set -eu
 
 compose="${COMPOSE:-docker compose} -f docker-compose.yml -f docker-compose.production.yml"
@@ -157,4 +157,4 @@ if [ "${fail}" -ne 0 ]; then
   printf 'Verification FAILED -- inspect: make logs-prod ARGS=fabric-node\n' >&2
   exit 1
 fi
-printf 'Verification passed -- recorder is capturing, protecting, and delivering\n'
+printf 'Ingress checks passed -- see warnings for skipped probes; destination delivery and protection are not verified\n'

@@ -7,9 +7,19 @@ namespace:
 otel-collector:
   replicaCount: 1
   image:
-    repository: fabric-otelcol
-    tag: e2e-production
+    repository: docker.io/library/fabric-otelcol
+    # Supplied from the actual manifest imported into kind; never Docker .Id.
+    tag: ""
+    digest: ""
     pullPolicy: Never
+  receiver:
+    workloadAuthentication:
+      tenantId: synthetic-tenant
+      workloadId: synthetic-pilot-client
+      identityAttestationRef: synthetic-fixture-credential-review-only
+      tokenSecret:
+        name: fabric-workload-token
+        key: token
   exporter:
     endpoint: https://fabric-test-sink:8443
     tls:
@@ -19,6 +29,10 @@ otel-collector:
     sendingQueue:
       persistence:
         size: 1Gi
+        storageClass: standard
+        # Explicitly unqualified: kind local-path storage is not encrypted
+        # customer storage. This review reference records that fixture gap.
+        encryptionAttestationRef: synthetic-unencrypted-storage-NO_GO
   networkPolicy:
     ingressFrom:
       - podSelector:

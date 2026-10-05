@@ -63,8 +63,9 @@ export class ContentSink {
     return this.manifest;
   }
 
-  get uri(): string {
-    return this.manifestUri;
+  /** No transcript exists until at least one capture outcome is observed. */
+  get uri(): string | undefined {
+    return this.manifest.items.length === 0 ? undefined : this.manifestUri;
   }
 
   private get store(): GovernedStore {
@@ -280,12 +281,18 @@ export class ContentSink {
    * Submit the manifest and stamp `fabric.content.manifest_ref`. The
    * stamped URI is deterministic — known before the bytes are
    * delivered. Called at decision close, before the span ends, so the
-   * attribute always lands; a resolver reading early sees `missing`
+   * attribute lands for observed outcomes; an empty observation window returns
+   * undefined without writing or stamping a manifest. A resolver reading early sees `missing`
    * and a later settlement rewrites the document idempotently
    * (spec 032 §5).
    */
-  close(options: { decisionSpan?: Span; closedAt?: string } = {}): string {
+  close(options: { decisionSpan?: Span; closedAt?: string } = {}): string | undefined {
     this.manifest.closed_at = options.closedAt ?? this.manifest.closed_at;
+    // No calls were observed: do not manufacture an action, stored count or
+    // schema-invalid empty manifest that could look like complete capture.
+    if (this.manifest.items.length === 0) {
+      return undefined;
+    }
     this.manifestSubmitted = true;
     this.submitManifest();
     const span = options.decisionSpan;

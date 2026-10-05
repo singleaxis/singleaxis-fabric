@@ -280,6 +280,13 @@ def validate_contract_tree(
             raise QualificationError(
                 f"{family_path}: configured public contract versions are missing"
             )
+        if included_versions is not None:
+            missing_versions = included_versions[family_path.name] - set(versions)
+            if missing_versions:
+                raise QualificationError(
+                    f"{family_path}: configured public contract versions are missing: "
+                    f"{', '.join(sorted(missing_versions))}"
+                )
         families[family_path.name] = tuple(versions)
     return files, families
 

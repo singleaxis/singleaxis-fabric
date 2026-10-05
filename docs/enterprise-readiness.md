@@ -29,9 +29,10 @@ separate optional enforcement capability and is not shipped in recorder v1.
 
 ## Production deployment posture
 
-The `shadow-production` Helm profile is passive: it does not block, transform,
-or delay the monitored application. It fails to render unless the operator
-provides:
+The `shadow-production` Helm profile processes telemetry without authorizing
+application actions. Capture consumes resources, and queue saturation can
+backpressure OTLP senders; qualify the application's buffering and timing.
+It fails to render unless the operator provides:
 
 - a non-empty customer-controlled tenant identifier;
 - TLS server identity and client-certificate verification for OTLP ingress;
@@ -84,14 +85,17 @@ Recorder release policy permits only these public artifacts:
 - the recorder-only `fabricctl` binary; and
 - activity, connection, recorder, privacy, and delivery contracts.
 
-The release workflow verifies the exact tagged commit, required workflow
-evidence, coordinated versions, package contents, artifact digests, SBOMs,
-provenance, and signatures before creating a draft release. Registry
-publication uses short-lived trusted identity where the registry supports it.
+The release workflow checks the exact tagged commit, required workflow
+evidence, coordinated versions and qualified package contents/digests. It
+generates image SBOM/provenance attestations and signs published OCI artifacts.
+Images are rebuilt during publication rather than promoted from the exact
+scanned CI image bytes; this remains a release qualification limitation.
+Consumers must verify the published signatures and provenance independently.
+Registry publication uses short-lived trusted identity where supported.
 
 ## Enterprise qualification responsibilities
 
-Before promotion, the customer and SingleAxis must qualify the exact deployment
+Before promotion, the deployment owner must qualify the exact deployment
 for:
 
 1. connector coverage and known blind spots;

@@ -158,8 +158,10 @@ Node protection, and Fabric Node strips them as today. They are **not**
 governed evidence storage and are documented as such.
 
 - Governed mode does not imply `capture_content=True`, and vice versa.
-- When both are set, governed storage still applies and raw attributes are
-  still stripped at the Node — no interaction beyond both code paths running.
+- The original proposal allowed both paths together. Current Python governed
+  capture instead rejects conflicting raw-span flags and raw-content
+  auto-instrumentation environment settings. TypeScript legacy behavior is a
+  separate capability boundary; do not infer Python parity or privacy from it.
 - Migration note (docs): customers who want *verifiable* content should use
   governed mode; raw span flags remain a dev/debug convenience.
 
@@ -211,7 +213,8 @@ raw `gen_ai.*` attributes, which the governed path does not consume in v1).
 2. Governed mode without store/roles/durability → configuration error.
 3. Each role in §4 demonstrably produces a bound, verified object, or is
    documented `unsupported`.
-4. Raw-span flags keep current behavior in both modes.
+4. Python governed capture rejects conflicting raw-span flags; TypeScript
+   legacy behavior is qualified separately. Neither widens Node protection.
 5. Unknown role names rejected; env var cannot enable governed mode.
 6. Coverage matrix doc test passes against implemented surface.
 

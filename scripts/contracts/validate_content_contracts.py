@@ -119,12 +119,14 @@ def validate_content_document(
     _validate_schema(document, schemas[schema_rel])
     version = document["schema_version"]
     if version == "fabric.transcript-manifest/v1":
-        _validate_manifest_semantics(document)
+        _validate_manifest_semantics(document, schemas)
     elif version == "fabric.transcript-export/v1":
         _validate_export_semantics(document)
 
 
-def _validate_manifest_semantics(document: Mapping[str, Any]) -> None:
+def _validate_manifest_semantics(
+    document: Mapping[str, Any], schemas: Mapping[str, Mapping[str, Any]]
+) -> None:
     items = document["items"]
     sequences = [item["sequence"] for item in items]
     if sequences != list(range(len(items))):
@@ -146,6 +148,13 @@ def _validate_manifest_semantics(document: Mapping[str, Any]) -> None:
                     "content.manifest.descriptor",
                     f"$.items[{index}]",
                     f"status {status!r} requires a descriptor",
+                )
+            validate_content_document(descriptor, schemas)
+            if descriptor["tenant_id"] != document["tenant_id"]:
+                raise ContentContractError(
+                    "content.manifest.tenant",
+                    f"$.items[{index}].descriptor.tenant_id",
+                    "descriptor tenant must match manifest tenant",
                 )
             if descriptor["status"] != status:
                 raise ContentContractError(

@@ -37,4 +37,13 @@ if ! grep -Fq 'fabric/charts/otel-collector/Chart.yaml' <<<"${listing}"; then
   exit 1
 fi
 
+if ! grep -Fxq 'fabric/charts/otel-collector/templates/tests/test-connection.yaml' <<<"${listing}"; then
+  printf 'FAIL: packaged Collector health-test hook is missing\n' >&2
+  exit 1
+fi
+if grep -Eq '^fabric/(tests/|charts/otel-collector/tests/)' <<<"${listing}"; then
+  printf 'FAIL: package includes chart development tests\n' >&2
+  exit 1
+fi
+
 printf 'PASS: packaged Fabric Node contains only the Collector recorder dependency\n'

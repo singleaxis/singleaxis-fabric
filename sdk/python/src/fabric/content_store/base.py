@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from .._hashes import sha256_hex
+
 # Spec 033 §2.1 — the shared safe-identifier rule for values used as
 # namespace path/key components (tenant_id and friends). First character
 # must be alphanumeric; separators, traversal, NUL, and percent-encoded
@@ -25,7 +27,11 @@ def check_safe_identifier(field_name: str, value: str) -> str:
     Shared by the local store, the S3 store, and the client tenant check —
     adapters never invent their own rule (spec 033 §2.1).
     """
-    if not isinstance(value, str) or not SAFE_IDENTIFIER_RE.match(value) or value in (".", ".."):
+    if (
+        not isinstance(value, str)
+        or not SAFE_IDENTIFIER_RE.fullmatch(value)
+        or value in (".", "..")
+    ):
         raise ValueError(
             f"{field_name}={value!r} is not a safe namespace identifier: "
             "must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$ and may not be '.' or '..'"
@@ -148,7 +154,7 @@ def content_hash(content: str) -> str:
     """SHA-256 hex of the content's UTF-8 bytes. Shared key strategy
     so the same content lands at the same address (content-addressed).
     """
-    return hashlib.sha256(content.encode("utf-8", "surrogatepass")).hexdigest()
+    return sha256_hex(content)
 
 
 def content_hash_bytes(data: bytes) -> str:

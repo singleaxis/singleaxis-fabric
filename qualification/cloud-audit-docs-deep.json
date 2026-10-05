@@ -1,0 +1,2071 @@
+{
+  "schema_version": "fabric.docs-deep-audit/v1",
+  "date": "2026-10-02",
+  "source_checkpoint": "059d54749c896cf6d93524b64668a27967123780",
+  "scope": "Remaining Markdown backlog from product ledger; existing main ledger unchanged. Review methods apply only to exact sha256. Baseline hashes are prior product ledger hashes. Historical test reports are reviewed as statements, not re-executed or independently authenticated.",
+  "methods": {
+    "sha256_inventory": "Exact local byte identity only; no semantic claim.",
+    "full_text_review": "Entire file was displayed without unresolved truncation and semantically reviewed; not every linked implementation or external reference was verified."
+  },
+  "entries": [
+    {
+      "path": "charts/README.md",
+      "baseline_sha256": "c58481a6ab696ebda4238096ca67815d3729d1b7ea7f725df13f9d2fe36b2d7b",
+      "sha256": "20fdaf8f870299deef7e02a7b062776919cd64a013f701b84c977316dbe5d48c",
+      "bytes": 1503,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-003",
+          "status": "corrected",
+          "detail": "Removed unsupported Helm .prov claim; release.yml signs OCI chart digest with cosign."
+        }
+      ],
+      "reviewed_sections": [
+        "charts/",
+        "Profiles",
+        "Status",
+        "Release signing"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "charts/fabric/README.md",
+      "baseline_sha256": "9d32f27f1f6676b2c61c41e1c82ea5068b7964e32d8291cf35e47699277c9473",
+      "sha256": "9d32f27f1f6676b2c61c41e1c82ea5068b7964e32d8291cf35e47699277c9473",
+      "bytes": 10282,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Fabric Node Helm chart",
+        "Profiles",
+        "`shadow-dev`",
+        "`shadow-production`",
+        "Workload identity and review metadata",
+        "Namespace and operations notes",
+        "Reliability semantics",
+        "Protection semantics",
+        "Verify the chart"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/README.md",
+      "baseline_sha256": "61f77980f427afd49b58c6d837c97c23763b881608f4e20cdb11b304132ec46c",
+      "sha256": "61f77980f427afd49b58c6d837c97c23763b881608f4e20cdb11b304132ec46c",
+      "bytes": 4065,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Fabric Node Collector",
+        "Ordinary workload authentication"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "contracts/activity/v1/README.md",
+      "baseline_sha256": "a44e1ef7eb8bda2361132149844a2868c655cd31f438a77a718779b36558da67",
+      "sha256": "a44e1ef7eb8bda2361132149844a2868c655cd31f438a77a718779b36558da67",
+      "bytes": 1941,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Fabric activity contract v1",
+        "Contents",
+        "Compatibility status"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "contracts/activity/v2/MAPPING.md",
+      "baseline_sha256": "6b46616d8cc5fd93b182c1b58b0649825257c76d3ca7a7a732bcd9fd1958c96e",
+      "sha256": "6b46616d8cc5fd93b182c1b58b0649825257c76d3ca7a7a732bcd9fd1958c96e",
+      "bytes": 6757,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Wire attribute to Activity Envelope v2 mapping",
+        "Identity, timing, and sequence",
+        "Identity block",
+        "Correlation",
+        "Source block",
+        "Source identity",
+        "Admitted attributes without a dedicated envelope field",
+        "Vocabulary notes"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "contracts/activity/v2/README.md",
+      "baseline_sha256": "1a3e2c2377c466605e74fb1aac36a311945b44b5d2cc6f0e4edf029903baef6a",
+      "sha256": "1a3e2c2377c466605e74fb1aac36a311945b44b5d2cc6f0e4edf029903baef6a",
+      "bytes": 1783,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Fabric activity contract v2"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "contracts/connect/v1/README.md",
+      "baseline_sha256": "bd1271d7b3243910b022303eecdfcae4e02535833918deb2f2f2f431cec4629f",
+      "sha256": "bd1271d7b3243910b022303eecdfcae4e02535833918deb2f2f2f431cec4629f",
+      "bytes": 3331,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Fabric Connect capability contract v1",
+        "Contract contents",
+        "`compatibility.activity_contract`",
+        "Validate",
+        "Change control"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "contracts/content/v1/README.md",
+      "baseline_sha256": "35946149cc4a29834961aaa7a1a5ad3e5361a25876c12c287843a0bb97125c66",
+      "sha256": "6ce1caf4d0f413a1eed2510dc964ff35ee49466cbf85d0ca9fa6bcf80c3e48f6",
+      "bytes": 2508,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-005",
+          "status": "corrected",
+          "detail": "Fixed relative specs link from contracts/specs to repository specs."
+        }
+      ],
+      "reviewed_sections": [
+        "Governed content contract v1",
+        "Documents",
+        "Byte fixtures",
+        "Pinning",
+        "Honest scope"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "contracts/content/v2/README.md",
+      "baseline_sha256": "313613c73f4c6ac23f5b5e355fdf6628c6e2f0c1d02aa7b0c7f1c4411933160a",
+      "sha256": "313613c73f4c6ac23f5b5e355fdf6628c6e2f0c1d02aa7b0c7f1c4411933160a",
+      "bytes": 1665,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Governed byte evidence contract v2 (draft)"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "contracts/evidence/v1/README.md",
+      "baseline_sha256": "02f4b4c671cdcd7a876958802c6c55f961358ee5cd6e7fec18ac0098cf6e18c0",
+      "sha256": "02f4b4c671cdcd7a876958802c6c55f961358ee5cd6e7fec18ac0098cf6e18c0",
+      "bytes": 2400,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Agent execution evidence contract v1 (draft)"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "deploy/README.md",
+      "baseline_sha256": "920443e445430dc0b80076ab810a7b4b46340e818d8dce6b1607bf9646ab015b",
+      "sha256": "920443e445430dc0b80076ab810a7b4b46340e818d8dce6b1607bf9646ab015b",
+      "bytes": 1624,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "deploy/",
+        "What exists today",
+        "`compose/` \u2014 Docker Compose paths (no Kubernetes)",
+        "What does not exist here yet",
+        "Authoritative spec"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "deploy/compose/README.md",
+      "baseline_sha256": "4079e66b93eaf71110f04bd2afe1c652fd1bdc900a7fcfabcea926e4220e1f48",
+      "sha256": "e660519ebe93cf9552c87cb23649b38a423e930132aa06f9f2aa01fddbd032d4",
+      "bytes": 8413,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-004",
+          "status": "corrected",
+          "detail": "Patched bearer semantics; Python OTel best-effort atexit and explicit bounded shutdown; Collector metrics cannot reveal agent queue loss."
+        },
+        {
+          "id": "CMP-004",
+          "status": "corrected",
+          "detail": "Compose deeper audit corrected production verification overclaim; current strict singleton opt-in verified in production YAML."
+        }
+      ],
+      "reviewed_sections": [
+        "Fabric Node evaluation harness",
+        "Start and inspect",
+        "Client VM deployment",
+        "Prerequisites",
+        "Quick start",
+        "Edit .env:",
+        "FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>",
+        "FABRIC_EXPORT_AUTH_HEADER = \"Bearer <egress credential>\"",
+        "FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token",
+        "Firewall and exposure",
+        "Secure defaults and honest limitations",
+        "Boot persistence",
+        "Agent-side capture reliability",
+        "Honest limitations",
+        "Remove evaluation data"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/agent-activity-coverage.md",
+      "baseline_sha256": "d97d69ff997df703fe1790f642e2cbdc0f78f4654135520954ac8f310ce9c5e2",
+      "sha256": "d97d69ff997df703fe1790f642e2cbdc0f78f4654135520954ac8f310ce9c5e2",
+      "bytes": 13694,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Agent activity coverage and production qualification",
+        "Evidence levels",
+        "Boundary inventory and required mapping",
+        "Current blockers to a complete-agent claim",
+        "Release and deployment gates"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/agent-developer-best-practices.md",
+      "baseline_sha256": "dd5f9170d19183d2d08571c8c5a6a6a40a0bef12d0708fece2f9745f575a648e",
+      "sha256": "dd5f9170d19183d2d08571c8c5a6a6a40a0bef12d0708fece2f9745f575a648e",
+      "bytes": 7302,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Agent developer integration practices",
+        "Choose the evidence level",
+        "Ten implementation habits",
+        "Small adoption checklist"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/api-stability.md",
+      "baseline_sha256": "92ecfdde5da03f6b9b036a4cdc4ff11f1756fef8fe7cc250986450d2f3979496",
+      "sha256": "92ecfdde5da03f6b9b036a4cdc4ff11f1756fef8fe7cc250986450d2f3979496",
+      "bytes": 1965,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Recorder v1 compatibility policy",
+        "Supported surfaces",
+        "Versioning",
+        "Artifact boundary",
+        "No hidden compatibility promise"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/auditor-checklist.md",
+      "baseline_sha256": "481902e62574086e0faae819f5c971cd8ea870a429ba4fdd8997c994d8408a04",
+      "sha256": "481902e62574086e0faae819f5c971cd8ea870a429ba4fdd8997c994d8408a04",
+      "bytes": 4390,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Recorder v1 auditor checklist",
+        "Capture coverage",
+        "Export protection",
+        "Delivery and retention",
+        "Operations and supply chain",
+        "Questions answered elsewhere"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/building-fabric.md",
+      "baseline_sha256": "e0c5e88187a819ee7e9f70a4bf8f007665771821d64ca395fd2dc272d501cf84",
+      "sha256": "e0c5e88187a819ee7e9f70a4bf8f007665771821d64ca395fd2dc272d501cf84",
+      "bytes": 1625,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Building recorder v1",
+        "Product invariant",
+        "Small-feature workflow",
+        "Required local checks"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/capture-control-compatibility.md",
+      "baseline_sha256": "e00db5a109a0259bc6b3b0e18e8ce0d8b801d3c98130877de594be23672aedb9",
+      "sha256": "e00db5a109a0259bc6b3b0e18e8ce0d8b801d3c98130877de594be23672aedb9",
+      "bytes": 9483,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Capture configuration and future control compatibility",
+        "Implemented configuration contracts",
+        "Authenticated operator and workload adapters",
+        "Desired, approved, applied and observed",
+        "Optional final-boundary exchange contract",
+        "Verification and support"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/capturing-interactions.md",
+      "baseline_sha256": "3448676ec13e02eef92fe3b592b7847cc1d60f5d45e57729c0d5eb98de9cb4b7",
+      "sha256": "3448676ec13e02eef92fe3b592b7847cc1d60f5d45e57729c0d5eb98de9cb4b7",
+      "bytes": 5209,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Capturing observable interactions",
+        "Privacy defaults",
+        "Bounded free-form metadata",
+        "Content capture postures",
+        "First-class recorder surfaces",
+        "Coverage statement"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/cloud-qualification-2026-10-02.md",
+      "baseline_sha256": "e742b290ba2f73d5622af78091431bef46403f7493e6838bdbe4e0258c9b99d3",
+      "sha256": "629e472cf92ff948255ef8818305f454f69ccf810d7c29b26b8f8406c7676fc4",
+      "bytes": 8037,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Cloud evidence qualification \u2014 2026-10-02",
+        "Source and restoration boundary",
+        "Composed functional evidence",
+        "Executed cloud checks",
+        "Audit and remaining qualification"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/codeql-capture-triage.md",
+      "baseline_sha256": "3d528ee73e714b01b5d16a7d431a9b5363daa320700f1f1517428abb70b5a9f9",
+      "sha256": "3d528ee73e714b01b5d16a7d431a9b5363daa320700f1f1517428abb70b5a9f9",
+      "bytes": 70490,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Capture PR CodeQL triage",
+        "Rule inventory",
+        "Per-alert disposition"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/custom-agent-recording-privacy.md",
+      "baseline_sha256": "b2e7845694ad36a6fa3c7c084a7c31d3ab3ad47cbec7cc145b8be05ed34841af",
+      "sha256": "b2e7845694ad36a6fa3c7c084a7c31d3ab3ad47cbec7cc145b8be05ed34841af",
+      "bytes": 5346,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Recording actual data with customer privacy choices"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/custom-agent-recording.md",
+      "baseline_sha256": "e9f9041c749765f4a23c2dfa75eb873ea75cc99716b0f44a81f9273c768f40ea",
+      "sha256": "e9f9041c749765f4a23c2dfa75eb873ea75cc99716b0f44a81f9273c768f40ea",
+      "bytes": 7789,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Recording a custom agent",
+        "Integration responsibilities",
+        "Inspecting and checking the record",
+        "Run the installed-package example",
+        "Routes outside this integration"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/deployment.md",
+      "baseline_sha256": "54018b4b39d62a82f56c517aab67b06e51eda6b4fbeb77ee565db2bb087b9a3e",
+      "sha256": "54018b4b39d62a82f56c517aab67b06e51eda6b4fbeb77ee565db2bb087b9a3e",
+      "bytes": 9868,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Deployment",
+        "Choose a profile",
+        "Local evaluation",
+        "Production shadow deployment",
+        "Production invariants",
+        "Delivery semantics",
+        "Other deployment models",
+        "Not deployed"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/enterprise-preflight.md",
+      "baseline_sha256": "d1ddeae8bf93c86075a7467786ea098420fd24f4d1ea6ed166be24e7d8d60ab9",
+      "sha256": "d1ddeae8bf93c86075a7467786ea098420fd24f4d1ea6ed166be24e7d8d60ab9",
+      "bytes": 11634,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Deployment preflight and bounded integration coverage",
+        "What the verdict means",
+        "Run the installed entrypoint",
+        "Installed, active, and qualified are different",
+        "What the local routed canary actually tests",
+        "Target loss and closure evidence",
+        "External attestation verification"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/enterprise-readiness.md",
+      "baseline_sha256": "caa589d157b5abc011a90245d801794a592f823e674090676bfaca9922cb6114",
+      "sha256": "8b5481cc2efe4fdc5a48a2bf665df0c4ca86f86bcaea9b919e256b3cef72e82d",
+      "bytes": 6026,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-001",
+          "status": "corrected",
+          "detail": "Replaced zero-delay claim with resource/backpressure boundary; distinguishes artifact checks from generated signatures and rebuilt images; owner qualification does not require SingleAxis."
+        }
+      ],
+      "reviewed_sections": [
+        "Enterprise readiness",
+        "Trust boundary",
+        "Production deployment posture",
+        "Release and supply-chain controls",
+        "Enterprise qualification responsibilities"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/enterprise-reference-validation.md",
+      "baseline_sha256": "8ee749caa965d8cbc017b4b806382736982688f73b1ad11467252589326deeca",
+      "sha256": "8ee749caa965d8cbc017b4b806382736982688f73b1ad11467252589326deeca",
+      "bytes": 7954,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Enterprise capture reference validation",
+        "Implemented and exercised",
+        "Executable campaign",
+        "Test commands",
+        "Audit logfile durability",
+        "Not qualified here",
+        "Recorded local regression result (2026-10-02)",
+        "Publication follow-up validation"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/enterprise-release-traceability.md",
+      "baseline_sha256": "b05e547be0a3c6f1a62539858b49e0cd3aa261dde3d4085e10246d39cf46bcd5",
+      "sha256": "b05e547be0a3c6f1a62539858b49e0cd3aa261dde3d4085e10246d39cf46bcd5",
+      "bytes": 10338,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Enterprise capture testing release: traceability",
+        "1. Versioned capture configuration and approval \u2014 implemented locally; external rollout",
+        "2. Per-content privacy before queue admission \u2014 implemented at explicit byte boundaries; partial ecosystem coverage",
+        "3. Explicit missing, transformed, sampled and lost states \u2014 implemented locally; partial end-to-end accounting",
+        "4. Governed storage and isolation \u2014 implemented local AES-GCM/readback; external cloud qualification",
+        "5. Retention, deletion and legal holds \u2014 implemented current local objects; partial full lifecycle",
+        "6. Identity, least privilege and support access \u2014 implemented local capabilities; external identity infrastructure",
+        "7. Authenticated audit and artifact-bound reviews \u2014 implemented local capture audit; partial action evidence",
+        "8. Secure deployment configuration \u2014 implemented validation; external runtime assurance",
+        "9. Coverage inventory and actual canaries \u2014 implemented bounded inventory/fixture; partial adapters",
+        "10. Durability, restart, background work and outcomes \u2014 partial",
+        "11. Failure behavior and action-control boundary \u2014 implemented passive behavior",
+        "12. Repeatable qualification and evidence pack \u2014 implemented local regression pack; external production campaign",
+        "Architecture boundary and next deployment decision"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/enterprise-testing-quickstart.md",
+      "baseline_sha256": "d2d840be530df61df726e30170e5eafe634fc64f169fcd30cc01a8f9bd9ec97b",
+      "sha256": "d2d840be530df61df726e30170e5eafe634fc64f169fcd30cc01a8f9bd9ec97b",
+      "bytes": 16713,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Enterprise testing slice: start here",
+        "Choose the smallest useful integration",
+        "1. Install the local source",
+        "Application changes: two touch points plus background context",
+        "2. Choose deployment capture policy",
+        "3. Integrate an application",
+        "4. Portal-ready configuration interfaces",
+        "5. Run honest preflight",
+        "6. Customer infrastructure gates",
+        "Capture/control compatibility and SDK support"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/evidence-attestation-verification.md",
+      "baseline_sha256": "f4c9d1e889545f1b06820b3c82e1f576bdd446c1d4a9b6c2132cc3a34f5d8468",
+      "sha256": "f4c9d1e889545f1b06820b3c82e1f576bdd446c1d4a9b6c2132cc3a34f5d8468",
+      "bytes": 5573,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Authenticating offline evidence statements",
+        "Checking an independent operation and byte feed"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/exporting-to-your-observability-backend.md",
+      "baseline_sha256": "ae544808cbf42b637dd1406c5fd0a0039f97003e253903ce8042f898f14ccc1f",
+      "sha256": "ae544808cbf42b637dd1406c5fd0a0039f97003e253903ce8042f898f14ccc1f",
+      "bytes": 4976,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Delivering protected records",
+        "Local evaluation",
+        "Production delivery",
+        "Destination choices",
+        "Delivery meaning",
+        "What leaves the customer boundary",
+        "Network policy limitations"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/genai-semantic-conventions.md",
+      "baseline_sha256": "cdaf2265bdaae26a868be3a9340b9e73946c223503701a472ceb3ed856422be3",
+      "sha256": "bca866017de7549301e448806ccb4f3e019cfecfd390f5ba6b234082f6fc759a",
+      "bytes": 4146,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-010",
+          "status": "corrected",
+          "detail": "Added low-entropy/correlation risk and explicit Python governed conflict, managed exporter and TypeScript boundaries; Node raw stripping retained."
+        }
+      ],
+      "reviewed_sections": [
+        "OpenTelemetry GenAI semantic conventions",
+        "What is emitted",
+        "Privacy",
+        "Python example",
+        "Compatibility boundary"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/governed-content-gap-assessment.md",
+      "baseline_sha256": "f7f71a1433aa56b2d958f3b79a62724d2758ea3377e3d6c013abcfa4470b21eb",
+      "sha256": "f7f71a1433aa56b2d958f3b79a62724d2758ea3377e3d6c013abcfa4470b21eb",
+      "bytes": 9380,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Governed content capture \u2014 gap assessment and requirements matrix",
+        "Numbering",
+        "A. Verified current state vs. required state",
+        "B. Design decisions taken in the specs",
+        "C. Requirements-to-test matrix",
+        "D. Product-boundary reconciliation"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/governed-content.md",
+      "baseline_sha256": "5a95dd51ebcd298422e64a2dcd83b11a161a6a8b8ef80d6afc95d5d087629602",
+      "sha256": "ef7f7c2d662d6b3f704d496c20aa99b69cfec54577dd851b5c9e25db6e1ac3f6",
+      "bytes": 14014,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-008",
+          "status": "corrected",
+          "detail": "Python governed mode rejects conflicting raw capture; TypeScript legacy behavior separately bounded."
+        }
+      ],
+      "reviewed_sections": [
+        "Governed content capture",
+        "What this enables for evaluation",
+        "The three postures",
+        "Configuration",
+        "Stores",
+        "Durability modes",
+        "Durable spooling",
+        "What telemetry carries",
+        "Resolution and export",
+        "Coverage and limits",
+        "Migrating from `capture_content`"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/how-fabric-fits-in-your-agent-stack.md",
+      "baseline_sha256": "eb9a231668faefb5f41af988b86d89238467acaebb23a5e6ac9eaf764074b17b",
+      "sha256": "c9b15b7f73d6e04387bb341ecbd2d4d89705c38b5d20592991ecc6b63fbb67f6",
+      "bytes": 2203,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-012",
+          "status": "corrected",
+          "detail": "Distinguished customer-selected inline proxy from asynchronous Fabric Node."
+        }
+      ],
+      "reviewed_sections": [
+        "How Fabric fits in an existing AI stack",
+        "Choose one capture route",
+        "Deploy the recorder",
+        "Add other systems without mixing layers"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/install.md",
+      "baseline_sha256": "2a78e3c47a74481ec08405f5f4201d0c5caebf8abda23632efd2804f3382ef7a",
+      "sha256": "2a78e3c47a74481ec08405f5f4201d0c5caebf8abda23632efd2804f3382ef7a",
+      "bytes": 5677,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Install a pinned Fabric recorder release",
+        "Before installation",
+        "SDK installation",
+        "Prepare local configuration",
+        "Kubernetes evaluation",
+        "Production shadow deployment",
+        "Promotion record"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/integration-models.md",
+      "baseline_sha256": "c29b2e5631ad46e3b951e3523ae42f5a1c7c241da87b74fd579b9792a285de12",
+      "sha256": "c29b2e5631ad46e3b951e3523ae42f5a1c7c241da87b74fd579b9792a285de12",
+      "bytes": 6274,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Integrating agents with Fabric",
+        "Integration models",
+        "Compose connectors into one trace",
+        "Regulated deployment gate",
+        "Selecting the first integration"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/licenses/README.md",
+      "baseline_sha256": "60385372d4fb33b4bc85a65fd8d5cae1697ee5656a27a18c9761e21aba7c602f",
+      "sha256": "60385372d4fb33b4bc85a65fd8d5cae1697ee5656a27a18c9761e21aba7c602f",
+      "bytes": 559,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Recorder dependency reports"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/loom-walkthrough.md",
+      "baseline_sha256": "166ac922e8c27e35fa8d6e42a3a8f8443539b95d28f2665e568e0203d735da18",
+      "sha256": "166ac922e8c27e35fa8d6e42a3a8f8443539b95d28f2665e568e0203d735da18",
+      "bytes": 2147,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Recorder v1 demo walkthrough",
+        "1. State the boundary",
+        "2. Initialize locally",
+        "3. Capture one operation",
+        "4. Demonstrate export protection",
+        "5. Demonstrate delivery behavior",
+        "6. Close with enterprise qualification"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/operations/dr.md",
+      "baseline_sha256": "a5b6dff6e9808829a9baacbad18aab0b12ff31f2f87c6777f077c5719aa00387",
+      "sha256": "a5b6dff6e9808829a9baacbad18aab0b12ff31f2f87c6777f077c5719aa00387",
+      "bytes": 5487,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Fabric Node recovery runbook",
+        "Recovery objectives",
+        "Before an incident",
+        "Destination outage",
+        "Fabric Node or cluster failure",
+        "Docker Compose deployments (client VM)",
+        "Queue volume sizing",
+        "Backup and restore of the queue volume",
+        "What to alert on",
+        "Evidence boundaries"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/oss-commercial-boundary.md",
+      "baseline_sha256": "94cc4e5068acc17ee2d0bbb31a4da26dd732024f12b25bde4c70940d67ac18b7",
+      "sha256": "94cc4e5068acc17ee2d0bbb31a4da26dd732024f12b25bde4c70940d67ac18b7",
+      "bytes": 3274,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "OSS and commercial boundary",
+        "Product separation",
+        "Open trust-boundary components",
+        "Commercial capabilities",
+        "Optional enforcement",
+        "Release boundary"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/protected-byte-spool.md",
+      "baseline_sha256": "30c61253218b5fa854a24ceda0fa8f493f7e997deb11bd6caded899427fcc6d3",
+      "sha256": "30c61253218b5fa854a24ceda0fa8f493f7e997deb11bd6caded899427fcc6d3",
+      "bytes": 10061,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Protected durable byte spool (Python)",
+        "Configure and recover",
+        "Obtain this 32-byte key from the customer's protected key provider. Do not",
+        "put credentials in deployment-policy JSON, source control, or capture output.",
+        "What each state means",
+        "Crash consistency, bounds and loss",
+        "Privacy, custody and retention",
+        "Executable evidence"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/python-auto-capture-privacy.md",
+      "baseline_sha256": "2f852e9353e88a7152f2e2d5bb84abdf2b255a5f7837f3794028f7a82a33960d",
+      "sha256": "2f852e9353e88a7152f2e2d5bb84abdf2b255a5f7837f3794028f7a82a33960d",
+      "bytes": 7667,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Python auto capture: protected setup and limits",
+        "Choose sampling explicitly. Use always_on when measuring attempt coverage.",
+        "Must run before the application installs another global TracerProvider.",
+        "Invoke the application's normal OpenAI client here.",
+        "Flush at an appropriate shutdown boundary, not after every model request.",
+        "What the managed span route retains",
+        "Inspect the actual boundary",
+        "Explicit content opt-in",
+        "Verified dependency combination"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/qualified-call-run-testing.md",
+      "baseline_sha256": "7fb7521e930f7004d187f32726a68d31792322456527d6424b6420dd7d072686",
+      "sha256": "7fb7521e930f7004d187f32726a68d31792322456527d6424b6420dd7d072686",
+      "bytes": 5481,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Qualified custom-agent evidence testing",
+        "What is implemented",
+        "Reproduce the bounded end-to-end test",
+        "Meaning of the result",
+        "Required inputs for a real deployment"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/recorder-v1-qualification-status.md",
+      "baseline_sha256": "61029206fc2a7e73158e8383322e968df00574dc486920316c922205a7c22728",
+      "sha256": "61029206fc2a7e73158e8383322e968df00574dc486920316c922205a7c22728",
+      "bytes": 77389,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Recorder v1 qualification status",
+        "Qualified offline evidence batch \u2014 2026-10-01 \u2014 deployment NO-GO",
+        "HTTP transport correction \u2014 latest frozen local artifacts",
+        "Final Linux evidence and findings-check follow-up",
+        "Exact remaining live gates, owner and next action",
+        "First Linux run and dependency correction",
+        "Current closure work \u2014 2026-09-30 \u2014 NO-GO",
+        "Finite engineering completion batch \u2014 spec 046",
+        "Deployment documentation cleanup scope",
+        "Independent-feed checker \u2014 local artifact qualification",
+        "Source metadata finalization qualification",
+        "Dedicated ingress Linux qualification",
+        "First synthetic evidence slice \u2014 NO-GO",
+        "Existing-agent integration test-start (spec 042)",
+        "Decision rule for the first bounded GO",
+        "Implemented in release artifacts",
+        "Public contracts, not automatic runtime evidence yet",
+        "Governed content (specs 028\u2013034, draft)",
+        "Host-source hardening (not a complete-host claim)",
+        "Locally qualified",
+        "Required before an enterprise test release is promoted",
+        "Known boundaries",
+        "Custom-agent call recorder build \u2014 NO-GO (2026-09-29)",
+        "Install that exact wheel in a new virtual environment, then:",
+        "GPT-6 Sol subscription-backed laptop stage \u2014 NO-GO"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/regulatory-profiles.md",
+      "baseline_sha256": "e9a4034c3d8d1973c8aa70702e4d12ea0aaa96f073f68abc72f19a61d2f2bfaf",
+      "sha256": "e9a4034c3d8d1973c8aa70702e4d12ea0aaa96f073f68abc72f19a61d2f2bfaf",
+      "bytes": 1153,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Deployment postures, not regulatory profiles"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/security-history-triage.md",
+      "baseline_sha256": "17f0b8a6aad64c6e8106a2bf19d37c157d6da4dcfd6d4df6635d65384448a648",
+      "sha256": "17f0b8a6aad64c6e8106a2bf19d37c157d6da4dcfd6d4df6635d65384448a648",
+      "bytes": 7906,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Historical secret-scan triage for recorder qualification",
+        "Capture publication findings (2026-10-02)"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/specs/enterprise-capture-build.md",
+      "baseline_sha256": "07528233b5af30b113baf6af1d04d851accbb5ce0f10b0f0807818aaf02d85bc",
+      "sha256": "07528233b5af30b113baf6af1d04d851accbb5ce0f10b0f0807818aaf02d85bc",
+      "bytes": 7248,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Enterprise capture reference build",
+        "Scope and durability contract",
+        "Workstreams and interfaces",
+        "Required acceptance",
+        "Integration ownership",
+        "Future client-portal control compatibility",
+        "Auditd receiver durability extension"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/typescript-parity-backlog.md",
+      "baseline_sha256": "12b46a51e1c1979fa32d9e1eae9d3a51f24b35d0163c56c85709f72b8dd71a5b",
+      "sha256": "12b46a51e1c1979fa32d9e1eae9d3a51f24b35d0163c56c85709f72b8dd71a5b",
+      "bytes": 980,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "TypeScript recorder parity"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "docs/verify-release.md",
+      "baseline_sha256": "cd1891d10a36c4fc2c6481e4e0478ab463a6f534273716c8192ba1bc7210d2ff",
+      "sha256": "7481614597cc5354a7043e51525da060ddb05c3691e64307fa4bb6c3366349e2",
+      "bytes": 4911,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-002",
+          "status": "corrected",
+          "detail": "Qualified packages versus rebuilt publication images distinguished; exact tag/workflow identity replaces broad repository regex. No historical certificate or remote registry verification performed."
+        }
+      ],
+      "reviewed_sections": [
+        "Verify a Fabric recorder release",
+        "What the release gate checks",
+        "Verify downloaded files",
+        "Verify OCI artifacts",
+        "Set the exact approved Git tag, including its leading v.",
+        "Maintainer qualification"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/local-go-simulation/README.md",
+      "baseline_sha256": "36d980cdb0297e743e195aa923834494a89afd086d24102c1c1440816c9a8036",
+      "sha256": "36d980cdb0297e743e195aa923834494a89afd086d24102c1c1440816c9a8036",
+      "bytes": 6203,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Local production-GO rehearsal (synthetic only)",
+        "Pre-registered simulated scope",
+        "Simulated target and witnesses",
+        "Acceptance and stop rule",
+        "Reproduction"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/local-go-simulation/observed-run-20260928.md",
+      "baseline_sha256": "c109cc19d76b4ad838e8eb74820dd5f0b99f5deccb3616e6266ff03c2cce2cb4",
+      "sha256": "c109cc19d76b4ad838e8eb74820dd5f0b99f5deccb3616e6266ff03c2cce2cb4",
+      "bytes": 4739,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Observed laptop GO rehearsal \u2014 2026-09-28",
+        "Frozen local candidate and target",
+        "Independent comparisons",
+        "What remains unproved"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/production-go/decision-packet.md",
+      "baseline_sha256": "c7d1428ab8ed351265b12074855c8ac34e9885cc11201011603b5d9c641f253f",
+      "sha256": "c7d1428ab8ed351265b12074855c8ac34e9885cc11201011603b5d9c641f253f",
+      "bytes": 7370,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Bounded production GO packet \u2014 owner intake and stop rule",
+        "1. Frozen claim to approve",
+        "2. Six release gates",
+        "3. Target-environment intake (no secrets in this file or chat)",
+        "4. One-pass decision procedure"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/sol-local-stage/README.md",
+      "baseline_sha256": "d45e5d95caf50bb24419bf53afe0e80c00c609f0e8f674c7b7658d1c6eef044d",
+      "sha256": "d45e5d95caf50bb24419bf53afe0e80c00c609f0e8f674c7b7658d1c6eef044d",
+      "bytes": 7916,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "GPT-6 Sol subscription-backed local agent stage",
+        "Frozen experimental boundary (revision 1)",
+        "Capture and independent truth",
+        "Offline Fabric projection (separate from the agent path)",
+        "Acceptance before any broader claim"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/sol-local-stage/local-results.md",
+      "baseline_sha256": "c0315476eaa0128820db910bf99106dfd8776a508bd545c5049b8f3b5ef78b57",
+      "sha256": "c0315476eaa0128820db910bf99106dfd8776a508bd545c5049b8f3b5ef78b57",
+      "bytes": 6751,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Synthetic GPT-6 Sol laptop stage \u2014 observed results",
+        "Exact run and comparisons",
+        "Fabric byte store and local Node delivery",
+        "Remaining production blockers"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/synthetic-slice/end-to-end-agent-pilot-plan.md",
+      "baseline_sha256": "ce64e985a97635e6d41015aabb1adfdd33f1b4e3f986f9510745083762e14741",
+      "sha256": "ce64e985a97635e6d41015aabb1adfdd33f1b4e3f986f9510745083762e14741",
+      "bytes": 3285,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Installed-artifact synthetic agent pilot plan",
+        "Declared workflow and independent truth",
+        "Required checks",
+        "Limits and release decision"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/synthetic-slice/local-artifact-ledger.md",
+      "baseline_sha256": "d1bb2b483671c80df7f0a71d7a1d736efddc019418c0bb49f99b22f2379f7de9",
+      "sha256": "d1bb2b483671c80df7f0a71d7a1d736efddc019418c0bb49f99b22f2379f7de9",
+      "bytes": 8434,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Disposable local artifact ledger \u2014 release NO-GO",
+        "sdk/python",
+        "repository root",
+        "components/host-emitter",
+        "components/otel-collector-fabric",
+        "repository root; the test creates a random Compose project and removes only its own volumes",
+        "AEEP bridge artifact rerun, 2026-09-27 local time",
+        "sdk/python (offline build uses the previously populated build cache)",
+        "components/otel-collector-fabric",
+        "repository root (unique random Compose project; no pre-existing volume removed)",
+        "Resource-attribute privacy hardening build \u2014 live test blocked"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/synthetic-slice/local-pilot-report.md",
+      "baseline_sha256": "e842154fc921ca2fbc6074b7436484686deb85175994ed937dfaec50dff56ea0",
+      "sha256": "e842154fc921ca2fbc6074b7436484686deb85175994ed937dfaec50dff56ea0",
+      "bytes": 6541,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Source-checkout synthetic shadow pilot \u2014 NO-GO",
+        "Reproduction",
+        "Reconciled local operation and role ledger",
+        "Injected discrepancy and privacy results"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "qualification/synthetic-slice/production-profile-kind-plan.md",
+      "baseline_sha256": "1b1a8078efb07a1cee7a043a72a8c3b646be89bb424dd067bd8ee1a14ecc49ed",
+      "sha256": "1b1a8078efb07a1cee7a043a72a8c3b646be89bb424dd067bd8ee1a14ecc49ed",
+      "bytes": 4732,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Production-profile synthetic kind qualification plan",
+        "Topology and identity",
+        "Acceptance",
+        "Non-claims"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/000-overview.md",
+      "baseline_sha256": "1d3853de26589f5ce4520a9543e94d8c44422ae486bb543d1e25547aa1cde981",
+      "sha256": "1d3853de26589f5ce4520a9543e94d8c44422ae486bb543d1e25547aa1cde981",
+      "bytes": 4468,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "000 \u2014 Overview & Conventions",
+        "Purpose of specs",
+        "File format",
+        "Required sections",
+        "Authoring style",
+        "Diagrams",
+        "Review expectations",
+        "Glossary"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/001-product-vision.md",
+      "baseline_sha256": "0a311245ea976e06b484100c86aeb6d8929a217090657e0d56cb78ab3caceb08",
+      "sha256": "0a311245ea976e06b484100c86aeb6d8929a217090657e0d56cb78ab3caceb08",
+      "bytes": 9168,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "001 \u2014 Product Vision & Positioning",
+        "Summary",
+        "Goals",
+        "Non-goals",
+        "The problem",
+        "The solution",
+        "Positioning \u2014 two complementary offerings",
+        "Differentiation",
+        "Target users",
+        "The honest one-liner",
+        "Open questions",
+        "References"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/010-development-standards.md",
+      "baseline_sha256": "dfb87e8db63bfd3c09f7192357aca57d9cfb681d97b0b6ff461dad7c7872f259",
+      "sha256": "7e2efd8040dcab916de6b0fca7f4948f243c01be18660b30ab1195a3bd89af8c",
+      "bytes": 9586,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-009",
+          "status": "corrected",
+          "detail": "Corrected current SBOM and unauthenticated evaluation-harness claims, preserving original dual-format design target as unimplemented. Replaced stale go mod tidy -check with non-mutating -diff without claiming CI executes it."
+        }
+      ],
+      "reviewed_sections": [
+        "010 \u2014 Development Standards",
+        "Summary",
+        "Goals",
+        "Non-goals",
+        "Languages and runtimes",
+        "Tooling",
+        "Python",
+        "Go",
+        "TypeScript",
+        "Helm / Kubernetes",
+        "Markdown / docs",
+        "Testing taxonomy",
+        "Unit tests",
+        "Integration and end-to-end tests",
+        "Security tests",
+        "CI gates",
+        "Release engineering",
+        "Versioning",
+        "Signing",
+        "SBOM",
+        "Contract packaging",
+        "Dependency governance",
+        "Adding a dependency",
+        "Pinning",
+        "Auto-update",
+        "SPDX headers",
+        "SPDX-License-Identifier: Apache-2.0",
+        "SPDX-FileCopyrightText: 2026 AI5Labs Research OPC Private Limited",
+        "Documentation standards",
+        "Code review",
+        "Backward compatibility",
+        "Observability of Fabric itself",
+        "Open questions",
+        "References"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/020-execution-step-capture.md",
+      "baseline_sha256": "027b37b31db67c9e48ebe829139dfc0d8664a7f8abecf97cb39e5f6d2d4bdfd9",
+      "sha256": "30f5db559dd02eecc2c32fbba974e4e40045cd3ac2347f45f630040e755d6503",
+      "bytes": 12186,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-013",
+          "status": "corrected",
+          "detail": "Added current-boundary note distinguishing read-only OSS byte evidence resolution from historical commercial action replay/graph services."
+        }
+      ],
+      "reviewed_sections": [
+        "020 \u2014 Execution & Step capture",
+        "Summary",
+        "Non-goals (the OSS\u2194commercial boundary)",
+        "Execution primitive (this PR)",
+        "Shape",
+        "Decision inheritance",
+        "Usage",
+        "async, id minted automatically",
+        "Step taxonomy (implemented)",
+        "Shape",
+        "Canonical step type",
+        "Opt-in step identity and step-level retry",
+        "Usage",
+        "Conformance",
+        "Compatibility"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/021-replay-metadata.md",
+      "baseline_sha256": "13c33f9792210efba660bb00e5dc7bda6335132cf49529bf49d42a0bc9947291",
+      "sha256": "dfba8afd05828c37bccc5dc6ee9fc7f38cfab5355cfa04348c68487e933fcbff",
+      "bytes": 5361,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-013",
+          "status": "corrected",
+          "detail": "Added current-boundary note distinguishing historical action replay scope from current OSS read-only evidence resolution."
+        }
+      ],
+      "reviewed_sections": [
+        "021 \u2014 ReplayMetadata envelope",
+        "Summary",
+        "The envelope",
+        "Non-goals (the OSS\u2194commercial boundary)",
+        "Conformance"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/022-surface-logging.md",
+      "baseline_sha256": "b62f3a73ad151b0b62747d9e3fda82265c1981a3bd7f946b3775d945dd6076ee",
+      "sha256": "eb83824f319818984f119212501bc50592bd99dffe06f362682e6363e5e41bc0",
+      "bytes": 5675,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-006",
+          "status": "corrected",
+          "detail": "Current Python file path hashing default is True; removed stale guardrail/evaluation API implementation advice and universal coverage goal."
+        }
+      ],
+      "reviewed_sections": [
+        "Spec 022 \u2014 Agent Surface Logging",
+        "Goal",
+        "The one invariant (applies to all five)",
+        "1. MCP server inventory (extend `integrations/mcp.py`)",
+        "2. Skills / plugins (new `Decision.record_skill`)",
+        "3. Sub-agent delegation (new `Decision.delegate`)",
+        "4. Hooks / middleware (new `Decision.record_hook`)",
+        "5. File access (new `Decision.record_file_access`)",
+        "Implementation notes",
+        "Conformance",
+        "Out of scope (Commercial / later)"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/023-generic-interaction-capture.md",
+      "baseline_sha256": "c3eb8239095b19b9c644f63180fa9dc74d07b06db28ca4feb3788ed9496bc86b",
+      "sha256": "860e95569cf5e5dbe3a54d1bb5f853dd1a1a5582fa54132dafe109b4262cf068",
+      "bytes": 6776,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-007",
+          "status": "corrected",
+          "detail": "Removed unsupported market-superiority/every-interaction and invisible-coverage discovery claims."
+        }
+      ],
+      "reviewed_sections": [
+        "Spec 023 \u2014 Generic Interaction Capture",
+        "Design principle: generic, not particular",
+        "1. Universal interaction primitive",
+        "2. Generic baseline comparison (any hashed thing)",
+        "3. Generic taxonomy tagging (any framework, extensible)",
+        "4. Generic signature verification (any artifact)",
+        "5. The improvement loop (coverage signal)",
+        "Relationship to existing primitives",
+        "Out of scope (Commercial / later)",
+        "Acceptance"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/025-product-planes-and-packaging.md",
+      "baseline_sha256": "f1175301bb3e8d0658a3ac460364ef5feff5e4f3906ff4fb7d8ac1efbb91b951",
+      "sha256": "f1175301bb3e8d0658a3ac460364ef5feff5e4f3906ff4fb7d8ac1efbb91b951",
+      "bytes": 20769,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "025 \u2014 Product planes, packaging, and deployment model",
+        "Summary",
+        "Goals",
+        "Non-goals",
+        "Product decision",
+        "Fabric Connect",
+        "Fabric Control",
+        "Fabric Observe",
+        "Fabric Assurance",
+        "Fabric Governance",
+        "Fabric Management",
+        "Artifact model",
+        "Shared activity contract",
+        "Lifecycle placement",
+        "Assurance levels",
+        "Integration and deployment models",
+        "1. Native SDK",
+        "2. Framework adapter or auto-instrumentation",
+        "3. Gateway or service-mesh interception",
+        "4. Existing OpenTelemetry or vendor telemetry",
+        "5. eBPF-assisted discovery",
+        "6. Isolated or customer-managed deployment",
+        "Declarative setup model",
+        "Public and private boundary",
+        "Public OSS",
+        "SingleAxis private implementation",
+        "Feature-slice contract",
+        "Current implementation state",
+        "Security considerations",
+        "Operational considerations",
+        "Open questions",
+        "References"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/027-recorder-v1.md",
+      "baseline_sha256": "711c40ae7b0f7cd07bbc3a2412230fc2f9a66da5497893331273d7fa3dceccc5",
+      "sha256": "711c40ae7b0f7cd07bbc3a2412230fc2f9a66da5497893331273d7fa3dceccc5",
+      "bytes": 6841,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "027 \u2014 Recorder-first OSS release",
+        "Product promise",
+        "Stable release artifacts",
+        "Required behavior",
+        "Capture",
+        "Protect",
+        "Deliver",
+        "Deployment profiles",
+        "`shadow-dev`",
+        "`shadow-production`",
+        "Explicit non-goals",
+        "Release gates",
+        "Commercial boundary"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/028-governed-content-capture.md",
+      "baseline_sha256": "656bf570cd44de37a79a2ad3dd31e7d86819034d37cc1b884bfa6d8778e0f84b",
+      "sha256": "f11c3feb13261dbe25342a19a5787b4af093bfc89c2d8883dc96b162d54359e6",
+      "bytes": 12134,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-008",
+          "status": "corrected",
+          "detail": "Distinguished historical dual-path proposal from current Python rejection; TypeScript separately qualified."
+        }
+      ],
+      "reviewed_sections": [
+        "028 \u2014 Governed content capture and configuration",
+        "Product promise",
+        "Goals",
+        "Non-goals",
+        "Capture modes",
+        "Contract declaration vs. executable configuration",
+        "Tenant identity",
+        "Content roles (v1)",
+        "Compatibility with `capture_content` / `captureContent`",
+        "Consent and configuration scope",
+        "Coverage matrix",
+        "Failure semantics",
+        "Acceptance tests",
+        "Rollout"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/029-content-objects-transcript-contract.md",
+      "baseline_sha256": "a1b4a7dfc25de6a49e95728157478d5b0c345a063b4993b13faa8574c5b096dd",
+      "sha256": "a1b4a7dfc25de6a49e95728157478d5b0c345a063b4993b13faa8574c5b096dd",
+      "bytes": 15082,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "029 \u2014 Content object and transcript manifest contracts",
+        "Goals",
+        "Non-goals",
+        "1. Content object descriptor \u2014 `fabric.content-object/v1`",
+        "2. Exact bytes and hashing",
+        "3. Transcript manifest \u2014 `fabric.transcript-manifest/v1`",
+        "4. Status vocabulary and item state machine",
+        "5. Span attributes (allowlist additions)",
+        "6. Examples",
+        "6.1 Complete model \u2192 tool \u2192 model transcript (excerpt)",
+        "6.2 Incomplete transcript (excerpt)",
+        "7. Compatibility"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/030-auditd-host-connector.md",
+      "baseline_sha256": "8f99a7042a76342302dd4381406a76b291210876ea29c9053e33de847b9e1b4d",
+      "sha256": "8f99a7042a76342302dd4381406a76b291210876ea29c9053e33de847b9e1b4d",
+      "bytes": 7516,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "Spec 030 \u2014 auditd Host Connector",
+        "Problem",
+        "What we are building",
+        "Input sources (config `source:`)",
+        "Event assembly",
+        "Log record shape",
+        "Safety controls",
+        "Fabric guard / gate interplay",
+        "Deliverables",
+        "Honest limits (manifest blind spots)"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/032-passive-content-delivery.md",
+      "baseline_sha256": "cb05aab47230434b9d4e9ffdd50732ee17a07d4108aa898c745c279624e04ac0",
+      "sha256": "cb05aab47230434b9d4e9ffdd50732ee17a07d4108aa898c745c279624e04ac0",
+      "bytes": 13685,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "032 \u2014 Passive asynchronous content recording and durable delivery",
+        "Goals",
+        "Non-goals",
+        "1. Durability modes",
+        "2. Bounded resources (all required, all configurable within caps)",
+        "3. Lifecycle",
+        "4. Failure isolation",
+        "5. Two-destination consistency",
+        "6. Crash and recovery semantics",
+        "6.1 Spool record \u2014 `fabric.content-spool/v2`",
+        "6.2 Spool filesystem rules",
+        "6.3 Recovery",
+        "7. Acceptance tests",
+        "8. Rollout"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/033-content-storage-resolution.md",
+      "baseline_sha256": "c4de7d522293d7bd51e0ab8d8dd94fb699cdd2fcfe35128bd9ec25b5180ef659",
+      "sha256": "c4de7d522293d7bd51e0ab8d8dd94fb699cdd2fcfe35128bd9ec25b5180ef659",
+      "bytes": 12241,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "033 \u2014 Customer content storage and authorized resolution",
+        "Goals",
+        "Non-goals",
+        "1. Architecture choice (decided)",
+        "2. Store layout",
+        "2.1 The safe-identifier rule (shared, both SDKs)",
+        "2.2 S3 namespace safety",
+        "Local adapter",
+        "S3 adapter",
+        "3. Resolver \u2014 `fabric.resolver`",
+        "4. Retention, deletion, expiry",
+        "5. Protection policy (separate from OTLP protection)",
+        "6. Acceptance tests",
+        "7. Rollout"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/034-eval-interoperability.md",
+      "baseline_sha256": "085f629c4673727835a37b0a793b7892ef5d0228d541b56d30efb738469a6e2a",
+      "sha256": "085f629c4673727835a37b0a793b7892ef5d0228d541b56d30efb738469a6e2a",
+      "bytes": 9838,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "034 \u2014 External evaluation interoperability and qualification",
+        "Positioning",
+        "Goals",
+        "Non-goals",
+        "1. Transcript export \u2014 `fabric.transcript-export/v1`",
+        "2. Required examples (outside recorder artifacts)",
+        "3. Collector integration",
+        "4. Packaging and boundary gates",
+        "5. Qualification matrix (brief gate \u2192 evidence)",
+        "6. Honest-capability documentation",
+        "7. Rollout"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/035-agent-execution-evidence-profile.md",
+      "baseline_sha256": "43beec5728cd46676e2b27242e8fbaed2fb896b78783cca78b3aaf4cb0e8a474",
+      "sha256": "43beec5728cd46676e2b27242e8fbaed2fb896b78783cca78b3aaf4cb0e8a474",
+      "bytes": 15169,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "035 \u2014 Agent Execution Evidence Profile for OpenTelemetry",
+        "Decision",
+        "Product boundary and guarantees",
+        "1. Identity, ordering and provenance",
+        "2. OTLP mapping",
+        "3. Governed content extension",
+        "4. Completeness and delivery",
+        "5. Minimal interoperable example (illustrative, not current wire output)",
+        "6. Conformance and staged implementation"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/036-evidence-capture-implementation-plan.md",
+      "baseline_sha256": "c39e4982064cc324b4adee996ac3aa470c4afe0597d10e8beefac87bb8b7ba82",
+      "sha256": "c39e4982064cc324b4adee996ac3aa470c4afe0597d10e8beefac87bb8b7ba82",
+      "bytes": 23195,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "036 \u2014 Bounded agent evidence capture: build plan",
+        "Decision and current state",
+        "1. Scope of a reconstruction claim",
+        "2. Standards and compatibility rules",
+        "3. Contract package to create first",
+        "3.1 Evidence-capability declaration",
+        "3.2 Content-object v2",
+        "3.3 Observation event and run manifest",
+        "3.4 Delivery receipt semantics",
+        "4. Capture adapter map and first qualification slices",
+        "5. Delivery, reliability, and privacy requirements",
+        "6. Work packages in required order",
+        "7. Conformance and release evidence",
+        "Implementation ledger (2026-09-26)"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/037-bounded-enterprise-deployment-and-controls.md",
+      "baseline_sha256": "d64fa5659bcdcf056379dce383114d0384995c90f5fbbb728cfc2d1f8ee4377d",
+      "sha256": "d64fa5659bcdcf056379dce383114d0384995c90f5fbbb728cfc2d1f8ee4377d",
+      "bytes": 11805,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "037 \u2014 Bounded enterprise evidence deployment and control applicability",
+        "Decision and non-claim",
+        "1. Reference boundary and topology",
+        "2. Applicability decision record",
+        "3. Technical control matrix and evidence ownership",
+        "4. Promotion rule"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/038-capture-boundary-and-loss-qualification.md",
+      "baseline_sha256": "8db2e97eaf009999fcddd5618ef1b2efa178974fe6e307c013ddf7f52b79ded7",
+      "sha256": "8db2e97eaf009999fcddd5618ef1b2efa178974fe6e307c013ddf7f52b79ded7",
+      "bytes": 10903,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "038 \u2014 Capture-boundary and source-loss qualification",
+        "Decision",
+        "1. Qualification inventory",
+        "2. Event and content acceptance",
+        "3. Source-loss and delivery fault matrix",
+        "4. Deterministic verdict and pass thresholds",
+        "5. Implementation order"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/039-storage-release-and-shadow-pilot.md",
+      "baseline_sha256": "eb0cdcc39755991b9b21c6f45d88dd7a8f146fb88c463bbcc4fb05fc0edeb783",
+      "sha256": "eb0cdcc39755991b9b21c6f45d88dd7a8f146fb88c463bbcc4fb05fc0edeb783",
+      "bytes": 11370,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "039 \u2014 Storage, release and shadow-pilot qualification",
+        "Decision",
+        "1. Protected storage and retention profile",
+        "2. Exact-artifact release gate",
+        "3. Customer shadow pilot",
+        "4. Pilot acceptance and stop conditions",
+        "5. Handoff artifacts and status"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/040-synthetic-agent-evidence-slice.md",
+      "baseline_sha256": "b4d04d6a9e2315a08a33a59f2cc36d152517624f020d7ae28dc2970c6c4823c6",
+      "sha256": "b4d04d6a9e2315a08a33a59f2cc36d152517624f020d7ae28dc2970c6c4823c6",
+      "bytes": 21756,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "040 \u2014 First bounded agent-evidence slice",
+        "Phase 1 \u2014 Audit, declared scope, and control/coverage matrix",
+        "Gap ledger",
+        "Provisional implementation-ready scope record",
+        "Control and coverage matrix for revision 1",
+        "Phase 2 \u2014 Event flow and pre-code acceptance contract",
+        "Phase 3 \u2014 Minimal adapters, documented before implementation",
+        "Phase 4 \u2014 Loss and receipt semantics, documented before implementation",
+        "Phase-4 synthetic source-journal implementation contract (before code)",
+        "Phase-4/7 metadata projection to Fabric Node (before code)",
+        "Phase 5 \u2014 Resolver and reconciler, documented before implementation",
+        "Phase 6 \u2014 Privacy and storage tests, documented before implementation",
+        "Phase 7 \u2014 Exact-artifact tests, documented before implementation",
+        "Phase 8 \u2014 Synthetic shadow pilot, documented before implementation"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/041-follow-on-evidence-adapter-scopes.md",
+      "baseline_sha256": "2fe43e3a854f21a108fae4f56d648f7ba263c761ca6013472b121ebf28123839",
+      "sha256": "2fe43e3a854f21a108fae4f56d648f7ba263c761ca6013472b121ebf28123839",
+      "bytes": 4146,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "041 \u2014 Separately scoped observable routes"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/042-client-boundary-integration.md",
+      "baseline_sha256": "e5cff4b9f637a69f356a0dd7bb911f5c4ed30d864ed6aa3de650359627bbd53d",
+      "sha256": "e5cff4b9f637a69f356a0dd7bb911f5c4ed30d864ed6aa3de650359627bbd53d",
+      "bytes": 2738,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "042 \u2014 Existing-agent byte boundary integration",
+        "Required observation and non-claims",
+        "Acceptance before implementation"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/043-custom-agent-call-recording.md",
+      "baseline_sha256": "5134b1a685904a78cbf6f7053dab4c3d92f90978809fef801de3b6caa3082667",
+      "sha256": "5134b1a685904a78cbf6f7053dab4c3d92f90978809fef801de3b6caa3082667",
+      "bytes": 9670,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "043 \u2014 One linked record for a custom agent",
+        "Scope and implementation phases (specified before code)",
+        "A. Identity and privacy consistency",
+        "B. Consolidated call surface",
+        "C. Customer privacy choices",
+        "D. Independent records and run report",
+        "E. Installable example and coverage check",
+        "Qualification limits",
+        "Implementation ledger \u2014 2026-09-30",
+        "Second build phase \u2014 specified before implementation"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/044-production-evidence-closure.md",
+      "baseline_sha256": "7c6cf2f51dfbd521ecc6c3acbcfa6a9d18f72dd6538055eb1f35c96e9f73d4a9",
+      "sha256": "7c6cf2f51dfbd521ecc6c3acbcfa6a9d18f72dd6538055eb1f35c96e9f73d4a9",
+      "bytes": 18771,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "044 \u2014 Closing the production evidence gaps",
+        "Scope and acceptance before implementation",
+        "Phase A: security findings",
+        "Phase B: authenticated offline attestations",
+        "Phase C: deployment qualification",
+        "Phase C1: dedicated authenticated source ingress",
+        "Next implementation slice: authenticated complete-run proof (not implemented)",
+        "C2 implementation contract \u2014 durable metadata epoch seal",
+        "Evidence ledger",
+        "PR #164 CI closure plan (head `4bf4df9`)"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/045-independent-evidence-feeds.md",
+      "baseline_sha256": "49bce68eba339dccfd032bf7cfd78ffb2d113c8568489f0b2fd56e46711d125e",
+      "sha256": "49bce68eba339dccfd032bf7cfd78ffb2d113c8568489f0b2fd56e46711d125e",
+      "bytes": 15703,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [],
+      "reviewed_sections": [
+        "045 \u2014 Independent evidence-feed contract",
+        "Purpose and boundary",
+        "Trust and feed-production prerequisite",
+        "Closed feed document, version 1",
+        "Canonicalization, byte resolution and authorization",
+        "Offline API and result semantics",
+        "Acceptance tests before implementation"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    },
+    {
+      "path": "specs/README.md",
+      "baseline_sha256": "02515d56d04dcce24fcb99d501863731fa94becf30471319cffa4ff741765a5d",
+      "sha256": "95cabc2b9c187c943d6d669b90013d57b9e3b45306b3662186105db1167ee319",
+      "bytes": 5042,
+      "methods": [
+        "sha256_inventory",
+        "full_text_review"
+      ],
+      "review_status": "fully_read",
+      "findings": [
+        {
+          "id": "DEEP-011",
+          "status": "corrected",
+          "detail": "Next unused public spec corrected to047 because046 exists."
+        }
+      ],
+      "reviewed_sections": [
+        "SingleAxis Fabric \u2014 Design of Record",
+        "How specs are numbered",
+        "Status values",
+        "How to propose a change",
+        "Index"
+      ],
+      "review_focus": "Read full text for claimed versus proposed capability, privacy, authorization, source/destination evidence, command prerequisites and relative references; source declaration review, not execution or independent verification of historical reported runs."
+    }
+  ],
+  "summary": {
+    "paths": 86,
+    "fully_read": 86,
+    "pending": 0
+  },
+  "validation": [
+    {
+      "command": "/workspace/fabric-venv/bin/python -m pytest scripts/tests/test_recorder_documentation_scope.py -q",
+      "result": "4 passed"
+    },
+    {
+      "method": "relative_markdown_file_link_existence",
+      "scope": "86 ledger paths; relative inline links excluding anchors, URL schemes, placeholders and absolute paths",
+      "result": "0 missing local file targets; external URLs and heading anchors not validated"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "PRE_COMMIT_HOME=/workspace/.cache/pre-commit pre-commit run markdownlint-cli2 --files <15 changed Markdown paths>",
+      "result": "UNEXECUTED: hook environment initialization failed; first npm cache ENOENT, then workspace npm cache retry EALLOWGIT fetching non-root git package disabled. No lint result claimed."
+    }
+  ]
+}

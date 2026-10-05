@@ -134,6 +134,21 @@ describe("ByteEvidenceRecorder", () => {
     await recorder.close();
   });
 
+  it("accepts the full queue capacity before the scheduled drain starts", async () => {
+    const recorder = new ByteEvidenceRecorder({
+      store: localStore(),
+      roles: new Set(["terminal.stdout"]),
+      queueMaxItems: 2,
+    });
+    const first = recorder.capture(Uint8Array.of(1), options(0));
+    const second = recorder.capture(Uint8Array.of(2), options(1));
+    const overflow = recorder.capture(Uint8Array.of(3), options(2));
+    expect(first.status).toBe("pending");
+    expect(second.status).toBe("pending");
+    expect(overflow).toMatchObject({ status: "dropped", status_reason: "queue_full" });
+    expect((await recorder.close()).stored).toBe(2);
+  });
+
   it("bounds the descriptor index and exposes settled outcomes for a manifest writer", async () => {
     const recorder = new ByteEvidenceRecorder({
       store: localStore(),

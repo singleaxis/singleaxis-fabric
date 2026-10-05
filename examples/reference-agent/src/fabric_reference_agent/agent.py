@@ -2,24 +2,24 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reference agent that exercises the Fabric recorder-v1 capture surface.
 
-One turn records everything a passive-recorder customer needs to see
-land downstream:
+One turn demonstrates these explicitly supplied observations:
 
 - ``fabric.decision`` span with tenant / agent / session / request identity
 - ``fabric.retrieval`` event (RAG stand-in; query is hashed locally)
 - ``llm_call`` child span (OpenTelemetry GenAI semantic conventions)
 - ``tool_call`` child span (arguments and results are hashed locally)
 - ``fabric.memory`` write event
-- ``fabric.side_effect`` event (a committed notification)
+- ``fabric.side_effect`` event (fixture-supplied committed notification claim)
 - ``fabric.checkpoint`` events bracketing the turn
 
 No real LLM is called — ``simulated_llm_call`` returns a canned
 response so the example runs anywhere without API keys. Swap it for
 your provider's SDK; nothing else in this file changes.
 
-The SDK is passive: it records what the agent did and never blocks,
-alters, or delays it. Protection and delivery happen in the Fabric
-Node the spans are exported to — judges, guardrails, and policy
+The SDK is passive: it records supplied observations without authorizing or
+altering agent actions. Instrumentation and export still have overhead.
+Protection and delivery happen in the Fabric Node the spans are exported to —
+judges, guardrails, and policy
 engines are deliberately not part of this example.
 """
 
@@ -117,8 +117,8 @@ class ReferenceAgent:
                     finish_reason="stop",
                 )
 
-            # The agent ran the tool itself; Fabric records the
-            # invocation with hashed payloads — raw values stay local.
+            # This stand-in supplies a simulated tool result; Fabric records the
+            # observation with hashed payloads — raw values stay local.
             with decision.tool_call("respond_to_user", call_id="call-0001") as tool:
                 tool.set_arguments('{"channel": "chat"}')
                 tool.set_result('{"delivered": true}')

@@ -1,0 +1,58 @@
+[
+  {
+    "kind": "model",
+    "operation_id": "model",
+    "attempt_id": "success",
+    "status": "ok",
+    "witness": "HTTP server",
+    "body_sha256": "acdbc19fb5e5c2e69b19fbb302c0afa4beec82524bb471219bcda54d902e912b"
+  },
+  {
+    "kind": "model",
+    "operation_id": "retry",
+    "attempt_id": "first",
+    "status": "error",
+    "witness": "HTTP server",
+    "body_sha256": "1d6cc54666db25b2484e7714cf79e74eb93458aebf3774c3e92de76e6cecd3f6"
+  },
+  {
+    "kind": "model",
+    "operation_id": "retry",
+    "attempt_id": "second",
+    "status": "ok",
+    "witness": "HTTP server",
+    "body_sha256": "90f51e6fa3c83739e05387f421477c5012da2ba9d3ac46fec09ef9cd7667cb94"
+  },
+  {
+    "kind": "tool",
+    "operation_id": "file",
+    "attempt_id": "one",
+    "status": "ok",
+    "witness": "filesystem readback",
+    "observed_sha256": "59f4153df16f7b2f59baacbf40528d684d17bf151b162573483d6d909f2fbb98"
+  },
+  {
+    "kind": "tool",
+    "operation_id": "process",
+    "attempt_id": "one",
+    "status": "ok",
+    "witness": "child stdout and exit",
+    "observed_sha256": "59f4153df16f7b2f59baacbf40528d684d17bf151b162573483d6d909f2fbb98"
+  },
+  {
+    "kind": "model",
+    "operation_id": "background",
+    "attempt_id": "one",
+    "status": "ok",
+    "witness": "HTTP server",
+    "body_sha256": "e1d58d850166b0d6af2f9d732921c51f49c9233a677675ec7588bf20f4e3644a"
+  },
+  {
+    "kind": "tool",
+    "operation_id": "bypass",
+    "attempt_id": "one",
+    "status": "ok",
+    "witness": "filesystem readback",
+    "observed_sha256": "f271a122bf4230c7c217b4cb8a66f8b4325b9c1821627dca16924fff32d6aa71"
+  }
+]

@@ -50,7 +50,7 @@ python evaluate.py --root ./store --decision-id <uuid>
 ## Files
 
 - `capture.py` — records the flow with `durability="inline"` (objects
-  land synchronously; production uses `process`/`spooled` for bounded
-  async delivery with durable handoff).
+  land synchronously; `process` uses bounded in-memory delivery, while
+  `spooled` adds an explicit durable handoff after its acknowledgement).
 - `evaluate.py` — the authorized consumer: manifest resolution,
   verified transcript export, deterministic assertions.

@@ -1,0 +1,42 @@
+
+> @singleaxis/fabric@0.8.0-rc.1 package:qualified
+> node scripts/package-qualified.mjs --destination /workspace/fabric-qualification/npm-security-final --smoke
+
+
+added 2 packages in 977ms
+singleaxis-fabric: no OpenTelemetry TracerProvider is configured; emitted telemetry will be silently dropped. Install one — e.g. `new NodeTracerProvider({spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())]})` registered with `provider.register({contextManager: new AsyncLocalStorageContextManager()})`, or via `installDefaultProvider({provider, contextManager})` — see the README's OpenTelemetry wiring section.
+singleaxis-fabric: decision span capture is disabled or has observed drops; captureHealth is local evidence only and does not verify complete capture or delivery.
+singleaxis-fabric: no OpenTelemetry TracerProvider is configured; emitted telemetry will be silently dropped. Install one — e.g. `new NodeTracerProvider({spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())]})` registered with `provider.register({contextManager: new AsyncLocalStorageContextManager()})`, or via `installDefaultProvider({provider, contextManager})` — see the README's OpenTelemetry wiring section.
+singleaxis-fabric: decision span capture is disabled or has observed drops; captureHealth is local evidence only and does not verify complete capture or delivery.
+{
+  "schema_version": "fabric.npm-package-qualification/v1",
+  "name": "@singleaxis/fabric",
+  "version": "0.8.0-rc.1",
+  "release_channel": "beta",
+  "filename": "singleaxis-fabric-0.8.0-rc.1.tgz",
+  "sha256": "fac626e5ca90dde2b56f8460717ab36f8c888037e30ca599a034f6f219bbb1be",
+  "integrity": "sha512-xKbUsY8Wp+uIGkpeY4F/j666yq4DoIltxRpUPhnFVKUPL7K6vvwEI6bv6T5rFE1a7ZDwaksGtuBUFSmJqGML2Q==",
+  "package_size": 226161,
+  "unpacked_size": 974815,
+  "files": [
+    "LICENSE",
+    "README.md",
+    "dist/index.cjs",
+    "dist/index.cjs.map",
+    "dist/index.d.cts",
+    "dist/index.d.ts",
+    "dist/index.js",
+    "dist/index.js.map",
+    "package.json"
+  ],
+  "smoke": [
+    "esm",
+    "cjs",
+    "types"
+  ]
+}
+npm notice
+npm notice New minor version of npm available! 11.9.0 -> 11.21.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.0
+npm notice To update run: npm install -g npm@11.21.0
+npm notice

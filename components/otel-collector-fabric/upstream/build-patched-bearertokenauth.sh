@@ -6,7 +6,7 @@ root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 dist="${root}/dist"
 module='github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension'
 version='v0.150.0'
-upstream="$(go env GOPATH)/pkg/mod/${module}@${version}"
+upstream="$(go env GOMODCACHE)/${module}@${version}"
 patched="${dist}/bearertokenauth-patched"
 marker="${patched}/.fabric-generated-v0.150.0"
 

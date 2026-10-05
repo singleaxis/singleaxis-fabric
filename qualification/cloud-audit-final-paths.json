@@ -1,0 +1,300 @@
+{
+  "changelog_rationale": [
+    "Prevent structurally incomplete governed SDK release archives by requiring current entry, reconstruction and durable delivery modules in wheel andsdist.",
+    "Prevent incomplete local license passes by inventorying Fabric gate binary and failing early when required Go/npm tooling is absent."
+  ],
+  "date": "2026-10-02",
+  "files": [
+    {
+      "assessment": "Selector, port and release labels match the local simulation's sink Service and Helm release. No namespaceSelector broadens source scope; no broad ingress rule is added.",
+      "bytes": 499,
+      "contract": "Namespaced NetworkPolicy selects only fixture sink pods and allows TCP8443 ingress from same-namespace collector pods carrying both otel-collector name and fabric-sim release labels.",
+      "limits": "Policy declaration alone does not establish CNI enforcement. Intended disposable namespace only; no egress restriction or authentication guarantee supplied by this file.",
+      "line_count": 19,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "yaml_parse"
+      ],
+      "path": "qualification/local-go-simulation/sink-ingress-policy.yaml",
+      "published_sha256": "68038996495f27663fa54fc770277baa06fb7c66571676b419e7cf5487e5dca5",
+      "sha256": "68038996495f27663fa54fc770277baa06fb7c66571676b419e7cf5487e5dca5",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Local verified_complete_for_declared_scope is paired with fixture-only issuer qualification and productionNO_GO. Eleven control assessment rows and three source coverage rows enumerate required follow-up rather than enable control enforcement.",
+      "bytes": 3986,
+      "contract": "Historical synthetic scope matrix records overallNO_GO, prior Linux workflow references and installed-wheel offline fixture evidence with explicit live-issuer/storage/retention/bypass/source limitations.",
+      "limits": "Historical dated summary; referenced action URLs and wheel bytes were not fetched/reverified in this audit. Free-form status strings are not a current machine-certified acceptance matrix; this file cannot attest the present source revision or production readiness.",
+      "line_count": 41,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "json_parse"
+      ],
+      "path": "qualification/synthetic-slice/control-coverage-matrix.v1.json",
+      "published_sha256": "b385878399a807d0db01bc8b4a0c4c8af3e1c0cdcf72c9046e402a0d201d7305",
+      "sha256": "b385878399a807d0db01bc8b4a0c4c8af3e1c0cdcf72c9046e402a0d201d7305",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Secret/configmap/PVC names match run_local_go_simulation.sh creation and companion manifests; script/cert mounts are read-only and data mount writable.",
+      "bytes": 1445,
+      "contract": "Single replica disposable Python OTLP test sink exposes HTTPS8443, reads generated TLS/auth secrets, loads script from ConfigMap and persists data on named PVC; readiness probes HTTPS health.",
+      "limits": "Explicit fixture, not production backend. Mutable python:3.12-alpine tag, default container privileges and absent resource bounds are not production qualification. Readiness alone does not prove durability; actual fsync behavior belongs to separately reviewed sink script. Not deployed during this audit.",
+      "line_count": 43,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "yaml_parse"
+      ],
+      "path": "qualification/synthetic-slice/kind-production-sink-deployment.yaml",
+      "published_sha256": "ab5a202aa54ccc0986baff53f2f0327e09ac9797efc8894b92223a93ce42ebdf",
+      "sha256": "ab5a202aa54ccc0986baff53f2f0327e09ac9797efc8894b92223a93ce42ebdf",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Claim name matches deployment. Kubernetes default StorageClass is used because none is specified here.",
+      "bytes": 234,
+      "contract": "Named ReadWriteOnce1Gi PVC supplies the controlled sink persistent volume.",
+      "limits": "PVC declaration does not prove provisioned capacity, encryption, recovery, retention, replicated durability or customer IAM. Local fixture only; no cluster/storage operation performed.",
+      "line_count": 10,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "yaml_parse"
+      ],
+      "path": "qualification/synthetic-slice/kind-production-sink-pvc.yaml",
+      "published_sha256": "c5734a33ba027e390fa0bdaef24331271fd4eebb7f6c4a1d23e1f19e2951e88b",
+      "sha256": "c5734a33ba027e390fa0bdaef24331271fd4eebb7f6c4a1d23e1f19e2951e88b",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Service name/selector/targetPort match Deployment and TLS SAN/name used by simulation exporter.",
+      "bytes": 239,
+      "contract": "Default ClusterIP Service selects fixture sink label and maps TCP8443 to named https container port.",
+      "limits": "No public LoadBalancer/NodePort is requested. In-cluster reachability, CNI behavior and TLS/application authentication are not established by Service declaration; no deployment executed.",
+      "line_count": 9,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "yaml_parse"
+      ],
+      "path": "qualification/synthetic-slice/kind-production-sink-service.yaml",
+      "published_sha256": "17c7eee1f1680b12934989ab42b7cdcbb586ced8a3345d36d38c7b5e98f05677",
+      "sha256": "17c7eee1f1680b12934989ab42b7cdcbb586ced8a3345d36d38c7b5e98f05677",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Empty tag/digest intentionally requires launcher to inject imported manifest digest; credential/CA names match launcher. Comments explicitly label local-path queue encryption and customer CNI unqualified withNO_GO reference.",
+      "bytes": 1481,
+      "contract": "Overlay on shadow-production configures one imported digest-pinned collector with pullPolicyNever, synthetic tenant/workload token binding, TLS sink CA,1Gi standard persisted exporter queue and selected ingress/egress fixture pods.",
+      "limits": "Overlay is not standalone values and grants no production approval. Claimed region/storage or CNI enforcement not established here; no Helm install performed. Synthetic identity attestation reference is a fixture annotation, not a live credential-review receipt.",
+      "line_count": 48,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "yaml_parse"
+      ],
+      "path": "qualification/synthetic-slice/kind-production-values.yaml",
+      "published_sha256": "849b38abd2f2c7df694816bb09a188dedbd24c0172a38dedb1f906dbb181a571",
+      "sha256": "849b38abd2f2c7df694816bb09a188dedbd24c0172a38dedb1f906dbb181a571",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Four row-role lists total12; artifact_after independently recomputed from test fixture bytes b'artifact\\x00\\xff' has10bytes and SHA256d3075a2cd0d0a83f8fbf3d92c57624d5e7c83747a3748db10ef1c84410a16a7e, matching summary and previously reviewed test_synthetic_evidence.py fixture.",
+      "bytes": 1740,
+      "contract": "Historical source-checkout summary reports12 compared byte objects,5 operation outcomes, zero discrepancies but verdictunverified and promotionNO_GO, with explicit missing authenticated source/journal/passivity/bypass/destination/artifact/storage proofs.",
+      "limits": "Unsigned static summary, not newly executed pilot or signed evidence. Recomputing one deterministic artifact and role counts does not verify historical run timing, persistence, completeness or current deployed revision.",
+      "line_count": 31,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "json_parse"
+      ],
+      "path": "qualification/synthetic-slice/local-pilot-discrepancy-report.v1.json",
+      "published_sha256": "34db4c99d0ccbf13679d07fb9b73741a5b7848534a86642e69b749e499ef6ce8",
+      "sha256": "34db4c99d0ccbf13679d07fb9b73741a5b7848534a86642e69b749e499ef6ce8",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "PTY, unwrapped subprocess/HTTP, background jobs, SSH/database/browser and nonallowlisted files are explicitly excluded; excluded-route reachability proof remains unverified. Build/runtime digest fields, retention/encryption/residency and approvers are unset.",
+      "bytes": 3151,
+      "contract": "Unsigned provisional synthetic scope enumerates three adapters, required/conditional roles, unauthenticated fixture witnesses, excluded routes, provisional capacity and synthetic-only privacy opt-in; production promotion remainsNO_GO.",
+      "limits": "Historical Python3.11.10 declaration is not this cloud executor's runtime qualification. Capacity is unmeasured; null approvals/digests cannot be inferred from other fixture tests. No universal execution-boundary or production-completeness promise.",
+      "line_count": 84,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "json_parse"
+      ],
+      "path": "qualification/synthetic-slice/scope.v1.json",
+      "published_sha256": "be81223eb9ec5273179c67476c5166c04eff2edcb9d1aac8dfad9af5a757154e",
+      "sha256": "be81223eb9ec5273179c67476c5166c04eff2edcb9d1aac8dfad9af5a757154e",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Full shell/control-flow review found omitted fabric-gate and optional Go/npm skips could permit incomplete passing results. Authorized fix adds gate inventory/argument and preflights required Go/npm before creating inventory. Narrow offline fixtures execute this real script plus license_check.py:MIT allsix surfaces passes; GPL only in fabric-gate fails; absent either required tool returns2 before report.",
+      "bytes": 3976,
+      "contract": "Local license procurement gate inventories PythonOTLP SDK, production TypeScript dependencies, generated Fabric Node, fabricctl, host-emitter and now image entrypoint fabric-gate; passes all inventories through unchanged allowlist with temporary raw inventory cleanup.",
+      "finding": {
+        "after": "Allsix CI surface categories are passed to policy; missing requiredGo/npm aborts clearly.",
+        "before": "Local success could omit gate binary or whole Go/TypeScript surfaces.",
+        "id": "FINAL-LICENSE-PARITY",
+        "severity": "medium",
+        "status": "fixed"
+      },
+      "limits": "No live dependency inventory or license certification performed in this audit. Scanner/tool installations can resolve external versions and existing tool binaries may differ; CI remains authoritative actual inventory gate. Optional SDK extras beyond CI'sOTLP selection are not asserted fully scanned.",
+      "line_count": 106,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "bash_n_syntax_check"
+      ],
+      "path": "scripts/license_scan.sh",
+      "published_sha256": "b9595486d14c7233b5d0b37742e6e2926681f0644a510bac93d1a0ddc47ddccc",
+      "sha256": "94d2083bb3710e3f14834012e236885530687e88740dcd8fc03da97b06c07b97",
+      "unchanged_from_published": false
+    },
+    {
+      "assessment": "All external parameters are quoted, digest syntax/content verified, empty/multiple digest results reject and source repository strips only final tag. set-euopipefail makes Docker/containerd/hash failures terminate; mutation is limited to local image aliases.",
+      "bytes": 1675,
+      "contract": "For explicitly named disposable kind cluster, resolve canonical tagged imported image on every node, require one sha256manifest digest, hash actual containerd manifest bytes, require same digest across nodes, and register digest-qualified repository alias without pulling.",
+      "limits": "No real kind/Docker execution here. Pinning validates manifest content identity, not build provenance/signature, image vulnerability state, running pod imageID, multiarch suitability or unrelated node images. Source tag parsing is intentionally narrower than completeOCI grammar.",
+      "line_count": 36,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "bash_n_syntax_check"
+      ],
+      "path": "scripts/qualification/pin_kind_node_image.sh",
+      "published_sha256": "1389e148bcddc88986fdac704a5accea3bfcdef28aa33990864419a46b83ecda",
+      "sha256": "1389e148bcddc88986fdac704a5accea3bfcdef28aa33990864419a46b83ecda",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Current-context/cluster match and clean git tree guard destination/source selection. umask077 protects temporary keys and reports. Trap terminates only launcher port-forwards; namespace/evidence deliberately retained. Node imported manifest is verified by pin helper before Helm use; HTTP acceptance alone is not credited as sink durability.",
+      "bytes": 12072,
+      "contract": "Clean-source explicitly selected kind rehearsal builds/packages installed artifacts, generates private ephemeral TLS/client/bearer credentials, provisions disposable namespace, exercises unauthenticated rejection and deny-then-allow queued delivery, runs synthetic pilot/readback, scans content/log canary and writes artifact evidence plusNO_GO summary.",
+      "limits": "macOS laptop path/private/tmp, hard-coded linux/arm64 build and Python3.11 mean it is not portable executor automation. No cluster/build performed here. ArtifactsJSON records Docker confignode_image_id while imported manifest digest is a separate evidence file; do not substitute configID for manifest digest. Controlled local tests cannot qualify productionCNI/storage/IAM/retention/passivity or excluded routes; summary retainsNO_GO.",
+      "line_count": 164,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "bash_n_syntax_check"
+      ],
+      "path": "scripts/qualification/run_local_go_simulation.sh",
+      "published_sha256": "16725d38428a756fbab501ccf74c604cbcab4308c2979cb9dcd52b74d0bbe2b9",
+      "sha256": "16725d38428a756fbab501ccf74c604cbcab4308c2979cb9dcd52b74d0bbe2b9",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Full policy/consumer read found required paths lagged SDK-local qualifier. Authorized fix adds10 missing current entry/governed/durable surfaces symmetrically for wheel/sdist, preserving all forbidden paths and release gates.28 missing-module cases reject,2 complete structural fixtures pass; old policy reproduced acceptance when governed_reconstruction.py was omitted. Existing built wheel/sdist pass strengthened structural inspection with exact archive hashes recorded separately.",
+      "bytes": 5041,
+      "contract": "Defines six required release workflows, recorder-only wheel/sdist structural surfaces and legacy exclusions, noPython console entrypoints, bounded public contract family/version list, one first-party collector chart and two recorder images.",
+      "finding": {
+        "after": "Release required paths cover every SDK-local qualifier required module in both formats; existing legacy exclusions preserved.",
+        "before": "Release qualifier could structurally accept wheel/sdist absent governed reconstruction and durable delivery modules.",
+        "id": "FINAL-RELEASE-SURFACES",
+        "severity": "medium",
+        "status": "fixed"
+      },
+      "limits": "Module presence/exclusion is structural qualification, not contents correctness, runtime behavior, source provenance or full installed smoke. Policy's public contract family list intentionally excludes other repository-only contracts; existing release-boundary tests preserve scope. Workflow names are not evidence that current exact-head CI passed.",
+      "line_count": 186,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "json_parse"
+      ],
+      "path": "scripts/release/release-policy.json",
+      "published_sha256": "414a0aa1faa685934c6bb694a8120db3c6860f74fb6a08c5f93e5dac92bfdf1c",
+      "sha256": "6e63e06ae85c22703cd09cca383a935aa22b9e62094a00d483be9d3757b10dbd",
+      "unchanged_from_published": false
+    },
+    {
+      "assessment": "Read all names and consuming boundary-test extraction; list is negative-test data, not enabled components/dependencies. Schema version and descriptive notes do not execute code.",
+      "bytes": 847,
+      "contract": "Canonical seven retired component names and separate langfuse chart name drive recorder release-boundary scans.",
+      "limits": "Finite denylist cannot prove arbitrary renamed/reimplemented forbidden capabilities absent; packaging/runtime ownership and allowlists are separate checks. Historical-source description is background wording, not claim those paths currently remain.",
+      "line_count": 19,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "json_parse"
+      ],
+      "path": "scripts/tests/fixtures/forbidden_components.json",
+      "published_sha256": "34aa95fdc5665e93cd5accf221631242a73098598eb0d888c9221af2cd95ba65",
+      "sha256": "34aa95fdc5665e93cd5accf221631242a73098598eb0d888c9221af2cd95ba65",
+      "unchanged_from_published": true
+    },
+    {
+      "assessment": "Materializer consumes each version field to build isolated fixture tree; corrected values use historical0.7.0 intentionally. Legacy relay/nemo names are test data; chart version differs from app/runtime version by contract.",
+      "bytes": 625,
+      "contract": "Two explicit synthetic source trees provide mismatched and corrected runtime/collector/Python/TypeScript/chart-version cases to release-identity verifier tests.",
+      "limits": "Fixture versions are not current release identity. Finite fixtures and validchart_lock marker do not independently verify current package artifacts; current-head verifier/test outputs supply separate evidence.",
+      "line_count": 24,
+      "methods": [
+        "complete_byte_read_sha256",
+        "full_text_semantic_contract_review",
+        "json_parse"
+      ],
+      "path": "scripts/tests/fixtures/release_identity_cases.json",
+      "published_sha256": "ca8e36c0ea7f7ae157ee9ee03b9e8b5b0aaafbdbb77f6277e37bdac9ff102ff4",
+      "sha256": "ca8e36c0ea7f7ae157ee9ee03b9e8b5b0aaafbdbb77f6277e37bdac9ff102ff4",
+      "unchanged_from_published": true
+    }
+  ],
+  "method_limits": [
+    "All14 assigned files fully read and contracts/control-flow reviewed; JSON/YAML parsed and shell syntax checked.",
+    "Historical qualification evidence bytes preserved; linked online workflows/artifacts not fetched or requalified.",
+    "No Docker/kind/Kubernetes deployment, live dependency inventory or broad security certification performed.",
+    "Structural archive checks and synthetic scanner tests do not substitute for full installed runtime smoke or exact-headCI."
+  ],
+  "reviewer": "reconstruction",
+  "schema_version": "fabric.cloud-audit-final-paths/v1",
+  "source_head": "0c057678eaa4d4b29217bccec2094dc196a34a18",
+  "status": "completed_declared_method",
+  "summary": {
+    "files_changed_for_authorized_fixes": 2,
+    "files_reviewed": 14,
+    "findings_fixed": 2,
+    "preserved_original_paths": 12
+  },
+  "validation": {
+    "artifact_checks": [
+      {
+        "filename": "singleaxis_fabric-0.8.0rc1-py3-none-any.whl",
+        "kind": "wheel",
+        "member_count": 75,
+        "name": "singleaxis-fabric",
+        "path": "/workspace/fabric-qualification/python-deep-dist/singleaxis_fabric-0.8.0rc1-py3-none-any.whl",
+        "requires_python": ">=3.11",
+        "sha256": "8af2e8a74194fffda6318d71b00c4bc9b779ad5cbe8c31ed80a1a3a1eb9da37c",
+        "version": "0.8.0-rc.1"
+      },
+      {
+        "filename": "singleaxis_fabric-0.8.0rc1.tar.gz",
+        "kind": "sdist",
+        "member_count": 76,
+        "name": "singleaxis-fabric",
+        "path": "/workspace/fabric-qualification/python-deep-dist/singleaxis_fabric-0.8.0rc1.tar.gz",
+        "requires_python": ">=3.11",
+        "sha256": "1f579b4d3e3ba47cbdfbb483dd1e27a3fb7f9bcfe9f2a22e3278d88c6b347d59",
+        "version": "0.8.0-rc.1"
+      }
+    ],
+    "regression_reproduction": "PreviousHEAD policy accepted both wheel andsdist without governed_reconstruction.py; strengthened current policy rejects those same structural fixture archives.",
+    "static": [
+      "Ruffcheckpassed; newtestfile formatted",
+      "bash-n passed on all3 audited shell scripts",
+      "gitdiff--checkpassed",
+      "all5 YAML and6 JSON files parsed"
+    ],
+    "test_path": "scripts/tests/test_final_audit_regressions.py",
+    "test_sha256": "6315dfb410fc10937478ee51684febf331143befea4e43b46aad2e3ded86b4ea",
+    "tests": {
+      "command": "/workspace/fabric-venv/bin/python -m pytest --no-cov -q scripts/tests/test_final_audit_regressions.py scripts/tests/test_release_qualification.py scripts/tests/test_license_workflow.py scripts/tests/test_recorder_release_boundary.py scripts/tests/test_verify_release_identity.py scripts/tests/test_local_go_simulation.py",
+      "result": "82 passed in1.12s"
+    }
+  }
+}

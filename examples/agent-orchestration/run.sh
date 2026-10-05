@@ -67,12 +67,15 @@ if [ "$(id -u)" -eq 0 ]; then
   echo "refusing a root-owned demo audit source" >&2
   exit 1
 fi
+mkdir -p "$RUN_OUT/audit-state"
+chmod 0700 "$RUN_OUT/audit-state"
 COL_ID="$(docker run -d --name "$COL" --user "$(id -u):$(id -g)" \
   --add-host host.docker.internal:host-gateway \
   -p "127.0.0.1:$OTLP_PORT:4318" -p "127.0.0.1:$GRPC_PORT:4317" \
   -p "127.0.0.1:$HEALTH_PORT:13133" \
   -v "$PWD/collector.demo.yaml:/etc/otelcol/config.yaml:ro" \
   -v "$RUN_OUT/audit:/demo-audit:ro" \
+  -v "$RUN_OUT/audit-state:/demo-audit-state:rw" \
   -e "SINK_PORT=$SINK_PORT" \
   "$IMG" --config /etc/otelcol/config.yaml)"
 for i in $(seq 60); do

@@ -1,0 +1,100 @@
+{
+  "schema_version": "fabric.ci-portability-followup/v1",
+  "previous_published_head": "2757a117a17fa982a057ccca6be4511b1b422bd2",
+  "sdk_runtime_unchanged": true,
+  "installed_wheel_journey_and_artifacts": "Runtime sources remain byte-identical to the prior published final-checks record; no business-effect replay or artifact rebuilding required for test-only fixes.",
+  "fixes": [
+    "Construct hostile Error fixture safely under Node20 lazy-stack behavior, then assert no diagnostic getters are read.",
+    "Generate RFC-valid synthetic certificates and exercise VERIFY_X509_STRICT instead of disabling verification.",
+    "Anchor chart development-test ignores so runtime Helm health hook is included; assert packaged hook and excluded dev tests.",
+    "Read controlled Node account mapping and run read-only capability-free queue probe as its validated nonroot owner."
+  ],
+  "verification": {
+    "typescript_node20_tests_passed": 453,
+    "node_version": "20.19.0",
+    "python_strict_tls_cases_passed": 16,
+    "python_mypy_files_passed": 138,
+    "repository_tests_passed": 477,
+    "repository_skipped": 50,
+    "skip_reasons": {
+      "helm_unavailable": 43,
+      "live_s3_unconfigured": 7
+    },
+    "live_docker_tests": "Local pinned-image pull still Docker Hub429; final exact-head CI required.",
+    "helm_live_tests": "Final exact-head CI required."
+  },
+  "reviewed_changes": [
+    {
+      "path": "charts/fabric/.helmignore",
+      "sha256": "5c023195db7faf159ab18ec0416e1002e71129d469bfb7f710754db8933a7577"
+    },
+    {
+      "path": "charts/fabric/charts/otel-collector/.helmignore",
+      "sha256": "98ddfe17be198bbd6b9a803567b920713a4ea8dc36a673c5ee9e3b19cd06ddab"
+    },
+    {
+      "path": "charts/fabric/tests/test-package-boundary.sh",
+      "sha256": "b4d9b37f1fa0059e38969cf72f071e9e368c5a2c878af74c60d73bdb22820067"
+    },
+    {
+      "path": "scripts/tests/test_governed_node_e2e.py",
+      "sha256": "5ab990283dc57cf43a517d8ca6dcdbbf63cc8f42bc29d8a262a1df49e609189a"
+    },
+    {
+      "path": "scripts/tests/test_governed_queue_probe.py",
+      "sha256": "c0d5b9224f0b00b314fd7122b45b174c1c0027bf27a35a6514d3b07c1db01981"
+    },
+    {
+      "path": "scripts/tests/test_helm_test_packaging.py",
+      "sha256": "a50611e50482753aff5f082e10233d002da179e71da49c67287cbc7629fe3bdc"
+    },
+    {
+      "path": "sdk/python/tests/test_semgrep_security_boundaries.py",
+      "sha256": "2dfde068f84fb6d570eaed035969ed5c3fd0ab048d32d771654448434d14c3bb"
+    },
+    {
+      "path": "sdk/typescript/test/exception-privacy.test.ts",
+      "sha256": "3c59e1a025c2d037a04eccba8f1a0ec0cf2cc1be37944de3adecd81eb3ead5f0"
+    }
+  ],
+  "logs": [
+    {
+      "path": "ci-followup-checks/python-mypy-ci-followup.txt",
+      "sha256": "7da4513cbed0a524ae5fea19bd9fff2b20cba43c825ac5e99b18ba49b082e355",
+      "bytes": 45
+    },
+    {
+      "path": "ci-followup-checks/python-tls-ci-followup.txt",
+      "sha256": "dc98acead1e211112aebf459f94fc61a5089d959beed4e088e6c88c053e8ec6a",
+      "bytes": 99
+    },
+    {
+      "path": "ci-followup-checks/scripts-ci-followup.txt",
+      "sha256": "a3c3b0f13c00f08e06b812d584ffede687c78fdffb323cc6fb9069f2fae19fa6",
+      "bytes": 2420
+    },
+    {
+      "path": "ci-followup-checks/ts-node20-453-verification.txt",
+      "sha256": "6a975c07ec683e40c97fe7f41e30f1e83ef0a90e2454dd7ee179ad2157029d8d",
+      "bytes": 233,
+      "original_run_sha256": "ea38bffebf6a4ebce3b3563b1faadaa60cdc06925f0c59d501c2dcb7e420c0d0",
+      "publication_transform": "EOF blank-line normalization only"
+    },
+    {
+      "path": "ci-followup-checks/tls-strict-before-fix.txt",
+      "sha256": "049923ce95c8cd2a7f77672d0fcc445edad2e458e340c29bb966a895dc72d7db",
+      "bytes": 13002,
+      "original_run_sha256": "bbe327e9c06ebe9bc81db62a824bb81f5e1f86175d50bf8d260d300193eebd78",
+      "publication_transform": "Trailing whitespace normalization only"
+    },
+    {
+      "path": "ci-followup-checks/tls-strict-after-fix.txt",
+      "sha256": "335c279c5a4ab95e86c4681c38feb4d62998d8214705665a483f290e482dfb93",
+      "bytes": 99
+    }
+  ],
+  "limits": [
+    "Security gates remain active and unresolved; these test fixes do not dismiss findings.",
+    "Earlier full-suite evidence and artifacts remain associated with their actual source snapshots; final CI is checked separately."
+  ]
+}

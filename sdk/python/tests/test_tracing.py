@@ -106,7 +106,9 @@ def test_install_default_provider_uses_otlp_env_endpoint(
     processors = provider._active_span_processor._span_processors
     assert len(processors) == 1
     exporter = getattr(processors[0], "span_exporter", None)
-    assert type(exporter).__name__ == "OTLPSpanExporter"
+    assert exporter is not None
+    assert type(exporter).__name__ == "MetadataOnlySpanExporter"
+    assert type(exporter.wrapped_exporter).__name__ == "OTLPSpanExporter"
 
 
 def test_get_tracer_warns_on_zero_processor_provider(

@@ -12,7 +12,7 @@
  * authorization: access is scoped by the configured store namespaces.
  */
 
-import { createHash } from "node:crypto";
+import { sha256BytesHex } from "./hash.js";
 
 import { SCHEMA_TRANSCRIPT_EXPORT } from "./content.js";
 import type { GovernedStore } from "./content-store.js";
@@ -133,7 +133,7 @@ export class ContentResolver {
       };
     }
     const expectedDigest = String(effectiveDescriptor["digest"]);
-    if (createHash("sha256").update(data).digest("hex") !== expectedDigest.slice(7)) {
+    if (sha256BytesHex(data) !== expectedDigest.slice(7)) {
       return {
         status: ResolveStatus.CORRUPTED,
         descriptor: effectiveDescriptor,

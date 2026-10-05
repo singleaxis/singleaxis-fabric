@@ -43,6 +43,7 @@ export {
   type CheckpointOptions,
   type DecisionClientIdentity,
   type DecisionIds,
+  type DecisionCaptureHealth,
   type DelegateOptions,
   type DelegationContext,
   type FileAccessOptions,
@@ -146,3 +147,14 @@ export {
 export { canonicalObjectHash, sha256Hex } from "./hash.js";
 export * as attributes from "./recorder-attributes.js";
 export * as testing from "./testing.js";
+export {
+  DeploymentPolicy,
+  ContentProtector,
+  ProtectedContent,
+  POLICY_SCHEMA_VERSION,
+  PRIVACY_MODES,
+  type DeploymentPolicyData,
+  type ContentProtectorOptions,
+  type PrivacyMode,
+  type ProtectionStatus,
+} from "./deployment-policy.js";

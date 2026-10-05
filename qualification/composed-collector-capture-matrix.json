@@ -1,0 +1,981 @@
+{
+  "build_command": "builder --config ocb-config.yaml && sh upstream/build-patched-bearertokenauth.sh",
+  "collector_sha256": "30f490477203fee76edd2d660b0b7b73ee79ca06b8eba83768c1722974a38a09",
+  "consumer": {
+    "fault_results": {
+      "corrupted_ciphertext": "corrupted",
+      "stale_policy": "denied",
+      "truncated_envelope": "corrupted",
+      "wrong_key": "corrupted",
+      "wrong_object": "missing",
+      "wrong_tenant": "denied"
+    },
+    "independent_effect_count": 1,
+    "received_records": 8,
+    "resolved_objects": 2,
+    "sdk_package_root": "/workspace/fabric-wheel-venv/lib/python3.12/site-packages/fabric",
+    "unique_records": 4
+  },
+  "execution_command": "python scripts/qualification/run_composed_collector_journey.py --collector-binary components/otel-collector-fabric/dist/otelcol-fabric --evidence-dir NEW_DIRECTORY",
+  "qualification": "LOCAL_FUNCTIONAL_GATE_ONLY",
+  "scenarios": [
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "available_exact_bytes",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "full_journey",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "duplicate_metadata_same_identity",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "lost_destination_ack",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "source_sequence_restored",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "reordered_readback",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "reopened_persisted_outbox_without_business_replay",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "sender_restart",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "unacknowledged_queue_replayed_to_fresh_consumer",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "collector_sigkill_restart",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "corrupted",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "corrupted_ciphertext",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "denied",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "stale_policy",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "corrupted",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "truncated_envelope",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "corrupted",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "wrong_key",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "missing",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "wrong_object",
+      "status": "passed"
+    },
+    {
+      "actual_boundary": "explicit tool call -> governed store; journal -> Fabric Collector -> loopback fsynced sink -> fresh authorized consumer",
+      "expected_action": "resolve verified authorized bytes or explicit failure without repeating business effect",
+      "identity_causality": "tenant/run/source/epoch/sequence/call/operation/attempt/object/policy",
+      "independent_truth": "sqlite physical effect row (one invocation), separate from capture",
+      "observed_result": "denied",
+      "omissions": [
+        "production authentication",
+        "external destination durability",
+        "source authentication",
+        "pre-fsync crash window",
+        "content writer crash recovery",
+        "automatic discovery of uninstrumented calls",
+        "TypeScript SDK equivalence"
+      ],
+      "privacy": "AES-GCM originals; metadata only on OTLP; owner-only stable local key files",
+      "scenario": "wrong_tenant",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "fabric.composed-collector-journey/v1",
+  "sdk_loading": "installed_distribution",
+  "sdk_runtime": {
+    "loading": "installed_distribution",
+    "matches_reviewed_python_sources": true,
+    "package_root": "/workspace/fabric-wheel-venv/lib/python3.12/site-packages/fabric",
+    "python_files": [
+      {
+        "path": "__init__.py",
+        "sha256": "24b94a5ba262316313ba87077e324f65b1a69ae0ff39d396960d744739dce2d8"
+      },
+      {
+        "path": "_attributes.py",
+        "sha256": "6483d043354ddcb43ea8acd2879a89c9643fd738b44e413fc2c17ef1c791de7e"
+      },
+      {
+        "path": "_calls.py",
+        "sha256": "57ff50593fba6694d9855e4a53ed5e0e80d9c21914f3d6e6ebd2f5c2589fe54d"
+      },
+      {
+        "path": "_capture_health.py",
+        "sha256": "509d73b2edcfc26352a690adba93ea1ac741991bb46b911f8a63e25de3f2ddf1"
+      },
+      {
+        "path": "_content.py",
+        "sha256": "14154ac9e767f720459ff614802e64ee35e973fe330860c424959d8707f607e8"
+      },
+      {
+        "path": "_content_sink.py",
+        "sha256": "6ab766f44bc9ab3643ecea32f06b8a3a3f37c1bfb9ee02e3f3f2acfcbfb1420a"
+      },
+      {
+        "path": "_content_writer.py",
+        "sha256": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4"
+      },
+      {
+        "path": "_coverage_canary.py",
+        "sha256": "638116d31b9e252bc626b274b646fe7e667f2332d2900e1f0a18c8af83beaa84"
+      },
+      {
+        "path": "_crosscut.py",
+        "sha256": "7f16c9b02deff74b070a63e24d8551c5adfec16acb73c1b936c3d5244d1acce8"
+      },
+      {
+        "path": "_hashes.py",
+        "sha256": "e8745a85117d6df98218c88a54a3c88d0162a13b922df6f8993c54a935668eb2"
+      },
+      {
+        "path": "_id_validators.py",
+        "sha256": "2be1802e007b8ded3dfed1ab28146e28ce443bb4337d860f65ffa40283e2b9a3"
+      },
+      {
+        "path": "_instrumentation_registry.py",
+        "sha256": "9242c9b422904eefecb4a76d429df23e073a0a8bb3331462c3e996a6ace8132c"
+      },
+      {
+        "path": "_span_protection.py",
+        "sha256": "ec11ba41a5dd1a7f02f73d5884b3968c7276a0531316882a30299780e3e9812a"
+      },
+      {
+        "path": "_version.py",
+        "sha256": "c3d3719676d1474e7d47fcf9dc2a5a6375d99d88473fd62eeb147e9e5d09cf65"
+      },
+      {
+        "path": "adapters/__init__.py",
+        "sha256": "816621fc33b31fe5b072342969f64535a2cd1378a23088740125fb05f5af0ed9"
+      },
+      {
+        "path": "adapters/byte_boundary.py",
+        "sha256": "ef0c2904f9613a9eb836209489af887084d1e6ea18c3056fda503adaeb6945c9"
+      },
+      {
+        "path": "adapters/crewai.py",
+        "sha256": "6b4b5e00fd31b40aacfc46064f20721587c104a0c6fab180d55b32c18548f7d3"
+      },
+      {
+        "path": "adapters/synthetic_evidence.py",
+        "sha256": "be3e105748a4c702fe7ce13ce0f540d859388e081a255dc3122626b1759c068e"
+      },
+      {
+        "path": "auto_instrument.py",
+        "sha256": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7"
+      },
+      {
+        "path": "baseline.py",
+        "sha256": "7d24cd6af37fec37663ec6e5bca055d5dd97f66fb3898db7d25e7214ec937416"
+      },
+      {
+        "path": "byte_evidence.py",
+        "sha256": "fc6b362d2037bf6111d4f49e2f8874222808956985bbe07c74112994d1b15d67"
+      },
+      {
+        "path": "byte_resolver.py",
+        "sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e"
+      },
+      {
+        "path": "byte_spool.py",
+        "sha256": "d07ac1f8fbb638f5c1bb04683ade938a9c208bc3a6b2e90117f343ef5dd4c62b"
+      },
+      {
+        "path": "call_otlp.py",
+        "sha256": "29c8af72af21b2d6f78cd4e0e34a720cdb9e0819a7019fffb8d57582c448131f"
+      },
+      {
+        "path": "call_reconcile.py",
+        "sha256": "ab5585931fe9ac785f0d4a460d4181631fca2bfefe981192f7535e4fdd7aed54"
+      },
+      {
+        "path": "call_recorder.py",
+        "sha256": "d2145abed359ad88eee5188ea85b5685300742f22030c6fa25928eeda37a0f26"
+      },
+      {
+        "path": "capture_capabilities.py",
+        "sha256": "2081d08291d7b7069481d6f0ecea4473033fa5b7bf489d90cb310d6ce7d6894f"
+      },
+      {
+        "path": "capture_identity.py",
+        "sha256": "b1f9095c36788de5a749b5439e3306916c36ab57e326fcae4ece30ff6d447ae2"
+      },
+      {
+        "path": "capture_readback.py",
+        "sha256": "ed494f4ee33a2726d189bb5d23144fcf6450a7ec8261edbae842f44544fdb97d"
+      },
+      {
+        "path": "checkpoint.py",
+        "sha256": "9e56c261ba46a328d2094c35245c00dcb972f15fd1e8a2e438692d1e7e42ae84"
+      },
+      {
+        "path": "client.py",
+        "sha256": "15cc558d74e555f7991ddad7840abea1ca0d7c146eacae7c75cb1866276dc43c"
+      },
+      {
+        "path": "content_join.py",
+        "sha256": "c35e647fec5e318193163f2fa79b69c3fc1ac6b90756ca94cb3f2af547a4a477"
+      },
+      {
+        "path": "content_store/__init__.py",
+        "sha256": "ca2672014d96fbd0f9bf0ae94654428b1bd2d17aef5306d12065cbc7b0f24808"
+      },
+      {
+        "path": "content_store/base.py",
+        "sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262"
+      },
+      {
+        "path": "content_store/local.py",
+        "sha256": "3dea808e391722ba49bd11d9b7932d9c054dd9ca0f2cb20a87d6c5d27ee06319"
+      },
+      {
+        "path": "content_store/s3.py",
+        "sha256": "647800d3e41128bb0e970bf1b77b62da3f7ef85c36aecf14ff29ab39353a99a2"
+      },
+      {
+        "path": "control_evidence.py",
+        "sha256": "51718507a1cf2bf3c63e98d68acd329baacf242aed81de9fc7f1bafaec8fce0e"
+      },
+      {
+        "path": "control_protocol.py",
+        "sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2"
+      },
+      {
+        "path": "coverage_manifest.py",
+        "sha256": "c70ad95c2faca0ace8c6429aa737d0ae0470c0b1a0707a7d7745169263674338"
+      },
+      {
+        "path": "decision.py",
+        "sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d"
+      },
+      {
+        "path": "deployment_policy.py",
+        "sha256": "a570bf5e43c3069f948d564b94328e30d765efdc94d05a148f99bba6de60f11a"
+      },
+      {
+        "path": "deployment_state.py",
+        "sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279"
+      },
+      {
+        "path": "distributed_closure.py",
+        "sha256": "8e2201c18d375ba61525ce7db46a34e5da1a3b64098986c7b613235b561fb340"
+      },
+      {
+        "path": "enterprise.py",
+        "sha256": "ca809e111c2011ad509e025683cb727fb57f6caef31efb520b6e2d145e166775"
+      },
+      {
+        "path": "enterprise_preflight.py",
+        "sha256": "28d9928a23e1872d9529478c01d8d0c80ffaa87afad1a7abb4665be51049b4ba"
+      },
+      {
+        "path": "evidence_attestation.py",
+        "sha256": "35cad659b014d6a6162b928a1f4b6b6f2b531990df04d59c6d666fc9d24a72cd"
+      },
+      {
+        "path": "execution.py",
+        "sha256": "95553fa4a764b4a0ec0ee990c5c578afdd9626d11f0ef251a71e4d3ed1ee0d2c"
+      },
+      {
+        "path": "governed_reconstruction.py",
+        "sha256": "ca023620285e9927d338c084be144a835a650246528b128b0b66019180e957ed"
+      },
+      {
+        "path": "governed_store.py",
+        "sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8"
+      },
+      {
+        "path": "http_dispatch.py",
+        "sha256": "d8deb3ce738e15085ba943e706eeb49907469a7d93f87b52167b0e0550aac1b4"
+      },
+      {
+        "path": "independent_feed.py",
+        "sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43"
+      },
+      {
+        "path": "independent_store.py",
+        "sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d"
+      },
+      {
+        "path": "integrations/__init__.py",
+        "sha256": "24061aef81b8cd8cf0dfb59452d6327c3af3c304617749919eaf4114ce271060"
+      },
+      {
+        "path": "integrations/mcp.py",
+        "sha256": "e6450367e3e52f38ed11ac4ccfce56c518333894531221623e036c8788f784ce"
+      },
+      {
+        "path": "memory.py",
+        "sha256": "b9e0c1b0eb609026bd8fc74c041c47b085d09936b92508b9df8ffee5fbac056f"
+      },
+      {
+        "path": "metadata_delivery.py",
+        "sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95"
+      },
+      {
+        "path": "propagation.py",
+        "sha256": "d3d8595bc84acfcb144c942cffbb746f516eaa96b3f471ab93d28f29a33027cb"
+      },
+      {
+        "path": "qualified_run.py",
+        "sha256": "fff8850fcd68550d9fe0d055ff3dc9e405f5d1155a24bef028f33216fee7e3df"
+      },
+      {
+        "path": "receipt_sets.py",
+        "sha256": "3aed96820500699fce98f5dd00eb08ed1f57b88d4ee5f8f251c014a402d56646"
+      },
+      {
+        "path": "reference_receipts.py",
+        "sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55"
+      },
+      {
+        "path": "resolver.py",
+        "sha256": "664b4a0084c383b14ba3dc51c9b18c9408710bbf85db31ab4582b37c3be94a07"
+      },
+      {
+        "path": "retrieval.py",
+        "sha256": "1cc21e6d0b99a5d8e2e110ac51a5cecfeba9d37c6b6f7dfa6b12fc0c37542997"
+      },
+      {
+        "path": "side_effect.py",
+        "sha256": "2acecfceed8bd848f3daa310c22c9e0f8646edd1b84c6de1576012debddb22c8"
+      },
+      {
+        "path": "signing.py",
+        "sha256": "79b9313dead9bc25a1442e4652d72a68b48109ca3ec14be4a9f2e3c0d2d9ec0a"
+      },
+      {
+        "path": "source_spool.py",
+        "sha256": "53235747df40f2ac0d2c519e3795122b08377a02926dad9f1a54f8aaf93ba644"
+      },
+      {
+        "path": "synthetic_otlp.py",
+        "sha256": "dfabda633f4ab6b02b8f7a4054be031cf810284935c4de28cb6b674a00371131"
+      },
+      {
+        "path": "synthetic_reconcile.py",
+        "sha256": "a31dacc91113d4468342c2e4beb5457d11f18d0246e8cd9f74235dadc94b9b0d"
+      },
+      {
+        "path": "taxonomy.py",
+        "sha256": "d48967525a57ee180d59191b6b74fb578a70604f79acaf331bcc8d164cb83195"
+      },
+      {
+        "path": "tracing.py",
+        "sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759"
+      }
+    ]
+  },
+  "source_base_revision": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "source_sha256": [
+    {
+      "path": "components/otel-collector-fabric/gate/evidence_binding_test.go",
+      "sha256": "1bb6188aa84cea3f2aa5596b37248584f59d20c6a7ba6eba3b2017d708fd1300"
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/gate.go",
+      "sha256": "6d335be7ca0d69a944efc8491c6d7ecbb2bdb23242f4c460c68b1ebb05e7a1d4"
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/gate_test.go",
+      "sha256": "8558ce5fbe8e6258dc1cd9ee31e7cf520e7dc72850e0ea1512ce297b710fbec8"
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/go.mod",
+      "sha256": "fd227218b160a188e5a813705c6c9bd40401df69a7631c77bce12804b0e5c796"
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/go.sum",
+      "sha256": "e42794fa9b56301ad073de55cac1dea683b320ed951454d8709ffc7156088dd2"
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/main.go",
+      "sha256": "3a0d66cdd1bf8ae4a895630a1aa8f8dde2901766d9d7e5248591b8299c180e1e"
+    },
+    {
+      "path": "components/otel-collector-fabric/gate/supervise.go",
+      "sha256": "77946570aa23ad1421c11bcea539e999a9cb05253d21f97a983049f53641bc18"
+    },
+    {
+      "path": "components/otel-collector-fabric/ocb-config.yaml",
+      "sha256": "3c441d97a41eb69a75d8cd515d506ea2336a0a7121cb040c7e58c8185a40e35b"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/allowlist.go",
+      "sha256": "213841321ba734b6a3787a682a01e87d7f3b38ab06f853b0e38bc0bb130dce8c"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/call_evidence_test.go",
+      "sha256": "a6e94b36b18dfc656f3dda8e364654eacd0de78df35a21471a4282362648b5f5"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/config.go",
+      "sha256": "79ad4532529a3c9b7c3c2f28befde479b2cc51c2f63800e93507323a25b47867"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/doc.go",
+      "sha256": "6d91f50f19cf3752432d2a9a552c7318765fc39b4c8253fd2e4995b670455d80"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/factory.go",
+      "sha256": "6fbf8c5615c117efa217a9168e3e48b1e7ac6e926db2c1e2cd91f278f9861491"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/factory_test.go",
+      "sha256": "ec7a28e286a584d6648da0c85904082f8d6bf641505b89e2100459f2ee902ba3"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/go.mod",
+      "sha256": "4de2e52f4f2b477f31c70e04a7711c8f4ad4d63e1dc3df184ba96aec533e56aa"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/go.sum",
+      "sha256": "19da99162f012dc360fbfe31de1d74a31e8460801e0b63e93881c79ae8b60b14"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/processor.go",
+      "sha256": "47f6804552d6144f9df9d049948510784dc64832f3bf3a0320452bff8d8a2468"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/processor_test.go",
+      "sha256": "5c0dcf9cd9324297a3af84ba5920b4662094b212bb12ba83ccbaa70da08b580c"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/source_binding_test.go",
+      "sha256": "eb207972375e4c959d79b0d35b049d0249ee17246aa3df48c8c5158598afc968"
+    },
+    {
+      "path": "components/otel-collector-fabric/processor/fabricguardprocessor/traces_test.go",
+      "sha256": "8597b32bcb9d1c9bfa56f15ab3fd7ee4532cbb23eddbeebef87b8835c8bd2731"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/assemble.go",
+      "sha256": "319735e2f390280d80ffef73467271c8da59ac9361c7ebb84cfcfa4d98c31556"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/assemble_test.go",
+      "sha256": "5ab0ebd8417167ae1c6d014222df9747cdcc5f58bb278a437e38cd49edc9867a"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
+      "sha256": "c93e9d3c4d2aa8223310132c153732c7056c198a853c909bf785a2fce7d91275"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/config.go",
+      "sha256": "5a970185c66073c9b9ca8610dbacb0dba9867450c26e94efc9f84c259fdf04e1"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/dedupe.go",
+      "sha256": "36009e816a2aa2fc7e6bacfc8f7b6611a385a51d6ebaef89cb793737213aef24"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_logfile.go",
+      "sha256": "9061bd1fd32b11ec35c3aa980872804c6d1e7b1a67e4e0fed2d8fa337494f751"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_platform_linux.go",
+      "sha256": "fc7a2e805cc5e66cf1ea462ee7223d2f71c1883256324dc642fdeefb5efc5a10"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_platform_other.go",
+      "sha256": "0be63451a2ab9bc72da42e43276bd3df79a39bc4ca3ff8b77017c5926cae6a3a"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_state.go",
+      "sha256": "130f3166599e8dac1b4a84492138aaca80f4c674a515c845876ef1ec11297760"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/durable_test.go",
+      "sha256": "03e7987b2ce773cc0bba9cbdd03ea416cf2ac61c9256b3083b3ec91ebfa80713"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/errno.go",
+      "sha256": "f98ba7ef7ee1edb5e2e6c3cecba48e34f6768f2e7a3bc4b8d8c747ce69cb5988"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/factory.go",
+      "sha256": "ef51f35d2b5910947d3cd42e862c2cddcf0871c741d09b8e50838db060084749"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/go.mod",
+      "sha256": "f67f50cb1379802f57505ea9ef1d7e0ceaa0d82085efb34f7108bc1a102eac95"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/go.sum",
+      "sha256": "0567edc7cf7d4f4a43969259d00b70fcc3ccfe448b2c55735a467daf34e43b54"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/logfile_legacy_test.go",
+      "sha256": "d90229befe437eb26acd25072c7ea2e701032ba4355ef9204efb74fadf778d4b"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_linux.go",
+      "sha256": "3d5183b2e5c3c7082156df64500fe9eb4346bbf8918a1d538bd4993e8fab4dbb"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_linux_test.go",
+      "sha256": "25ee96ba3ce10ae437c972396b006103dc71de45d7f8f4ee8d2795ce22b4c044"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/netlink_other.go",
+      "sha256": "9bd40586062849dd51200f1ab5b9c4befda332b449bb63c8c106200ab06c1b2d"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/parse.go",
+      "sha256": "8f97ee17f91ff9f596a826d4c88a30fa5e5a516bc838315188b7b61f8afb045e"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/receiver.go",
+      "sha256": "cea81469a3dc69ec6da74eac572b43ded4a23ae9b69da4efeb71ce9b0cd92e69"
+    },
+    {
+      "path": "components/otel-collector-fabric/receiver/auditreceiver/translate.go",
+      "sha256": "771032aa6fecedfc58e205387b74d7d9e40340c3036dab4bd07e9aea08b2a6f2"
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/README.md",
+      "sha256": "90150db37ed86b970478f368e1a9ebb042ca68af218bb7a82ee51ff06a6e0d7a"
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/bearertokenauth-empty-tokens.patch",
+      "sha256": "f3159447794a242c6086feb3a61522d6c2cfad3b0607822967cdbf2739a6f4d6"
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/bearertokenauth_empty_tokens_test.go",
+      "sha256": "4ea9bc8e7cbf404b24146c1c9091ba753f4cdf340ae51d6e26595dba662d7682"
+    },
+    {
+      "path": "components/otel-collector-fabric/upstream/build-patched-bearertokenauth.sh",
+      "sha256": "30547bf10b263cb44112d714284ee386cd0f9eb9747b081236aacdbeca4ab700"
+    },
+    {
+      "path": "scripts/qualification/run_composed_collector_journey.py",
+      "sha256": "18e742fe83c0a058851d8da85fd9f529c85d29de3f0ed19421f2874494849e2e"
+    },
+    {
+      "path": "sdk/python/src/fabric/__init__.py",
+      "sha256": "24b94a5ba262316313ba87077e324f65b1a69ae0ff39d396960d744739dce2d8"
+    },
+    {
+      "path": "sdk/python/src/fabric/_attributes.py",
+      "sha256": "6483d043354ddcb43ea8acd2879a89c9643fd738b44e413fc2c17ef1c791de7e"
+    },
+    {
+      "path": "sdk/python/src/fabric/_calls.py",
+      "sha256": "57ff50593fba6694d9855e4a53ed5e0e80d9c21914f3d6e6ebd2f5c2589fe54d"
+    },
+    {
+      "path": "sdk/python/src/fabric/_capture_health.py",
+      "sha256": "509d73b2edcfc26352a690adba93ea1ac741991bb46b911f8a63e25de3f2ddf1"
+    },
+    {
+      "path": "sdk/python/src/fabric/_content.py",
+      "sha256": "14154ac9e767f720459ff614802e64ee35e973fe330860c424959d8707f607e8"
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_sink.py",
+      "sha256": "6ab766f44bc9ab3643ecea32f06b8a3a3f37c1bfb9ee02e3f3f2acfcbfb1420a"
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_writer.py",
+      "sha256": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4"
+    },
+    {
+      "path": "sdk/python/src/fabric/_coverage_canary.py",
+      "sha256": "638116d31b9e252bc626b274b646fe7e667f2332d2900e1f0a18c8af83beaa84"
+    },
+    {
+      "path": "sdk/python/src/fabric/_crosscut.py",
+      "sha256": "7f16c9b02deff74b070a63e24d8551c5adfec16acb73c1b936c3d5244d1acce8"
+    },
+    {
+      "path": "sdk/python/src/fabric/_hashes.py",
+      "sha256": "e8745a85117d6df98218c88a54a3c88d0162a13b922df6f8993c54a935668eb2"
+    },
+    {
+      "path": "sdk/python/src/fabric/_id_validators.py",
+      "sha256": "2be1802e007b8ded3dfed1ab28146e28ce443bb4337d860f65ffa40283e2b9a3"
+    },
+    {
+      "path": "sdk/python/src/fabric/_instrumentation_registry.py",
+      "sha256": "9242c9b422904eefecb4a76d429df23e073a0a8bb3331462c3e996a6ace8132c"
+    },
+    {
+      "path": "sdk/python/src/fabric/_span_protection.py",
+      "sha256": "ec11ba41a5dd1a7f02f73d5884b3968c7276a0531316882a30299780e3e9812a"
+    },
+    {
+      "path": "sdk/python/src/fabric/_version.py",
+      "sha256": "c3d3719676d1474e7d47fcf9dc2a5a6375d99d88473fd62eeb147e9e5d09cf65"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/__init__.py",
+      "sha256": "816621fc33b31fe5b072342969f64535a2cd1378a23088740125fb05f5af0ed9"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/byte_boundary.py",
+      "sha256": "ef0c2904f9613a9eb836209489af887084d1e6ea18c3056fda503adaeb6945c9"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/crewai.py",
+      "sha256": "6b4b5e00fd31b40aacfc46064f20721587c104a0c6fab180d55b32c18548f7d3"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/synthetic_evidence.py",
+      "sha256": "be3e105748a4c702fe7ce13ce0f540d859388e081a255dc3122626b1759c068e"
+    },
+    {
+      "path": "sdk/python/src/fabric/auto_instrument.py",
+      "sha256": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7"
+    },
+    {
+      "path": "sdk/python/src/fabric/baseline.py",
+      "sha256": "7d24cd6af37fec37663ec6e5bca055d5dd97f66fb3898db7d25e7214ec937416"
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_evidence.py",
+      "sha256": "fc6b362d2037bf6111d4f49e2f8874222808956985bbe07c74112994d1b15d67"
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_resolver.py",
+      "sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e"
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_spool.py",
+      "sha256": "d07ac1f8fbb638f5c1bb04683ade938a9c208bc3a6b2e90117f343ef5dd4c62b"
+    },
+    {
+      "path": "sdk/python/src/fabric/call_otlp.py",
+      "sha256": "29c8af72af21b2d6f78cd4e0e34a720cdb9e0819a7019fffb8d57582c448131f"
+    },
+    {
+      "path": "sdk/python/src/fabric/call_reconcile.py",
+      "sha256": "ab5585931fe9ac785f0d4a460d4181631fca2bfefe981192f7535e4fdd7aed54"
+    },
+    {
+      "path": "sdk/python/src/fabric/call_recorder.py",
+      "sha256": "d2145abed359ad88eee5188ea85b5685300742f22030c6fa25928eeda37a0f26"
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_capabilities.py",
+      "sha256": "2081d08291d7b7069481d6f0ecea4473033fa5b7bf489d90cb310d6ce7d6894f"
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_identity.py",
+      "sha256": "b1f9095c36788de5a749b5439e3306916c36ab57e326fcae4ece30ff6d447ae2"
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_readback.py",
+      "sha256": "ed494f4ee33a2726d189bb5d23144fcf6450a7ec8261edbae842f44544fdb97d"
+    },
+    {
+      "path": "sdk/python/src/fabric/checkpoint.py",
+      "sha256": "9e56c261ba46a328d2094c35245c00dcb972f15fd1e8a2e438692d1e7e42ae84"
+    },
+    {
+      "path": "sdk/python/src/fabric/client.py",
+      "sha256": "15cc558d74e555f7991ddad7840abea1ca0d7c146eacae7c75cb1866276dc43c"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_join.py",
+      "sha256": "c35e647fec5e318193163f2fa79b69c3fc1ac6b90756ca94cb3f2af547a4a477"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/__init__.py",
+      "sha256": "ca2672014d96fbd0f9bf0ae94654428b1bd2d17aef5306d12065cbc7b0f24808"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/local.py",
+      "sha256": "3dea808e391722ba49bd11d9b7932d9c054dd9ca0f2cb20a87d6c5d27ee06319"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/s3.py",
+      "sha256": "647800d3e41128bb0e970bf1b77b62da3f7ef85c36aecf14ff29ab39353a99a2"
+    },
+    {
+      "path": "sdk/python/src/fabric/control_evidence.py",
+      "sha256": "51718507a1cf2bf3c63e98d68acd329baacf242aed81de9fc7f1bafaec8fce0e"
+    },
+    {
+      "path": "sdk/python/src/fabric/control_protocol.py",
+      "sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2"
+    },
+    {
+      "path": "sdk/python/src/fabric/coverage_manifest.py",
+      "sha256": "c70ad95c2faca0ace8c6429aa737d0ae0470c0b1a0707a7d7745169263674338"
+    },
+    {
+      "path": "sdk/python/src/fabric/decision.py",
+      "sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d"
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_policy.py",
+      "sha256": "a570bf5e43c3069f948d564b94328e30d765efdc94d05a148f99bba6de60f11a"
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_state.py",
+      "sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279"
+    },
+    {
+      "path": "sdk/python/src/fabric/distributed_closure.py",
+      "sha256": "8e2201c18d375ba61525ce7db46a34e5da1a3b64098986c7b613235b561fb340"
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise.py",
+      "sha256": "ca809e111c2011ad509e025683cb727fb57f6caef31efb520b6e2d145e166775"
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise_preflight.py",
+      "sha256": "28d9928a23e1872d9529478c01d8d0c80ffaa87afad1a7abb4665be51049b4ba"
+    },
+    {
+      "path": "sdk/python/src/fabric/evidence_attestation.py",
+      "sha256": "35cad659b014d6a6162b928a1f4b6b6f2b531990df04d59c6d666fc9d24a72cd"
+    },
+    {
+      "path": "sdk/python/src/fabric/execution.py",
+      "sha256": "95553fa4a764b4a0ec0ee990c5c578afdd9626d11f0ef251a71e4d3ed1ee0d2c"
+    },
+    {
+      "path": "sdk/python/src/fabric/governed_reconstruction.py",
+      "sha256": "ca023620285e9927d338c084be144a835a650246528b128b0b66019180e957ed"
+    },
+    {
+      "path": "sdk/python/src/fabric/governed_store.py",
+      "sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8"
+    },
+    {
+      "path": "sdk/python/src/fabric/http_dispatch.py",
+      "sha256": "d8deb3ce738e15085ba943e706eeb49907469a7d93f87b52167b0e0550aac1b4"
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_feed.py",
+      "sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43"
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_store.py",
+      "sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d"
+    },
+    {
+      "path": "sdk/python/src/fabric/integrations/__init__.py",
+      "sha256": "24061aef81b8cd8cf0dfb59452d6327c3af3c304617749919eaf4114ce271060"
+    },
+    {
+      "path": "sdk/python/src/fabric/integrations/mcp.py",
+      "sha256": "e6450367e3e52f38ed11ac4ccfce56c518333894531221623e036c8788f784ce"
+    },
+    {
+      "path": "sdk/python/src/fabric/memory.py",
+      "sha256": "b9e0c1b0eb609026bd8fc74c041c47b085d09936b92508b9df8ffee5fbac056f"
+    },
+    {
+      "path": "sdk/python/src/fabric/metadata_delivery.py",
+      "sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95"
+    },
+    {
+      "path": "sdk/python/src/fabric/propagation.py",
+      "sha256": "d3d8595bc84acfcb144c942cffbb746f516eaa96b3f471ab93d28f29a33027cb"
+    },
+    {
+      "path": "sdk/python/src/fabric/qualified_run.py",
+      "sha256": "fff8850fcd68550d9fe0d055ff3dc9e405f5d1155a24bef028f33216fee7e3df"
+    },
+    {
+      "path": "sdk/python/src/fabric/receipt_sets.py",
+      "sha256": "3aed96820500699fce98f5dd00eb08ed1f57b88d4ee5f8f251c014a402d56646"
+    },
+    {
+      "path": "sdk/python/src/fabric/reference_receipts.py",
+      "sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55"
+    },
+    {
+      "path": "sdk/python/src/fabric/resolver.py",
+      "sha256": "664b4a0084c383b14ba3dc51c9b18c9408710bbf85db31ab4582b37c3be94a07"
+    },
+    {
+      "path": "sdk/python/src/fabric/retrieval.py",
+      "sha256": "1cc21e6d0b99a5d8e2e110ac51a5cecfeba9d37c6b6f7dfa6b12fc0c37542997"
+    },
+    {
+      "path": "sdk/python/src/fabric/side_effect.py",
+      "sha256": "2acecfceed8bd848f3daa310c22c9e0f8646edd1b84c6de1576012debddb22c8"
+    },
+    {
+      "path": "sdk/python/src/fabric/signing.py",
+      "sha256": "79b9313dead9bc25a1442e4652d72a68b48109ca3ec14be4a9f2e3c0d2d9ec0a"
+    },
+    {
+      "path": "sdk/python/src/fabric/source_spool.py",
+      "sha256": "53235747df40f2ac0d2c519e3795122b08377a02926dad9f1a54f8aaf93ba644"
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_otlp.py",
+      "sha256": "dfabda633f4ab6b02b8f7a4054be031cf810284935c4de28cb6b674a00371131"
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_reconcile.py",
+      "sha256": "a31dacc91113d4468342c2e4beb5457d11f18d0246e8cd9f74235dadc94b9b0d"
+    },
+    {
+      "path": "sdk/python/src/fabric/taxonomy.py",
+      "sha256": "d48967525a57ee180d59191b6b74fb578a70604f79acaf331bcc8d164cb83195"
+    },
+    {
+      "path": "sdk/python/src/fabric/tracing.py",
+      "sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759"
+    }
+  ],
+  "source_state": "working tree; individual hashes authoritative"
+}

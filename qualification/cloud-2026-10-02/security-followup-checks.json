@@ -1,0 +1,540 @@
+{
+  "schema_version": "fabric.security-followup-checks/v1",
+  "parent_revision": "0ad942bf46c5fefef6a17636d8bf610b934c5bd9",
+  "source_state": "uncommitted followup bytes on parent, frozen for publication; exact runtime hashes below",
+  "validation": {
+    "python_full_passed": 1831,
+    "python_coverage_percent": 88.8,
+    "python_mypy_files": 142,
+    "python_ruff_version": "0.13.0",
+    "python_final_test_hygiene": "After full run, cold-import subprocess test was rewritten to spawn with same2cases and IPC operations moved out of asserts; final2cases passed independently. Runtime sources unchanged. Exact-head hosted suites still required.",
+    "typescript_node20_passed": 461,
+    "typescript_package_tests": 6,
+    "repository_passed": 540,
+    "repository_skipped": 50,
+    "skip_reasons": {
+      "helm_unavailable": 43,
+      "live_s3_unconfigured": 7
+    },
+    "local_docker": "3liveDockerchecks excluded after prior verified DockerHub429; exact-head CI required",
+    "installed_wheel_collector_journey": "passed:8received/4unique/2objects/1independent effect; no recovery effect replay",
+    "installed_wheel_c8_journey": "passed:3scenarios/4requests/7derivatives/1independent effect; no recovery effect replay"
+  },
+  "logs": [
+    {
+      "path": "security-followup-checks/python-security-final.txt",
+      "sha256": "dc61e6192207a78c61090687d4365c2fd9d8c5e2e22a90d204e9731ee078707e",
+      "bytes": 12948,
+      "original_run_sha256": "dc61e6192207a78c61090687d4365c2fd9d8c5e2e22a90d204e9731ee078707e",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/python-mypy-security-final.txt",
+      "sha256": "4c4a665426bd7e2c31c03fe0525ff1f36866379468f399322f0e59d63cd7d4f7",
+      "bytes": 45,
+      "original_run_sha256": "4c4a665426bd7e2c31c03fe0525ff1f36866379468f399322f0e59d63cd7d4f7",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/python-security-build.txt",
+      "sha256": "2cab5823ff4c1705af10d1bf45fe068981d9ae6e3c5b783a62f6e2b760aa0ec4",
+      "bytes": 615,
+      "original_run_sha256": "2cab5823ff4c1705af10d1bf45fe068981d9ae6e3c5b783a62f6e2b760aa0ec4",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/python-security-release-inspection.txt",
+      "sha256": "d3b07df5ca7dee09e8f28c4cd6b0b37cc5da1518ec70640d930d56561991b7ed",
+      "bytes": 3765,
+      "original_run_sha256": "d3b07df5ca7dee09e8f28c4cd6b0b37cc5da1518ec70640d930d56561991b7ed",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/collector-security-build.txt",
+      "sha256": "8fef4d22d9c94bdbfaaa6f4db80c5730715c0b1217357e491fa8b805a15f2572",
+      "bytes": 107,
+      "original_run_sha256": "8fef4d22d9c94bdbfaaa6f4db80c5730715c0b1217357e491fa8b805a15f2572",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/ts-security-followup-build.txt",
+      "sha256": "5d98c672fd64f7f815c039f7980548ee05b1a0f79056ab6c21951a3bc83ee31c",
+      "bytes": 807,
+      "original_run_sha256": "5d98c672fd64f7f815c039f7980548ee05b1a0f79056ab6c21951a3bc83ee31c",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/ts-security-package.txt",
+      "sha256": "ded17d6d41c3cba4bcf8ed067ada0b5aec3b8987fe41c0346ee314501c4fb245",
+      "bytes": 2295,
+      "original_run_sha256": "ded17d6d41c3cba4bcf8ed067ada0b5aec3b8987fe41c0346ee314501c4fb245",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/scripts-security-final.txt",
+      "sha256": "6ccaa37bbd0f21f5a86939648b86bc611e8768925936f93c347f18e7ae2aab65",
+      "bytes": 753,
+      "original_run_sha256": "6ccaa37bbd0f21f5a86939648b86bc611e8768925936f93c347f18e7ae2aab65",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/root-security-followup.txt",
+      "sha256": "9f2283fe45acca1d572c4e0614f475d54ff1efafe52aef6197978fa57cac2804",
+      "bytes": 179,
+      "original_run_sha256": "9f2283fe45acca1d572c4e0614f475d54ff1efafe52aef6197978fa57cac2804",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/s3-ownership-before.txt",
+      "sha256": "bc812d3eee9c1aeb5cc83cf9857a56204acfb70ff0e0be8009ed3d8af720c5bb",
+      "bytes": 2619,
+      "original_run_sha256": "ef972f14f6f6801569dec7c5adcc1e6b5d1dab15cfe1d0b5ab664752fd127cbe",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/composed-collector-security-final.txt",
+      "sha256": "e9f5ebfdb22cfd2b06d7498bed832be8ff7f6614743cd803d86f587f6dda42cf",
+      "bytes": 370,
+      "original_run_sha256": "e9f5ebfdb22cfd2b06d7498bed832be8ff7f6614743cd803d86f587f6dda42cf",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/c8-network-security-final.txt",
+      "sha256": "31b25c8bef53be8aafa05948777a56280f98d7ad860febb56b86da6232b0d376",
+      "bytes": 330,
+      "original_run_sha256": "31b25c8bef53be8aafa05948777a56280f98d7ad860febb56b86da6232b0d376",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/codeql-annotations-root-review.txt",
+      "sha256": "8efc32be4600f610c83709c309a90e8a1695e6e506345e6ff1c7d78e3792dccc",
+      "bytes": 99,
+      "original_run_sha256": "8efc32be4600f610c83709c309a90e8a1695e6e506345e6ff1c7d78e3792dccc",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/ts-security-followup-full.txt",
+      "sha256": "4c39c251d335df52e07f2a24f222fab405a05900e06f83d1dfd651c1d693a453",
+      "bytes": 233,
+      "original_run_sha256": "a4053dae1e7b49017c6393464baa36ea49ea8f82759297a1dad773f24af0f514",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/ts-security-followup-package.txt",
+      "sha256": "d1ed9640abac9c1e2b499e59c3cf245e9f9456afb947a0857461f1be2d1785dc",
+      "bytes": 834,
+      "original_run_sha256": "d1ed9640abac9c1e2b499e59c3cf245e9f9456afb947a0857461f1be2d1785dc",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/precommit-security-final.txt",
+      "sha256": "73e7dd25a9ab93dd8f6e94854596c7b926596070cc104164f4c97d8bdeb988d1",
+      "bytes": 1200,
+      "original_run_sha256": "73e7dd25a9ab93dd8f6e94854596c7b926596070cc104164f4c97d8bdeb988d1",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    },
+    {
+      "path": "security-followup-checks/markdown-security-final.txt",
+      "sha256": "54004ffbf399725a508890e0f8153843ce295bf9fcbee0f84dd71eedf645ac56",
+      "bytes": 289,
+      "original_run_sha256": "54004ffbf399725a508890e0f8153843ce295bf9fcbee0f84dd71eedf645ac56",
+      "publication_transform": "Trailing whitespace and EOF blank-line normalization only"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/workspace/fabric-qualification/python-security-dist/singleaxis_fabric-0.8.0rc1-py3-none-any.whl",
+      "sha256": "35a3d26dd231cd4969b75c074d109a78533ce7c4205b88694f3f79e02d25f4cd",
+      "bytes": 307753
+    },
+    {
+      "path": "/workspace/fabric-qualification/python-security-dist/singleaxis_fabric-0.8.0rc1.tar.gz",
+      "sha256": "ed9d2a6c665850faff3e265a3bbe90af5aeedba2caeb216054064ca19a658c9c",
+      "bytes": 260935
+    },
+    {
+      "path": "/workspace/fabric-qualification/npm-security-final/singleaxis-fabric-0.8.0-rc.1.tgz",
+      "sha256": "fac626e5ca90dde2b56f8460717ab36f8c888037e30ca599a034f6f219bbb1be",
+      "bytes": 226161
+    }
+  ],
+  "runtime_source_hashes": [
+    {
+      "path": "sdk/python/src/fabric/__init__.py",
+      "sha256": "24b94a5ba262316313ba87077e324f65b1a69ae0ff39d396960d744739dce2d8"
+    },
+    {
+      "path": "sdk/python/src/fabric/_attributes.py",
+      "sha256": "6483d043354ddcb43ea8acd2879a89c9643fd738b44e413fc2c17ef1c791de7e"
+    },
+    {
+      "path": "sdk/python/src/fabric/_calls.py",
+      "sha256": "57ff50593fba6694d9855e4a53ed5e0e80d9c21914f3d6e6ebd2f5c2589fe54d"
+    },
+    {
+      "path": "sdk/python/src/fabric/_capture_health.py",
+      "sha256": "509d73b2edcfc26352a690adba93ea1ac741991bb46b911f8a63e25de3f2ddf1"
+    },
+    {
+      "path": "sdk/python/src/fabric/_content.py",
+      "sha256": "14154ac9e767f720459ff614802e64ee35e973fe330860c424959d8707f607e8"
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_sink.py",
+      "sha256": "6ab766f44bc9ab3643ecea32f06b8a3a3f37c1bfb9ee02e3f3f2acfcbfb1420a"
+    },
+    {
+      "path": "sdk/python/src/fabric/_content_writer.py",
+      "sha256": "0c12441804592a932ec218f622a6339f3e0aa616803c7f060894002c746573e4"
+    },
+    {
+      "path": "sdk/python/src/fabric/_coverage_canary.py",
+      "sha256": "638116d31b9e252bc626b274b646fe7e667f2332d2900e1f0a18c8af83beaa84"
+    },
+    {
+      "path": "sdk/python/src/fabric/_crosscut.py",
+      "sha256": "7f16c9b02deff74b070a63e24d8551c5adfec16acb73c1b936c3d5244d1acce8"
+    },
+    {
+      "path": "sdk/python/src/fabric/_hashes.py",
+      "sha256": "e8745a85117d6df98218c88a54a3c88d0162a13b922df6f8993c54a935668eb2"
+    },
+    {
+      "path": "sdk/python/src/fabric/_id_validators.py",
+      "sha256": "2be1802e007b8ded3dfed1ab28146e28ce443bb4337d860f65ffa40283e2b9a3"
+    },
+    {
+      "path": "sdk/python/src/fabric/_instrumentation_registry.py",
+      "sha256": "9242c9b422904eefecb4a76d429df23e073a0a8bb3331462c3e996a6ace8132c"
+    },
+    {
+      "path": "sdk/python/src/fabric/_span_protection.py",
+      "sha256": "ec11ba41a5dd1a7f02f73d5884b3968c7276a0531316882a30299780e3e9812a"
+    },
+    {
+      "path": "sdk/python/src/fabric/_version.py",
+      "sha256": "c3d3719676d1474e7d47fcf9dc2a5a6375d99d88473fd62eeb147e9e5d09cf65"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/__init__.py",
+      "sha256": "816621fc33b31fe5b072342969f64535a2cd1378a23088740125fb05f5af0ed9"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/byte_boundary.py",
+      "sha256": "ef0c2904f9613a9eb836209489af887084d1e6ea18c3056fda503adaeb6945c9"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/crewai.py",
+      "sha256": "6b4b5e00fd31b40aacfc46064f20721587c104a0c6fab180d55b32c18548f7d3"
+    },
+    {
+      "path": "sdk/python/src/fabric/adapters/synthetic_evidence.py",
+      "sha256": "be3e105748a4c702fe7ce13ce0f540d859388e081a255dc3122626b1759c068e"
+    },
+    {
+      "path": "sdk/python/src/fabric/auto_instrument.py",
+      "sha256": "7f6c1a9aa17212b34a3d8da096b3090fc9a561a2323ffd339f01e5188b7e1bc7"
+    },
+    {
+      "path": "sdk/python/src/fabric/baseline.py",
+      "sha256": "7d24cd6af37fec37663ec6e5bca055d5dd97f66fb3898db7d25e7214ec937416"
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_evidence.py",
+      "sha256": "fc6b362d2037bf6111d4f49e2f8874222808956985bbe07c74112994d1b15d67"
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_resolver.py",
+      "sha256": "59218554a8c9d2a291c3a679d7017a5465a4b5c7742b7bec9ca071bad82ef18e"
+    },
+    {
+      "path": "sdk/python/src/fabric/byte_spool.py",
+      "sha256": "d07ac1f8fbb638f5c1bb04683ade938a9c208bc3a6b2e90117f343ef5dd4c62b"
+    },
+    {
+      "path": "sdk/python/src/fabric/call_otlp.py",
+      "sha256": "29c8af72af21b2d6f78cd4e0e34a720cdb9e0819a7019fffb8d57582c448131f"
+    },
+    {
+      "path": "sdk/python/src/fabric/call_reconcile.py",
+      "sha256": "ab5585931fe9ac785f0d4a460d4181631fca2bfefe981192f7535e4fdd7aed54"
+    },
+    {
+      "path": "sdk/python/src/fabric/call_recorder.py",
+      "sha256": "d2145abed359ad88eee5188ea85b5685300742f22030c6fa25928eeda37a0f26"
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_capabilities.py",
+      "sha256": "2081d08291d7b7069481d6f0ecea4473033fa5b7bf489d90cb310d6ce7d6894f"
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_identity.py",
+      "sha256": "b1f9095c36788de5a749b5439e3306916c36ab57e326fcae4ece30ff6d447ae2"
+    },
+    {
+      "path": "sdk/python/src/fabric/capture_readback.py",
+      "sha256": "ed494f4ee33a2726d189bb5d23144fcf6450a7ec8261edbae842f44544fdb97d"
+    },
+    {
+      "path": "sdk/python/src/fabric/checkpoint.py",
+      "sha256": "9e56c261ba46a328d2094c35245c00dcb972f15fd1e8a2e438692d1e7e42ae84"
+    },
+    {
+      "path": "sdk/python/src/fabric/client.py",
+      "sha256": "15cc558d74e555f7991ddad7840abea1ca0d7c146eacae7c75cb1866276dc43c"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_join.py",
+      "sha256": "c35e647fec5e318193163f2fa79b69c3fc1ac6b90756ca94cb3f2af547a4a477"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/__init__.py",
+      "sha256": "ca2672014d96fbd0f9bf0ae94654428b1bd2d17aef5306d12065cbc7b0f24808"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/base.py",
+      "sha256": "5dd38cbd04d3c20e12ff8b0b460dc35aad1fa395055a1d78d5c675fea4ecb262"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/local.py",
+      "sha256": "3dea808e391722ba49bd11d9b7932d9c054dd9ca0f2cb20a87d6c5d27ee06319"
+    },
+    {
+      "path": "sdk/python/src/fabric/content_store/s3.py",
+      "sha256": "647800d3e41128bb0e970bf1b77b62da3f7ef85c36aecf14ff29ab39353a99a2"
+    },
+    {
+      "path": "sdk/python/src/fabric/control_evidence.py",
+      "sha256": "51718507a1cf2bf3c63e98d68acd329baacf242aed81de9fc7f1bafaec8fce0e"
+    },
+    {
+      "path": "sdk/python/src/fabric/control_protocol.py",
+      "sha256": "50b6e30f27c9e520ecd02256a261138b7be1de419caa147ceb4aad95cb2eb3a2"
+    },
+    {
+      "path": "sdk/python/src/fabric/coverage_manifest.py",
+      "sha256": "c70ad95c2faca0ace8c6429aa737d0ae0470c0b1a0707a7d7745169263674338"
+    },
+    {
+      "path": "sdk/python/src/fabric/decision.py",
+      "sha256": "c77c101e809cf1f399be16ac89139ef304181527a5539d5268eed56342f6607d"
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_policy.py",
+      "sha256": "a570bf5e43c3069f948d564b94328e30d765efdc94d05a148f99bba6de60f11a"
+    },
+    {
+      "path": "sdk/python/src/fabric/deployment_state.py",
+      "sha256": "ad65233741158a86b32ec9fb22fc862fa4f7bbd6d7095c8bfe205431ab977279"
+    },
+    {
+      "path": "sdk/python/src/fabric/distributed_closure.py",
+      "sha256": "8e2201c18d375ba61525ce7db46a34e5da1a3b64098986c7b613235b561fb340"
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise.py",
+      "sha256": "ca809e111c2011ad509e025683cb727fb57f6caef31efb520b6e2d145e166775"
+    },
+    {
+      "path": "sdk/python/src/fabric/enterprise_preflight.py",
+      "sha256": "28d9928a23e1872d9529478c01d8d0c80ffaa87afad1a7abb4665be51049b4ba"
+    },
+    {
+      "path": "sdk/python/src/fabric/evidence_attestation.py",
+      "sha256": "35cad659b014d6a6162b928a1f4b6b6f2b531990df04d59c6d666fc9d24a72cd"
+    },
+    {
+      "path": "sdk/python/src/fabric/execution.py",
+      "sha256": "95553fa4a764b4a0ec0ee990c5c578afdd9626d11f0ef251a71e4d3ed1ee0d2c"
+    },
+    {
+      "path": "sdk/python/src/fabric/governed_reconstruction.py",
+      "sha256": "ca023620285e9927d338c084be144a835a650246528b128b0b66019180e957ed"
+    },
+    {
+      "path": "sdk/python/src/fabric/governed_store.py",
+      "sha256": "dc05e692b39c12732ca7f3d02de3a2b4ac640987a149c28632951c0249537bf8"
+    },
+    {
+      "path": "sdk/python/src/fabric/http_dispatch.py",
+      "sha256": "d8deb3ce738e15085ba943e706eeb49907469a7d93f87b52167b0e0550aac1b4"
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_feed.py",
+      "sha256": "3fab74c179c9f1b8939d7f02e0290f04d21c4d9089e5c4cb5157d5e7d53ddb43"
+    },
+    {
+      "path": "sdk/python/src/fabric/independent_store.py",
+      "sha256": "9aa7941286a3feedab18717eb7a31f945935dc5d74e40e04f4d080be3e9ddb9d"
+    },
+    {
+      "path": "sdk/python/src/fabric/integrations/__init__.py",
+      "sha256": "24061aef81b8cd8cf0dfb59452d6327c3af3c304617749919eaf4114ce271060"
+    },
+    {
+      "path": "sdk/python/src/fabric/integrations/mcp.py",
+      "sha256": "e6450367e3e52f38ed11ac4ccfce56c518333894531221623e036c8788f784ce"
+    },
+    {
+      "path": "sdk/python/src/fabric/memory.py",
+      "sha256": "b9e0c1b0eb609026bd8fc74c041c47b085d09936b92508b9df8ffee5fbac056f"
+    },
+    {
+      "path": "sdk/python/src/fabric/metadata_delivery.py",
+      "sha256": "940a08641b0a6cceff2b29f55aeb5f39c9c0fa2952858ca9a549d968d5693d95"
+    },
+    {
+      "path": "sdk/python/src/fabric/propagation.py",
+      "sha256": "d3d8595bc84acfcb144c942cffbb746f516eaa96b3f471ab93d28f29a33027cb"
+    },
+    {
+      "path": "sdk/python/src/fabric/qualified_run.py",
+      "sha256": "fff8850fcd68550d9fe0d055ff3dc9e405f5d1155a24bef028f33216fee7e3df"
+    },
+    {
+      "path": "sdk/python/src/fabric/receipt_sets.py",
+      "sha256": "3aed96820500699fce98f5dd00eb08ed1f57b88d4ee5f8f251c014a402d56646"
+    },
+    {
+      "path": "sdk/python/src/fabric/reference_receipts.py",
+      "sha256": "cd09abf821c8f9081a7cd677070aa7a48595963977c57432a36d04294b68ba55"
+    },
+    {
+      "path": "sdk/python/src/fabric/resolver.py",
+      "sha256": "664b4a0084c383b14ba3dc51c9b18c9408710bbf85db31ab4582b37c3be94a07"
+    },
+    {
+      "path": "sdk/python/src/fabric/retrieval.py",
+      "sha256": "1cc21e6d0b99a5d8e2e110ac51a5cecfeba9d37c6b6f7dfa6b12fc0c37542997"
+    },
+    {
+      "path": "sdk/python/src/fabric/side_effect.py",
+      "sha256": "2acecfceed8bd848f3daa310c22c9e0f8646edd1b84c6de1576012debddb22c8"
+    },
+    {
+      "path": "sdk/python/src/fabric/signing.py",
+      "sha256": "79b9313dead9bc25a1442e4652d72a68b48109ca3ec14be4a9f2e3c0d2d9ec0a"
+    },
+    {
+      "path": "sdk/python/src/fabric/source_spool.py",
+      "sha256": "53235747df40f2ac0d2c519e3795122b08377a02926dad9f1a54f8aaf93ba644"
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_otlp.py",
+      "sha256": "dfabda633f4ab6b02b8f7a4054be031cf810284935c4de28cb6b674a00371131"
+    },
+    {
+      "path": "sdk/python/src/fabric/synthetic_reconcile.py",
+      "sha256": "a31dacc91113d4468342c2e4beb5457d11f18d0246e8cd9f74235dadc94b9b0d"
+    },
+    {
+      "path": "sdk/python/src/fabric/taxonomy.py",
+      "sha256": "d48967525a57ee180d59191b6b74fb578a70604f79acaf331bcc8d164cb83195"
+    },
+    {
+      "path": "sdk/python/src/fabric/tracing.py",
+      "sha256": "b62c7317e385788309a55df2fd816318d83707751a4712e972c4fbbfa5f4e759"
+    },
+    {
+      "path": "sdk/typescript/src/attributes.ts",
+      "sha256": "8b25153827c99a9206f20712af8bbec4585e33618d3efa4dc14b7c743556f02a"
+    },
+    {
+      "path": "sdk/typescript/src/byte-evidence.ts",
+      "sha256": "268a6f29420245810e0574687064f48b4587064388252af3ffbb798e63fac5c6"
+    },
+    {
+      "path": "sdk/typescript/src/calls.ts",
+      "sha256": "ebee0f864648053049279d6a97e1a5f2b55c63766a29bcbc55782105bd4c7da6"
+    },
+    {
+      "path": "sdk/typescript/src/client.ts",
+      "sha256": "95e65d305513260c04d2d6396f6b500e869cc93a8129a6ce7e8dbddc024dfcba"
+    },
+    {
+      "path": "sdk/typescript/src/content-sink.ts",
+      "sha256": "742f56231bc203685e9e6f44e430334de4c2135889710a2501b990a3f7e361ce"
+    },
+    {
+      "path": "sdk/typescript/src/content-store.ts",
+      "sha256": "757b3e57a06c5ace2a8d061c368fbc0a2a9db2e6672d60fe34c0a514419252fb"
+    },
+    {
+      "path": "sdk/typescript/src/content-writer.ts",
+      "sha256": "fc365361cc148ecab9012f45940d531471be4ea435c31536808d5b65ed2a4c07"
+    },
+    {
+      "path": "sdk/typescript/src/content.ts",
+      "sha256": "a58077eaf94899e6617283d3b0f0606ab05af457a778e4aa6ab1756599b81ef9"
+    },
+    {
+      "path": "sdk/typescript/src/crosscut.ts",
+      "sha256": "b0b7557c2b2d50f95e06a5ef227f9231364f879a16188c3a0313850824c41e31"
+    },
+    {
+      "path": "sdk/typescript/src/decision.ts",
+      "sha256": "ef8a9065a12727a46ef784146c0c5dcbab92a167fd1fa713b66a1653a21f065f"
+    },
+    {
+      "path": "sdk/typescript/src/deployment-policy.ts",
+      "sha256": "e9101d085e0e6d4e49e50b457889722db4d343996ce2d4c79a75da4b8311c0e4"
+    },
+    {
+      "path": "sdk/typescript/src/execution.ts",
+      "sha256": "470574cfa91e8161681d2d24b31835c1b5ddf82671664cca940440a5bedcf211"
+    },
+    {
+      "path": "sdk/typescript/src/hash.ts",
+      "sha256": "f04f3112e8466b7c8f7df4ca972a2d6c9696255ae680e2451f393af0b87b6aa0"
+    },
+    {
+      "path": "sdk/typescript/src/id-validators.ts",
+      "sha256": "0ceb3ee62dc141353c04a25418fcbb0b1303df60aec48f65fba8af748ba712c1"
+    },
+    {
+      "path": "sdk/typescript/src/index.ts",
+      "sha256": "ae1077d33df034d239632c17964e5959af0ec42464276457bba910b0904a3268"
+    },
+    {
+      "path": "sdk/typescript/src/propagation.ts",
+      "sha256": "9420c5e47c8ee1e2e34bea81ec27c9304e3573a733aaea8983e4d56b69cf554c"
+    },
+    {
+      "path": "sdk/typescript/src/recorder-attributes.ts",
+      "sha256": "2dc48e847566e88719bef040bc1cb80debb1fc9c42e6a5cdc7966b9d5862f8e7"
+    },
+    {
+      "path": "sdk/typescript/src/resolver.ts",
+      "sha256": "c984a6cff7f1b1de4eecb48c4f8af44013749273254f36cc7a247ac7f3b94285"
+    },
+    {
+      "path": "sdk/typescript/src/testing.ts",
+      "sha256": "9c3a3dc5bb47bf10321e89d63305bfb65c5aec788bed246b2e8fde0b5be62b8e"
+    },
+    {
+      "path": "sdk/typescript/src/tracing.ts",
+      "sha256": "431e784b55ec5531605bf774ef0d61ac0cdfc1969b76e42b974ff286f19a91c9"
+    },
+    {
+      "path": "sdk/typescript/src/validators.ts",
+      "sha256": "8020eb53d9f81a9be78459ca2e107c1b2634b89967bd3212f002dbc46de2935a"
+    },
+    {
+      "path": "sdk/typescript/src/version.ts",
+      "sha256": "384eb08ed87237356b477971feeadeb7f78b09fe2b2689ab387e3894689cfa52"
+    }
+  ],
+  "security_acceptance": "NO_GO pending exact-head hosted gates and remaining explicit security-owner decisions",
+  "independent_reviews": [
+    "qualification/cloud-audit-independent-security-followup.json",
+    "qualification/cloud-audit-license-independent.json",
+    "qualification/cloud-audit-python-codeql-followup.json",
+    "qualification/cloud-audit-security-followup.json",
+    "qualification/cloud-audit-scripts-security-followup.json"
+  ],
+  "limits": [
+    "All simulated effects are synthetic local fixtures; no actual external services or paid APIs.",
+    "No desktop commits restored; independent cleanup equivalence is semantic only.",
+    "No benchmark bytes changed, no suppression/dismissal/gate weakening."
+  ]
+}
