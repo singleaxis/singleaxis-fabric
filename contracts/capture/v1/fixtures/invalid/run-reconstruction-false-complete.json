@@ -1,0 +1,133 @@
+{
+  "schema_version": "fabric.run-reconstruction/v1",
+  "generated_at": "2026-10-07T09:10:00Z",
+  "verifier": {
+    "name": "fabric.reconstruct",
+    "version": "0.0.0-draft"
+  },
+  "inputs": {
+    "span_files": [
+      {
+        "path": "out/records.jsonl",
+        "sha256": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "format": "sink_jsonl",
+        "records": 2
+      }
+    ],
+    "scope": "metadata",
+    "recompute_digests": false,
+    "scan_store": false
+  },
+  "sources": [
+    {
+      "source_id": "wire-3f9a1c2b7d4e5f60",
+      "source_epoch": 1791331200000000000,
+      "component": "wire",
+      "observed_records": 2,
+      "high_water_sequence": 2,
+      "missing_sequences": [
+        [
+          1,
+          1
+        ]
+      ],
+      "cumulative_lost": 0
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "run-x",
+      "run_id_basis": "source",
+      "verdict": "complete_for_declared_scope",
+      "declared_scope": {
+        "capture_surfaces": [
+          "exact_wire"
+        ],
+        "bytes": false,
+        "through": []
+      },
+      "exchanges": [
+        {
+          "exchange_id": "ex-a",
+          "run_sequence": 0,
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 0,
+          "fidelity": "exact_wire",
+          "api": "openai.chat_completions",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba90200",
+          "started_at": "2026-10-07T09:00:00.100Z",
+          "ended_at": "2026-10-07T09:00:00.900Z",
+          "model": "gpt-4o-2024-08-06",
+          "response_id": "chatcmpl-run42-0",
+          "response_state": "complete",
+          "thread_id": "thread-0",
+          "input_message_count": 1,
+          "output_message_count": 1,
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [],
+          "origin": "span_and_store",
+          "objects": {}
+        },
+        {
+          "exchange_id": "ex-b",
+          "run_sequence": 1,
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 2,
+          "fidelity": "exact_wire",
+          "api": "openai.chat_completions",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba90201",
+          "started_at": "2026-10-07T09:00:01.100Z",
+          "ended_at": "2026-10-07T09:00:01.900Z",
+          "model": "gpt-4o-2024-08-06",
+          "response_id": "chatcmpl-run42-1",
+          "response_state": "complete",
+          "thread_id": "thread-0",
+          "input_message_count": 3,
+          "output_message_count": 1,
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [],
+          "origin": "span_and_store",
+          "objects": {},
+          "continues_exchange_id": "ex-a"
+        }
+      ],
+      "threads": [
+        {
+          "thread_id": "thread-0",
+          "exchange_ids": [
+            "ex-a",
+            "ex-b"
+          ]
+        }
+      ],
+      "gaps": [
+        {
+          "gap_type": "sequence_gap",
+          "effect": "partial",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "sequences": [
+            1
+          ]
+        }
+      ],
+      "counts": {
+        "exchanges": 2,
+        "gaps_by_type": {
+          "sequence_gap": 1
+        }
+      },
+      "checks": {
+        "sequence": "failed",
+        "loss": "passed",
+        "tail": "passed",
+        "bytes": "not_applicable",
+        "stitching": "passed"
+      }
+    }
+  ]
+}

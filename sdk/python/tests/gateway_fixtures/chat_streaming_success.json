@@ -1,0 +1,289 @@
+{
+  "description": "LiteLLM acompletion stream=True success: kwargs.complete_streaming_response holds the assembled response; response_obj is the final chunk. Run id supplied via litellm_params.metadata.fabric_run_id.",
+  "hook": "async_log_success_event",
+  "kwargs": {
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a travel assistant. Use tools for live data."
+      },
+      {
+        "role": "user",
+        "content": "Suggest one museum in Paris."
+      }
+    ],
+    "optional_params": {
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "temperature": 0.7
+    },
+    "litellm_params": {
+      "acompletion": true,
+      "api_key": null,
+      "force_timeout": 600,
+      "logger_fn": null,
+      "verbose": false,
+      "custom_llm_provider": "openai",
+      "api_base": "https://api.openai.com/v1",
+      "litellm_call_id": "0f3c9d55-6a2e-4b1d-8c7f-1e2d3c4b5a63",
+      "model_alias_map": {},
+      "completion_call_id": null,
+      "metadata": {
+        "headers": {
+          "host": "litellm.internal:4000",
+          "content-type": "application/json",
+          "user-agent": "OpenAI/Python 1.54.4",
+          "x-stainless-lang": "python",
+          "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-a3ce929d0e0e4736-01"
+        },
+        "user_api_key_hash": "88dc28d0f030c55ed4ab77ed8faf098196cb1c05df778539800c9f1243fe6b4b",
+        "user_api_key_alias": "travel-agent-prod",
+        "user_api_key_team_id": "team-travel",
+        "user_api_key_user_id": "svc-travel-agent",
+        "requester_ip_address": "",
+        "model_group": "gpt-4o",
+        "deployment": "openai/gpt-4o",
+        "endpoint": "http://litellm.internal:4000/v1/chat/completions",
+        "caching_groups": null,
+        "fabric_run_id": "run-museum-7"
+      },
+      "model_info": {
+        "id": "4f1c0b0e7d3a2c1b",
+        "db_model": false
+      },
+      "proxy_server_request": {
+        "url": "http://litellm.internal:4000/v1/chat/completions",
+        "method": "POST",
+        "headers": {
+          "host": "litellm.internal:4000",
+          "authorization": "Bearer sk-fake-PROXY-VIRTUAL-KEY-DO-NOT-STORE",
+          "content-type": "application/json",
+          "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-a3ce929d0e0e4736-01"
+        },
+        "body": {
+          "model": "gpt-4o",
+          "messages": "<elided by fixture author>"
+        }
+      },
+      "preset_cache_key": null,
+      "no-log": false,
+      "stream_response": {},
+      "input_cost_per_token": null,
+      "output_cost_per_token": null
+    },
+    "start_time": "2026-10-07T09:00:10.000000+00:00",
+    "end_time": "2026-10-07T09:00:11.250000+00:00",
+    "completion_start_time": "2026-10-07T09:00:10.380000+00:00",
+    "stream": true,
+    "user": "end-user-7",
+    "call_type": "acompletion",
+    "litellm_call_id": "0f3c9d55-6a2e-4b1d-8c7f-1e2d3c4b5a63",
+    "input": [
+      {
+        "role": "system",
+        "content": "You are a travel assistant. Use tools for live data."
+      },
+      {
+        "role": "user",
+        "content": "Suggest one museum in Paris."
+      }
+    ],
+    "api_key": "sk-fake-UPSTREAM-PROVIDER-KEY-DO-NOT-STORE",
+    "additional_args": {
+      "complete_input_dict": {
+        "model": "gpt-4o",
+        "messages": "<elided>"
+      },
+      "headers": {
+        "Authorization": "Bearer sk-fake-UPSTREAM-PROVIDER-KEY-DO-NOT-STORE"
+      }
+    },
+    "log_event_type": "successful_api_call",
+    "cache_hit": false,
+    "response_cost": 0.000385,
+    "standard_logging_object": {
+      "id": "0f3c9d55-6a2e-4b1d-8c7f-1e2d3c4b5a63",
+      "trace_id": "d1b0f9a2-5c3e-4f7a-9b8d-2e6c1a4f0b37",
+      "call_type": "acompletion",
+      "stream": true,
+      "response_cost": 0.000385,
+      "response_cost_failure_debug_info": null,
+      "status": "success",
+      "custom_llm_provider": "openai",
+      "total_tokens": 49,
+      "prompt_tokens": 40,
+      "completion_tokens": 9,
+      "startTime": 1791363610.0,
+      "endTime": 1791363611.25,
+      "completionStartTime": 1791363610.38,
+      "response_time": 1.25,
+      "model_map_information": {
+        "model_map_key": "gpt-4o",
+        "model_map_value": null
+      },
+      "model": "gpt-4o",
+      "model_id": "4f1c0b0e7d3a2c1b",
+      "model_group": "gpt-4o",
+      "api_base": "https://api.openai.com/v1/chat/completions",
+      "metadata": {
+        "user_api_key_hash": "88dc28d0f030c55ed4ab77ed8faf098196cb1c05df778539800c9f1243fe6b4b",
+        "user_api_key_alias": "travel-agent-prod",
+        "user_api_key_team_id": "team-travel",
+        "user_api_key_org_id": null,
+        "user_api_key_user_id": "svc-travel-agent",
+        "user_api_key_team_alias": null,
+        "user_api_key_end_user_id": null,
+        "spend_logs_metadata": null,
+        "requester_ip_address": "",
+        "requester_metadata": {},
+        "prompt_management_metadata": null,
+        "mcp_tool_call_metadata": null
+      },
+      "cache_hit": false,
+      "cache_key": null,
+      "saved_cache_cost": 0.0,
+      "request_tags": [],
+      "end_user": null,
+      "requester_ip_address": "",
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a travel assistant. Use tools for live data."
+        },
+        {
+          "role": "user",
+          "content": "Suggest one museum in Paris."
+        }
+      ],
+      "response": {
+        "id": "chatcmpl-B9x3sT",
+        "created": 1791363610,
+        "model": "gpt-4o-2024-08-06",
+        "object": "chat.completion",
+        "system_fingerprint": "fp_7f8c2d1a3b",
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "Visit the Musée d'Orsay.",
+              "role": "assistant",
+              "tool_calls": null,
+              "function_call": null,
+              "provider_specific_fields": null
+            }
+          }
+        ],
+        "usage": {
+          "completion_tokens": 9,
+          "prompt_tokens": 40,
+          "total_tokens": 49,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 0
+          }
+        }
+      },
+      "error_str": null,
+      "error_information": {
+        "error_code": "",
+        "error_class": "",
+        "llm_provider": "",
+        "traceback": "",
+        "error_message": ""
+      },
+      "model_parameters": {
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "temperature": 0.7
+      },
+      "hidden_params": {
+        "model_id": "4f1c0b0e7d3a2c1b",
+        "cache_key": null,
+        "api_base": "https://api.openai.com/v1/chat/completions",
+        "response_cost": 0.000385,
+        "litellm_overhead_time_ms": 3.1,
+        "additional_headers": {
+          "x-ratelimit-remaining-requests": 9998,
+          "x-ratelimit-remaining-tokens": 29870,
+          "llm_provider-x-request-id": "req_8c1f2a",
+          "llm_provider-openai-processing-ms": "412"
+        },
+        "batch_models": null,
+        "litellm_model_name": "openai/gpt-4o",
+        "usage_object": null
+      },
+      "guardrail_information": null,
+      "standard_built_in_tools_params": {
+        "web_search_options": null,
+        "file_search": null
+      }
+    },
+    "complete_streaming_response": {
+      "id": "chatcmpl-B9x3sT",
+      "created": 1791363610,
+      "model": "gpt-4o-2024-08-06",
+      "object": "chat.completion",
+      "system_fingerprint": "fp_7f8c2d1a3b",
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "Visit the Musée d'Orsay.",
+            "role": "assistant",
+            "tool_calls": null,
+            "function_call": null,
+            "provider_specific_fields": null
+          }
+        }
+      ],
+      "usage": {
+        "completion_tokens": 9,
+        "prompt_tokens": 40,
+        "total_tokens": 49,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        }
+      }
+    }
+  },
+  "response_obj": {
+    "id": "chatcmpl-B9x3sT",
+    "created": 1791363610,
+    "model": "gpt-4o-2024-08-06",
+    "object": "chat.completion.chunk",
+    "system_fingerprint": "fp_7f8c2d1a3b",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "delta": {
+          "content": null,
+          "role": null,
+          "function_call": null,
+          "tool_calls": null
+        }
+      }
+    ],
+    "provider_specific_fields": null
+  }
+}

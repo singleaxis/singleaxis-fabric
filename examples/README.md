@@ -26,6 +26,7 @@ engines, or management services in this stack.
 | [`governed-content/`](governed-content/) | Opt-in governed capture: a model → tool → model run where content lands in a customer-controlled store and telemetry carries refs only. |
 | [`offline-transcript/`](offline-transcript/) | Minimal record-and-read harness — SDK + local store only, no Node or services. |
 | [`agent-orchestration/`](agent-orchestration/) | Full UAT demo: orchestrated agent (tools, shell execs, HTTP fetch, file write) traced through the real collector + audit receiver, reconstructed into a journal and rendered by a local viewer. |
+| [`wire-capture/`](wire-capture/) | Framework-agnostic LLM wire capture (spec 042): a plain httpx ReAct loop against a fake OpenAI-compatible model, exact bytes in a local store, digest-only spans, then `python -m fabric.reconstruct` returning a `complete_for_declared_scope` verdict. Runs fully offline. |
 
 Pre-0.8 examples that demonstrated removed APIs (guardrails, policy
 evaluation, tool authorization, escalation, eval/judge capture) were

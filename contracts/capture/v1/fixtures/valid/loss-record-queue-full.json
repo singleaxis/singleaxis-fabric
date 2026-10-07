@@ -1,0 +1,26 @@
+{
+  "schema_version": "fabric.loss-record/v1",
+  "record_id": "9d0c8b7a-6f5e-4d3c-8b2a-1f0e9d8c7b6a",
+  "kind": "loss",
+  "tenant_id": "tenant-a",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000,
+    "source_sequence": 9,
+    "component": "wire"
+  },
+  "emitted_at": "2026-10-07T09:00:05.000Z",
+  "reason": "queue_full",
+  "count": 1,
+  "affected": [
+    {
+      "source_sequence": 7,
+      "run_id": "run-travel-42",
+      "run_sequence": 3,
+      "exchange_id": "2e4f6a8c-0b1d-4f3e-a5c7-e9f1a3b5c7d9"
+    }
+  ],
+  "affected_truncated": false,
+  "high_water_sequence": 9,
+  "cumulative": {"total": 1, "by_reason": {"queue_full": 1}}
+}

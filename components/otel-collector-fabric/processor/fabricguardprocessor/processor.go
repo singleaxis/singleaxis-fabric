@@ -445,12 +445,20 @@ func (g *guard) scrubTraceScope(scopeSpan ptrace.ScopeSpans) {
 // vocabulary. Attribute metadata wins, preserving reconstruction without
 // exporting a caller-controlled name that may contain PHI or credentials.
 func activityCategory(name string, attrs pcommon.Map) string {
+	// Capture-loss records and watermarks (spec 042) win over every other
+	// category: their native name is irrelevant once the kind is known.
+	if kind, ok := attrs.Get("fabric.loss.record_kind"); ok {
+		if kind.Type() == pcommon.ValueTypeStr && kind.Str() == "watermark" {
+			return "fabric.capture_watermark"
+		}
+		return "fabric.capture_loss"
+	}
 	for _, key := range []string{"fabric.tool.name", "gen_ai.tool.name", "fabric.tool.result_hash"} {
 		if _, ok := attrs.Get(key); ok {
 			return "fabric.tool_call"
 		}
 	}
-	for _, key := range []string{"fabric.llm.system", "gen_ai.request.model"} {
+	for _, key := range []string{"fabric.llm.system", "gen_ai.request.model", "fabric.wire.exchange_id"} {
 		if _, ok := attrs.Get(key); ok {
 			return "fabric.model_call"
 		}
@@ -484,7 +492,8 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		"fabric.interaction", "fabric.file_access", "fabric.delegation", "fabric.error",
 		"fabric.retry", "fabric.cancellation", "fabric.deployment_change", "fabric.human_action",
 		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory", "fabric.skill",
-		"fabric.hook", "fabric.coverage", "fabric.crewai.step", "fabric.crewai.task":
+		"fabric.hook", "fabric.coverage", "fabric.crewai.step", "fabric.crewai.task",
+		"fabric.capture_loss", "fabric.capture_watermark":
 		return name
 	default:
 		return "fabric.activity"
@@ -507,6 +516,10 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 			return true
 		}
 		if !validHostAuditValue(key, value) {
+			g.stats.notAllowedRemoved.Add(1)
+			return true
+		}
+		if !validCaptureValue(key, value) {
 			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
@@ -597,6 +610,162 @@ func validHostAuditValue(key string, value pcommon.Value) bool {
 	default:
 		return true
 	}
+}
+
+// maxCaptureArray is the spec 042 OTLP array bound. It applies regardless of
+// max_slice_elements so a raised operator bound cannot widen capture arrays.
+const maxCaptureArray = 64
+
+var (
+	captureSourceComponents = toSet("wire", "gateway", "otel")
+	captureRunIDBases       = toSet("explicit", "trace", "source")
+	captureFidelities       = toSet("exact_wire", "gateway_normalized")
+	captureWireAPIs         = toSet(
+		"openai.chat_completions", "openai.responses", "openai.completions",
+		"openai.embeddings", "anthropic.messages",
+	)
+	captureResponseStates = toSet("complete", "closed_early", "transport_error", "abandoned")
+	captureParseStatuses  = toSet("ok", "not_json", "undecodable_encoding", "unrecognized_shape", "truncated", "not_parsed")
+	captureStoreStatuses  = toSet("stored", "partial", "failed", "disabled")
+	captureRecordKinds    = toSet("loss", "watermark")
+	captureLossReasons    = toSet(
+		"buffer_overflow", "queue_full", "store_failure", "span_dropped",
+		"span_export_failed", "internal_error", "shutdown_timeout", "run_index_evicted",
+	)
+)
+
+// validCaptureValue closes the value shapes of the spec 042 wire-capture
+// keys: fixed enums, typed non-negative integers, booleans, opaque ids, the
+// endpoint-id pattern and W3C traceparent. Without it an exact-key allowlist
+// would still let a buggy or compromised source export arbitrary text, such
+// as a prompt, under a nominal metadata key. Hash keys are closed separately
+// by hashAttributeKey/validHashValue; this function only bounds their arrays.
+func validCaptureValue(key string, value pcommon.Value) bool {
+	switch key {
+	case "fabric.source.component":
+		return captureEnum(value, captureSourceComponents)
+	case "fabric.run.id_basis":
+		return captureEnum(value, captureRunIDBases)
+	case "fabric.wire.fidelity":
+		return captureEnum(value, captureFidelities)
+	case "fabric.wire.api":
+		return captureEnum(value, captureWireAPIs)
+	case "fabric.wire.response_state":
+		return captureEnum(value, captureResponseStates)
+	case "fabric.wire.parse_status":
+		return captureEnum(value, captureParseStatuses)
+	case "fabric.wire.store_status":
+		return captureEnum(value, captureStoreStatuses)
+	case "fabric.loss.record_kind":
+		return captureEnum(value, captureRecordKinds)
+	case "fabric.loss.reason":
+		return captureEnum(value, captureLossReasons)
+	case "fabric.loss.cumulative_reasons":
+		return captureSlice(value, func(v pcommon.Value) bool { return captureEnum(v, captureLossReasons) })
+	case "fabric.source.epoch", "fabric.run.sequence",
+		"fabric.wire.request_body_bytes", "fabric.wire.response_body_bytes",
+		"fabric.wire.input.message_count", "fabric.wire.output.message_count",
+		"fabric.wire.input.message_hashes_offset",
+		"fabric.loss.count", "fabric.loss.high_water_sequence", "fabric.loss.cumulative_total":
+		return captureInt(value, 0)
+	case "fabric.run.high_water_sequence":
+		return captureInt(value, -1)
+	case "fabric.loss.affected_sequences", "fabric.loss.cumulative_counts":
+		return captureSlice(value, func(v pcommon.Value) bool { return captureInt(v, 0) })
+	case "fabric.loss.affected_run_sequences":
+		return captureSlice(value, func(v pcommon.Value) bool { return captureInt(v, -1) })
+	case "fabric.wire.arrays_truncated", "fabric.wire.truncated", "fabric.loss.affected_truncated":
+		return value.Type() == pcommon.ValueTypeBool
+	case "fabric.run.id", "fabric.wire.exchange_id", "fabric.wire.provider_request_id", "fabric.loss.record_id":
+		return evidenceID(value)
+	case "fabric.wire.input.tool_call_ids", "fabric.wire.output.tool_call_ids":
+		return captureSlice(value, evidenceID)
+	case "fabric.loss.affected_run_ids":
+		// "" is the aligned placeholder for an unknown run.
+		return captureSlice(value, func(v pcommon.Value) bool {
+			return v.Type() == pcommon.ValueTypeStr && v.Str() == "" || evidenceID(v)
+		})
+	case "fabric.wire.input.message_hashes", "fabric.wire.output.message_hashes":
+		// Element format is enforced by validHashValue.
+		return value.Type() != pcommon.ValueTypeSlice || value.Slice().Len() <= maxCaptureArray
+	case "fabric.wire.endpoint_id":
+		return validEndpointID(value)
+	case "fabric.wire.client_traceparent":
+		return validTraceparent(value)
+	default:
+		return true
+	}
+}
+
+func captureEnum(value pcommon.Value, allowed map[string]struct{}) bool {
+	if value.Type() != pcommon.ValueTypeStr {
+		return false
+	}
+	_, ok := allowed[value.Str()]
+	return ok
+}
+
+func captureInt(value pcommon.Value, minimum int64) bool {
+	return value.Type() == pcommon.ValueTypeInt && value.Int() >= minimum
+}
+
+func captureSlice(value pcommon.Value, element func(pcommon.Value) bool) bool {
+	if value.Type() != pcommon.ValueTypeSlice {
+		return false
+	}
+	values := value.Slice()
+	if values.Len() > maxCaptureArray {
+		return false
+	}
+	for i := 0; i < values.Len(); i++ {
+		if !element(values.At(i)) {
+			return false
+		}
+	}
+	return true
+}
+
+// validEndpointID matches ^[a-z0-9][a-z0-9._-]{0,63}$. It is a configured
+// label, never a host name.
+func validEndpointID(value pcommon.Value) bool {
+	if value.Type() != pcommon.ValueTypeStr {
+		return false
+	}
+	id := value.Str()
+	if len(id) < 1 || len(id) > 64 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || i > 0 && (c == '.' || c == '_' || c == '-') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// validTraceparent matches ^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$.
+func validTraceparent(value pcommon.Value) bool {
+	if value.Type() != pcommon.ValueTypeStr {
+		return false
+	}
+	parts := strings.Split(value.Str(), "-")
+	if len(parts) != 4 {
+		return false
+	}
+	for i, width := range []int{2, 32, 16, 2} {
+		if len(parts[i]) != width {
+			return false
+		}
+		for j := 0; j < width; j++ {
+			c := parts[i][j]
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func hashAttributeKey(key string) bool {

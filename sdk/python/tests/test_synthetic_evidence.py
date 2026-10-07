@@ -418,8 +418,11 @@ def test_unapproved_outcome_field_is_a_gap_not_a_metadata_secret(tmp_path: Path)
     spool = SyntheticSourceSpool(str(root), tenant_id="synthetic-tenant", run_id="run-1")
     session, _store = _session(tmp_path, source_spool=spool)
     session.outcome(
-        source_id="provider-http-1", boundary="provider_bound",
-        operation_id="model-1", attempt_id="try-1", unapproved_field="secret-canary",
+        source_id="provider-http-1",
+        boundary="provider_bound",
+        operation_id="model-1",
+        attempt_id="try-1",
+        unapproved_field="secret-canary",
     )
     snapshot = session.snapshot()
     assert snapshot["operations"] == []
@@ -613,7 +616,10 @@ def test_local_shadow_pilot_reconciles_two_models_terminal_and_artifact(tmp_path
                 else "agent.evidence.content"
             )
         for forbidden in (
-            b"start\x00", b"artifact\x00", str(root).encode(), os.fsencode(sys.executable)
+            b"start\x00",
+            b"artifact\x00",
+            str(root).encode(),
+            os.fsencode(sys.executable),
         ):
             assert forbidden not in payload
     finally:

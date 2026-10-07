@@ -24,22 +24,53 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ROLES = frozenset(
     {
-        "model.request.instructions", "model.request.messages", "model.request.tool_definitions",
-        "model.request.parameters", "model.output.messages", "tool.definition",
-        "tool.call.arguments", "tool.call.result", "retrieval.query", "retrieval.results",
-        "memory.write.content", "memory.read.content", "side_effect.request",
-        "side_effect.result", "context.file", "interaction.payload", "terminal.argv",
-        "terminal.stdin", "terminal.stdout", "terminal.stderr", "remote.request",
-        "remote.result", "remote.stream", "database.query", "database.parameters",
-        "database.rows", "database.mutation", "network.request", "network.response",
-        "network.stream", "sandbox.config", "sandbox.output", "artifact.before",
-        "artifact.after", "service.receipt",
+        "model.request.instructions",
+        "model.request.messages",
+        "model.request.tool_definitions",
+        "model.request.parameters",
+        "model.output.messages",
+        "tool.definition",
+        "tool.call.arguments",
+        "tool.call.result",
+        "retrieval.query",
+        "retrieval.results",
+        "memory.write.content",
+        "memory.read.content",
+        "side_effect.request",
+        "side_effect.result",
+        "context.file",
+        "interaction.payload",
+        "terminal.argv",
+        "terminal.stdin",
+        "terminal.stdout",
+        "terminal.stderr",
+        "remote.request",
+        "remote.result",
+        "remote.stream",
+        "database.query",
+        "database.parameters",
+        "database.rows",
+        "database.mutation",
+        "network.request",
+        "network.response",
+        "network.stream",
+        "sandbox.config",
+        "sandbox.output",
+        "artifact.before",
+        "artifact.after",
+        "service.receipt",
     }
 )
 _STATUSES = frozenset(
     {
-        "pending", "stored", "truncated", "redacted", "not_captured",
-        "unsupported", "dropped", "failed",
+        "pending",
+        "stored",
+        "truncated",
+        "redacted",
+        "not_captured",
+        "unsupported",
+        "dropped",
+        "failed",
     }
 )
 _BOUNDARIES = frozenset(
@@ -126,8 +157,7 @@ def project_synthetic_snapshot(snapshot: dict[str, Any]) -> tuple[bytes, list[st
             fields["content_object_id"] = object_id
             fields["content_sha256"] = digest
         name = (
-            "agent.evidence.artifact" if role.startswith("artifact.")
-            else "agent.evidence.content"
+            "agent.evidence.artifact" if role.startswith("artifact.") else "agent.evidence.content"
         )
         records.append(
             {"eventName": name, "attributes": [_attribute(k, v) for k, v in fields.items()]}

@@ -1,0 +1,92 @@
+{
+  "schema_version": "fabric.llm-exchange/v1",
+  "exchange_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+  "tenant_id": "tenant-a",
+  "fidelity": "exact_wire",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000,
+    "source_sequence": 5,
+    "component": "wire"
+  },
+  "run": {"run_id": "run-travel-42", "basis": "explicit", "run_sequence": 1},
+  "trace": {
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "00f067aa0ba902b7",
+    "parent_span_id": "a3ce929d0e0e4736"
+  },
+  "endpoint": {
+    "endpoint_id": "openai",
+    "api": "openai.chat_completions",
+    "provider_name": "openai",
+    "http_method": "POST",
+    "http_status_code": 200,
+    "provider_request_id": "req_8c1f2a"
+  },
+  "timing": {
+    "started_at": "2026-10-07T09:00:01.120Z",
+    "first_byte_at": "2026-10-07T09:00:01.410Z",
+    "ended_at": "2026-10-07T09:00:02.050Z"
+  },
+  "request": {
+    "body": {
+      "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+      "role": "model.exchange.request",
+      "media_type": "application/json",
+      "content_encoding": "identity",
+      "representation": "exact",
+      "status": "stored",
+      "source_byte_length": 1,
+      "source_sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "stored_byte_length": 1,
+      "stored_sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "ref": "file:///var/lib/fabric/content/tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
+    },
+    "model": "gpt-4o-2024-08-06",
+    "stream": true,
+    "message_count": 4,
+    "message_digests": [
+      "sha256:404c676b903100db77c14ddebd2cad5f580aaa2c5fbaf43b5a76ffc1660afb33",
+      "sha256:4643233bdbff106862e3910484d1104e47823d2c8cf85d109cf9ddcc56fb7474",
+      "sha256:40577397c954af145a6a923a4ca0d26be8c87a85f45e9006d6366d71891d3d19",
+      "sha256:a8434f9d517a55f61e5e033e3817696fae2af1b6c1e35f5f28b684b98e99abab"
+    ],
+    "message_roles": ["system", "user", "assistant", "tool"],
+    "tools_digest": "sha256:46c47ab6bfb80e3515c94471d99c6f267ddc20af3967baa603436366f6d21a0f",
+    "tool_call_ids_consumed": ["call_7Qx2"],
+    "parse_status": "ok"
+  },
+  "response": {
+    "state": "complete",
+    "body": {
+      "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+      "role": "model.exchange.response",
+      "media_type": "text/event-stream",
+      "content_encoding": "identity",
+      "representation": "exact",
+      "status": "stored",
+      "source_byte_length": 1,
+      "source_sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "stored_byte_length": 1,
+      "stored_sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "ref": "file:///var/lib/fabric/content/tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02"
+    },
+    "response_id": "chatcmpl-B9x2kQ",
+    "model": "gpt-4o-2024-08-06",
+    "finish_reasons": ["stop"],
+    "message_count": 1,
+    "message_digests": [
+      "sha256:096dcaf182e3ff69ee1dc503625586ad8aaa31cb2382609de47c016531a9968c"
+    ],
+    "message_roles": ["assistant"],
+    "tool_calls": [],
+    "usage": {"input_tokens": 212, "output_tokens": 14},
+    "parse_status": "ok"
+  },
+  "capture": {
+    "digest_projection": "fabric.stitch/v1",
+    "truncated": false,
+    "store_status": "stored",
+    "loss_record_ids": []
+  }
+}

@@ -30,8 +30,9 @@ from typing import Any
 
 from opentelemetry import metrics, trace
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import SpanLimits, TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON, Sampler
 
 from ._version import __version__
 
@@ -162,12 +163,39 @@ def _resolve_default_exporter(exporter: SpanExporter | None) -> SpanExporter | N
     return None
 
 
+def _new_provider(
+    service_name: str | None,
+    resource_attributes: dict[str, Any] | None,
+    sampler: Sampler | None = None,
+) -> TracerProvider:
+    attrs: dict[str, Any] = {
+        "service.name": service_name or os.environ.get("OTEL_SERVICE_NAME", FABRIC_SDK_NAME),
+        "fabric.sdk.version": __version__,
+    }
+    if resource_attributes:
+        attrs.update(resource_attributes)
+    return TracerProvider(
+        sampler=sampler,
+        resource=Resource.create(attrs),
+        span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN),
+    )
+
+
+def _span_processor(exporter: SpanExporter, loss_accounting: bool) -> SpanProcessor:
+    if not loss_accounting:
+        return BatchSpanProcessor(exporter)
+    from ._loss import LossCountingSpanProcessor, get_loss_emitter  # noqa: PLC0415
+
+    return LossCountingSpanProcessor(exporter, loss=get_loss_emitter())
+
+
 def install_default_provider(
     *,
     service_name: str | None = None,
     exporter: SpanExporter | None = None,
     resource_attributes: dict[str, Any] | None = None,
     meter_provider: metrics.MeterProvider | None = None,
+    loss_accounting: bool = True,
 ) -> TracerProvider:
     """Install a :class:`TracerProvider` on the global OTel API.
 
@@ -191,6 +219,13 @@ def install_default_provider(
     ``gen_ai.client.*`` instruments actually record. Without a real
     ``MeterProvider`` those metrics silently no-op (see module docstring).
 
+    ``loss_accounting`` (default on) exports through
+    :class:`fabric._loss.LossCountingSpanProcessor` instead of
+    ``BatchSpanProcessor``: same batching, but spans dropped on a full queue
+    or a failed export are counted and reported as ``fabric.capture_loss``
+    records (spec 042 §7) instead of disappearing silently. Pass ``False``
+    for the plain OTel ``BatchSpanProcessor``.
+
     If a real ``TracerProvider`` is already installed, a WARN is emitted
     and the existing provider is returned unchanged. Re-install of an
     already-configured provider is an OTel anti-pattern (the OTel API
@@ -206,18 +241,9 @@ def install_default_provider(
         )
         return existing
     resolved_exporter = _resolve_default_exporter(exporter)
-    attrs: dict[str, Any] = {
-        "service.name": service_name or os.environ.get("OTEL_SERVICE_NAME", FABRIC_SDK_NAME),
-        "fabric.sdk.version": __version__,
-    }
-    if resource_attributes:
-        attrs.update(resource_attributes)
-    provider = TracerProvider(
-        resource=Resource.create(attrs),
-        span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN),
-    )
+    provider = _new_provider(service_name, resource_attributes)
     if resolved_exporter is not None:
-        provider.add_span_processor(BatchSpanProcessor(resolved_exporter))
+        provider.add_span_processor(_span_processor(resolved_exporter, loss_accounting))
     else:
         _LOG.warning(
             "fabric.tracing: install_default_provider() called without an "
@@ -234,4 +260,41 @@ def install_default_provider(
     # the latch unset and let _warn_if_noop_provider flag that shape too.
     global _NOOP_PROVIDER_WARNED  # noqa: PLW0603
     _NOOP_PROVIDER_WARNED = resolved_exporter is not None
+    return provider
+
+
+def build_private_provider(
+    *,
+    exporter: SpanExporter | None = None,
+    service_name: str | None = None,
+    resource_attributes: dict[str, Any] | None = None,
+    loss_accounting: bool = True,
+) -> TracerProvider:
+    """Build a :class:`TracerProvider` for Fabric's own use, never installed globally.
+
+    Used by capture components (the wire tee with ``FABRIC_WIRE_TRACER=private``)
+    that must emit spans without taking over the host's OTel setup: this
+    function never calls ``trace.set_tracer_provider``, so a host that
+    configures OTel later is unaffected. The exporter is resolved exactly
+    like :func:`install_default_provider` (explicit ``exporter``, else an
+    ``OTLPSpanExporter`` from the standard ``OTEL_EXPORTER_OTLP_*`` env when
+    the ``[otlp]`` extra is installed). Without either, the provider has no
+    span processor and a WARN is logged.
+
+    The provider always samples (``ALWAYS_ON``), ignoring ``OTEL_TRACES_SAMPLER``
+    and the host's sampling decision on the parent: capture spans are the
+    record, and a sampled-out exchange, loss or watermark span would be an
+    unexplained gap (spec 042 §7).
+    """
+    resolved_exporter = _resolve_default_exporter(exporter)
+    provider = _new_provider(service_name, resource_attributes, sampler=ALWAYS_ON)
+    if resolved_exporter is not None:
+        provider.add_span_processor(_span_processor(resolved_exporter, loss_accounting))
+    else:
+        _LOG.warning(
+            "fabric.tracing: build_private_provider() has no exporter; spans "
+            "on this private provider will be recorded then dropped. Pass "
+            "exporter=... or set OTEL_EXPORTER_OTLP_ENDPOINT (with the [otlp] "
+            "extra)."
+        )
     return provider

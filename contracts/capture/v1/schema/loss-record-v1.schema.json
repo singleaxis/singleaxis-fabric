@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/loss-record-v1.schema.json",
+  "title": "Fabric capture loss record / source watermark v1 (draft, spec 042)",
+  "description": "A loss record makes a capture-side gap visible; a watermark declares a source's high-water sequence and cumulative loss so tail loss is detectable. Neither carries content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "record_id", "kind", "source", "emitted_at", "count",
+    "affected", "affected_truncated", "high_water_sequence", "cumulative"
+  ],
+  "properties": {
+    "schema_version": {"const": "fabric.loss-record/v1"},
+    "record_id": {"$ref": "#/$defs/opaqueId"},
+    "kind": {"enum": ["loss", "watermark"]},
+    "tenant_id": {"$ref": "#/$defs/opaqueId"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_epoch", "source_sequence", "component"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "source_sequence": {"type": "integer", "minimum": 0},
+        "component": {"enum": ["wire", "gateway", "otel"]}
+      }
+    },
+    "emitted_at": {"type": "string", "format": "date-time"},
+    "reason": {"$ref": "#/$defs/reason"},
+    "count": {"type": "integer", "minimum": 0},
+    "affected": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_sequence"],
+        "properties": {
+          "source_sequence": {"type": "integer", "minimum": 0},
+          "run_id": {"$ref": "#/$defs/opaqueId"},
+          "run_sequence": {"type": "integer", "minimum": 0},
+          "exchange_id": {"$ref": "#/$defs/opaqueId"}
+        },
+        "dependentRequired": {"run_sequence": ["run_id"]}
+      }
+    },
+    "affected_truncated": {"type": "boolean"},
+    "high_water_sequence": {"type": "integer", "minimum": 0},
+    "cumulative": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "by_reason"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "by_reason": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/reason"},
+          "additionalProperties": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "high_water_run_sequence"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/opaqueId"},
+        "high_water_run_sequence": {"type": "integer", "minimum": -1}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "loss"}}},
+      "then": {
+        "required": ["reason"],
+        "properties": {"count": {"minimum": 1}},
+        "not": {"required": ["run"]}
+      }
+    },
+    {
+      "if": {"properties": {"kind": {"const": "watermark"}}},
+      "then": {
+        "not": {"required": ["reason"]},
+        "properties": {
+          "count": {"const": 0},
+          "affected": {"maxItems": 0},
+          "affected_truncated": {"const": false}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "opaqueId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "reason": {
+      "enum": [
+        "buffer_overflow", "queue_full", "store_failure", "span_dropped",
+        "span_export_failed", "internal_error", "shutdown_timeout",
+        "run_index_evicted"
+      ]
+    }
+  }
+}

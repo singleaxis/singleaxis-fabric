@@ -69,6 +69,8 @@ jobs:
         run: python scripts/contracts/validate_data_plane_contracts.py
       - name: Validate draft AEEP evidence and content-v2 fixtures
         run: python scripts/contracts/validate_evidence_contracts.py
+      - name: Validate draft LLM wire-capture contracts
+        run: python scripts/contracts/validate_capture_contracts.py
       - name: Verify coordinated artifact identity
         run: python scripts/verify_release_identity.py --json
 

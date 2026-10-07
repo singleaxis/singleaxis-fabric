@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/run-reconstruction-v1.schema.json",
+  "title": "Fabric run reconstruction v1 (draft, spec 042)",
+  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope; it is not a quality evaluation and carries no content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "verifier", "inputs", "sources", "runs"],
+  "properties": {
+    "schema_version": {"const": "fabric.run-reconstruction/v1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "fabric.reconstruct"},
+        "version": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["span_files", "scope", "recompute_digests", "scan_store"],
+      "properties": {
+        "span_files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "format", "records"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+              "sha256": {"$ref": "#/$defs/digest"},
+              "format": {"enum": ["sink_jsonl", "otlp_json"]},
+              "records": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "tenant_id"],
+          "properties": {
+            "kind": {"enum": ["local", "s3"]},
+            "tenant_id": {"$ref": "#/$defs/opaqueId"}
+          }
+        },
+        "scope": {"enum": ["bytes", "metadata"]},
+        "recompute_digests": {"type": "boolean"},
+        "scan_store": {"type": "boolean"}
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id", "source_epoch", "observed_records", "high_water_sequence",
+          "missing_sequences", "cumulative_lost"
+        ],
+        "properties": {
+          "source_id": {"$ref": "#/$defs/opaqueId"},
+          "source_epoch": {"type": "integer", "minimum": 0},
+          "component": {"enum": ["wire", "gateway", "otel"]},
+          "observed_records": {"type": "integer", "minimum": 0},
+          "high_water_sequence": {"type": "integer", "minimum": -1},
+          "missing_sequences": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {"type": "integer", "minimum": 0},
+                {"type": "integer", "minimum": 0}
+              ],
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "watermark_sequence": {"type": "integer", "minimum": 0},
+          "cumulative_lost": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}}
+  },
+  "$defs": {
+    "opaqueId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "gapType": {
+      "enum": [
+        "sequence_gap", "prefix_break", "unmatched_tool_call", "missing_object",
+        "digest_mismatch", "loss_record", "truncated", "unresolved_previous_response",
+        "unparsed_exchange", "tail_unverified"
+      ]
+    },
+    "check": {"enum": ["passed", "failed", "skipped", "not_applicable"]},
+    "objectCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification"],
+      "properties": {
+        "object_id": {"$ref": "#/$defs/opaqueId"},
+        "ref": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "verification": {"enum": ["verified", "missing", "digest_mismatch", "not_stored", "not_checked"]}
+      }
+    },
+    "exchange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exchange_id", "run_sequence", "source_id", "source_epoch", "source_sequence",
+        "fidelity", "api", "response_state", "thread_id", "input_message_count",
+        "output_message_count", "tool_call_ids_consumed", "tool_call_ids_emitted",
+        "origin", "objects"
+      ],
+      "properties": {
+        "exchange_id": {"$ref": "#/$defs/opaqueId"},
+        "run_sequence": {"type": "integer", "minimum": 0},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "source_sequence": {"type": "integer", "minimum": 0},
+        "fidelity": {"enum": ["exact_wire", "gateway_normalized"]},
+        "api": {
+          "enum": [
+            "openai.chat_completions", "openai.responses", "openai.completions",
+            "openai.embeddings", "anthropic.messages"
+          ]
+        },
+        "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": "string", "format": "date-time"},
+        "model": {"type": "string", "minLength": 1, "maxLength": 256},
+        "response_id": {"$ref": "#/$defs/opaqueId"},
+        "previous_response_id": {"$ref": "#/$defs/opaqueId"},
+        "response_state": {"enum": ["complete", "closed_early", "transport_error", "abandoned"]},
+        "thread_id": {"$ref": "#/$defs/opaqueId"},
+        "continues_exchange_id": {"$ref": "#/$defs/opaqueId"},
+        "input_message_count": {"type": "integer", "minimum": 0},
+        "output_message_count": {"type": "integer", "minimum": 0},
+        "tool_call_ids_consumed": {"type": "array", "items": {"$ref": "#/$defs/opaqueId"}},
+        "tool_call_ids_emitted": {"type": "array", "items": {"$ref": "#/$defs/opaqueId"}},
+        "origin": {"enum": ["span", "store", "span_and_store"]},
+        "objects": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "request": {"$ref": "#/$defs/objectCheck"},
+            "response": {"$ref": "#/$defs/objectCheck"},
+            "record": {"$ref": "#/$defs/objectCheck"}
+          }
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gap_type", "effect"],
+      "properties": {
+        "gap_type": {"$ref": "#/$defs/gapType"},
+        "effect": {"enum": ["info", "partial", "unverified"]},
+        "exchange_id": {"$ref": "#/$defs/opaqueId"},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "sequences": {"type": "array", "maxItems": 256, "items": {"type": "integer", "minimum": 0}},
+        "run_sequences": {"type": "array", "maxItems": 256, "items": {"type": "integer", "minimum": 0}},
+        "tool_call_id": {"$ref": "#/$defs/opaqueId"},
+        "previous_response_id": {"$ref": "#/$defs/opaqueId"},
+        "loss_record_id": {"$ref": "#/$defs/opaqueId"},
+        "object_role": {"enum": ["request", "response", "record"]},
+        "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id", "run_id_basis", "verdict", "declared_scope", "exchanges",
+        "threads", "gaps", "counts", "checks"
+      ],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/opaqueId"},
+        "run_id_basis": {"enum": ["explicit", "trace", "source"]},
+        "verdict": {"enum": ["complete_for_declared_scope", "partial", "unverified"]},
+        "declared_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capture_surfaces", "bytes", "through"],
+          "properties": {
+            "capture_surfaces": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"enum": ["exact_wire", "gateway_normalized"]}
+            },
+            "bytes": {"type": "boolean"},
+            "through": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["source_id", "source_epoch", "through_source_sequence"],
+                "properties": {
+                  "source_id": {"$ref": "#/$defs/opaqueId"},
+                  "source_epoch": {"type": "integer", "minimum": 0},
+                  "through_source_sequence": {"type": "integer", "minimum": 0}
+                }
+              }
+            }
+          }
+        },
+        "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange"}},
+        "threads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["thread_id", "exchange_ids"],
+            "properties": {
+              "thread_id": {"$ref": "#/$defs/opaqueId"},
+              "exchange_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/opaqueId"}}
+            }
+          }
+        },
+        "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exchanges", "gaps_by_type"],
+          "properties": {
+            "exchanges": {"type": "integer", "minimum": 0},
+            "gaps_by_type": {
+              "type": "object",
+              "propertyNames": {"$ref": "#/$defs/gapType"},
+              "additionalProperties": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sequence", "loss", "tail", "bytes", "stitching"],
+          "properties": {
+            "sequence": {"$ref": "#/$defs/check"},
+            "loss": {"$ref": "#/$defs/check"},
+            "tail": {"$ref": "#/$defs/check"},
+            "bytes": {"$ref": "#/$defs/check"},
+            "stitching": {"$ref": "#/$defs/check"}
+          }
+        }
+      }
+    }
+  }
+}

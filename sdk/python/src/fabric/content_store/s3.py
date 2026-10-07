@@ -210,8 +210,11 @@ class S3ContentStore:
         for dest, value in ((key, content), (meta_key, body)):
             try:
                 client.put_object(
-                    Bucket=self.bucket, Key=dest, Body=value,
-                    IfNoneMatch="*", **self._put_kwargs(),
+                    Bucket=self.bucket,
+                    Key=dest,
+                    Body=value,
+                    IfNoneMatch="*",
+                    **self._put_kwargs(),
                 )
             except Exception as exc:
                 if not _is_precondition_failed(exc):

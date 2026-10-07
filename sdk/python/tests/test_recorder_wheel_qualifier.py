@@ -32,7 +32,11 @@ _GOVERNED_MEMBERS = (
     "fabric/content_store/local.py",
     "fabric/content_store/s3.py",
     "fabric/resolver.py",
+    # Spec 042 wire capture and its env-gated autoload.
+    "fabric/_autoload/__init__.py",
+    "fabric/_autoload/sitecustomize.py",
 )
+_WIRE_INIT = "def current_handle():\n    return None\n"
 
 
 def _wheel(
@@ -41,16 +45,20 @@ def _wheel(
     extra: str | None = None,
     member: str | None = None,
     decision: str = "",
+    root_init: str = '__all__ = ["Fabric"]\n',
+    omit: str | None = None,
 ) -> Path:
     metadata = ["Name: singleaxis-fabric", "Version: 1.0.0"]
     if extra:
         metadata.append(f"Provides-Extra: {extra}")
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("fabric/__init__.py", '__all__ = ["Fabric"]\n')
+        archive.writestr("fabric/__init__.py", root_init)
         archive.writestr("fabric/client.py", "")
         archive.writestr("fabric/decision.py", decision)
+        archive.writestr("fabric/wire/__init__.py", _WIRE_INIT)
         for governed in _GOVERNED_MEMBERS:
-            archive.writestr(governed, "")
+            if governed != omit:
+                archive.writestr(governed, "")
         archive.writestr("singleaxis_fabric-1.0.0.dist-info/METADATA", "\n".join(metadata))
         if member:
             archive.writestr(member, "")
@@ -63,6 +71,7 @@ def _sdist(path: Path, *, member: str | None = None, decision: str = "") -> Path
         f"{prefix}/src/fabric/__init__.py": b'__all__ = ["Fabric"]\n',
         f"{prefix}/src/fabric/client.py": b"",
         f"{prefix}/src/fabric/decision.py": decision.encode(),
+        f"{prefix}/src/fabric/wire/__init__.py": _WIRE_INIT.encode(),
         f"{prefix}/PKG-INFO": b"Name: singleaxis-fabric\nVersion: 1.0.0\n",
     }
     for governed in _GOVERNED_MEMBERS:
@@ -113,3 +122,59 @@ def test_rejects_legacy_decision_method_in_built_code(tmp_path: Path, method: st
 def test_rejects_legacy_module_in_sdist(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="excluded legacy modules"):
         _qualifier().qualify(_sdist(tmp_path / "bad.tar.gz", member="fabric/judge.py"))
+
+
+# ------------------------------------------------------- spec 042 wire capture
+
+
+def test_rejects_artifact_without_autoload(tmp_path: Path) -> None:
+    wheel = _wheel(tmp_path / "no-autoload.whl", omit="fabric/_autoload/sitecustomize.py")
+    with pytest.raises(ValueError, match="missing recorder modules"):
+        _qualifier().qualify(wheel, import_probe=False)
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "singleaxis_fabric.pth",
+        "fabric/_autoload/fabric.pth",
+        "sitecustomize.py",
+        "usercustomize.py",
+        "fabric/sitecustomize.py",
+    ],
+)
+def test_rejects_interpreter_startup_hooks(tmp_path: Path, member: str) -> None:
+    with pytest.raises(ValueError, match="interpreter startup hooks"):
+        _qualifier().qualify(_wheel(tmp_path / "hook.whl", member=member), import_probe=False)
+
+
+def test_rejects_startup_hook_in_sdist(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="interpreter startup hooks"):
+        _qualifier().qualify(
+            _sdist(tmp_path / "hook.tar.gz", member="fabric/x.pth"), import_probe=False
+        )
+
+
+def test_import_probe_passes_inert_artifacts(tmp_path: Path) -> None:
+    qualifier = _qualifier()
+    assert qualifier.qualify(_wheel(tmp_path / "ok.whl"))["qualified"] is True
+    assert qualifier.qualify(_sdist(tmp_path / "ok.tar.gz"))["qualified"] is True
+
+
+@pytest.mark.parametrize(
+    ("root_init", "problem"),
+    [
+        (
+            "import threading, time\n"
+            "threading.Thread(target=time.sleep, args=(5,), daemon=True).start()\n",
+            "started a thread",
+        ),
+        ("from . import _autoload\n", "fabric._autoload"),
+    ],
+)
+def test_import_probe_rejects_import_side_effects(
+    tmp_path: Path, root_init: str, problem: str
+) -> None:
+    wheel = _wheel(tmp_path / "noisy.whl", root_init=root_init)
+    with pytest.raises(ValueError, match=problem):
+        _qualifier().qualify(wheel)

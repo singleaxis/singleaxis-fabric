@@ -26,3 +26,17 @@ those checks with customer-controlled identity and storage policy.
 The JSON fixture under `fixtures/bytes/` uses base64 only to make the
 contract test portable. It is **not** a prescription to place encoded content
 in OTLP; the bytes belong in the customer-controlled content store.
+
+## Model-exchange roles (spec 042, draft)
+
+`model.exchange.request` and `model.exchange.response` hold the complete
+HTTP body of one model API call — exactly as transmitted/received for the
+in-process wire tee (`provenance: protocol`, `representation: exact`,
+`partial` or `truncated`), or the canonical JSON of the parsed objects a
+gateway callback exposes (`provenance: caller_reported`,
+`representation: canonicalized`). `model.exchange.record` holds the
+metadata-only `fabric.llm-exchange/v1` document
+([capture v1](../../capture/v1/README.md)) that binds both bodies to their
+stitching keys. All three use `boundary: provider_bound`. The narrower
+`model.request.*` / `model.output.messages` roles are unchanged and are
+not emitted by the wire tee.

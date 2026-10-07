@@ -11,6 +11,8 @@
     "name": "singleaxis-fabric",
     "required_wheel_paths": [
       "fabric/__init__.py",
+      "fabric/_autoload/__init__.py",
+      "fabric/_autoload/sitecustomize.py",
       "fabric/_content.py",
       "fabric/_content_sink.py",
       "fabric/_content_writer.py",
@@ -19,8 +21,11 @@
       "fabric/content_store/base.py",
       "fabric/content_store/local.py",
       "fabric/content_store/s3.py",
+      "fabric/gateway/__init__.py",
       "fabric/py.typed",
-      "fabric/resolver.py"
+      "fabric/reconstruct/__init__.py",
+      "fabric/resolver.py",
+      "fabric/wire/__init__.py"
     ],
     "allowed_wheel_package_roots": [
       "fabric"
@@ -55,6 +60,8 @@
       "README.md",
       "LICENSE",
       "src/fabric/__init__.py",
+      "src/fabric/_autoload/__init__.py",
+      "src/fabric/_autoload/sitecustomize.py",
       "src/fabric/_content.py",
       "src/fabric/_content_sink.py",
       "src/fabric/_content_writer.py",
@@ -63,8 +70,11 @@
       "src/fabric/content_store/base.py",
       "src/fabric/content_store/local.py",
       "src/fabric/content_store/s3.py",
+      "src/fabric/gateway/__init__.py",
       "src/fabric/py.typed",
-      "src/fabric/resolver.py"
+      "src/fabric/reconstruct/__init__.py",
+      "src/fabric/resolver.py",
+      "src/fabric/wire/__init__.py"
     ],
     "allowed_sdist_top_level": [
       "src",

@@ -18,18 +18,33 @@ def _snapshot() -> dict[str, Any]:
     digest = "sha256:" + "a" * 64
     return {
         "schema_version": "fabric.synthetic-capture/v1",
-        "tenant_id": "tenant-1", "run_id": "run-1",
-        "events": [{
-            "record_id": "evt-1", "tenant_id": "tenant-1", "run_id": "run-1",
-            "source_id": "source-1", "source_epoch": 1, "source_sequence": 0,
-            "operation_id": "op-1", "attempt_id": "try-1", "boundary": "terminal",
-            "role": "terminal.stdout", "status": "stored",
-            "observed_at": "2026-09-26T10:00:00Z",
-            "descriptor": {"status": "stored", "object_id": "obj-1", "tenant_id": "tenant-1",
-                           "source_sha256": digest, "stored_sha256": digest,
-                           "ref": "file:///private/CANARY-SECRET"},
-            "raw": "CANARY-SECRET",
-        }],
+        "tenant_id": "tenant-1",
+        "run_id": "run-1",
+        "events": [
+            {
+                "record_id": "evt-1",
+                "tenant_id": "tenant-1",
+                "run_id": "run-1",
+                "source_id": "source-1",
+                "source_epoch": 1,
+                "source_sequence": 0,
+                "operation_id": "op-1",
+                "attempt_id": "try-1",
+                "boundary": "terminal",
+                "role": "terminal.stdout",
+                "status": "stored",
+                "observed_at": "2026-09-26T10:00:00Z",
+                "descriptor": {
+                    "status": "stored",
+                    "object_id": "obj-1",
+                    "tenant_id": "tenant-1",
+                    "source_sha256": digest,
+                    "stored_sha256": digest,
+                    "ref": "file:///private/CANARY-SECRET",
+                },
+                "raw": "CANARY-SECRET",
+            }
+        ],
         "operations": [{"outcome": "CANARY-SECRET"}],
     }
 
@@ -62,10 +77,15 @@ def test_dropped_object_projects_loss_without_false_digest() -> None:
     assert "content_object_id" not in attrs
 
 
-@pytest.mark.parametrize("key,value", [
-    ("role", "CANARY-SECRET"), ("status", "CANARY-SECRET"),
-    ("source_sequence", -1), ("tenant_id", "other-tenant"),
-])
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("role", "CANARY-SECRET"),
+        ("status", "CANARY-SECRET"),
+        ("source_sequence", -1),
+        ("tenant_id", "other-tenant"),
+    ],
+)
 def test_projection_rejects_invalid_event(key: str, value: object) -> None:
     snapshot = _snapshot()
     snapshot["events"][0][key] = value

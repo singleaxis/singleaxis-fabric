@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/llm-exchange-v1.schema.json",
+  "title": "Fabric LLM exchange record v1 (draft, spec 042)",
+  "description": "Metadata-only record of one model API call. Bytes live in content-v2 objects referenced by request.body / response.body; this document never carries prompt, message, tool-argument or tool-result content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "exchange_id", "tenant_id", "fidelity", "source", "run",
+    "trace", "endpoint", "timing", "request", "response", "capture"
+  ],
+  "properties": {
+    "schema_version": {"const": "fabric.llm-exchange/v1"},
+    "exchange_id": {"$ref": "#/$defs/opaqueId"},
+    "tenant_id": {"$ref": "#/$defs/opaqueId"},
+    "fidelity": {"enum": ["exact_wire", "gateway_normalized"]},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_epoch", "source_sequence", "component"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "source_sequence": {"type": "integer", "minimum": 0},
+        "component": {"enum": ["wire", "gateway"]}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "basis", "run_sequence"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/opaqueId"},
+        "basis": {"enum": ["explicit", "trace", "source"]},
+        "run_sequence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "parent_span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "client_traceparent": {"$ref": "#/$defs/traceparent"}
+      },
+      "dependentRequired": {"span_id": ["trace_id"], "parent_span_id": ["trace_id"]}
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint_id", "api", "provider_name", "http_method"],
+      "properties": {
+        "endpoint_id": {"$ref": "#/$defs/endpointId"},
+        "api": {"$ref": "#/$defs/api"},
+        "provider_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "http_method": {"const": "POST"},
+        "http_status_code": {"type": "integer", "minimum": 100, "maximum": 599},
+        "provider_request_id": {"$ref": "#/$defs/opaqueId"}
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["started_at", "ended_at"],
+      "properties": {
+        "started_at": {"type": "string", "format": "date-time"},
+        "first_byte_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "body", "stream", "message_count", "message_digests",
+        "tool_call_ids_consumed", "parse_status"
+      ],
+      "properties": {
+        "body": {"$ref": "#/$defs/body"},
+        "model": {"$ref": "#/$defs/shortText"},
+        "stream": {"type": "boolean"},
+        "previous_response_id": {"$ref": "#/$defs/opaqueId"},
+        "message_count": {"type": "integer", "minimum": 0},
+        "message_digests": {"type": "array", "items": {"$ref": "#/$defs/digest"}},
+        "message_roles": {"type": "array", "items": {"$ref": "#/$defs/messageRole"}},
+        "system_digest": {"$ref": "#/$defs/digest"},
+        "tools_digest": {"$ref": "#/$defs/digest"},
+        "tool_call_ids_consumed": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/opaqueId"}
+        },
+        "parse_status": {"$ref": "#/$defs/parseStatus"}
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state", "finish_reasons", "message_count", "message_digests",
+        "tool_calls", "parse_status"
+      ],
+      "properties": {
+        "state": {"enum": ["complete", "closed_early", "transport_error", "abandoned"]},
+        "body": {"$ref": "#/$defs/body"},
+        "response_id": {"$ref": "#/$defs/opaqueId"},
+        "model": {"$ref": "#/$defs/shortText"},
+        "finish_reasons": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[a-z0-9_]{1,64}$"}
+        },
+        "message_count": {"type": "integer", "minimum": 0},
+        "message_digests": {"type": "array", "items": {"$ref": "#/$defs/digest"}},
+        "message_roles": {"type": "array", "items": {"$ref": "#/$defs/messageRole"}},
+        "tool_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": {"$ref": "#/$defs/opaqueId"},
+              "name": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"}
+            }
+          }
+        },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input_tokens": {"type": "integer", "minimum": 0},
+            "output_tokens": {"type": "integer", "minimum": 0},
+            "cache_read_input_tokens": {"type": "integer", "minimum": 0},
+            "cache_creation_input_tokens": {"type": "integer", "minimum": 0},
+            "reasoning_output_tokens": {"type": "integer", "minimum": 0}
+          }
+        },
+        "error_type": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"},
+        "parse_status": {"$ref": "#/$defs/parseStatus"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"state": {"const": "transport_error"}}},
+          "then": {"required": ["error_type"]}
+        }
+      ]
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest_projection", "truncated", "store_status", "loss_record_ids"],
+      "properties": {
+        "digest_projection": {"const": "fabric.stitch/v1"},
+        "truncated": {"type": "boolean"},
+        "store_status": {"enum": ["stored", "partial", "failed"]},
+        "loss_record_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/opaqueId"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "opaqueId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "endpointId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "shortText": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"},
+    "messageRole": {"type": "string", "pattern": "^[a-z_]{1,32}$"},
+    "traceparent": {"type": "string", "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"},
+    "api": {
+      "enum": [
+        "openai.chat_completions", "openai.responses", "openai.completions",
+        "openai.embeddings", "anthropic.messages"
+      ]
+    },
+    "parseStatus": {
+      "enum": ["ok", "not_json", "undecodable_encoding", "unrecognized_shape", "truncated", "not_parsed"]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_id", "role", "media_type", "representation", "status"],
+      "properties": {
+        "object_id": {"$ref": "#/$defs/opaqueId"},
+        "role": {"enum": ["model.exchange.request", "model.exchange.response"]},
+        "media_type": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+$"
+        },
+        "content_encoding": {"enum": ["identity", "gzip", "deflate", "br", "zstd"]},
+        "representation": {"enum": ["exact", "canonicalized", "partial", "truncated", "unavailable"]},
+        "status": {"enum": ["stored", "truncated", "dropped", "failed"]},
+        "source_byte_length": {"type": "integer", "minimum": 0},
+        "source_sha256": {"$ref": "#/$defs/digest"},
+        "stored_byte_length": {"type": "integer", "minimum": 0},
+        "stored_sha256": {"$ref": "#/$defs/digest"},
+        "ref": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^(s3|gs|file)://[^@?#]+$"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["stored", "truncated"]}}},
+          "then": {"required": ["stored_byte_length", "stored_sha256", "ref"]}
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["dropped", "failed"]}}},
+          "then": {
+            "properties": {"representation": {"const": "unavailable"}},
+            "not": {
+              "anyOf": [
+                {"required": ["ref"]},
+                {"required": ["stored_sha256"]},
+                {"required": ["stored_byte_length"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "truncated"}}},
+          "then": {
+            "required": ["source_byte_length"],
+            "properties": {"representation": {"const": "truncated"}}
+          }
+        },
+        {
+          "if": {"properties": {"representation": {"const": "exact"}}},
+          "then": {"required": ["source_byte_length", "source_sha256"]}
+        },
+        {
+          "if": {"required": ["source_sha256"]},
+          "then": {"required": ["source_byte_length"]}
+        }
+      ]
+    }
+  }
+}
