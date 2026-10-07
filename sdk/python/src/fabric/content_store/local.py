@@ -29,7 +29,11 @@ _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """Write ``data`` to ``target`` atomically: tmp + fsync + rename +
     directory fsync. Never leaves a partially written object."""
-    target.parent.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # mkdir honours the process umask only for newly-created components;
+    # tighten an existing directory as well so governed roots never remain
+    # group/world-readable after first use.
+    os.chmod(target.parent, 0o700)
     fd, tmp_name = tempfile.mkstemp(
         dir=str(target.parent), prefix=f".{target.name}.", suffix=".tmp"
     )
@@ -147,6 +151,41 @@ class LocalFilesystemContentStore:
                 (json.dumps(descriptor, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
             )
         return ContentRef(uri=f"file://{target}", content_hash=digest)
+
+    def evidence_ref_for(self, object_id: str) -> str:
+        """Prospective v2 reference, scoped to one observation."""
+        check_safe_identifier("object_id", object_id)
+        return f"file://{self._tenant_root() / 'evidence' / object_id}"
+
+    def put_bytes_object(self, descriptor: Mapping[str, Any], content: bytes) -> ContentRef:
+        """Persist exact v2 bytes and an observation-specific descriptor."""
+        if descriptor.get("schema_version") != "fabric.content-object/v2":
+            raise ValueError("put_bytes_object requires a content-object/v2 descriptor")
+        if descriptor.get("tenant_id") != self.tenant_id:
+            raise ValueError("descriptor tenant_id does not match store tenant_id")
+        object_id = check_safe_identifier("object_id", descriptor["object_id"])
+        digest = content_hash_bytes(content)
+        if descriptor.get("stored_sha256") != f"sha256:{digest}":
+            raise ValueError("content bytes do not match stored_sha256")
+        if descriptor.get("stored_byte_length") != len(content):
+            raise ValueError("content bytes do not match stored_byte_length")
+        target = self._tenant_root() / "evidence" / object_id
+        ref = f"file://{target}"
+        if descriptor.get("ref") != ref:
+            raise ValueError("descriptor ref does not match store namespace")
+        meta = target.parent / "meta" / f"{object_id}.json"
+        body = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        if target.exists():
+            if target.read_bytes() != content:
+                raise CorruptedObjectError(f"pre-existing evidence object {target} differs")
+        else:
+            _atomic_write_bytes(target, content)
+        if meta.exists():
+            if meta.read_bytes() != body:
+                raise CorruptedObjectError(f"pre-existing evidence descriptor {meta} differs")
+        else:
+            _atomic_write_bytes(meta, body)
+        return ContentRef(uri=ref, content_hash=digest)
 
     def write_manifest(
         self, manifest: Mapping[str, Any], *, decision_id: str, manifest_id: str

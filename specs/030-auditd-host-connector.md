@@ -1,8 +1,8 @@
 ---
 title: auditd Host Connector (auditreceiver)
-status: implemented
-revision: 1
-last_updated: 2026-09-22
+status: implemented-not-enterprise-qualified
+revision: 2
+last_updated: 2026-09-26
 owner: project-lead
 ---
 
@@ -48,7 +48,8 @@ auditd rules → kernel emits records → audit netlink (unicast) or audit.log
    (`manage_rules: true`) — first writer wins, never overrides an existing
    daemon.
 2. **`logfile`**. Tail `/var/log/audit/audit.log` (configurable path) with
-   rotation handling and resume-position. Needs read access to the audit log
+   rotation handling and an in-process read position. The position is not
+   restart-durable. Needs read access to the audit log
    directory only — the lowest-privilege fallback for hosts where the audit
    subsystem is owned by an existing daemon.
 
@@ -76,11 +77,11 @@ EOE 1320). The receiver:
 | `audit.serial` | event serial | dedupe/debug |
 | `process.pid` / `process.parent_pid` | SYSCALL pid/ppid | correlation key |
 | `process.executable.name` | SYSCALL comm | basename |
-| `process.executable.path` | SYSCALL exe | full path |
+| `process.executable.path_sha256` | SYSCALL exe | full-path hash; raw path is not emitted |
 | `process.command_args_sha256` | EXECVE argv / PROCTITLE | **hash only — raw argv never emitted** (may carry secrets) |
 | `process.owner` | auid | login uid of initiator |
 | `network.peer.address` / `network.peer.port` | SOCKADDR | connect/accept targets |
-| `file.path` | PATH | only when `file_access: true`; honor `hash_file_paths` |
+| `file.path_sha256` | PATH | only when `file_access: true`; hashing is required |
 | `audit.source` | `netlink`/`logfile` | provenance |
 | `fabric.event_count` | dedupe window | >1 when aggregated |
 
@@ -90,6 +91,9 @@ Resource attributes: `host.name`, plus collector's configured resource.
 
 - **Argv scrubbing at collection** — `process.command_args_sha256` only; raw
   argv never leaves the host boundary. (`fabricguard` is the second layer.)
+- **Path minimization at collection** — executable and file paths are hashed;
+  `file_access: true` with `hash_file_paths: false` fails configuration
+  validation. The export guard drops raw path keys even from other sources.
 - **Volume**: `max_events_per_sec` token bucket (default 200) + optional
   `dedupe_window` (default 1s) collapsing identical exec/connect bursts into
   `fabric.event_count`. Drops counted and surfaced via collector telemetry.
@@ -104,11 +108,10 @@ Resource attributes: `host.name`, plus collector's configured resource.
 
 - Events land on the `logs` pipeline → existing `fabric-gate` pipeline check
   passes unchanged.
-- The `audit` event class in `allowlist.go` gets its field set populated
-  (currently `{}`).
+- The `audit` event class has an exact metadata allowlist with closed host
+  status values and no raw path or argv keys.
 - Deploying this receiver requires `CAP_AUDIT_READ` (netlink) or audit-log
-  read access (logfile) — documented as the only privileged posture the
-  collector ever takes, and only in the `host-monitor` overlay.
+  read access (logfile), and only in the optional host-monitor overlay.
 
 ## Deliverables
 
@@ -128,3 +131,8 @@ Resource attributes: `host.name`, plus collector's configured resource.
   off by default.
 - No semantic/decision context — this layer records *what the OS did*, not
   *why the agent did it*.
+- Failed downstream deliveries now enter a bounded in-memory retry queue and
+  overflow/rate/assembly gaps are reported when delivery resumes. This queue
+  is not restart-durable, logfile mode has no persisted cursor, and multicast
+  netlink cannot replay lost kernel events. Source-to-Node loss/restart
+  qualification remains required before any complete-host-capture claim.

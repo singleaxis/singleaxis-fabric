@@ -42,8 +42,8 @@ type Config struct {
 	// AssemblyTimeout is how long a serial-grouped event waits for its
 	// trailing records (EOE) before being flushed incomplete.
 	AssemblyTimeout time.Duration `mapstructure:"assembly_timeout"`
-	// HashFilePaths emits file.path_sha256 instead of file.path for
-	// file_access events — paths can embed sensitive names.
+	// HashFilePaths must remain true when file_access is enabled. Paths can
+	// contain sensitive names and are never emitted raw.
 	HashFilePaths bool `mapstructure:"hash_file_paths"`
 	// ReadBufferBytes sizes the netlink/logfile read buffer.
 	ReadBufferBytes int `mapstructure:"read_buffer_bytes"`
@@ -51,16 +51,17 @@ type Config struct {
 
 func createDefaultConfig() component.Config {
 	return &Config{
-		Source:           "netlink",
-		LogPath:          "/var/log/audit/audit.log",
-		Exec:             true,
-		Connect:          true,
-		FileAccess:       false,
-		RuleKey:          "fabric",
-		MaxEventsPerSec:  200,
-		DedupeWindow:     time.Second,
-		AssemblyTimeout:  500 * time.Millisecond,
-		ReadBufferBytes:  1 << 20,
+		Source:          "netlink",
+		LogPath:         "/var/log/audit/audit.log",
+		Exec:            true,
+		Connect:         true,
+		FileAccess:      false,
+		RuleKey:         "fabric",
+		MaxEventsPerSec: 200,
+		DedupeWindow:    time.Second,
+		AssemblyTimeout: 500 * time.Millisecond,
+		HashFilePaths:   true,
+		ReadBufferBytes: 1 << 20,
 	}
 }
 
@@ -77,6 +78,9 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxEventsPerSec < 0 {
 		return fmt.Errorf("audit receiver: max_events_per_sec must be >= 0")
+	}
+	if c.FileAccess && !c.HashFilePaths {
+		return fmt.Errorf("audit receiver: hash_file_paths must be true when file_access is enabled")
 	}
 	if c.DedupeWindow < 0 {
 		return fmt.Errorf("audit receiver: dedupe_window must be >= 0")

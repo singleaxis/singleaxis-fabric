@@ -23,12 +23,12 @@
     },
     {
       "path": "manifests/auditd-host-connector.json",
-      "sha256": "f51c7c64075f39c5965774ff9e4a07afe30313900d4bf8e81c11282270809036",
+      "sha256": "481e717d8ce54517bc6e30925627b4726fa763f1d0937f79ff7d4f264f2eb718",
       "expectation": "valid"
     },
     {
       "path": "manifests/ebpf-host-emitter.json",
-      "sha256": "d0c323cfea883edaf1be3face4df64619b6a214b4a4752da5742e971f5642d38",
+      "sha256": "2674fa1f4af527ee23279961a68cd86245ae331146ec463c6429faf70b991ee1",
       "expectation": "valid"
     },
     {

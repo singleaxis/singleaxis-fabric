@@ -1,8 +1,8 @@
 ---
 title: eBPF Host Emitter (fabric-host-emitter)
-status: implemented
-revision: 1
-last_updated: 2026-09-22
+status: implemented-not-enterprise-qualified
+revision: 2
+last_updated: 2026-09-26
 owner: project-lead
 ---
 
@@ -38,6 +38,7 @@ kernel tracepoints ──► perf/ringbuf ──► fabric-host-emitter (DaemonS
    sched_process_exec, sys_enter_connect, sys_enter_openat
                                               │
                                   cgroup-scoped filter (in-kernel)
+                                              │  bounded fsynced source spool
                                               │  OTLP logs (bearer auth)
                                               ▼
                                         Fabric Node → queue → export
@@ -59,10 +60,14 @@ radius).
 
 `event_class=audit`, `audit.syscall` (exec/connect/openat), `audit.result`
 (limited — tracepoints expose args, not always retval), `process.pid`,
-`process.parent_pid`, `process.executable.name/path`,
-`process.command_args_sha256` (argv read from task memory, hashed at
-collection — never raw), `process.owner`, `network.peer.address/port`,
-`file.path` (openat only), `audit.source=ebpf`, `fabric.event_count`.
+`process.parent_pid`, `process.executable.name`,
+`process.executable.path_sha256`, `process.command_args_sha256` (argv read
+from task memory, hashed at collection — never raw),
+`network.peer.address/port`, `file.path_sha256` (openat only),
+`audit.source=ebpf`, `log.record.uid`, and `fabric.event_count`.
+When BPF buffers cannot hold a complete argv or path, the hash is omitted
+and an incomplete-field event is emitted; a prefix is not presented as the
+full value.
 
 ## The eBPF-only capability: in-kernel cgroup scoping
 
@@ -76,12 +81,17 @@ with a warning.
 ## Safety controls
 
 - Collection-side argv scrub (sha256 only) — same rule as spec 030.
-- `max_events_per_sec` token bucket + `dedupe_window` + drop counters
-  exported as metrics/log events.
+- A bounded mode-0700 disk spool, fsync-before-acknowledgement, asynchronous
+  OTLP retry and restart replay. The queue is at-least-once; `log.record.uid`
+  is stable across replay for downstream deduplication.
+- `max_events_per_sec` and `dedupe_window` default off for per-event fidelity;
+  enabling them intentionally reduces completeness. Ring-buffer and rate
+  losses emit counted status events after observation, not missing records.
 - Graceful degradation: missing BTF, denied caps, or verifier rejection →
   clear startup error listing the exact requirement; never partial-silent
   operation.
-- Privilege: `CAP_BPF`+`CAP_PERFMON` (kernel ≥5.8) or `--privileged` fallback;
+- Privilege: scoped `CAP_BPF`+`CAP_PERFMON` (kernel ≥5.8); no production
+  `--privileged` fallback is qualified;
   `hostPID: true` for process correlation; read-only mounts for
   `/sys/kernel/btf`, `/sys/fs/cgroup`, `/sys/kernel/debug`.
 
@@ -92,8 +102,9 @@ with a warning.
   cgroup resolver; `//go:build linux` for BPF loading, darwin stub for dev
 - `components/host-emitter/Dockerfile` — pinned builder compiles the BPF
   object (clang+bpftool in-builder), distroless runtime ships emitter only
-- `deploy/kubernetes/host-emitter-daemonset.yaml` — securityContext with the
-  minimal cap set, tolerations, resource limits
+- `deploy/kubernetes/host-emitter-daemonset.yaml` — fail-closed qualification
+  template with pinned-digest placeholder, scoped cgroup placeholder,
+  credential Secret and pre-provisioned persistent spool mount
 - `contracts/connect/v1/manifests/` — convert `ebpf-discovery-only.json` from
   illustrative to the real emitter manifest (honest blind spots preserved +
   privilege posture); digest repin
@@ -102,11 +113,18 @@ with a warning.
 
 ## Honest limits (manifest blind spots)
 
-- Kernel ≥ 5.8 with BTF for CO-RE (older kernels need the `--privileged`
-  fallback path or are unsupported — declared, not hidden).
+- Kernel ≥ 5.8 with BTF for CO-RE; unsupported kernels are rejected, not
+  silently downgraded.
 - No semantic/decision layer — same inference caveat as spec 030.
 - Encrypted traffic: metadata only (peer, timing, sizes) — never content.
 - Attribution to a logical "agent" is deployment-dependent (cgroup or PID
   namespace mapping); record the method as provenance.
 - An adversarial workload with kernel-level access is outside this threat
   model — the emitter observes the host it runs on.
+- The current emitter defaults to TLS and can use client certificates or
+  bearer authentication. Local spool/retry/race tests pass, but Linux BPF
+  build/live kernel-loss, exact-artifact outage/restart, encrypted-volume,
+  workload-scoping and independent host-truth tests have not passed here.
+  The sample DaemonSet intentionally cannot deploy unchanged. Neither
+  source fsync nor OTLP acceptance is a destination durable receipt, and
+  no complete-host-capture claim is qualified.

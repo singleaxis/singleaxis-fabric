@@ -33,9 +33,9 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from ._content import ContentDescriptor, ContentStatus
+from ._content import DESCRIPTOR_STATUSES, ContentDescriptor, ContentStatus
 
 if TYPE_CHECKING:
     from .content_store.base import GovernedStore
@@ -46,7 +46,8 @@ _DURABILITY_MODES = frozenset({"inline", "process", "spooled"})
 _QUEUE_MAX_CAP = 65536
 _PAYLOAD_MAX_CAP = 16 * 1024 * 1024
 _ENQUEUE_TIMEOUT_CAP_MS = 100
-_SPOOL_VERSION = 1
+_SPOOL_VERSION = "fabric.content-spool/v2"
+_LEGACY_SPOOL_VERSION = 1
 _SPOOL_SUFFIX = ".corrupt"
 
 
@@ -139,10 +140,12 @@ class _Task:
     content: str | None = None
     manifest: dict[str, Any] | None = None
     manifest_id: str | None = None
+    manifest_item_sequence: int | None = None
+    manifest_revision: int | None = None
     decision_id: str | None = None
     tenant_id: str | None = None
     attempts: int = 0
-    first_enqueued: float = field(default_factory=time.monotonic)
+    first_enqueued: float = field(default_factory=time.time)
 
 
 class ContentWriter:
@@ -160,6 +163,11 @@ class ContentWriter:
         self._queue: queue.Queue[_Task] = queue.Queue(maxsize=config.queue_max_items)
         self._pending: dict[str, _Task] = {}
         self._pending_lock = threading.Lock()
+        # A queued task must not become visible to the worker until its
+        # pending bookkeeping (and accepted manifest generation) is stable.
+        # RLock is required because settlement callbacks can submit a
+        # manifest rewrite from the worker thread itself.
+        self._submission_lock = threading.RLock()
         self._closed = False
         self._stats = {
             "enqueued": 0,
@@ -174,6 +182,12 @@ class ContentWriter:
         # subscriber is removed on terminal settlement, so a shared writer
         # never accumulates per-decision callbacks (spec 032 §3).
         self._subscribers: dict[str, Callable[[ContentDescriptor, str], None]] = {}
+        # Monotonic per-manifest submission generations. Multiple
+        # settlements can rewrite one manifest while older revisions are
+        # still queued; only the latest revision may remove its durable
+        # spool record or reach the destination.
+        self._manifest_revisions: dict[str, int] = {}
+        self._manifest_revision_counters: dict[str, int] = {}
         self._worker: threading.Thread | None = None
         self._wake = threading.Event()
         self._spool_dir: Path | None = None
@@ -217,6 +231,8 @@ class ContentWriter:
         content: str,
         *,
         decision_id: str | None = None,
+        manifest_id: str | None = None,
+        manifest_item_sequence: int | None = None,
     ) -> str:
         """Enqueue a content object for delivery; returns its item status.
 
@@ -233,6 +249,8 @@ class ContentWriter:
             descriptor=descriptor,
             content=content,
             decision_id=decision_id,
+            manifest_id=manifest_id,
+            manifest_item_sequence=manifest_item_sequence,
             tenant_id=descriptor.tenant_id,
         )
         return self._submit_task(task, descriptor.object_id)
@@ -255,31 +273,56 @@ class ContentWriter:
         if self._closed:
             _LOG.warning("fabric.content_writer: manifest submit after close")
             return ContentStatus.FAILED
+        with self._pending_lock:
+            revision = self._manifest_revision_counters.get(manifest_id, 0) + 1
+            self._manifest_revision_counters[manifest_id] = revision
         task = _Task(
             kind="manifest",
             key=f"manifest:{manifest_id}",
             manifest=dict(manifest),
             manifest_id=manifest_id,
+            manifest_revision=revision,
             decision_id=decision_id,
             tenant_id=tenant_id,
         )
-        return self._submit_task(task, task.key)
+        status = self._submit_task(task, task.key)
+        if status in (ContentStatus.PENDING, ContentStatus.STORED):
+            with self._pending_lock:
+                self._manifest_revisions[manifest_id] = max(
+                    self._manifest_revisions.get(manifest_id, 0), revision
+                )
+        return status
 
     def _submit_task(self, task: _Task, identity: str) -> str:
         if self._config.durability == "inline":
             return self._submit_inline(task)
+        with self._submission_lock:
+            return self._enqueue_task(task, identity)
+
+    def _enqueue_task(self, task: _Task, identity: str) -> str:
         if self._config.durability == "spooled" and (self._queue.full() or not self._spool(task)):
             self._stats["dropped"] += 1
             return ContentStatus.DROPPED
+        # Register before publishing to the queue. Otherwise a fast worker
+        # can settle the task before it appears in ``_pending``, leaving a
+        # permanent phantom pending entry when the caller adds it later.
+        with self._pending_lock:
+            previous_pending = self._pending.get(identity)
+            self._pending[identity] = task
         try:
             if self._config.enqueue_timeout_ms:
                 self._queue.put(task, timeout=self._config.enqueue_timeout_ms / 1000.0)
             else:
                 self._queue.put_nowait(task)
         except queue.Full:
+            with self._pending_lock:
+                if self._pending.get(identity) is task:
+                    if previous_pending is not None:
+                        self._pending[identity] = previous_pending
+                    else:
+                        self._pending.pop(identity, None)
             if self._config.durability == "spooled":
-                with contextlib.suppress(OSError):
-                    self._spool_path(task).unlink(missing_ok=True)
+                self._remove_spool(task)
             self._stats["dropped"] += 1
             _LOG.warning(
                 "fabric.content_writer: queue full (%d); dropping %s",
@@ -287,8 +330,6 @@ class ContentWriter:
                 task.key,
             )
             return ContentStatus.DROPPED
-        with self._pending_lock:
-            self._pending[identity] = task
         self._stats["enqueued"] += 1
         self._wake.set()
         return ContentStatus.PENDING
@@ -326,14 +367,20 @@ class ContentWriter:
             "tenant_id": task.tenant_id,
             "decision_id": task.decision_id,
             "attempts": task.attempts,
+            "first_enqueued": task.first_enqueued,
+            "manifest_id": task.manifest_id,
+            "manifest_item_sequence": task.manifest_item_sequence,
+            "manifest_revision": task.manifest_revision,
         }
+        if task.kind == "manifest" and task.manifest_id:
+            record["ref"] = self._store.manifest_uri_for(task.manifest_id)
         if task.kind == "manifest":
-            record["manifest_id"] = task.manifest_id
             record["manifest"] = task.manifest
         else:
             if task.descriptor is None or task.content is None:
                 raise ValueError("object spool task missing descriptor/content")
             record["descriptor"] = task.descriptor.to_json()
+            record["ref"] = self._store.ref_for(task.descriptor.digest.split(":", 1)[1])
             record["content_b64"] = base64.b64encode(
                 task.content.encode("utf-8", "surrogatepass")
             ).decode("ascii")
@@ -342,17 +389,20 @@ class ContentWriter:
         ).hexdigest()
         return record
 
-    def _spool(self, task: _Task) -> bool:
+    def _spool(self, task: _Task, *, count: bool = True) -> bool:
         """fsync a spool entry for ``task``. False when the spool bound hit."""
         spool_dir = self._spool_root()
         entry = json.dumps(self._spool_record(task)).encode("utf-8")
-        if self._spool_usage() + len(entry) > self._config.spool_max_bytes:
+        path = self._spool_path(task)
+        previous_size = 0
+        with contextlib.suppress(OSError):
+            previous_size = path.stat().st_size
+        if self._spool_usage() - previous_size + len(entry) > self._config.spool_max_bytes:
             _LOG.warning(
                 "fabric.content_writer: spool full; dropping %s",
                 task.key,
             )
             return False
-        path = self._spool_path(task)
         try:
             fd, tmp = tempfile.mkstemp(dir=str(spool_dir), prefix=".spool-", suffix=".tmp")
             os.chmod(tmp, 0o600)
@@ -367,7 +417,8 @@ class ContentWriter:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
-            self._stats["spooled"] += 1
+            if count:
+                self._stats["spooled"] += 1
             return True
         except OSError:
             _LOG.warning("fabric.content_writer: spool write failed", exc_info=True)
@@ -390,6 +441,7 @@ class ContentWriter:
         work. Unreadable or checksum-failed entries quarantine to
         ``*.corrupt`` with an explicit stat, never silently ignored.
         """
+        recovered: list[_Task] = []
         for path in sorted(self._spool_root().glob("*.json")):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
@@ -397,10 +449,24 @@ class ContentWriter:
             except (OSError, KeyError, ValueError, TypeError):
                 self._quarantine(path)
                 continue
-            self._recovery_backlog.append(task)
+            recovered.append(task)
             with self._pending_lock:
                 self._pending[task.key] = task
+                if task.manifest_id and task.manifest_revision is not None:
+                    self._manifest_revisions[task.manifest_id] = max(
+                        self._manifest_revisions.get(task.manifest_id, 0),
+                        task.manifest_revision,
+                    )
+                    self._manifest_revision_counters[task.manifest_id] = max(
+                        self._manifest_revision_counters.get(task.manifest_id, 0),
+                        task.manifest_revision,
+                    )
             self._stats["recovered"] += 1
+        # A recovered object needs its pending manifest to exist before it
+        # can reconcile the terminal status. Deliver every manifest first,
+        # then the objects in stable spool-name order.
+        recovered.sort(key=lambda task: 0 if task.kind == "manifest" else 1)
+        self._recovery_backlog.extend(recovered)
 
     def _task_from_record(self, record: Mapping[str, Any]) -> _Task:
         checksum = record.get("checksum")
@@ -413,7 +479,8 @@ class ContentWriter:
         ).hexdigest()
         if checksum != expected:
             raise ValueError("spool record checksum mismatch")
-        if record.get("schema_version") != _SPOOL_VERSION:
+        version = record.get("schema_version")
+        if version not in (_SPOOL_VERSION, _LEGACY_SPOOL_VERSION):
             raise ValueError(f"unsupported spool schema_version {record.get('schema_version')!r}")
         kind = record["kind"]
         if kind == "manifest":
@@ -422,6 +489,7 @@ class ContentWriter:
                 key=str(record["key"]),
                 manifest=dict(record["manifest"]),
                 manifest_id=str(record["manifest_id"]),
+                manifest_revision=int(record.get("manifest_revision") or 1),
                 decision_id=str(record.get("decision_id") or ""),
                 tenant_id=str(record.get("tenant_id") or ""),
             )
@@ -433,11 +501,18 @@ class ContentWriter:
                 descriptor=descriptor,
                 content=base64.b64decode(record["content_b64"]).decode("utf-8", "surrogatepass"),
                 decision_id=str(record.get("decision_id") or ""),
+                manifest_id=str(record.get("manifest_id") or "") or None,
+                manifest_item_sequence=(
+                    int(record["manifest_item_sequence"])
+                    if record.get("manifest_item_sequence") is not None
+                    else None
+                ),
                 tenant_id=str(record.get("tenant_id") or ""),
             )
         else:
             raise ValueError(f"unknown spool kind {kind!r}")
         task.attempts = int(record.get("attempts") or 0)
+        task.first_enqueued = float(record.get("first_enqueued") or time.time())
         return task
 
     def _quarantine(self, path: Path) -> None:
@@ -453,6 +528,12 @@ class ContentWriter:
     # -- delivery -----------------------------------------------------------
 
     def _deliver(self, task: _Task) -> str:
+        if task.kind == "manifest" and self._is_stale_manifest(task):
+            # The stable spool file contains the latest revision. An older
+            # in-memory task must neither overwrite the destination nor
+            # unlink that newer durable record.
+            self._settle(task, ContentStatus.STORED)
+            return ContentStatus.STORED
         task.attempts += 1
         try:
             if task.kind == "manifest":
@@ -467,11 +548,18 @@ class ContentWriter:
                 if task.descriptor is None or task.content is None:
                     raise ValueError("object task missing descriptor/content")
                 self._store.put_object(task.descriptor.to_json(), task.content)
+                if not self._has_subscriber(task.key) and task.manifest_id:
+                    self._reconcile_recovered_object(task, ContentStatus.STORED)
         except Exception:
             if (
                 task.attempts < self._config.retry_max_attempts
-                and time.monotonic() - task.first_enqueued < self._config.retry_max_elapsed_s
+                and time.time() - task.first_enqueued < self._config.retry_max_elapsed_s
             ):
+                if self._spool_dir is not None and not self._spool(task, count=False):
+                    _LOG.warning(
+                        "fabric.content_writer: could not persist retry metadata for %s",
+                        task.key,
+                    )
                 raise _RetryLaterError from None
             self._stats["failed"] += 1
             _LOG.warning(
@@ -479,20 +567,33 @@ class ContentWriter:
                 task.key,
                 exc_info=True,
             )
+            if task.kind == "object" and task.manifest_id and not self._has_subscriber(task.key):
+                with contextlib.suppress(Exception):
+                    self._reconcile_recovered_object(task, ContentStatus.FAILED)
             self._settle(task, ContentStatus.FAILED)
             return ContentStatus.FAILED
         self._stats["stored"] += 1
         self._settle(task, ContentStatus.STORED)
-        if self._spool_dir is not None:
-            try:
-                self._spool_path(task).unlink(missing_ok=True)
-            except OSError:
-                _LOG.warning("fabric.content_writer: spool cleanup failed", exc_info=True)
+        if self._spool_dir is not None and not self._remove_spool(task):
+            _LOG.warning("fabric.content_writer: spool cleanup failed", exc_info=True)
         return ContentStatus.STORED
+
+    def _remove_spool(self, task: _Task) -> bool:
+        try:
+            self._spool_path(task).unlink(missing_ok=True)
+            directory_fd = os.open(str(self._spool_root()), os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            return True
+        except OSError:
+            return False
 
     def _settle(self, task: _Task, status: str) -> None:
         with self._pending_lock:
-            self._pending.pop(task.key, None)
+            if self._pending.get(task.key) is task:
+                self._pending.pop(task.key, None)
             callback = self._subscribers.pop(task.key, None)
         # Manifest tasks carry no subscriber — settlement is bookkeeping
         # only; object tasks route to their manifest item.
@@ -501,6 +602,93 @@ class ContentWriter:
                 callback(task.descriptor, status)
             except Exception:
                 _LOG.warning("fabric.content_writer: settled callback failed", exc_info=True)
+
+    def _has_subscriber(self, key: str) -> bool:
+        with self._pending_lock:
+            return key in self._subscribers
+
+    def _is_stale_manifest(self, task: _Task) -> bool:
+        if task.manifest_id is None or task.manifest_revision is None:
+            return False
+        with self._pending_lock:
+            return task.manifest_revision < self._manifest_revisions.get(task.manifest_id, 0)
+
+    def _reconcile_recovered_object(self, task: _Task, status: str) -> None:
+        """Fold a post-restart object result into its durable manifest.
+
+        Subscriber callbacks are process-local and disappear on a crash.
+        Spool v2 therefore carries the manifest id and item sequence so the
+        worker can perform the same pending -> terminal transition after a
+        restart without relying on the original ``ContentSink`` instance.
+        """
+        if task.descriptor is None or task.manifest_id is None:
+            raise ValueError("recovered object lacks descriptor/manifest identity")
+        uri = self._store.manifest_uri_for(task.manifest_id)
+        manifest = self._store.read_manifest(uri)
+        items = manifest.get("items")
+        if not isinstance(items, list):
+            raise ValueError("recovered manifest has no items array")
+        item = self._find_manifest_item(items, task)
+        if item is None:
+            raise ValueError(
+                f"manifest {task.manifest_id} has no item for {task.descriptor.object_id}"
+            )
+        if item.get("status") != ContentStatus.PENDING:
+            return
+        status_value = status
+        if status == ContentStatus.STORED and task.descriptor.representation == "truncated":
+            status_value = ContentStatus.TRUNCATED
+        item["status"] = status_value
+        if status_value in DESCRIPTOR_STATUSES:
+            item["descriptor"] = {
+                **task.descriptor.to_json(),
+                "status": status_value,
+            }
+        else:
+            item.pop("descriptor", None)
+            item.pop("ref", None)
+            item["status_reason"] = "delivery_failed_after_restart"
+        completeness, roles_observed = self._manifest_rollups(items)
+        manifest["completeness"] = completeness
+        coverage = manifest.setdefault("coverage", {})
+        coverage["roles_observed"] = sorted(roles_observed)
+        self._store.write_manifest(
+            manifest,
+            decision_id=task.decision_id or str(manifest.get("decision_id") or ""),
+            manifest_id=task.manifest_id,
+        )
+
+    @staticmethod
+    def _find_manifest_item(items: list[Any], task: _Task) -> dict[str, Any] | None:
+        if task.manifest_item_sequence is not None:
+            for candidate in items:
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("sequence") == task.manifest_item_sequence
+                ):
+                    return candidate
+        for candidate in items:
+            descriptor = candidate.get("descriptor") if isinstance(candidate, dict) else None
+            if (
+                isinstance(descriptor, dict)
+                and task.descriptor is not None
+                and descriptor.get("object_id") == task.descriptor.object_id
+            ):
+                return cast(dict[str, Any], candidate)
+        return None
+
+    @staticmethod
+    def _manifest_rollups(items: list[Any]) -> tuple[dict[str, int], set[str]]:
+        completeness: dict[str, int] = {}
+        roles_observed: set[str] = set()
+        for candidate in items:
+            if not isinstance(candidate, dict):
+                continue
+            candidate_status = str(candidate.get("status") or "")
+            completeness[candidate_status] = completeness.get(candidate_status, 0) + 1
+            if candidate_status in DESCRIPTOR_STATUSES:
+                roles_observed.add(str(candidate["role"]))
+        return completeness, roles_observed
 
     def _run(self) -> None:
         """Worker loop: drain queue + recovery backlog, bounded backoff."""
@@ -517,10 +705,15 @@ class ContentWriter:
                 except _RetryLaterError:
                     retry_backlog.append(task)
             while True:
-                try:
-                    task = self._queue.get_nowait()
-                except queue.Empty:
-                    break
+                # The producer holds this lock while it registers pending
+                # state and publishes to the queue. Taking the item under
+                # the same lock closes that publication race; delivery then
+                # runs unlocked so callbacks cannot invert sink/writer locks.
+                with self._submission_lock:
+                    try:
+                        task = self._queue.get_nowait()
+                    except queue.Empty:
+                        break
                 try:
                     self._deliver(task)
                 except _RetryLaterError:

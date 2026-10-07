@@ -73,6 +73,65 @@ func recordCount(ld plog.Logs) int {
 	return n
 }
 
+func TestEvidenceProjectionClosedMetadata(t *testing.T) {
+	base := map[string]any{
+		"event_class": "evidence", "schema_version": "agent.evidence.event/v1",
+		"record_id": "evt-1", "tenant_id": "tenant-1", "run_id": "run-1",
+		"source_id": "source-1", "source_epoch": 1, "source_sequence": 2,
+		"operation_id": "op-1", "attempt_id": "try-1", "boundary": "terminal",
+		"provenance": "caller_reported", "role": "terminal.stdout", "status": "stored",
+		"content_object_id": "obj-1", "content_sha256": "sha256:" + strings.Repeat("a", 64),
+		"observed_at": "2026-09-26T10:00:00Z", "raw_output": "CANARY-SECRET",
+		"content_ref": "file:///private/CANARY-SECRET",
+	}
+	ld := makeLogs(base)
+	lr := firstRecord(t, ld)
+	lr.SetEventName("agent.evidence.content")
+	lr.Body().SetStr("CANARY-SECRET")
+	resource := ld.ResourceLogs().At(0)
+	resource.Resource().Attributes().PutStr("service.name", "CANARY-SECRET")
+	resource.ScopeLogs().At(0).Scope().Attributes().PutStr("service.name", "CANARY-SECRET")
+	out, err := newTestGuard(t, nil).processLogs(context.Background(), ld)
+	if err != nil || recordCount(out) != 1 {
+		t.Fatalf("valid projection rejected: count=%d err=%v", recordCount(out), err)
+	}
+	lr = firstRecord(t, out)
+	if lr.EventName() != "agent.evidence.content" || lr.Body().Type() != pcommon.ValueTypeEmpty {
+		t.Fatal("name not preserved or body not cleared")
+	}
+	if out.ResourceLogs().At(0).Resource().Attributes().Len() != 0 || out.ResourceLogs().At(0).ScopeLogs().At(0).Scope().Attributes().Len() != 0 {
+		t.Fatal("evidence resource/scope metadata not cleared")
+	}
+	for _, key := range []string{"raw_output", "content_ref"} {
+		if _, ok := lr.Attributes().Get(key); ok {
+			t.Fatalf("unsafe key retained: %s", key)
+		}
+	}
+	for _, test := range []struct {
+		key   string
+		value any
+		name  string
+	}{
+		{"role", "CANARY-SECRET", "agent.evidence.content"},
+		{"tenant_id", "tenant/CANARY-SECRET", "agent.evidence.content"},
+		{"status", "CANARY-SECRET", "agent.evidence.content"},
+		{"content_sha256", "sha256:CANARY-SECRET", "agent.evidence.content"},
+		{"role", "terminal.stdout", "CANARY-SECRET"},
+	} {
+		attrs := make(map[string]any, len(base))
+		for key, value := range base {
+			attrs[key] = value
+		}
+		attrs[test.key] = test.value
+		bad := makeLogs(attrs)
+		firstRecord(t, bad).SetEventName(test.name)
+		filtered, err := newTestGuard(t, nil).processLogs(context.Background(), bad)
+		if err != nil || recordCount(filtered) != 0 {
+			t.Fatalf("invalid %s/%s survived: count=%d err=%v", test.key, test.name, recordCount(filtered), err)
+		}
+	}
+}
+
 func TestAllowlistStripsUnknownAttributes(t *testing.T) {
 	g := newTestGuard(t, nil)
 	ld := makeLogs(map[string]any{
@@ -411,6 +470,91 @@ func TestMergeAllowedReturnsBaseWhenNoExtras(t *testing.T) {
 func TestMergeAllowedUnknownClass(t *testing.T) {
 	if _, ok := mergeAllowed("nope", nil); ok {
 		t.Error("unknown class should return ok=false")
+	}
+}
+
+func TestHostLossReasonIsExactAuditMetadata(t *testing.T) {
+	audit, ok := mergeAllowed("audit", nil)
+	if !ok {
+		t.Fatal("audit class missing")
+	}
+	if _, ok := audit["audit.loss_reason"]; !ok {
+		t.Fatal("closed host loss reason must survive audit protection")
+	}
+	if _, ok := audit["log.record.uid"]; !ok {
+		t.Fatal("stable host record identity must survive for deduplication")
+	}
+	if _, ok := audit["audit.loss_detail"]; ok {
+		t.Fatal("arbitrary raw host loss detail must not be exported")
+	}
+	if sensitiveAttributeKey("audit.loss_reason") {
+		t.Fatal("closed loss reason should be safe metadata")
+	}
+	if sensitiveAttributeKey("log.record.uid") {
+		t.Fatal("opaque record identity should be safe metadata")
+	}
+}
+
+func TestHostAuditValuesRejectCallerControlledText(t *testing.T) {
+	g := newTestGuard(t, nil)
+	ld := makeLogs(
+		map[string]any{
+			"event_class":                    "audit",
+			"audit.event":                    "capture_loss",
+			"audit.loss_reason":              "ring_buffer_full",
+			"log.record.uid":                 "host-0123456789abcdef0123456789abcdef",
+			"audit.dedupe_key":               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			"process.executable.path_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			"file.path_sha256":               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		},
+		map[string]any{
+			"event_class":             "audit",
+			"audit.event":             "secret=do-not-export",
+			"audit.loss_reason":       "secret=do-not-export",
+			"log.record.uid":          "host-token-do-not-export",
+			"audit.dedupe_key":        "secret=/private/customer/file",
+			"process.executable.path": "/private/customer/secret-file",
+			"file.path":               "/private/customer/secret-file",
+		},
+	)
+	out, err := g.processLogs(context.Background(), ld)
+	if err != nil {
+		t.Fatalf("processLogs: %v", err)
+	}
+	first := out.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	if _, ok := first.Attributes().Get("audit.loss_reason"); !ok {
+		t.Fatal("closed loss reason was stripped")
+	}
+	if _, ok := first.Attributes().Get("log.record.uid"); !ok {
+		t.Fatal("opaque record id was stripped")
+	}
+	if _, ok := first.Attributes().Get("audit.dedupe_key"); !ok {
+		t.Fatal("hashed dedupe key was stripped")
+	}
+	if _, ok := first.Attributes().Get("process.executable.path_sha256"); !ok {
+		t.Fatal("hashed executable path was stripped")
+	}
+	if _, ok := first.Attributes().Get("file.path_sha256"); !ok {
+		t.Fatal("hashed file path was stripped")
+	}
+	second := out.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(1)
+	if _, ok := second.Attributes().Get("audit.event"); ok {
+		t.Fatal("free-form audit event leaked")
+	}
+	if _, ok := second.Attributes().Get("audit.loss_reason"); ok {
+		t.Fatal("free-form loss reason leaked")
+	}
+	if _, ok := second.Attributes().Get("log.record.uid"); ok {
+		t.Fatal("free-form record id leaked")
+	}
+	if _, ok := second.Attributes().Get("audit.dedupe_key"); ok {
+		t.Fatal("raw dedupe key leaked")
+	}
+	if _, ok := second.Attributes().Get("process.executable.path"); ok {
+		t.Fatal("raw executable path leaked")
+	}
+	if _, ok := second.Attributes().Get("file.path"); ok {
+		t.Fatal("raw file path leaked")
 	}
 }
 

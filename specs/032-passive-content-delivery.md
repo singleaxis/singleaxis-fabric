@@ -1,8 +1,8 @@
 ---
 title: Passive asynchronous content recording and durable delivery
 status: draft
-revision: 2
-last_updated: 2026-09-23
+revision: 3
+last_updated: 2026-09-24
 owner: product-architecture
 depends_on: 028, 029
 related: 033, 034
@@ -171,23 +171,26 @@ resolvable:
   `pending`/absent objects with an honest manifest; spool-acknowledged
   content survives a kill -9 between enqueue and upload.
 
-### 6.1 Spool record — `fabric.content-spool/v1`
+### 6.1 Spool record — `fabric.content-spool/v2`
 
 Each spool file is one JSON document carrying enough identity to reconcile
 its manifest after a restart with no SDK state:
 
 | Field | Meaning |
 |---|---|
-| `schema_version` | `"fabric.content-spool/v1"` — unknown versions fail closed |
-| `delivery_type` | `"object"` or `"manifest"` |
+| `schema_version` | `"fabric.content-spool/v2"` — unknown versions fail closed; numeric legacy-v1 records remain readable for upgrade recovery |
+| `kind` | `"object"` or `"manifest"` |
 | `tenant_id` | Owning tenant namespace (safe identifier, spec 033) |
-| `object_id` / `manifest_id` | Identity of the delivery |
+| `key` | Object id, or stable `manifest:<manifest_id>` delivery identity |
+| `manifest_id` | Owning manifest for either delivery type |
+| `manifest_item_sequence` | Object deliveries: exact item slot to reconcile after restart |
+| `manifest_revision` | Manifest deliveries: monotonic submitted revision; stale queued revisions may not overwrite or delete the latest durable record |
 | `decision_id` | Owning decision (for manifest reconciliation) |
 | `descriptor` + `content_b64` | Object deliveries: descriptor and UTF-8/base64 bytes |
 | `manifest` | Manifest deliveries: the full manifest document |
 | `ref` | The deterministic destination URI stamped on telemetry |
-| `attempts`, `first_enqueued` | Retry metadata continued across restarts |
-| `checksum` | `sha256:` hex of the canonical entry body (all fields except `checksum` itself) — the entry's own integrity check |
+| `attempts`, `first_enqueued` | Retry metadata continued across restarts (Unix seconds for `first_enqueued`) |
+| `checksum` | SHA-256 hex of the canonical entry body (all fields except `checksum` itself) — the entry's own integrity check |
 
 ### 6.2 Spool filesystem rules
 
@@ -206,20 +209,21 @@ its manifest after a restart with no SDK state:
   work is already durable and must drain to completion (or terminal
   `failed`) rather than be silently re-dropped.
 - A record whose checksum fails, whose JSON is unreadable, or whose
-  `schema_version`/`delivery_type` is unknown is **quarantined** into
-  `spool_dir/quarantine/` (move, same filesystem) and counted/logged —
+  `schema_version`/`kind` is unknown is **quarantined** by an atomic
+  same-directory rename to `*.json.corrupt` and counted/logged —
   an explicit operational outcome, never silent ignore and never an
   infinite re-warn loop.
 - Successful delivery deletes the spool entry durably (unlink + directory
   fsync). Delivery is idempotent: re-delivering a record whose object or
   manifest already exists converges without error, so a crash between
   remote write and local delete is safe.
-- Recovered object deliveries reconcile their manifest: the record's
-  `decision_id` locates the manifest via the store's by-decision alias;
-  the item settles `pending -> stored`/`failed` and the manifest is
-  rewritten per spec 029 §4. An object whose manifest cannot be found is
-  still delivered — the store is the content's home; the manifest link
-  degrades to an orphan record visible via `list_object_uris`.
+- Recovery republishes manifest records before object records. Recovered
+  object deliveries then use `manifest_id` + `manifest_item_sequence`
+  (with object-id fallback) to settle the exact item
+  `pending -> stored`/`truncated`/`failed` and recompute manifest
+  completeness/coverage per spec 029 §4. If reconciliation cannot finish,
+  the object write remains idempotent and the spool record remains available
+  for a later restart; completeness is never falsely reported.
 - Recovered manifest deliveries republish the manifest and its
   by-decision alias.
 - Stale tmp files (`*.tmp` older than process start) and quarantined

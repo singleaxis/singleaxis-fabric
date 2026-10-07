@@ -58,6 +58,15 @@ export interface GovernedStore {
    */
   putObject(descriptor: Record<string, unknown>, content: string): MaybePromise<ContentRef>;
 
+  /** Content-v2 exact-byte evidence, stored per observation rather than
+   * deduplicated by digest so distinct source identities keep distinct
+   * descriptor sidecars. Optional for legacy custom v1 stores. */
+  evidenceRefFor?(objectId: string): string;
+  putBytesObject?(
+    descriptor: Record<string, unknown>,
+    content: Uint8Array,
+  ): MaybePromise<ContentRef>;
+
   /** Store the manifest and a by-decision alias; return its URI. */
   writeManifest(
     manifest: Record<string, unknown>,
@@ -98,6 +107,32 @@ export function contentHashBytes(data: Uint8Array): string {
 }
 
 const DIGEST_RE = /^[0-9a-f]{64}$/;
+const EVIDENCE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+function checkedEvidenceObject(
+  descriptor: Record<string, unknown>,
+  data: Uint8Array,
+  tenantId: string,
+): { objectId: string; digest: string } {
+  const objectId = descriptor["object_id"];
+  const digest = String(descriptor["stored_sha256"] ?? "").split(":", 2)[1] ?? "";
+  if (
+    descriptor["schema_version"] !== "fabric.content-object/v2" ||
+    descriptor["tenant_id"] !== tenantId ||
+    typeof objectId !== "string" ||
+    !EVIDENCE_ID_RE.test(objectId) ||
+    !DIGEST_RE.test(digest) ||
+    descriptor["stored_byte_length"] !== data.length ||
+    contentHashBytes(data) !== digest ||
+    descriptor["status"] !== "stored" ||
+    descriptor["representation"] !== "exact" ||
+    descriptor["source_byte_length"] !== data.length ||
+    descriptor["source_sha256"] !== descriptor["stored_sha256"]
+  ) {
+    throw new Error("invalid content-v2 descriptor or byte digest");
+  }
+  return { objectId, digest };
+}
 
 /**
  * Spec 033 §2.1 — the shared safe-identifier rule for values used as
@@ -126,6 +161,7 @@ export function assertSafeIdentifier(fieldName: string, value: string): string {
 /** Write `data` to `target` atomically: tmp + fsync + rename + dir fsync. */
 function atomicWriteBytes(target: string, data: Uint8Array): void {
   fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+  fs.chmodSync(path.dirname(target), 0o700);
   const tmp = path.join(
     path.dirname(target),
     `.${path.basename(target)}.${process.pid}.${Date.now()}.tmp`,
@@ -220,6 +256,39 @@ export class LocalFilesystemContentStore implements GovernedStore {
       atomicWriteBytes(meta, new TextEncoder().encode(JSON.stringify(descriptor, null, 2) + "\n"));
     }
     return { uri: `file://${target}`, contentHash: digest };
+  }
+
+  evidenceRefFor(objectId: string): string {
+    if (!EVIDENCE_ID_RE.test(objectId)) throw new Error("invalid evidence object_id");
+    return `file://${path.join(this.tenantRoot(), "evidence", objectId)}`;
+  }
+
+  putBytesObject(descriptor: Record<string, unknown>, content: Uint8Array): ContentRef {
+    const data = new Uint8Array(content);
+    const { objectId, digest } = checkedEvidenceObject(descriptor, data, this.tenantId);
+    if (descriptor["ref"] !== this.evidenceRefFor(objectId)) {
+      throw new Error("content-v2 reference does not match this tenant-bound store");
+    }
+    const target = path.join(this.tenantRoot(), "evidence", objectId);
+    const meta = path.join(this.tenantRoot(), "evidence", "meta", `${objectId}.json`);
+    if (fs.existsSync(target)) {
+      if (contentHashBytes(new Uint8Array(fs.readFileSync(target))) !== digest) {
+        throw new CorruptedObjectError(
+          `pre-existing evidence object ${objectId} fails digest verification`,
+        );
+      }
+    } else {
+      atomicWriteBytes(target, data);
+    }
+    if (fs.existsSync(meta)) {
+      const existing = JSON.parse(fs.readFileSync(meta, "utf-8")) as Record<string, unknown>;
+      if (JSON.stringify(existing) !== JSON.stringify(descriptor)) {
+        throw new CorruptedObjectError(`pre-existing evidence descriptor ${objectId} differs`);
+      }
+    } else {
+      atomicWriteBytes(meta, new TextEncoder().encode(JSON.stringify(descriptor, null, 2) + "\n"));
+    }
+    return { uri: this.evidenceRefFor(objectId), contentHash: digest };
   }
 
   writeManifest(manifest: Record<string, unknown>, decisionId: string, manifestId: string): string {
@@ -395,6 +464,62 @@ export class S3ContentStore implements GovernedStore {
 
   refFor(digest: string): string {
     return `s3://${this.bucket}/${this.objectKey(digest)}`;
+  }
+
+  evidenceRefFor(objectId: string): string {
+    if (!EVIDENCE_ID_RE.test(objectId)) throw new Error("invalid evidence object_id");
+    return `s3://${this.bucket}/${this.prefix}${this.tenantId}/evidence/${objectId}`;
+  }
+
+  async putBytesObject(
+    descriptor: Record<string, unknown>,
+    content: Uint8Array,
+  ): Promise<ContentRef> {
+    const data = new Uint8Array(content);
+    const { objectId, digest } = checkedEvidenceObject(descriptor, data, this.tenantId);
+    if (descriptor["ref"] !== this.evidenceRefFor(objectId)) {
+      throw new Error("content-v2 reference does not match this tenant-bound store");
+    }
+    const key = `${this.prefix}${this.tenantId}/evidence/${objectId}`;
+    const metaKey = `${this.prefix}${this.tenantId}/evidence/meta/${objectId}.json`;
+    const client = this.getClient();
+    try {
+      await client.send(
+        this.command("PutObjectCommand", {
+          Bucket: this.bucket,
+          Key: key,
+          Body: data,
+          IfNoneMatch: "*",
+        }),
+      );
+    } catch (err) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      if (status !== 412) throw err;
+      const existing = new Uint8Array(await this.read(this.evidenceRefFor(objectId)));
+      if (contentHashBytes(existing) !== digest) {
+        throw new CorruptedObjectError(
+          `pre-existing evidence object ${objectId} fails digest verification`,
+        );
+      }
+    }
+    try {
+      await client.send(
+        this.command("PutObjectCommand", {
+          Bucket: this.bucket,
+          Key: metaKey,
+          Body: JSON.stringify(descriptor, null, 2) + "\n",
+          IfNoneMatch: "*",
+        }),
+      );
+    } catch (err) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      if (status !== 412) throw err;
+      const existing = await this.readDescriptor(this.evidenceRefFor(objectId));
+      if (JSON.stringify(existing) !== JSON.stringify(descriptor)) {
+        throw new CorruptedObjectError(`pre-existing evidence descriptor ${objectId} differs`);
+      }
+    }
+    return { uri: this.evidenceRefFor(objectId), contentHash: digest };
   }
 
   async putObject(descriptor: Record<string, unknown>, content: string): Promise<ContentRef> {

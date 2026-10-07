@@ -165,7 +165,13 @@ export class ContentSink {
       }),
     );
     this.writer.subscribe(descriptor.object_id, (d, s) => this.onItemSettled(d, s));
-    const status = this.writer.submit(descriptor, contentText);
+    const status = this.writer.submit(
+      descriptor,
+      contentText,
+      this.manifest.decision_id,
+      this.manifest.manifest_id,
+      item.sequence,
+    );
     // An inline store has already settled inside submit(); only items
     // still pending can be dropped (queue full) or failed (closed
     // writer) by the return value itself.

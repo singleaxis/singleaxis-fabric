@@ -4,13 +4,19 @@
 package auditreceiver
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumertest"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 )
 
@@ -95,8 +101,11 @@ func TestExecveEventEmitsScrubbed(t *testing.T) {
 	if v, _ := attrs.Get("process.executable.name"); v.Str() != "ssh" {
 		t.Fatalf("comm = %v", v.Str())
 	}
-	if v, _ := attrs.Get("process.executable.path"); v.Str() != "/usr/bin/ssh" {
-		t.Fatalf("exe = %v", v.Str())
+	if v, ok := attrs.Get("process.executable.path_sha256"); !ok || len(v.Str()) != 64 {
+		t.Fatalf("executable path hash missing/malformed: %v", v.Str())
+	}
+	if _, ok := attrs.Get("process.executable.path"); ok {
+		t.Fatal("raw executable path must not be emitted")
 	}
 	if v, ok := attrs.Get("process.command_args_sha256"); !ok || len(v.Str()) != 64 {
 		t.Fatalf("argv hash missing/malformed: %v", v.Str())
@@ -153,23 +162,20 @@ func TestFileAccessGatedByConfig(t *testing.T) {
 		t.Fatal("file_access=true did not emit the openat record")
 	}
 	lr := recs[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
-	if v, _ := lr.Attributes().Get("file.path"); v.Str() != "/etc/shadow" {
-		t.Fatalf("file.path = %v", v.Str())
+	if v, ok := lr.Attributes().Get("file.path_sha256"); !ok || len(v.Str()) != 64 {
+		t.Fatalf("file.path_sha256 missing/malformed: %v", v.Str())
+	}
+	if _, ok := lr.Attributes().Get("file.path"); ok {
+		t.Fatal("raw file path must not be emitted by default")
 	}
 }
 
-func TestHashFilePathsOption(t *testing.T) {
+func TestFileAccessRejectsDisabledPathHashing(t *testing.T) {
 	cfg := createDefaultConfig().(*Config)
 	cfg.FileAccess = true
-	cfg.HashFilePaths = true
-	r, sink := newTestReceiver(t, cfg)
-	feedLines(t, r, openatLines)
-	lr := sink.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
-	if v, ok := lr.Attributes().Get("file.path_sha256"); !ok || len(v.Str()) != 64 {
-		t.Fatal("file.path_sha256 missing")
-	}
-	if _, ok := lr.Attributes().Get("file.path"); ok {
-		t.Fatal("file.path present despite hash_file_paths")
+	cfg.HashFilePaths = false
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "hash_file_paths") {
+		t.Fatal("file access without path hashing must fail configuration validation")
 	}
 }
 
@@ -204,6 +210,228 @@ func TestDedupeCollapsesRepeats(t *testing.T) {
 	}
 	if total != 3 {
 		t.Fatalf("collapsed count = %d, want 3", total)
+	}
+}
+
+func TestFailedDeliveryRetriedWithoutDuplicate(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	var attempts int
+	sink := new(consumertest.LogsSink)
+	next, err := consumer.NewLogs(func(ctx context.Context, ld plog.Logs) error {
+		attempts++
+		if attempts == 1 {
+			ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Attributes().PutStr("tampered", "true")
+			return errors.New("downstream unavailable")
+		}
+		return sink.ConsumeLogs(ctx, ld)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := newAuditReceiver(cfg, receivertest.NewNopSettings(component.MustNewType("audit")), next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feedLines(t, r, execveLines)
+	if len(r.pending) != 1 || len(sink.AllLogs()) != 0 {
+		t.Fatalf("failed record not retained: pending=%d delivered=%d", len(r.pending), len(sink.AllLogs()))
+	}
+	r.retryAt = time.Time{}
+	r.flushDeliveries(t.Context())
+	if len(r.pending) != 0 || len(sink.AllLogs()) != 1 || attempts != 2 {
+		t.Fatalf("retry result: pending=%d delivered=%d attempts=%d", len(r.pending), len(sink.AllLogs()), attempts)
+	}
+	lr := sink.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	if _, exists := lr.Attributes().Get("tampered"); exists {
+		t.Fatal("failed downstream attempt mutated the retained record")
+	}
+}
+
+func TestRepeatedOutageBackoffAndRecovery(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	cfg.DedupeWindow = 0
+	sink := new(consumertest.LogsSink)
+	var attempts int
+	next, err := consumer.NewLogs(func(ctx context.Context, ld plog.Logs) error {
+		attempts++
+		if attempts <= 3 {
+			return errors.New("sustained outage")
+		}
+		return sink.ConsumeLogs(ctx, ld)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := newAuditReceiver(cfg, receivertest.NewNopSettings(component.MustNewType("audit")), next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feedLines(t, r, execveLines)
+	feedLines(t, r, deniedLines)
+	if attempts != 1 || len(r.pending) != 2 {
+		t.Fatalf("backoff failed: attempts=%d queued=%d", attempts, len(r.pending))
+	}
+	for i, want := range []time.Duration{200 * time.Millisecond, 400 * time.Millisecond} {
+		r.retryAt = time.Time{}
+		r.flushDeliveries(t.Context())
+		if r.backoff != want || len(r.pending) != 2 {
+			t.Fatalf("failure %d: backoff=%s queued=%d", i+2, r.backoff, len(r.pending))
+		}
+	}
+	r.retryAt = time.Time{}
+	r.flushDeliveries(t.Context())
+	if attempts != 5 || len(r.pending) != 0 || len(sink.AllLogs()) != 2 {
+		t.Fatalf("recovery: attempts=%d queued=%d delivered=%d", attempts, len(r.pending), len(sink.AllLogs()))
+	}
+	if r.stats.failedAttempts != 3 {
+		t.Fatalf("failed attempts=%d", r.stats.failedAttempts)
+	}
+}
+
+func TestCollapsedSummaryFailureRetriedAndKeyHashed(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	cfg.FileAccess = true
+	sink := new(consumertest.LogsSink)
+	failed := true
+	next, err := consumer.NewLogs(func(ctx context.Context, ld plog.Logs) error {
+		if failed {
+			return errors.New("outage")
+		}
+		return sink.ConsumeLogs(ctx, ld)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := newAuditReceiver(cfg, receivertest.NewNopSettings(component.MustNewType("audit")), next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feedLines(t, r, openatLines)
+	feedLines(t, r, openatLines)
+	r.emitCollapsed(t.Context(), r.dedup.sweep(time.Now().Add(2*time.Second)))
+	if len(r.pending) != 2 {
+		t.Fatalf("pending=%d, want original + summary", len(r.pending))
+	}
+	failed = false
+	r.retryAt = time.Time{}
+	r.flushDeliveries(t.Context())
+	if len(sink.AllLogs()) != 2 {
+		t.Fatalf("delivered=%d", len(sink.AllLogs()))
+	}
+	lr := sink.AllLogs()[1].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	v, _ := lr.Attributes().Get("audit.dedupe_key")
+	if len(v.Str()) != 64 || strings.Contains(v.Str(), "/etc/shadow") {
+		t.Fatalf("dedupe key leaked target: %q", v.Str())
+	}
+}
+
+func TestQueueOverflowEmitsGapAfterRecovery(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	r, sink := newTestReceiver(t, cfg)
+	r.pending = make([]plog.Logs, maxPendingDeliveries)
+	r.enqueue(t.Context(), plog.NewLogs())
+	if r.gapQueue != 1 || len(r.pending) != maxPendingDeliveries {
+		t.Fatalf("overflow accounting: gap=%d pending=%d", r.gapQueue, len(r.pending))
+	}
+	// Model the previously queued records being delivered; the gap must then
+	// be exported, and must not itself be silently lost.
+	r.pending = nil
+	r.flushDeliveries(t.Context())
+	if r.gapQueue != 0 || len(sink.AllLogs()) != 1 {
+		t.Fatal("overflow gap not exported")
+	}
+	lr := sink.AllLogs()[0].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	v, _ := lr.Attributes().Get("audit.event")
+	if v.Str() != "delivery_queue_overflow" {
+		t.Fatalf("gap type=%q", v.Str())
+	}
+}
+
+func TestRateLimitGapCountedOnce(t *testing.T) {
+	cfg := createDefaultConfig().(*Config)
+	cfg.DedupeWindow = 0
+	cfg.MaxEventsPerSec = 1
+	r, sink := newTestReceiver(t, cfg)
+	for i := 0; i < 3; i++ {
+		feedLines(t, r, execveLines)
+	}
+	r.flushDeliveries(t.Context())
+	if len(sink.AllLogs()) != 2 {
+		t.Fatalf("delivered=%d, want one event and one gap", len(sink.AllLogs()))
+	}
+	lr := sink.AllLogs()[1].ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	v, _ := lr.Attributes().Get("fabric.event_count")
+	if v.Int() != 2 {
+		t.Fatalf("dropped count=%d, want 2", v.Int())
+	}
+}
+
+func TestLogfilePartialLineRotationAndRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	if err := os.WriteFile(path, []byte("first"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	out := make(chan string, 8)
+	issues := make(chan string, 8)
+	go tailFileObserved(ctx, path, out, func(reason string) { issues <- reason })
+	time.Sleep(250 * time.Millisecond)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(" half\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	select {
+	case line := <-out:
+		if line != "first half\n" {
+			t.Fatalf("partial line=%q", line)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("partial line never completed")
+	}
+	if err := os.Rename(path, path+".1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("second\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-out:
+		if line != "second\n" {
+			t.Fatalf("rotation line=%q", line)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("rotated file not followed")
+	}
+	select {
+	case reason := <-issues:
+		if reason != "logfile_replaced" {
+			t.Fatalf("rotation health reason=%q", reason)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("rotation was not reported as a source-health incident")
+	}
+	cancel()
+	select {
+	case <-out:
+	case <-time.After(time.Second):
+		t.Fatal("tail did not stop")
+	}
+	// There is no checkpoint: restarting intentionally replays the current file.
+	ctx2, cancel2 := context.WithCancel(t.Context())
+	defer cancel2()
+	out2 := make(chan string, 1)
+	go tailFile(ctx2, path, out2)
+	select {
+	case line := <-out2:
+		if line != "second\n" {
+			t.Fatalf("restart line=%q", line)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("restart did not replay current file")
 	}
 }
 

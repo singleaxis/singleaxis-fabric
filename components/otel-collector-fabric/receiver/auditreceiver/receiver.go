@@ -5,6 +5,7 @@ package auditreceiver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -23,24 +24,38 @@ type logLike interface {
 }
 
 type auditReceiver struct {
-	cfg      *Config
-	logger   *zap.Logger
-	next     consumer.Logs
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	asm      *assembler
-	dedup    *deduper
-	bucket   *tokenBucket
-	conn     *auditConn
-	stats    recvStats
+	cfg    *Config
+	logger *zap.Logger
+	next   consumer.Logs
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	asm    *assembler
+	dedup  *deduper
+	bucket *tokenBucket
+	conn   *auditConn
+	stats  recvStats
+	// consume owns this bounded retry queue. It is intentionally not durable:
+	// a collector crash can still lose records queued here.
+	pending  []plog.Logs
+	retryAt  time.Time
+	backoff  time.Duration
+	gapRate  uint64
+	gapQueue uint64
+	gapAsm   uint64
+	seenAsm  int
 }
 
+const maxPendingDeliveries = 4096
+
 type recvStats struct {
-	mu        sync.Mutex
-	received  uint64
-	emitted   uint64
-	droppedRt uint64
-	evicted   uint64
+	mu             sync.Mutex
+	received       uint64
+	emitted        uint64
+	droppedRt      uint64
+	evicted        uint64
+	failedAttempts uint64
+	droppedQueue   uint64
+	sourceIssues   uint64
 }
 
 func newAuditReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) (*auditReceiver, error) {
@@ -81,7 +96,7 @@ func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
-			tailFile(ctx, r.cfg.LogPath, lines)
+			tailFileObserved(ctx, r.cfg.LogPath, lines, r.noteSourceIssue)
 		}()
 	}
 
@@ -118,6 +133,12 @@ func (r *auditReceiver) readNetlink(ctx context.Context, out chan<- string) {
 			select {
 			case <-ctx.Done():
 				return
+			default:
+			}
+			r.noteSourceIssue("netlink_read_error")
+			select {
+			case <-ctx.Done():
+				return
 			case <-time.After(50 * time.Millisecond):
 			}
 			continue
@@ -134,6 +155,19 @@ func (r *auditReceiver) readNetlink(ctx context.Context, out chan<- string) {
 				return
 			}
 		}
+	}
+}
+
+// Source failures cannot be converted into an exact missing-event count.
+// Record them as health incidents, never as falsely precise lost-event totals.
+func (r *auditReceiver) noteSourceIssue(reason string) {
+	r.stats.mu.Lock()
+	r.stats.sourceIssues++
+	n := r.stats.sourceIssues
+	r.stats.mu.Unlock()
+	if n&(n-1) == 0 { // log 1, 2, 4, ... without an outage log storm
+		r.logger.Warn("audit source health incident; completeness is unverified",
+			zap.String("reason", reason), zap.Uint64("incident_count", n))
 	}
 }
 
@@ -167,6 +201,8 @@ func (r *auditReceiver) consume(ctx context.Context, lines <-chan string) {
 			for _, ev := range r.asm.flushExpired(now) {
 				r.emit(ctx, ev)
 			}
+			r.observeAssemblyLoss()
+			r.flushDeliveries(ctx)
 		case now := <-sweepTick.C:
 			r.emitCollapsed(ctx, r.dedup.sweep(now))
 		}
@@ -186,19 +222,14 @@ func (r *auditReceiver) emit(ctx context.Context, ev *auditEvent) {
 		r.stats.mu.Lock()
 		r.stats.droppedRt++
 		r.stats.mu.Unlock()
+		r.gapRate++
 		return
 	}
 	ld := plog.NewLogs()
 	rl := ld.ResourceLogs().AppendEmpty()
 	sl := rl.ScopeLogs().AppendEmpty()
 	lr.CopyTo(sl.LogRecords().AppendEmpty())
-	if err := r.next.ConsumeLogs(ctx, ld); err != nil {
-		r.logger.Warn("failed to emit audit record", zap.Error(err))
-		return
-	}
-	r.stats.mu.Lock()
-	r.stats.emitted++
-	r.stats.mu.Unlock()
+	r.enqueue(ctx, ld)
 }
 
 // emitCollapsed reports dedupe-folded repeats so suppressed volume is itself
@@ -216,17 +247,127 @@ func (r *auditReceiver) emitCollapsed(ctx context.Context, collapsed map[string]
 		rl := ld.ResourceLogs().AppendEmpty()
 		sl := rl.ScopeLogs().AppendEmpty()
 		lr.CopyTo(sl.LogRecords().AppendEmpty())
-		_ = r.next.ConsumeLogs(ctx, ld)
+		r.enqueue(ctx, ld)
 	}
 }
 
+// enqueue retains failed deliveries while allowing the source reader to keep
+// progressing. Once full, it records an explicit gap instead of growing without
+// bound or pretending that a failed ConsumeLogs call was delivered.
+func (r *auditReceiver) enqueue(ctx context.Context, ld plog.Logs) {
+	if len(r.pending) >= maxPendingDeliveries {
+		r.gapQueue++
+		r.stats.mu.Lock()
+		r.stats.droppedQueue++
+		r.stats.mu.Unlock()
+		return
+	}
+	r.pending = append(r.pending, ld)
+	r.flushDeliveries(ctx)
+}
+
+func (r *auditReceiver) observeAssemblyLoss() {
+	if n := r.asm.droppedEO; n > r.seenAsm {
+		r.gapAsm += uint64(n - r.seenAsm)
+		r.seenAsm = n
+	}
+}
+
+// flushDeliveries retries in FIFO order with capped exponential backoff. Gap
+// summaries are sent only after retained records; failed gap sends keep their
+// counts for the next attempt. No raw audit line, argv, or file path is logged.
+func (r *auditReceiver) flushDeliveries(ctx context.Context) {
+	if time.Now().Before(r.retryAt) {
+		return
+	}
+	for len(r.pending) > 0 {
+		// A downstream consumer may mutate its input even when it returns an
+		// error. Keep the queued copy intact for a meaningful retry.
+		attempt := plog.NewLogs()
+		r.pending[0].CopyTo(attempt)
+		if err := r.next.ConsumeLogs(ctx, attempt); err != nil {
+			r.deliveryFailed(err)
+			return
+		}
+		r.pending[0] = plog.Logs{}
+		r.pending = r.pending[1:]
+		r.deliverySucceeded()
+	}
+	for _, gap := range []struct {
+		name  string
+		count *uint64
+	}{
+		{"delivery_queue_overflow", &r.gapQueue},
+		{"rate_limited", &r.gapRate},
+		{"assembly_evicted", &r.gapAsm},
+	} {
+		if *gap.count == 0 {
+			continue
+		}
+		n := *gap.count
+		ld := plog.NewLogs()
+		lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+		lr.SetTimestamp(pcommonNow())
+		lr.Attributes().PutStr(eventClassAttr, eventClassVal)
+		lr.Attributes().PutStr("audit.source", r.cfg.Source)
+		lr.Attributes().PutStr("audit.event", gap.name)
+		lr.Attributes().PutInt("fabric.event_count", int64(n))
+		if err := r.next.ConsumeLogs(ctx, ld); err != nil {
+			r.deliveryFailed(err)
+			return
+		}
+		*gap.count -= n
+		r.deliverySucceeded()
+	}
+}
+
+func (r *auditReceiver) deliveryFailed(err error) {
+	r.stats.mu.Lock()
+	r.stats.failedAttempts++
+	r.stats.mu.Unlock()
+	if r.backoff == 0 {
+		r.backoff = 100 * time.Millisecond
+	} else if r.backoff < 5*time.Second {
+		r.backoff *= 2
+	}
+	r.retryAt = time.Now().Add(r.backoff)
+	r.logger.Warn("audit delivery failed; retaining bounded in-memory backlog",
+		zap.String("error_type", fmt.Sprintf("%T", err)), zap.Int("pending_records", len(r.pending)))
+}
+
+func (r *auditReceiver) deliverySucceeded() {
+	r.backoff = 0
+	r.retryAt = time.Time{}
+	r.stats.mu.Lock()
+	r.stats.emitted++
+	r.stats.mu.Unlock()
+}
+
 func (r *auditReceiver) logStats() {
+	r.observeAssemblyLoss()
+	r.dedup.mu.Lock()
+	var unflushedDedupe uint64
+	for _, entry := range r.dedup.pending {
+		if entry.count > 1 {
+			unflushedDedupe += entry.count - 1
+		}
+	}
+	r.dedup.mu.Unlock()
 	r.stats.mu.Lock()
 	defer r.stats.mu.Unlock()
 	r.logger.Info("audit receiver stopped",
 		zap.Uint64("received_records", r.stats.received),
 		zap.Uint64("emitted_events", r.stats.emitted),
-		zap.Uint64("dropped_rate_limited", r.stats.droppedRt+r.bucket.dropped()),
+		zap.Uint64("dropped_rate_limited", r.stats.droppedRt),
+		zap.Uint64("failed_delivery_attempts", r.stats.failedAttempts),
+		zap.Uint64("dropped_delivery_queue", r.stats.droppedQueue),
+		zap.Uint64("source_health_incidents", r.stats.sourceIssues),
+		zap.Int("undelivered_on_shutdown", len(r.pending)),
+		zap.Uint64("unreported_rate_gaps", r.gapRate),
+		zap.Uint64("unreported_delivery_gaps", r.gapQueue),
+		zap.Uint64("unreported_assembly_gaps", r.gapAsm),
+		zap.Uint64("unflushed_dedupe_repeats", unflushedDedupe),
+		zap.Int("unfinished_assembly_events", len(r.asm.pending)),
 		zap.Int("evicted_incomplete", r.asm.droppedEO),
 	)
 }

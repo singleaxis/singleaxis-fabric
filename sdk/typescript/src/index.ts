@@ -130,6 +130,14 @@ export {
 } from "./content-writer.js";
 export { ContentSink } from "./content-sink.js";
 export {
+  BYTE_EVIDENCE_BOUNDARIES,
+  BYTE_EVIDENCE_ROLES,
+  ByteEvidenceRecorder,
+  type ByteEvidenceCapture,
+  type ByteEvidenceConfig,
+  type ByteEvidenceDescriptor,
+} from "./byte-evidence.js";
+export {
   ContentResolver,
   ResolveStatus,
   type ExportTranscriptOptions,

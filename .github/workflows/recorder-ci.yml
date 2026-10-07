@@ -61,10 +61,14 @@ jobs:
           python-version: "3.12"
       - name: Install validation dependencies
         run: python -m pip install pytest==8.4.2 jsonschema==4.25.1 PyYAML==6.0.2
+      - name: Install SDK driver for Docker-backed repository tests
+        run: python -m pip install -e './sdk/python[otlp]'
       - name: Test repository contracts and release boundary
         run: python -m pytest scripts/tests -q
       - name: Validate public data-plane contracts
         run: python scripts/contracts/validate_data_plane_contracts.py
+      - name: Validate draft AEEP evidence and content-v2 fixtures
+        run: python scripts/contracts/validate_evidence_contracts.py
       - name: Verify coordinated artifact identity
         run: python scripts/verify_release_identity.py --json
 
@@ -108,7 +112,7 @@ jobs:
         working-directory: sdk/python
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . ruff==0.13.0 mypy jsonschema types-jsonschema PyYAML types-PyYAML httpx cryptography opentelemetry-exporter-otlp-proto-http
+          python -m pip install -e . pytest ruff==0.13.0 mypy jsonschema types-jsonschema PyYAML types-PyYAML httpx cryptography opentelemetry-exporter-otlp-proto-http
       - name: Ruff
         working-directory: sdk/python
         run: |
@@ -217,6 +221,9 @@ jobs:
   host-emitter:
     name: Host emitter (eBPF) build and test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
@@ -241,6 +248,21 @@ jobs:
           push: false
           load: true
           tags: fabric-host-emitter:pr
+      - name: Scan released emitter image surface
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: fabric-host-emitter:pr
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"
+          format: sarif
+          output: trivy-fabric-host-emitter.sarif
+          limit-severities-for-sarif: "true"
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+        if: always()
+        with:
+          sarif_file: trivy-fabric-host-emitter.sarif
 
   helm:
     name: Fabric Node Helm contracts

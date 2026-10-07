@@ -1,0 +1,173 @@
+{
+  "schema_version": "agent.evidence.run-manifest/v1",
+  "manifest_id": "manifest-1",
+  "tenant_id": "tenant-a",
+  "run_id": "run-1",
+  "revision": 1,
+  "scope": {
+    "boundary_ids": ["sandbox-a"],
+    "required_source_ids": ["sandbox-1"],
+    "required_roles": ["artifact.after"],
+    "required_feed_ids": ["sandbox-inventory"],
+    "excluded_surfaces": ["Remote hosts outside sandbox-a"],
+    "approval_id": "scope-approval-1",
+    "approval_revision": 1,
+    "approval_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+    "approval_verification": {
+      "verifier_id": "customer-scope-reviewer",
+      "method": "signature",
+      "evidence_ref": "file:///tenant-a/signed-scope-approval-1",
+      "evidence_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+      "checked_at": "2026-09-26T00:00:04Z"
+    }
+  },
+  "sources": [
+    {
+      "source_id": "sandbox-1",
+      "epoch": 0,
+      "capability_id": "sandbox-recorder",
+      "capability_version": "0.1.0",
+      "capability_sha256": "sha256:ea8abe3b48434c69132c37def96bd3b16562981dd2ed5eed08b5ac0dfd59d80c",
+      "identity_verified": true,
+      "sampling_enabled": false,
+      "identity_verification": {
+        "verifier_id": "customer-iam",
+        "method": "workload_identity",
+        "evidence_ref": "file:///tenant-a/identity-proof-1",
+        "evidence_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+        "checked_at": "2026-09-26T00:00:03Z"
+      },
+      "first_sequence": 0,
+      "start_record_id": "evt-start-1",
+      "start_sequence": 0,
+      "high_water": 2,
+      "observed_sequences": [0, 1, 2],
+      "loss_count": 0,
+      "sampled_count": 0,
+      "rate_limited_count": 0,
+      "overflow_count": 0,
+      "unknown_loss": false,
+      "started_at": "2026-09-26T00:00:00Z",
+      "stopped_at": "2026-09-26T00:00:02Z",
+      "terminal_record_id": "evt-terminal-1",
+      "terminal_sequence": 2,
+      "health": "complete"
+    }
+  ],
+  "items": [
+    {
+      "record_id": "evt-1",
+      "source_id": "sandbox-1",
+      "source_epoch": 0,
+      "source_sequence": 1,
+      "role": "artifact.after",
+      "status": "stored",
+      "verified": true,
+      "content_object_id": "obj-1",
+      "content_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+      "representation": "exact"
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_id": "receipt-1",
+      "tenant_id": "tenant-a",
+      "run_id": "run-1",
+      "subject_type": "content_object",
+      "subject_id": "obj-1",
+      "subject_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+      "stage": "destination_durable",
+      "issuer": "customer-store",
+      "issuer_type": "destination",
+      "issued_at": "2026-09-26T00:00:03Z",
+      "verified": true,
+      "verification": {
+        "verifier_id": "customer-reconciler",
+        "method": "store_readback",
+        "evidence_ref": "file:///tenant-a/receipt-proof-1",
+        "evidence_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+        "checked_at": "2026-09-26T00:00:04Z"
+      }
+    },
+    {
+      "receipt_id": "receipt-start-1",
+      "tenant_id": "tenant-a",
+      "run_id": "run-1",
+      "subject_type": "evidence_event",
+      "subject_id": "evt-start-1",
+      "subject_sha256": "sha256:799b1bdaec189dbfb976a41436b7000d4170754f8810c58c5a65d7e5bffa16d3",
+      "stage": "destination_durable",
+      "issuer": "customer-telemetry-store",
+      "issuer_type": "destination",
+      "issued_at": "2026-09-26T00:00:03Z",
+      "verified": true,
+      "verification": {
+        "verifier_id": "customer-reconciler",
+        "method": "destination_api",
+        "evidence_ref": "file:///tenant-a/receipt-proof-start-1",
+        "evidence_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+        "checked_at": "2026-09-26T00:00:04Z"
+      }
+    },
+    {
+      "receipt_id": "receipt-event-1",
+      "tenant_id": "tenant-a",
+      "run_id": "run-1",
+      "subject_type": "evidence_event",
+      "subject_id": "evt-1",
+      "subject_sha256": "sha256:ccf840241fbf50791eae63560d74163a5d8b1a3b6ad41654fc8499785b52b79d",
+      "stage": "destination_durable",
+      "issuer": "customer-telemetry-store",
+      "issuer_type": "destination",
+      "issued_at": "2026-09-26T00:00:03Z",
+      "verified": true,
+      "verification": {
+        "verifier_id": "customer-reconciler",
+        "method": "destination_api",
+        "evidence_ref": "file:///tenant-a/receipt-proof-event-1",
+        "evidence_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+        "checked_at": "2026-09-26T00:00:04Z"
+      }
+    },
+    {
+      "receipt_id": "receipt-terminal-1",
+      "tenant_id": "tenant-a",
+      "run_id": "run-1",
+      "subject_type": "evidence_event",
+      "subject_id": "evt-terminal-1",
+      "subject_sha256": "sha256:dd4ce9ca401ee7d72dbdffa7cf4c8fae16292a71e33ea06fd961e90032aa30cf",
+      "stage": "destination_durable",
+      "issuer": "customer-telemetry-store",
+      "issuer_type": "destination",
+      "issued_at": "2026-09-26T00:00:03Z",
+      "verified": true,
+      "verification": {
+        "verifier_id": "customer-reconciler",
+        "method": "destination_api",
+        "evidence_ref": "file:///tenant-a/receipt-proof-terminal-1",
+        "evidence_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+        "checked_at": "2026-09-26T00:00:04Z"
+      }
+    }
+  ],
+  "feeds": [
+    {
+      "feed_id": "sandbox-inventory",
+      "issuer": "customer-sandbox-inventory",
+      "status": "matched",
+      "expected_count": 1,
+      "observed_count": 1,
+      "matched_count": 1,
+      "missing_count": 0,
+      "extra_count": 0,
+      "verification": {
+        "verifier_id": "customer-reconciler",
+        "method": "independent_audit",
+        "evidence_ref": "file:///tenant-a/feed-proof-1",
+        "evidence_sha256": "sha256:46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6",
+        "checked_at": "2026-09-26T00:00:04Z"
+      }
+    }
+  ],
+  "verdict": "verified_complete_for_declared_scope"
+}

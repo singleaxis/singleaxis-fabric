@@ -15,6 +15,7 @@ import hashlib
 import json
 import stat
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -221,6 +222,27 @@ def test_writer_process_mode_buffers_then_flushes(tmp_path: Path) -> None:
     result = writer.flush(timeout_s=5)
     assert result.stored == 1
     writer.close()
+
+
+def test_worker_cannot_settle_before_pending_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Publishing to the queue before registering pending used to leave a
+    phantom pending entry when the worker won this race."""
+    writer = ContentWriter(_config(tmp_path, durability="process", worker_flush_interval_ms=1))
+    original_put = writer._queue.put_nowait
+
+    def delayed_return(task: Any) -> None:
+        original_put(task)
+        time.sleep(0.05)
+
+    monkeypatch.setattr(writer._queue, "put_nowait", delayed_return)
+    descriptor, content = _task(content="race")
+    assert writer.submit(descriptor, content) == ContentStatus.PENDING
+    result = writer.flush(timeout_s=5)
+    writer.close()
+    assert result.stored == 1
+    assert result.pending == 0
 
 
 def test_writer_spooled_survives_restart(tmp_path: Path) -> None:
@@ -780,6 +802,20 @@ def test_identical_content_two_tenants_stays_isolated(tmp_path: Path) -> None:
     assert ContentResolver([a]).resolve(rb.uri).status == ResolveStatus.DENIED
 
 
+def test_governed_local_directories_are_owner_only(tmp_path: Path) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path), tenant_id=TENANT)
+    descriptor = _descriptor()
+    store.put_object(descriptor.to_json(), "payload")
+    store.write_manifest({"manifest_id": "m-mode"}, decision_id="d-mode", manifest_id="m-mode")
+    for directory in (
+        tmp_path / TENANT,
+        tmp_path / TENANT / "meta",
+        tmp_path / TENANT / "manifests",
+        tmp_path / TENANT / "manifests" / "by-decision",
+    ):
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+
 # --------------------------------------------------------------------------- #
 # spec 033 §3 — verified resolution
 # --------------------------------------------------------------------------- #
@@ -1068,6 +1104,34 @@ def test_manifest_bytes_arrive_via_writer_not_close(tmp_path: Path) -> None:
     assert manifest["items"]
 
 
+def test_concurrent_decisions_keep_manifests_and_content_distinct(tmp_path: Path) -> None:
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id=TENANT)
+    client = _client(tmp_path, store=store, durability="process")
+
+    def record(index: int) -> tuple[str, str]:
+        with client.decision(session_id="shared", request_id=f"request-{index}") as decision:
+            decision.record_context(f"context-{index}.txt", f"payload-{index}")
+        assert decision.content_manifest_uri is not None
+        return decision.decision_id, decision.content_manifest_uri
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        records = list(pool.map(record, range(16)))
+    result = client.flush_content(timeout_s=10)
+    client.close()
+
+    assert result is not None
+    assert result.pending == 0
+    assert len({uri for _, uri in records}) == len(records)
+    resolver = ContentResolver([store])
+    for index, (decision_id, uri) in enumerate(records):
+        manifest = store.read_manifest(uri)
+        assert manifest["decision_id"] == decision_id
+        exported = resolver.export_transcript(uri)
+        entries = [entry for step in exported["steps"] for entry in step["entries"]]
+        context = next(entry for entry in entries if entry["role"] == "context.file")
+        assert context["text"] == f"payload-{index}"
+
+
 # --------------------------------------------------------------------------- #
 # spec 032 §4 — durable spool records and recovery
 # --------------------------------------------------------------------------- #
@@ -1111,6 +1175,8 @@ def test_spool_record_carries_full_identity(tmp_path: Path) -> None:
             descriptor=descriptor,
             content="payload",
             decision_id="d-9",
+            manifest_id="m-9",
+            manifest_item_sequence=3,
             tenant_id=TENANT,
         )
     )
@@ -1124,14 +1190,20 @@ def test_spool_record_carries_full_identity(tmp_path: Path) -> None:
         "key",
         "tenant_id",
         "decision_id",
+        "manifest_id",
+        "manifest_item_sequence",
         "descriptor",
         "content_b64",
         "attempts",
+        "first_enqueued",
+        "ref",
         "checksum",
     ):
         assert key in record, f"spool record missing {key}"
     assert record["tenant_id"] == TENANT
     assert record["decision_id"] == "d-9"
+    assert record["manifest_id"] == "m-9"
+    assert record["manifest_item_sequence"] == 3
     assert record["kind"] == "object"
 
 
@@ -1230,6 +1302,141 @@ def test_recovered_manifest_reconciles_after_restart(tmp_path: Path) -> None:
     recovered.close()
     manifest_path = tmp_path / "store" / TENANT / "manifests" / "m-restart.json"
     assert json.loads(manifest_path.read_text())["manifest_id"] == "m-restart"
+
+
+def test_recovered_object_reconciles_owning_manifest(tmp_path: Path) -> None:
+    """A process restart loses callbacks, so spool identity must drive the
+    pending -> stored manifest transition directly."""
+    from fabric._content_writer import _Task  # noqa: PLC0415
+
+    cfg = _spool_config(tmp_path, worker_flush_interval_ms=60_000)
+    descriptor = _descriptor()
+    manifest_id = "m-object-restart"
+    decision_id = "d-object-restart"
+    manifest = {
+        "schema_version": "fabric.transcript-manifest/v1",
+        "manifest_id": manifest_id,
+        "tenant_id": TENANT,
+        "agent_id": "bot",
+        "decision_id": decision_id,
+        "producer": {"name": "test", "version": "1", "language": "python"},
+        "items": [
+            {
+                "sequence": 0,
+                "role": descriptor.role,
+                "status": "pending",
+                "descriptor": descriptor.to_json(),
+                "ref": cfg.store.ref_for(descriptor.digest.split(":", 1)[1]),
+            }
+        ],
+        "completeness": {"pending": 1},
+        "coverage": {"roles_enabled": [descriptor.role], "roles_observed": [descriptor.role]},
+    }
+    plant = ContentWriter(cfg)
+    assert plant._spool(
+        _Task(
+            kind="manifest",
+            key=f"manifest:{manifest_id}",
+            manifest=manifest,
+            manifest_id=manifest_id,
+            manifest_revision=1,
+            decision_id=decision_id,
+            tenant_id=TENANT,
+        )
+    )
+    assert plant._spool(
+        _Task(
+            kind="object",
+            key=descriptor.object_id,
+            descriptor=descriptor,
+            content="payload",
+            manifest_id=manifest_id,
+            manifest_item_sequence=0,
+            decision_id=decision_id,
+            tenant_id=TENANT,
+        )
+    )
+    plant.close()
+
+    recovered = ContentWriter(cfg)
+    result = recovered.flush(timeout_s=10)
+    recovered.close()
+
+    doc = cfg.store.read_manifest(cfg.store.manifest_uri_for(manifest_id))
+    assert result.pending == 0
+    assert doc["items"][0]["status"] == "stored"
+    assert doc["items"][0]["descriptor"]["status"] == "stored"
+    assert doc["completeness"] == {"stored": 1}
+    assert not list((tmp_path / "spool").glob("*.json"))
+
+
+def test_stale_manifest_revision_cannot_delete_latest_spool(tmp_path: Path) -> None:
+    """An older queued revision must not overwrite or unlink the newer
+    revision stored at the manifest's stable spool path."""
+    from fabric._content_writer import _Task  # noqa: PLC0415
+
+    cfg = _spool_config(tmp_path, worker_flush_interval_ms=60_000)
+    writer = ContentWriter(cfg)
+    first = _Task(
+        kind="manifest",
+        key="manifest:m-revision",
+        manifest={"manifest_id": "m-revision", "generation": 1},
+        manifest_id="m-revision",
+        manifest_revision=1,
+        decision_id="d-revision",
+        tenant_id=TENANT,
+    )
+    latest = _Task(
+        kind="manifest",
+        key="manifest:m-revision",
+        manifest={"manifest_id": "m-revision", "generation": 2},
+        manifest_id="m-revision",
+        manifest_revision=2,
+        decision_id="d-revision",
+        tenant_id=TENANT,
+    )
+    assert writer._spool(first)
+    assert writer._spool(latest)
+    writer._manifest_revisions["m-revision"] = 2
+    spool_path = writer._spool_path(latest)
+    writer._deliver(first)
+    assert spool_path.exists(), "stale revision removed the latest durable record"
+    writer._deliver(latest)
+    assert not spool_path.exists()
+    doc = cfg.store.read_manifest(cfg.store.manifest_uri_for("m-revision"))
+    assert doc["generation"] == 2
+    writer.close()
+
+
+def test_dropped_manifest_rewrite_does_not_suppress_accepted_revision(tmp_path: Path) -> None:
+    cfg = _config(
+        tmp_path,
+        durability="process",
+        queue_max_items=1,
+        worker_flush_interval_ms=60_000,
+    )
+    writer = ContentWriter(cfg)
+    assert (
+        writer.submit_manifest(
+            {"manifest_id": "m-pressure", "generation": 1},
+            decision_id="d-pressure",
+            manifest_id="m-pressure",
+            tenant_id=TENANT,
+        )
+        == ContentStatus.PENDING
+    )
+    assert (
+        writer.submit_manifest(
+            {"manifest_id": "m-pressure", "generation": 2},
+            decision_id="d-pressure",
+            manifest_id="m-pressure",
+            tenant_id=TENANT,
+        )
+        == ContentStatus.DROPPED
+    )
+    writer.close()
+    doc = cfg.store.read_manifest(cfg.store.manifest_uri_for("m-pressure"))
+    assert doc["generation"] == 1
 
 
 def test_duplicate_recovery_is_idempotent(tmp_path: Path) -> None:

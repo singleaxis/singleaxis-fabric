@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/evidence/v1/evidence-event-v1.schema.json",
+  "title": "AEEP OTLP LogRecord projection v1 (draft)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "event_name", "record_id", "tenant_id",
+    "source_id", "source_epoch", "source_sequence", "boundary",
+    "provenance", "observed_at", "status"
+  ],
+  "properties": {
+    "schema_version": {"const": "agent.evidence.event/v1"},
+    "event_name": {"enum": ["agent.evidence.content", "agent.evidence.artifact", "agent.evidence.coverage", "agent.evidence.loss", "agent.evidence.receipt"]},
+    "record_id": {"$ref": "#/$defs/id"},
+    "tenant_id": {"$ref": "#/$defs/id"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "source_id": {"$ref": "#/$defs/id"},
+    "source_epoch": {"type": "integer", "minimum": 0},
+    "source_sequence": {"type": "integer", "minimum": 0},
+    "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+    "operation_id": {"$ref": "#/$defs/id"},
+    "attempt_id": {"$ref": "#/$defs/id"},
+    "boundary": {"enum": ["caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service"]},
+    "provenance": {"enum": ["native", "protocol", "caller_reported", "inferred"]},
+    "role": {"type": "string", "minLength": 3, "maxLength": 80},
+    "status": {"enum": ["pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed", "observed"]},
+    "content_object_id": {"$ref": "#/$defs/id"},
+    "content_ref": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^(s3|gs|file)://[^@?#]+$"},
+    "content_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "loss_count": {"type": "integer", "minimum": 1},
+    "loss_reason": {"enum": ["rate_limit", "queue_full", "spool_full", "export_failure", "kernel_loss", "unknown"]},
+    "coverage_phase": {"enum": ["start", "stop", "heartbeat", "restart", "scope_changed"]},
+    "receipt_id": {"$ref": "#/$defs/id"},
+    "receipt_stage": {"enum": ["source_spooled", "node_accepted", "destination_accepted", "destination_durable"]},
+    "receipt_subject_id": {"$ref": "#/$defs/id"},
+    "receipt_subject_type": {"enum": ["evidence_event", "content_object"]}
+  },
+  "allOf": [
+    {"if": {"required": ["span_id"]}, "then": {"required": ["trace_id"]}},
+    {"if": {"properties": {"event_name": {"const": "agent.evidence.loss"}}}, "then": {"required": ["loss_count", "loss_reason"], "properties": {"status": {"const": "dropped"}}}},
+    {"if": {"properties": {"event_name": {"const": "agent.evidence.coverage"}}}, "then": {"required": ["coverage_phase"], "properties": {"status": {"const": "observed"}}}},
+    {"if": {"properties": {"event_name": {"const": "agent.evidence.receipt"}}}, "then": {"required": ["receipt_id", "receipt_stage", "receipt_subject_id", "receipt_subject_type"], "properties": {"status": {"const": "observed"}}}},
+    {"if": {"properties": {"event_name": {"enum": ["agent.evidence.content", "agent.evidence.artifact"]}}}, "then": {"required": ["role"]}},
+    {"if": {"properties": {"status": {"enum": ["not_captured", "unsupported", "dropped", "failed"]}}}, "then": {"not": {"anyOf": [{"required": ["content_ref"]}, {"required": ["content_sha256"]}]}}}
+  ],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"}
+  }
+}

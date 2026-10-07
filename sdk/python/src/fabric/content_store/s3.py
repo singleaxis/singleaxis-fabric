@@ -72,15 +72,16 @@ class S3ContentStore:
             raise ValueError("sse_kms_key_id requires sse_algorithm")
 
     def _get_client(self) -> Any:
+        if self._client is not None:
+            return self._client
         try:
             import boto3  # type: ignore[import-not-found, import-untyped, unused-ignore]  # noqa: PLC0415
         except ImportError as exc:  # pragma: no cover — covered by extras
             raise ImportError(_IMPORT_HINT) from exc
 
-        if self._client is None:
-            self._client = boto3.client(
-                "s3", region_name=self.region_name, endpoint_url=self.endpoint_url
-            )
+        self._client = boto3.client(
+            "s3", region_name=self.region_name, endpoint_url=self.endpoint_url
+        )
         return self._client
 
     # -- legacy contract ---------------------------------------------------
@@ -180,6 +181,47 @@ class S3ContentStore:
                 Bucket=self.bucket, Key=meta_key, Body=meta_body, **self._put_kwargs()
             )
         return ContentRef(uri=f"s3://{self.bucket}/{key}", content_hash=digest)
+
+    def evidence_ref_for(self, object_id: str) -> str:
+        check_safe_identifier("object_id", object_id)
+        if self.tenant_id is None:
+            raise ValueError("byte evidence requires a tenant-scoped store")
+        return f"s3://{self.bucket}/{self.prefix}{self.tenant_id}/evidence/{object_id}"
+
+    def put_bytes_object(self, descriptor: Mapping[str, Any], content: bytes) -> ContentRef:
+        """Write v2 bytes without the race-prone nonconditional fallback."""
+        if descriptor.get("schema_version") != "fabric.content-object/v2":
+            raise ValueError("put_bytes_object requires a content-object/v2 descriptor")
+        if descriptor.get("tenant_id") != self.tenant_id or self.tenant_id is None:
+            raise ValueError("descriptor tenant_id does not match store tenant_id")
+        object_id = check_safe_identifier("object_id", descriptor["object_id"])
+        digest = content_hash_bytes(content)
+        if descriptor.get("stored_sha256") != f"sha256:{digest}":
+            raise ValueError("content bytes do not match stored_sha256")
+        if descriptor.get("stored_byte_length") != len(content):
+            raise ValueError("content bytes do not match stored_byte_length")
+        ref = self.evidence_ref_for(object_id)
+        if descriptor.get("ref") != ref:
+            raise ValueError("descriptor ref does not match store namespace")
+        key = f"{self.prefix}{self.tenant_id}/evidence/{object_id}"
+        meta_key = f"{self.prefix}{self.tenant_id}/evidence/meta/{object_id}.json"
+        body = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        client = self._get_client()
+        for dest, value in ((key, content), (meta_key, body)):
+            try:
+                client.put_object(
+                    Bucket=self.bucket, Key=dest, Body=value,
+                    IfNoneMatch="*", **self._put_kwargs(),
+                )
+            except Exception as exc:
+                if not _is_precondition_failed(exc):
+                    raise
+                existing = client.get_object(Bucket=self.bucket, Key=dest)["Body"].read()
+                if existing != value:
+                    raise CorruptedObjectError(
+                        f"pre-existing evidence object s3://{self.bucket}/{dest} differs"
+                    ) from exc
+        return ContentRef(uri=ref, content_hash=digest)
 
     def write_manifest(
         self, manifest: Mapping[str, Any], *, decision_id: str, manifest_id: str

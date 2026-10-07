@@ -1,4 +1,7 @@
 # fabric-host-emitter DaemonSet (spec 031) — passive eBPF host observation.
+# Qualification template, not a production-ready install. Replace the image
+# digest and workload cgroup, provision the credential Secret and a mode-0700
+# encrypted host spool directory, then test the exact rendered manifest.
 #
 # This is the ONLY Fabric workload that requests elevated capability, and it
 # stays read-only: the BPF programs are tracepoints (observe), never LSM or
@@ -21,13 +24,24 @@ spec:
     spec:
       hostPID: true            # correlate kernel events to host process tree
       hostNetwork: false
+      automountServiceAccountToken: false
       containers:
         - name: emitter
-          image: ghcr.io/singleaxis/fabric-host-emitter:0.8.0-rc.1
+          # A zero digest intentionally cannot pull until an approved release
+          # digest is substituted; a mutable tag is not an audit identity.
+          image: ghcr.io/singleaxis/fabric-host-emitter@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: IfNotPresent
           env:
             - name: EMIT_ENDPOINT
               value: "fabric-collector.fabric-system.svc.cluster.local:4317"
+            - name: EMIT_TLS_CA_FILE
+              value: /var/run/secrets/fabric/ca.crt
+            - name: EMIT_TLS_CERT_FILE
+              value: /var/run/secrets/fabric/tls.crt
+            - name: EMIT_TLS_KEY_FILE
+              value: /var/run/secrets/fabric/tls.key
+            - name: EMIT_BEARER_TOKEN_FILE
+              value: /var/run/secrets/fabric/emitter-token
             # Scope to the agent workload's cgroup; never silently all-host.
             - name: EMIT_CGROUP_PATH
               value: ""        # e.g. /sys/fs/cgroup/kubepods/.../<agent-pod>
@@ -40,10 +54,11 @@ spec:
             - name: EMIT_FILE_ACCESS
               value: "false"   # high volume — enable only when scoped
             - name: EMIT_MAX_EVENTS_PER_SEC
-              value: "500"
-            # Bearer token for the node's bearertokenauth ingress:
-            # - name: EMIT_BEARER_TOKEN_FILE
-            #   value: /var/run/secrets/fabric/emitter-token
+              value: "0"       # no intentional sampling of required events
+            - name: EMIT_SPOOL_DIR
+              value: /var/lib/fabric-host-emitter
+            - name: EMIT_SPOOL_MAX_BYTES
+              value: "1073741824" # size for the approved outage/rate budget
           securityContext:
             runAsUser: 0        # bpf() and tracefs access need root
             readOnlyRootFilesystem: true
@@ -69,6 +84,11 @@ spec:
             - name: debugfs
               mountPath: /sys/kernel/debug
               readOnly: true
+            - name: emitter-credentials
+              mountPath: /var/run/secrets/fabric
+              readOnly: true
+            - name: emitter-spool
+              mountPath: /var/lib/fabric-host-emitter
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits:   { cpu: 500m, memory: 256Mi }
@@ -81,7 +101,14 @@ spec:
           hostPath: { path: /sys/kernel/tracing, type: Directory }
         - name: debugfs
           hostPath: { path: /sys/kernel/debug, type: Directory }
-      tolerations:
-        - operator: Exists      # observe every node, incl. control plane
+        - name: emitter-credentials
+          secret:
+            secretName: fabric-host-emitter-credentials
+            defaultMode: 0400
+        - name: emitter-spool
+          # Pre-provision this exact path mode 0700 on each selected node,
+          # backed by customer-approved encrypted storage. DirectoryOrCreate
+          # would silently create it with unsafe permissions.
+          hostPath: { path: /var/lib/fabric-host-emitter, type: Directory }
       # On kernels <5.8 or without BTF the container crashes with a clear
       # startup error — no partial silent operation.

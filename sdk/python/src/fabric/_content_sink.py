@@ -189,7 +189,11 @@ class ContentSink:
             )
         self._writer.subscribe(descriptor.object_id, self._on_item_settled)
         status = self._writer.submit(
-            descriptor, content_text, decision_id=self._manifest.decision_id
+            descriptor,
+            content_text,
+            decision_id=self._manifest.decision_id,
+            manifest_id=self._manifest.manifest_id,
+            manifest_item_sequence=item.sequence,
         )
         # An inline store has already settled inside submit(); only items
         # still pending can be dropped (queue full) or failed (closed

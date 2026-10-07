@@ -89,7 +89,7 @@ no unauthenticated fallback.
 
 > **Token file format matters.** The pinned `bearertokenauth` extension
 > splits the token file on newlines and keeps empty entries — a trailing
-> newline or any blank line mints `Bearer ` (empty token) as a valid
+> newline or any blank line mints a `Bearer` prefix with an empty token as a valid
 > credential, which gRPC metadata preserves. Write the file with
 > `printf %s` (no trailing newline) as shown; `make preflight-prod` fails
 > on unsafe token files, and the image's `fabric-gate` entrypoint refuses

@@ -43,7 +43,7 @@
       }
     ],
     "decision_semantics": "none",
-    "coverage_basis": "Captures syscall-level events the kernel audit subsystem records (execve, connect, openat per the configured ruleset). Coverage equals the loaded audit rules; events outside the ruleset are invisible. Syscall records are host-level metadata: they show that a process ran, connected, or opened \u2014 not what the agent intended or decided."
+    "coverage_basis": "Captures selected syscall-level events the kernel audit subsystem reports (execve, connect, openat per the configured ruleset). Coverage is bounded by the loaded audit rules, kernel/source loss and collector uptime; events outside those limits are invisible. Syscall records are host-level metadata, not agent intent or decisions."
   },
   "control": {
     "interposition": "none",
@@ -80,7 +80,7 @@
     },
     "baggage": "unsupported",
     "correlation_limitations": [
-      "Audit events carry kernel identity (pid, ppid, auid, exe) and timestamps \u2014 they are not span edges. Joining them to agent traces is inferred provenance by pid/host/time, never causal.",
+      "Audit events carry kernel identity (pid, ppid, auid, executable-path hash) and timestamps \u2014 they are not span edges. Joining them to agent traces is inferred provenance by pid/host/time, never causal.",
       "Audit serials are host-local and restart-sensitive; they are dedupe evidence, not durable identity.",
       "process.command_args_sha256 proves a command line existed without revealing it; replay requires the source host's own records."
     ]
@@ -98,7 +98,7 @@
     {
       "type": "unit_test",
       "path": "components/otel-collector-fabric/receiver/auditreceiver/audit_test.go",
-      "claim": "Covers record parsing, multi-record event assembly, argv hash-only emission, sockaddr decode, deny recording, rule-key filtering, dedupe collapse, rate limiting, and bounded assembly."
+      "claim": "Covers record parsing, assembly, argv/path hash-only emission, sockaddr decode, rule-key filtering, bounded retry and known-gap reporting. It does not qualify restart durability."
     }
   ],
   "known_blind_spots": [
@@ -107,6 +107,7 @@
     "file_access (openat) is high-volume on real systems and disabled by default; enabling it without scoped rules can exceed emit and queue budgets.",
     "Very short-lived processes and io_uring-driven syscalls can evade the audit pipeline on some kernels; auditd's own blind spots carry through.",
     "manage_rules writes audit rules only when no daemon holds the control socket; a running auditd wins and its ruleset governs what we see.",
-    "Records are host-level metadata (process, peer, path), not agent intent \u2014 the semantic layer still requires SDK or framework instrumentation."
+    "Records are host-level metadata (process, peer, path hash), not agent intent \u2014 the semantic layer still requires SDK or framework instrumentation.",
+    "Failed downstream deliveries use bounded in-memory retry only; collector crash can lose them, logfile mode lacks a persisted cursor, and netlink multicast cannot replay missed kernel events."
   ]
 }

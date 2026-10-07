@@ -11,7 +11,7 @@ the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 035.
+next unused public number is 040.
 
 Spec [027](027-recorder-v1.md) is the authoritative product and release scope
 for the first stable OSS recorder. Specs describing capabilities outside
@@ -61,3 +61,10 @@ Every spec declares a `Status` in its header:
 | [032](032-passive-content-delivery.md) | Passive asynchronous content recording and durable delivery | draft |
 | [033](033-content-storage-resolution.md) | Customer content storage and authorized resolution | draft |
 | [034](034-eval-interoperability.md) | External evaluation interoperability and qualification | draft |
+| [035](035-agent-execution-evidence-profile.md) | Agent Execution Evidence Profile for OpenTelemetry | draft |
+| [036](036-evidence-capture-implementation-plan.md) | Bounded agent evidence capture — implementation and conformance plan | draft |
+| [037](037-bounded-enterprise-deployment-and-controls.md) | Bounded enterprise evidence deployment and control applicability | draft |
+| [038](038-capture-boundary-and-loss-qualification.md) | Capture-boundary and source-loss qualification | draft |
+| [039](039-storage-release-and-shadow-pilot.md) | Protected storage, exact-artifact release, and shadow-pilot qualification | draft |
+| [040](040-synthetic-agent-evidence-slice.md) | First bounded synthetic model-terminal-artifact evidence slice | draft; NO-GO |
+| [041](041-follow-on-evidence-adapter-scopes.md) | Separately scoped SSH, DB, browser/cloud, sandbox and other adapters | draft; no coverage claim |

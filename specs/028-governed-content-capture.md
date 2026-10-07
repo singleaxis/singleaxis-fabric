@@ -184,7 +184,7 @@ the matrix rows:
 
 | Surface | Python manual API | TS manual API | Auto-instrumentation | Adapters |
 |---|---|---|---|---|
-| model.request.* / model.output.* | ✔ v1 | ✔ v1 | deferred — adapters see provider spans without caller-supplied payloads; marked `unsupported` until wired | MCP integration: tool args/results ✔ |
+| `model.request.*` / `model.output.*` | ✔ v1 | ✔ v1 | deferred — adapters see provider spans without caller-supplied payloads; marked `unsupported` until wired | MCP integration: tool args/results ✔ |
 | tool.call.* | ✔ | ✔ | — | MCP ✔ |
 | retrieval.* | ✔ | ✔ | — | — |
 | memory.* | ✔ | ✔ | — | — |

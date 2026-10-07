@@ -20,25 +20,27 @@ import (
 
 // event mirrors struct event in bpf/emit.bpf.c — same field order and sizes.
 type rawEvent struct {
-	CgroupID uint64
-	TsNs     uint64
-	Pid      uint32
-	Ppid     uint32
-	Type     uint32
-	Family   uint32
-	Port     uint32
-	Addr     [16]byte
-	ArgvLen  uint32
-	Comm     [16]byte
-	Filename [240]byte
-	Argv     [384]byte
+	CgroupID           uint64
+	TsNs               uint64
+	Pid                uint32
+	Ppid               uint32
+	Type               uint32
+	Family             uint32
+	Port               uint32
+	Addr               [16]byte
+	ArgvLen            uint32
+	ArgvIncomplete     uint32
+	FilenameIncomplete uint32
+	Comm               [16]byte
+	Filename           [240]byte
+	Argv               [384]byte
 }
 
 // bpfRuntime owns the loaded objects and attached links.
 type bpfRuntime struct {
-	objs    emitObjects
-	links   []link.Link
-	reader  *ringbuf.Reader
+	objs   emitObjects
+	links  []link.Link
+	reader *ringbuf.Reader
 }
 
 // loadBPF loads the CO-RE objects, applies the cgroup filter, and attaches
@@ -120,20 +122,39 @@ func (rt *bpfRuntime) next() (*event, error) {
 	return rawToEvent(&e), nil
 }
 
+func (rt *bpfRuntime) lossCount() (uint64, error) {
+	cpus, err := ebpf.PossibleCPU()
+	if err != nil {
+		return 0, err
+	}
+	counts := make([]uint64, cpus)
+	key := uint32(0)
+	if err := rt.objs.Losses.Lookup(&key, &counts); err != nil {
+		return 0, err
+	}
+	var total uint64
+	for _, count := range counts {
+		total += count
+	}
+	return total, nil
+}
+
 // rawToEvent converts the fixed-layout kernel record to the neutral event.
 func rawToEvent(r *rawEvent) *event {
 	return &event{
-		Type:     r.Type,
-		TsNs:     r.TsNs,
-		Pid:      r.Pid,
-		Ppid:     r.Ppid,
-		Comm:     cstr(r.Comm[:]),
-		Filename: cstr(r.Filename[:]),
-		Argv:     r.Argv[:min(int(r.ArgvLen), len(r.Argv))],
-		Family:   r.Family,
-		Port:     r.Port,
-		Addr:     r.Addr,
-		CgroupID: r.CgroupID,
+		Type:               r.Type,
+		TsNs:               r.TsNs,
+		Pid:                r.Pid,
+		Ppid:               r.Ppid,
+		Comm:               cstr(r.Comm[:]),
+		Filename:           cstr(r.Filename[:]),
+		Argv:               r.Argv[:min(int(r.ArgvLen), len(r.Argv))],
+		ArgvIncomplete:     r.ArgvIncomplete != 0,
+		FilenameIncomplete: r.FilenameIncomplete != 0,
+		Family:             r.Family,
+		Port:               r.Port,
+		Addr:               r.Addr,
+		CgroupID:           r.CgroupID,
 	}
 }
 

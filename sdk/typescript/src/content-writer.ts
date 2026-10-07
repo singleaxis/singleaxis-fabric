@@ -16,14 +16,20 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-import { ContentStatus, canonicalJson, type ContentDescriptor } from "./content.js";
+import {
+  ContentStatus,
+  DESCRIPTOR_STATUSES,
+  canonicalJson,
+  type ContentDescriptor,
+} from "./content.js";
 import type { GovernedStore } from "./content-store.js";
 
 const DURABILITY_MODES = new Set(["inline", "process", "spooled"]);
 
 const QUEUE_MAX_CAP = 1 << 20;
 const PAYLOAD_MAX_CAP = 64 * 1024 * 1024;
-const SPOOL_VERSION = 1;
+const SPOOL_VERSION = "fabric.content-spool/v2";
+const LEGACY_SPOOL_VERSION = 1;
 const CORRUPT_SUFFIX = ".corrupt";
 
 /** Canonical-JSON bytes for the spool checksum (sorted keys, compact).
@@ -83,6 +89,8 @@ interface Task {
   content?: string;
   manifest?: Record<string, unknown>;
   manifestId?: string;
+  manifestItemSequence?: number;
+  manifestRevision?: number;
   decisionId?: string;
   tenantId?: string;
   attempts: number;
@@ -180,6 +188,8 @@ export class ContentWriter {
    * terminal settlement so a shared writer never accumulates
    * per-decision callbacks (spec 032 §3). */
   private readonly subscribers = new Map<string, (d: ContentDescriptor, s: string) => void>();
+  /** Latest submitted generation for each stable manifest identity. */
+  private readonly manifestRevisions = new Map<string, number>();
   private readonly counters = {
     enqueued: 0,
     stored: 0,
@@ -262,7 +272,13 @@ export class ContentWriter {
    * Enqueue a content object for delivery; returns its item status.
    * Never throws — failures map to `dropped`/`failed` statuses.
    */
-  submit(descriptor: ContentDescriptor, content: string, decisionId?: string): string {
+  submit(
+    descriptor: ContentDescriptor,
+    content: string,
+    decisionId?: string,
+    manifestId?: string,
+    manifestItemSequence?: number,
+  ): string {
     if (this.closed) {
       return ContentStatus.FAILED;
     }
@@ -272,6 +288,8 @@ export class ContentWriter {
       descriptor,
       content,
       decisionId,
+      manifestId,
+      manifestItemSequence,
       tenantId: descriptor.tenant_id,
       attempts: 0,
       firstEnqueued: Date.now() / 1000,
@@ -296,17 +314,27 @@ export class ContentWriter {
       console.warn("fabric.contentWriter: manifest submit after close");
       return ContentStatus.FAILED;
     }
+    const previousRevision = this.manifestRevisions.get(manifestId) ?? 0;
+    const revision = previousRevision + 1;
     const task: Task = {
       kind: "manifest",
       key: `manifest:${manifestId}`,
       manifest: { ...manifest },
       manifestId,
+      manifestRevision: revision,
       decisionId,
       tenantId,
       attempts: 0,
       firstEnqueued: Date.now() / 1000,
     };
-    return this.submitTask(task);
+    const status = this.submitTask(task);
+    if (status === ContentStatus.PENDING || status === ContentStatus.STORED) {
+      this.manifestRevisions.set(
+        manifestId,
+        Math.max(this.manifestRevisions.get(manifestId) ?? 0, revision),
+      );
+    }
+    return status;
   }
 
   private submitTask(task: Task): string {
@@ -325,8 +353,8 @@ export class ContentWriter {
       this.counters.dropped += 1;
       return ContentStatus.DROPPED;
     }
-    this.queue.push(task);
     this.pending.set(task.key, task);
+    this.queue.push(task);
     this.counters.enqueued += 1;
     this.scheduleDrain();
     return ContentStatus.PENDING;
@@ -384,25 +412,40 @@ export class ContentWriter {
       tenant_id: task.tenantId,
       decision_id: task.decisionId,
       attempts: task.attempts,
+      first_enqueued: task.firstEnqueued,
+      manifest_id: task.manifestId,
+      manifest_item_sequence: task.manifestItemSequence,
+      manifest_revision: task.manifestRevision,
     };
+    if (task.kind === "manifest" && task.manifestId !== undefined) {
+      record["ref"] = this.config.store.manifestUriFor(task.manifestId);
+    }
     if (task.kind === "manifest") {
-      record["manifest_id"] = task.manifestId;
       record["manifest"] = task.manifest;
     } else {
       record["descriptor"] = task.descriptor;
+      record["ref"] = this.config.store.refFor(
+        (task.descriptor as ContentDescriptor).digest.split(":", 2)[1] ?? "",
+      );
       record["content_b64"] = Buffer.from(task.content as string, "utf-8").toString("base64");
     }
     record["checksum"] = createHash("sha256").update(canonicalJsonBytes(record)).digest("hex");
     return record;
   }
 
-  private spool(task: Task): boolean {
+  private spool(task: Task, count = true): boolean {
     const dir = this.spoolRoot();
     const entry = new TextEncoder().encode(JSON.stringify(this.spoolRecord(task)));
-    if (this.spoolUsage() + entry.length > this.config.spoolMaxBytes) {
+    const target = this.spoolPath(task);
+    let previousSize = 0;
+    try {
+      previousSize = fs.statSync(target).size;
+    } catch {
+      // no previous revision at this stable path
+    }
+    if (this.spoolUsage() - previousSize + entry.length > this.config.spoolMaxBytes) {
       return false;
     }
-    const target = this.spoolPath(task);
     const tmp = path.join(dir, `.spool-${randomUUID()}.tmp`);
     try {
       const fd = fs.openSync(tmp, "w", 0o600);
@@ -420,7 +463,7 @@ export class ContentWriter {
       } finally {
         fs.closeSync(dirFd);
       }
-      this.counters.spooled += 1;
+      if (count) this.counters.spooled += 1;
       return true;
     } catch {
       try {
@@ -453,6 +496,7 @@ export class ContentWriter {
    * with an explicit stat, never silently ignored.
    */
   private recoverSpool(): void {
+    const recovered: Task[] = [];
     for (const name of fs.readdirSync(this.spoolRoot()).sort()) {
       if (!name.endsWith(".json")) continue;
       const file = path.join(this.spoolRoot(), name);
@@ -464,10 +508,20 @@ export class ContentWriter {
         this.quarantine(file);
         continue;
       }
-      this.recoveryBacklog.push(task);
+      recovered.push(task);
       this.pending.set(task.key, task);
+      if (task.manifestId !== undefined && task.manifestRevision !== undefined) {
+        this.manifestRevisions.set(
+          task.manifestId,
+          Math.max(this.manifestRevisions.get(task.manifestId) ?? 0, task.manifestRevision),
+        );
+      }
       this.counters.recovered += 1;
     }
+    // Recreate each pending manifest before its recovered objects attempt
+    // to fold terminal delivery results into it.
+    recovered.sort((a, b) => Number(b.kind === "manifest") - Number(a.kind === "manifest"));
+    this.recoveryBacklog.push(...recovered);
   }
 
   private taskFromRecord(record: Record<string, unknown>): Task {
@@ -476,7 +530,10 @@ export class ContentWriter {
     if (checksum !== expected) {
       throw new Error("spool record checksum mismatch");
     }
-    if (record["schema_version"] !== SPOOL_VERSION) {
+    if (
+      record["schema_version"] !== SPOOL_VERSION &&
+      record["schema_version"] !== LEGACY_SPOOL_VERSION
+    ) {
       throw new Error(`unsupported spool schema_version ${String(record["schema_version"])}`);
     }
     const kind = record["kind"];
@@ -487,6 +544,7 @@ export class ContentWriter {
         key: String(record["key"]),
         manifest: record["manifest"] as Record<string, unknown>,
         manifestId: String(record["manifest_id"]),
+        manifestRevision: Number(record["manifest_revision"] ?? 1),
         decisionId: String(record["decision_id"] ?? ""),
         tenantId: String(record["tenant_id"] ?? ""),
         attempts: 0,
@@ -499,6 +557,11 @@ export class ContentWriter {
         descriptor: record["descriptor"] as ContentDescriptor,
         content: Buffer.from(String(record["content_b64"]), "base64").toString("utf-8"),
         decisionId: String(record["decision_id"] ?? ""),
+        manifestId: record["manifest_id"] === undefined ? undefined : String(record["manifest_id"]),
+        manifestItemSequence:
+          record["manifest_item_sequence"] === undefined
+            ? undefined
+            : Number(record["manifest_item_sequence"]),
         tenantId: String(record["tenant_id"] ?? ""),
         attempts: 0,
         firstEnqueued: Date.now() / 1000,
@@ -507,6 +570,7 @@ export class ContentWriter {
       throw new Error(`unknown spool kind ${String(kind)}`);
     }
     task.attempts = Number(record["attempts"] ?? 0) || 0;
+    task.firstEnqueued = Number(record["first_enqueued"] ?? Date.now() / 1000);
     return task;
   }
 
@@ -525,6 +589,10 @@ export class ContentWriter {
   // -- delivery -------------------------------------------------------------
 
   private async deliver(task: Task): Promise<void> {
+    if (task.kind === "manifest" && this.isStaleManifest(task)) {
+      this.settle(task, ContentStatus.STORED);
+      return;
+    }
     task.attempts += 1;
     try {
       if (task.kind === "manifest") {
@@ -538,29 +606,58 @@ export class ContentWriter {
           task.descriptor as unknown as Record<string, unknown>,
           task.content as string,
         );
+        if (!this.subscribers.has(task.key) && task.manifestId !== undefined) {
+          await this.reconcileRecoveredObject(task, ContentStatus.STORED);
+        }
       }
       this.counters.stored += 1;
       this.settle(task, ContentStatus.STORED);
     } catch {
       const elapsed = Date.now() / 1000 - task.firstEnqueued;
       if (task.attempts < this.config.retryMaxAttempts && elapsed < this.config.retryMaxElapsedS) {
+        if (this.config.durability === "spooled") {
+          this.spool(task, false);
+        }
         this.retryBacklog.push(task);
         return;
       }
       this.counters.failed += 1;
+      if (
+        task.kind === "object" &&
+        task.manifestId !== undefined &&
+        !this.subscribers.has(task.key)
+      ) {
+        try {
+          await this.reconcileRecoveredObject(task, ContentStatus.FAILED);
+        } catch {
+          // The object spool remains for a later restart/reconciliation.
+        }
+      }
       this.settle(task, ContentStatus.FAILED);
     }
     if (this.config.durability === "spooled") {
+      this.removeSpool(task);
+    }
+  }
+
+  private removeSpool(task: Task): void {
+    try {
+      fs.rmSync(this.spoolPath(task), { force: true });
+      const dirFd = fs.openSync(this.spoolRoot(), "r");
       try {
-        fs.unlinkSync(this.spoolPath(task));
-      } catch {
-        // best-effort spool cleanup
+        fs.fsyncSync(dirFd);
+      } finally {
+        fs.closeSync(dirFd);
       }
+    } catch {
+      // Best-effort cleanup. A surviving record is safe to redeliver.
     }
   }
 
   private settle(task: Task, status: string): void {
-    this.pending.delete(task.key);
+    if (this.pending.get(task.key) === task) {
+      this.pending.delete(task.key);
+    }
     const callback = this.subscribers.get(task.key);
     this.subscribers.delete(task.key);
     // Manifest tasks carry no subscriber — settlement is bookkeeping
@@ -572,6 +669,92 @@ export class ContentWriter {
         // a sink hook must never break delivery
       }
     }
+  }
+
+  private isStaleManifest(task: Task): boolean {
+    if (task.manifestId === undefined || task.manifestRevision === undefined) {
+      return false;
+    }
+    return task.manifestRevision < (this.manifestRevisions.get(task.manifestId) ?? 0);
+  }
+
+  private async reconcileRecoveredObject(task: Task, status: string): Promise<void> {
+    if (task.descriptor === undefined || task.manifestId === undefined) {
+      throw new Error("recovered object lacks descriptor/manifest identity");
+    }
+    const manifest = await this.config.store.readManifest(
+      this.config.store.manifestUriFor(task.manifestId),
+    );
+    const items = manifest["items"];
+    if (!Array.isArray(items)) {
+      throw new Error("recovered manifest has no items array");
+    }
+    const item = this.findManifestItem(items, task);
+    if (item === undefined) {
+      throw new Error(`manifest ${task.manifestId} has no item for ${task.descriptor.object_id}`);
+    }
+    if (item["status"] !== ContentStatus.PENDING) {
+      return;
+    }
+    const statusValue =
+      status === ContentStatus.STORED && task.descriptor.representation === "truncated"
+        ? ContentStatus.TRUNCATED
+        : status;
+    item["status"] = statusValue;
+    if (DESCRIPTOR_STATUSES.has(statusValue)) {
+      item["descriptor"] = { ...task.descriptor, status: statusValue };
+    } else {
+      delete item["descriptor"];
+      delete item["ref"];
+      item["status_reason"] = "delivery_failed_after_restart";
+    }
+    const completeness: Record<string, number> = {};
+    const rolesObserved = new Set<string>();
+    for (const candidate of items) {
+      if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) continue;
+      const record = candidate as Record<string, unknown>;
+      const candidateStatus = String(record["status"] ?? "");
+      completeness[candidateStatus] = (completeness[candidateStatus] ?? 0) + 1;
+      if (DESCRIPTOR_STATUSES.has(candidateStatus)) {
+        rolesObserved.add(String(record["role"]));
+      }
+    }
+    manifest["completeness"] = completeness;
+    const coverage =
+      typeof manifest["coverage"] === "object" &&
+      manifest["coverage"] !== null &&
+      !Array.isArray(manifest["coverage"])
+        ? (manifest["coverage"] as Record<string, unknown>)
+        : {};
+    coverage["roles_observed"] = [...rolesObserved].sort();
+    manifest["coverage"] = coverage;
+    await this.config.store.writeManifest(
+      manifest,
+      task.decisionId ?? String(manifest["decision_id"] ?? ""),
+      task.manifestId,
+    );
+  }
+
+  private findManifestItem(items: unknown[], task: Task): Record<string, unknown> | undefined {
+    const candidates = items.filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null && !Array.isArray(item),
+    );
+    if (task.manifestItemSequence !== undefined) {
+      const bySequence = candidates.find(
+        (candidate) => candidate["sequence"] === task.manifestItemSequence,
+      );
+      if (bySequence !== undefined) return bySequence;
+    }
+    return candidates.find((candidate) => {
+      const descriptor = candidate["descriptor"];
+      return (
+        typeof descriptor === "object" &&
+        descriptor !== null &&
+        !Array.isArray(descriptor) &&
+        (descriptor as Record<string, unknown>)["object_id"] === task.descriptor?.object_id
+      );
+    });
   }
 
   private scheduleDrain(): void {

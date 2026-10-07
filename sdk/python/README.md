@@ -72,6 +72,43 @@ the tenant-controlled store and stamp the returned `fabric.content.*_ref` URI on
 the emitted event. The trace stream then carries a governed reference an
 auditor resolves out-of-band, never the raw bytes.
 
+### Experimental explicit byte evidence (content v2)
+
+The separate `ByteEvidenceRecorder` API captures bytes the caller explicitly
+supplies. It does not intercept terminal, SSH, database or sandbox operations.
+An example observation is:
+
+```python
+from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, LocalFilesystemContentStore
+
+store = LocalFilesystemContentStore("/private/fabric-content", tenant_id="acme")
+recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
+    store=store,
+    roles=frozenset({"artifact.after"}),
+))
+initial = recorder.capture(
+    artifact_bytes,
+    role="artifact.after",
+    boundary="sandbox",
+    source_id="sandbox-1",
+    source_epoch=0,
+    source_sequence=7,
+    run_id="run-42",
+)
+recorder.flush()
+settled = recorder.get(initial["object_id"])
+recorder.close()
+```
+
+The store receives exact binary bytes and a per-observation v2 descriptor;
+the descriptor uses `caller_reported` provenance. `pending` is only a
+process-memory handoff, not durable storage. Only `stored` after `flush()`
+confirms local store settlement. A bounded queue, payload cap and record
+index report `dropped` rather than pretending coverage. Callers must publish
+and reconcile settled descriptors independently; this experimental API does
+not yet emit correlated OTLP events, delivery receipts or run-level coverage
+manifests. It is not a compliance-grade complete-capture path.
+
 ## Stable recorder-v1 surface
 
 The `fabric` package root exports capture, activity-correlation, governed

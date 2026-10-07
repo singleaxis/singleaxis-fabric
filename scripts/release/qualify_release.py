@@ -23,10 +23,23 @@ SEMVER_RE = re.compile(
     r"(?P<pre>-(?:alpha|beta|rc)(?:\.(?:0|[1-9]\d*))?)?$"
 )
 FIELD_RE = re.compile(r"^(?P<key>[A-Za-z][A-Za-z0-9]*):\s*(?P<value>.+?)\s*$")
+PYTHON_PRERELEASE_RE = re.compile(
+    r"^(?P<base>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))"
+    r"-(?P<label>alpha|beta|rc)\.(?P<number>(?:0|[1-9]\d*))$"
+)
 
 
 class QualificationError(ValueError):
     """An artifact cannot be proven to meet the release policy."""
+
+
+def normalize_python_version(value: str) -> str:
+    """Normalize the repository's SemVer prerelease spelling to PEP 440."""
+    match = PYTHON_PRERELEASE_RE.fullmatch(value)
+    if match is None:
+        return value
+    label = {"alpha": "a", "beta": "b", "rc": "rc"}[match.group("label")]
+    return f"{match.group('base')}{label}{match.group('number')}"
 
 
 def release_versions(tag: str) -> tuple[str, str]:
@@ -235,7 +248,9 @@ def inspect_wheel(
             except (UnicodeDecodeError, configparser.Error) as exc:
                 raise QualificationError(f"{path}: invalid entry_points.txt") from exc
     expected_name = policy["python_distribution"]["name"]
-    if name != expected_name or version != expected_version:
+    if name != expected_name or normalize_python_version(
+        version
+    ) != normalize_python_version(expected_version):
         raise QualificationError(
             f"{path}: metadata is {name} {version}; expected {expected_name} {expected_version}"
         )
@@ -341,7 +356,9 @@ def inspect_sdist(
             raise QualificationError(f"{path}: PKG-INFO is not a regular file")
         name, version, requires_python = _metadata_fields(extracted.read(), path)
     expected_name = policy["python_distribution"]["name"]
-    if name != expected_name or version != expected_version:
+    if name != expected_name or normalize_python_version(
+        version
+    ) != normalize_python_version(expected_version):
         raise QualificationError(
             f"{path}: metadata is {name} {version}; expected {expected_name} {expected_version}"
         )
@@ -390,20 +407,50 @@ def smoke_install_wheel(
                 "pip",
                 "install",
                 "--disable-pip-version-check",
-                "--no-index",
-                "--no-deps",
                 str(path.resolve()),
             ],
             check=True,
         )
         expected_scripts = sorted(required_scripts.items())
-        code = (
-            "from importlib.metadata import distribution; "
-            "d=distribution('singleaxis-fabric'); "
-            f"assert d.version == {expected_version!r}; "
-            "assert d.locate_file('fabric/py.typed').is_file(); "
-            "eps=sorted((e.name,e.value) for e in d.entry_points if e.group=='console_scripts'); "
-            f"assert eps == {expected_scripts!r}, eps"
+        normalized_expected_version = normalize_python_version(expected_version)
+        code = "\n".join(
+            [
+                "from importlib.metadata import distribution",
+                "from pathlib import Path",
+                "from tempfile import TemporaryDirectory",
+                "from fabric import (",
+                "    ContentCaptureConfig, ContentResolver, Fabric, FabricConfig,",
+                "    LocalFilesystemContentStore,",
+                ")",
+                "d = distribution('singleaxis-fabric')",
+                "normalize = lambda value: (value.replace('-alpha.', 'a')"
+                ".replace('-beta.', 'b').replace('-rc.', 'rc'))",
+                f"assert normalize(d.version) == {normalized_expected_version!r}, d.version",
+                "assert d.locate_file('fabric/py.typed').is_file()",
+                "eps = sorted((e.name, e.value) for e in d.entry_points "
+                "if e.group == 'console_scripts')",
+                f"assert eps == {expected_scripts!r}, eps",
+                "with TemporaryDirectory(prefix='fabric-wheel-runtime-') as directory:",
+                "    store = LocalFilesystemContentStore(directory, tenant_id='artifact-smoke')",
+                "    client = Fabric(",
+                "        FabricConfig(tenant_id='artifact-smoke', agent_id='artifact-smoke'),",
+                "        content_capture=ContentCaptureConfig(",
+                "            store=store, roles='all', durability='inline'",
+                "        ),",
+                "    )",
+                "    with client.decision(session_id='s', request_id='r') as decision:",
+                "        decision.record_context('note.txt', 'artifact smoke content')",
+                "    uri = decision.content_manifest_uri",
+                "    assert uri is not None",
+                "    exported = ContentResolver([store]).export_transcript(uri, materialize=True)",
+                "    assert exported['schema_version'] == 'fabric.transcript-export/v1'",
+                "    assert exported['integrity']['verified'] is True",
+                "    entries = [entry for step in exported['steps'] for entry in step['entries']]",
+                "    context = next(entry for entry in entries if entry['role'] == 'context.file')",
+                "    assert context['text'] == 'artifact smoke content'",
+                "    client.close()",
+                "    assert (Path(directory) / 'artifact-smoke').is_dir()",
+            ]
         )
         subprocess.run([str(python), "-I", "-c", code], check=True)
 

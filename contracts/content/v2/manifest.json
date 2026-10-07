@@ -1,0 +1,14 @@
+{
+  "contract": "singleaxis.fabric.content",
+  "version": "2.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "schema/content-object-v2.schema.json", "sha256": "5bfee18b54f7f155b631b534b35453f450a1a88c10206ca7b13fb2938c19e2f9", "expectation": "schema", "expected_error": null},
+    {"path": "valid/artifact-after.json", "sha256": "0b6c9f627801547f0c93b50d629cb47ed0a8dcf415c08dd984ddb503a15bb8e6", "expectation": "valid", "expected_error": null},
+    {"path": "valid/caller-terminal-chunk.json", "sha256": "5404b61dd83501e0c6cb4e21df97ae1ca2dc623a8dbb98a366d7605cf58b60e6", "expectation": "valid", "expected_error": null},
+    {"path": "invalid/artifact-credential-ref.json", "sha256": "e8fdbe704bcf33b06afe96d609096f0f718da3992a16ad5698ba07e9c363a1a5", "expectation": "invalid", "expected_error": "evidence.schema"},
+    {"path": "invalid/artifact-false-exact.json", "sha256": "6ce1a11cb2226baaf2adb15bc02595a129c1055b6a62aea882b0db8e6ad69b92", "expectation": "invalid", "expected_error": "evidence.content.false_exact"},
+    {"path": "fixtures/bytes/binary-four-bytes.json", "sha256": "c5ebca8d2c0a8b8eb4912f562a6b85af50a71476ff2800916817591497a50c4e", "expectation": "bytes", "expected_error": null},
+    {"path": "fixtures/bytes/binary-terminal-five-bytes.json", "sha256": "3d75cfedefef601360a1f57bf9d172497a494b17559064ea64aa16c85e7832ad", "expectation": "bytes", "expected_error": null}
+  ]
+}

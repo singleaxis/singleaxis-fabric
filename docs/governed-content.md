@@ -28,6 +28,21 @@ This extends the recorder; it does not add evaluation. Fabric ships no
 judge, grader, or finding generator. External evaluators run where the
 content is authorized to be read, using the resolver/export contract.
 
+## What this enables for evaluation
+
+| Available record | What can be evaluated | What remains impossible |
+|---|---|---|
+| Metadata only (default) | call structure, latency, token/cost fields, retries, tool names, hashes, relationships, reported outcomes | semantic correctness, grounding, instruction following, leakage, payload safety, or whether a tool's arguments/result were appropriate |
+| Governed content + metadata | all of the above, plus content-level review of captured prompts/messages, outputs, tool arguments/results, retrieval inputs/results, memory, side effects, explicit context and interaction payloads | hidden provider context/reasoning, content not exposed to an instrumented boundary, and correctness without an external rubric/expected outcome |
+| Harness-owned offline transcript | content-level development evaluation without Fabric Node or production durability infrastructure | production audit durability/authentication unless the harness separately supplies them |
+
+The output of this feature is therefore an **evaluation-ready, verified
+record**, not an evaluation result. A grader consumes
+`fabric.transcript-export/v1`, applies its own rubric, and stores its score or
+finding outside Fabric OSS. Metadata and governed content are deliberately
+separate channels: OTLP remains metadata-only while an authorized evaluator
+resolves content from customer storage.
+
 ## The three postures
 
 | Posture | Content | Infrastructure | Use |
@@ -37,7 +52,8 @@ content is authorized to be read, using the resolver/export contract.
 | harness-owned | local store | none | development, offline eval |
 
 A development harness can record and read its own local transcripts
-directly — see [examples/governed-content](../examples/governed-content/README.md).
+directly — see
+[examples/offline-transcript](../examples/offline-transcript/README.md).
 Offline datasets still carry privacy, access, and retention
 responsibilities: the store enforces tenant namespacing and `0600`
 file modes, but retention and deletion are the operator's storage
@@ -134,6 +150,13 @@ behavior — failures land as explicit manifest statuses (`failed`,
 `dropped`, `unsupported`, `not_captured`), not exceptions into the
 monitored path and not silent omissions.
 
+The monitored call still pays for canonical serialization, UTF-8
+truncation, SHA-256 hashing, descriptor construction, and the bounded local
+handoff. Those costs are linear in the accepted payload size. `process`
+limits the handoff to a bounded in-memory enqueue; `spooled` additionally
+pays for a local file fsync + rename + directory fsync. Remote destination
+I/O and retries stay off the monitored path in both modes.
+
 **Passive delivery end to end.** In `process`/`spooled` modes no
 object-store I/O — local *or* network — happens on the monitored path,
 including the transcript manifest: `fabric.content.manifest_ref` is a
@@ -142,27 +165,35 @@ span is still open; the manifest document is then delivered through the
 same bounded writer (spooled, in spooled mode) and reconciled as items
 settle (`pending → stored`/`failed`, idempotent rewrite, stable
 `manifest_id`). Object delivery outcomes reach the owning manifest
-through a keyed subscriber — a closed decision's callback is removed
-after terminal settlement.
+through a keyed subscriber while the process is alive. Durable spool
+records also carry the owning manifest id and item sequence, so restart
+recovery performs the same transition without relying on a process-local
+callback.
 
 ### Durable spooling
 
 In `spooled` mode each pending delivery — content objects *and* the
-transcript manifest — is a `fabric.content-spool/v1` record: schema
+transcript manifest — is a `fabric.content-spool/v2` record: schema
 version, tenant, delivery type, object/manifest and decision identity,
 the payload (descriptor + bytes, or the manifest document), the
 deterministic destination ref, retry metadata, and a record checksum.
+Object records include `manifest_id` + `manifest_item_sequence` for
+post-restart reconciliation. Manifest records carry a monotonic revision;
+older queued revisions cannot overwrite the newest document or delete its
+stable spool file.
 The spool directory is `0700` (tightened if it already exists more
 permissively), records `0600`, written atomically with file + directory
 fsync.
 
 On restart, recovery processes **every** valid record — not just the
-first queue-capacity batch — with idempotent re-delivery and manifest
-reconciliation through the by-decision alias. Unreadable or
-checksum-failed records are quarantined under `spool_dir/quarantine/`
-and counted — an explicit operational outcome, never silent loss.
-Successful delivery deletes the record durably; a crash between remote
-write and local delete is safe because re-delivery converges.
+first queue-capacity batch. It republishes recovered manifests first,
+then idempotently delivers objects and reconciles their exact manifest
+items. Unreadable, checksum-failed, or unknown-version records are renamed
+to `*.json.corrupt` and counted — an explicit operational outcome, never
+silent loss. Successful delivery unlinks the record and fsyncs the spool
+directory; a crash between remote write and local delete is safe because
+re-delivery converges. Numeric legacy-v1 records remain readable for
+upgrade recovery, but new writes use v2.
 
 ## What telemetry carries
 

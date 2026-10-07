@@ -17,7 +17,7 @@
       {"surface": "file_access_metadata", "source": "kernel_inferred"}
     ],
     "decision_semantics": "none",
-    "coverage_basis": "Kernel tracepoints observe every exec/connect/openat inside the configured cgroup scope — including actions the agent never instrumented. Coverage is bounded by the cgroup filter (or explicit all_host opt-in) and the enabled syscall classes; file_access is off by default because openat volume is host-scale."
+    "coverage_basis": "Configured kernel tracepoints observe selected exec/connect/openat activity inside the configured cgroup scope, including actions outside SDK instrumentation. Ring-buffer loss, sensor downtime, unsupported paths and scoping errors prevent an every-action guarantee. File access is off by default because openat volume is host-scale."
   },
   "control": {
     "interposition": "passive_probe",
@@ -38,9 +38,9 @@
   "authentication": {
     "ingress_supported": ["none"],
     "ingress_default": "none",
-    "egress_supported": ["none", "bearer_token"],
+    "egress_supported": ["none", "bearer_token", "mtls"],
     "egress_default": "none",
-    "credential_handling": "The emitter mounts a bearer-token file for the node's bearertokenauth ingress; no other credentials exist."
+    "credential_handling": "The emitter optionally reads a bearer-token file or a client certificate/key pair. TLS is the default; an explicit development-only insecure transport setting rejects bearer tokens and TLS files."
   },
   "context_propagation": {
     "w3c_tracecontext": {"receive": false, "inject": false, "preserve": false},
@@ -59,8 +59,8 @@
     "default_destination": "configured EMIT_ENDPOINT (Fabric Node)"
   },
   "verification_evidence": [
-    {"type": "unit_test", "path": "components/host-emitter/emitter_test.go", "claim": "Covers event translation, argv hash-only emission, cgroup-scope validation (refuses unscoped-by-default), dedupe collapse, and rate limiting."},
-    {"type": "integration_test", "path": "components/host-emitter/e2e-emitter.sh", "claim": "Loads the real BPF objects in a privileged container, attaches tracepoints, and proves exec/connect events cross-container surface as audit records at the node with argv hashed."}
+    {"type": "unit_test", "path": "components/host-emitter/emitter_test.go", "claim": "Covers minimized event translation, incomplete argv/path status, cgroup-scope validation, TLS configuration rejection, dedupe collapse, and rate limiting."},
+    {"type": "integration_test", "path": "components/host-emitter/e2e-emitter.sh", "claim": "Linux Docker BPF capture test script; it must pass against the exact release image before live coverage is claimed and has not been qualified by local macOS tests."}
   ],
   "known_blind_spots": [
     "Cannot identify prompts, completions, tool arguments, tool results, policy verdicts, or decision boundaries — kernel metadata only.",
@@ -68,6 +68,9 @@
     "Encrypted traffic prevents payload or trace-header inspection — peer/timing metadata only.",
     "openat (file_access) is host-scale volume and off by default; enabling it without cgroup scoping can exceed emit budgets.",
     "Attribution to a logical agent depends on correct cgroup_path; all_host=true is an explicit opt-in and widens collection to the whole node.",
-    "An adversarial workload with kernel-level access is outside this threat model — the emitter observes the host it runs on and cannot defend the kernel itself."
+    "An adversarial workload with kernel-level access is outside this threat model — the emitter observes the host it runs on and cannot defend the kernel itself.",
+    "The emitter has a bounded fsynced source spool with at-least-once replay and stable record IDs, but neither source fsync nor OTLP acceptance proves durable destination storage.",
+    "Spool exhaustion causes a visible sensor stop; activity while the sensor is down or before a kernel loss count is durably queued cannot be reconstructed by this source.",
+    "Only configured tracepoints and cgroup scope are observed; kernel ring-buffer loss and partial argv/path capture require explicit incomplete status and independent reconciliation."
   ]
 }

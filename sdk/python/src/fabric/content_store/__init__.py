@@ -8,6 +8,7 @@ let a tenant stand up that store.
 """
 
 from fabric.content_store.base import (
+    ByteEvidenceStore,
     ContentRef,
     ContentStore,
     CorruptedObjectError,
@@ -17,6 +18,7 @@ from fabric.content_store.local import LocalFilesystemContentStore
 from fabric.content_store.s3 import S3ContentStore
 
 __all__ = [
+    "ByteEvidenceStore",
     "ContentRef",
     "ContentStore",
     "CorruptedObjectError",

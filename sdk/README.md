@@ -14,7 +14,8 @@ references before export.
 
 - [`../specs/027-recorder-v1.md`](../specs/027-recorder-v1.md) — recorder scope
 - [`../specs/020-execution-step-capture.md`](../specs/020-execution-step-capture.md) — decision/step capture model
-- [`../specs/022-surface-logging.md`](../specs/022-surface-logging.md) — agent surface logging (delegation, MCP, skills, hooks, file access)
+- [`../specs/022-surface-logging.md`](../specs/022-surface-logging.md) —
+  agent surface logging (delegation, MCP, skills, hooks, file access)
 
 ## Target languages
 

@@ -33,6 +33,8 @@ struct event {
     __u32 port;
     __u8  addr[16];
     __u32 argv_len;
+    __u32 argv_incomplete;
+    __u32 filename_incomplete;
     char  comm[16];
     char  filename[240];
     __u8  argv[384];
@@ -42,6 +44,22 @@ struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 1 << 24);
 } events SEC(".maps");
+
+// Count ring-buffer reservation failures per CPU. These are outside the
+// userspace spool and must be reported as capture loss, not inferred away.
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} losses SEC(".maps");
+
+static __always_inline void note_ring_loss(void) {
+    __u32 k = 0;
+    __u64 *n = bpf_map_lookup_elem(&losses, &k);
+    if (n)
+        (*n)++;
+}
 
 // cfg[0] = target cgroup id; 0 means unfiltered (all_host opt-in).
 struct {
@@ -69,8 +87,10 @@ int tp_exec(struct trace_event_raw_sched_process_exec *ctx) {
     if (!want(cg))
         return 0;
     struct event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e)
+    if (!e) {
+        note_ring_loss();
         return 0;
+    }
     __builtin_memset(e, 0, sizeof(*e));
     e->type = EV_EXEC;
     e->cgroup_id = cg;
@@ -80,7 +100,10 @@ int tp_exec(struct trace_event_raw_sched_process_exec *ctx) {
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     // filename sits behind the tracepoint's __data_loc (low 16 bits = offset)
     __u32 off = ctx->__data_loc_filename & 0xFFFF;
-    bpf_probe_read_str(&e->filename, sizeof(e->filename), (void *)ctx + off);
+    __u32 source_len = ctx->__data_loc_filename >> 16;
+    long path_read = bpf_probe_read_str(&e->filename, sizeof(e->filename), (void *)ctx + off);
+    if (path_read <= 0 || source_len >= sizeof(e->filename) || path_read >= sizeof(e->filename))
+        e->filename_incomplete = 1;
     // argv: mm->arg_start..arg_end — raw bytes go to userspace, which emits
     // only their SHA-256 (collection-side scrub).
     struct task_struct *task = (void *)bpf_get_current_task();
@@ -88,13 +111,18 @@ int tp_exec(struct trace_event_raw_sched_process_exec *ctx) {
     if (mm) {
         __u64 astart = BPF_CORE_READ(mm, arg_start);
         __u64 aend = BPF_CORE_READ(mm, arg_end);
-        __u32 len = (__u32)(aend - astart);
-        len &= 0x1FF;
-        if (len > sizeof(e->argv))
-            len = sizeof(e->argv);
-        e->argv_len = len;
-        if (len)
-            bpf_probe_read(&e->argv, len, (const void *)astart);
+        if (aend > astart) {
+            __u64 size = aend - astart;
+            if (size > sizeof(e->argv)) {
+                e->argv_incomplete = 1;
+            } else {
+                e->argv_len = (__u32)size;
+                if (bpf_probe_read(&e->argv, e->argv_len, (const void *)astart) < 0) {
+                    e->argv_len = 0;
+                    e->argv_incomplete = 1;
+                }
+            }
+        }
     }
     bpf_ringbuf_submit(e, 0);
     return 0;
@@ -111,8 +139,10 @@ int tp_connect(struct trace_event_raw_sys_enter *ctx) {
     if (fam != AF_INET && fam != AF_INET6)
         return 0;
     struct event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e)
+    if (!e) {
+        note_ring_loss();
         return 0;
+    }
     __builtin_memset(e, 0, sizeof(*e));
     e->type = EV_CONNECT;
     e->cgroup_id = cg;
@@ -142,8 +172,10 @@ int tp_openat(struct trace_event_raw_sys_enter *ctx) {
     if (!want(cg))
         return 0;
     struct event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e)
+    if (!e) {
+        note_ring_loss();
         return 0;
+    }
     __builtin_memset(e, 0, sizeof(*e));
     e->type = EV_OPENAT;
     e->cgroup_id = cg;
@@ -152,7 +184,9 @@ int tp_openat(struct trace_event_raw_sys_enter *ctx) {
     e->ppid = task_ppid();
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
     const char *fname = (const char *)ctx->args[1];
-    bpf_probe_read_str(&e->filename, sizeof(e->filename), fname);
+    long path_read = bpf_probe_read_str(&e->filename, sizeof(e->filename), fname);
+    if (path_read <= 0 || path_read >= sizeof(e->filename))
+        e->filename_incomplete = 1;
     bpf_ringbuf_submit(e, 0);
     return 0;
 }

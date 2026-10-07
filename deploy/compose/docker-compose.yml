@@ -48,7 +48,7 @@ services:
     build:
       context: ../../components/otel-collector-fabric
       dockerfile: Dockerfile
-    image: fabric/node:evaluation
+    image: ${FABRIC_NODE_IMAGE:-fabric/node:evaluation}
     command: ["--config=/etc/fabric-node/collector.yaml"]
     volumes:
       - ./collector-config/collector.yaml:/etc/fabric-node/collector.yaml:ro

@@ -345,6 +345,31 @@ describe("LocalFilesystemContentStore", () => {
     expect(pointer.manifest_uri).toBe(uri);
   });
 
+  it("keeps governed directories owner-only", () => {
+    const root = tmpRoot();
+    const s = store(root);
+    const { descriptor, data } = buildContentDescriptor({
+      tenantId: "acme",
+      role: ContentRole.INTERACTION_PAYLOAD,
+      content: "payload",
+      mediaType: "text/plain",
+      source: "caller",
+      status: ContentStatus.PENDING,
+      bindings: {},
+      payloadMaxBytes: 1024,
+    });
+    s.putObject(descriptor as unknown as Record<string, unknown>, new TextDecoder().decode(data));
+    s.writeManifest({ manifest_id: "m-mode" }, "d-mode", "m-mode");
+    for (const directory of [
+      path.join(root, "acme"),
+      path.join(root, "acme", "meta"),
+      path.join(root, "acme", "manifests"),
+      path.join(root, "acme", "manifests", "by-decision"),
+    ]) {
+      expect(fs.statSync(directory).mode & 0o777).toBe(0o700);
+    }
+  });
+
   it("confines reads to the tenant namespace", () => {
     const root = tmpRoot();
     const acme = store(root, "acme");
@@ -391,7 +416,7 @@ describe("ContentWriter", () => {
     expect(writer.submit(descriptor, text)).toBe(ContentStatus.STORED);
     const result = await writer.close();
     expect(result.stored).toBe(1);
-    expect(result.pending).toBe(0);
+    expect(result?.pending).toBe(0);
   });
 
   it("process durability enqueues then flushes", async () => {
@@ -405,7 +430,7 @@ describe("ContentWriter", () => {
     expect(writer.submit(descriptor, text)).toBe(ContentStatus.PENDING);
     const result = await writer.flush(5);
     expect(result.stored).toBe(1);
-    expect(result.pending).toBe(0);
+    expect(result?.pending).toBe(0);
     await writer.close();
   });
 
@@ -908,6 +933,45 @@ describe("passive delivery", () => {
     expect(manifest.decision_id).toBe(decisionId);
     expect(manifest.items.length).toBeGreaterThan(0);
   });
+
+  it("keeps concurrent decisions and their content distinct", async () => {
+    const root = tmpRoot();
+    const s = store(root);
+    const fabric = governedFabric(root, { store: s, durability: "process" });
+    const records = await Promise.all(
+      Array.from({ length: 16 }, async (_, index) => {
+        let uri: string | undefined;
+        let decisionId = "";
+        await fabric.decision(
+          { sessionId: "shared", requestId: `request-${index}` },
+          async (decision) => {
+            decision.recordContext(`context-${index}.txt`, `payload-${index}`);
+            await Promise.resolve();
+            uri = decision.contentManifestUri;
+            decisionId = decision.decisionId;
+          },
+        );
+        expect(uri).toBeDefined();
+        return { index, uri: uri as string, decisionId };
+      }),
+    );
+    const result = await fabric.flushContent(10);
+    await fabric.close();
+    expect(result?.pending).toBe(0);
+    expect(new Set(records.map((record) => record.uri)).size).toBe(records.length);
+    const resolver = new ContentResolver([s]);
+    for (const record of records) {
+      const manifest = s.readManifest(record.uri) as { decision_id: string };
+      expect(manifest.decision_id).toBe(record.decisionId);
+      const exported = (await resolver.exportTranscript(record.uri, { materialize: true })) as {
+        steps: Array<{ entries: Array<{ role: string; text?: unknown }> }>;
+      };
+      const contextEntry = exported.steps
+        .flatMap((step) => step.entries)
+        .find((entry) => entry.role === ContentRole.CONTEXT_FILE);
+      expect(contextEntry?.text).toBe(`payload-${record.index}`);
+    }
+  });
 });
 
 // ----------------------------------------------------------------------- //
@@ -942,7 +1006,7 @@ describe("durable spool", () => {
   it("spool record carries full identity and a checksum", () => {
     const root = tmpRoot();
     const writer = new ContentWriter(spoolConfig(root));
-    writer.submit(descriptor(), "payload", "d-9");
+    writer.submit(descriptor(), "payload", "d-9", "m-9", 3);
     const files = fs.readdirSync(path.join(root, "spool")).filter((f) => f.endsWith(".json"));
     // The worker may have drained already; if a record exists, inspect it.
     if (files.length > 0) {
@@ -955,15 +1019,21 @@ describe("durable spool", () => {
         "key",
         "tenant_id",
         "decision_id",
+        "manifest_id",
+        "manifest_item_sequence",
         "descriptor",
         "content_b64",
         "attempts",
+        "first_enqueued",
+        "ref",
         "checksum",
       ]) {
         expect(record, `spool record missing ${key}`).toHaveProperty(key);
       }
       expect(record["tenant_id"]).toBe("acme");
       expect(record["decision_id"]).toBe("d-9");
+      expect(record["manifest_id"]).toBe("m-9");
+      expect(record["manifest_item_sequence"]).toBe(3);
     }
     void writer.close();
   });
@@ -1046,5 +1116,145 @@ describe("durable spool", () => {
       manifest_id: string;
     };
     expect(doc2.manifest_id).toBe("m-restart");
+  });
+
+  it("reconciles a recovered object into its owning manifest", async () => {
+    const root = tmpRoot();
+    const cfg = spoolConfig(root, { workerFlushIntervalMs: 60000 });
+    const d = descriptor();
+    const manifestId = "m-object-restart";
+    const decisionId = "d-object-restart";
+    const manifest = {
+      schema_version: "fabric.transcript-manifest/v1",
+      manifest_id: manifestId,
+      tenant_id: "acme",
+      agent_id: "bot",
+      decision_id: decisionId,
+      producer: { name: "test", version: "1", language: "typescript" },
+      items: [
+        {
+          sequence: 0,
+          role: d.role,
+          status: "pending",
+          descriptor: d,
+          ref: cfg.store.refFor(d.digest.slice(7)),
+        },
+      ],
+      completeness: { pending: 1 },
+      coverage: { roles_enabled: [d.role], roles_observed: [d.role] },
+    };
+    const plant = new ContentWriter(cfg);
+    const spool = (plant as unknown as { spool(task: unknown): boolean }).spool.bind(plant);
+    expect(
+      spool({
+        kind: "manifest",
+        key: `manifest:${manifestId}`,
+        manifest,
+        manifestId,
+        manifestRevision: 1,
+        decisionId,
+        tenantId: "acme",
+        attempts: 0,
+        firstEnqueued: Date.now() / 1000,
+      }),
+    ).toBe(true);
+    expect(
+      spool({
+        kind: "object",
+        key: d.object_id,
+        descriptor: d,
+        content: "payload",
+        manifestId,
+        manifestItemSequence: 0,
+        decisionId,
+        tenantId: "acme",
+        attempts: 0,
+        firstEnqueued: Date.now() / 1000,
+      }),
+    ).toBe(true);
+    await plant.close();
+
+    const recovered = new ContentWriter(cfg);
+    const result = await recovered.flush(10);
+    await recovered.close();
+    const doc = cfg.store.readManifest(cfg.store.manifestUriFor(manifestId)) as {
+      items: Array<{ status: string; descriptor: { status: string } }>;
+      completeness: Record<string, number>;
+    };
+    expect(result.pending).toBe(0);
+    expect(doc.items[0]?.status).toBe("stored");
+    expect(doc.items[0]?.descriptor.status).toBe("stored");
+    expect(doc.completeness).toEqual({ stored: 1 });
+    expect(fs.readdirSync(path.join(root, "spool")).filter((f) => f.endsWith(".json"))).toEqual([]);
+  });
+
+  it("does not let a stale manifest revision delete the latest spool", async () => {
+    const root = tmpRoot();
+    const cfg = spoolConfig(root, { workerFlushIntervalMs: 60000 });
+    const writer = new ContentWriter(cfg);
+    const first = {
+      kind: "manifest" as const,
+      key: "manifest:m-revision",
+      manifest: { manifest_id: "m-revision", generation: 1 },
+      manifestId: "m-revision",
+      manifestRevision: 1,
+      decisionId: "d-revision",
+      tenantId: "acme",
+      attempts: 0,
+      firstEnqueued: Date.now() / 1000,
+    };
+    const latest = {
+      ...first,
+      manifest: { manifest_id: "m-revision", generation: 2 },
+      manifestRevision: 2,
+    };
+    const internals = writer as unknown as {
+      spool(task: unknown): boolean;
+      spoolPath(task: unknown): string;
+      deliver(task: unknown): Promise<void>;
+      manifestRevisions: Map<string, number>;
+    };
+    expect(internals.spool(first)).toBe(true);
+    expect(internals.spool(latest)).toBe(true);
+    internals.manifestRevisions.set("m-revision", 2);
+    const spoolPath = internals.spoolPath(latest);
+    await internals.deliver(first);
+    expect(fs.existsSync(spoolPath)).toBe(true);
+    await internals.deliver(latest);
+    expect(fs.existsSync(spoolPath)).toBe(false);
+    const doc = await cfg.store.readManifest(cfg.store.manifestUriFor("m-revision"));
+    expect(doc["generation"]).toBe(2);
+    await writer.close();
+  });
+
+  it("does not suppress an accepted manifest when a newer rewrite drops", async () => {
+    const root = tmpRoot();
+    const cfg = {
+      store: store(root),
+      roles: "all" as const,
+      durability: "process" as const,
+      queueMaxItems: 1,
+      workerFlushIntervalMs: 60000,
+    };
+    const writer = new ContentWriter(cfg);
+    expect(
+      writer.submitManifest(
+        { manifest_id: "m-pressure", generation: 1 },
+        "d-pressure",
+        "m-pressure",
+        "acme",
+      ),
+    ).toBe(ContentStatus.PENDING);
+    expect(
+      writer.submitManifest(
+        { manifest_id: "m-pressure", generation: 2 },
+        "d-pressure",
+        "m-pressure",
+        "acme",
+      ),
+    ).toBe(ContentStatus.DROPPED);
+    await writer.close();
+    const doc = cfg.store.readManifest(cfg.store.manifestUriFor("m-pressure"));
+    expect(doc["generation"]).toBe(1);
   });
 });

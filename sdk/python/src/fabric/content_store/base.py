@@ -128,6 +128,22 @@ class GovernedStore(Protocol):
         ...
 
 
+@runtime_checkable
+class ByteEvidenceStore(Protocol):
+    """Per-observation byte store for explicit content-v2 capture.
+
+    Unlike v1's digest-addressed objects, each observation has its own
+    object ID so identical bytes cannot collapse distinct provenance.
+    """
+
+    @property
+    def tenant_id(self) -> str | None: ...
+
+    def evidence_ref_for(self, object_id: str) -> str: ...
+
+    def put_bytes_object(self, descriptor: Mapping[str, Any], content: bytes) -> ContentRef: ...
+
+
 def content_hash(content: str) -> str:
     """SHA-256 hex of the content's UTF-8 bytes. Shared key strategy
     so the same content lands at the same address (content-addressed).

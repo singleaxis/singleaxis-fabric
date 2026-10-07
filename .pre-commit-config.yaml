@@ -8,25 +8,31 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=512"]
+        # CO-RE builds require this generated, reviewed kernel type header.
+        exclude: ^components/host-emitter/bpf/vmlinux\.h$
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-symlinks
       - id: check-yaml
         # Helm chart templates contain Go template directives (`{{- if
         # .Values.foo }}`) that are not valid YAML on their own. Exclude
-        # anything under a chart's templates/ directory, plus our helm-
-        # specific test fixtures. `Chart.yaml` / `values.yaml` are still
-        # checked because they are real YAML.
+        # anything under a chart's templates/ directory and its test
+        # fixtures. Compose v2's !override is also not generic YAML.
+        # Chart.yaml / values.yaml remain checked as real YAML.
         exclude: |
           (?x)^(
             charts/.*/templates/.*\.ya?ml|
-            charts/.*/tests/.*/expected\.ya?ml
+            charts/.*/tests/.*/expected\.ya?ml|
+            deploy/compose/docker-compose\.production\.yml
           )$
       - id: check-json
       - id: check-toml
       - id: detect-private-key
       - id: end-of-file-fixer
       - id: trailing-whitespace
+        # Unified diffs intentionally contain leading '+' followed by context
+        # whitespace; rewriting them corrupts the vendored security patch.
+        exclude: \.patch$
       - id: mixed-line-ending
         args: ["--fix=lf"]
 

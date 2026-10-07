@@ -1,0 +1,15 @@
+{
+  "schema_version": "agent.evidence.event/v1",
+  "event_name": "agent.evidence.coverage",
+  "record_id": "evt-terminal-1",
+  "tenant_id": "tenant-a",
+  "run_id": "run-1",
+  "source_id": "sandbox-1",
+  "source_epoch": 0,
+  "source_sequence": 2,
+  "boundary": "sandbox",
+  "provenance": "native",
+  "status": "observed",
+  "coverage_phase": "stop",
+  "observed_at": "2026-09-26T00:00:02Z"
+}

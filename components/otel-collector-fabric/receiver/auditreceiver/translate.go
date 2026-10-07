@@ -70,7 +70,8 @@ func (r *auditReceiver) translate(ev *auditEvent) (plog.LogRecord, string, bool)
 		attrs.PutStr("process.executable.name", v)
 	}
 	if v := sys.fields["exe"]; v != "" {
-		attrs.PutStr("process.executable.path", v)
+		sum := sha256.Sum256([]byte(v))
+		attrs.PutStr("process.executable.path_sha256", hex.EncodeToString(sum[:]))
 	}
 	if v := sys.fields["auid"]; v != "" && v != "4294967295" { // unset auid sentinel
 		attrs.PutStr("process.owner", v)
@@ -99,12 +100,8 @@ func (r *auditReceiver) translate(ev *auditEvent) (plog.LogRecord, string, bool)
 	case "file":
 		if p := ev.find(recPath); p != nil {
 			if fp := p.fields["name"]; fp != "" {
-				if r.cfg.HashFilePaths {
-					sum := sha256.Sum256([]byte(fp))
-					attrs.PutStr("file.path_sha256", hex.EncodeToString(sum[:]))
-				} else {
-					attrs.PutStr("file.path", fp)
-				}
+				sum := sha256.Sum256([]byte(fp))
+				attrs.PutStr("file.path_sha256", hex.EncodeToString(sum[:]))
 			}
 		}
 	}
@@ -152,8 +149,9 @@ func argvHash(ex *auditRecord) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// dedupeKey is the identity used for window-collapse: syscall + actor +
-// target. serial and pid are intentionally excluded so repeats fold.
+// dedupeKey is a digest of syscall + actor + target. The value is exported in
+// collapse summaries, so raw file paths or other target strings must never
+// appear in it. Serial and pid are excluded so repeats still fold.
 func dedupeKey(name string, sys *auditRecord, ev *auditEvent) string {
 	var sb strings.Builder
 	sb.WriteString(name)
@@ -168,7 +166,8 @@ func dedupeKey(name string, sys *auditRecord, ev *auditEvent) string {
 	if p := ev.find(recPath); p != nil {
 		sb.WriteString(p.fields["name"])
 	}
-	return sb.String()
+	sum := sha256.Sum256([]byte(sb.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 func putInt(attrs pcommon.Map, key, s string) {

@@ -12,14 +12,16 @@ boot and re-validates it while the collector runs.
 - **Status:** prepared — pending submission to
   `open-telemetry/opentelemetry-collector-contrib`.
 - **Test to include in the PR:** a token file ending in `\n` must yield
-  exactly one credential, and `Bearer ` (empty token) must be rejected.
+  exactly one credential, and a `Bearer` prefix with an empty token must be
+  rejected.
 
 Draft issue text:
 
 > `bearertokenauth`'s `refreshToken()` splits the file on `\n` and trims each
 > entry but never drops empties, so a blank line or a trailing newline mints
 > `""` as a valid token. gRPC metadata preserves the trailing space in
-> `Bearer `, so that empty credential authenticates. Any deployment that
+> a `Bearer` prefix followed only by a space, so that empty credential
+> authenticates. Any deployment that
 > generated its token file with `openssl rand -hex 32 > file` (the natural
 > documented shape) accepts an empty bearer token on gRPC. Fix: discard
 > entries that trim to empty (patch attached); an all-empty file should fail
