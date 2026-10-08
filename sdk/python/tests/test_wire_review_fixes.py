@@ -99,23 +99,6 @@ def test_fork_child_reinitializes_wire_locks() -> None:
     assert result.stdout.strip() == "child 0", result.stderr
 
 
-def test_setup_failure_before_sequence_allocation_leaves_no_gap(
-    rig: Rig, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def boom(*args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("injected")
-
-    monkeypatch.setattr(_stream.Exchange, "_retain", boom)  # fails retaining the request
-    with rig.client(lambda r: httpx.Response(200, json={"choices": []})) as client:
-        assert client.post(OPENAI_CHAT, json={"messages": []}).status_code == 200
-    rig.flush()
-    assert rig.allocator.last_sequence()[1] == -1  # allocated last: nothing consumed
-    assert rig.loss_counts() == {}
-    assert rig.tee.stats()["internal_errors"] == 1
-    assert rig.tee.stats()["inflight_bytes"] == 0
-    assert not rig.tee._active
-
-
 class _Holder:
     """An openai.Stream-style object: it and its iterator form a cycle only GC frees."""
 

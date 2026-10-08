@@ -3,7 +3,9 @@
 """Visible capture loss (spec 042 §6): coalesced loss ranges and heartbeats.
 
 ``record()`` is O(1) and never raises; spans are emitted by a 1 s daemon thread
-(or ``flush()``), never on the caller's thread, and carry ids and counts only.
+(or ``flush()``), never on the caller's thread, and carry ids and counts only. A
+record whose export fails is retained and re-sent; one evicted before export, or
+lost with the process, is a sequence gap the verifier reports (spec 042 §6).
 """
 
 from __future__ import annotations
@@ -15,8 +17,8 @@ import os
 import threading
 import time
 import weakref
-from collections.abc import Sequence
-from typing import Literal
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, get_args
 
 from opentelemetry import trace
 from opentelemetry.context import Context
@@ -32,7 +34,7 @@ from .tracing import FABRIC_SDK_NAME
 LossReason = Literal["queue_full", "internal_error", "shutdown", "span_dropped"]
 SPAN_LOSS, SPAN_HEARTBEAT = "fabric.capture_loss", "fabric.capture_heartbeat"
 _KEYS = ("fabric.source_id", "fabric.source.epoch", "fabric.source.sequence")
-_TICK_S, _MAX_QUEUED_HEARTBEATS = 1.0, 1024
+_TICK_S, _MAX_QUEUED_HEARTBEATS, _MAX_PENDING_RANGES = 1.0, 1024, 1024
 _LOG = logging.getLogger("fabric.capture")
 _EMITTERS: weakref.WeakSet[LossEmitter] = weakref.WeakSet()
 
@@ -67,27 +69,50 @@ class LossEmitter:
 
     def record(self, source_id: str, source_epoch: int, reason: LossReason, sequence: int) -> None:
         """Count one lost exchange sequence."""
+        self._retain((source_id, source_epoch, reason), sequence, sequence, 1)
+
+    def _retain(self, key: tuple[str, int, str], first: int, last: int, count: int) -> None:
         try:
-            with self._lock:
-                key = (source_id, source_epoch, reason)
-                first, last, count = self._pending.get(key, (sequence, sequence, 0))
-                self._pending[key] = (min(first, sequence), max(last, sequence), count + 1)
+            with self._lock:  # one merged range per key; past the cap a loss is only a gap
+                if key in self._pending or len(self._pending) < _MAX_PENDING_RANGES:
+                    low, high, total = self._pending.get(key, (first, last, 0))
+                    self._pending[key] = (min(low, first), max(high, last), total + count)
             self._ensure_thread()
         except Exception:
             self.internal_errors += 1
 
+    def requeue(self, name: str, attrs: Mapping[str, Any]) -> None:
+        """Retain a loss or heartbeat record whose export failed; it is re-sent, never re-lost."""
+        source_id, epoch, reason = (attrs.get(k) for k in (*_KEYS[:2], LossAttr.REASON))
+        first, last, count, beat = (attrs.get(k) for k in (
+            LossAttr.FIRST_SEQUENCE, LossAttr.LAST_SEQUENCE, LossAttr.COUNT,
+            LossAttr.HEARTBEAT_LAST_SEQUENCE,
+        ))  # fmt: skip
+        if not isinstance(source_id, str) or type(epoch) is not int:
+            return
+        if name == SPAN_LOSS and isinstance(reason, str) and reason in get_args(LossReason):
+            if type(first) is int and type(last) is int and type(count) is int:
+                self._retain((source_id, epoch, reason), first, last, count)
+        elif name == SPAN_HEARTBEAT and type(beat) is int:
+            run_id = attrs.get("fabric.run.id")
+            self._queue_beat(source_id, epoch, beat, run_id if isinstance(run_id, str) else None)
+
     def heartbeat(self, allocator: SourceAllocator, *, run_id: str | None = None) -> None:
         """Queue the last sequence allocated *now*; with ``run_id`` it is a run marker."""
         epoch, last = allocator.last_sequence()
-        marker = encode_opaque_id(run_id) if run_id else None
         with self._lock:
             self._sources[allocator] = True  # overflow drops the marker; flush still covers it
+        marker = encode_opaque_id(run_id) if run_id else None
+        self._queue_beat(allocator.source_id, epoch, last, marker)
+
+    def _queue_beat(self, source_id: str, epoch: int, last: int, run_id: str | None) -> None:
+        with self._lock:
             if len(self._beats) < _MAX_QUEUED_HEARTBEATS:
-                self._beats.append((allocator.source_id, epoch, last, marker))
+                self._beats.append((source_id, epoch, last, run_id))
         self._ensure_thread()
 
     def note_activity(self, allocator: SourceAllocator) -> None:
-        """Make ``allocator`` eligible for the next periodic heartbeat."""
+        """Make ``allocator`` eligible for the next periodic heartbeat (called at allocation)."""
         with self._lock:
             self._sources[allocator] = True
         self._ensure_thread()
@@ -149,27 +174,50 @@ class LossEmitter:
             self.internal_errors += 1
 
     def flush(self, timeout_s: float = 2.0) -> bool:
-        """Emit pending losses, queued heartbeats and a heartbeat per known source."""
+        """Emit pending losses, queued heartbeats and a heartbeat per known source, then export.
+
+        The work runs on a helper thread and the caller waits only until ``timeout_s``, so a
+        blocked exporter never holds it. ``True`` only when everything was delivered in time.
+        """
         deadline = time.monotonic() + max(timeout_s, 0.0)
-        if not self._emit_lock.acquire(timeout=max(timeout_s, 0.0)):
-            return False
+        done, result = threading.Event(), [False]
+
+        def work() -> None:
+            try:
+                result[0] = self._flush_until(deadline)
+            finally:
+                done.set()
+
         try:
-            self._drain(periodic=False, every_source=True)
-        finally:
-            self._emit_lock.release()
-        force_flush = getattr(self._provider or trace.get_tracer_provider(), "force_flush", None)
+            threading.Thread(target=work, name="fabric-loss-flush", daemon=True).start()
+        except RuntimeError:  # no new threads (interpreter shutdown): flush inline
+            work()
+        return done.wait(max(0.0, deadline - time.monotonic())) and result[0]
+
+    def _flush_until(self, deadline: float) -> bool:
         try:
+            if not self._emit_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
+                return False
+            try:
+                self._drain(periodic=False, every_source=True)
+            finally:
+                self._emit_lock.release()
+            provider = self._provider or trace.get_tracer_provider()
+            force_flush = getattr(provider, "force_flush", None)
             remaining_ms = max(int((deadline - time.monotonic()) * 1000), 0)
-            return not callable(force_flush) or bool(force_flush(remaining_ms))
+            exported = not callable(force_flush) or bool(force_flush(remaining_ms))
+            with self._lock:  # a failed export put its records back
+                return exported and not self._pending and not self._beats
         except Exception:
             return False
 
     def close(self, timeout_s: float = 2.0) -> bool:
-        """Flush, then stop the emitter thread."""
+        """Flush, then stop the emitter thread; returns within ``timeout_s``."""
+        deadline = time.monotonic() + max(timeout_s, 0.0)
         flushed = self.flush(timeout_s)
         self._stop.set()
         if self._thread is not None and self._thread is not threading.current_thread():
-            self._thread.join(timeout=min(max(timeout_s, 0.0), _TICK_S))
+            self._thread.join(timeout=max(0.0, deadline - time.monotonic()))
         return flushed
 
 
@@ -199,7 +247,8 @@ if hasattr(os, "register_at_fork"):
 
 
 class LossExporter(SpanExporter):
-    """Wraps an exporter; exchange spans of a failed export become ``span_dropped`` losses."""
+    """Wraps an exporter; on failure exchange spans become ``span_dropped`` losses and loss or
+    heartbeat records are retained for re-sending (never re-reported, so nothing cascades)."""
 
     def __init__(self, inner: SpanExporter, *, loss: LossEmitter | None = None) -> None:
         self._inner, self._loss = inner, loss
@@ -212,8 +261,11 @@ class LossExporter(SpanExporter):
         if result is not SpanExportResult.SUCCESS:
             with contextlib.suppress(Exception):
                 loss = self._loss or get_loss_emitter()
-                for span in spans:  # loss/heartbeat spans carry no exchange id: no cascade
+                for span in spans:
                     attrs = span.attributes or {}
+                    if span.name in (SPAN_LOSS, SPAN_HEARTBEAT):
+                        loss.requeue(span.name, attrs)
+                        continue
                     source_id, epoch, sequence = (attrs.get(key) for key in _KEYS)
                     ids_ok = isinstance(source_id, str) and "fabric.wire.exchange_id" in attrs
                     if ids_ok and isinstance(epoch, int) and isinstance(sequence, int):

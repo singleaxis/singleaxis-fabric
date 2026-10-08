@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from fabric._sequence import encode_opaque_id
+from fabric._sequence import OPAQUE_ID_RE
 
 __all__ = [
     "ParseStatus",
@@ -384,16 +384,28 @@ def _looks_like_sse(data: bytes, media_type: str | None) -> bool:
 # Helpers
 
 
+def _opaque(value: str) -> str:
+    """A provider id as the report may carry it (spec 042 §9).
+
+    The id itself when it fully matches the opaque-id pattern, else ``h-`` +
+    40 hex of its sha256 -- the same encoding capture applies, but anchored
+    so a trailing newline cannot slip through ``$``.
+    """
+    if OPAQUE_ID_RE.fullmatch(value):
+        return value
+    return "h-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:40]
+
+
 def _ids(values: Sequence[Any]) -> tuple[str, ...]:
     seen: dict[str, None] = {}
     for value in values:
         if isinstance(value, str) and value:
-            seen.setdefault(encode_opaque_id(value), None)
+            seen.setdefault(_opaque(value), None)
     return tuple(seen)
 
 
 def _opt_id(value: Any) -> str | None:
-    return encode_opaque_id(value) if isinstance(value, str) and value else None
+    return _opaque(value) if isinstance(value, str) and value else None
 
 
 def _opt_str(value: Any) -> str | None:
@@ -612,7 +624,7 @@ def _tool_calls(pairs: Sequence[tuple[Any, Any]]) -> tuple[tuple[str, str | None
     seen: dict[str, str | None] = {}
     for call_id, name in pairs:
         if isinstance(call_id, str) and call_id:
-            seen.setdefault(encode_opaque_id(call_id), name if isinstance(name, str) else None)
+            seen.setdefault(_opaque(call_id), name if isinstance(name, str) else None)
     return tuple(seen.items())
 
 

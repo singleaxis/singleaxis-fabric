@@ -268,11 +268,17 @@ def test_importing_fabric_patches_nothing() -> None:
     result = _run(
         textwrap.dedent(
             """
-            import sys
+            import importlib, sys
             import fabric, fabric.wire
-            assert "httpx" not in sys.modules, "fabric.wire imported httpx"
-            import httpx
-            assert not hasattr(httpx.HTTPTransport.handle_request, "__fabric_wire_patch__")
+            for flavor in ("httpx", "httpx2"):
+                assert flavor not in sys.modules, "fabric.wire imported " + flavor
+            for flavor in ("httpx", "httpx2"):
+                try:
+                    module = importlib.import_module(flavor)
+                except ImportError:
+                    continue
+                handle_request = module.HTTPTransport.handle_request
+                assert not hasattr(handle_request, "__fabric_wire_patch__")
             assert fabric.wire.current_handle() is None
             print("clean")
             """
@@ -290,10 +296,18 @@ def test_autoload_is_env_gated_and_chains(tmp_path: Path) -> None:
     pythonpath = os.pathsep.join([autoload_path(), str(other), str(SRC)])
     code = textwrap.dedent(
         """
-        import builtins, fabric.wire, httpx
+        import builtins, importlib.util, fabric.wire, httpx
         handle = fabric.wire.current_handle()
-        patched = hasattr(httpx.HTTPTransport.handle_request, "__fabric_wire_patch__")
-        print(getattr(builtins, "CHAINED", False), handle is not None, patched)
+        modules = [httpx]
+        if importlib.util.find_spec("httpx2") is not None:
+            import httpx2
+            modules.append(httpx2)
+        patched = {
+            hasattr(module.HTTPTransport.handle_request, "__fabric_wire_patch__")
+            for module in modules
+        }
+        assert len(patched) == 1, "httpx and httpx2 must be patched together"
+        print(getattr(builtins, "CHAINED", False), handle is not None, patched.pop())
         """
     )
     enabled = _run(

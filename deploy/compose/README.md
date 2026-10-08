@@ -69,12 +69,22 @@ cp .env.example .env && chmod 0600 .env
 #   FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>
 #   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
 #   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
-printf %s "$(openssl rand -hex 32)" > secrets/ingress.token && chmod 0600 secrets/ingress.token
+printf %s "$(openssl rand -hex 32)" > secrets/ingress.token
+sudo chown root:65532 secrets/ingress.token && sudo chmod 0440 secrets/ingress.token
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
 make verify-prod    # proves health, 401 unauthenticated, 200 authenticated (queue metrics warn-only)
 make logs-prod
 ```
+
+> **File ownership matters.** The image runs as distroless `nonroot`
+> (uid/gid 65532) and Compose bind-mounts the token secret and the TLS
+> directory with their host owner and mode. A token file owned by your
+> login user with mode `0600` is unreadable inside the container and
+> `fabric-gate` refuses to start. Give secrets (token, `server.key`) group
+> 65532 and mode `0440` (or owner 65532 and `0400`); certificates and CA
+> bundles only need to be readable (`0444`). `make preflight-prod` checks
+> each mounted file it uses.
 
 Use `make up-prod` for startup: it always runs the preflight first. Invoking
 the expanded `docker compose ... up` command directly skips the TLS,
@@ -108,7 +118,8 @@ OTLP, health (`13133`), and metrics (`8888`) publish on `127.0.0.1` only.
 Setting `FABRIC_BIND_ADDR` to a LAN address is an explicit operator choice:
 first uncomment the `tls:` stanzas in
 `collector-config/collector-production.yaml`, drop `server.crt`/`server.key`
-into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`), and open only ports
+into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`; `server.key` as
+`root:65532 0440`), and open only ports
 4317/4318 in the host firewall. Bearer tokens over plaintext must stay on
 loopback.
 
@@ -118,6 +129,10 @@ loopback.
   is optional-but-supported and required before binding beyond loopback.
 - Egress requires HTTPS with certificate verification and an Authorization
   header; `insecure_skip_verify` exists only for throwaway dev destinations.
+  For a destination with a private CA, put the bundle in `./tls`, uncomment
+  `ca_file` in `collector-config/collector-production.yaml` and set
+  `FABRIC_EXPORT_CA_FILE=/run/fabric-node/tls/<bundle>`; preflight checks
+  that the file exists and is readable by the container user.
 - The collector runs as nonroot with a read-only root filesystem, all
   capabilities dropped, and `no-new-privileges`.
 - This deployment proves the same thing `make qualify` proves at a different

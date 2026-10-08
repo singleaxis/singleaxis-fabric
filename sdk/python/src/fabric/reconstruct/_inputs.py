@@ -29,7 +29,9 @@ _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 _TRACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]*$")
-_MODEL_MAX = 256
+# The capture-side model pattern (fabric.wire, spec 042 §8). Kept local like
+# the attribute keys below; tests pin it to the capture runtime's pattern.
+MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$")
 
 APIS = frozenset(
     {
@@ -278,7 +280,7 @@ def _otlp_spans(export: Mapping[str, Any], where: str) -> list[SpanRecord]:
 
 
 def opaque_id(value: Any) -> str | None:
-    return value if isinstance(value, str) and OPAQUE_ID_RE.match(value) else None
+    return value if isinstance(value, str) and OPAQUE_ID_RE.fullmatch(value) else None
 
 
 def int_at_least(value: Any, minimum: int) -> int | None:
@@ -294,23 +296,29 @@ def enum_value(value: Any, allowed: frozenset[str]) -> str | None:
 def digest_value(value: Any) -> str | None:
     """Bare 64-hex (the OTLP form) to the ``sha256:<hex>`` report form."""
 
-    return f"sha256:{value}" if isinstance(value, str) and _HEX64_RE.match(value) else None
+    return f"sha256:{value}" if isinstance(value, str) and _HEX64_RE.fullmatch(value) else None
 
 
-def _model(value: Any) -> str | None:
-    return value if isinstance(value, str) and 0 < len(value) <= _MODEL_MAX else None
+def model_value(value: Any) -> str | None:
+    """A model name that matches the capture pattern, else ``None`` (never free text)."""
+
+    return value if isinstance(value, str) and MODEL_RE.fullmatch(value) else None
 
 
 def _trace_id(value: str) -> str | None:
-    return value if _TRACE_ID_RE.match(value) and value != "0" * 32 else None
+    return value if _TRACE_ID_RE.fullmatch(value) and value != "0" * 32 else None
 
 
 def _span_id(value: str) -> str | None:
-    return value if _SPAN_ID_RE.match(value) and value != "0" * 16 else None
+    return value if _SPAN_ID_RE.fullmatch(value) and value != "0" * 16 else None
 
 
 def object_id_from_ref(ref: Any) -> str | None:
-    """The object id is the last path segment of a ref; never the full path."""
+    """The object id a span names; never a path to open.
+
+    Current capture records the bare object id (spec 042 rev 4). Older spans
+    carry a full ``file://`` / ``s3://`` ref, whose last path segment is the id.
+    """
 
     if not isinstance(ref, str) or not ref:
         return None
@@ -450,7 +458,7 @@ def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> Exc
         end_ns=max(span.end_ns, span.start_ns),
         trace_id=_trace_id(span.trace_id),
         span_id=_span_id(span.span_id),
-        model=_model(attrs.get(A_RESPONSE_MODEL)),
+        model=model_value(attrs.get(A_RESPONSE_MODEL)),
         response_id=opaque_id(attrs.get(A_RESPONSE_ID)),
         http_status=_http_status(attrs.get(A_HTTP_STATUS)),
     )

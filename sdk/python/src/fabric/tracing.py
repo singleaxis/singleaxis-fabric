@@ -24,8 +24,10 @@ metric exporter) at process level, or pass ``meter_provider=`` to
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
+import re
 from typing import Any
 
 from opentelemetry import metrics, trace
@@ -51,6 +53,7 @@ Generous for any hash/identifier/short text; hosts that wire their own
 TracerProvider choose their own SpanLimits."""
 
 _NOOP_PROVIDER_WARNED = False
+_SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _provider_has_span_processors(provider: object) -> bool:
@@ -144,9 +147,7 @@ def _resolve_default_exporter(exporter: SpanExporter | None) -> SpanExporter | N
     """
     if exporter is not None:
         return exporter
-    if os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") or os.environ.get(
-        "OTEL_EXPORTER_OTLP_ENDPOINT"
-    ):
+    if otlp_endpoint_configured():
         try:
             from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: PLC0415
                 OTLPSpanExporter,
@@ -247,35 +248,61 @@ def install_default_provider(
     return provider
 
 
-def build_private_provider(
-    *,
-    exporter: SpanExporter | None = None,
-    service_name: str | None = None,
-    resource_attributes: dict[str, Any] | None = None,
-) -> TracerProvider:
+def otlp_endpoint_configured() -> bool:
+    """Whether the standard env names an OTLP traces endpoint."""
+    names = ("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")
+    return any(os.environ.get(name) for name in names)
+
+
+def _private_exporter() -> SpanExporter | None:
+    """The OTLP exporter the standard protocol env selects; ``ValueError`` when unusable."""
+    names = ("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL")
+    protocol = next((v.strip() for n in names if (v := os.environ.get(n))), "http/protobuf")
+    if protocol not in ("http/protobuf", "grpc"):
+        raise ValueError("OTLP protocol must be http/protobuf or grpc for Fabric capture")
+    if not otlp_endpoint_configured():
+        return None
+    if protocol == "http/protobuf":
+        return _resolve_default_exporter(None)  # warns when the package is missing
+    try:
+        module = importlib.import_module("opentelemetry.exporter.otlp.proto.grpc.trace_exporter")
+    except ImportError as exc:
+        raise ValueError("OTLP grpc needs opentelemetry-exporter-otlp-proto-grpc") from exc
+    exporter: SpanExporter = module.OTLPSpanExporter()
+    return exporter
+
+
+def build_private_provider(*, exporter: SpanExporter | None = None) -> TracerProvider:
     """Build a :class:`TracerProvider` for Fabric's own use, never installed globally.
 
-    Used by capture components (the wire tee with ``FABRIC_WIRE_TRACER=private``)
-    that must emit spans without taking over the host's OTel setup: this
-    function never calls ``trace.set_tracer_provider``, so a host that
-    configures OTel later is unaffected. The exporter is resolved exactly
-    like :func:`install_default_provider` (explicit ``exporter``, else an
-    ``OTLPSpanExporter`` from the standard ``OTEL_EXPORTER_OTLP_*`` env when
-    the ``[otlp]`` extra is installed). Without either, the provider has no
-    span processor and a WARN is logged.
+    Used by capture components (the wire tee) that must emit spans without taking over
+    the host's OTel setup: this never calls ``trace.set_tracer_provider``. The exporter
+    is ``exporter``, else the OTLP exporter selected by
+    ``OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`` / ``OTEL_EXPORTER_OTLP_PROTOCOL``
+    (``http/protobuf`` by default, or ``grpc``) when an OTLP endpoint is set. Any
+    other protocol, or ``grpc`` without its package, raises ``ValueError``. Without an
+    exporter the provider has no span processor and a WARN is logged.
 
-    The provider always samples (``ALWAYS_ON``), ignoring ``OTEL_TRACES_SAMPLER``
-    and the host's sampling decision on the parent: capture spans are the
-    record, and a sampled-out exchange, loss or heartbeat span would be an
-    unexplained gap (spec 042 §6). The exporter is wrapped in
-    :class:`fabric._loss.LossExporter`, so exchange spans in a failed export
-    become ``span_dropped`` loss records.
+    The resource is only ``service.name`` (a valid ``OTEL_SERVICE_NAME``, else
+    ``fabric-wire``): ``OTEL_RESOURCE_ATTRIBUTES`` and detectors are ignored, so no
+    host attribute leaves the process on capture spans. The provider always samples
+    (``ALWAYS_ON``): capture spans are the record (spec 042 §6). The exporter is
+    wrapped in :class:`fabric._loss.LossExporter`: exchange spans of a failed export
+    become ``span_dropped`` losses, and failed loss/heartbeat records are retried.
     """
     from ._loss import LossExporter  # noqa: PLC0415 - _loss imports this module
 
-    resolved_exporter = _resolve_default_exporter(exporter)
-    provider = _new_provider(service_name, resource_attributes, sampler=ALWAYS_ON)
+    resolved_exporter = exporter if exporter is not None else _private_exporter()
+    name = os.environ.get("OTEL_SERVICE_NAME", "")
+    name = name if _SERVICE_NAME_RE.match(name) else "fabric-wire"
+    provider = TracerProvider(
+        sampler=ALWAYS_ON,
+        resource=Resource({"service.name": name}),
+        span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN),
+    )
     if resolved_exporter is not None:
+        # Spans evicted from a full batch queue never reach LossExporter; they stay
+        # sequence gaps, which the verifier reports as partial (spec 042 §6).
         provider.add_span_processor(BatchSpanProcessor(LossExporter(resolved_exporter)))
     else:
         _LOG.warning(

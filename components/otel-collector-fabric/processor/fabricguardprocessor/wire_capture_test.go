@@ -78,7 +78,6 @@ func wireExchangeAttrs() map[string]any {
 		"gen_ai.operation.name":          "chat",
 		"gen_ai.provider.name":           "openai",
 		"gen_ai.response.model":          "gpt-4o-2024-08-06",
-		"gen_ai.response.id":             "chatcmpl-abc123",
 		"gen_ai.response.finish_reasons": []any{"tool_calls"},
 		"gen_ai.usage.input_tokens":      int64(120),
 		"gen_ai.usage.output_tokens":     int64(18),
@@ -86,8 +85,8 @@ func wireExchangeAttrs() map[string]any {
 		"http.response.status_code":      int64(200),
 		"fabric.source_id":               "wire-0123456789abcdef",
 		"fabric.source.sequence":         int64(7),
-		"fabric.content.request_ref":     "fabric-content://tenant-a/evidence/obj-req",
-		"fabric.content.result_ref":      "fabric-content://tenant-a/evidence/obj-resp",
+		"fabric.content.request_ref":     "0f8fad5b-d9cb-469f-a165-70867728950e",
+		"fabric.content.result_ref":      "7c9e6679-7425-40de-944b-e07fc1f90ae7",
 		// New spec 042 rev 3 keys.
 		"fabric.source.epoch":         int64(1759800000000000000),
 		"fabric.run.id":               "trace:0af7651916cd43dd8448eb211c80319c",
@@ -110,7 +109,7 @@ func wireErrorExchangeAttrs() map[string]any {
 		"error.type":                 "httpx.ReadTimeout",
 		"fabric.source_id":           "wire-0123456789abcdef",
 		"fabric.source.sequence":     int64(8),
-		"fabric.content.request_ref": "fabric-content://tenant-a/evidence/obj-req2",
+		"fabric.content.request_ref": "e4eaaaf2-d142-41ed-a6ab-2c1f1e2d3b4a",
 		"fabric.source.epoch":        int64(1759800000000000000),
 		"fabric.run.id":              "source:wire-0123456789abcdef:1759800000000000000",
 		"fabric.wire.exchange_id":    "ex-2",
@@ -296,12 +295,12 @@ func TestWireCapture_InvalidValuesAreRemoved(t *testing.T) {
 	for _, key := range keys {
 		for i, bad := range cases[key] {
 			g := newTestGuard(t, nil)
-			attrs := map[string]any{"fabric.tenant_id": "tenant-a", key: bad}
+			attrs := map[string]any{"fabric.source_id": "wire-1", key: bad}
 			span := processOne(t, g, "fabric.model_call", attrs)
 			if _, ok := span.Attributes().Get(key); ok {
 				t.Errorf("%s[%d] = %#v survived validation", key, i, bad)
 			}
-			if _, ok := span.Attributes().Get("fabric.tenant_id"); !ok {
+			if _, ok := span.Attributes().Get("fabric.source_id"); !ok {
 				t.Errorf("%s[%d]: unrelated valid key removed", key, i)
 			}
 		}
@@ -459,9 +458,11 @@ func TestWireCapture_CaptureNamesPassThroughVocabulary(t *testing.T) {
 	}
 }
 
+// Outside capture spans (which carry no events or links at all), the new
+// capture keys stay value-closed on span events and links.
 func TestWireCapture_EventsAndLinksAreValueClosedToo(t *testing.T) {
 	g := newTestGuard(t, nil)
-	td := makeRawSpan("fabric.model_call", wireExchangeAttrs())
+	td := makeRawSpan("chat model-a", map[string]any{"gen_ai.request.model": "model-a"})
 	span := firstSpan(td)
 	event := span.Events().AppendEmpty()
 	event.SetName("native event")

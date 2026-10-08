@@ -1,9 +1,10 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Validate the draft LLM wire-capture contracts (contracts/capture/v1, spec 042 rev 3).
+"""Validate the draft LLM wire-capture contracts (contracts/capture/v1, spec 042 rev 4).
 
 JSON Schema handles closed shapes. The semantic checks below reject what a
-schema cannot express: a store status that disagrees with the body refs,
+schema cannot express: a store status that disagrees with the stored body
+object ids,
 loss ranges that cannot hold their count, and a reconstruction verdict
 stronger than its gaps, checks, sequence windows and heartbeats allow. The
 stitch-digest fixture pins the ``fabric.stitch/v1`` per-message projection
@@ -20,7 +21,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Sequence
-from urllib.parse import urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -84,29 +84,12 @@ def _schema_error(document: Mapping[str, Any], schema: Mapping[str, Any]) -> Non
         )
 
 
-def _safe_ref(ref: str) -> bool:
-    parsed = urlsplit(ref)
-    return (
-        parsed.scheme in {"s3", "gs", "file"}
-        and parsed.username is None
-        and parsed.password is None
-        and not parsed.query
-        and not parsed.fragment
-        and "%" not in ref
-        and not any(part in {".", ".."} for part in parsed.path.split("/"))
-    )
-
-
 def _validate_exchange(document: Mapping[str, Any]) -> None:
     bodies = [document["request"]] + (
         [document["response"]] if "response" in document else []
     )
-    for side, body in zip(("request", "response"), bodies):
-        if "ref" in body and not _safe_ref(body["ref"]):
-            raise CaptureContractError(
-                "capture.exchange.ref", f"$.{side}.ref", "ref must be credential-free and plain"
-            )
-    stored = [("ref" in body) for body in bodies]
+    # object_id is closed to a uuid4 by the schema: no path, URI or bucket.
+    stored = [("object_id" in body) for body in bodies]
     status = document["store_status"]
     if status in {"disabled", "failed"}:
         consistent = not any(stored)
@@ -118,7 +101,7 @@ def _validate_exchange(document: Mapping[str, Any]) -> None:
         raise CaptureContractError(
             "capture.exchange.store_status",
             "$.store_status",
-            f"store_status {status!r} disagrees with the body refs",
+            f"store_status {status!r} disagrees with the stored body object ids",
         )
     if "error_type" in document and document["response_state"] != "error":
         raise CaptureContractError(

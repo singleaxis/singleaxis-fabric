@@ -18,10 +18,15 @@ ResponseState = Literal["complete", "closed_early", "error", "abandoned"]
 StoreStatus = Literal["stored", "partial", "failed", "disabled"]
 ROLE_REQUEST, ROLE_RESPONSE = "model.exchange.request", "model.exchange.response"
 SPAN_EXCHANGE = "fabric.model_call"
+FINISH_REASONS = frozenset({
+    "stop", "length", "tool_calls", "content_filter", "function_call", "end_turn", "max_tokens",
+    "stop_sequence", "tool_use", "pause_turn", "refusal", "completed", "incomplete", "failed",
+})  # fmt: skip
+"""Closed ``gen_ai.response.finish_reasons`` vocabulary; any other value becomes ``other``."""
 
 
 class WireAttr:
-    """OTLP keys of the exchange span (spec 042 §8)."""
+    """OTLP keys of the exchange span (spec 042 §8); the refs carry store object ids only."""
 
     EXCHANGE_ID, RUN_ID = "fabric.wire.exchange_id", "fabric.run.id"
     SOURCE_ID, SOURCE_SEQUENCE = "fabric.source_id", "fabric.source.sequence"

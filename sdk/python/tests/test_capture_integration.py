@@ -292,7 +292,7 @@ def test_dropped_exchange_span_is_partial(tmp_path: Path) -> None:
 def test_deleted_store_object_is_missing_object(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
     row = next(r for r in _rows(spans) if r["attributes"].get("fabric.source.sequence") == 1)
-    object_id = row["attributes"]["fabric.content.result_ref"].rsplit("/", 1)[1]
+    object_id = row["attributes"]["fabric.content.result_ref"]
     (tmp_path / "store" / TENANT / "evidence" / object_id).unlink()
 
     run = _only_run(_verify(spans, store))
@@ -304,7 +304,7 @@ def test_deleted_store_object_is_missing_object(tmp_path: Path) -> None:
 def test_flipped_stored_byte_is_digest_mismatch(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
     row = next(r for r in _rows(spans) if r["attributes"].get("fabric.source.sequence") == 0)
-    object_id = row["attributes"]["fabric.content.request_ref"].rsplit("/", 1)[1]
+    object_id = row["attributes"]["fabric.content.request_ref"]
     target = tmp_path / "store" / TENANT / "evidence" / object_id
     data = bytearray(target.read_bytes())
     data[0] ^= 0x01

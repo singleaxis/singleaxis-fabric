@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""A plain-httpx ReAct agent for the wire-capture Node E2E.
+"""A ReAct agent for the wire-capture Node E2E, over plain httpx or the real OpenAI SDK.
 
 It imports nothing from Fabric: capture is activated only by the zero-code
 path the platform sets up (the autoload directory on ``PYTHONPATH`` plus
@@ -11,6 +11,10 @@ loop is three OpenAI-compatible chat-completions calls:
 2. streamed (SSE): the model asks for ``c_to_f``; the agent assembles the
    tool call from the deltas;
 3. non-streamed: the model answers.
+
+``--client httpx`` drives the loop with hand-written httpx calls;
+``--client openai`` uses the real ``openai`` SDK (>=3, which sends through
+httpx2) exactly as an application would.
 
 Prints one JSON line on stdout: the answer and whether Fabric was active.
 """
@@ -70,12 +74,54 @@ def _assemble_stream(response: httpx.Response) -> dict[str, Any]:
     return message
 
 
-def react(client: httpx.Client, url: str, api_key: str, question: str) -> str:
+def _httpx_step(
+    client: httpx.Client, url: str, api_key: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if payload.get("stream"):
+        with client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            return _assemble_stream(response)
+    response = client.post(url, headers=headers, json=payload)
+    response.raise_for_status()
+    return dict(response.json()["choices"][0]["message"])
+
+
+def _openai_step(client: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    """One call through the real OpenAI SDK; the message as the application sees it."""
+    if not payload.get("stream"):
+        completion = client.chat.completions.create(**payload)
+        return dict(completion.choices[0].message.model_dump(exclude_unset=True))
+    content: str | None = None
+    calls: dict[int, dict[str, Any]] = {}
+    for chunk in client.chat.completions.create(**payload):  # a real openai.Stream
+        for choice in chunk.choices:
+            delta = choice.delta
+            if delta.content is not None:
+                content = (content or "") + delta.content
+            for call in delta.tool_calls or ():
+                entry = calls.setdefault(call.index, {"function": {}})
+                if call.id is not None:
+                    entry["id"] = call.id
+                if call.type is not None:
+                    entry["type"] = call.type
+                if call.function is not None:
+                    for key in ("name", "arguments"):
+                        if (value := getattr(call.function, key)) is not None:
+                            entry["function"][key] = (
+                                entry["function"].get(key, "") + value
+                            )
+    message: dict[str, Any] = {"role": "assistant", "content": content}
+    if calls:
+        message["tool_calls"] = [calls[index] for index in sorted(calls)]
+    return message
+
+
+def react(step_call: Any, question: str) -> str:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": "You are a weather assistant. Use tools."},
         {"role": "user", "content": question},
     ]
-    headers = {"Authorization": f"Bearer {api_key}"}
     for step in range(5):
         tools = [{"type": "function", "function": {"name": name}} for name in TOOLS]
         payload: dict[str, Any] = {
@@ -85,13 +131,7 @@ def react(client: httpx.Client, url: str, api_key: str, question: str) -> str:
         }
         if step == 1:  # the second call streams
             payload["stream"] = True
-            with client.stream("POST", url, headers=headers, json=payload) as response:
-                response.raise_for_status()
-                message = _assemble_stream(response)
-        else:
-            response = client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            message = response.json()["choices"][0]["message"]
+        message = step_call(payload)
         messages.append(message)
         calls = message.get("tool_calls") or []
         if not calls:
@@ -114,15 +154,27 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-url", required=True)
     parser.add_argument("--question", required=True)
+    parser.add_argument("--client", choices=("httpx", "openai"), default="httpx")
     args = parser.parse_args()
-    with httpx.Client(timeout=30.0) as client:
-        answer = react(
-            client, args.model_url, os.environ["E2E_MODEL_API_KEY"], args.question
-        )
-    # Whether the zero-code path patched httpx; read without importing Fabric.
-    patched = bool(
-        getattr(httpx.HTTPTransport.handle_request, "__fabric_wire_patch__", False)
-    )
+    api_key = os.environ["E2E_MODEL_API_KEY"]
+    if args.client == "openai":
+        import httpx2
+        import openai
+
+        base_url = args.model_url.removesuffix("/chat/completions")
+        with openai.OpenAI(base_url=base_url, api_key=api_key, max_retries=0) as sdk:
+            answer = react(lambda payload: _openai_step(sdk, payload), args.question)
+        transport: Any = httpx2.HTTPTransport
+    else:
+        with httpx.Client(timeout=30.0) as client:
+            answer = react(
+                lambda payload: _httpx_step(client, args.model_url, api_key, payload),
+                args.question,
+            )
+        transport = httpx.HTTPTransport
+    # Whether the zero-code path patched the transport the client used; read
+    # without importing Fabric.
+    patched = bool(getattr(transport.handle_request, "__fabric_wire_patch__", False))
     sys.stdout.write(json.dumps({"answer": answer, "capture_active": patched}) + "\n")
     return 0
 

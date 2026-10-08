@@ -117,8 +117,8 @@ STARTUP_HOOK_NAMES = {"sitecustomize.py", "usercustomize.py"}
 
 # Run in a fresh interpreter against the extracted artifact: importing
 # fabric and fabric.wire must patch nothing, start no thread, import
-# neither httpx nor the tee transport, and never trigger the autoload —
-# even with FABRIC_WIRE_AUTOLOAD=1 set.
+# neither httpx/httpx2 nor the tee transport, and never trigger the autoload
+# — even with FABRIC_WIRE_AUTOLOAD=1 set.
 _IMPORT_PROBE = """
 import json, os, sys, threading
 root = os.path.realpath(sys.argv[1])
@@ -129,7 +129,7 @@ import fabric.wire
 problems = []
 if not os.path.realpath(fabric.__file__).startswith(root + os.sep):
     problems.append("fabric was not imported from the artifact")
-for name in ("httpx", "fabric._autoload", "fabric._autoload.sitecustomize",
+for name in ("httpx", "httpx2", "fabric._autoload", "fabric._autoload.sitecustomize",
              "fabric.wire._transport", "fabric.reconstruct"):
     if name in sys.modules:
         problems.append("import fabric/fabric.wire loaded " + name)
@@ -137,15 +137,16 @@ if threading.active_count() != threads:
     problems.append("import fabric/fabric.wire started a thread")
 if fabric.wire.current_handle() is not None:
     problems.append("import fabric.wire installed the wire tee")
-try:
-    import httpx
-except ImportError:
-    httpx = None
-if httpx is not None:
-    for method in (httpx.HTTPTransport.handle_request,
-                   httpx.AsyncHTTPTransport.handle_async_request):
+import importlib
+for flavor in ("httpx", "httpx2"):
+    try:
+        module = importlib.import_module(flavor)
+    except ImportError:
+        continue
+    for method in (module.HTTPTransport.handle_request,
+                   module.AsyncHTTPTransport.handle_async_request):
         if getattr(method, "__fabric_wire_patch__", False):
-            problems.append("httpx transport is patched after import")
+            problems.append(flavor + " transport is patched after import")
 print(json.dumps(problems))
 """
 

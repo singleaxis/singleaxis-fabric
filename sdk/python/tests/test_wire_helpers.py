@@ -101,6 +101,10 @@ class Rig:
             transport=AsyncWireTransport(httpx.MockTransport(handler), handle=self.handle)
         )
 
+    def read_ref(self, object_id: str) -> bytes:
+        """Stored bytes for a span's bare object-id ref (spec 042 §8)."""
+        return bytes(self.store.read(self.store.evidence_ref_for(object_id)))
+
     def descriptors(self) -> list[dict[str, Any]]:
         root = Path(self.store.root) / self.store.tenant_id / "evidence" / "meta"
         return [json.loads(p.read_text("utf-8")) for p in root.glob("*.json")]
@@ -227,16 +231,15 @@ def exchange_document(span: ReadableSpan) -> dict[str, Any]:
         "store_status": a["fabric.wire.store_status"],
     }
     if "fabric.content.request_ref" in a:
-        document["request"]["ref"] = a["fabric.content.request_ref"]
+        document["request"]["object_id"] = a["fabric.content.request_ref"]
     if "fabric.wire.response_sha256" in a:
         document["response"] = {"sha256": "sha256:" + a["fabric.wire.response_sha256"]}
         if "fabric.content.result_ref" in a:
-            document["response"]["ref"] = a["fabric.content.result_ref"]
+            document["response"]["object_id"] = a["fabric.content.result_ref"]
     for key, field in (
         ("http.response.status_code", "http_status_code"),
         ("error.type", "error_type"),
         ("gen_ai.response.model", "model"),
-        ("gen_ai.response.id", "response_id"),
     ):
         if key in a:
             document[field] = a[key]

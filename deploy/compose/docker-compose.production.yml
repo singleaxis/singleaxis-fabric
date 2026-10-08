@@ -15,8 +15,13 @@ name: fabric-node-production
 
 # The ingress bearer token is a file-backed secret so it never appears in the
 # collector's environment, `docker inspect`, or the rendered config. Point
-# FABRIC_INGRESS_TOKEN_FILE at a 0600-permission file containing the token
-# agents must send as "Authorization: Bearer <token>".
+# FABRIC_INGRESS_TOKEN_FILE at a file containing the token agents must send as
+# "Authorization: Bearer <token>". Compose bind-mounts file secrets with their
+# host owner and mode, and the image runs as nonroot (uid/gid 65532), so the
+# file must be readable by that user and closed to everyone else:
+#   sudo chown root:65532 <file> && sudo chmod 0440 <file>
+# A host-owned 0600 file is unreadable in the container and fabric-gate
+# refuses to start. preflight-prod.sh checks this.
 secrets:
   fabric_ingress_token:
     file: ${FABRIC_INGRESS_TOKEN_FILE:?set FABRIC_INGRESS_TOKEN_FILE in .env to the ingress token file}
@@ -48,6 +53,10 @@ services:
       # Egress destination credentials; required, fail closed at compose time.
       FABRIC_EXPORT_ENDPOINT: ${FABRIC_EXPORT_ENDPOINT:?set FABRIC_EXPORT_ENDPOINT in .env to an https OTLP/HTTP endpoint}
       FABRIC_EXPORT_AUTH_HEADER: ${FABRIC_EXPORT_AUTH_HEADER:?set FABRIC_EXPORT_AUTH_HEADER in .env to the egress Authorization header value}
+      # Egress private-CA bundle, only consulted if the ca_file line in
+      # collector-production.yaml is uncommented. Must live under
+      # /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR).
+      FABRIC_EXPORT_CA_FILE: ${FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}
       # Ingress TLS paths, only consulted if the tls: stanzas in
       # collector-production.yaml are uncommented.
       FABRIC_INGRESS_TLS_CERT_FILE: ${FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
@@ -60,7 +69,9 @@ services:
       - fabric-queue:/var/lib/fabric-node/queue
       # TLS material for ingress (cert/key) and egress (private CA). The
       # directory is mounted even while TLS is disabled so enabling it is a
-      # config-only change; keep it empty rather than deleting it.
+      # config-only change; keep it empty rather than deleting it. Files keep
+      # their host owner and mode: the private key needs the same
+      # root:65532 0440 treatment as the token file.
       - ${FABRIC_INGRESS_TLS_DIR:-./tls}:/run/fabric-node/tls:ro
     ports: !override
       # OTLP ingress binds loopback by default. Setting FABRIC_BIND_ADDR to a

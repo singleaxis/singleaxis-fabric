@@ -99,6 +99,15 @@ def parts(tmp_path: Path) -> Any:
     loss.close(1.0)
 
 
+def _validate_exchange(span: Any, store: LocalFilesystemContentStore) -> None:
+    """Schema-check the span's document; its refs are bare uuid4 object ids the store resolves."""
+    document = exchange_document(span)
+    for body in (document["request"], document.get("response", {})):
+        if object_id := body.get("object_id"):
+            assert Path(store.evidence_ref_for(object_id).removeprefix("file://")).is_file()
+    load_validator().validate_document(document, capture_schemas())
+
+
 def _descriptors(store: LocalFilesystemContentStore) -> list[dict[str, Any]]:
     meta = Path(store.root) / "tenant-a" / "evidence" / "meta"
     return [json.loads(p.read_text()) for p in meta.glob("*.json")]
@@ -110,9 +119,11 @@ def test_job_stores_exact_bodies(parts: Any) -> None:
     assert pipeline.submit(job)
     assert pipeline.flush(5.0)
     (span,) = [s for s in exporter.get_finished_spans() if s.name == "fabric.model_call"]
-    load_validator().validate_document(exchange_document(span), capture_schemas())
+    _validate_exchange(span, store)
     a = attrs(span)
     assert a["fabric.wire.store_status"] == "stored"
+    refs = {a["fabric.content.request_ref"], a["fabric.content.result_ref"]}
+    assert {d["ref"] for d in _descriptors(store)} == {store.evidence_ref_for(r) for r in refs}
     assert span.parent is None
     content = Draft202012Validator(
         json.loads(CONTENT_SCHEMA.read_text()), format_checker=FormatChecker()
@@ -141,7 +152,7 @@ def test_truncated_body_without_prefix_is_not_stored(parts: Any) -> None:
     assert a["fabric.wire.store_status"] == "partial"
     assert "fabric.content.request_ref" not in a and "fabric.content.result_ref" in a
     assert [d["role"] for d in _descriptors(store)] == ["model.exchange.response"]
-    load_validator().validate_document(exchange_document(span), capture_schemas())
+    _validate_exchange(span, store)
 
 
 def test_submit_after_close_records_shutdown_loss(parts: Any) -> None:
@@ -171,22 +182,21 @@ def test_pipeline_rejects_bad_settings(tmp_path: Path) -> None:
         (
             "openai.chat_completions",
             chat_response({"role": "assistant"}, finish="tool_calls"),
-            {"model": "gpt-4o-2024-08-06", "response_id": "chatcmpl-1",
-             "finish_reasons": ["tool_calls"], "input_tokens": 20, "output_tokens": 5},
+            {"model": "gpt-4o-2024-08-06", "finish_reasons": ["tool_calls"],
+             "input_tokens": 20, "output_tokens": 5},
         ),
         (
             "openai.responses",
             {"id": "resp_1", "model": "gpt-5", "status": "completed",
              "usage": {"input_tokens": 3, "output_tokens": 4}},
-            {"model": "gpt-5", "response_id": "resp_1", "finish_reasons": ["completed"],
-             "input_tokens": 3, "output_tokens": 4},
+            {"model": "gpt-5", "finish_reasons": ["completed"], "input_tokens": 3,
+             "output_tokens": 4},
         ),
         (
             "anthropic.messages",
             {"id": "msg 1", "model": "claude-x", "stop_reason": "tool_use",
              "usage": {"input_tokens": 9, "output_tokens": -1}},
-            {"model": "claude-x", "response_id": "h-" + __import__("hashlib").sha256(
-                b"msg 1").hexdigest()[:40], "finish_reasons": ["tool_use"], "input_tokens": 9},
+            {"model": "claude-x", "finish_reasons": ["tool_use"], "input_tokens": 9},
         ),
         (
             "openai.embeddings",

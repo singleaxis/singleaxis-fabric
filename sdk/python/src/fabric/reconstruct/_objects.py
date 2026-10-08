@@ -3,8 +3,9 @@
 """Read-only store access and byte verification for the verifier.
 
 Objects are always resolved by ``object_id`` through
-``store.evidence_ref_for(object_id)``; a recorded ref is only used to learn
-the id (its last path segment), never opened directly, so a span cannot
+``store.evidence_ref_for(object_id)``. Current spans record the bare object
+id; an older span's full ref is only used to learn the id (its last path
+segment). A recorded ref is never opened directly, so a span cannot
 point the verifier outside the configured tenant namespace. Every fetched
 object is checked against the digest the span recorded and against its
 content-v2 descriptor, which also says how to decode the bytes.

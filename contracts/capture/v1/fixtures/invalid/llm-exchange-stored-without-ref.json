@@ -13,7 +13,7 @@
   "ended_at": "2026-10-08T09:00:00.900Z",
   "request": {
     "sha256": "sha256:f162b493dd9bf56e431f6d9db5dcd9dd2af4e4442f711d454b30f50745621c00",
-    "ref": "file:///var/lib/fabric/content/tenant-a/evidence/1c9f2d63-2a1b-4e8f-9a4c-6d0b3f8e2b01"
+    "object_id": "1c9f2d63-2a1b-4e8f-9a4c-6d0b3f8e2b01"
   },
   "response": {
     "sha256": "sha256:dadd3f33ead60a412074630603ff9a8782b510b501334869533f5fb642b17857"

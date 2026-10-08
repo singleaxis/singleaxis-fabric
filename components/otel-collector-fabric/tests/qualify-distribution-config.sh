@@ -300,6 +300,14 @@ if [[ "${mode}" == "image" ]]; then
     --network none \
     --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
 
+  # A traces pipeline that no longer runs fabricguard (e.g. an overlay that
+  # replaced its processors) would export unfiltered spans.
+  sed 's|processors: \[memory_limiter, fabricguard\]|processors: [memory_limiter]|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal "${container_name}-noguard" "a pipeline without fabricguard" \
+    --network none \
+    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
+
   # Unsafe token material: same config plus a newline-terminated token file.
   printf 'tok3n\n' >"${runtime}/bad.token"
   sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: /fabric-config-test/bad.token|' \
@@ -322,6 +330,9 @@ elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
   sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
     "${runtime}/config.yaml" >"${badcfg}"
   gate_expect_refusal_bin "a metrics pipeline"
+  sed 's|processors: \[memory_limiter, fabricguard\]|processors: [memory_limiter]|' \
+    "${runtime}/config.yaml" >"${badcfg}"
+  gate_expect_refusal_bin "a pipeline without fabricguard"
   printf 'tok3n\n' >"${runtime}/bad.token"
   sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: '"${runtime}"'/bad.token|' \
     "${runtime}/config.yaml" >"${badcfg}"

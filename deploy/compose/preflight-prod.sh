@@ -51,6 +51,69 @@ FABRIC_EXPORT_AUTH_HEADER="$(envget FABRIC_EXPORT_AUTH_HEADER)"
 FABRIC_INGRESS_TOKEN_FILE="$(envget FABRIC_INGRESS_TOKEN_FILE)"
 FABRIC_INGRESS_TLS_DIR="$(envget FABRIC_INGRESS_TLS_DIR)"
 FABRIC_BIND_ADDR="$(envget FABRIC_BIND_ADDR)"
+FABRIC_EXPORT_CA_FILE="$(envget FABRIC_EXPORT_CA_FILE)"
+FABRIC_INGRESS_TLS_CERT_FILE="$(envget FABRIC_INGRESS_TLS_CERT_FILE)"
+FABRIC_INGRESS_TLS_KEY_FILE="$(envget FABRIC_INGRESS_TLS_KEY_FILE)"
+# The image runs as distroless nonroot (uid/gid 65532). Bind-mounted files
+# keep their host owner and mode, so that user must be able to read them.
+# Override only for an image built with a different nonroot user.
+NODE_UID="$(envget FABRIC_NODE_UID)"; NODE_UID="${NODE_UID:-65532}"
+NODE_GID="$(envget FABRIC_NODE_GID)"; NODE_GID="${NODE_GID:-65532}"
+
+# file_meta PATH -> "uid gid mode" (GNU stat, then BSD stat).
+file_meta() {
+  stat -c '%u %g %a' "$1" 2>/dev/null || stat -f '%u %g %Lp' "$1" 2>/dev/null
+}
+
+# node_access PATH BIT -> 0 when the node user gets BIT (4=r, 1=x) on PATH.
+node_access() {
+  meta=$(file_meta "$1") || return 1
+  # shellcheck disable=SC2086 # split "uid gid mode" into fields
+  set -- ${meta} "$2"
+  m="${3#"${3%???}"}"
+  u=${m%??}; g=${m#?}; g=${g%?}; o=${m#??}
+  if [ "$1" = "${NODE_UID}" ]; then [ $((u & $4)) -ne 0 ]; return; fi
+  if [ "$2" = "${NODE_GID}" ]; then [ $((g & $4)) -ne 0 ]; return; fi
+  [ $((o & $4)) -ne 0 ]
+}
+
+# other_bits PATH -> the "other" permission digit.
+other_bits() {
+  meta=$(file_meta "$1") || { printf '7'; return; }
+  # shellcheck disable=SC2086 # split "uid gid mode" into fields
+  set -- ${meta}
+  printf '%s' "${3#"${3%?}"}"
+}
+
+# check_node_secret LABEL PATH: readable by the node user, closed to others.
+check_node_secret() {
+  if [ "$(other_bits "$2")" != "0" ]; then
+    bad "$1 $2 is accessible to every host user; chown root:${NODE_GID} + chmod 0440 (or chown ${NODE_UID}:${NODE_GID} + chmod 0400)"
+  elif ! node_access "$2" 4; then
+    bad "$1 $2 is not readable by the container user ${NODE_UID}:${NODE_GID}; chown root:${NODE_GID} + chmod 0440 (or chown ${NODE_UID}:${NODE_GID} + chmod 0400)"
+  else
+    ok "$1 readable by container user ${NODE_UID}:${NODE_GID} and closed to other users"
+  fi
+}
+
+# check_node_readable LABEL PATH: public material (certificates, CA bundles).
+check_node_readable() {
+  if node_access "$2" 4; then
+    ok "$1 readable by container user ${NODE_UID}:${NODE_GID}"
+  else
+    bad "$1 $2 is not readable by the container user ${NODE_UID}:${NODE_GID}; chmod 0444 or chgrp ${NODE_GID}"
+  fi
+}
+
+# host_tls_path CONTAINER_PATH -> host path under FABRIC_INGRESS_TLS_DIR, or
+# fails when the path is outside the only mounted TLS directory.
+host_tls_path() {
+  case "$1" in
+    *..*) return 1 ;;
+    /run/fabric-node/tls/?*) printf '%s/%s' "${FABRIC_INGRESS_TLS_DIR:-./tls}" "${1#/run/fabric-node/tls/}" ;;
+    *) return 1 ;;
+  esac
+}
 
 # --- required egress settings ------------------------------------------------
 case "${FABRIC_EXPORT_ENDPOINT:-}" in
@@ -84,12 +147,8 @@ elif [ -z "$(tail -c1 "${FABRIC_INGRESS_TOKEN_FILE}")" ]; then
   bad "ingress token file ends with a newline; an empty 'Bearer ' credential would authenticate -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
 else
   ok "ingress token file present, non-empty, single-entry-safe format"
-  # shellcheck disable=SC2012
-  tperms=$(ls -l "${FABRIC_INGRESS_TOKEN_FILE}" | awk '{print $1}')
-  case "${tperms}" in
-    -rw-------*) ok "token file permissions ${tperms}" ;;
-    *) warn "token file permissions ${tperms}; chmod 0600 recommended" ;;
-  esac
+  # Compose file secrets are bind mounts: owner and mode are the host's.
+  check_node_secret "ingress token file" "${FABRIC_INGRESS_TOKEN_FILE}"
 fi
 
 # --- ingress TLS (only if enabled in collector-production.yaml) ---------------
@@ -164,15 +223,44 @@ receiver_tls_enabled() {
     | grep -q '^[[:space:]]*tls:'
 }
 
+tlsdir="${FABRIC_INGRESS_TLS_DIR:-./tls}"
 if receiver_tls_enabled; then
-  tlsdir="${FABRIC_INGRESS_TLS_DIR:-./tls}"
-  if [ -s "${tlsdir}/server.crt" ] && [ -s "${tlsdir}/server.key" ]; then
+  cert_path=$(host_tls_path "${FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}") || cert_path=""
+  key_path=$(host_tls_path "${FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}") || key_path=""
+  if [ -z "${cert_path}" ] || [ -z "${key_path}" ]; then
+    bad "FABRIC_INGRESS_TLS_CERT_FILE/KEY_FILE must be under /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR)"
+  elif [ -s "${cert_path}" ] && [ -s "${key_path}" ]; then
     ok "ingress TLS cert/key present in ${tlsdir}"
+    node_access "${tlsdir}" 1 || bad "TLS directory ${tlsdir} is not searchable by the container user ${NODE_UID}:${NODE_GID}"
+    check_node_readable "ingress TLS certificate" "${cert_path}"
+    check_node_secret "ingress TLS private key" "${key_path}"
   else
-    bad "tls: stanzas enabled but ${tlsdir}/{server.crt,server.key} missing"
+    bad "tls: stanzas enabled but ${cert_path} or ${key_path} missing"
   fi
 else
   ok "receiver TLS disabled (loopback-only deployment is consistent with this)"
+fi
+
+# --- egress private CA (only if ca_file is enabled in collector-production.yaml)
+export_ca_enabled() {
+  [ -f "${COLLECTOR_CONFIG}" ] || return 1
+  sed -n '/^exporters:/,/^service:/p' "${COLLECTOR_CONFIG}" \
+    | grep -q '^[[:space:]]*ca_file:'
+}
+
+if export_ca_enabled; then
+  ca_container="${FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}"
+  if ! ca_path=$(host_tls_path "${ca_container}"); then
+    bad "FABRIC_EXPORT_CA_FILE=${ca_container} must be under /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR)"
+  elif [ ! -s "${ca_path}" ]; then
+    bad "egress ca_file enabled but ${ca_path} (container ${ca_container}) is missing or empty"
+  else
+    ok "egress CA bundle present: ${ca_path}"
+    node_access "${tlsdir}" 1 || bad "TLS directory ${tlsdir} is not searchable by the container user ${NODE_UID}:${NODE_GID}"
+    check_node_readable "egress CA bundle" "${ca_path}"
+  fi
+elif [ -n "${FABRIC_EXPORT_CA_FILE:-}" ]; then
+  warn "FABRIC_EXPORT_CA_FILE is set but ca_file is commented out in ${COLLECTOR_CONFIG}; egress uses the system trust store"
 fi
 
 # --- bind address sanity ------------------------------------------------------

@@ -118,24 +118,55 @@ func deepMerge(base, overlay map[string]any) {
 	}
 }
 
-// checkPipelines requires every pipeline signal to be traces or logs. The
-// fabricguard processor only runs inside the pipelines it is wired into, so
-// a metrics or profiles pipeline would export unfiltered records past the
-// allowlist.
+// checkPipelines requires every pipeline signal to be traces or logs, and
+// every pipeline to run fabricguard itself. The processor only protects the
+// pipelines it is wired into: a metrics or profiles pipeline, a pipeline with
+// no fabricguard (processors: [] or an overlay that replaced the list), or a
+// pipeline relying on fabricguard in a sibling pipeline would all export
+// unfiltered records.
 func checkPipelines(cfg map[string]any) error {
 	service, _ := cfg["service"].(map[string]any)
 	pipelines, _ := service["pipelines"].(map[string]any)
 	if len(pipelines) == 0 {
 		return fmt.Errorf("service.pipelines defines no pipelines")
 	}
-	for name := range pipelines {
-		signal := name
-		if i := strings.IndexByte(name, '/'); i >= 0 {
-			signal = name[:i]
-		}
+	for name, node := range pipelines {
+		signal, _, _ := strings.Cut(name, "/")
 		if signal != "traces" && signal != "logs" {
 			return fmt.Errorf("pipeline %q uses signal %q; the recorder allows only traces and logs (fabricguard cannot protect other signals)", name, signal)
 		}
+		pipeline, _ := node.(map[string]any)
+		processors, _ := pipeline["processors"].([]any)
+		if err := checkGuarded(name, processors); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// inertAfterGuard are the only processor types allowed after fabricguard:
+// they neither add nor rewrite record content. Anything else placed after the
+// guard (attributes, resource, transform, k8sattributes...) could re-introduce
+// values the allowlist removed, e.g. client metadata or auth context.
+var inertAfterGuard = map[string]bool{"batch": true, "memory_limiter": true}
+
+// checkGuarded requires a fabricguard processor in the pipeline's own
+// processor list, followed only by inert processors, so every record passes
+// the guard before any exporter sees it.
+func checkGuarded(pipeline string, processors []any) error {
+	guarded := false
+	for _, p := range processors {
+		id, _ := p.(string)
+		typ, _, _ := strings.Cut(id, "/")
+		switch {
+		case typ == "fabricguard":
+			guarded = true
+		case guarded && !inertAfterGuard[typ]:
+			return fmt.Errorf("pipeline %q runs processor %q after fabricguard; only batch and memory_limiter may follow the guard", pipeline, id)
+		}
+	}
+	if !guarded {
+		return fmt.Errorf("pipeline %q does not run fabricguard; every traces and logs pipeline must include it before export", pipeline)
 	}
 	return nil
 }

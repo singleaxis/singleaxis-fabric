@@ -4,7 +4,10 @@
 
 Chunks pass through as the same objects, in order, with no read-ahead. Inner
 exceptions re-raise unchanged; a tee failure becomes a pass-through plus an
-``internal_error`` loss. Each exchange is finalized once, with one submit.
+``internal_error`` loss. Each exchange is finalized once, with one submit, and
+hands its retained chunks to that job (or drops them), so a response the host
+keeps holds no captured bytes. Works for ``httpx`` and ``httpx2`` responses;
+neither is imported here.
 """
 
 from __future__ import annotations
@@ -13,14 +16,15 @@ import contextlib
 import functools
 import os
 import queue
+import sys
 import threading
 import time
 import uuid
 import weakref
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
-import httpx
 from opentelemetry import context as otel_context
 from opentelemetry import trace
 
@@ -37,6 +41,7 @@ _FINISH_LOCK = threading.Lock()
 _ABANDONED: queue.SimpleQueue[Callable[[], object]] = queue.SimpleQueue()
 _REAPER_LOCK = threading.Lock()
 _REAPER_PID: int | None = None
+FLAVORS = ("httpx", "httpx2")  # API-identical clients with independent classes
 
 
 def _reap() -> None:
@@ -95,7 +100,7 @@ class Budget:
 class _Side:
     __slots__ = ("chunks", "encoding", "media_type", "observed", "retained", "truncated")
 
-    def __init__(self, headers: httpx.Headers) -> None:
+    def __init__(self, headers: Mapping[str, str]) -> None:
         self.chunks: list[bytes] = []
         self.observed = self.retained = 0
         self.truncated = False
@@ -103,12 +108,30 @@ class _Side:
         self.encoding = headers.get("content-encoding", "identity")
 
     def body(self) -> CapturedBody:
-        chunks = tuple(self.chunks)
+        """The retained bytes; ownership moves to the caller (the job)."""
+        chunks, self.chunks = tuple(self.chunks), []
         return CapturedBody(chunks, self.observed, self.truncated, self.media_type, self.encoding)
 
 
+def _tee_types(response: Any) -> tuple[type[Any], type[Any], type[Any]]:
+    """``(ByteStream, sync tee, async tee)`` of the library that built ``response``."""
+    for name in FLAVORS:
+        module = sys.modules.get(name)
+        if module is not None and isinstance(response, module.Response):
+            return _flavor_types(module)
+    raise TypeError("not an httpx or httpx2 response")
+
+
+@functools.cache
+def _flavor_types(module: ModuleType) -> tuple[type[Any], type[Any], type[Any]]:
+    # Each library's Response type-checks its stream against its own base classes.
+    sync = type("TeeSyncStream", (TeeSyncStream, module.SyncByteStream), {})
+    async_ = type("TeeAsyncStream", (TeeAsyncStream, module.AsyncByteStream), {})
+    return module.ByteStream, sync, async_
+
+
 class Exchange:
-    """One matched model call, from request start to finalization."""
+    """One matched model call, from its sequence allocation to finalization."""
 
     __slots__ = (
         "__weakref__", "api", "done", "epoch", "exchange_id", "finalizer", "matcher",
@@ -117,25 +140,29 @@ class Exchange:
     )  # fmt: skip
 
     def __init__(
-        self, tee: WireTee, matcher: EndpointMatcher, api: WireApi, request: httpx.Request
+        self, tee: WireTee, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int
     ) -> None:
         self.tee, self.matcher, self.api = tee, matcher, api
-        self.started_ns, self.done = time.time_ns(), False
+        self.epoch, self.sequence, self.done = epoch, sequence, False
         self.finalizer: weakref.finalize[Any, Any] | None = None
         self.status_code: int | None = None
+        self.request = _Side({})  # replaced by start()
         self.response: _Side | None = None
+
+    def start(self, request: Any) -> None:
+        """Capture context and the request body; on failure the caller detaches (lost)."""
+        self.started_ns = time.time_ns()
         self.parent_context = otel_context.get_current()
         span_context = trace.get_current_span(self.parent_context).get_span_context()
         trace_id = span_context.trace_id if span_context.is_valid else None
-        self.run_id = resolve_run_id(tee.allocator, trace_id=trace_id)
-        self.request, self.exchange_id = _Side(request.headers), str(uuid.uuid4())
+        self.run_id = resolve_run_id(self.tee.allocator, trace_id=trace_id)
+        self.exchange_id = str(uuid.uuid4())
+        self.request = side = _Side(request.headers)
         content = getattr(request, "_content", None)
         if isinstance(content, bytes):
-            self._retain(self.request, content)
+            self._retain(side, content)
         else:  # a streamed request body passes through untouched and unretained
-            self.request.truncated = True
-        # Allocate last: a failure before this leaves no sequence behind.
-        self.epoch, self.sequence = tee.allocator.next_sequence()
+            side.truncated = True
 
     def _retain(self, side: _Side, chunk: bytes) -> None:
         size = len(chunk)
@@ -144,13 +171,13 @@ class Exchange:
             return
         room = self.tee.max_body_bytes - side.retained
         if size <= room and self.tee.budget.try_reserve(size):
+            side.retained += size  # counted first: detach() releases what was reserved
             side.chunks.append(chunk)
-            side.retained += size
             return
         side.truncated = True  # keep the largest prefix that still fits
         if 0 < room < size and self.tee.budget.try_reserve(room):
-            side.chunks.append(chunk[:room])
             side.retained += room
+            side.chunks.append(chunk[:room])
 
     def add(self, chunk: bytes) -> None:
         try:
@@ -159,18 +186,19 @@ class Exchange:
         except Exception:
             self.detach(lost=True)
 
-    def attach(self, response: httpx.Response, *, is_async: bool) -> None:
+    def attach(self, response: Any, *, is_async: bool) -> None:
         """Tee ``response.stream``; never raises."""
         try:
             self.status_code = response.status_code
             self.response = _Side(response.headers)
+            byte_stream, sync_tee, async_tee = _tee_types(response)
             stream: Any = response.stream
-            if isinstance(stream, httpx.ByteStream):  # already in memory: may never be iterated
+            if isinstance(stream, byte_stream):  # already in memory: may never be iterated
                 for chunk in stream:
                     self.add(chunk)
                 self.finish("complete")
                 return
-            wrapper = TeeAsyncStream(stream, self) if is_async else TeeSyncStream(stream, self)
+            wrapper = (async_tee if is_async else sync_tee)(stream, self)
             _ensure_reaper()
             reap = functools.partial(self.finish, "abandoned")
             self.finalizer = weakref.finalize(wrapper, _ABANDONED.put, reap)
@@ -196,7 +224,7 @@ class Exchange:
         _ABANDONED.put(functools.partial(self.finish, "closed_early"))
 
     def finish(self, state: ResponseState, error_type: str | None = None) -> None:
-        """Finalize once and hand the job to the pipeline; never raises."""
+        """Finalize once and hand the job (and the retained bytes) over; never raises."""
         try:
             if not self._claim():
                 return
@@ -223,17 +251,23 @@ class Exchange:
         """
         if not self._claim():
             return False
+        if lost:
+            with contextlib.suppress(Exception):
+                self.tee.lose(self.epoch, self.sequence, "internal_error")
         with contextlib.suppress(Exception):
             self.tee.forget(self)
-            retained = self.request.retained + (self.response.retained if self.response else 0)
-            self.tee.budget.release(retained)
-            if lost:
-                self.tee.lose(self, "internal_error")
+        for side in (self.request, self.response):
+            if side is not None:
+                with contextlib.suppress(Exception):
+                    side.chunks = []
+                    self.tee.budget.release(side.retained)
         return True
 
 
-class TeeSyncStream(httpx.SyncByteStream):
-    def __init__(self, inner: httpx.SyncByteStream, exchange: Exchange) -> None:
+class TeeSyncStream:
+    """Sync response tee; combined with the library's ``SyncByteStream`` per flavor."""
+
+    def __init__(self, inner: Any, exchange: Exchange) -> None:
         self._inner, self._exchange = inner, exchange
 
     def __iter__(self) -> Iterator[bytes]:
@@ -256,8 +290,10 @@ class TeeSyncStream(httpx.SyncByteStream):
             self._exchange.finish("closed_early")
 
 
-class TeeAsyncStream(httpx.AsyncByteStream):
-    def __init__(self, inner: httpx.AsyncByteStream, exchange: Exchange) -> None:
+class TeeAsyncStream:
+    """Async response tee; combined with the library's ``AsyncByteStream`` per flavor."""
+
+    def __init__(self, inner: Any, exchange: Exchange) -> None:
         self._inner, self._exchange = inner, exchange
 
     async def __aiter__(self) -> AsyncIterator[bytes]:

@@ -255,7 +255,7 @@ class Capture:
                 content_encoding="identity",
                 truncated=truncated == "request",
             )
-            attrs["fabric.content.request_ref"] = self.store.evidence_ref_for(request_id)
+            attrs["fabric.content.request_ref"] = request_id  # bare object id (rev 4)
             if response_bytes is not None:
                 response_id = self._put(
                     exchange_id,
@@ -267,7 +267,7 @@ class Capture:
                     content_encoding=response_encoding,
                     truncated=truncated == "response",
                 )
-                attrs["fabric.content.result_ref"] = self.store.evidence_ref_for(response_id)
+                attrs["fabric.content.result_ref"] = response_id
         start = self._ns(sequence)
         span = {
             "kind": "span",
@@ -863,7 +863,21 @@ def test_truncated_response_is_partial(capture: Capture) -> None:
     assert "unparsed_exchange" not in gap_types(run)
 
 
+def test_spans_carry_bare_object_ids_that_resolve_through_the_store(capture: Capture) -> None:
+    exchanges = react_run(capture)
+    attributes = exchanges[0].span["attributes"]
+    assert attributes["fabric.content.request_ref"] == exchanges[0].request_id
+    assert "/" not in attributes["fabric.content.result_ref"]
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    objects = run["exchanges"][0]["objects"]
+    assert objects["request"]["object_id"] == exchanges[0].request_id
+    assert objects["request"]["verification"] == "verified"
+
+
 def test_store_objects_are_resolved_by_object_id_not_recorded_path(capture: Capture) -> None:
+    """Legacy spans (rev 3) carry a full ref; only its last segment is used."""
+
     react_run(capture)
     for row in capture.rows:
         attributes = row["attributes"]
@@ -1077,6 +1091,26 @@ def test_streamed_sse_response_is_stitched(capture: Capture) -> None:
     assert second_ex["continues_exchange_id"] == "ex-0"
 
 
+def test_stream_closed_at_its_terminal_event_stitches_normally(capture: Capture) -> None:
+    """Clients that stop reading at [DONE] end as closed_early, which is not a gap."""
+
+    first = chat_request([SYSTEM, USER], stream=True)
+    call = {"index": 0, "id": "call_c1", "type": "function", "function": {"name": "f"}}
+    stream = sse(
+        _chunk({"role": "assistant", "tool_calls": [call]}), _chunk({}, finish_reason="tool_calls")
+    )
+    capture.exchange(first, stream, state="closed_early")
+    second = chat_request(
+        [SYSTEM, USER, assistant_calls("call_c1", "x"), tool_result("call_c1", "ok")]
+    )
+    capture.exchange(second, chat_response({"role": "assistant", "content": "done"}, "c-2"))
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
+    assert run["exchanges"][0]["response_state"] == "closed_early"
+    assert run["exchanges"][0]["tool_call_ids_emitted"] == ["call_c1"]
+
+
 def test_unparsed_request_is_unverified(capture: Capture) -> None:
     capture.exchange(b"not json at all", chat_response({"role": "assistant", "content": "x"}, "c"))
     capture.heartbeat()
@@ -1279,3 +1313,71 @@ def test_store_read_failures_never_raise(
     assert {(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"} == {
         (gap_type, reason)
     }
+
+
+# --------------------------------------------------------------------------
+# Provider-derived identifiers in the report (report2 finding 4)
+# --------------------------------------------------------------------------
+
+FREE_TEXT_MODEL = "Prompt: patient Alice has HIV. API key sk-live-secret"
+
+
+def test_model_pattern_is_the_capture_pattern() -> None:
+    inputs = importlib.import_module("fabric.reconstruct._inputs")
+    capture_side = importlib.import_module("fabric.wire._pipeline")
+    assert inputs.MODEL_RE.pattern == capture_side._MODEL_RE.pattern
+
+
+@pytest.mark.parametrize("store", [True, False])
+def test_free_text_model_never_reaches_the_report(tmp_path: Path, store: bool) -> None:
+    capture = Capture(tmp_path, store=store)
+    request, response = react_turns()[0]
+    exchange = capture.exchange(
+        {**request, "model": FREE_TEXT_MODEL}, {**response, "model": FREE_TEXT_MODEL}
+    )
+    exchange.span["attributes"]["gen_ai.response.model"] = FREE_TEXT_MODEL
+    capture.heartbeat()
+    document = capture.reconstruct()
+    entry = only_run(document)["exchanges"][0]
+    assert "model" not in entry
+    text = json.dumps(document)
+    for needle in ("Alice", "sk-live-secret", "Prompt"):
+        assert needle not in text
+
+
+def test_valid_span_model_backs_up_a_free_text_body_model(capture: Capture) -> None:
+    request, response = react_turns()[0]
+    exchange = capture.exchange(request, {**response, "model": FREE_TEXT_MODEL})
+    exchange.span["attributes"]["gen_ai.response.model"] = MODEL
+    capture.heartbeat()
+    entry = only_run(capture.reconstruct())["exchanges"][0]
+    assert entry["model"] == MODEL
+
+
+@pytest.mark.parametrize("bad", [f"{MODEL}\n", "gpt 4o", "-gpt", "m" * 257])
+def test_model_must_fully_match_the_capture_pattern(capture: Capture, bad: str) -> None:
+    request, response = react_turns()[0]
+    exchange = capture.exchange(request, {**response, "model": bad})
+    exchange.span["attributes"]["gen_ai.response.model"] = bad
+    capture.heartbeat()
+    entry = only_run(capture.reconstruct())["exchanges"][0]
+    assert "model" not in entry
+
+
+def test_provider_ids_with_a_trailing_newline_are_digested(capture: Capture) -> None:
+    first = [SYSTEM, USER]
+    second = [*first, assistant_calls("call_a\n", "Paris"), tool_result("call_a\n", "18C")]
+    capture.exchange(
+        chat_request(first), chat_response(assistant_calls("call_a\n", "Paris"), "chatcmpl-0\n")
+    )
+    capture.exchange(
+        chat_request(second), chat_response({"role": "assistant", "content": "ok"}, "c-1")
+    )
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())  # schema-validated: ids match the opaque pattern
+    first_entry, second_entry = run["exchanges"]
+    assert first_entry["response_id"].startswith("h-")
+    (emitted,) = first_entry["tool_call_ids_emitted"]
+    assert emitted.startswith("h-")
+    assert second_entry["tool_call_ids_consumed"] == [emitted]
+    assert run["verdict"] == "complete_for_declared_scope"

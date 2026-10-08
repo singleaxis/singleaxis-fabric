@@ -27,7 +27,7 @@ _RUN_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("fabric_run
 
 def encode_opaque_id(value: str) -> str:
     """``value`` when it is a valid opaque id, else ``"h-"`` + 40 hex of its sha256."""
-    if OPAQUE_ID_RE.match(value):
+    if OPAQUE_ID_RE.fullmatch(value):
         return value
     return "h-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:40]
 
@@ -45,7 +45,7 @@ class SourceAllocator:
     __slots__ = ("__weakref__", "_lock", "_next", "component", "epoch", "source_id")
 
     def __init__(self, source_id: str, component: Component) -> None:
-        if component != "wire" or not OPAQUE_ID_RE.match(str(source_id)):
+        if component != "wire" or not OPAQUE_ID_RE.fullmatch(str(source_id)):
             raise ValueError("component must be wire and source_id an opaque id")
         self.source_id, self.component = source_id, component
         self._lock, self._next = threading.Lock(), 0
@@ -86,7 +86,7 @@ def get_allocator(component: Component, *, source_id: str | None = None) -> Sour
 @contextmanager
 def run_scope(run_id: str) -> Iterator[None]:
     """Scope an explicit run id for exchanges started inside the block."""
-    if not isinstance(run_id, str) or not OPAQUE_ID_RE.match(run_id):
+    if not isinstance(run_id, str) or not OPAQUE_ID_RE.fullmatch(run_id):
         raise ValueError("run_id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     token = _RUN_ID.set(run_id)
     try:

@@ -14,6 +14,7 @@ import os
 import queue
 import re
 import threading
+import time
 import uuid
 import weakref
 from collections.abc import Callable, Mapping
@@ -25,10 +26,10 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from opentelemetry.util.types import AttributeValue
 
 from .._loss import LossEmitter, LossReason
-from .._sequence import OPAQUE_ID_RE, encode_opaque_id
+from .._sequence import OPAQUE_ID_RE
 from .._version import __version__
 from ._match import OPERATION_NAMES
-from ._model import ROLE_REQUEST, ROLE_RESPONSE, SPAN_EXCHANGE, WireAttr
+from ._model import FINISH_REASONS, ROLE_REQUEST, ROLE_RESPONSE, SPAN_EXCHANGE, WireAttr
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import TracerProvider
@@ -39,7 +40,6 @@ if TYPE_CHECKING:
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$")
-_FINISH_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _ERROR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
 _FINISH_KEY = {"openai.responses": "status", "anthropic.messages": "stop_reason"}
 _STATS = ("submitted", "dropped", "truncated", "internal_errors", "store_failures", "spans_emitted")
@@ -52,17 +52,17 @@ _PIPELINES: weakref.WeakSet[CapturePipeline] = weakref.WeakSet()
 def media_type_of(value: str) -> str:
     """``Content-Type`` without parameters, lowercased; octet-stream when invalid."""
     media = value.split(";", 1)[0].strip().lower()
-    return media if _MEDIA_RE.match(media) else "application/octet-stream"
+    return media if _MEDIA_RE.fullmatch(media) else "application/octet-stream"
 
 
 def content_encoding_of(value: str) -> str:
     """Lowercased, whitespace removed; ``identity`` when empty, ``unknown`` when invalid."""
     encoding = "".join(value.split()).lower() or "identity"
-    return encoding if _ENCODING_RE.match(encoding) else "unknown"
+    return encoding if _ENCODING_RE.fullmatch(encoding) else "unknown"
 
 
 def response_metadata(job: CaptureJob) -> dict[str, Any]:
-    """Model, response id, finish reasons and usage, only from a complete plain-JSON response."""
+    """Model, finish reasons and usage, only from a complete plain-JSON response."""
     body = job.response
     if body is None or body.truncated or job.response_state != "complete":
         return {}
@@ -78,16 +78,14 @@ def response_metadata(job: CaptureJob) -> dict[str, Any]:
     if not isinstance(doc, dict):
         return {}
     found: dict[str, Any] = {}
-    if isinstance(model := doc.get("model"), str) and _MODEL_RE.match(model):
+    if isinstance(model := doc.get("model"), str) and _MODEL_RE.fullmatch(model):
         found["model"] = model
-    if job.api != "openai.embeddings" and isinstance(rid := doc.get("id"), str) and rid:
-        found["response_id"] = encode_opaque_id(rid)
     choices = doc["choices"] if isinstance(doc.get("choices"), list) else []
     reasons: list[Any] = [doc.get(_FINISH_KEY[job.api])] if job.api in _FINISH_KEY else [
         choice.get("finish_reason") for choice in choices if isinstance(choice, dict)
     ]  # fmt: skip
-    if reasons := [r for r in reasons if isinstance(r, str) and _FINISH_RE.match(r)][:64]:
-        found["finish_reasons"] = reasons
+    if reasons := [r for r in reasons if isinstance(r, str)][:64]:
+        found["finish_reasons"] = [r if r in FINISH_REASONS else "other" for r in reasons]
     usage = doc["usage"] if isinstance(doc.get("usage"), dict) else {}
     native = job.api in _FINISH_KEY  # Responses and Anthropic already use OTel's names
     for key, name in (("input_tokens", "prompt_tokens"), ("output_tokens", "completion_tokens")):
@@ -101,10 +99,10 @@ def exchange_attributes(
     request_ref: str | None, response_ref: str | None, store_status: StoreStatus,
     truncated: bool, metadata: Mapping[str, Any],
 ) -> dict[str, AttributeValue]:  # fmt: skip
-    """The exchange span's attributes (spec 042 §8): ids, digests, refs and enums only."""
+    """The exchange span's attributes (spec 042 §8): ids, digests, object ids and enums only."""
     error, status = job.error_type, job.http_status_code
     if job.response_state == "error":
-        error = error if error and _ERROR_RE.match(error) else "UnknownError"
+        error = error if error and _ERROR_RE.fullmatch(error) else "UnknownError"
     attrs: dict[str, Any] = {
         WireAttr.EXCHANGE_ID: job.exchange_id, WireAttr.RUN_ID: job.run_id,
         WireAttr.SOURCE_ID: job.source_id, WireAttr.SOURCE_EPOCH: job.source_epoch,
@@ -119,7 +117,6 @@ def exchange_attributes(
         "http.response.status_code": status if status in range(100, 600) else None,
         "error.type": error if job.response_state == "error" else None,
         "gen_ai.response.model": metadata.get("model"),
-        "gen_ai.response.id": metadata.get("response_id"),
         "gen_ai.response.finish_reasons": metadata.get("finish_reasons"),
         "gen_ai.usage.input_tokens": metadata.get("input_tokens"),
         "gen_ai.usage.output_tokens": metadata.get("output_tokens"),
@@ -138,7 +135,7 @@ class CapturePipeline:
         if type(queue_max_items) is not int or not 1 <= queue_max_items <= 65536:  # noqa: PLR2004
             raise ValueError("queue_max_items must be an integer between 1 and 65536")
         tenant = getattr(store, "tenant_id", None)
-        if store is not None and not OPAQUE_ID_RE.match(tenant if isinstance(tenant, str) else ""):
+        if store is not None and not (isinstance(tenant, str) and OPAQUE_ID_RE.fullmatch(tenant)):
             raise ValueError("the byte store must be tenant-scoped")
         self._store, self._tenant_id, self._provider = store, tenant, tracer_provider
         self._loss, self._max_items, self._on_job_done = loss, queue_max_items, on_job_done
@@ -150,6 +147,7 @@ class CapturePipeline:
         self._queue: queue.Queue[Any] = queue.Queue(maxsize=self._max_items)
         self._cond, self._closing = threading.Condition(), threading.Event()
         self._closed, self._pending, self._stats = False, 0, dict.fromkeys(_STATS, 0)
+        self._current: CaptureJob | None = None  # the job in progress until its outcome is claimed
         self._worker = threading.Thread(target=self._run, name="fabric-wire-capture", daemon=True)
         self._worker.start()
 
@@ -188,10 +186,12 @@ class CapturePipeline:
             return self._cond.wait_for(lambda: not self._pending, max(0.0, timeout_s))
 
     def close(self, timeout_s: float = 2.0) -> bool:
-        """Drain within ``timeout_s``; still-queued jobs become ``shutdown`` losses.
+        """Drain within ``timeout_s``; every job unfinished at the deadline is a ``shutdown`` loss.
 
-        The job in progress is left to the worker (span or loss), so none is reported twice.
+        The job in progress is claimed too and its late span suppressed: it is reported once,
+        even if a blocked store keeps the worker busy until the interpreter exits.
         """
+        deadline = time.monotonic() + max(0.0, timeout_s)
         with self._cond:
             already, self._closed = self._closed, True
         drained = self.flush(timeout_s)
@@ -204,33 +204,50 @@ class CapturePipeline:
                 lost.append(self._queue.get_nowait())
         with self._cond:
             self._pending -= len(lost)
+            current, self._current = self._current, None
+            self._stats["dropped"] += current is not None
             self._cond.notify_all()
         for job in lost:
             self._drop(job, "shutdown")
+        if current is not None:  # the worker still releases its bytes when it returns
+            self._lose(current, "shutdown")
         self._queue.put(_STOP)
         if drained and self._worker is not threading.current_thread():
-            self._worker.join(timeout=min(max(timeout_s, 0.0), 1.0))
-        return drained and not lost
+            self._worker.join(timeout=max(0.0, deadline - time.monotonic()))
+        return drained and not lost and current is None
 
     def stats(self) -> Mapping[str, int]:
         with self._cond:
             return {**self._stats, "queue_depth": self._queue.qsize()}
 
+    def _claim(self, job: CaptureJob) -> bool:
+        """Take ``job``'s outcome; ``False`` once ``close`` has reported it as a shutdown loss."""
+        with self._cond:
+            owned, self._current = self._current is job, None
+            return owned
+
     def _run(self) -> None:  # the worker is the only writer of its own counters
         while (job := self._queue.get()) is not _STOP:
+            with self._cond:
+                self._current = job
+            owned = False
             try:
-                self._process(job)
+                attrs = self._prepare(job)
+                if owned := self._claim(job):
+                    self._emit(job, attrs)
             except Exception:
                 with contextlib.suppress(Exception):
-                    self._stats["internal_errors"] += 1
-                    self._lose(job, "internal_error")
+                    if owned or self._claim(job):
+                        self._stats["internal_errors"] += 1
+                        self._lose(job, "internal_error")
             finally:
                 self._done(job)
                 with self._cond:
                     self._pending -= 1
                     self._cond.notify_all()
 
-    def _process(self, job: CaptureJob) -> None:
+    def _prepare(self, job: CaptureJob) -> dict[str, AttributeValue]:
+        """Digest and store both bodies; the exchange span's attributes."""
         sides = [(job.request, ROLE_REQUEST)]
         sides += [] if job.response is None else [(job.response, ROLE_RESPONSE)]
         shas: list[str] = []
@@ -245,11 +262,13 @@ class CapturePipeline:
         status: StoreStatus = "disabled" if self._store is None else (
             "stored" if stored == len(refs) else "partial" if stored else "failed"
         )  # fmt: skip
-        attrs = exchange_attributes(
+        return exchange_attributes(
             job, request_sha256=shas[0], response_sha256=[*shas, None][1],
             request_ref=refs[0], response_ref=[*refs, None][1], store_status=status,
             truncated=truncated, metadata=response_metadata(job),
         )  # fmt: skip
+
+    def _emit(self, job: CaptureJob, attrs: dict[str, AttributeValue]) -> None:
         tracer = trace.get_tracer("fabric.wire", __version__, tracer_provider=self._provider)
         span = tracer.start_span(
             SPAN_EXCHANGE, job.parent_context, SpanKind.CLIENT, attrs, start_time=job.started_ns
@@ -266,7 +285,7 @@ class CapturePipeline:
     def _store_body(
         self, job: CaptureJob, body: CapturedBody, data: bytes, sha: str, role: str
     ) -> str | None:
-        """Write one body with retries; its ref, or ``None`` when not stored."""
+        """Write one body with retries; its object id (never a path or URI), or ``None``."""
         if self._store is None or (body.truncated and not data):
             return None  # nothing useful to store: no retained prefix
         object_id = str(uuid.uuid4())
@@ -277,7 +296,7 @@ class CapturePipeline:
                 result = self._store.put_bytes_object(descriptor, data)
                 if result.uri != ref or result.content_hash != sha:
                     raise ValueError("byte store returned a mismatched reference")
-                return ref
+                return object_id  # resolved again through store.evidence_ref_for
             except Exception:
                 if delay is None or self._closing.wait(delay):
                     break

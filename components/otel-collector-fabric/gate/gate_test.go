@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func writeConfig(t *testing.T, body string) string {
@@ -56,9 +58,11 @@ func TestNamedPipelinesPass(t *testing.T) {
   pipelines:
     traces/ingress:
       receivers: [otlp]
+      processors: [fabricguard/strict]
       exporters: [otlp_http/fabric]
     logs/ingress:
       receivers: [otlp]
+      processors: [memory_limiter, fabricguard, batch]
       exporters: [otlp_http/fabric]
 `
 	if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err != nil {
@@ -66,9 +70,126 @@ func TestNamedPipelinesPass(t *testing.T) {
 	}
 }
 
+// An unguarded traces or logs pipeline exports raw attributes, resources and
+// exception text: every pipeline must run fabricguard itself.
+func TestPipelineWithoutFabricguardRejected(t *testing.T) {
+	for name, cfg := range map[string]string{
+		"traces no processors key": `service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp_http/fabric]
+`,
+		"traces empty processors": `service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: []
+      exporters: [otlp_http/fabric]
+`,
+		"logs memory_limiter only": `service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [otlp_http/fabric]
+`,
+		"guard only in sibling pipeline": `service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, fabricguard]
+      exporters: [otlp_http/fabric]
+    traces/raw:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [otlp_http/fabric]
+`,
+		"guard-like name": `service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [fabricguardx, transform/fabricguard]
+      exporters: [otlp_http/fabric]
+`,
+		"processors not a list": `service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: fabricguard
+      exporters: [otlp_http/fabric]
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err == nil {
+				t.Fatal("pipeline without fabricguard accepted; records would export unfiltered")
+			}
+		})
+	}
+}
+
+// An overlay --config that replaces a pipeline's processor list is merged
+// before the check, so it cannot strip the guard.
+func TestOverlayRemovingFabricguardRejected(t *testing.T) {
+	overlay := `service:
+  pipelines:
+    logs:
+      processors: [memory_limiter]
+`
+	_, err := validateArgs([]string{
+		"--config=" + writeConfig(t, baseConfig),
+		"--config=" + writeConfig(t, overlay),
+	})
+	if err == nil {
+		t.Fatal("overlay that removed fabricguard from logs accepted")
+	}
+}
+
+// A content-adding processor after the guard could re-introduce values the
+// allowlist removed (client metadata, auth context, static attributes).
+func TestProcessorAfterFabricguardRejected(t *testing.T) {
+	for _, after := range []string{"attributes/ctx", "transform", "resource", "k8sattributes"} {
+		cfg := `service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, fabricguard, ` + after + `]
+      exporters: [otlp_http/fabric]
+`
+		if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err == nil {
+			t.Errorf("processor %q after fabricguard accepted", after)
+		}
+	}
+}
+
+// The configurations shipped in this repository must pass the gate.
+func TestShippedConfigsPass(t *testing.T) {
+	for _, rel := range []string{
+		"../examples/config.yaml",
+		"../../../deploy/compose/collector-config/collector.yaml",
+		"../../../deploy/compose/collector-config/collector-production.yaml",
+		"../../../deploy/compose/collector-config/collector-host-monitor.yaml",
+	} {
+		t.Run(rel, func(t *testing.T) {
+			raw, err := os.ReadFile(rel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cfg map[string]any
+			if err := yaml.Unmarshal(raw, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			if err := checkPipelines(cfg); err != nil {
+				t.Fatalf("shipped config rejected by gate: %v", err)
+			}
+		})
+	}
+}
+
 func TestMetricsPipelineRejected(t *testing.T) {
 	cfg := baseConfig + `    metrics:
       receivers: [otlp]
+      processors: [fabricguard]
       exporters: [otlp_http/fabric]
 `
 	_, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)})
@@ -82,6 +203,7 @@ func TestProfilesPipelineRejected(t *testing.T) {
   pipelines:
     profiles:
       receivers: [otlp]
+      processors: [fabricguard]
       exporters: [otlp_http/fabric]
 `
 	if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err == nil {
@@ -132,6 +254,7 @@ func TestMergedConfigSources(t *testing.T) {
   pipelines:
     metrics:
       receivers: [otlp]
+      processors: [fabricguard]
       exporters: [otlp_http/fabric]
 `
 	_, err := validateArgs([]string{

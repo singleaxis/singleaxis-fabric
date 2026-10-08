@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/llm-exchange-v1.schema.json",
-  "title": "Fabric LLM exchange record v1 (draft, spec 042 rev 3)",
-  "description": "JSON form of one fabric.model_call span: identity, source position, run, body digests and refs, and cheap response metadata. It carries no message hashes, tool-call ids or content; stitching is derived offline from the stored bytes.",
+  "title": "Fabric LLM exchange record v1 (draft, spec 042 rev 4)",
+  "description": "JSON form of one fabric.model_call span: identity, source position, run, body digests and store object ids, and closed-shape response metadata. It carries no message hashes, tool-call ids, response ids, store paths or content; stitching is derived offline from the stored bytes.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -39,11 +39,17 @@
       "type": "string", "minLength": 1, "maxLength": 256,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
     },
-    "response_id": {"$ref": "#/$defs/opaqueId"},
     "finish_reasons": {
+      "description": "Provider finish reasons mapped onto a closed vocabulary; any other value is recorded as other.",
       "type": "array",
       "maxItems": 64,
-      "items": {"type": "string", "pattern": "^[a-z0-9_]{1,64}$"}
+      "items": {
+        "enum": [
+          "stop", "length", "tool_calls", "content_filter", "function_call",
+          "end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn",
+          "refusal", "completed", "incomplete", "failed", "other"
+        ]
+      }
     },
     "usage": {
       "type": "object",
@@ -79,15 +85,15 @@
       ]
     },
     "body": {
-      "description": "One captured body. sha256 covers the captured bytes (the retained prefix when truncated); ref is present only when those bytes were written to the customer store.",
+      "description": "One captured body. sha256 covers the captured bytes (the retained prefix when truncated); object_id is present only when those bytes were written to the customer store, and is the store's opaque object id (a lowercase uuid4), never a path, URI or bucket name. Readers resolve it through the store they are configured with.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sha256"],
       "properties": {
         "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-        "ref": {
-          "type": "string", "minLength": 1, "maxLength": 2048,
-          "pattern": "^(s3|gs|file)://[^@?#]+$"
+        "object_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         }
       }
     }

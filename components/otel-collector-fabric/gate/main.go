@@ -8,6 +8,10 @@
 //   - every service pipeline must be traces or logs; metrics and profiles
 //     pipelines would carry records past the fabricguard processor, which only
 //     runs inside the two signal pipelines it is wired into;
+//   - every traces and logs pipeline must list fabricguard in its own
+//     processors, followed only by batch or memory_limiter, so no record
+//     reaches an exporter unfiltered (processors: [], an overlay that drops
+//     the guard, or a guard in a sibling pipeline only are all refused);
 //   - every bearertokenauth extension that reads tokens from a file must point
 //     at a file the pinned extension (v0.150.0) cannot misread: it splits on
 //     newlines and retains empty entries, so a blank line or trailing newline

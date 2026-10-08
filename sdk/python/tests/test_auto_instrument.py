@@ -91,12 +91,21 @@ def test_no_extras_installed_returns_empty(monkeypatch: pytest.MonkeyPatch) -> N
 def test_one_extra_installed_enables_only_that(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Stub openai, leave others to ImportError naturally.
+    # Stub openai and force ImportError for every other instrumentor, so the
+    # result does not depend on which extras happen to be installed.
     counters = _install_fake_instrumentor(
         monkeypatch,
         "opentelemetry.instrumentation.openai_v2",
         "OpenAIInstrumentor",
     )
+    real_import = builtins.__import__
+
+    def faux_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name.startswith("opentelemetry.instrumentation.") and name not in sys.modules:
+            raise ImportError(f"no module named {name!r}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", faux_import)
 
     enabled = enable_auto_instrumentation()
     assert "openai" in enabled

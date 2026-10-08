@@ -4,7 +4,8 @@
 
 This drives the whole recorder path with real processes and real sockets:
 
-    plain-httpx ReAct agent (zero-code autoload, no Fabric import)
+    ReAct agent over plain httpx and over the real OpenAI SDK (httpx2)
+        (zero-code autoload, no Fabric import)
         -> fake OpenAI-compatible model (http.server, real TCP)
         -> wire tee: exact bytes -> local file:// store (customer boundary)
         -> private TracerProvider -> OTLP/HTTP over TLS + bearer token
@@ -96,11 +97,15 @@ REUSED_KEYS = frozenset(
         "fabric.source_id", "fabric.source.sequence", "fabric.content.request_ref",
         "fabric.content.result_ref", "gen_ai.operation.name", "gen_ai.provider.name",
         "http.request.method", "http.response.status_code", "error.type",
-        "gen_ai.response.model", "gen_ai.response.id", "gen_ai.response.finish_reasons",
+        "gen_ai.response.model", "gen_ai.response.finish_reasons",
         "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens",
     }
 )  # fmt: skip
 assert len(CAPTURE_KEYS) == 14
+# Content refs on spans are bare uuid4 object ids (spec 042 §8, decision D2).
+OBJECT_ID = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+)
 EXCHANGE_REQUIRED = frozenset(
     {
         "fabric.wire.exchange_id", "fabric.run.id", "fabric.source_id",
@@ -115,7 +120,7 @@ EXCHANGE_REQUIRED = frozenset(
 # from the streamed call.
 EXCHANGE_METADATA = frozenset(
     {
-        "gen_ai.response.model", "gen_ai.response.id", "gen_ai.response.finish_reasons",
+        "gen_ai.response.model", "gen_ai.response.finish_reasons",
         "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens",
     }
 )  # fmt: skip
@@ -595,12 +600,18 @@ class Stack:
         }
 
     def run_agent(
-        self, service: str, *, token: str = INGRESS_TOKEN, store: Path | None = None
+        self,
+        service: str,
+        *,
+        token: str = INGRESS_TOKEN,
+        store: Path | None = None,
+        client: str = "httpx",
     ) -> AgentRun:
         store = store or self.store
         before = self.model.requests
         result = subprocess.run(  # noqa: S603
-            [sys.executable, str(AGENT), "--model-url", self.model.url, "--question", PROMPT],
+            [sys.executable, str(AGENT), "--model-url", self.model.url, "--question", PROMPT,
+             "--client", client],
             env=self.agent_env(service, store, token), cwd=self.root, capture_output=True,
             text=True, timeout=180, check=False,
         )  # fmt: skip
@@ -697,9 +708,17 @@ def _assert_no_leak(stack: Stack) -> None:
 
 
 def _assert_capture_spans(
-    spans: list[dict[str, Any]], store: Path
+    spans: list[dict[str, Any]],
+    store: Path,
+    *,
+    streamed_states: frozenset[str] = frozenset({"complete"}),
 ) -> list[dict[str, Any]]:
-    """Shape of one agent's capture spans after the Node; returns the exchanges."""
+    """Shape of one agent's capture spans after the Node; returns the exchanges.
+
+    ``streamed_states``: the OpenAI SDK (>=3) stops reading at ``[DONE]`` and
+    closes the response before end-of-stream, which is recorded as
+    ``closed_early`` with every byte the client read (spec 042 §4.6).
+    """
     assert {s["name"] for s in spans} <= CAPTURE_SPAN_NAMES, {s["name"] for s in spans}
     for span in spans:
         extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS
@@ -724,12 +743,13 @@ def _assert_capture_spans(
         assert not missing, f"the Node dropped exchange keys {missing}"
         assert span["span_kind"] == SPAN_KIND_CLIENT
         assert attrs["fabric.wire.api"] == "openai.chat_completions"
-        assert attrs["fabric.wire.response_state"] == "complete"
+        streamed = index == 1
+        states = streamed_states if streamed else {"complete"}
+        assert attrs["fabric.wire.response_state"] in states, (index, attrs)
         assert attrs["fabric.wire.store_status"] == "stored"
         assert attrs["fabric.wire.truncated"] is False
         assert attrs["http.response.status_code"] == 200
         assert attrs["gen_ai.operation.name"] == "chat"
-        streamed = index == 1
         present = EXCHANGE_METADATA & set(attrs)
         assert present == (set() if streamed else EXCHANGE_METADATA), (index, present)
         for ref_key, digest_key, role in (
@@ -744,16 +764,19 @@ def _assert_capture_spans(
                 "model.exchange.response",
             ),
         ):
-            descriptor = descriptors[attrs[ref_key].rstrip("/").rsplit("/", 1)[-1]]
+            assert OBJECT_ID.fullmatch(attrs[ref_key]), (ref_key, attrs[ref_key])
+            descriptor = descriptors[attrs[ref_key]]
             assert descriptor["role"] == role
             assert descriptor["operation_id"] == attrs["fabric.wire.exchange_id"]
             assert descriptor["stored_sha256"] == "sha256:" + attrs[digest_key]
             assert descriptor["source_sequence"] == attrs["fabric.source.sequence"]
-            assert descriptor["representation"] == "exact"
+            # A response the client closed before end-of-stream is stored as
+            # exactly the bytes it read, described as ``partial``.
+            complete = attrs["fabric.wire.response_state"] == "complete"
+            exact = role == "model.exchange.request" or complete
+            assert descriptor["representation"] == ("exact" if exact else "partial")
         if streamed:
-            response = descriptors[
-                attrs["fabric.content.result_ref"].rsplit("/", 1)[-1]
-            ]
+            response = descriptors[attrs["fabric.content.result_ref"]]
             assert response["media_type"] == "text/event-stream"
     heartbeats = [s for s in spans if s["name"] == "fabric.capture_heartbeat"]
     assert heartbeats, "no heartbeat reached the sink"
@@ -806,6 +829,33 @@ def test_wire_capture_streams_through_production_node_and_reconstructs(
     # The content exists, but only inside the customer's store; headers
     # (the model API key) are never stored at all.
     stored = b"".join(p.read_bytes() for p in run.store.rglob("*") if p.is_file())
+    for marker in CONTENT_MARKERS:
+        assert marker.encode() in stored, f"{marker} was not captured into the store"
+    for secret in SECRET_MARKERS:
+        assert secret.encode() not in stored, f"{secret} was written to the store"
+    _assert_no_leak(stack)
+
+    code, report = stack.reconstruct()
+    _assert_complete(report, code, {exchanges[0]["attributes"]["fabric.run.id"]})
+
+
+def test_real_openai_sdk_through_production_node_reconstructs(stack: Stack) -> None:
+    """The deployment-relevant proof: an unmodified OpenAI SDK (>=3, httpx2)
+    application, sync and streamed, captured with zero code and delivered
+    through the production Node."""
+    run = stack.run_agent("wire-e2e-openai", client="openai")
+    spans = stack.wait_for_run(run.service, calls=3)
+    exchanges = _assert_capture_spans(
+        spans, run.store, streamed_states=frozenset({"complete", "closed_early"})
+    )
+    states = [s["attributes"]["fabric.wire.response_state"] for s in exchanges]
+    print(f"openai SDK exchange states: {states}")
+    # This run's own objects hold the content; the SDK's API key is never stored.
+    stored = b"".join(
+        (run.store / TENANT / "evidence" / s["attributes"][key]).read_bytes()
+        for s in exchanges
+        for key in ("fabric.content.request_ref", "fabric.content.result_ref")
+    )
     for marker in CONTENT_MARKERS:
         assert marker.encode() in stored, f"{marker} was not captured into the store"
     for secret in SECRET_MARKERS:

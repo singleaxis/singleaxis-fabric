@@ -35,6 +35,14 @@ the binary artifact. `make build` places `fabric-gate` next to
 `otelcol-fabric` in `dist/` — binary deployments should launch the gate,
 which resolves and execs the sibling collector itself.
 
+Every `traces` and `logs` pipeline must also list `fabricguard` in its own
+`processors` (checked on the merged configuration, so an overlay cannot drop
+it), and only `batch` or `memory_limiter` may follow it; a processor after the
+guard could re-add values it removed. On the wire-capture spans
+(`fabric.model_call`, `fabric.capture_loss`, `fabric.capture_heartbeat`)
+`fabricguard` applies a strict profile: only the spec 042 §8 keys, each with a
+value validator, everything else dropped.
+
 `fabric-gate` also rejects `bearertokenauth` extensions whose token material
 would mint an empty credential under the pinned extension (v0.150.0 keeps
 empty entries after splitting token files on newlines): missing, empty,

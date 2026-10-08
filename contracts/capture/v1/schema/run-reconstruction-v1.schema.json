@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/run-reconstruction-v1.schema.json",
-  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 3)",
+  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 4)",
   "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store. It is not a quality evaluation and carries no content.",
   "type": "object",
   "additionalProperties": false,
@@ -119,7 +119,10 @@
       "required": ["verification"],
       "properties": {
         "object_id": {"$ref": "#/$defs/opaqueId"},
-        "ref": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "ref": {
+          "description": "Where the verifier's configured store resolved object_id. Local to the reader; never taken from a span.",
+          "type": "string", "minLength": 1, "maxLength": 2048
+        },
         "sha256": {"$ref": "#/$defs/digest"},
         "byte_length": {"type": "integer", "minimum": 0},
         "verification": {"enum": ["verified", "missing", "digest_mismatch", "not_stored", "not_checked"]}
@@ -143,7 +146,10 @@
         "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
         "started_at": {"type": "string", "format": "date-time"},
         "ended_at": {"type": "string", "format": "date-time"},
-        "model": {"type": "string", "minLength": 1, "maxLength": 256},
+        "model": {
+          "type": "string", "minLength": 1, "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+        },
         "response_id": {"$ref": "#/$defs/opaqueId"},
         "previous_response_id": {"$ref": "#/$defs/opaqueId"},
         "response_state": {"enum": ["complete", "closed_early", "error", "abandoned"]},

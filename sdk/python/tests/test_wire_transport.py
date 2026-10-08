@@ -53,7 +53,7 @@ EXCHANGE_KEYS = {
     "fabric.wire.response_sha256", "fabric.wire.response_state", "fabric.wire.truncated",
     "fabric.wire.store_status", "gen_ai.operation.name", "gen_ai.provider.name",
     "http.request.method", "http.response.status_code", "error.type", "gen_ai.response.model",
-    "gen_ai.response.id", "gen_ai.response.finish_reasons", "gen_ai.usage.input_tokens",
+    "gen_ai.response.finish_reasons", "gen_ai.usage.input_tokens",
     "gen_ai.usage.output_tokens",
 }  # fmt: skip
 
@@ -97,16 +97,16 @@ def test_openai_chat_loop_is_captured_stored_and_projected(rig: Rig) -> None:
     assert a["fabric.source.epoch"] == rig.allocator.epoch
     # Cheap metadata from a complete, plain JSON response only.
     assert a["gen_ai.response.model"] == "gpt-4o-2024-08-06"
-    assert a["gen_ai.response.id"] == "c-1"
+    assert "gen_ai.response.id" not in a  # D2: provider response ids never reach OTLP
     assert a["gen_ai.response.finish_reasons"] == ("tool_calls",)
     assert (a["gen_ai.usage.input_tokens"], a["gen_ai.usage.output_tokens"]) == (20, 5)
     # No content, message hashes or tool-call ids reach OTLP.
     flat = json.dumps({k: list(v) if isinstance(v, tuple) else v for k, v in b.items()})
     assert "Paris" not in flat and "call_7Qx2" not in flat and 'gpt-4o"' not in flat
     # The store holds exactly the wire bytes, and the span digests cover them.
-    stored_request = rig.store.read(a["fabric.content.request_ref"])
+    stored_request = rig.read_ref(a["fabric.content.request_ref"])
     assert json.loads(stored_request) == {"model": "gpt-4o", "messages": FIRST}
-    assert rig.store.read(a["fabric.content.result_ref"]) == first.content
+    assert rig.read_ref(a["fabric.content.result_ref"]) == first.content
     assert a["fabric.wire.request_sha256"] == hashlib.sha256(stored_request).hexdigest()
     assert a["fabric.wire.response_sha256"] == hashlib.sha256(first.content).hexdigest()
     assert second.json()["id"] == "c-2"
@@ -142,8 +142,8 @@ def test_streamed_chat_chunks_reach_caller_unchanged(rig: Rig) -> None:
     (span,) = rig.spans()
     a = attrs(span)
     assert a["fabric.wire.response_state"] == "complete"
-    assert "gen_ai.response.id" not in a  # streams are left to fabric.reconstruct
-    assert rig.store.read(a["fabric.content.result_ref"]) == b"".join(chunks)
+    assert "gen_ai.response.id" not in a
+    assert rig.read_ref(a["fabric.content.result_ref"]) == b"".join(chunks)
     response_descriptor = _by_role(rig)[(0, "model.exchange.response")]
     assert response_descriptor["media_type"] == "text/event-stream"
     validate_capture(rig)
@@ -163,7 +163,7 @@ def test_gzip_response_is_stored_compressed(rig: Rig) -> None:
     rig.flush()
     (span,) = rig.spans()
     a = attrs(span)
-    assert rig.store.read(a["fabric.content.result_ref"]) == compressed
+    assert rig.read_ref(a["fabric.content.result_ref"]) == compressed
     assert a["fabric.wire.response_sha256"] == hashlib.sha256(compressed).hexdigest()
     assert "gen_ai.response.model" not in a  # never decompressed at capture
     descriptor = _by_role(rig)[(0, "model.exchange.response")]
@@ -216,7 +216,7 @@ def test_anthropic_messages(rig: Rig) -> None:
     assert "gen_ai.response.id" not in attrs(streamed)
     p = attrs(plain)
     assert p["fabric.wire.api"] == "anthropic.messages"
-    assert (p["gen_ai.response.id"], p["gen_ai.response.model"]) == ("msg_n", "claude-x")
+    assert "gen_ai.response.id" not in p and p["gen_ai.response.model"] == "claude-x"
     assert p["gen_ai.response.finish_reasons"] == ("end_turn",)
     assert (p["gen_ai.usage.input_tokens"], p["gen_ai.usage.output_tokens"]) == (9, 1)
     validate_capture(rig)
@@ -261,7 +261,7 @@ def test_responses_api_metadata(rig: Rig) -> None:
     (span,) = rig.spans()
     a = attrs(span)
     assert a["fabric.wire.api"] == "openai.responses"
-    assert a["gen_ai.response.id"] == "resp_2"
+    assert "gen_ai.response.id" not in a
     assert a["gen_ai.response.finish_reasons"] == ("completed",)
     assert (a["gen_ai.usage.input_tokens"], a["gen_ai.usage.output_tokens"]) == (7, 2)
     assert "gen_ai.request.previous_response.id" not in a  # reconstruct reads it from bytes
@@ -329,7 +329,7 @@ def test_body_cap_truncates_without_a_loss(tmp_path: Path) -> None:
         assert a["fabric.wire.truncated"] is True
         assert a["fabric.wire.store_status"] == "stored"
         retained = b"x" * 50 + b"y" * 14
-        assert rig.store.read(a["fabric.content.result_ref"]) == retained
+        assert rig.read_ref(a["fabric.content.result_ref"]) == retained
         assert a["fabric.wire.response_sha256"] == hashlib.sha256(retained).hexdigest()
         body = _by_role(rig)[(0, "model.exchange.response")]
         assert (body["status"], body["representation"]) == ("truncated", "truncated")
@@ -509,8 +509,8 @@ def test_injected_tee_crash_leaves_http_result_unchanged(
         response = client.post(OPENAI_CHAT, json={"messages": []})
     assert response.status_code == 200
     assert response.content == b"".join(chunks)
-    # _retain first runs before the sequence is allocated: no sequence, no loss.
-    assert rig.loss_counts() == ({} if hook == "_retain" else {"internal_error": 1})
+    # The sequence is allocated before any setup step, so every crash is one loss.
+    assert rig.loss_counts() == {"internal_error": 1}
     assert rig.tee.stats()["internal_errors"] == 1
     assert rig.tee.stats()["inflight_bytes"] == 0
 

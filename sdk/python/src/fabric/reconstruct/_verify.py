@@ -29,6 +29,7 @@ from fabric.reconstruct._inputs import (
     LossObs,
     ReconstructInputError,
     SpanFormat,
+    model_value,
     object_id_from_ref,
     observe,
     read_span_file,
@@ -59,7 +60,6 @@ _BYTE_GAPS = frozenset({"missing_object", "digest_mismatch", "truncated"})
 _STITCH_GAPS = frozenset(
     {"unparsed_exchange", "prefix_break", "unmatched_tool_call", "unresolved_previous_response"}
 )
-_MODEL_MAX = 256
 _HTTP_ERROR = 400
 
 
@@ -499,8 +499,10 @@ class _Run:
         if exchange.span_id is not None:
             entry["span_id"] = exchange.span_id
         view = self._parse(exchange, bodies, entry)
-        model = entry.get("model") or exchange.model
-        if isinstance(model, str) and 0 < len(model) <= _MODEL_MAX:
+        # A parsed body may carry any text under "model"; only a value that
+        # passes the capture pattern is copied into the report.
+        model = model_value(entry.get("model")) or exchange.model
+        if model is not None:
             entry["model"] = model
         else:
             entry.pop("model", None)

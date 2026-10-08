@@ -5,6 +5,7 @@ package fabricguardprocessor
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -325,12 +326,21 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 			g.stats.nativeTextNormalized.Add(1)
 		}
 		clearEntityRefs(resourceSpan.Resource(), g)
-		g.filterAttributes(resourceSpan.Resource().Attributes(), allowed, "trace-resource")
 		scopeSpans := resourceSpan.ScopeSpans()
+		captureOnly := onlyCaptureSpans(scopeSpans)
+		if captureOnly {
+			g.applyCaptureResource(resourceSpan.Resource().Attributes())
+		} else {
+			g.filterAttributes(resourceSpan.Resource().Attributes(), allowed, "trace-resource")
+		}
 		for si := 0; si < scopeSpans.Len(); si++ {
 			scopeSpan := scopeSpans.At(si)
 			g.scrubTraceScope(scopeSpan)
-			g.filterAttributes(scopeSpan.Scope().Attributes(), allowed, "trace-scope")
+			if captureOnly {
+				g.removeAll(scopeSpan.Scope().Attributes())
+			} else {
+				g.filterAttributes(scopeSpan.Scope().Attributes(), allowed, "trace-scope")
+			}
 			spans := scopeSpan.Spans()
 			spans.RemoveIf(func(span ptrace.Span) bool {
 				return g.applyToSpan(span, allowed)
@@ -353,7 +363,11 @@ func clearEntityRefs(res pcommon.Resource, g *guard) {
 }
 
 func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool {
-	g.filterAttributes(span.Attributes(), allowed, "span")
+	if isCaptureSpan(span) {
+		g.applyCaptureProfile(span)
+	} else {
+		g.filterAttributes(span.Attributes(), allowed, "span")
+	}
 	normalizedName := activityCategory(span.Name(), span.Attributes())
 	if span.Name() != normalizedName {
 		span.SetName(normalizedName)
@@ -620,50 +634,207 @@ var (
 	captureResponseStates = toSet("complete", "closed_early", "error", "abandoned")
 	captureStoreStatuses  = toSet("stored", "partial", "failed", "disabled")
 	captureLossReasons    = toSet("queue_full", "internal_error", "shutdown", "span_dropped")
+	captureOperations     = toSet("chat", "text_completion", "embeddings")
+	// captureFinishReasons is the closed vocabulary the SDK normalizes
+	// provider finish reasons into; anything else arrives as "other".
+	captureFinishReasons = toSet(
+		"stop", "length", "tool_calls", "content_filter", "function_call",
+		"end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn",
+		"refusal", "completed", "incomplete", "failed", "other",
+	)
+	// Content refs on capture spans are opaque store object ids (uuid4), never
+	// a path, URI or bucket name that could carry credentials or topology.
+	captureObjectIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	// error.type is an exception class name, never an exception message.
+	captureErrorTypePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]{0,127}$`)
+	captureModelPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$`)
+	captureProviderPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+	// captureServiceNamePattern matches the service.name the SDK's private
+	// capture provider emits (OTEL_SERVICE_NAME when it matches, else
+	// "fabric-wire"); it excludes '@', spaces and URL syntax.
+	captureServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 )
 
-// validCaptureValue closes the value shapes of the spec 042 wire-capture
-// keys: fixed enums, typed integers with minimums, booleans and opaque ids.
-// Without it an exact-key allowlist would still let a buggy or compromised
-// source export arbitrary text, such as a prompt, under a nominal metadata
-// key. The *_sha256 keys are closed separately by hashAttributeKey and
-// validHashValue (bare 64-hex).
-func validCaptureValue(key string, value pcommon.Value) bool {
-	switch key {
-	case "fabric.wire.api":
-		return captureEnum(value, captureWireAPIs)
-	case "fabric.wire.response_state":
-		return captureEnum(value, captureResponseStates)
-	case "fabric.wire.store_status":
-		return captureEnum(value, captureStoreStatuses)
-	case "fabric.loss.reason":
-		return captureEnum(value, captureLossReasons)
-	case "fabric.source.epoch", "fabric.loss.first_sequence", "fabric.loss.last_sequence":
-		return captureInt(value, 0)
-	case "fabric.loss.count":
-		return captureInt(value, 1)
-	case "fabric.heartbeat.last_sequence":
-		return captureInt(value, -1)
-	case "fabric.wire.truncated":
-		return value.Type() == pcommon.ValueTypeBool
-	case "fabric.run.id", "fabric.wire.exchange_id":
-		return evidenceID(value)
-	default:
+// captureProfile is the complete admission profile for spec 042 capture spans
+// (fabric.model_call, fabric.capture_loss, fabric.capture_heartbeat): the
+// capture keys plus the reused keys spec 042 §8 lists, each with a value
+// validator. A key absent from this map, or a value its validator rejects, is
+// dropped from a capture span; the general trace allowlist and
+// extra_allowed_trace_fields do not apply to these spans.
+var captureProfile = map[string]func(pcommon.Value) bool{
+	"fabric.wire.exchange_id":        evidenceID,
+	"fabric.run.id":                  evidenceID,
+	"fabric.source_id":               evidenceID,
+	"fabric.source.sequence":         intAtLeast(0),
+	"fabric.source.epoch":            intAtLeast(0),
+	"fabric.wire.api":                oneOf(captureWireAPIs),
+	"fabric.wire.response_state":     oneOf(captureResponseStates),
+	"fabric.wire.store_status":       oneOf(captureStoreStatuses),
+	"fabric.wire.truncated":          isBool,
+	"fabric.wire.request_sha256":     isStr, // bare 64-hex closed by validHashValue
+	"fabric.wire.response_sha256":    isStr,
+	"fabric.content.request_ref":     matches(captureObjectIDPattern),
+	"fabric.content.result_ref":      matches(captureObjectIDPattern),
+	"gen_ai.operation.name":          oneOf(captureOperations),
+	"gen_ai.provider.name":           matches(captureProviderPattern),
+	"http.request.method":            oneOf(toSet("POST")),
+	"http.response.status_code":      intIn(100, 599),
+	"error.type":                     matches(captureErrorTypePattern),
+	"gen_ai.response.model":          matches(captureModelPattern),
+	"gen_ai.response.finish_reasons": finishReasons,
+	"gen_ai.usage.input_tokens":      intAtLeast(0),
+	"gen_ai.usage.output_tokens":     intAtLeast(0),
+	"fabric.loss.reason":             oneOf(captureLossReasons),
+	"fabric.loss.count":              intAtLeast(1),
+	"fabric.loss.first_sequence":     intAtLeast(0),
+	"fabric.loss.last_sequence":      intAtLeast(0),
+	"fabric.heartbeat.last_sequence": intAtLeast(-1),
+}
+
+// captureNewKeys are the fourteen keys spec 042 introduced. On spans outside
+// the capture profile they stay value-closed by the same validators, so a
+// non-capture span cannot use them as a free-text channel either.
+var captureNewKeys = toSet(
+	"fabric.source.epoch", "fabric.run.id",
+	"fabric.wire.exchange_id", "fabric.wire.api",
+	"fabric.wire.request_sha256", "fabric.wire.response_sha256",
+	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
+	"fabric.loss.reason", "fabric.loss.count",
+	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
+	"fabric.heartbeat.last_sequence",
+)
+
+var (
+	captureSpanNames = toSet("fabric.model_call", "fabric.capture_loss", "fabric.capture_heartbeat")
+	// captureMarkers are the keys that make activityCategory (and the
+	// offline verifier) treat a span as a capture record.
+	captureMarkers = []string{"fabric.wire.exchange_id", "fabric.loss.reason", "fabric.heartbeat.last_sequence"}
+)
+
+// isCaptureSpan reports whether a span is, or presents itself as, a spec 042
+// capture record: its native name is a capture name or it carries a capture
+// marker key (whatever the value). Classification uses the unfiltered span so
+// an invalid marker cannot opt a span out of the strict profile. Governed and
+// framework LLM spans (native names such as "chat gpt-4o") are not capture
+// spans and keep the general allowlist.
+func isCaptureSpan(span ptrace.Span) bool {
+	if _, ok := captureSpanNames[span.Name()]; ok {
 		return true
 	}
+	for _, key := range captureMarkers {
+		if _, ok := span.Attributes().Get(key); ok {
+			return true
+		}
+	}
+	return false
 }
 
-func captureEnum(value pcommon.Value, allowed map[string]struct{}) bool {
-	if value.Type() != pcommon.ValueTypeStr {
+func onlyCaptureSpans(scopeSpans ptrace.ScopeSpansSlice) bool {
+	seen := false
+	for si := 0; si < scopeSpans.Len(); si++ {
+		spans := scopeSpans.At(si).Spans()
+		for i := 0; i < spans.Len(); i++ {
+			if !isCaptureSpan(spans.At(i)) {
+				return false
+			}
+			seen = true
+		}
+	}
+	return seen
+}
+
+// applyCaptureProfile admits only captureProfile keys with valid values, then
+// applies the generic checks (sensitive names, hash shape, size and count
+// bounds). Capture spans carry no events or links, so any are removed.
+func (g *guard) applyCaptureProfile(span ptrace.Span) {
+	span.Attributes().RemoveIf(func(key string, value pcommon.Value) bool {
+		if valid, listed := captureProfile[key]; listed && valid(value) {
+			return false
+		}
+		g.stats.notAllowedRemoved.Add(1)
+		return true
+	})
+	g.filterAttributes(span.Attributes(), TraceAllowedFields, "capture-span")
+	if removed := span.Events().Len() + span.Links().Len(); removed > 0 {
+		span.Events().RemoveIf(func(ptrace.SpanEvent) bool { return true })
+		span.Links().RemoveIf(func(ptrace.SpanLink) bool { return true })
+		g.stats.notAllowedRemoved.Add(uint64(removed))
+	}
+}
+
+// applyCaptureResource keeps only a well-formed service.name on a resource
+// whose spans are all capture spans: the SDK's private capture provider sets
+// nothing else, so any other key or value did not come from capture.
+func (g *guard) applyCaptureResource(attrs pcommon.Map) {
+	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
+		if key == "service.name" && matches(captureServiceNamePattern)(value) {
+			return false
+		}
+		g.stats.notAllowedRemoved.Add(1)
+		return true
+	})
+}
+
+func (g *guard) removeAll(attrs pcommon.Map) {
+	if n := attrs.Len(); n > 0 {
+		attrs.Clear()
+		g.stats.notAllowedRemoved.Add(uint64(n))
+	}
+}
+
+// validCaptureValue closes the values of the fourteen spec 042 keys wherever
+// they appear (resources, scopes, events, links and non-capture spans), with
+// the same validators the capture profile uses.
+func validCaptureValue(key string, value pcommon.Value) bool {
+	if _, ok := captureNewKeys[key]; !ok {
+		return true
+	}
+	return captureProfile[key](value)
+}
+
+func finishReasons(value pcommon.Value) bool {
+	if value.Type() != pcommon.ValueTypeSlice || value.Slice().Len() == 0 {
 		return false
 	}
-	_, ok := allowed[value.Str()]
-	return ok
+	for i := 0; i < value.Slice().Len(); i++ {
+		if !oneOf(captureFinishReasons)(value.Slice().At(i)) {
+			return false
+		}
+	}
+	return true
 }
 
-func captureInt(value pcommon.Value, minimum int64) bool {
-	return value.Type() == pcommon.ValueTypeInt && value.Int() >= minimum
+func oneOf(allowed map[string]struct{}) func(pcommon.Value) bool {
+	return func(value pcommon.Value) bool {
+		if value.Type() != pcommon.ValueTypeStr {
+			return false
+		}
+		_, ok := allowed[value.Str()]
+		return ok
+	}
 }
+
+func matches(pattern *regexp.Regexp) func(pcommon.Value) bool {
+	return func(value pcommon.Value) bool {
+		return value.Type() == pcommon.ValueTypeStr && pattern.MatchString(value.Str())
+	}
+}
+
+func intAtLeast(minimum int64) func(pcommon.Value) bool {
+	return func(value pcommon.Value) bool {
+		return value.Type() == pcommon.ValueTypeInt && value.Int() >= minimum
+	}
+}
+
+func intIn(minimum, maximum int64) func(pcommon.Value) bool {
+	return func(value pcommon.Value) bool {
+		return value.Type() == pcommon.ValueTypeInt && value.Int() >= minimum && value.Int() <= maximum
+	}
+}
+
+func isBool(value pcommon.Value) bool { return value.Type() == pcommon.ValueTypeBool }
+
+func isStr(value pcommon.Value) bool { return value.Type() == pcommon.ValueTypeStr }
 
 func hashAttributeKey(key string) bool {
 	canonical := strings.Map(func(r rune) rune {

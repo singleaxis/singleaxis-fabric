@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Qualification tests for the draft LLM wire-capture contracts (spec 042 rev 3)."""
+"""Qualification tests for the draft LLM wire-capture contracts (spec 042 rev 4)."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 11
+    assert len(validated) == 12
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
 
 
@@ -54,28 +54,65 @@ def test_exchange_record_carries_no_content_or_stitching_keys() -> None:
     for forbidden in (
         "messages", "content", "prompt", "input", "output", "arguments",
         "message_digests", "tool_calls", "tool_call_ids_consumed", "previous_response_id",
+        "response_id", "ref",
     ):
         assert forbidden not in fields
-    assert set(schema["$defs"]["body"]["properties"]) == {"sha256", "ref"}
+    assert set(schema["$defs"]["body"]["properties"]) == {"sha256", "object_id"}
 
 
 def test_exchange_store_status_rollup() -> None:
     document = _json("fixtures/valid/llm-exchange-chat.json")
-    document["response"].pop("ref")
+    document["response"].pop("object_id")
     _assert_error(document, "capture.exchange.store_status")
     document["store_status"] = "partial"
     validate_document(document, _schemas())
-    document["request"].pop("ref")
+    document["request"].pop("object_id")
     document["store_status"] = "failed"
     validate_document(document, _schemas())
     document["store_status"] = "disabled"
     validate_document(document, _schemas())
 
 
-def test_exchange_ref_must_not_traverse() -> None:
+@pytest.mark.parametrize(
+    "value",
+    [
+        "file:///var/lib/fabric/content/tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+        "s3://bucket/fabric/content/tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+        "tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+        "0B8E1C52-1F0A-4D7E-8F3B-5C9A2E7D1A01",
+        "0b8e1c52-1f0a-1d7e-8f3b-5c9a2e7d1a01",
+        "patient-123-45-6789",
+    ],
+)
+def test_exchange_object_id_is_a_bare_uuid4(value: str) -> None:
     document = _json("fixtures/valid/llm-exchange-chat.json")
-    document["request"]["ref"] = "file:///var/lib/fabric/content/tenant-a/../tenant-b/x"
-    _assert_error(document, "capture.exchange.ref")
+    document["request"]["object_id"] = value
+    _assert_error(document, "capture.schema")
+
+
+def test_exchange_carries_no_response_id() -> None:
+    document = _json("fixtures/valid/llm-exchange-chat.json")
+    document["response_id"] = "chatcmpl-B9x2kQ"
+    _assert_error(document, "capture.schema")
+
+
+@pytest.mark.parametrize(
+    ("reason", "valid"),
+    [("stop", True), ("end_turn", True), ("other", True), ("secret_password", False)],
+)
+def test_exchange_finish_reasons_are_a_closed_vocabulary(reason: str, valid: bool) -> None:
+    document = _json("fixtures/valid/llm-exchange-chat.json")
+    document["finish_reasons"] = [reason]
+    if valid:
+        validate_document(document, _schemas())
+    else:
+        _assert_error(document, "capture.schema")
+
+
+def test_reconstruction_model_uses_the_capture_pattern() -> None:
+    document = _json("fixtures/valid/run-reconstruction-partial-loss.json")
+    document["runs"][0]["exchanges"][0]["model"] = "Prompt: patient Alice has HIV"
+    _assert_error(document, "capture.schema")
 
 
 def test_exchange_error_state_needs_error_type() -> None:

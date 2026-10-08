@@ -1,12 +1,12 @@
 # LLM wire-capture contract v1 (draft)
 
 Specified by [spec 042](../../../specs/042-llm-wire-capture-and-reconstruction.md)
-(revision 3, store-only stitching). Not emitted by recorder v1 and not part
+(revision 4: store-only stitching, object-id refs, closed metadata values). Not emitted by recorder v1 and not part
 of the published contracts archive until spec 042 is accepted.
 
 | Schema | Document | Produced by |
 |---|---|---|
-| `schema/llm-exchange-v1.schema.json` | `fabric.llm-exchange/v1` — the JSON form of one `fabric.model_call` span: exchange id, source position, run, body digests and refs, cheap response metadata | wire tee (as an OTLP span); normalized by the verifier |
+| `schema/llm-exchange-v1.schema.json` | `fabric.llm-exchange/v1` — the JSON form of one `fabric.model_call` span: exchange id, source position, run, body digests and store object ids, closed-shape response metadata | wire tee (as an OTLP span); normalized by the verifier |
 | `schema/loss-record-v1.schema.json` | `fabric.loss-record/v1` — `loss` (a range of exchange sequences that will never produce a span) or `heartbeat` (the source's last allocated sequence) | the capture loss emitter (as `fabric.capture_loss` / `fabric.capture_heartbeat` spans) |
 | `schema/run-reconstruction-v1.schema.json` | `fabric.run-reconstruction/v1` — per-run exchanges, threads, gaps and integrity verdict | `python -m fabric.reconstruct` |
 
@@ -14,9 +14,15 @@ Every document is metadata only. Request and response bytes live in
 customer-controlled content-v2 objects (`model.exchange.request`,
 `model.exchange.response`) whose descriptors carry the exchange id, run id,
 source position, media type and `content_encoding`. OTLP carries no
-message hashes and no tool-call ids: all stitching is derived offline by
-`fabric.reconstruct` from the stored bytes, so stitching requires read
-access to the store.
+message hashes, no tool-call ids and no response ids: all stitching is
+derived offline by `fabric.reconstruct` from the stored bytes, so stitching
+requires read access to the store.
+
+A stored body is named on OTLP only by its opaque object id (a lowercase
+uuid4), never by a path, URI or bucket name; a reader resolves it through
+the store it is configured with. Model names follow a fixed identifier
+pattern and finish reasons a closed vocabulary (anything else is `other`),
+so no free-text value from a response reaches telemetry.
 
 Digests in these JSON documents use the `sha256:<hex>` form. The OTLP
 projection uses bare 64-hex values because the Node's hash-key rule
@@ -29,6 +35,11 @@ for each case, `projected` is what an implementation must derive from
 of those UTF-8 bytes. Cases marked `same_digest_as` prove that a message
 hashes identically when returned in a response and when re-sent in the next
 request. These digests never leave the verifier.
+
+Completeness rests on per-source sequence numbers, heartbeats and the
+offline verifier: a lost exchange always shows as a sequence gap. Loss
+records only *explain* a gap (its reason); a gap without one is still
+detected and still makes the run `partial`.
 
 The run verdict is an integrity verdict for a declared scope (per-source
 sequence windows and the heartbeat that covers them), not a quality evaluation: `complete_for_declared_scope` means no

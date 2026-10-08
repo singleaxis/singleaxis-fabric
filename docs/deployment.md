@@ -112,6 +112,12 @@ Operational notes:
 Helm validation proves configuration shape and required references. Pod
 readiness proves that referenced Secrets and storage are actually available.
 
+Independently of the chart, the Node's `fabric-gate` entrypoint refuses to
+boot any configuration (Helm, Compose or hand-written, overlays included)
+in which a `traces` or `logs` pipeline does not run `fabricguard`, or runs a
+processor other than `batch` or `memory_limiter` after it. For LLM wire
+capture see [wire-capture-deployment.md](wire-capture-deployment.md).
+
 ## Delivery semantics
 
 Fabric Node uses at-least-once delivery. Destinations must deduplicate using

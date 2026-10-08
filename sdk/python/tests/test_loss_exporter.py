@@ -150,13 +150,11 @@ def test_build_private_provider_is_always_on_wrapped_and_never_global(
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
     monkeypatch.setenv("OTEL_TRACES_SAMPLER", "always_off")
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "wire-svc")
     exporter = InMemorySpanExporter()
-    private = build_private_provider(
-        exporter=exporter, service_name="wire-svc", resource_attributes={"k": "v"}
-    )
+    private = build_private_provider(exporter=exporter)
     assert trace._TRACER_PROVIDER is None
-    assert private.resource.attributes["service.name"] == "wire-svc"
-    assert private.resource.attributes["k"] == "v"
+    assert dict(private.resource.attributes) == {"service.name": "wire-svc"}
     (processor,) = _processors(private)
     assert isinstance(processor, BatchSpanProcessor)
     assert isinstance(processor.span_exporter, LossExporter)

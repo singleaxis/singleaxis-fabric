@@ -44,10 +44,12 @@ def validate_endpoint(matcher: EndpointMatcher) -> None:
     m = matcher
     valid = (
         isinstance(m, EndpointMatcher)
-        and all(isinstance(v, str) and _NAME_RE.match(v) for v in (m.endpoint_id, m.provider_name))
+        and all(
+            isinstance(v, str) and _NAME_RE.fullmatch(v) for v in (m.endpoint_id, m.provider_name)
+        )
         and m.dialect in ("openai", "anthropic")
         and bool(hosts := [*m.hosts, *m.host_suffixes])
-        and all(isinstance(h, str) and _HOST_RE.match(h) for h in hosts)
+        and all(isinstance(h, str) and _HOST_RE.fullmatch(h) for h in hosts)
         and bool(m.schemes)
         and set(m.schemes) <= {"http", "https"}
         and all(type(p) is int and 0 < p < 65536 for p in m.ports or ())  # noqa: PLR2004
@@ -80,7 +82,7 @@ class WireConfig:
         timeout = self.shutdown_timeout_s
         if not isinstance(timeout, (int, float)) or not 0 <= timeout <= 300:  # noqa: PLR2004
             raise ValueError("shutdown_timeout_s must be between 0 and 300 seconds")
-        if self.source_id is not None and not OPAQUE_ID_RE.match(str(self.source_id)):
+        if self.source_id is not None and not OPAQUE_ID_RE.fullmatch(str(self.source_id)):
             raise ValueError("source_id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
         for matcher in self.all_endpoints:
             validate_endpoint(matcher)
@@ -119,8 +121,17 @@ def parse_endpoints(text: str) -> tuple[EndpointMatcher, ...]:
     return tuple(matchers)
 
 
-def build_store(uri: str, tenant_id: str | None) -> ByteEvidenceStore:
-    """Build the byte store named by ``file:///abs/dir`` or ``s3://bucket/prefix``."""
+def build_store(
+    uri: str, tenant_id: str | None, *, sse: str | None = None, kms_key_id: str | None = None
+) -> ByteEvidenceStore:
+    """Build the byte store named by ``file:///abs/dir`` or ``s3://bucket/prefix``.
+
+    ``sse`` (``AES256``/``aws:kms``) and ``kms_key_id`` (``aws:kms`` only) apply to S3.
+    """
+    if sse not in (None, "AES256", "aws:kms") or (kms_key_id and sse != "aws:kms"):
+        raise ValueError("FABRIC_WIRE_STORE_SSE must be AES256 or aws:kms (KMS key: aws:kms)")
+    if (sse or kms_key_id) and not uri.startswith("s3://"):
+        raise ValueError("FABRIC_WIRE_STORE_SSE applies to s3:// stores only")
     if not tenant_id:
         raise ValueError("FABRIC_WIRE_STORE requires FABRIC_TENANT_ID")
     parsed = urlsplit(uri)
@@ -140,7 +151,10 @@ def build_store(uri: str, tenant_id: str | None) -> ByteEvidenceStore:
 
         prefix = parsed.path.strip("/")
         extra = {"prefix": prefix + "/"} if prefix else {}
-        return S3ContentStore(bucket=parsed.netloc, tenant_id=tenant_id, **extra)
+        return S3ContentStore(
+            bucket=parsed.netloc, tenant_id=tenant_id, sse_algorithm=sse,
+            sse_kms_key_id=kms_key_id, **extra,
+        )  # fmt: skip
     raise ValueError("FABRIC_WIRE_STORE must be a file:// or s3:// URI")
 
 
@@ -152,10 +166,13 @@ def config_from_env(
     tracer_mode = (environ.get("FABRIC_WIRE_TRACER") or "private").strip().lower()
     if tracer_mode not in ("private", "global"):
         raise ValueError("FABRIC_WIRE_TRACER must be 'private' or 'global'")
-    kwargs: dict[str, Any] = {
-        "store": build_store(store_uri, environ.get("FABRIC_TENANT_ID")) if store_uri else None,
-        "source_id": environ.get("FABRIC_SOURCE_ID") or None,
-    }
+    sse = environ.get("FABRIC_WIRE_STORE_SSE") or None
+    kms = environ.get("FABRIC_WIRE_STORE_KMS_KEY_ID") or None
+    if (sse or kms) and not store_uri:
+        raise ValueError("FABRIC_WIRE_STORE_SSE needs an s3:// FABRIC_WIRE_STORE")
+    tenant = environ.get("FABRIC_TENANT_ID")
+    store = build_store(store_uri, tenant, sse=sse, kms_key_id=kms) if store_uri else None
+    kwargs: dict[str, Any] = {"store": store, "source_id": environ.get("FABRIC_SOURCE_ID") or None}
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
     for name, field in (
