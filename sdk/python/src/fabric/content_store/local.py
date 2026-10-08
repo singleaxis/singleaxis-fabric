@@ -26,10 +26,29 @@ from fabric.content_store.base import (
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+def _make_private_dirs(directory: Path) -> None:
+    """Create ``directory`` and its missing parents, each mode ``0700``.
+
+    ``mkdir(parents=True, mode=...)`` applies the mode to the leaf only and the umask
+    to everything, so a tenant directory Fabric created could stay world-readable.
+    Directories that already exist are left as they are.
+    """
+    missing: list[Path] = []
+    while not directory.exists() and directory != directory.parent:
+        missing.append(directory)
+        directory = directory.parent
+    for path in reversed(missing):
+        try:
+            path.mkdir(mode=0o700)
+        except FileExistsError:
+            continue  # created concurrently by someone else: not ours to change
+        os.chmod(path, 0o700)  # the umask may have masked mkdir's mode
+
+
 def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """Write ``data`` to ``target`` atomically: tmp + fsync + rename +
     directory fsync. Never leaves a partially written object."""
-    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _make_private_dirs(target.parent)
     # mkdir honours the process umask only for newly-created components;
     # tighten an existing directory as well so governed roots never remain
     # group/world-readable after first use.

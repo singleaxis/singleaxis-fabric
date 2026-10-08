@@ -238,7 +238,7 @@ def test_sampled_out_loss_spans_warn_and_do_not_cascade(
     caplog.set_level("WARNING", logger="fabric.capture")
     loss.record("wire-sampled", 1, "queue_full", 3)
     loss.record("wire-sampled", 1, "shutdown", 4)
-    assert loss.flush(2.0)
+    assert not loss.flush(2.0)  # E10: sampled-away records are a failed flush
     assert loss.spans_unsampled == 2
     assert not loss._pending  # nothing was re-reported
     assert len([r for r in caplog.records if r.name == "fabric.capture"]) == 1

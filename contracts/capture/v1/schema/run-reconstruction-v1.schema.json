@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/run-reconstruction-v1.schema.json",
-  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 4)",
-  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store. It is not a quality evaluation and carries no content.",
+  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 5)",
+  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store. It is not a quality evaluation and carries no content: provider-derived ids appear only as pseudonyms and store locations never appear.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "generated_at", "verifier", "inputs", "sources", "runs"],
@@ -63,6 +63,10 @@
           "source_epoch": {"type": "integer", "minimum": 0},
           "exchanges": {"type": "integer", "minimum": 0},
           "heartbeat_sequence": {"type": "integer", "minimum": -1},
+          "final_heartbeat_sequence": {
+            "description": "Highest last_sequence of a final heartbeat for this epoch, when one was seen.",
+            "type": "integer", "minimum": -1
+          },
           "missing_sequences": {"type": "array", "items": {"$ref": "#/$defs/range"}},
           "loss_ranges": {
             "type": "array",
@@ -89,6 +93,10 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
     },
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "pseudonym": {
+      "description": "A provider-derived id (response, previous-response or tool-call id) as the report carries it: 'p-' + the first 16 hex of sha256(value). Equal ids map to equal pseudonyms.",
+      "type": "string", "pattern": "^p-[0-9a-f]{16}$"
+    },
     "range": {
       "type": "array",
       "prefixItems": [
@@ -119,10 +127,6 @@
       "required": ["verification"],
       "properties": {
         "object_id": {"$ref": "#/$defs/opaqueId"},
-        "ref": {
-          "description": "Where the verifier's configured store resolved object_id. Local to the reader; never taken from a span.",
-          "type": "string", "minLength": 1, "maxLength": 2048
-        },
         "sha256": {"$ref": "#/$defs/digest"},
         "byte_length": {"type": "integer", "minimum": 0},
         "verification": {"enum": ["verified", "missing", "digest_mismatch", "not_stored", "not_checked"]}
@@ -147,11 +151,11 @@
         "started_at": {"type": "string", "format": "date-time"},
         "ended_at": {"type": "string", "format": "date-time"},
         "model": {
-          "type": "string", "minLength": 1, "maxLength": 256,
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+          "type": "string", "minLength": 1, "maxLength": 128,
+          "pattern": "^(?!.*://)[A-Za-z0-9][A-Za-z0-9._:/-]*$"
         },
-        "response_id": {"$ref": "#/$defs/opaqueId"},
-        "previous_response_id": {"$ref": "#/$defs/opaqueId"},
+        "response_id": {"$ref": "#/$defs/pseudonym"},
+        "previous_response_id": {"$ref": "#/$defs/pseudonym"},
         "response_state": {"enum": ["complete", "closed_early", "error", "abandoned"]},
         "parse_status": {
           "enum": ["ok", "not_json", "undecodable_encoding", "unrecognized_shape", "truncated", "not_checked"]
@@ -160,8 +164,8 @@
         "continues_exchange_id": {"$ref": "#/$defs/opaqueId"},
         "input_message_count": {"type": "integer", "minimum": 0},
         "output_message_count": {"type": "integer", "minimum": 0},
-        "tool_call_ids_consumed": {"type": "array", "items": {"$ref": "#/$defs/opaqueId"}},
-        "tool_call_ids_emitted": {"type": "array", "items": {"$ref": "#/$defs/opaqueId"}},
+        "tool_call_ids_consumed": {"type": "array", "items": {"$ref": "#/$defs/pseudonym"}},
+        "tool_call_ids_emitted": {"type": "array", "items": {"$ref": "#/$defs/pseudonym"}},
         "objects": {
           "type": "object",
           "additionalProperties": false,
@@ -184,8 +188,8 @@
         "source_epoch": {"type": "integer", "minimum": 0},
         "first_sequence": {"type": "integer", "minimum": 0},
         "last_sequence": {"type": "integer", "minimum": 0},
-        "tool_call_id": {"$ref": "#/$defs/opaqueId"},
-        "previous_response_id": {"$ref": "#/$defs/opaqueId"},
+        "tool_call_id": {"$ref": "#/$defs/pseudonym"},
+        "previous_response_id": {"$ref": "#/$defs/pseudonym"},
         "object_role": {"enum": ["request", "response"]},
         "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
       },
@@ -203,7 +207,11 @@
         "source_epoch": {"type": "integer", "minimum": 0},
         "first_sequence": {"type": "integer", "minimum": 0},
         "last_sequence": {"type": "integer", "minimum": 0},
-        "heartbeat_sequence": {"type": "integer", "minimum": -1}
+        "heartbeat_sequence": {"type": "integer", "minimum": -1},
+        "closed_by": {
+          "description": "The evidence that proves this window's end: the run's own run_start/run_end markers, or (for a run without markers) the epoch's final heartbeat. Absent when the end is not proven.",
+          "enum": ["run_markers", "final_heartbeat"]
+        }
       }
     },
     "run": {

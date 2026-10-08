@@ -8,7 +8,9 @@ id; an older span's full ref is only used to learn the id (its last path
 segment). A recorded ref is never opened directly, so a span cannot
 point the verifier outside the configured tenant namespace. Every fetched
 object is checked against the digest the span recorded and against its
-content-v2 descriptor, which also says how to decode the bytes.
+content-v2 descriptor, which also says how to decode the bytes. The
+resolved location (a local path or ``s3://`` URI) is used only to read and
+never appears in the report (spec 042 §9, rev 5).
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ StoreKind = Literal["local", "s3"]
 
 _STORED_STATUSES = frozenset({"stored", "truncated"})
 _ABSENT_CODES = frozenset({"NoSuchKey", "404", "NotFound"})
-_REF_MAX = 2048
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +35,6 @@ class ObjectResult:
 
     verification: Verification
     object_id: str | None = None
-    ref: str | None = None
     sha256: str | None = None
     byte_length: int | None = None
     reason: str | None = None
@@ -47,8 +47,6 @@ class ObjectResult:
         out: dict[str, Any] = {}
         if self.object_id is not None:
             out["object_id"] = self.object_id
-        if self.ref is not None and 0 < len(self.ref) <= _REF_MAX:
-            out["ref"] = self.ref
         if self.sha256 is not None:
             out["sha256"] = self.sha256
         if self.byte_length is not None:
@@ -105,14 +103,14 @@ class StoreReader:
             reason = "absent" if _is_absent(exc) else "read_error"
             return ObjectResult("missing", object_id, sha256=expected_sha256, reason=reason)
         if not isinstance(data, bytes | bytearray):
-            return ObjectResult("missing", object_id, uri, expected_sha256, reason="read_error")
+            return ObjectResult("missing", object_id, expected_sha256, reason="read_error")
         data = bytes(data)
         try:
             descriptor: Any = self._store.read_descriptor(uri)
         except Exception as exc:
             if _is_absent(exc):
                 return ObjectResult(
-                    "missing", object_id, uri, expected_sha256, reason="descriptor_missing"
+                    "missing", object_id, expected_sha256, reason="descriptor_missing"
                 )
             descriptor = None
         if sha256_digest(data) != expected_sha256:
@@ -127,7 +125,6 @@ class StoreReader:
             return ObjectResult(
                 "verified",
                 object_id,
-                uri,
                 expected_sha256,
                 len(data),
                 data=data,
@@ -136,9 +133,7 @@ class StoreReader:
                 truncated="truncated"
                 in (descriptor.get("representation"), descriptor.get("status")),
             )
-        return ObjectResult(
-            "digest_mismatch", object_id, uri, expected_sha256, len(data), reason=reason
-        )
+        return ObjectResult("digest_mismatch", object_id, expected_sha256, len(data), reason=reason)
 
     def _descriptor_ok(
         self,

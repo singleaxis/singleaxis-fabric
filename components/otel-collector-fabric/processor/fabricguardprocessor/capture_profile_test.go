@@ -5,6 +5,7 @@ package fabricguardprocessor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -101,9 +102,28 @@ func TestCaptureProfile_ValueValidators(t *testing.T) {
 			bad:  []any{"alice@example.com", "Open AI", "-openai", ""},
 			good: []any{"openai", "anthropic", "azure.ai.openai"},
 		},
+		// Decision E5: the shared SDK/guard/verifier pattern, plus no "://".
+		// The first bad value is the Codex re-review probe.
 		"gen_ai.response.model": {
-			bad:  []any{"Prompt: patient Alice has HIV", "", "-model", int64(4)},
-			good: []any{"gpt-4o-2024-08-06", "claude-sonnet-4@20250514", "org/model:v1"},
+			bad: []any{
+				"https://user:sk-live-secret@example.com/private",
+				"http://internal-gateway/v1/models/gpt-4o",
+				"s3://bucket/models/llama",
+				"a://b",
+				"alice@example.com",
+				"claude-sonnet-4@20250514",
+				"gpt-4o+patient",
+				"gpt-4o?api_key=sk-live",
+				"gpt 4o",
+				"Prompt: patient Alice has HIV",
+				strings.Repeat("m", 129),
+				"", "-model", "/abs/path", int64(4),
+			},
+			good: []any{
+				"gpt-4o-2024-08-06", "org/model:v1", "ft:gpt-4o-mini:acme::abc123",
+				"accounts/fireworks/models/llama-v3p1-70b-instruct",
+				"anthropic.claude-3-5-sonnet-20240620-v1:0", strings.Repeat("m", 128),
+			},
 		},
 		"gen_ai.usage.input_tokens": {
 			bad:  []any{int64(-1), "12", 1.5},
@@ -300,9 +320,11 @@ func TestCaptureProfile_CaptureOnlyResourceKeepsOnlyServiceName(t *testing.T) {
 	}
 }
 
-// Governed-content and framework LLM spans are not capture spans: their
-// resources, URI content refs, response ids and general keys keep the
-// existing behaviour, even when sharing a resource with capture spans.
+// Governed-content and framework LLM spans are not capture spans: their own
+// attributes (URI content refs, response ids, general keys) keep the general
+// allowlist even when they share a resource with capture spans. The shared
+// resource and scope, however, follow the strict capture policy (decision
+// E4): one capture span in the group is enough.
 func TestCaptureProfile_GovernedSpansUnaffected(t *testing.T) {
 	governed := map[string]any{
 		"gen_ai.operation.name":      "chat",
@@ -316,7 +338,7 @@ func TestCaptureProfile_GovernedSpansUnaffected(t *testing.T) {
 	}
 	g := newTestGuard(t, nil)
 	td := captureResourceTraces(map[string]any{
-		"service.name":        "unknown_service:python",
+		"service.name":        "billing-agent",
 		"service.instance.id": "pod-7",
 	},
 		spanFixture{name: "chat gpt-4o", attrs: governed},
@@ -327,10 +349,12 @@ func TestCaptureProfile_GovernedSpansUnaffected(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs := out.ResourceSpans().At(0)
-	for key, want := range map[string]string{"service.name": "unknown_service:python", "service.instance.id": "pod-7"} {
-		if v, ok := rs.Resource().Attributes().Get(key); !ok || v.Str() != want {
-			t.Errorf("mixed resource lost %q", key)
-		}
+	res := rs.Resource().Attributes()
+	if v, ok := res.Get("service.name"); !ok || v.Str() != "billing-agent" {
+		t.Error("mixed resource lost a valid service.name")
+	}
+	if res.Len() != 1 {
+		t.Errorf("mixed resource kept %v, want only service.name", res.AsRaw())
 	}
 	spans := rs.ScopeSpans().At(0).Spans()
 	gov := spans.At(0)
@@ -339,7 +363,100 @@ func TestCaptureProfile_GovernedSpansUnaffected(t *testing.T) {
 		t.Errorf("governed span name = %q", gov.Name())
 	}
 	assertKeysKept(t, spans.At(1), wireExchangeAttrs())
+	if n := rs.ScopeSpans().At(0).Scope().Attributes().Len(); n != 0 {
+		t.Errorf("mixed scope kept %d attributes", n)
+	}
+}
+
+// Codex re-review probe: a non-capture sibling span must not switch the
+// shared resource and scope back to the general allowlist. Before decision
+// E4 every value below survived; now the resource keeps nothing (the
+// service.name is not a valid name) and the scope keeps nothing, while the
+// application span's own attributes still follow the general policy.
+func TestCaptureProfile_MixedGroupSharedMetadataIsStrict(t *testing.T) {
+	appAttrs := map[string]any{
+		"fabric.tenant_id": "acme",
+		"http.route":       "/v1/orders",
+		"db.system":        "postgresql",
+	}
+	for _, order := range []string{"capture-first", "app-first", "separate-scopes"} {
+		t.Run(order, func(t *testing.T) {
+			td := ptrace.NewTraces()
+			rs := td.ResourceSpans().AppendEmpty()
+			_ = rs.Resource().Attributes().FromRaw(map[string]any{
+				"service.name":               "alice@example.com",
+				"service.instance.id":        "patient-123-45-6789",
+				"fabric.content.request_ref": "https://user:pass@example.com/object?api_key=secret",
+				"gen_ai.response.id":         "patient-secret",
+			})
+			scopes := []ptrace.ScopeSpans{rs.ScopeSpans().AppendEmpty()}
+			if order == "separate-scopes" {
+				scopes = append(scopes, rs.ScopeSpans().AppendEmpty())
+			}
+			for _, ss := range scopes {
+				_ = ss.Scope().Attributes().FromRaw(map[string]any{
+					"http.route":       "/private?api_key=secret",
+					"fabric.tenant_id": "alice@example.com",
+				})
+			}
+			add := func(ss ptrace.ScopeSpans, name string, attrs map[string]any) {
+				span := ss.Spans().AppendEmpty()
+				span.SetName(name)
+				_ = span.Attributes().FromRaw(attrs)
+			}
+			last := scopes[len(scopes)-1]
+			if order == "app-first" {
+				add(scopes[0], "host operation", appAttrs)
+				add(last, "fabric.model_call", wireExchangeAttrs())
+			} else {
+				add(scopes[0], "fabric.model_call", wireExchangeAttrs())
+				add(last, "host operation", appAttrs)
+			}
+			g := newTestGuard(t, nil)
+			out, err := g.processTraces(context.Background(), td)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := out.ResourceSpans().At(0)
+			if res := got.Resource().Attributes(); res.Len() != 0 {
+				t.Errorf("mixed resource kept %v", res.AsRaw())
+			}
+			for si := 0; si < got.ScopeSpans().Len(); si++ {
+				ss := got.ScopeSpans().At(si)
+				if n := ss.Scope().Attributes().Len(); n != 0 {
+					t.Errorf("scope %d kept %v", si, ss.Scope().Attributes().AsRaw())
+				}
+				for i := 0; i < ss.Spans().Len(); i++ {
+					span := ss.Spans().At(i)
+					if _, ok := span.Attributes().Get("fabric.wire.exchange_id"); ok {
+						assertKeysKept(t, span, wireExchangeAttrs())
+					} else {
+						assertKeysKept(t, span, appAttrs)
+					}
+				}
+			}
+		})
+	}
+}
+
+// A resource group without any capture span keeps the general behaviour.
+func TestCaptureProfile_AppOnlyGroupKeepsGeneralResource(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := captureResourceTraces(map[string]any{
+		"service.name":        "unknown_service:python",
+		"service.instance.id": "pod-7",
+	}, spanFixture{name: "host operation", attrs: map[string]any{"fabric.tenant_id": "acme"}})
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := out.ResourceSpans().At(0)
+	for key, want := range map[string]string{"service.name": "unknown_service:python", "service.instance.id": "pod-7"} {
+		if v, ok := rs.Resource().Attributes().Get(key); !ok || v.Str() != want {
+			t.Errorf("app-only resource lost %q", key)
+		}
+	}
 	if _, ok := rs.ScopeSpans().At(0).Scope().Attributes().Get("fabric.tenant_id"); !ok {
-		t.Error("mixed scope lost general-allowlist attribute")
+		t.Error("app-only scope lost general-allowlist attribute")
 	}
 }

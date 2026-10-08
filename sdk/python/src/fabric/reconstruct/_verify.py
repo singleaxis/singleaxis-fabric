@@ -74,24 +74,42 @@ class _Source:
     sequences: set[int] = field(default_factory=set)
     losses: set[LossObs] = field(default_factory=set)
     heartbeat: int = -1
+    final: int | None = None
+    top: int = -1
     missing: list[tuple[int, int]] = field(default_factory=list)
     segments: dict[tuple[int, int], list[Segment]] = field(default_factory=dict)
 
     def finalize(self) -> None:
-        top = max([self.heartbeat, *self.sequences, *(loss.last_sequence for loss in self.losses)])
+        self.top = max(
+            [self.heartbeat, *self.sequences, *(loss.last_sequence for loss in self.losses)]
+        )
         previous = -1
         for sequence in sorted(self.sequences):
             if sequence > previous + 1:
                 self.missing.append((previous + 1, sequence - 1))
             previous = sequence
-        if top > previous:
-            self.missing.append((previous + 1, top))
+        if self.top > previous:
+            self.missing.append((previous + 1, self.top))
         ordered = sorted(self.losses, key=lambda x: (x.first_sequence, x.reason, x.last_sequence))
         for first, last in self.missing:
             self.segments[(first, last)] = _segments(first, last, ordered)
 
+    def tail_problem(self) -> str | None:
+        """Why this epoch's end is unknown; ``None`` when a final heartbeat ended it.
+
+        A ``final`` heartbeat is written by a clean close and names the last
+        sequence the epoch allocated. It ends the epoch only if nothing seen
+        for the epoch lies beyond it (spec 042 §9.5, rev 5).
+        """
+
+        if self.final is None:
+            return "no_final_heartbeat"
+        if self.top > self.final:
+            return "activity_after_final_heartbeat"
+        return None
+
     def to_json(self, exchanges: int) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "source_id": self.key[0],
             "source_epoch": self.key[1],
             "exchanges": exchanges,
@@ -109,6 +127,9 @@ class _Source:
                 )
             ],
         }
+        if self.final is not None:
+            out["final_heartbeat_sequence"] = self.final
+        return out
 
 
 def _segments(first: int, last: int, losses: Sequence[LossObs]) -> list[Segment]:
@@ -127,6 +148,32 @@ def _segments(first: int, last: int, losses: Sequence[LossObs]) -> list[Segment]
     if position <= last:
         out.append((position, last, None))
     return out
+
+
+@dataclass(slots=True)
+class _Marks:
+    """A run's ``run_start`` / ``run_end`` markers on one source epoch (distinct records)."""
+
+    starts: set[int] = field(default_factory=set)
+    ends: set[int] = field(default_factory=set)
+
+    def open_reason(self, own: Sequence[int]) -> str | None:
+        """``None`` when the markers close the run around all of its exchanges.
+
+        Each ``fabric.wire.run()`` block writes one ``run_start`` and one
+        ``run_end``. Sorted starts and ends must pair up (equal numbers, each
+        start at or before its end); a missing ``run_end`` leaves the run's
+        end unknown however many other markers arrived.
+        """
+
+        starts, ends = sorted(self.starts), sorted(self.ends)
+        if not starts or len(starts) != len(ends):
+            return "run_not_closed"
+        if any(start > end for start, end in zip(starts, ends, strict=True)):
+            return "run_not_closed"
+        if own and (min(own) <= starts[0] or max(own) > ends[-1]):
+            return "exchange_outside_run_markers"
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -158,7 +205,7 @@ def reconstruct(
         fmt, records = read_span_file(path)
         span_files.append(_span_file_entry(path, fmt, len(records)))
         for record in records:
-            verifier.add(observe(record), (record.trace_id, record.span_id))
+            verifier.add(observe(record))
     verifier.finalize()
     inputs: dict[str, Any] = {"span_files": span_files}
     if reader is not None:
@@ -202,17 +249,15 @@ class _Verifier:
         self.sources: dict[SourceKey, _Source] = {}
         self.exchange_count: dict[SourceKey, int] = defaultdict(int)
         self.claims: dict[tuple[SourceKey, int], set[str]] = defaultdict(set)
-        self.markers: dict[str, dict[SourceKey, list[int]]] = defaultdict(lambda: defaultdict(list))
-        self._heartbeats: set[tuple[tuple[str, str] | None, HeartbeatObs]] = set()
+        self.markers: dict[str, dict[SourceKey, _Marks]] = defaultdict(lambda: defaultdict(_Marks))
+        self._heartbeats: set[HeartbeatObs] = set()
 
     def _source(self, key: SourceKey) -> _Source:
         if key not in self.sources:
             self.sources[key] = _Source(key)
         return self.sources[key]
 
-    def add(
-        self, obs: ExchangeObs | LossObs | HeartbeatObs | None, span: tuple[str, str] | None = None
-    ) -> None:
+    def add(self, obs: ExchangeObs | LossObs | HeartbeatObs | None) -> None:
         if isinstance(obs, ExchangeObs):
             known = self.exchanges.get(obs.exchange_id)
             if known is None:
@@ -225,15 +270,20 @@ class _Verifier:
                 self.conflicts.add(obs.exchange_id)
         elif isinstance(obs, LossObs):
             self._source((obs.source_id, obs.source_epoch)).losses.add(obs)
-        elif isinstance(obs, HeartbeatObs) and (span, obs) not in self._heartbeats:
-            # Deduplicated per span, not per content: a run's entry and exit
-            # markers may carry the same last_sequence and both must count.
-            self._heartbeats.add((span, obs))
+        elif isinstance(obs, HeartbeatObs) and obs not in self._heartbeats:
+            # Deduplicated by logical identity (source, epoch, kind, run id,
+            # last sequence), never by span id: a retried export re-sends the
+            # same record under a new span id and must not count twice.
+            self._heartbeats.add(obs)
             key = (obs.source_id, obs.source_epoch)
             source = self._source(key)
             source.heartbeat = max(source.heartbeat, obs.last_sequence)
-            if obs.run_id is not None:
-                self.markers[obs.run_id][key].append(obs.last_sequence)
+            if obs.kind == "final":
+                source.final = max(obs.last_sequence, -1 if source.final is None else source.final)
+            elif obs.kind == "run_start" and obs.run_id is not None:
+                self.markers[obs.run_id][key].starts.add(obs.last_sequence)
+            elif obs.kind == "run_end" and obs.run_id is not None:
+                self.markers[obs.run_id][key].ends.add(obs.last_sequence)
 
     def finalize(self) -> None:
         for source in self.sources.values():
@@ -258,12 +308,29 @@ class _Verifier:
 # --------------------------------------------------------------------------
 
 
+def _closed_by(window: _Window) -> dict[str, str]:
+    """The evidence that proves the window's end, when there is one."""
+
+    if window.tail_problem is not None:
+        return {}
+    return {"closed_by": "run_markers" if window.marked else "final_heartbeat"}
+
+
 @dataclass(slots=True)
 class _Window:
+    """One source epoch a run used, and why its end is (or is not) known.
+
+    ``marked`` says the run left ``run_start`` / ``run_end`` markers on this
+    source; then they alone bound the run (rule a). Without markers the
+    epoch's final heartbeat must (rule b). ``tail_problem`` is ``None`` only
+    when that evidence exists.
+    """
+
     key: SourceKey
     low: int
     high: int
-    markers: int
+    marked: bool
+    tail_problem: str | None
 
 
 @dataclass(slots=True)
@@ -279,7 +346,7 @@ class _Run:
         verifier: _Verifier,
         run_id: str,
         members: list[ExchangeObs],
-        markers: dict[SourceKey, list[int]],
+        markers: dict[SourceKey, _Marks],
     ) -> None:
         self.verifier = verifier
         self.run_id = run_id
@@ -290,18 +357,29 @@ class _Run:
         self.gaps: list[Gap] = []
         self.windows = self._windows(markers)
 
-    def _windows(self, markers: dict[SourceKey, list[int]]) -> list[_Window]:
+    def _windows(self, markers: dict[SourceKey, _Marks]) -> list[_Window]:
         sequences: dict[SourceKey, list[int]] = defaultdict(list)
         for exchange in self.members:
             sequences[exchange.source].append(exchange.source_sequence)
         windows: list[_Window] = []
         for key in sorted(set(sequences) | set(markers)):
             own = sequences.get(key, [])
-            marks = markers.get(key, [])
-            low = min([*own, *(mark + 1 for mark in marks)])
-            high = max([*own, *marks])
-            if low <= high:
-                windows.append(_Window(key, low, high, len(marks)))
+            marks = markers.get(key)
+            source = self.verifier.sources[key]
+            if marks is None:
+                # A run that wrote markers anywhere is bounded only by markers
+                # (rule a); without any, by the epoch's final heartbeat (rule b).
+                problem = "no_run_markers_on_source" if markers else source.tail_problem()
+                windows.append(_Window(key, min(own), max(own), False, problem))
+                continue
+            problem = marks.open_reason(own)
+            starts = [start + 1 for start in marks.starts]
+            # With only run_end markers the run's start is unknown.
+            low = min([*own, *starts]) if own or starts else max(min(marks.ends), 0)
+            high = max([*own, *marks.ends], default=low)
+            if problem is None and low > high:
+                continue  # a closed run that allocated nothing on this source
+            windows.append(_Window(key, low, max(low, high), True, problem))
         return windows
 
     def build(self) -> dict[str, Any]:
@@ -332,6 +410,7 @@ class _Run:
                         "first_sequence": window.low,
                         "last_sequence": window.high,
                         "heartbeat_sequence": self.verifier.sources[window.key].heartbeat,
+                        **_closed_by(window),
                     }
                     for window in self.windows
                 ],
@@ -349,21 +428,28 @@ class _Run:
     # -- completeness ------------------------------------------------------
 
     def _completeness(self) -> None:
+        """Spec 042 §9.5 (rev 5): only proven ends make a run complete.
+
+        A missing sequence inside a window, or adjacent to it (it may be the
+        run's own first or last call), is ``partial``. A missing sequence
+        after the window counts against the run unless the window's end is
+        proven: by the run's own closed markers (then later sequences belong
+        to other work) or, without markers, by the epoch's final heartbeat
+        (then every sequence up to it is checked, and one missing there may
+        be the run's lost call, so it is ``unverified``). Without either the
+        tail is ``unverified``.
+        """
+
         for window in self.windows:
             key, low, high = window.key, window.low, window.high
             source = self.verifier.sources[key]
-            # run() emits markers in entry/exit pairs. Without a closed pair the
-            # run's end is unknown, so a later loss may be one of its calls.
-            closed = window.markers > 0 and window.markers % 2 == 0
+            bounded_by_markers = window.marked and window.tail_problem is None
             for first, last in source.missing:
-                # Missing ranges are maximal, so the observed exchanges right
-                # before/after one sit at first-1 and last+1: "adjacent to a
-                # run exchange" and "inside the window" both reduce to
-                # intersecting [low - 1, high + 1].
+                effect: Literal["partial", "unverified"]
                 if first <= high + 1 and last >= low - 1:
-                    effect: Literal["partial", "unverified"] = "partial"
-                elif not closed and last >= low:
-                    effect = "unverified"  # the run may still have been open
+                    effect = "partial"
+                elif not bounded_by_markers and last >= low:
+                    effect = "unverified"  # may be the run's lost later call
                 else:
                     continue
                 unexplained = "unattributed" if effect == "unverified" else None
@@ -379,26 +465,14 @@ class _Run:
                             reason=reason or unexplained,
                         )
                     )
-            if window.markers % 2:
+            if window.tail_problem is not None:
                 self.gaps.append(
                     Gap(
                         "tail_unverified",
                         "unverified",
                         source_id=key[0],
                         source_epoch=key[1],
-                        reason="run_not_closed",
-                    )
-                )
-            if source.heartbeat < high:
-                self.gaps.append(
-                    Gap(
-                        "tail_unverified",
-                        "unverified",
-                        source_id=key[0],
-                        source_epoch=key[1],
-                        first_sequence=source.heartbeat + 1,
-                        last_sequence=high,
-                        reason="no_covering_heartbeat",
+                        reason=window.tail_problem,
                     )
                 )
 

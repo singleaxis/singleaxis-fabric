@@ -32,6 +32,7 @@ import pytest
 from fabric.content_store.local import LocalFilesystemContentStore
 from fabric.reconstruct import ReconstructInputError, reconstruct
 from fabric.reconstruct.__main__ import main
+from fabric.reconstruct._inputs import pseudonym as pid
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAPTURE_ROOT = REPO_ROOT / "contracts" / "capture" / "v1"
@@ -318,13 +319,31 @@ class Capture:
             },
         )
 
-    def heartbeat(self, last: int | None = None, *, run_id: str | None = None) -> None:
+    def heartbeat(
+        self, last: int | None = None, *, run_id: str | None = None, kind: str | None = "final"
+    ) -> None:
+        """A heartbeat; the default is the ``final`` one a clean close writes.
+
+        ``kind=None`` writes a heartbeat without ``fabric.heartbeat.kind``
+        (what capture before spec 042 rev 5 wrote).
+        """
         attributes: dict[str, Any] = {
             "fabric.heartbeat.last_sequence": self.sequence - 1 if last is None else last
         }
+        if kind is not None:
+            attributes["fabric.heartbeat.kind"] = kind
         if run_id is not None:
             attributes["fabric.run.id"] = run_id
         self._record("fabric.capture_heartbeat", attributes)
+
+    def periodic(self, last: int | None = None) -> None:
+        self.heartbeat(last, kind="periodic")
+
+    def run_start(self, run_id: str) -> None:
+        self.heartbeat(run_id=run_id, kind="run_start")
+
+    def run_end(self, run_id: str) -> None:
+        self.heartbeat(run_id=run_id, kind="run_end")
 
     def object_path(self, object_id: str) -> Path:
         return self.root / "store" / TENANT / "evidence" / object_id
@@ -359,6 +378,11 @@ def run_by_id(document: Mapping[str, Any], run_id: str) -> dict[str, Any]:
 
 def gap_types(run: Mapping[str, Any]) -> list[str]:
     return [gap["gap_type"] for gap in run["gaps"]]
+
+
+def real_gaps(run: Mapping[str, Any]) -> list[tuple[str, str | None]]:
+    """``(gap_type, reason)`` of every gap that affects the verdict."""
+    return [(gap["gap_type"], gap.get("reason")) for gap in run["gaps"] if gap["effect"] != "info"]
 
 
 # --------------------------------------------------------------------------
@@ -449,6 +473,7 @@ def test_clean_three_turn_react_run_is_complete(capture: Capture) -> None:
                 "first_sequence": 0,
                 "last_sequence": 2,
                 "heartbeat_sequence": 2,
+                "closed_by": "final_heartbeat",
             }
         ],
     }
@@ -459,12 +484,12 @@ def test_clean_three_turn_react_run_is_complete(capture: Capture) -> None:
     assert third["continues_exchange_id"] == "ex-1"
     assert [ex["input_message_count"] for ex in run["exchanges"]] == [2, 4, 6]
     assert [ex["output_message_count"] for ex in run["exchanges"]] == [1, 1, 1]
-    assert first["tool_call_ids_emitted"] == ["call_a"]
-    assert second["tool_call_ids_consumed"] == ["call_a"]
-    assert third["tool_call_ids_consumed"] == ["call_a", "call_b"]
+    assert first["tool_call_ids_emitted"] == [pid("call_a")]
+    assert second["tool_call_ids_consumed"] == [pid("call_a")]
+    assert third["tool_call_ids_consumed"] == [pid("call_a"), pid("call_b")]
     assert third["tool_call_ids_emitted"] == []
     assert first["model"] == MODEL
-    assert first["response_id"] == "chatcmpl-0"
+    assert first["response_id"] == pid("chatcmpl-0")
     assert first["parse_status"] == "ok"
     assert first["objects"]["request"]["verification"] == "verified"
     assert first["objects"]["response"]["object_id"] == "ex-0-response"
@@ -476,6 +501,7 @@ def test_clean_three_turn_react_run_is_complete(capture: Capture) -> None:
             "heartbeat_sequence": 2,
             "missing_sequences": [],
             "loss_ranges": [],
+            "final_heartbeat_sequence": 2,
         }
     ]
     assert document["inputs"]["store"] == {"kind": "local", "tenant_id": TENANT}
@@ -514,7 +540,7 @@ def test_dropped_exchange_span_is_a_sequence_gap(capture: Capture) -> None:
         g for g in run["gaps"] if g["gap_type"] == "unmatched_tool_call" and g["effect"] != "info"
     ]
     assert [(g["tool_call_id"], g["reason"]) for g in unmatched] == [
-        ("call_b", "consumed_not_emitted")
+        (pid("call_b"), "consumed_not_emitted")
     ]
 
 
@@ -575,27 +601,28 @@ def test_loss_inside_open_run_window_is_partial_via_markers(capture: Capture) ->
     scoped = "agent-run-7"
     other = "trace:" + "9" * 32
     capture.exchange(*react_turns()[0], run_id=other)  # 0
-    capture.heartbeat(run_id=scoped)  # entry marker: last_sequence 0
+    capture.run_start(scoped)  # last_sequence 0
     capture.exchange(*react_turns()[0], run_id=scoped)  # 1
     capture.exchange(*react_turns()[0], run_id=other)  # 2
     capture.skip()  # 3: lost while the scoped run was open
     capture.loss("internal_error", 3)
     capture.exchange(*react_turns()[0], run_id=other)  # 4
-    capture.heartbeat(run_id=scoped)  # exit marker: last_sequence 4
+    capture.run_end(scoped)  # last_sequence 4
     capture.exchange(*react_turns()[0], run_id=other)  # 5
     capture.heartbeat()
     run = run_by_id(capture.reconstruct(), scoped)
     assert run["verdict"] == "partial"
     window = run["declared_scope"]["windows"][0]
     assert (window["first_sequence"], window["last_sequence"]) == (1, 4)
+    assert window["closed_by"] == "run_markers"
     assert [g["gap_type"] for g in run["gaps"] if g["effect"] != "info"] == ["loss"]
 
 
-def test_without_exit_marker_a_later_loss_is_never_complete(capture: Capture) -> None:
-    """Review fix: an entry marker without its exit marker leaves the run's end unknown."""
+def test_without_run_end_a_later_loss_is_never_complete(capture: Capture) -> None:
+    """Review fix: a run_start without its run_end leaves the run's end unknown."""
     scoped = "agent-run-8"
     other = "trace:" + "9" * 32
-    capture.heartbeat(run_id=scoped)  # entry marker: -1
+    capture.run_start(scoped)  # -1
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
     capture.exchange(*react_turns()[0], run_id=other)  # 1
     capture.skip()  # 2
@@ -606,6 +633,7 @@ def test_without_exit_marker_a_later_loss_is_never_complete(capture: Capture) ->
     run = run_by_id(document, scoped)
     window = run["declared_scope"]["windows"][0]
     assert (window["first_sequence"], window["last_sequence"]) == (0, 0)
+    assert "closed_by" not in window
     assert run["verdict"] == "unverified"
     found = {
         (g["gap_type"], g["effect"], g.get("reason")) for g in run["gaps"] if g["effect"] != "info"
@@ -618,12 +646,12 @@ def test_without_exit_marker_a_later_loss_is_never_complete(capture: Capture) ->
 
 
 def test_run_killed_inside_scope_is_not_complete(capture: Capture) -> None:
-    """Review fix: entry marker, two calls, flush, then a crash before the exit marker."""
-    capture.heartbeat(run_id="agent-run-k")  # entry: -1
+    """Review fix: run_start, two calls, flush, then a crash before run_end."""
+    capture.run_start("agent-run-k")  # -1
     capture.exchange(*react_turns()[0], run_id="agent-run-k")  # 0
     capture.exchange(*react_turns()[0], run_id="agent-run-k")  # 1
-    capture.heartbeat()  # periodic/flush heartbeat: 1
-    # seq 2 is allocated, then SIGKILL: no span, no loss, no exit marker.
+    capture.periodic()  # 1
+    # seq 2 is allocated, then SIGKILL: no span, no loss, no run_end.
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "unverified"
     assert run["checks"]["tail"] == "failed"
@@ -632,18 +660,17 @@ def test_run_killed_inside_scope_is_not_complete(capture: Capture) -> None:
     ]
 
 
-def test_closed_runs_count_markers_per_span_not_per_content(
+def test_back_to_back_runs_and_reread_files_dedupe_by_logical_identity(
     capture: Capture, tmp_path: Path
 ) -> None:
     """Back-to-back run() blocks repeat a last_sequence; a re-read file repeats spans."""
     scoped = "agent-run-p"
-    capture.heartbeat(run_id=scoped)  # entry: -1
+    capture.run_start(scoped)  # -1
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
-    capture.heartbeat(run_id=scoped)  # exit: 0
-    capture.heartbeat(run_id=scoped)  # entry: 0 (same content as the exit)
+    capture.run_end(scoped)  # 0
+    capture.run_start(scoped)  # 0 (same last_sequence as the run_end, other kind)
     capture.exchange(*react_turns()[0], run_id=scoped)  # 1
-    capture.heartbeat(run_id=scoped)  # exit: 1
-    capture.heartbeat()
+    capture.run_end(scoped)  # 1
     assert only_run(capture.reconstruct())["verdict"] == "complete_for_declared_scope"
     path = capture.write()
     document = reconstruct([path, path], store=capture.store, generated_at=GENERATED_AT)
@@ -685,10 +712,10 @@ def test_unscoped_run_ignores_losses_before_its_first_call(capture: Capture) -> 
 
 
 def test_marker_only_run_with_lost_calls_is_partial(capture: Capture) -> None:
-    capture.heartbeat(run_id="agent-run-9")  # entry: -1
+    capture.run_start("agent-run-9")  # -1
     capture.skip()  # 0: the run's only call, lost
     capture.loss("queue_full", 0)
-    capture.heartbeat(run_id="agent-run-9")  # exit: 0
+    capture.run_end("agent-run-9")  # 0
     run = only_run(capture.reconstruct())
     assert run["exchanges"] == []
     assert run["verdict"] == "partial"
@@ -706,26 +733,20 @@ def test_missing_heartbeat_is_an_unverified_tail(capture: Capture) -> None:
             "effect": "unverified",
             "source_id": SOURCE,
             "source_epoch": EPOCH,
-            "first_sequence": 0,
-            "last_sequence": 2,
-            "reason": "no_covering_heartbeat",
+            "reason": "no_final_heartbeat",
         }
     ]
+    assert "closed_by" not in run["declared_scope"]["windows"][0]
 
 
-def test_stale_heartbeat_does_not_cover_the_tail(capture: Capture) -> None:
+def test_periodic_heartbeat_never_closes_a_run(capture: Capture) -> None:
     turns = react_turns()
     capture.exchange(*turns[0])
-    capture.heartbeat()
     capture.exchange(*turns[1])
+    capture.periodic()  # covers every call so far, but the process went on
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "unverified"
-    gap = run["gaps"][0]
-    assert (gap["gap_type"], gap["first_sequence"], gap["last_sequence"]) == (
-        "tail_unverified",
-        1,
-        1,
-    )
+    assert real_gaps(run) == [("tail_unverified", "no_final_heartbeat")]
 
 
 def test_heartbeat_reveals_lost_tail_exchange(capture: Capture) -> None:
@@ -737,6 +758,206 @@ def test_heartbeat_reveals_lost_tail_exchange(capture: Capture) -> None:
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "partial"
     assert "sequence_gap" in gap_types(run)
+
+
+# --------------------------------------------------------------------------
+# Tail evidence: heartbeat kinds and the rev-5 verdict rule (re-review fixes)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["periodic", None])
+def test_lost_final_call_after_a_heartbeat_without_markers_is_unverified(
+    capture: Capture, kind: str | None
+) -> None:
+    """Codex re-review report1 #4 / report3 #3.
+
+    Exchange 0 and a heartbeat at 0 arrive; call 1 is allocated and the
+    process dies before anything else is exported. Without a final heartbeat
+    nothing proves call 1 never happened, so the run is not complete. A
+    heartbeat without a kind (pre-rev-5 capture) is treated the same way.
+    """
+    capture.exchange(*react_turns()[0])  # 0
+    capture.heartbeat(kind=kind)  # last_sequence 0
+    capture.skip()  # 1: allocated, then process death
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert [g for g in run["gaps"] if g["effect"] != "info"] == [
+        {
+            "gap_type": "tail_unverified",
+            "effect": "unverified",
+            "source_id": SOURCE,
+            "source_epoch": EPOCH,
+            "reason": "no_final_heartbeat",
+        }
+    ]
+
+
+def test_retried_run_start_never_closes_a_run(capture: Capture) -> None:
+    """Codex re-review report1 #5 / report3 #2.
+
+    The Node stored the run_start but its acknowledgement was lost, so the
+    retry exported the same record again under a new span id. Counting spans
+    made two markers look like an entry/exit pair. Deduplicated by logical
+    identity it is one run_start without a run_end.
+    """
+    scoped = "open-run"
+    capture.run_start(scoped)  # -1
+    capture.run_start(scoped)  # the retry: same record, new span id
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 0
+    capture.periodic()  # 0
+    capture.skip()  # 1: the run's second call, lost with the process
+    rows = [row for row in capture.rows if row["name"] == "fabric.capture_heartbeat"]
+    assert rows[0]["span_id"] != rows[1]["span_id"]
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert real_gaps(run) == [("tail_unverified", "run_not_closed")]
+
+
+def test_retried_run_start_with_a_final_heartbeat_is_still_unverified(capture: Capture) -> None:
+    scoped = "open-run"
+    capture.run_start(scoped)
+    capture.run_start(scoped)  # retry duplicate
+    capture.exchange(*react_turns()[0], run_id=scoped)
+    capture.heartbeat()  # final: the run had markers, so only markers can close it
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert ("tail_unverified", "run_not_closed") in real_gaps(run)
+
+
+def test_clean_final_heartbeat_completes_an_unmarked_run(capture: Capture) -> None:
+    react_run(capture)  # three exchanges, then the final heartbeat of a clean close
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    assert run["declared_scope"]["windows"][0]["closed_by"] == "final_heartbeat"
+
+
+def test_closed_run_markers_complete_a_run_without_a_final_heartbeat(capture: Capture) -> None:
+    scoped = "agent-run-c"
+    capture.run_start(scoped)
+    capture.run_start(scoped)  # a retried duplicate is harmless
+    for request, response in react_turns():
+        capture.exchange(request, response, run_id=scoped)
+    capture.run_end(scoped)
+    capture.run_end(scoped)  # so is a retried run_end
+    capture.exchange(*react_turns()[0], run_id="trace:" + "5" * 32)  # later, other work
+    capture.skip()  # a later loss belongs to other work: the run's end is proven
+    run = run_by_id(capture.reconstruct(), scoped)
+    assert run["verdict"] == "complete_for_declared_scope"
+    window = run["declared_scope"]["windows"][0]
+    assert (window["first_sequence"], window["last_sequence"], window["closed_by"]) == (
+        0,
+        2,
+        "run_markers",
+    )
+
+
+def test_second_run_block_without_its_run_end_is_not_closed(capture: Capture) -> None:
+    scoped = "agent-run-twice"
+    capture.run_start(scoped)  # -1
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 0
+    capture.run_end(scoped)  # 0
+    capture.run_start(scoped)  # 0
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 1
+    capture.periodic()  # 1; the second block's run_end never arrives
+    capture.skip()  # 2: lost
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert ("tail_unverified", "run_not_closed") in real_gaps(run)
+
+
+def test_exchange_after_run_end_is_outside_the_markers(capture: Capture) -> None:
+    scoped = "agent-run-leak"
+    capture.run_start(scoped)  # -1
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 0
+    capture.run_end(scoped)  # 0
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 1: a task that outlived the block
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert ("tail_unverified", "exchange_outside_run_markers") in real_gaps(run)
+
+
+def test_run_end_alone_never_closes_a_run(capture: Capture) -> None:
+    capture.exchange(*react_turns()[0], run_id="agent-run-e")  # 0
+    capture.run_end("agent-run-e")  # 0; the run_start was lost
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+
+
+def test_open_run_with_only_a_run_start_is_reported_unverified(capture: Capture) -> None:
+    capture.run_start("agent-run-s")  # -1
+    capture.skip()  # 0: its only call, lost with the process
+    capture.periodic()
+    run = only_run(capture.reconstruct())
+    assert run["run_id"] == "agent-run-s"
+    assert run["verdict"] == "partial"  # sequence 0 is known missing inside its window
+    assert ("tail_unverified", "run_not_closed") in real_gaps(run)
+
+
+def test_activity_after_the_final_heartbeat_reopens_the_epoch(capture: Capture) -> None:
+    """A final heartbeat proves the epoch's end only if nothing came after it."""
+    capture.exchange(*react_turns()[0], run_id="trace:" + "1" * 32)  # 0
+    capture.heartbeat()  # final at 0
+    capture.exchange(*react_turns()[0], run_id="trace:" + "2" * 32)  # 1: the epoch went on
+    document = capture.reconstruct()
+    for run in document["runs"]:
+        assert run["verdict"] == "unverified"
+        assert real_gaps(run) == [("tail_unverified", "activity_after_final_heartbeat")]
+
+
+def test_markers_on_one_source_require_markers_on_every_source(tmp_path: Path) -> None:
+    first = Capture(tmp_path, id_prefix="a")
+    first.run_start("agent-run-m")
+    first.exchange(*react_turns()[0], run_id="agent-run-m")
+    first.run_end("agent-run-m")
+    second = Capture(tmp_path, source_id="wire-0000000000000002", id_prefix="b")
+    second.exchange(*react_turns()[0], run_id="agent-run-m")
+    second.heartbeat()  # final, but this source has no markers for a marked run
+    first.rows.extend(second.rows)
+    run = only_run(first.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert ("tail_unverified", "no_run_markers_on_source") in real_gaps(run)
+
+
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {"fabric.heartbeat.kind": "shutdown"},  # outside the closed vocabulary
+        {"fabric.heartbeat.kind": "run_end"},  # a marker that names no run
+        {"fabric.heartbeat.kind": "final", "fabric.run.id": "agent-run-x"},
+    ],
+)
+def test_malformed_heartbeat_kinds_never_close_a_run(
+    capture: Capture, attributes: dict[str, Any]
+) -> None:
+    capture.run_start("agent-run-x")
+    capture.exchange(*react_turns()[0], run_id="agent-run-x")
+    capture._record(
+        "fabric.capture_heartbeat",
+        {"fabric.heartbeat.last_sequence": capture.sequence - 1, **attributes},
+    )
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+
+
+def test_codex_tail_probe_spans_are_never_complete(tmp_path: Path) -> None:
+    """The re-review probe shapes, replayed exactly as pre-rev-5 capture exported them.
+
+    Kind-less heartbeats (with and without a run id) are neither markers nor
+    a final heartbeat, so neither the lost-final-call capture nor the
+    retried-marker capture can be complete.
+    """
+    for retried in (False, True):
+        capture = Capture(tmp_path / str(retried))
+        run_id = "open-run" if retried else RUN
+        if retried:
+            capture.heartbeat(run_id=run_id, kind=None)  # entry marker
+            capture.heartbeat(run_id=run_id, kind=None)  # its retry, new span id
+        capture.exchange(*react_turns()[0], run_id=run_id)
+        capture.heartbeat(kind=None)
+        capture.skip()
+        assert only_run(capture.reconstruct())["verdict"] == "unverified"
 
 
 def test_two_epochs_are_accounted_separately(tmp_path: Path) -> None:
@@ -885,10 +1106,22 @@ def test_store_objects_are_resolved_by_object_id_not_recorded_path(capture: Capt
             if key in attributes:
                 object_id = attributes[key].rsplit("/", 1)[-1]
                 attributes[key] = f"file:///elsewhere/other/{object_id}"
-    run = only_run(capture.reconstruct())
+    document = capture.reconstruct()
+    run = only_run(document)
     assert run["verdict"] == "complete_for_declared_scope"
-    ref = run["exchanges"][0]["objects"]["request"]["ref"]
-    assert ref.startswith(f"file://{capture.root / 'store'}")
+    assert run["exchanges"][0]["objects"]["request"]["verification"] == "verified"
+
+
+def test_report_never_names_a_store_location(capture: Capture) -> None:
+    """Codex re-review report2: the report carried each object's resolved path."""
+    react_run(capture)
+    document = capture.reconstruct()
+    text = json.dumps(document)
+    assert str(capture.root / "store") not in text
+    assert "file://" not in text
+    for entry in only_run(document)["exchanges"]:
+        for checked in entry["objects"].values():
+            assert set(checked) <= {"object_id", "sha256", "byte_length", "verification"}
 
 
 def test_conflicting_duplicate_span_is_a_digest_mismatch(capture: Capture) -> None:
@@ -959,8 +1192,8 @@ def test_tool_call_consumed_but_never_emitted_is_partial(capture: Capture) -> No
     assert run["verdict"] == "partial"
     assert run["checks"]["stitching"] == "failed"
     gaps = {(g.get("tool_call_id"), g["effect"], g["reason"]) for g in run["gaps"]}
-    assert ("call_z", "partial", "consumed_not_emitted") in gaps
-    assert ("call_a", "info", "emitted_not_consumed") in gaps
+    assert (pid("call_z"), "partial", "consumed_not_emitted") in gaps
+    assert (pid("call_a"), "info", "emitted_not_consumed") in gaps
 
 
 def test_tool_result_before_run_start_is_info(capture: Capture) -> None:
@@ -969,7 +1202,7 @@ def test_tool_result_before_run_start_is_info(capture: Capture) -> None:
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "complete_for_declared_scope"
     reasons = {(g["tool_call_id"], g["reason"]) for g in run["gaps"]}
-    assert ("call_a", "consumed_before_run") in reasons
+    assert (pid("call_a"), "consumed_before_run") in reasons
 
 
 def test_previous_response_id_chain_is_stitched(capture: Capture) -> None:
@@ -1012,9 +1245,9 @@ def test_previous_response_id_chain_is_stitched(capture: Capture) -> None:
     capture.heartbeat()
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "complete_for_declared_scope"
-    assert run["exchanges"][1]["previous_response_id"] == "resp_1"
+    assert run["exchanges"][1]["previous_response_id"] == pid("resp_1")
     assert run["exchanges"][1]["continues_exchange_id"] == "ex-0"
-    assert run["exchanges"][0]["tool_call_ids_emitted"] == ["call_r1"]
+    assert run["exchanges"][0]["tool_call_ids_emitted"] == [pid("call_r1")]
     assert len(run["threads"]) == 1
 
 
@@ -1030,7 +1263,7 @@ def test_unresolved_previous_response_is_partial(capture: Capture) -> None:
             "gap_type": "unresolved_previous_response",
             "effect": "partial",
             "exchange_id": "ex-0",
-            "previous_response_id": "resp_gone",
+            "previous_response_id": pid("resp_gone"),
         }
     ]
 
@@ -1086,8 +1319,8 @@ def test_streamed_sse_response_is_stitched(capture: Capture) -> None:
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
     first_ex, second_ex = run["exchanges"]
-    assert first_ex["tool_call_ids_emitted"] == ["call_s1"]
-    assert first_ex["response_id"] == "chatcmpl-s"
+    assert first_ex["tool_call_ids_emitted"] == [pid("call_s1")]
+    assert first_ex["response_id"] == pid("chatcmpl-s")
     assert second_ex["continues_exchange_id"] == "ex-0"
 
 
@@ -1108,7 +1341,7 @@ def test_stream_closed_at_its_terminal_event_stitches_normally(capture: Capture)
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
     assert run["exchanges"][0]["response_state"] == "closed_early"
-    assert run["exchanges"][0]["tool_call_ids_emitted"] == ["call_c1"]
+    assert run["exchanges"][0]["tool_call_ids_emitted"] == [pid("call_c1")]
 
 
 def test_unparsed_request_is_unverified(capture: Capture) -> None:
@@ -1354,7 +1587,20 @@ def test_valid_span_model_backs_up_a_free_text_body_model(capture: Capture) -> N
     assert entry["model"] == MODEL
 
 
-@pytest.mark.parametrize("bad", [f"{MODEL}\n", "gpt 4o", "-gpt", "m" * 257])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        f"{MODEL}\n",
+        "gpt 4o",
+        "-gpt",
+        "m" * 129,
+        # Codex re-review report2 #1: a credential-bearing URL passed the old pattern.
+        "https://user:sk-live-secret@example.com/private",
+        "a://b",
+        "gpt-4o@vendor",
+        "gpt+4o",
+    ],
+)
 def test_model_must_fully_match_the_capture_pattern(capture: Capture, bad: str) -> None:
     request, response = react_turns()[0]
     exchange = capture.exchange(request, {**response, "model": bad})
@@ -1364,7 +1610,23 @@ def test_model_must_fully_match_the_capture_pattern(capture: Capture, bad: str) 
     assert "model" not in entry
 
 
-def test_provider_ids_with_a_trailing_newline_are_digested(capture: Capture) -> None:
+@pytest.mark.parametrize(
+    "good", ["gpt-4o:latest", "accounts/fireworks/models/llama-v3p1", "m" * 128, "a:/b"]
+)
+def test_model_names_matching_the_shared_pattern_are_kept(capture: Capture, good: str) -> None:
+    request, response = react_turns()[0]
+    capture.exchange(request, {**response, "model": good})
+    capture.heartbeat()
+    assert only_run(capture.reconstruct())["exchanges"][0]["model"] == good
+
+
+def test_model_rule_is_the_rev5_rule() -> None:
+    inputs = importlib.import_module("fabric.reconstruct._inputs")
+    assert inputs.MODEL_RE.pattern == r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+    assert inputs.model_value("x://y") is None
+
+
+def test_provider_ids_with_a_trailing_newline_are_pseudonymised(capture: Capture) -> None:
     first = [SYSTEM, USER]
     second = [*first, assistant_calls("call_a\n", "Paris"), tool_result("call_a\n", "18C")]
     capture.exchange(
@@ -1374,10 +1636,72 @@ def test_provider_ids_with_a_trailing_newline_are_digested(capture: Capture) -> 
         chat_request(second), chat_response({"role": "assistant", "content": "ok"}, "c-1")
     )
     capture.heartbeat()
-    run = only_run(capture.reconstruct())  # schema-validated: ids match the opaque pattern
+    run = only_run(capture.reconstruct())  # schema-validated: ids match the pseudonym pattern
     first_entry, second_entry = run["exchanges"]
-    assert first_entry["response_id"].startswith("h-")
+    assert first_entry["response_id"] == pid("chatcmpl-0\n")
     (emitted,) = first_entry["tool_call_ids_emitted"]
-    assert emitted.startswith("h-")
+    assert emitted == pid("call_a\n")
     assert second_entry["tool_call_ids_consumed"] == [emitted]
     assert run["verdict"] == "complete_for_declared_scope"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["patient-123-45-6789", "alice@example.com", "sk-live-secret", "chatcmpl-B9x2kQ"],
+)
+def test_provider_ids_never_reach_the_report_but_still_correlate(
+    capture: Capture, raw: str
+) -> None:
+    """Codex re-review report2 #1: valid-looking personal ids passed through unchanged.
+
+    Response, previous-response and tool-call ids are pseudonymised the same
+    way everywhere in the report, so stitching and tool-call matching still
+    work while the provider's value never appears.
+    """
+    tool_id, response_id = f"{raw}-call", f"{raw}-resp"
+    first = [SYSTEM, USER]
+    second = [*first, assistant_calls(tool_id, "Paris"), tool_result(tool_id, "18C")]
+    capture.exchange(
+        chat_request(first), chat_response(assistant_calls(tool_id, "Paris"), response_id)
+    )
+    capture.exchange(
+        chat_request(second), chat_response({"role": "assistant", "content": "ok"}, "c-1")
+    )
+    responses = {
+        "model": "gpt-4o",
+        "previous_response_id": response_id,
+        "input": "next",
+    }
+    capture.exchange(
+        responses,
+        {"id": f"{raw}-next", "model": MODEL, "status": "completed", "output": []},
+        api="openai.responses",
+    )
+    capture.exchange(
+        {"model": "gpt-4o", "previous_response_id": f"{raw}-gone", "input": "x"},
+        {"id": f"{raw}-last", "model": MODEL, "status": "completed", "output": []},
+        api="openai.responses",
+    )
+    capture.heartbeat()
+    document = capture.reconstruct()
+    assert raw not in json.dumps(document)
+    run = only_run(document)
+    first_entry, second_entry, third_entry, _ = run["exchanges"]
+    assert first_entry["tool_call_ids_emitted"] == [pid(tool_id)]
+    assert second_entry["tool_call_ids_consumed"] == [pid(tool_id)]
+    assert second_entry["continues_exchange_id"] == first_entry["exchange_id"]
+    assert first_entry["response_id"] == pid(response_id)
+    assert third_entry["previous_response_id"] == pid(response_id)
+    assert third_entry["continues_exchange_id"] == first_entry["exchange_id"]
+    unresolved = next(g for g in run["gaps"] if g["gap_type"] == "unresolved_previous_response")
+    assert unresolved["previous_response_id"] == pid(f"{raw}-gone")
+
+
+def test_span_response_id_is_pseudonymised_like_the_body_one(capture: Capture) -> None:
+    """Older capture exported gen_ai.response.id; it maps to the same pseudonym."""
+    (exchange,) = [capture.exchange(react_turns()[0][0], None, state="error", http_status=None)]
+    exchange.span["attributes"]["gen_ai.response.id"] = "patient-123-45-6789"
+    capture.heartbeat()
+    document = capture.reconstruct()
+    assert "patient-123-45-6789" not in json.dumps(document)
+    assert only_run(document)["exchanges"][0]["response_id"] == pid("patient-123-45-6789")

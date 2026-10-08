@@ -73,6 +73,7 @@ def _decode_traces(body: bytes) -> list[dict[str, Any]]:
                         "trace_id": span.trace_id.hex(),
                         "span_id": span.span_id.hex(),
                         "parent_span_id": span.parent_span_id.hex() or None,
+                        "trace_state": span.trace_state,
                         "name": span.name,
                         "span_kind": span.kind,
                         "start_ns": span.start_time_unix_nano,

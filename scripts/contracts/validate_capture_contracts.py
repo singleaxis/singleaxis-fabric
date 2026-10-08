@@ -164,6 +164,12 @@ def _validate_scope(run: Mapping[str, Any], sources: Mapping[Any, Any], path: st
     if run["verdict"] != "complete_for_declared_scope":
         return
     for window in windows:
+        if window.get("closed_by") not in ("run_markers", "final_heartbeat"):
+            raise CaptureContractError(
+                "capture.reconstruction.verdict",
+                f"{path}.declared_scope",
+                "a complete run needs every window's end proven (closed_by)",
+            )
         source = sources[(window["source_id"], window["source_epoch"])]
         low, high = window["first_sequence"] - 1, window["last_sequence"] + 1
         if window["heartbeat_sequence"] < window["last_sequence"] or any(

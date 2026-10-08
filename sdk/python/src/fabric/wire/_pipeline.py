@@ -22,7 +22,15 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
-from opentelemetry.trace import SpanKind, Status, StatusCode
+from opentelemetry.context import Context
+from opentelemetry.trace import (
+    NonRecordingSpan,
+    SpanContext,
+    SpanKind,
+    Status,
+    StatusCode,
+    TraceState,
+)  # fmt: skip
 from opentelemetry.util.types import AttributeValue
 
 from .._loss import LossEmitter, LossReason
@@ -39,7 +47,7 @@ if TYPE_CHECKING:
 
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
-_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$")
+_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")  # and never "://"
 _ERROR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
 _FINISH_KEY = {"openai.responses": "status", "anthropic.messages": "stop_reason"}
 _STATS = ("submitted", "dropped", "truncated", "internal_errors", "store_failures", "spans_emitted")
@@ -47,6 +55,35 @@ _BACKOFFS_S = (0.1, 0.4, 1.6)  # one try plus three retries
 _METADATA_MAX_BYTES = 256 * 1024  # json.loads holds the GIL; larger bodies are left to reconstruct
 _STOP = object()
 _PIPELINES: weakref.WeakSet[CapturePipeline] = weakref.WeakSet()
+
+
+def safe_model(value: object) -> str | None:
+    """A provider ``model`` value fit for telemetry, else ``None`` (the attribute is omitted).
+
+    No ``@``, no URL (``://``), no whitespace, at most 128 characters: credentials and
+    endpoints a provider echoes back never reach OTLP.
+    """
+    if isinstance(value, str) and _MODEL_RE.fullmatch(value) and "://" not in value:
+        return value
+    return None
+
+
+def capture_parent(context: Context | None) -> Context:
+    """A fresh context holding only ``context``'s span ids and flags (decision E7).
+
+    The trace id, span id, flags and remoteness are kept for correlation; the trace
+    state is empty and nothing else (baggage, other entries) is carried over, so
+    upstream tenant data or credentials never reach a capture span. Without a valid
+    span the result is an explicit empty context: a root span, never the context of
+    whichever thread emits it. The host's own context object is not modified.
+    """
+    parent = trace.get_current_span(context).get_span_context() if context else None
+    if parent is None or not parent.is_valid:
+        return Context()
+    clean = SpanContext(
+        parent.trace_id, parent.span_id, parent.is_remote, parent.trace_flags, TraceState()
+    )
+    return trace.set_span_in_context(NonRecordingSpan(clean), Context())
 
 
 def media_type_of(value: str) -> str:
@@ -78,7 +115,7 @@ def response_metadata(job: CaptureJob) -> dict[str, Any]:
     if not isinstance(doc, dict):
         return {}
     found: dict[str, Any] = {}
-    if isinstance(model := doc.get("model"), str) and _MODEL_RE.fullmatch(model):
+    if (model := safe_model(doc.get("model"))) is not None:
         found["model"] = model
     choices = doc["choices"] if isinstance(doc.get("choices"), list) else []
     reasons: list[Any] = [doc.get(_FINISH_KEY[job.api])] if job.api in _FINISH_KEY else [
@@ -220,8 +257,10 @@ class CapturePipeline:
         with self._cond:
             return {**self._stats, "queue_depth": self._queue.qsize()}
 
-    def _claim(self, job: CaptureJob) -> bool:
-        """Take ``job``'s outcome; ``False`` once ``close`` has reported it as a shutdown loss."""
+    def _commit(self, job: CaptureJob) -> bool:
+        """The job's single terminal transition: ``True`` gives the worker its outcome;
+        ``False`` means ``close`` already reported it as a shutdown loss. Exactly one wins.
+        """
         with self._cond:
             owned, self._current = self._current is job, None
             return owned
@@ -229,15 +268,12 @@ class CapturePipeline:
     def _run(self) -> None:  # the worker is the only writer of its own counters
         while (job := self._queue.get()) is not _STOP:
             with self._cond:
-                self._current = job
-            owned = False
+                self._current = job  # close() may claim it until the worker commits
             try:
-                attrs = self._prepare(job)
-                if owned := self._claim(job):
-                    self._emit(job, attrs)
-            except Exception:
+                self._emit(job, self._prepare(job))
+            except Exception:  # before the commit only: after it the outcome is the span
                 with contextlib.suppress(Exception):
-                    if owned or self._claim(job):
+                    if self._commit(job):
                         self._stats["internal_errors"] += 1
                         self._lose(job, "internal_error")
             finally:
@@ -269,18 +305,26 @@ class CapturePipeline:
         )  # fmt: skip
 
     def _emit(self, job: CaptureJob, attrs: dict[str, AttributeValue]) -> None:
+        """Build the span, then commit: an unended span is never exported, so a job that
+        ``close`` claimed while this ran (a slow store or span start) is dropped here."""
         tracer = trace.get_tracer("fabric.wire", __version__, tracer_provider=self._provider)
+        parent = capture_parent(job.parent_context)
         span = tracer.start_span(
-            SPAN_EXCHANGE, job.parent_context, SpanKind.CLIENT, attrs, start_time=job.started_ns
+            SPAN_EXCHANGE, parent, SpanKind.CLIENT, attrs, start_time=job.started_ns
         )
         code = job.http_status_code
         if job.response_state == "error" or (code is not None and code >= 400):  # noqa: PLR2004
             span.set_status(Status(StatusCode.ERROR))
-        if not span.is_recording():  # sampled out: the sequence must not silently vanish
-            self._lose(job, "span_dropped")
-            return
-        span.end(end_time=max(job.ended_ns, job.started_ns))
-        self._stats["spans_emitted"] += 1
+        if not self._commit(job):
+            return  # already a shutdown loss: suppress the late outcome
+        try:
+            if not span.is_recording():  # sampled out: the sequence must not silently vanish
+                self._lose(job, "span_dropped")
+                return
+            span.end(end_time=max(job.ended_ns, job.started_ns))
+            self._stats["spans_emitted"] += 1
+        except Exception:  # committed: never a second outcome for this sequence
+            self._stats["internal_errors"] += 1
 
     def _store_body(
         self, job: CaptureJob, body: CapturedBody, data: bytes, sha: str, role: str

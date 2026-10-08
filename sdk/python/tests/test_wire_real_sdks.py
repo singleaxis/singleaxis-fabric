@@ -11,9 +11,12 @@ is not installed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 import pytest
+
+from fabric import wire
 
 from . import test_wire_httpx2 as base
 from .test_wire_httpx2 import FakeLLM, Installed, assert_exact_capture
@@ -86,3 +89,56 @@ def test_anthropic_sync_async_and_streaming(installed: Installed, fake_llm: Fake
         ("anthropic.messages", "anthropic")
     }
     assert all(exchange.path == "/v1/messages" for exchange in fake_llm.seen)
+
+
+@pytest.mark.parametrize("sdk_name", ["openai", "anthropic"])
+def test_official_default_client_factories_accept_explicit_wrappers(
+    installed: Installed, fake_llm: FakeLLM, sdk_name: str
+) -> None:
+    """Re-review finding 10: ``DefaultHttpxClient`` / ``DefaultAsyncHttpxClient`` take
+    explicit httpx2 wrappers while httpx is installed too, and each call is captured
+    once (the patched inner transport does not capture it again)."""
+    import httpx  # noqa: PLC0415
+
+    httpx2 = pytest.importorskip("httpx2")
+    sdk = pytest.importorskip(sdk_name)
+    assert httpx.BaseTransport is not httpx2.BaseTransport  # both flavors are installed
+    sync_http = sdk.DefaultHttpxClient(transport=wire.WireTransport(httpx2.HTTPTransport()))
+    if sdk_name == "openai":
+        client: Any = sdk.OpenAI(
+            api_key="test", base_url=f"http://127.0.0.1:{fake_llm.port}/v1",
+            max_retries=0, http_client=sync_http,
+        )  # fmt: skip
+        call: Any = lambda c: c.chat.completions.create(  # noqa: E731
+            model="gpt-fake", messages=[{"role": "user", "content": "x"}]
+        )
+        aclient_type, api = sdk.AsyncOpenAI, "openai.chat_completions"
+        base_url = f"http://127.0.0.1:{fake_llm.port}/v1"
+    else:
+        base_url = f"http://127.0.0.1:{fake_llm.port}"
+        client = sdk.Anthropic(
+            api_key="test", base_url=base_url, max_retries=0, http_client=sync_http
+        )
+        call = lambda c: c.messages.create(  # noqa: E731
+            model="claude-fake-1", max_tokens=8, messages=[{"role": "user", "content": "x"}]
+        )
+        aclient_type, api = sdk.AsyncAnthropic, "anthropic.messages"
+    call(client)
+    client.close()
+
+    async def run_async() -> None:
+        async_http = sdk.DefaultAsyncHttpxClient(
+            transport=wire.AsyncWireTransport(httpx2.AsyncHTTPTransport())
+        )
+        aclient = aclient_type(
+            api_key="test", base_url=base_url, max_retries=0, http_client=async_http
+        )
+        await call(aclient)
+        await aclient.close()
+
+    asyncio.run(run_async())
+    found = assert_exact_capture(installed, fake_llm, ["complete"] * 2)
+    assert {a["fabric.wire.api"] for a in found} == {api}
+    with pytest.raises(TypeError) if sdk_name == "anthropic" else contextlib.nullcontext():
+        # an httpx (not httpx2) wrapper is still an httpx transport, as it should be
+        sdk.DefaultHttpxClient(transport=wire.WireTransport(httpx.HTTPTransport()))

@@ -16,7 +16,13 @@ loop is three OpenAI-compatible chat-completions calls:
 ``--client openai`` uses the real ``openai`` SDK (>=3, which sends through
 httpx2) exactly as an application would.
 
-Prints one JSON line on stdout: the answer and whether Fabric was active.
+The loop runs under an ambient (host) parent span context whose W3C trace
+state carries ``E2E_TRACE_STATE``, the way upstream instrumentation can put
+a tenant id or credential there. Capture must keep the trace/span ids for
+correlation but never forward that trace state (spec 042 §8, decision E7).
+
+Prints one JSON line on stdout: the answer, whether Fabric was active and the
+ambient parent's trace and span ids.
 """
 
 from __future__ import annotations
@@ -28,6 +34,8 @@ import sys
 from typing import Any
 
 import httpx
+from opentelemetry import context as otel_context
+from opentelemetry import trace
 
 
 def get_weather(city: str) -> dict[str, Any]:
@@ -157,6 +165,35 @@ def main() -> int:
     parser.add_argument("--client", choices=("httpx", "openai"), default="httpx")
     args = parser.parse_args()
     api_key = os.environ["E2E_MODEL_API_KEY"]
+    # The host's ambient span context: ids for correlation, a sensitive trace state.
+    parent = trace.SpanContext(
+        trace_id=int.from_bytes(os.urandom(16), "big") | 1,
+        span_id=int.from_bytes(os.urandom(8), "big") | 1,
+        is_remote=True,
+        trace_flags=trace.TraceFlags(trace.TraceFlags.SAMPLED),
+        trace_state=trace.TraceState([("hostsecret", os.environ["E2E_TRACE_STATE"])]),
+    )
+    token = otel_context.attach(trace.set_span_in_context(trace.NonRecordingSpan(parent)))
+    try:
+        answer, transport = _run(args, api_key)
+        if trace.get_current_span().get_span_context() is not parent:
+            raise RuntimeError("capture modified the host's span context")
+    finally:
+        otel_context.detach(token)
+    # Whether the zero-code path patched the transport the client used; read
+    # without importing Fabric.
+    patched = bool(getattr(transport.handle_request, "__fabric_wire_patch__", False))
+    info = {
+        "answer": answer,
+        "capture_active": patched,
+        "trace_id": f"{parent.trace_id:032x}",
+        "span_id": f"{parent.span_id:016x}",
+    }
+    sys.stdout.write(json.dumps(info) + "\n")
+    return 0
+
+
+def _run(args: argparse.Namespace, api_key: str) -> tuple[str, Any]:
     if args.client == "openai":
         import httpx2
         import openai
@@ -172,11 +209,7 @@ def main() -> int:
                 args.question,
             )
         transport = httpx.HTTPTransport
-    # Whether the zero-code path patched the transport the client used; read
-    # without importing Fabric.
-    patched = bool(getattr(transport.handle_request, "__fabric_wire_patch__", False))
-    sys.stdout.write(json.dumps({"answer": answer, "capture_active": patched}) + "\n")
-    return 0
+    return answer, transport
 
 
 if __name__ == "__main__":

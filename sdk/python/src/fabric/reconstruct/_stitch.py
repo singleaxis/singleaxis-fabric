@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from fabric._sequence import OPAQUE_ID_RE
+from fabric.reconstruct._inputs import pseudonym
 
 __all__ = [
     "ParseStatus",
@@ -385,15 +385,14 @@ def _looks_like_sse(data: bytes, media_type: str | None) -> bool:
 
 
 def _opaque(value: str) -> str:
-    """A provider id as the report may carry it (spec 042 §9).
+    """A provider id as the report carries it (spec 042 §9, rev 5).
 
-    The id itself when it fully matches the opaque-id pattern, else ``h-`` +
-    40 hex of its sha256 -- the same encoding capture applies, but anchored
-    so a trailing newline cannot slip through ``$``.
+    Response, previous-response and tool-call ids come from provider bytes
+    and may hold anything, so the report only ever carries their pseudonym
+    (``p-`` + 16 hex of sha256): equal ids stay equal, so correlation and
+    stitching survive, but the value itself never reaches the report.
     """
-    if OPAQUE_ID_RE.fullmatch(value):
-        return value
-    return "h-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:40]
+    return pseudonym(value)
 
 
 def _ids(values: Sequence[Any]) -> tuple[str, ...]:

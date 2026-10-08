@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -263,6 +264,44 @@ func TestMergedConfigSources(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("metrics pipeline in second --config source accepted")
+	}
+}
+
+// The collector merges --set overrides after every --config source, so a
+// guarded configuration plus --set could drop fabricguard after the gate
+// approved it (Codex re-review probe). Both pflag spellings are refused,
+// wherever they appear, and even when the override looks harmless.
+func TestSetOverrideRejected(t *testing.T) {
+	cfg := writeConfig(t, baseConfig)
+	for name, args := range map[string][]string{
+		"equals form drops guard":   {"--config=" + cfg, "--set=service.pipelines.traces.processors=[batch]"},
+		"separate form drops guard": {"--config", cfg, "--set", "service.pipelines.traces.processors=[]"},
+		"before config":             {"--set=service.telemetry.logs.level=debug", "--config=" + cfg},
+		"harmless-looking override": {"--config=" + cfg, "--set", "service.telemetry.logs.level=debug"},
+		"empty equals form":         {"--config=" + cfg, "--set="},
+		"codex probe inline yaml": {
+			"--config",
+			"yaml:receivers: {otlp: {}}\nprocessors: {fabricguard: {}, batch: {}}\nexporters: {debug: {}}\nservice: {pipelines: {traces: {receivers: [otlp], processors: [fabricguard, batch], exporters: [debug]}}}",
+			"--set=service.pipelines.traces.processors=[batch]",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := validateArgs(args)
+			if err == nil {
+				t.Fatal("--set override accepted")
+			}
+			if !strings.Contains(err.Error(), "--set") || !strings.Contains(err.Error(), "--config") {
+				t.Fatalf("error does not explain the --set refusal: %v", err)
+			}
+		})
+	}
+}
+
+// Flags that merely share the "--set" prefix are not overrides.
+func TestSetPrefixedOtherFlagsNotRejected(t *testing.T) {
+	_, err := validateArgs([]string{"--config=" + writeConfig(t, baseConfig), "--settings-unrelated=1"})
+	if err != nil {
+		t.Fatalf("non---set flag rejected: %v", err)
 	}
 }
 

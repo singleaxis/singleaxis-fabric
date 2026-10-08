@@ -70,7 +70,7 @@ cp .env.example .env && chmod 0600 .env
 #   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
 #   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
 printf %s "$(openssl rand -hex 32)" > secrets/ingress.token
-sudo chown root:65532 secrets/ingress.token && sudo chmod 0440 secrets/ingress.token
+sudo chown "$(id -u)":65532 secrets/ingress.token && chmod 0440 secrets/ingress.token
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
 make verify-prod    # proves health, 401 unauthenticated, 200 authenticated (queue metrics warn-only)
@@ -81,10 +81,15 @@ make logs-prod
 > (uid/gid 65532) and Compose bind-mounts the token secret and the TLS
 > directory with their host owner and mode. A token file owned by your
 > login user with mode `0600` is unreadable inside the container and
-> `fabric-gate` refuses to start. Give secrets (token, `server.key`) group
-> 65532 and mode `0440` (or owner 65532 and `0400`); certificates and CA
-> bundles only need to be readable (`0444`). `make preflight-prod` checks
-> each mounted file it uses.
+> `fabric-gate` refuses to start. Make each secret (token, `server.key`)
+> owned by the operator who runs `make preflight-prod`, with group 65532
+> and mode `0440`: the operator can read it so preflight can check its
+> format, the container reads it through the group, and nobody else can.
+> Certificates and CA bundles only need to be readable (`0444`).
+> `make preflight-prod` checks each mounted file it uses, and reports a
+> file it cannot read as a read failure rather than guessing at its
+> content. With a layout the operator cannot read (for example owner
+> 65532 and `0400`), run the preflight as a user that can.
 
 Use `make up-prod` for startup: it always runs the preflight first. Invoking
 the expanded `docker compose ... up` command directly skips the TLS,
@@ -118,15 +123,18 @@ OTLP, health (`13133`), and metrics (`8888`) publish on `127.0.0.1` only.
 Setting `FABRIC_BIND_ADDR` to a LAN address is an explicit operator choice:
 first uncomment the `tls:` stanzas in
 `collector-config/collector-production.yaml`, drop `server.crt`/`server.key`
-into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`; `server.key` as
-`root:65532 0440`), and open only ports
-4317/4318 in the host firewall. Bearer tokens over plaintext must stay on
-loopback.
+into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`; `server.key` operator-owned,
+group 65532, mode `0440`), and open only ports
+4317/4318 in the host firewall. Both OTLP ports publish on
+`FABRIC_BIND_ADDR`, so `make preflight-prod` fails unless **every**
+configured receiver (gRPC and HTTP) has its own `tls:` stanza. Bearer
+tokens over plaintext must stay on loopback.
 
 ### Secure defaults and honest limitations
 
 - Ingress requires a bearer token (file-backed Compose secret); receiver TLS
-  is optional-but-supported and required before binding beyond loopback.
+  is optional-but-supported and required on every receiver before binding
+  beyond loopback.
 - Egress requires HTTPS with certificate verification and an Authorization
   header; `insecure_skip_verify` exists only for throwaway dev destinations.
   For a destination with a private CA, put the bundle in `./tls`, uncomment

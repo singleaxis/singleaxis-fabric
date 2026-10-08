@@ -15,11 +15,13 @@ import importlib
 import importlib.util
 import logging
 import os
+import sys
 import threading
 import time
 import weakref
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from .._loss import LossEmitter, LossReason
 from .._sequence import SourceAllocator
@@ -28,14 +30,15 @@ from ._model import CaptureJob
 from ._pipeline import CapturePipeline
 from ._stream import FLAVORS, Budget, Exchange, drain_reaper
 
-try:  # the explicit wrappers are httpx transports when httpx is installed
+if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_wrapper
     from httpx import AsyncBaseTransport as _AsyncBase
     from httpx import BaseTransport as _SyncBase
-except ImportError:  # httpx2-only host: the wrappers stay duck-typed
-    _SyncBase = _AsyncBase = object  # type: ignore[misc,assignment]
 
-if TYPE_CHECKING:
     from ._config import WireConfig
+else:
+    _SyncBase = _AsyncBase = object
+
+_W = TypeVar("_W")
 
 _LOG = logging.getLogger("fabric.wire")
 # Set while a tee calls its inner transport, so a patched HTTPTransport under an
@@ -66,23 +69,25 @@ class WireTee:
         )  # fmt: skip
         _TEES.add(self)
 
-    def begin(self, request: Any) -> Exchange | None:
-        """Match ``request`` and open an exchange; ``None`` means pass through. Never raises.
+    def begin(self, request: Any) -> tuple[bool, Exchange | None]:
+        """Match ``request`` and open an exchange. Never raises.
 
-        The sequence is allocated right after the match, so any later setup failure
-        is an ``internal_error`` loss for it, never a silent miss.
+        ``(owned, exchange)``: ``owned`` once a sequence was allocated for the call,
+        so the caller suppresses nested tees while delegating even when ``exchange``
+        is ``None`` because setup failed (that failure is an ``internal_error`` loss
+        for the sequence, never a silent miss, and never a second capture).
         """
         if self.closed or _IN_TEE.get():
-            return None
+            return False, None
         try:
             url = request.url
             found = self.index.match(request.method, url.scheme, url.host, url.port, url.path)
             if found is None:
-                return None
+                return False, None
             epoch, sequence = self.allocator.next_sequence()
         except Exception:  # nothing allocated: nothing to account for
             self.internal_errors += 1
-            return None
+            return False, None
         exchange: Exchange | None = None
         try:
             self.matched += 1
@@ -91,41 +96,47 @@ class WireTee:
             exchange = Exchange(self, found[0], found[1], epoch, sequence)
             exchange.start(request)
             self._active.add(exchange)
-            return exchange
+            return True, exchange
         except Exception:
             with contextlib.suppress(Exception):
                 if exchange is None:
                     self.lose(epoch, sequence, "internal_error")
                 else:
                     exchange.detach(lost=True)
-            return None
+            return True, None
 
     def handle_sync(self, call: Callable[..., Any], transport: Any, request: Any) -> Any:
-        if (exchange := self.begin(request)) is None:
+        owned, exchange = self.begin(request)
+        if not owned:
             return call(transport, request)
-        token = _IN_TEE.set(True)
+        token = _IN_TEE.set(True)  # also after a setup failure: no nested second capture
         try:
             response = call(transport, request)
         except BaseException as exc:
-            exchange.fail(exc)
+            if exchange is not None:
+                exchange.fail(exc)
             raise
         finally:
             _IN_TEE.reset(token)
-        exchange.attach(response, is_async=False)
+        if exchange is not None:
+            exchange.attach(response, is_async=False)
         return response
 
     async def handle_async(self, call: Callable[..., Any], transport: Any, request: Any) -> Any:
-        if (exchange := self.begin(request)) is None:
+        owned, exchange = self.begin(request)
+        if not owned:
             return await call(transport, request)
-        token = _IN_TEE.set(True)
+        token = _IN_TEE.set(True)  # also after a setup failure: no nested second capture
         try:
             response = await call(transport, request)
         except BaseException as exc:
-            exchange.fail(exc)
+            if exchange is not None:
+                exchange.fail(exc)
             raise
         finally:
             _IN_TEE.reset(token)
-        exchange.attach(response, is_async=True)
+        if exchange is not None:
+            exchange.attach(response, is_async=True)
         return response
 
     def forget(self, exchange: Exchange) -> None:
@@ -231,8 +242,42 @@ def unpatch_httpx() -> None:
         _PATCHED.clear()
 
 
+def _flavor_of(inner: Any) -> ModuleType | None:
+    """The httpx flavor (``httpx`` or ``httpx2``) whose transport ``inner`` is, if any."""
+    for klass in type(inner).__mro__:
+        root = str(getattr(klass, "__module__", "")).partition(".")[0]
+        if root in FLAVORS:
+            return sys.modules.get(root)
+    return None
+
+
+_FLAVORED: dict[tuple[type[Any], type[Any]], type[Any]] = {}
+
+
+def _new_wrapper(cls: type[_W], inner: Any, base: str) -> _W:
+    """An instance of ``cls`` that also subclasses ``base`` of ``inner``'s library only.
+
+    anthropic's ``DefaultHttpxClient`` rejects any ``httpx`` class in the MRO of an
+    httpx2 transport, so a wrapper must not carry the other library's base class.
+    """
+    flavor_base = getattr(_flavor_of(inner), base, None)
+    if isinstance(flavor_base, type) and not issubclass(cls, flavor_base):
+        key = (cls, flavor_base)
+        if (flavored := _FLAVORED.get(key)) is None:
+            made = type(cls.__name__, (cls, flavor_base), {"__slots__": ()})
+            flavored = _FLAVORED.setdefault(key, made)
+        cls = flavored
+    return object.__new__(cls)
+
+
 class WireTransport(_SyncBase):
-    """Explicit sync wrapper (httpx or httpx2); without ``handle`` it uses the installed one."""
+    """Explicit sync wrapper (httpx or httpx2); without ``handle`` it uses the installed one.
+
+    An instance is a ``BaseTransport`` of its inner transport's library only.
+    """
+
+    def __new__(cls, inner: Any, *, handle: Any | None = None) -> WireTransport:
+        return _new_wrapper(cls, inner, "BaseTransport")
 
     def __init__(self, inner: Any, *, handle: Any | None = None) -> None:
         self._inner, self._handle = inner, handle
@@ -242,12 +287,24 @@ class WireTransport(_SyncBase):
             return self._inner.handle_request(request)
         return tee.handle_sync(lambda t, r: t.handle_request(r), self._inner, request)
 
+    def __enter__(self) -> WireTransport:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
     def close(self) -> None:
         self._inner.close()
 
 
 class AsyncWireTransport(_AsyncBase):
-    """Explicit async wrapper (httpx or httpx2); without ``handle`` it uses the installed one."""
+    """Explicit async wrapper (httpx or httpx2); without ``handle`` it uses the installed one.
+
+    An instance is an ``AsyncBaseTransport`` of its inner transport's library only.
+    """
+
+    def __new__(cls, inner: Any, *, handle: Any | None = None) -> AsyncWireTransport:
+        return _new_wrapper(cls, inner, "AsyncBaseTransport")
 
     def __init__(self, inner: Any, *, handle: Any | None = None) -> None:
         self._inner, self._handle = inner, handle
@@ -257,6 +314,12 @@ class AsyncWireTransport(_AsyncBase):
             return await self._inner.handle_async_request(request)
         call = lambda t, r: t.handle_async_request(r)  # noqa: E731
         return await tee.handle_async(call, self._inner, request)
+
+    async def __aenter__(self) -> AsyncWireTransport:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()
 
     async def aclose(self) -> None:
         await self._inner.aclose()

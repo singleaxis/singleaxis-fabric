@@ -9,8 +9,8 @@
 // credential-shaped extension keys, and drops unknown log classes by default.
 // Spec 042 wire-capture spans (fabric.model_call, fabric.capture_loss,
 // fabric.capture_heartbeat) get a stricter profile: only their own keys, each
-// value-validated; a resource holding only capture spans keeps nothing but a
-// well-formed service.name.
+// value-validated; a resource holding any capture span keeps nothing but a
+// well-formed service.name, and its scopes keep no attributes.
 // Its purpose is export protection for passive capture; it is not an evaluator,
 // a runtime control engine, or a claim of legal de-identification.
 package fabricguardprocessor

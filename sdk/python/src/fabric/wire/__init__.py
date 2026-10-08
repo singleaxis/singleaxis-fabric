@@ -18,7 +18,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .._sequence import SourceAllocator, get_allocator, run_scope
 from ._config import DEFAULT_ENDPOINTS, WireConfig
@@ -74,11 +74,23 @@ class WireHandle:
     def allocator(self) -> SourceAllocator:
         return self._tee.allocator
 
+    def _exchange_providers(self) -> tuple[object, ...]:
+        """Where exchange spans go: the configured provider, else the host's global one."""
+        from opentelemetry import trace  # noqa: PLC0415
+
+        return (self.config.tracer_provider or trace.get_tracer_provider(),)
+
     def flush(self, timeout_s: float = 5.0) -> bool:
-        """Wait for queued exchanges, then emit pending losses and heartbeats."""
+        """Wait for queued exchanges, force-flush the exchange provider (the host's in global
+        mode), then emit and export pending losses and heartbeats; all within ``timeout_s``.
+
+        ``False`` when anything was not delivered in time, or a loss/heartbeat record was
+        sampled away by a host-supplied provider.
+        """
         deadline = time.monotonic() + max(0.0, timeout_s)
         drained = self._tee.flush(timeout_s)
-        return self._tee.loss.flush(max(0.0, deadline - time.monotonic())) and drained
+        remaining = max(0.0, deadline - time.monotonic())
+        return self._tee.loss.flush(remaining, also=self._exchange_providers()) and drained
 
     def close(self, timeout_s: float | None = None) -> bool:
         """Restore httpx, drain, report what missed the deadline as losses, flush. Idempotent.
@@ -101,7 +113,10 @@ class WireHandle:
             timeout = self.config.shutdown_timeout_s if timeout_s is None else timeout_s
             deadline = time.monotonic() + max(0.0, timeout)
             drained = self._tee.close(timeout * _DRAIN_SHARE)
-            self._result = self._tee.loss.flush(max(0.0, deadline - time.monotonic())) and drained
+            self._tee.loss.final(self.allocator)  # this epoch allocates nothing more
+            remaining = max(0.0, deadline - time.monotonic())
+            flushed = self._tee.loss.flush(remaining, also=self._exchange_providers())
+            self._result = flushed and drained
         return self._result
 
     def uninstall(self) -> None:
@@ -112,8 +127,25 @@ class WireHandle:
         return WireStats(**{f.name: values.get(f.name, 0) for f in dataclasses.fields(WireStats)})
 
     def _atexit_close(self) -> None:
+        """Interpreter exit: everything within ``shutdown_timeout_s``, nothing inline.
+
+        Close (drain, ``final`` heartbeat, flush), close the loss emitter, then shut down
+        Fabric's private providers, each on a helper thread; when the flush did not
+        succeed the exporter is presumed blocked and the shutdown is skipped.
+        """
         with contextlib.suppress(BaseException):  # interpreter shutdown
-            self.close()
+            from .. import _loss  # noqa: PLC0415
+            from ..tracing import is_private_provider  # noqa: PLC0415
+
+            deadline = time.monotonic() + max(0.0, self.config.shutdown_timeout_s)
+            closed = self.close()
+            loss = self._tee.loss
+            flushed = loss.close(max(0.0, deadline - time.monotonic())) and closed
+            providers = {self.config.tracer_provider, loss.tracer_provider} - {None}
+            for provider in providers if flushed else ():
+                if is_private_provider(provider):
+                    shutdown = lambda p=provider: p.shutdown() or True  # noqa: E731
+                    _loss.run_bounded(shutdown, deadline, "fabric-provider-shutdown")
 
 
 def install(config: WireConfig | None = None, /, **overrides: Any) -> WireHandle:
@@ -130,6 +162,7 @@ def install(config: WireConfig | None = None, /, **overrides: Any) -> WireHandle
         loss = get_loss_emitter()
         if config.tracer_provider is not None:
             loss.set_tracer_provider(config.tracer_provider)
+        loss.exit_timeout_s = config.shutdown_timeout_s
         allocator = get_allocator("wire", source_id=config.source_id)
         tee = _transport.WireTee(config, allocator=allocator, loss=loss)
         _HANDLE = WireHandle(config, tee, patched=config.patch_httpx)
@@ -177,21 +210,21 @@ def flush(timeout_s: float = 5.0) -> bool:
     return _HANDLE.flush(timeout_s) if _HANDLE is not None else True
 
 
-def _run_marker(run_id: str) -> None:
+def _run_marker(run_id: str, kind: Literal["run_start", "run_end"]) -> None:
     if (handle := _HANDLE) is not None:
         with contextlib.suppress(Exception):  # capture fails open
-            handle._tee.loss.heartbeat(handle.allocator, run_id=run_id)
+            handle._tee.loss.heartbeat(handle.allocator, kind=kind, run_id=run_id)
 
 
 @contextlib.contextmanager
 def run(run_id: str) -> Iterator[None]:
-    """Scope an explicit run; heartbeat run markers on entry and exit bound its window."""
+    """Scope an explicit run; ``run_start``/``run_end`` heartbeats bound its window."""
     with run_scope(run_id):
-        _run_marker(run_id)
+        _run_marker(run_id, "run_start")
         try:
             yield
         finally:
-            _run_marker(run_id)
+            _run_marker(run_id, "run_end")
 
 
 def __getattr__(name: str) -> Any:

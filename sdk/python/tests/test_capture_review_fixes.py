@@ -22,6 +22,7 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
 
 from fabric import wire
 from fabric.content_store import LocalFilesystemContentStore
+from fabric.reconstruct._inputs import pseudonym
 from fabric.tracing import build_private_provider
 
 from .test_capture_integration import (
@@ -244,7 +245,7 @@ def test_unmatched_tool_call_beyond_64_ids_is_detected(tmp_path: Path) -> None:
     run = _capture_long_loop(tmp_path, ghost_position="end")
     assert run["verdict"] == "partial"
     reasons = {(g["gap_type"], g.get("reason"), g.get("tool_call_id")) for g in run["gaps"]}
-    assert ("unmatched_tool_call", "consumed_not_emitted", "call_ghost") in reasons
+    assert ("unmatched_tool_call", "consumed_not_emitted", pseudonym("call_ghost")) in reasons
 
 
 def test_tool_call_rewritten_into_early_history_is_never_a_false_complete(
@@ -253,7 +254,7 @@ def test_tool_call_rewritten_into_early_history_is_never_a_false_complete(
     run = _capture_long_loop(tmp_path, ghost_position="early")
     assert run["verdict"] == "partial"
     reasons = {(g["gap_type"], g.get("reason"), g.get("tool_call_id")) for g in run["gaps"]}
-    assert ("unmatched_tool_call", "consumed_not_emitted", "call_ghost") in reasons
+    assert ("unmatched_tool_call", "consumed_not_emitted", pseudonym("call_ghost")) in reasons
 
 
 # ------------------------------------- stitching over a failed response body

@@ -35,6 +35,7 @@ from fabric import wire
 from fabric._loss import LossEmitter
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.reconstruct import reconstruct
+from fabric.reconstruct._inputs import pseudonym
 
 from .test_wire_helpers import capture_schemas, load_validator
 
@@ -244,8 +245,9 @@ def test_wire_react_run_reconstructs_complete(tmp_path: Path) -> None:
     ]
     emitted = [ids for e in run["exchanges"] for ids in e["tool_call_ids_emitted"]]
     consumed = [ids for e in run["exchanges"] for ids in e["tool_call_ids_consumed"]]
-    assert emitted == ["call_0", "call_1"]
-    assert sorted(set(consumed)) == ["call_0", "call_1"]
+    # E6: provider-derived ids are pseudonymised, with correlation preserved.
+    assert emitted == [pseudonym("call_0"), pseudonym("call_1")]
+    assert sorted(set(consumed)) == sorted({pseudonym("call_0"), pseudonym("call_1")})
     assert [e["source_sequence"] for e in run["exchanges"]] == [0, 1, 2]
     assert all(
         obj["verification"] == "verified" for e in run["exchanges"] for obj in e["objects"].values()

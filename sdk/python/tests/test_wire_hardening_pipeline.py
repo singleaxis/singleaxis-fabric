@@ -197,7 +197,7 @@ def test_failed_loss_and_heartbeat_exports_are_retained_and_resent() -> None:
     allocator = SourceAllocator("hard-retry", "wire")
     allocator.next_sequence()
     emitter.record("hard-retry", allocator.epoch, "queue_full", 0)
-    emitter.heartbeat(allocator, run_id="run-1")
+    emitter.heartbeat(allocator, kind="run_start", run_id="run-1")
     assert not emitter.flush(2.0)  # the loss export failed: still awaiting delivery
     assert emitter.flush(2.0)
     (loss,) = _named(gate.inner, SPAN_LOSS)

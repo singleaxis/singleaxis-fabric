@@ -27,9 +27,11 @@ from typing import TYPE_CHECKING, Any
 
 from opentelemetry import context as otel_context
 from opentelemetry import trace
+from opentelemetry.context import Context
 
 from .._sequence import resolve_run_id
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ResponseState, WireApi
+from ._pipeline import capture_parent
 
 if TYPE_CHECKING:
     from ._transport import WireTee
@@ -42,6 +44,10 @@ _ABANDONED: queue.SimpleQueue[Callable[[], object]] = queue.SimpleQueue()
 _REAPER_LOCK = threading.Lock()
 _REAPER_PID: int | None = None
 FLAVORS = ("httpx", "httpx2")  # API-identical clients with independent classes
+# Retained chunks smaller than this are copied into one shared buffer, so chunk
+# references stay under 2 * max_body_bytes / _COALESCE_BYTES + 1 per side however
+# small the chunks get; larger chunks are kept by reference, uncopied.
+_COALESCE_BYTES = 4096
 
 
 def _reap() -> None:
@@ -101,15 +107,26 @@ class _Side:
     __slots__ = ("chunks", "encoding", "media_type", "observed", "retained", "truncated")
 
     def __init__(self, headers: Mapping[str, str]) -> None:
-        self.chunks: list[bytes] = []
+        self.chunks: list[bytes | bytearray] = []
         self.observed = self.retained = 0
         self.truncated = False
         self.media_type = headers.get("content-type", "application/octet-stream")
         self.encoding = headers.get("content-encoding", "identity")
 
+    def keep(self, chunk: bytes) -> None:
+        """Retain a non-empty chunk (already reserved), coalescing small ones."""
+        chunks = self.chunks
+        if len(chunk) >= _COALESCE_BYTES:
+            chunks.append(chunk)
+        elif chunks and isinstance(last := chunks[-1], bytearray) and len(last) < _COALESCE_BYTES:
+            last += chunk
+        else:
+            chunks.append(bytearray(chunk))
+
     def body(self) -> CapturedBody:
         """The retained bytes; ownership moves to the caller (the job)."""
-        chunks, self.chunks = tuple(self.chunks), []
+        chunks = tuple(bytes(c) if isinstance(c, bytearray) else c for c in self.chunks)
+        self.chunks = []
         return CapturedBody(chunks, self.observed, self.truncated, self.media_type, self.encoding)
 
 
@@ -128,6 +145,14 @@ def _flavor_types(module: ModuleType) -> tuple[type[Any], type[Any], type[Any]]:
     sync = type("TeeSyncStream", (TeeSyncStream, module.SyncByteStream), {})
     async_ = type("TeeAsyncStream", (TeeAsyncStream, module.AsyncByteStream), {})
     return module.ByteStream, sync, async_
+
+
+def _capture_parent() -> tuple[Context, int | None]:
+    """The parent context for a capture span, and the host trace id if there is one."""
+    current = otel_context.get_current()
+    span_context = trace.get_current_span(current).get_span_context()
+    trace_id = span_context.trace_id if span_context.is_valid else None
+    return capture_parent(current), trace_id
 
 
 class Exchange:
@@ -152,9 +177,7 @@ class Exchange:
     def start(self, request: Any) -> None:
         """Capture context and the request body; on failure the caller detaches (lost)."""
         self.started_ns = time.time_ns()
-        self.parent_context = otel_context.get_current()
-        span_context = trace.get_current_span(self.parent_context).get_span_context()
-        trace_id = span_context.trace_id if span_context.is_valid else None
+        self.parent_context, trace_id = _capture_parent()
         self.run_id = resolve_run_id(self.tee.allocator, trace_id=trace_id)
         self.exchange_id = str(uuid.uuid4())
         self.request = side = _Side(request.headers)
@@ -166,18 +189,20 @@ class Exchange:
 
     def _retain(self, side: _Side, chunk: bytes) -> None:
         size = len(chunk)
+        if not size:  # an empty chunk (e.g. an empty HTTP/2 DATA frame) adds nothing
+            return
         side.observed += size
         if side.truncated or self.done:
             return
         room = self.tee.max_body_bytes - side.retained
         if size <= room and self.tee.budget.try_reserve(size):
             side.retained += size  # counted first: detach() releases what was reserved
-            side.chunks.append(chunk)
+            side.keep(chunk)
             return
         side.truncated = True  # keep the largest prefix that still fits
         if 0 < room < size and self.tee.budget.try_reserve(room):
             side.retained += room
-            side.chunks.append(chunk[:room])
+            side.keep(chunk[:room])
 
     def add(self, chunk: bytes) -> None:
         try:

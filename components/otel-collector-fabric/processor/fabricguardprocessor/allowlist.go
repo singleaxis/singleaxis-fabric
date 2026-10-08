@@ -134,7 +134,7 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
 	"fabric.loss.reason", "fabric.loss.count",
 	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
-	"fabric.heartbeat.last_sequence",
+	"fabric.heartbeat.last_sequence", "fabric.heartbeat.kind",
 ))
 
 // BuiltInAllowedFields retains released v1 log classes. The shared envelope

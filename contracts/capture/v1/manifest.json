@@ -3,17 +3,17 @@
   "version": "1.0.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
-    {"path": "schema/llm-exchange-v1.schema.json", "sha256": "fd8f87690c2298575fb88fbc54eeac510981cbaea0a33f127b20b156b58f7112", "expectation": "schema", "expected_error": null},
-    {"path": "schema/loss-record-v1.schema.json", "sha256": "41e9d410abea8360d25cf19961f706382e5d0caebf060626655987ca4920f1fb", "expectation": "schema", "expected_error": null},
-    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "368f0abf6c0c095ec602e0589b8a89245947d041d9f2b40902f56fe8d36acf0f", "expectation": "schema", "expected_error": null},
+    {"path": "schema/llm-exchange-v1.schema.json", "sha256": "ba9cfc9afccd24e633783fd2858b919c53f4efde62332a82c9cfbceec2b22155", "expectation": "schema", "expected_error": null},
+    {"path": "schema/loss-record-v1.schema.json", "sha256": "288b8a1f225072ba9456a58eca37f5304f8eba2a677163becdb5179413b2d1a8", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "1f96e848d5f8a8788f01fdfeba1b7c3d725022d29dc6e4474ba04c54e5c6e7f3", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/llm-exchange-chat.json", "sha256": "f59dc151edd5e6652f8957fccbcecc01586638d2cee1b80fd61bbeaba8d96cf6", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/loss-record-queue-full.json", "sha256": "fcfd6408ded931f15bac08d30a02782cdf7b652f28ea1668e640f0e728c0e5a1", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/loss-record-heartbeat.json", "sha256": "84fd6e912b43183b4cb9b5b69bdf18213a2310cc70bd04fe84413ee257466eb4", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/run-reconstruction-partial-loss.json", "sha256": "6b8129cb5537fc0c15990e3b05c6c4a0e56791a34ae4c7f963e7a793983a619f", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/loss-record-heartbeat.json", "sha256": "c57679bd53ee109f1123fd0311b833e514e4fdceb0c7b4f2781c138a0d37d99a", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/run-reconstruction-partial-loss.json", "sha256": "307209021f589ccd6ff1b90cce44cb83895be1f0fb3c2093a29232f5e4cbc4bb", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/invalid/llm-exchange-stored-without-ref.json", "sha256": "d3620627679ffeeb5c43abdf5323c7f6e5ae29fe56211693dac166727f589599", "expectation": "invalid", "expected_error": "capture.exchange.store_status"},
     {"path": "fixtures/invalid/llm-exchange-object-id-is-uri.json", "sha256": "2ab0cb1ad00e6bc281cefabc126ff081498c8de00e4d745aef875089df40c5f8", "expectation": "invalid", "expected_error": "capture.schema"},
     {"path": "fixtures/invalid/loss-record-bad-range.json", "sha256": "4f67411fc2699cf54ef72dfceb69b8049878da703c3a49d0e4a55c5944935639", "expectation": "invalid", "expected_error": "capture.loss.range"},
-    {"path": "fixtures/invalid/run-reconstruction-false-complete.json", "sha256": "f4f608554b62546025c35236049837f7005dbdd8e1a55e72fc25bf58ac9cce75", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
+    {"path": "fixtures/invalid/run-reconstruction-false-complete.json", "sha256": "e229a807c4f19f3fb52d73f1a6b211169a4d03bc5886ea081649760a7b23f6b7", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
     {"path": "fixtures/digests/stitch-v1-messages.json", "sha256": "b7b32407f52570cef9af146cde0b5427e398a2c0c41a867d54bdb7395966ab36", "expectation": "digests", "expected_error": null}
   ]
 }

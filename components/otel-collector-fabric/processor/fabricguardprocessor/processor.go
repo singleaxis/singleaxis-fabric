@@ -327,8 +327,11 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 		}
 		clearEntityRefs(resourceSpan.Resource(), g)
 		scopeSpans := resourceSpan.ScopeSpans()
-		captureOnly := onlyCaptureSpans(scopeSpans)
-		if captureOnly {
+		// Any capture span makes the whole group's shared metadata strict: a
+		// sibling application span (global-tracer mode) must not widen the
+		// resource or scope that capture spans are exported under.
+		captureGroup := anyCaptureSpan(scopeSpans)
+		if captureGroup {
 			g.applyCaptureResource(resourceSpan.Resource().Attributes())
 		} else {
 			g.filterAttributes(resourceSpan.Resource().Attributes(), allowed, "trace-resource")
@@ -336,7 +339,7 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 		for si := 0; si < scopeSpans.Len(); si++ {
 			scopeSpan := scopeSpans.At(si)
 			g.scrubTraceScope(scopeSpan)
-			if captureOnly {
+			if captureGroup {
 				g.removeAll(scopeSpan.Scope().Attributes())
 			} else {
 				g.filterAttributes(scopeSpan.Scope().Attributes(), allowed, "trace-scope")
@@ -634,6 +637,10 @@ var (
 	captureResponseStates = toSet("complete", "closed_early", "error", "abandoned")
 	captureStoreStatuses  = toSet("stored", "partial", "failed", "disabled")
 	captureLossReasons    = toSet("queue_full", "internal_error", "shutdown", "span_dropped")
+	// captureHeartbeatKinds is the closed heartbeat vocabulary: periodic
+	// liveness, explicit run boundaries from fabric.wire.run(), and the final
+	// heartbeat a clean close()/exit flush emits.
+	captureHeartbeatKinds = toSet("periodic", "run_start", "run_end", "final")
 	captureOperations     = toSet("chat", "text_completion", "embeddings")
 	// captureFinishReasons is the closed vocabulary the SDK normalizes
 	// provider finish reasons into; anything else arrives as "other".
@@ -647,8 +654,12 @@ var (
 	captureObjectIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 	// error.type is an exception class name, never an exception message.
 	captureErrorTypePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]{0,127}$`)
-	captureModelPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$`)
-	captureProviderPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+	// captureModelPattern is shared with the SDK and the offline verifier
+	// (decision E5): no '@', '+', spaces or query syntax, at most 128 bytes.
+	// validCaptureModel additionally rejects "://", so URLs and
+	// credential-bearing endpoints echoed by a provider never pass.
+	captureModelPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
+	captureProviderPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 	// captureServiceNamePattern matches the service.name the SDK's private
 	// capture provider emits (OTEL_SERVICE_NAME when it matches, else
 	// "fabric-wire"); it excludes '@', spaces and URL syntax.
@@ -680,7 +691,7 @@ var captureProfile = map[string]func(pcommon.Value) bool{
 	"http.request.method":            oneOf(toSet("POST")),
 	"http.response.status_code":      intIn(100, 599),
 	"error.type":                     matches(captureErrorTypePattern),
-	"gen_ai.response.model":          matches(captureModelPattern),
+	"gen_ai.response.model":          validCaptureModel,
 	"gen_ai.response.finish_reasons": finishReasons,
 	"gen_ai.usage.input_tokens":      intAtLeast(0),
 	"gen_ai.usage.output_tokens":     intAtLeast(0),
@@ -689,9 +700,10 @@ var captureProfile = map[string]func(pcommon.Value) bool{
 	"fabric.loss.first_sequence":     intAtLeast(0),
 	"fabric.loss.last_sequence":      intAtLeast(0),
 	"fabric.heartbeat.last_sequence": intAtLeast(-1),
+	"fabric.heartbeat.kind":          oneOf(captureHeartbeatKinds),
 }
 
-// captureNewKeys are the fourteen keys spec 042 introduced. On spans outside
+// captureNewKeys are the fifteen keys spec 042 introduced. On spans outside
 // the capture profile they stay value-closed by the same validators, so a
 // non-capture span cannot use them as a free-text channel either.
 var captureNewKeys = toSet(
@@ -701,7 +713,7 @@ var captureNewKeys = toSet(
 	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
 	"fabric.loss.reason", "fabric.loss.count",
 	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
-	"fabric.heartbeat.last_sequence",
+	"fabric.heartbeat.last_sequence", "fabric.heartbeat.kind",
 )
 
 var (
@@ -729,18 +741,25 @@ func isCaptureSpan(span ptrace.Span) bool {
 	return false
 }
 
-func onlyCaptureSpans(scopeSpans ptrace.ScopeSpansSlice) bool {
-	seen := false
+// anyCaptureSpan reports whether a resource group holds at least one capture
+// span. Such a group gets the strict capture resource/scope policy as a whole,
+// so co-batched application spans cannot carry shared metadata past it.
+func anyCaptureSpan(scopeSpans ptrace.ScopeSpansSlice) bool {
 	for si := 0; si < scopeSpans.Len(); si++ {
 		spans := scopeSpans.At(si).Spans()
 		for i := 0; i < spans.Len(); i++ {
-			if !isCaptureSpan(spans.At(i)) {
-				return false
+			if isCaptureSpan(spans.At(i)) {
+				return true
 			}
-			seen = true
 		}
 	}
-	return seen
+	return false
+}
+
+// validCaptureModel admits a provider model identifier only when it is a
+// plain name (captureModelPattern) and not a URL; anything else is omitted.
+func validCaptureModel(value pcommon.Value) bool {
+	return matches(captureModelPattern)(value) && !strings.Contains(value.Str(), "://")
 }
 
 // applyCaptureProfile admits only captureProfile keys with valid values, then
@@ -763,8 +782,9 @@ func (g *guard) applyCaptureProfile(span ptrace.Span) {
 }
 
 // applyCaptureResource keeps only a well-formed service.name on a resource
-// whose spans are all capture spans: the SDK's private capture provider sets
-// nothing else, so any other key or value did not come from capture.
+// holding any capture span: the SDK's private capture provider sets nothing
+// else, and in global-tracer mode the host resource it shares with
+// application spans must not ride along with capture records.
 func (g *guard) applyCaptureResource(attrs pcommon.Map) {
 	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
 		if key == "service.name" && matches(captureServiceNamePattern)(value) {
@@ -782,7 +802,7 @@ func (g *guard) removeAll(attrs pcommon.Map) {
 	}
 }
 
-// validCaptureValue closes the values of the fourteen spec 042 keys wherever
+// validCaptureValue closes the values of the fifteen spec 042 keys wherever
 // they appear (resources, scopes, events, links and non-capture spans), with
 // the same validators the capture profile uses.
 func validCaptureValue(key string, value pcommon.Value) bool {

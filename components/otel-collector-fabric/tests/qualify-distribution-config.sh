@@ -271,16 +271,23 @@ for prohibited in fabricredact fabricpolicy fabricsampler; do
 done
 
 # The shipped image's fabric-gate entrypoint must refuse configurations the
-# recorder cannot protect: non-traces/logs pipelines bypass fabricguard, and
-# a newline-terminated token file mints an empty "Bearer " credential under
-# the pinned bearertokenauth extension. Binary mode cannot exercise this
-# (the gate wraps the image, not the collector artifact).
+# recorder cannot protect: non-traces/logs pipelines bypass fabricguard, a
+# newline-terminated token file mints an empty "Bearer " credential under
+# the pinned bearertokenauth extension, and a collector --set override (in
+# either spelling) would be merged after the validated --config files. Each
+# refusal must name its own reason, so a refusal for an unrelated cause (for
+# example an unreadable config path) cannot pass for the intended one.
 if [[ "${mode}" == "image" ]]; then
-  badcfg="${runtime}/gate-reject.yaml"
+  # The runtime directory is mounted at /fabric-config-test, so the rejected
+  # config must live at the path the container is given.
+  badcfg="${runtime}/bad.yaml"
+  # gate_expect_refusal NAME WHY REASON [COLLECTOR-ARG...]
   gate_expect_refusal() {
-    local name="$1" why="$2"; shift 2
-    docker run -d --name "${name}" "$@" "${artifact}" \
-      --config=/fabric-config-test/bad.yaml >/dev/null \
+    local name="$1" why="$2" reason="$3"; shift 3
+    docker run -d --name "${name}" \
+      --network none \
+      --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly" \
+      "${artifact}" --config=/fabric-config-test/bad.yaml "$@" >/dev/null \
       || fail "could not start gate test container: ${name}"
     sleep 2
     local state
@@ -289,55 +296,69 @@ if [[ "${mode}" == "image" ]]; then
       docker rm -f "${name}" >/dev/null 2>&1 || true
       fail "image booted despite ${why}; fabric-gate did not refuse"
     fi
-    docker logs "${name}" 2>&1 | grep -q "fabric-gate" \
-      || { docker rm -f "${name}" >/dev/null 2>&1 || true; fail "rejected ${why} produced no fabric-gate refusal message"; }
+    local logs
+    logs="$(docker logs "${name}" 2>&1 || true)"
     docker rm -f "${name}" >/dev/null 2>&1 || true
+    grep -qF "fabric-gate: refusing to start recorder" <<<"${logs}" \
+      || fail "rejected ${why} produced no fabric-gate refusal message"
+    grep -qF -- "${reason}" <<<"${logs}" \
+      || fail "rejected ${why} for a different reason than expected: ${logs}"
   }
 
   sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
     "${runtime}/config.yaml" >"${badcfg}"
-  gate_expect_refusal "${container_name}-gate" "a metrics pipeline" \
-    --network none \
-    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
+  gate_expect_refusal "${container_name}-gate" "a metrics pipeline" 'uses signal "metrics"'
 
   # A traces pipeline that no longer runs fabricguard (e.g. an overlay that
   # replaced its processors) would export unfiltered spans.
   sed 's|processors: \[memory_limiter, fabricguard\]|processors: [memory_limiter]|' \
     "${runtime}/config.yaml" >"${badcfg}"
-  gate_expect_refusal "${container_name}-noguard" "a pipeline without fabricguard" \
-    --network none \
-    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
+  gate_expect_refusal "${container_name}-noguard" "a pipeline without fabricguard" "does not run fabricguard"
 
   # Unsafe token material: same config plus a newline-terminated token file.
   printf 'tok3n\n' >"${runtime}/bad.token"
   sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: /fabric-config-test/bad.token|' \
     "${runtime}/config.yaml" >"${badcfg}"
-  gate_expect_refusal "${container_name}-token" "a trailing-newline token file" \
-    --network none \
-    --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly"
-  printf '%s PASS: image entrypoint refused unprotected pipelines and unsafe token material\n' "${prefix}"
+  gate_expect_refusal "${container_name}-token" "a trailing-newline token file" 'empty "Bearer " credential would authenticate'
+
+  # A valid, guarded config plus a collector --set override that would drop
+  # fabricguard after validation; both pflag spellings are refused.
+  cp "${runtime}/config.yaml" "${badcfg}"
+  gate_expect_refusal "${container_name}-set-eq" "a --set= override" "--set overrides are not accepted" \
+    "--set=service.pipelines.traces.processors=[memory_limiter]"
+  gate_expect_refusal "${container_name}-set-sep" "a --set override" "--set overrides are not accepted" \
+    --set "service.pipelines.traces.processors=[memory_limiter]"
+  printf '%s PASS: image entrypoint refused unprotected pipelines, unsafe token material and --set overrides\n' "${prefix}"
 elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
   # Binary mode: the same refusal invariants run through dist/fabric-gate,
   # which resolves the sibling collector and exits non-zero before exec.
   gate_bin="$(dirname "${artifact}")/fabric-gate"
   badcfg="${runtime}/gate-reject.yaml"
   gate_expect_refusal_bin() {
-    local why="$1"
-    if "${gate_bin}" --config="${badcfg}" >/dev/null 2>&1; then
+    local why="$1" reason="$2"; shift 2
+    local out
+    if out="$("${gate_bin}" --config="${badcfg}" "$@" 2>&1 </dev/null)"; then
       fail "fabric-gate accepted ${why}"
     fi
+    grep -qF -- "${reason}" <<<"${out}" \
+      || fail "fabric-gate rejected ${why} for a different reason than expected: ${out}"
   }
   sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
     "${runtime}/config.yaml" >"${badcfg}"
-  gate_expect_refusal_bin "a metrics pipeline"
+  gate_expect_refusal_bin "a metrics pipeline" 'uses signal "metrics"'
   sed 's|processors: \[memory_limiter, fabricguard\]|processors: [memory_limiter]|' \
     "${runtime}/config.yaml" >"${badcfg}"
-  gate_expect_refusal_bin "a pipeline without fabricguard"
+  gate_expect_refusal_bin "a pipeline without fabricguard" "does not run fabricguard"
   printf 'tok3n\n' >"${runtime}/bad.token"
   sed 's|^extensions:|extensions:\n  bearertokenauth:\n    filename: '"${runtime}"'/bad.token|' \
     "${runtime}/config.yaml" >"${badcfg}"
-  gate_expect_refusal_bin "a trailing-newline token file"
-  printf '%s PASS: fabric-gate binary refused unprotected pipelines and unsafe token material\n' "${prefix}"
+  gate_expect_refusal_bin "a trailing-newline token file" 'empty "Bearer " credential would authenticate'
+  cp "${runtime}/config.yaml" "${badcfg}"
+  gate_expect_refusal_bin "a --set= override" "--set overrides are not accepted" \
+    "--set=service.pipelines.traces.processors=[memory_limiter]"
+  gate_expect_refusal_bin "a --set override" "--set overrides are not accepted" \
+    --set "service.pipelines.traces.processors=[memory_limiter]"
+  printf '%s PASS: fabric-gate binary refused unprotected pipelines, unsafe token material and --set overrides\n' "${prefix}"
 fi
 
 printf '%s PASS: recorder artifact accepted mTLS ingress, protection, and durable OTLP/HTTP export\n' "${prefix}"

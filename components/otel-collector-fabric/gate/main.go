@@ -12,6 +12,10 @@
 //     processors, followed only by batch or memory_limiter, so no record
 //     reaches an exporter unfiltered (processors: [], an overlay that drops
 //     the guard, or a guard in a sibling pipeline only are all refused);
+//   - --set overrides are refused in both spellings (--set=k=v, --set k=v):
+//     the collector merges them after every --config source, so they could
+//     undo a validated pipeline; overrides must go in an additional --config
+//     file, which the gate merges and validates;
 //   - every bearertokenauth extension that reads tokens from a file must point
 //     at a file the pinned extension (v0.150.0) cannot misread: it splits on
 //     newlines and retains empty entries, so a blank line or trailing newline

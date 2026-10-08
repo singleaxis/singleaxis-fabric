@@ -78,10 +78,14 @@ API_KEY = f"sk-{MARK}_apikey"
 INGRESS_TOKEN = f"{MARK}_ingress_token"
 WRONG_TOKEN = f"{MARK}_wrong_token"
 EGRESS_AUTH = f"Bearer {MARK}_egress_token"
+# Set by the agent as its ambient W3C trace state (spec 042 §8, decision E7).
+TRACE_STATE = f"{MARK}_tracestate"
 CONTENT_MARKERS = [f"{MARK}_prompt", CITY, TOOL_RESULT, COMPLETION]
-SECRET_MARKERS = [API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token"]
+SECRET_MARKERS = [
+    API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token", TRACE_STATE
+]  # fmt: skip
 
-# Spec 042 §8: the fourteen new capture keys plus the reused, already
+# Spec 042 §8: the fifteen new capture keys plus the reused, already
 # allowlisted keys a capture span may carry. Anything else is a leak channel.
 CAPTURE_KEYS = frozenset(
     {
@@ -90,6 +94,7 @@ CAPTURE_KEYS = frozenset(
         "fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
         "fabric.loss.reason", "fabric.loss.count", "fabric.loss.first_sequence",
         "fabric.loss.last_sequence", "fabric.heartbeat.last_sequence",
+        "fabric.heartbeat.kind",
     }
 )  # fmt: skip
 REUSED_KEYS = frozenset(
@@ -101,7 +106,8 @@ REUSED_KEYS = frozenset(
         "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens",
     }
 )  # fmt: skip
-assert len(CAPTURE_KEYS) == 14
+assert len(CAPTURE_KEYS) == 15
+HEARTBEAT_KINDS = frozenset({"periodic", "run_start", "run_end", "final"})
 # Content refs on spans are bare uuid4 object ids (spec 042 §8, decision D2).
 OBJECT_ID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
@@ -547,7 +553,7 @@ class Stack:
     def wait_for_run(
         self, service: str, calls: int, timeout_s: float = 90.0
     ) -> list[dict[str, Any]]:
-        """Until every exchange span and the final tail heartbeat of ``service`` arrived."""
+        """Until every exchange span and the clean-exit final heartbeat of ``service`` arrived."""
         deadline = time.monotonic() + timeout_s
         spans: list[dict[str, Any]] = []
         while time.monotonic() < deadline:
@@ -558,14 +564,14 @@ class Stack:
             }  # fmt: skip
             tail = [
                 s for s in spans
-                if s["attributes"].get("fabric.heartbeat.last_sequence") == calls - 1
+                if s["attributes"].get("fabric.heartbeat.kind") == "final"
             ]  # fmt: skip
             if len(exchanges) >= calls and tail:
                 return spans
             time.sleep(1)
         raise AssertionError(
             f"{service}: {len(spans)} spans after {timeout_s}s, expected {calls} exchanges "
-            f"and a tail heartbeat\n{self.node_logs()[-4000:]}"
+            f"and a final heartbeat\n{self.node_logs()[-4000:]}"
         )
 
     # -- agent ---------------------------------------------------------------
@@ -597,6 +603,7 @@ class Stack:
             "OTEL_EXPORTER_OTLP_CERTIFICATE": str(self.tls / "ca.crt"),
             "E2E_MODEL_API_KEY": API_KEY,
             "E2E_TOOL_RESULT_MARK": TOOL_RESULT,
+            "E2E_TRACE_STATE": TRACE_STATE,
         }
 
     def run_agent(
@@ -709,7 +716,7 @@ def _assert_no_leak(stack: Stack) -> None:
 
 def _assert_capture_spans(
     spans: list[dict[str, Any]],
-    store: Path,
+    run: AgentRun,
     *,
     streamed_states: frozenset[str] = frozenset({"complete"}),
 ) -> list[dict[str, Any]]:
@@ -719,6 +726,7 @@ def _assert_capture_spans(
     closes the response before end-of-stream, which is recorded as
     ``closed_early`` with every byte the client read (spec 042 §4.6).
     """
+    store = run.store
     assert {s["name"] for s in spans} <= CAPTURE_SPAN_NAMES, {s["name"] for s in spans}
     for span in spans:
         extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS
@@ -726,6 +734,8 @@ def _assert_capture_spans(
         assert span["scope"] == "", (
             "fabricguard must clear the instrumentation scope name"
         )
+        # Decision E7: the host's trace state never leaves with a capture span.
+        assert span["trace_state"] == "", (span["name"], span["trace_state"])
     by_id: dict[str, dict[str, Any]] = {}
     for span in spans:
         if span["name"] == "fabric.model_call":
@@ -742,6 +752,11 @@ def _assert_capture_spans(
         missing = EXCHANGE_REQUIRED - set(attrs)
         assert not missing, f"the Node dropped exchange keys {missing}"
         assert span["span_kind"] == SPAN_KIND_CLIENT
+        # Correlation is kept: the exchange is a child of the host's ambient span.
+        assert (span["trace_id"], span["parent_span_id"]) == (
+            run.info["trace_id"],
+            run.info["span_id"],
+        )
         assert attrs["fabric.wire.api"] == "openai.chat_completions"
         streamed = index == 1
         states = streamed_states if streamed else {"complete"}
@@ -780,6 +795,18 @@ def _assert_capture_spans(
             assert response["media_type"] == "text/event-stream"
     heartbeats = [s for s in spans if s["name"] == "fabric.capture_heartbeat"]
     assert heartbeats, "no heartbeat reached the sink"
+    # Decision E1: every heartbeat names its kind; a clean interpreter exit
+    # emits a final heartbeat covering the last allocated sequence.
+    kinds = {s["attributes"].get("fabric.heartbeat.kind") for s in heartbeats}
+    assert kinds <= HEARTBEAT_KINDS, kinds
+    finals = {
+        s["attributes"]["fabric.heartbeat.last_sequence"]
+        for s in heartbeats
+        if s["attributes"]["fabric.heartbeat.kind"] == "final"
+    }
+    assert finals == {2}, f"expected one final heartbeat at sequence 2, got {finals}"
+    epoch = exchanges[0]["attributes"]["fabric.source.epoch"]
+    assert all(s["attributes"]["fabric.source.epoch"] == epoch for s in heartbeats)
     assert not [s for s in spans if s["name"] == "fabric.capture_loss"], (
         "unexpected capture loss"
     )
@@ -796,6 +823,11 @@ def _assert_complete(report: dict[str, Any], code: int, runs: set[str]) -> None:
             run["checks"],
         )
         assert run["gaps"] == [], (run_id, run["gaps"])
+        # Decision E2: completeness is proven by the epoch's final heartbeat
+        # (no run markers: the agent never calls fabric.wire.run()).
+        windows = run["declared_scope"]["windows"]
+        closers = {window.get("closed_by") for window in windows}
+        assert closers == {"final_heartbeat"}, (run_id, windows)
         assert set(run["checks"].values()) <= {"passed", "not_applicable"}, run[
             "checks"
         ]
@@ -824,7 +856,7 @@ def test_wire_capture_streams_through_production_node_and_reconstructs(
 
     run = stack.run_agent("wire-e2e-agent")
     spans = stack.wait_for_run(run.service, calls=3)
-    exchanges = _assert_capture_spans(spans, run.store)
+    exchanges = _assert_capture_spans(spans, run)
 
     # The content exists, but only inside the customer's store; headers
     # (the model API key) are never stored at all.
@@ -846,7 +878,7 @@ def test_real_openai_sdk_through_production_node_reconstructs(stack: Stack) -> N
     run = stack.run_agent("wire-e2e-openai", client="openai")
     spans = stack.wait_for_run(run.service, calls=3)
     exchanges = _assert_capture_spans(
-        spans, run.store, streamed_states=frozenset({"complete", "closed_early"})
+        spans, run, streamed_states=frozenset({"complete", "closed_early"})
     )
     states = [s["attributes"]["fabric.wire.response_state"] for s in exchanges]
     print(f"openai SDK exchange states: {states}")
@@ -882,7 +914,7 @@ def test_queued_spans_survive_sink_outage_and_node_restart(stack: Stack) -> None
     finally:
         stack.start_sink()
     spans = stack.wait_for_run(run.service, calls=3, timeout_s=180)
-    exchanges = _assert_capture_spans(spans, run.store)
+    exchanges = _assert_capture_spans(spans, run)
     duplicates = len([s for s in spans if s["name"] == "fabric.model_call"]) - len(
         exchanges
     )

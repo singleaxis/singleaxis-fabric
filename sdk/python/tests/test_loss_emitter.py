@@ -29,6 +29,7 @@ VALIDATOR, SCHEMAS = load_validator(), capture_schemas()
 SPAN_KEYS = {
     "fabric.source_id", "fabric.source.epoch", "fabric.run.id", LossAttr.REASON, LossAttr.COUNT,
     LossAttr.FIRST_SEQUENCE, LossAttr.LAST_SEQUENCE, LossAttr.HEARTBEAT_LAST_SEQUENCE,
+    LossAttr.HEARTBEAT_KIND,
 }  # fmt: skip
 
 
@@ -103,16 +104,19 @@ def test_heartbeat_reports_the_sequence_at_request_time(
     allocator = SourceAllocator("wire-hb", "wire")
     emitter.heartbeat(allocator)  # -1: nothing allocated yet
     allocator.next_sequence()
-    emitter.heartbeat(allocator, run_id="run-travel-42")
+    emitter.heartbeat(allocator, kind="run_start", run_id="run-travel-42")
     allocator.next_sequence()
-    emitter.heartbeat(allocator, run_id="bad id")
+    emitter.heartbeat(allocator, kind="run_end", run_id="bad id")
     assert emitter.flush(2.0)
     beats = [
-        (a[LossAttr.HEARTBEAT_LAST_SEQUENCE], a.get("fabric.run.id"))
+        (a[LossAttr.HEARTBEAT_LAST_SEQUENCE], a[LossAttr.HEARTBEAT_KIND], a.get("fabric.run.id"))
         for a in _named(exporter, SPAN_HEARTBEAT)
     ]
     # Queued beats in order, then the flush heartbeat for the source.
-    assert beats == [(-1, None), (0, "run-travel-42"), (1, encode_opaque_id("bad id")), (1, None)]
+    assert beats == [
+        (-1, "periodic", None), (0, "run_start", "run-travel-42"),
+        (1, "run_end", encode_opaque_id("bad id")), (1, "periodic", None),
+    ]  # fmt: skip
     assert {a["fabric.source.epoch"] for a in _named(exporter, SPAN_HEARTBEAT)} == {allocator.epoch}
     _validate_all(exporter)
 
@@ -154,7 +158,7 @@ def test_heartbeat_queue_overflow_drops_only_the_marker(
     monkeypatch.setattr(_loss, "_MAX_QUEUED_HEARTBEATS", 2)
     allocator = SourceAllocator("wire-full", "wire")
     for index in range(5):
-        emitter.heartbeat(allocator, run_id=f"run-{index}")
+        emitter.heartbeat(allocator, kind="run_start", run_id=f"run-{index}")
     assert emitter.flush(2.0)
     beats = _named(exporter, SPAN_HEARTBEAT)
     assert [b.get("fabric.run.id") for b in beats] == ["run-0", "run-1", None]
@@ -193,8 +197,9 @@ def test_record_never_raises_and_emit_failures_are_swallowed() -> None:
     emitter = LossEmitter(tracer_provider=Broken())
     emitter.record("wire-x", 1, "queue_full", None)  # type: ignore[arg-type]
     emitter.record("wire-x", 1, "queue_full", 2)
-    assert emitter.flush(1.0)
+    assert not emitter.flush(1.0)  # the record could not be emitted: never reported delivered
     assert emitter.internal_errors >= 1
+    assert emitter.flush(1.0)  # reported once; nothing is pending any more
     emitter.close(0.5)
 
 

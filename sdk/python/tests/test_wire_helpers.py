@@ -264,7 +264,11 @@ def loss_document(span: ReadableSpan) -> dict[str, Any]:
         "emitted_at": _iso(span.start_time),
     }
     if span.name == "fabric.capture_heartbeat":
-        document.update(kind="heartbeat", last_sequence=a["fabric.heartbeat.last_sequence"])
+        document.update(
+            kind="heartbeat",
+            heartbeat_kind=a["fabric.heartbeat.kind"],
+            last_sequence=a["fabric.heartbeat.last_sequence"],
+        )
         if "fabric.run.id" in a:
             document["run_id"] = a["fabric.run.id"]
     else:

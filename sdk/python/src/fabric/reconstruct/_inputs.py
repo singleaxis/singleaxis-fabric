@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 SpanFormat = Literal["sink_jsonl", "otlp_json"]
 
@@ -29,9 +30,10 @@ _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 _TRACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]*$")
-# The capture-side model pattern (fabric.wire, spec 042 §8). Kept local like
-# the attribute keys below; tests pin it to the capture runtime's pattern.
-MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$")
+# The model pattern shared by capture, fabricguard and the verifier (spec 042
+# §8, rev 5). A value must also not contain "://": no "@", no URL, so no
+# credential-bearing endpoint can pass as a model name.
+MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 
 APIS = frozenset(
     {
@@ -45,6 +47,9 @@ APIS = frozenset(
 RESPONSE_STATES = frozenset({"complete", "closed_early", "error", "abandoned"})
 STORE_STATUSES = frozenset({"stored", "partial", "failed", "disabled"})
 LOSS_REASONS = frozenset({"queue_full", "internal_error", "shutdown", "span_dropped"})
+HeartbeatKind = Literal["periodic", "run_start", "run_end", "final"]
+HEARTBEAT_KINDS: frozenset[str] = frozenset({"periodic", "run_start", "run_end", "final"})
+RUN_MARKER_KINDS: frozenset[str] = frozenset({"run_start", "run_end"})
 
 # OTLP attribute keys (spec 042 §8). Kept local: the verifier consumes plain
 # JSON and must not import the capture runtime.
@@ -70,6 +75,7 @@ L_COUNT = "fabric.loss.count"
 L_FIRST = "fabric.loss.first_sequence"
 L_LAST = "fabric.loss.last_sequence"
 H_LAST = "fabric.heartbeat.last_sequence"
+H_KIND = "fabric.heartbeat.kind"
 
 
 class ReconstructInputError(ValueError):
@@ -300,9 +306,17 @@ def digest_value(value: Any) -> str | None:
 
 
 def model_value(value: Any) -> str | None:
-    """A model name that matches the capture pattern, else ``None`` (never free text)."""
+    """A model name that matches the shared pattern, else ``None`` (never free text)."""
 
-    return value if isinstance(value, str) and MODEL_RE.fullmatch(value) else None
+    if not isinstance(value, str) or "://" in value or not MODEL_RE.fullmatch(value):
+        return None
+    return value
+
+
+def pseudonym(value: str) -> str:
+    """``p-`` + 16 hex of sha256: how the report carries a provider-derived id."""
+
+    return "p-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:16]
 
 
 def _trace_id(value: str) -> str | None:
@@ -374,12 +388,20 @@ class LossObs:
 
 @dataclass(frozen=True, slots=True)
 class HeartbeatObs:
-    """A ``fabric.capture_heartbeat``; with ``run_id`` it is a run marker."""
+    """A ``fabric.capture_heartbeat``: its logical identity (spec 042 §6, rev 5).
+
+    Equal observations are one record however many times it was exported
+    (a retried export re-sends the same record under a new span id).
+    ``kind`` is ``None`` for a heartbeat without a valid kind; it still
+    reveals allocated sequences but is never a run marker or a final
+    heartbeat. ``run_id`` is kept only for ``run_start`` / ``run_end``.
+    """
 
     source_id: str
     source_epoch: int
-    last_sequence: int
+    kind: HeartbeatKind | None
     run_id: str | None
+    last_sequence: int
 
 
 Observation = ExchangeObs | LossObs | HeartbeatObs
@@ -392,15 +414,25 @@ def observe(span: SpanRecord) -> Observation | None:
     source_id = opaque_id(attrs.get(A_SOURCE_ID))
     epoch = int_at_least(attrs.get(A_SOURCE_EPOCH), 0)
     if H_LAST in attrs:
-        last = int_at_least(attrs.get(H_LAST), -1)
-        if source_id is None or epoch is None or last is None:
-            return None
-        return HeartbeatObs(source_id, epoch, last, opaque_id(attrs.get(A_RUN_ID)))
+        return _heartbeat(attrs, source_id, epoch)
     if L_REASON in attrs:
         return _loss(attrs, source_id, epoch)
     if A_EXCHANGE_ID in attrs:
         return _exchange(span, source_id, epoch)
     return None
+
+
+def _heartbeat(
+    attrs: Mapping[str, Any], source_id: str | None, epoch: int | None
+) -> HeartbeatObs | None:
+    last = int_at_least(attrs.get(H_LAST), -1)
+    if source_id is None or epoch is None or last is None:
+        return None
+    kind = cast("HeartbeatKind | None", enum_value(attrs.get(H_KIND), HEARTBEAT_KINDS))
+    run_id = opaque_id(attrs.get(A_RUN_ID)) if kind in RUN_MARKER_KINDS else None
+    if kind in RUN_MARKER_KINDS and run_id is None:
+        kind = None  # a marker that names no run bounds nothing
+    return HeartbeatObs(source_id, epoch, kind, run_id, last)
 
 
 def _loss(attrs: Mapping[str, Any], source_id: str | None, epoch: int | None) -> LossObs | None:
@@ -459,9 +491,15 @@ def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> Exc
         trace_id=_trace_id(span.trace_id),
         span_id=_span_id(span.span_id),
         model=model_value(attrs.get(A_RESPONSE_MODEL)),
-        response_id=opaque_id(attrs.get(A_RESPONSE_ID)),
+        response_id=_response_id(attrs.get(A_RESPONSE_ID)),
         http_status=_http_status(attrs.get(A_HTTP_STATUS)),
     )
+
+
+def _response_id(value: Any) -> str | None:
+    """Older capture recorded the provider response id; only its pseudonym is used."""
+
+    return pseudonym(value) if isinstance(value, str) and value else None
 
 
 def _http_status(value: Any) -> int | None:

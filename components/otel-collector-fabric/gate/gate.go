@@ -54,11 +54,20 @@ func validateArgs(args []string) ([]tokenFile, error) {
 // (--config=URI and --config URI). The collector accepts the flag multiple
 // times and merges the sources, so each is validated rather than only the
 // last.
+//
+// --set is refused outright, in both spellings (--set=k=v and --set k=v):
+// the pinned collector (otelcol v0.150.0 flags.go) turns each --set into a
+// configuration source merged after every --config, so a single
+// --set=service.pipelines.traces.processors=[batch] would remove fabricguard
+// after the gate had approved the files. Overrides belong in an additional
+// --config file, which the gate merges and validates like any other.
 func configSources(args []string) ([]string, error) {
 	var sources []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
+		case arg == "--set" || strings.HasPrefix(arg, "--set="):
+			return nil, fmt.Errorf("--set overrides are not accepted by the recorder gate; put overrides in an additional --config file so they are validated")
 		case arg == "--config":
 			if i+1 >= len(args) {
 				return nil, fmt.Errorf("--config requires a value")

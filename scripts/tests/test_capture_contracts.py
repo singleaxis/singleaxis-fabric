@@ -160,6 +160,7 @@ def test_reconstruction_skipped_check_is_unverified() -> None:
     run["checks"] = dict.fromkeys(run["checks"], "passed")
     run["checks"]["bytes"] = "skipped"
     run["verdict"] = "complete_for_declared_scope"
+    run["declared_scope"]["windows"][0]["closed_by"] = "run_markers"
     _assert_error(document, "capture.reconstruction.verdict")
     run["verdict"] = "unverified"
     validate_document(document, _schemas())
@@ -181,6 +182,7 @@ def test_reconstruction_info_gaps_do_not_downgrade() -> None:
     run["counts"]["gaps_by_type"] = {"prefix_break": 1}
     run["checks"] = dict.fromkeys(run["checks"], "passed")
     run["verdict"] = "complete_for_declared_scope"
+    run["declared_scope"]["windows"][0]["closed_by"] = "run_markers"
     validate_document(document, _schemas())
 
 
@@ -193,6 +195,7 @@ def test_complete_run_needs_heartbeat_through_its_window() -> None:
     run["counts"]["gaps_by_type"] = {}
     run["checks"] = dict.fromkeys(run["checks"], "passed")
     run["verdict"] = "complete_for_declared_scope"
+    run["declared_scope"]["windows"][0]["closed_by"] = "run_markers"
     validate_document(document, _schemas())
     run["declared_scope"]["windows"][0]["heartbeat_sequence"] = 3
     _assert_error(document, "capture.reconstruction.verdict")
@@ -207,8 +210,25 @@ def test_adjacent_missing_sequence_blocks_complete() -> None:
     run["counts"]["gaps_by_type"] = {}
     run["checks"] = dict.fromkeys(run["checks"], "passed")
     run["verdict"] = "complete_for_declared_scope"
+    run["declared_scope"]["windows"][0]["closed_by"] = "run_markers"
     _assert_error(document, "capture.reconstruction.verdict")
     document["sources"][0]["missing_sequences"] = [[6, 6]]
+    validate_document(document, _schemas())
+
+
+def test_complete_run_needs_a_proven_window_end() -> None:
+    document = _json("fixtures/valid/run-reconstruction-partial-loss.json")
+    document["sources"][0]["missing_sequences"] = []
+    document["sources"][0]["loss_ranges"] = []
+    run = document["runs"][0]
+    run["gaps"] = []
+    run["counts"]["gaps_by_type"] = {}
+    run["checks"] = dict.fromkeys(run["checks"], "passed")
+    run["verdict"] = "complete_for_declared_scope"
+    window = run["declared_scope"]["windows"][0]
+    window.pop("closed_by", None)
+    _assert_error(document, "capture.reconstruction.verdict")  # no end evidence
+    window["closed_by"] = "final_heartbeat"
     validate_document(document, _schemas())
 
 

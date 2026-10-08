@@ -64,9 +64,10 @@ receivers:
             # Reject ping floods from idle clients (slow-loris-style).
             min_time: 10s
             permit_without_stream: false
-        # Uncomment to terminate TLS on gRPC ingress (required before binding
-        # beyond 127.0.0.1). Paths resolve inside the container; the Compose
-        # overlay mounts FABRIC_INGRESS_TLS_DIR at /run/fabric-node/tls.
+        # Uncomment to terminate TLS on gRPC ingress. Before binding beyond
+        # 127.0.0.1 BOTH receivers (this one and http below) need TLS;
+        # preflight fails otherwise. Paths resolve inside the container; the
+        # Compose overlay mounts FABRIC_INGRESS_TLS_DIR at /run/fabric-node/tls.
         # tls:
         #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
         #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}

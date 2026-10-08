@@ -6,6 +6,7 @@
     "source_epoch": 1791331200000000000
   },
   "emitted_at": "2026-10-08T09:00:06.000Z",
+  "heartbeat_kind": "run_end",
   "last_sequence": 4,
   "run_id": "run-travel-42"
 }

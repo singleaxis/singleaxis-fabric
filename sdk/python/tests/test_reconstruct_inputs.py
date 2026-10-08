@@ -11,7 +11,8 @@ from typing import Any
 
 import pytest
 
-from fabric.reconstruct import ReconstructInputError, read_span_file, reconstruct
+from fabric.reconstruct import ReconstructInputError, SpanRecord, read_span_file, reconstruct
+from fabric.reconstruct._inputs import HeartbeatObs, observe
 from tests.test_reconstruct_verifier import (
     GENERATED_AT,
     Capture,
@@ -260,3 +261,54 @@ def test_invalid_loss_and_heartbeat_spans_are_ignored(
     assert source["loss_ranges"] == []
     assert source["heartbeat_sequence"] == 4
     assert "sequence_gap" in {gap["gap_type"] for gap in only_run(document)["gaps"]}
+
+
+def _heartbeat_span(span_id: str, attributes: dict[str, Any]) -> SpanRecord:
+    return SpanRecord(
+        trace_id="a" * 32,
+        span_id=span_id,
+        parent_span_id=None,
+        name="fabric.capture_heartbeat",
+        start_ns=1,
+        end_ns=1,
+        attributes={
+            "fabric.source_id": "wire-1",
+            "fabric.source.epoch": 7,
+            "fabric.heartbeat.last_sequence": 3,
+            **attributes,
+        },
+        resource={},
+    )
+
+
+@pytest.mark.parametrize(
+    ("attributes", "kind", "run_id"),
+    [
+        ({"fabric.heartbeat.kind": "periodic"}, "periodic", None),
+        ({"fabric.heartbeat.kind": "final"}, "final", None),
+        ({"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1"}, "run_start", "r-1"),
+        ({"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1"}, "run_end", "r-1"),
+        # A marker that names no valid run bounds nothing.
+        ({"fabric.heartbeat.kind": "run_end"}, None, None),
+        ({"fabric.heartbeat.kind": "run_end", "fabric.run.id": "bad id"}, None, None),
+        # A run id on a non-marker kind is ignored.
+        ({"fabric.heartbeat.kind": "final", "fabric.run.id": "r-1"}, "final", None),
+        # Outside the closed vocabulary, or absent (pre-rev-5 capture).
+        ({"fabric.heartbeat.kind": "shutdown"}, None, None),
+        ({"fabric.run.id": "r-1"}, None, None),
+    ],
+)
+def test_heartbeat_kind_is_a_closed_vocabulary(
+    attributes: dict[str, Any], kind: str | None, run_id: str | None
+) -> None:
+    observed = observe(_heartbeat_span("b" * 16, attributes))
+    assert observed == HeartbeatObs("wire-1", 7, kind, run_id, 3)  # type: ignore[arg-type]
+
+
+def test_heartbeat_identity_ignores_the_span_id() -> None:
+    """A retried export re-sends the same record under a new span id (spec 042 E1)."""
+    attributes = {"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1"}
+    first = observe(_heartbeat_span("b" * 16, attributes))
+    retry = observe(_heartbeat_span("c" * 16, attributes))
+    assert first == retry
+    assert len({first, retry}) == 1

@@ -64,6 +64,19 @@ class SourceAllocator:
         with self._lock:
             return self.epoch, self._next - 1
 
+    def seal(self) -> tuple[int, int]:
+        """End the current epoch: its ``(epoch, last sequence)``; later allocations use a new one.
+
+        This is what makes a ``final`` heartbeat true: nothing is ever allocated after
+        ``last`` in the sealed epoch.
+        """
+        with self._lock:
+            sealed = self.epoch, self._next - 1
+            with _LOCK:
+                self.epoch = _new_epoch()
+            self._next = 0
+            return sealed
+
 
 def default_source_id(component: Component, service_name: str | None = None) -> str:
     """``<component>-`` + 16 hex of ``sha256(hostname NUL service.name)``."""

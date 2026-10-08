@@ -68,7 +68,7 @@
           "started_at": "2026-10-08T09:00:00.100Z",
           "ended_at": "2026-10-08T09:00:00.900Z",
           "model": "gpt-4o-2024-08-06",
-          "response_id": "chatcmpl-run42-0",
+          "response_id": "p-847dca5515066fc9",
           "response_state": "complete",
           "parse_status": "ok",
           "thread_id": "thread-0",
@@ -76,19 +76,17 @@
           "output_message_count": 1,
           "tool_call_ids_consumed": [],
           "tool_call_ids_emitted": [
-            "call_a"
+            "p-05f49740f9329fd0"
           ],
           "objects": {
             "request": {
               "object_id": "req0",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req0",
               "sha256": "sha256:f162b493dd9bf56e431f6d9db5dcd9dd2af4e4442f711d454b30f50745621c00",
               "byte_length": 4,
               "verification": "verified"
             },
             "response": {
               "object_id": "rsp0",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp0",
               "sha256": "sha256:dadd3f33ead60a412074630603ff9a8782b510b501334869533f5fb642b17857",
               "byte_length": 4,
               "verification": "verified"
@@ -106,29 +104,27 @@
           "started_at": "2026-10-08T09:00:01.120Z",
           "ended_at": "2026-10-08T09:00:02.050Z",
           "model": "gpt-4o-2024-08-06",
-          "response_id": "chatcmpl-run42-1",
+          "response_id": "p-c65586eda463e310",
           "response_state": "complete",
           "parse_status": "ok",
           "thread_id": "thread-0",
           "input_message_count": 4,
           "output_message_count": 1,
           "tool_call_ids_consumed": [
-            "call_a"
+            "p-05f49740f9329fd0"
           ],
           "tool_call_ids_emitted": [
-            "call_b"
+            "p-9d60374e10d0bf8b"
           ],
           "objects": {
             "request": {
               "object_id": "req1",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req1",
               "sha256": "sha256:c84a09757ebaad3dbdc07d455da0b62427fff0f874c83fd5d961f5d4503523a1",
               "byte_length": 4,
               "verification": "verified"
             },
             "response": {
               "object_id": "rsp1",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp1",
               "sha256": "sha256:9f583f90d69602712456c8f53125962bfce6fdffb320ffa2b34e6adab3d5f195",
               "byte_length": 4,
               "verification": "verified"
@@ -147,30 +143,28 @@
           "started_at": "2026-10-08T09:00:02.300Z",
           "ended_at": "2026-10-08T09:00:03.000Z",
           "model": "gpt-4o-2024-08-06",
-          "response_id": "chatcmpl-run42-2",
+          "response_id": "p-10e6d76ba6f3ddf2",
           "response_state": "complete",
           "parse_status": "ok",
           "thread_id": "thread-0",
           "input_message_count": 6,
           "output_message_count": 1,
           "tool_call_ids_consumed": [
-            "call_a",
-            "call_b"
+            "p-05f49740f9329fd0",
+            "p-9d60374e10d0bf8b"
           ],
           "tool_call_ids_emitted": [
-            "call_c"
+            "p-e646569ef524b117"
           ],
           "objects": {
             "request": {
               "object_id": "req2",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req2",
               "sha256": "sha256:0e3cc730d9c08262b256b2ba943e34c5460dbf5747cc864f0cf8065ad068605c",
               "byte_length": 4,
               "verification": "verified"
             },
             "response": {
               "object_id": "rsp2",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp2",
               "sha256": "sha256:0ddacccaf1eefed4c03108590690038c18f2c839f35ecb38eba55b1a9189304f",
               "byte_length": 4,
               "verification": "verified"
@@ -189,30 +183,28 @@
           "started_at": "2026-10-08T09:00:04.200Z",
           "ended_at": "2026-10-08T09:00:04.800Z",
           "model": "gpt-4o-2024-08-06",
-          "response_id": "chatcmpl-run42-4",
+          "response_id": "p-d55f21f9a30b4c35",
           "response_state": "complete",
           "parse_status": "ok",
           "thread_id": "thread-0",
           "input_message_count": 10,
           "output_message_count": 1,
           "tool_call_ids_consumed": [
-            "call_a",
-            "call_b",
-            "call_c",
-            "call_d"
+            "p-05f49740f9329fd0",
+            "p-9d60374e10d0bf8b",
+            "p-e646569ef524b117",
+            "p-6c3d5667a5332c3f"
           ],
           "tool_call_ids_emitted": [],
           "objects": {
             "request": {
               "object_id": "req4",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req4",
               "sha256": "sha256:fe53a3874e0ce698a53d5936aa4a12825ed878df3010c3ef9bf69ef2207b2ce0",
               "byte_length": 4,
               "verification": "verified"
             },
             "response": {
               "object_id": "rsp4",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp4",
               "sha256": "sha256:1441e3bed567a5bb89cc3ad67e341ac59c5bb3b4262343b813739a652730d74f",
               "byte_length": 4,
               "verification": "verified"
@@ -246,7 +238,7 @@
           "gap_type": "unmatched_tool_call",
           "effect": "partial",
           "exchange_id": "ex-4",
-          "tool_call_id": "call_d",
+          "tool_call_id": "p-6c3d5667a5332c3f",
           "reason": "consumed_not_emitted"
         }
       ],

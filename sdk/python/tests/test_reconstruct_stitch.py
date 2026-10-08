@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from fabric.reconstruct._inputs import pseudonym as pid
 from fabric.reconstruct._stitch import (
     canonical_json,
     continuation_digests,
@@ -92,7 +93,7 @@ def test_chat_tool_call_round_trip_digests_match() -> None:
         ),
     )
     assert first.request_parse_status == "ok" and first.response_parse_status == "ok"
-    assert first.tool_calls == (("call_7Qx2", "get_weather"),)
+    assert first.tool_calls == ((pid("call_7Qx2"), "get_weather"),)
     assert first.finish_reasons == ("tool_calls",)
     assert first.usage == {"input_tokens": 20, "output_tokens": 5}
     assert first.input_roles == ("system", "user")
@@ -111,7 +112,7 @@ def test_chat_tool_call_round_trip_digests_match() -> None:
         second_request,
         chat_response({"role": "assistant", "content": "It is 18C."}),
     )
-    assert second.tool_call_ids_consumed == ("call_7Qx2",)
+    assert second.tool_call_ids_consumed == (pid("call_7Qx2"),)
     # Request N+1 re-sends request N + the continuation of response N.
     expected_prefix = first.input_digests + continuation_digests(
         "openai.chat_completions", first.output_digests
@@ -172,8 +173,8 @@ def test_chat_stream_assembles_text_and_tool_calls() -> None:
     )
     assert keys.stream is True
     assert keys.response_parse_status == "ok"
-    assert keys.response_id == "chatcmpl-9"
-    assert keys.tool_calls == (("call_A", "lookup"),)
+    assert keys.response_id == pid("chatcmpl-9")
+    assert keys.tool_calls == ((pid("call_A"), "lookup"),)
     assert keys.finish_reasons == ("tool_calls",)
     assert keys.usage == {"input_tokens": 3, "output_tokens": 4}
     non_stream = {
@@ -227,7 +228,7 @@ def test_anthropic_non_stream_and_resend_match() -> None:
         "messages": [{"role": "user", "content": "find"}],
     }
     first = _keys("anthropic.messages", request, response)
-    assert first.tool_calls == (("toolu_01AbC", "search"),)
+    assert first.tool_calls == ((pid("toolu_01AbC"), "search"),)
     assert first.finish_reasons == ("tool_use",)
     assert first.usage == {"input_tokens": 10, "output_tokens": 7, "cache_read_input_tokens": 2}
     assert first.system_digest is not None
@@ -258,7 +259,7 @@ def test_anthropic_non_stream_and_resend_match() -> None:
     second = _keys("anthropic.messages", follow, None)
     assert second.system_digest == first.system_digest
     assert second.input_digests[:2] == first.input_digests + first.output_digests
-    assert second.tool_call_ids_consumed == ("toolu_01AbC",)
+    assert second.tool_call_ids_consumed == (pid("toolu_01AbC"),)
     assert second.response_parse_status == "not_parsed"
 
 
@@ -345,8 +346,8 @@ def test_anthropic_stream_assembly() -> None:
     )
     keys = _keys("anthropic.messages", {"messages": []}, stream_chunks=chunks)
     assert keys.response_parse_status == "ok"
-    assert keys.response_id == "msg_02"
-    assert keys.tool_calls == (("toolu_9", "search"),)
+    assert keys.response_id == pid("msg_02")
+    assert keys.tool_calls == ((pid("toolu_9"), "search"),)
     assert keys.finish_reasons == ("tool_use",)
     assert keys.usage == {"input_tokens": 5, "output_tokens": 12}
     expected = {
@@ -389,12 +390,12 @@ def test_responses_api_keys() -> None:
         },
     }
     keys = _keys("openai.responses", request, response)
-    assert keys.previous_response_id == "resp_prev"
-    assert keys.response_id == "resp_1"
+    assert keys.previous_response_id == pid("resp_prev")
+    assert keys.response_id == pid("resp_1")
     assert keys.system_digest is not None
     assert keys.input_roles == ("user",)
     assert keys.output_roles == ("function_call",)
-    assert keys.tool_calls == (("call_r1", "lookup"),)
+    assert keys.tool_calls == ((pid("call_r1"), "lookup"),)
     assert keys.finish_reasons == ("completed",)
     assert keys.usage == {"input_tokens": 9, "output_tokens": 3, "reasoning_output_tokens": 2}
     follow = {
@@ -412,7 +413,7 @@ def test_responses_api_keys() -> None:
     }
     second = _keys("openai.responses", follow, None)
     assert second.input_digests[0] == keys.output_digests[0]
-    assert second.tool_call_ids_consumed == ("call_r1",)
+    assert second.tool_call_ids_consumed == (pid("call_r1"),)
 
 
 def test_responses_stream_uses_completed_event() -> None:
@@ -440,7 +441,7 @@ def test_responses_stream_uses_completed_event() -> None:
     )
     keys = _keys("openai.responses", {"input": "q", "stream": True}, stream_chunks=chunks)
     assert keys.response_parse_status == "ok"
-    assert keys.response_id == "resp_s"
+    assert keys.response_id == pid("resp_s")
     assert keys.output_roles == ("assistant",)
     resent = {
         "type": "message",
@@ -555,7 +556,7 @@ def test_content_encodings_decode() -> None:
     assert keys.output_digests == plain.output_digests
 
 
-def test_non_ascii_ids_are_opaque_encoded() -> None:
+def test_non_ascii_ids_are_pseudonymised() -> None:
     keys = _keys(
         "openai.chat_completions",
         {"messages": [{"role": "tool", "tool_call_id": "call with space", "content": "x"}]},
@@ -572,8 +573,40 @@ def test_non_ascii_ids_are_opaque_encoded() -> None:
             }
         ),
     )
-    assert keys.tool_call_ids_consumed[0].startswith("h-")
+    assert keys.tool_call_ids_consumed == (pid("call with space"),)
     assert keys.tool_calls[0][0] == keys.tool_call_ids_consumed[0]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["chatcmpl-B9x2kQ", "patient-123-45-6789", "alice@example.com", "call with space"],
+)
+def test_every_provider_id_is_a_consistent_pseudonym(raw: str) -> None:
+    """Codex re-review report2 #1: valid-looking personal ids passed through unchanged."""
+    keys = _keys(
+        "openai.chat_completions",
+        {"messages": [{"role": "tool", "tool_call_id": raw, "content": "x"}]},
+        {
+            **chat_response(
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": raw,
+                            "type": "function",
+                            "function": {"name": "f", "arguments": "{}"},
+                        }
+                    ],
+                }
+            ),
+            "id": raw,
+        },
+    )
+    assert keys.response_id == pid(raw)
+    assert keys.tool_call_ids_consumed == (pid(raw),)
+    assert keys.tool_calls[0][0] == pid(raw)
+    assert pid(raw).startswith("p-") and len(pid(raw)) == 18
+    assert raw not in repr(keys)
 
 
 def test_helpers_never_raise_on_garbage() -> None:

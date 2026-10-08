@@ -85,12 +85,18 @@ other_bits() {
   printf '%s' "${3#"${3%?}"}"
 }
 
+# The recommended ownership for a secret file: the operator who runs
+# preflight owns it (so preflight can validate its content) and the image's
+# group reads it (so the container can use it); nobody else can.
+OPERATOR_UID="$(id -u 2>/dev/null || printf 'OPERATOR')"
+SECRET_FIX="chown ${OPERATOR_UID}:${NODE_GID} + chmod 0440 (operator-owned, group ${NODE_GID}, no access for others)"
+
 # check_node_secret LABEL PATH: readable by the node user, closed to others.
 check_node_secret() {
   if [ "$(other_bits "$2")" != "0" ]; then
-    bad "$1 $2 is accessible to every host user; chown root:${NODE_GID} + chmod 0440 (or chown ${NODE_UID}:${NODE_GID} + chmod 0400)"
+    bad "$1 $2 is accessible to every host user; ${SECRET_FIX}"
   elif ! node_access "$2" 4; then
-    bad "$1 $2 is not readable by the container user ${NODE_UID}:${NODE_GID}; chown root:${NODE_GID} + chmod 0440 (or chown ${NODE_UID}:${NODE_GID} + chmod 0400)"
+    bad "$1 $2 is not readable by the container user ${NODE_UID}:${NODE_GID}; ${SECRET_FIX}"
   else
     ok "$1 readable by container user ${NODE_UID}:${NODE_GID} and closed to other users"
   fi
@@ -130,18 +136,33 @@ else
 fi
 
 # --- ingress token ------------------------------------------------------------
+# token_blank_lines / token_last_byte print nothing when the file cannot be
+# read, so a read failure is reported as such, never as a content problem.
+token_blank_lines() {
+  grep -c '^[[:space:]]*$' "$1" 2>/dev/null || true
+}
+token_last_byte() {
+  # The trailing "x" keeps a final newline from being stripped by $(...).
+  { tail -c1 "$1" 2>/dev/null && printf 'x'; } || true
+}
 if [ -z "${FABRIC_INGRESS_TOKEN_FILE:-}" ]; then
   bad "FABRIC_INGRESS_TOKEN_FILE unset; ingress would have no bearer token"
 elif [ ! -f "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
   bad "FABRIC_INGRESS_TOKEN_FILE points at a missing file: ${FABRIC_INGRESS_TOKEN_FILE}"
+elif [ ! -r "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
+  bad "cannot read ingress token file ${FABRIC_INGRESS_TOKEN_FILE} as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
 elif [ ! -s "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
   bad "ingress token file is empty: ${FABRIC_INGRESS_TOKEN_FILE}"
-elif grep -q '^[[:space:]]*$' "${FABRIC_INGRESS_TOKEN_FILE}"; then
+elif blank_lines=$(token_blank_lines "${FABRIC_INGRESS_TOKEN_FILE}")
+  last_byte=$(token_last_byte "${FABRIC_INGRESS_TOKEN_FILE}")
+  [ -z "${blank_lines}" ] || [ -z "${last_byte}" ]; then
+  bad "reading ingress token file ${FABRIC_INGRESS_TOKEN_FILE} failed, so its format cannot be checked; ${SECRET_FIX}"
+elif [ "${blank_lines}" != "0" ]; then
   # bearertokenauth v0.150.0 splits the file on newlines and keeps EMPTY
   # entries: a blank line mints "Bearer " (empty token) as a valid
   # credential, which gRPC metadata preserves verbatim -- auth bypass.
   bad "ingress token file contains a blank line; an empty 'Bearer ' credential would authenticate -- remove blank lines"
-elif [ -z "$(tail -c1 "${FABRIC_INGRESS_TOKEN_FILE}")" ]; then
+elif [ "${last_byte}" = "$(printf '\nx')" ]; then
   # Same extension quirk: a trailing newline produces a trailing empty
   # entry -> "Bearer " authenticates. The only safe file ends mid-line.
   bad "ingress token file ends with a newline; an empty 'Bearer ' credential would authenticate -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
@@ -217,10 +238,46 @@ EOF
   esac
 fi
 
-receiver_tls_enabled() {
+# receiver_proto PROTO MODE: MODE "present" succeeds when the OTLP receiver
+# configures PROTO (grpc or http); MODE "tls" when PROTO also has an
+# uncommented tls: stanza of its own. Only the receivers: block is read, so
+# exporter TLS settings never count as ingress TLS.
+receiver_proto() {
   [ -f "${COLLECTOR_CONFIG}" ] || return 1
-  sed -n '/^receivers:/,/^processors:/p' "${COLLECTOR_CONFIG}" \
-    | grep -q '^[[:space:]]*tls:'
+  sed -n '/^receivers:/,/^processors:/p' "${COLLECTOR_CONFIG}" | awk -v want="$1" -v mode="$2" '
+    /^[[:space:]]*(#.*)?$/ { next }
+    {
+      match($0, /^[[:space:]]*/)
+      indent = RLENGTH
+      if (proto != "" && indent <= proto_indent) proto = ""
+    }
+    /^[[:space:]]*(grpc|http):[[:space:]]*(#.*)?$/ {
+      name = $0
+      sub(/^[[:space:]]*/, "", name)
+      sub(/:.*/, "", name)
+      proto = name
+      proto_indent = indent
+      if (proto == want) present = 1
+      next
+    }
+    proto == want && /^[[:space:]]*tls:/ { tls = 1 }
+    END {
+      if (mode == "tls") exit((present && tls) ? 0 : 1)
+      exit(present ? 0 : 1)
+    }'
+}
+
+# Compose publishes both OTLP ports on FABRIC_BIND_ADDR, so every configured
+# protocol is published wherever that address is.
+receiver_tls_enabled() {
+  receiver_proto grpc tls || receiver_proto http tls
+}
+plaintext_receivers() {
+  for proto in grpc http; do
+    if receiver_proto "${proto}" present && ! receiver_proto "${proto}" tls; then
+      printf '%s ' "${proto}"
+    fi
+  done
 }
 
 tlsdir="${FABRIC_INGRESS_TLS_DIR:-./tls}"
@@ -264,15 +321,25 @@ elif [ -n "${FABRIC_EXPORT_CA_FILE:-}" ]; then
 fi
 
 # --- bind address sanity ------------------------------------------------------
+# Both OTLP ports are published on FABRIC_BIND_ADDR: beyond loopback, EVERY
+# configured receiver protocol needs its own TLS, or bearer tokens and
+# telemetry cross the network in plaintext on that port.
 bind="${FABRIC_BIND_ADDR:-127.0.0.1}"
-if [ "${bind}" != "127.0.0.1" ]; then
-  if receiver_tls_enabled; then
-    ok "non-loopback bind (${bind}) with TLS enabled"
-  else
-    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but receiver TLS is disabled"
-  fi
-else
+case "${bind}" in
+  127.*|localhost|::1|\[::1\]) loopback=1 ;;
+  *) loopback=0 ;;
+esac
+if [ "${loopback}" -eq 1 ]; then
   ok "OTLP ports bind loopback only"
+else
+  plaintext=$(plaintext_receivers)
+  if [ -n "${plaintext}" ]; then
+    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but these receivers have no tls: stanza: ${plaintext% }; enable TLS on every receiver or keep FABRIC_BIND_ADDR=127.0.0.1"
+  elif receiver_tls_enabled; then
+    ok "non-loopback bind (${bind}) with TLS on every OTLP receiver"
+  else
+    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but no OTLP receiver is configured in ${COLLECTOR_CONFIG}"
+  fi
 fi
 
 # --- optional reachability probe (warn-only: destination may not exist yet) ---

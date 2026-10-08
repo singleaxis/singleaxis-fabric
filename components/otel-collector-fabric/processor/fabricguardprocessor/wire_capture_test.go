@@ -13,13 +13,14 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-// Spec 042 rev 3 §8 Node admission: exactly the fourteen capture keys are
+// Spec 042 rev 3 §8 Node admission: exactly the fifteen capture keys are
 // exact-allowlisted and value-closed; every revision-2 key is dropped; raw
 // content never passes.
 
 func hex64(c string) string { return strings.Repeat(c, 64) }
 
-// captureKeys are the fourteen new spec 042 rev 3 OTLP keys.
+// captureKeys are the fifteen new spec 042 rev 3 OTLP keys (the fourteen of
+// rev 3 plus fabric.heartbeat.kind, decision E1).
 var captureKeys = []string{
 	"fabric.source.epoch", "fabric.run.id",
 	"fabric.wire.exchange_id", "fabric.wire.api",
@@ -27,7 +28,7 @@ var captureKeys = []string{
 	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
 	"fabric.loss.reason", "fabric.loss.count",
 	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
-	"fabric.heartbeat.last_sequence",
+	"fabric.heartbeat.last_sequence", "fabric.heartbeat.kind",
 }
 
 // removedCaptureKeys are the revision-2 keys (and the removed revision-3
@@ -139,6 +140,7 @@ func wireHeartbeatAttrs() map[string]any {
 		"fabric.source_id":               "wire-0123456789abcdef",
 		"fabric.source.epoch":            int64(1759800000000000000),
 		"fabric.heartbeat.last_sequence": int64(-1),
+		"fabric.heartbeat.kind":          "run_start",
 		"fabric.run.id":                  "run-1",
 	}
 }
@@ -253,6 +255,42 @@ func TestWireCapture_HeartbeatOutranksLossReason(t *testing.T) {
 	}
 }
 
+// fabric.heartbeat.kind (decision E1) is a closed vocabulary on every span:
+// each of the four kinds survives on a heartbeat, anything else is dropped
+// on capture and non-capture spans alike, and the heartbeat itself (with its
+// sequence) is kept so the verifier can still dedupe and order it.
+func TestWireCapture_HeartbeatKindIsClosedVocabulary(t *testing.T) {
+	for _, kind := range []string{"periodic", "run_start", "run_end", "final"} {
+		g := newTestGuard(t, nil)
+		attrs := wireHeartbeatAttrs()
+		attrs["fabric.heartbeat.kind"] = kind
+		span := processOne(t, g, "fabric.capture_heartbeat", attrs)
+		assertKeysKept(t, span, attrs)
+		if v, _ := span.Attributes().Get("fabric.heartbeat.kind"); v.Str() != kind {
+			t.Errorf("kind %q became %q", kind, v.Str())
+		}
+	}
+	for _, bad := range []any{"Periodic", "final ", "end", "run_start;run_end", "alice@example.com", "", int64(0), []any{"final"}} {
+		for _, native := range []string{"fabric.capture_heartbeat", "app operation"} {
+			g := newTestGuard(t, nil)
+			attrs := map[string]any{"fabric.heartbeat.kind": bad}
+			if native == "fabric.capture_heartbeat" {
+				attrs = wireHeartbeatAttrs()
+				attrs["fabric.heartbeat.kind"] = bad
+			}
+			span := processOne(t, g, native, attrs)
+			if v, ok := span.Attributes().Get("fabric.heartbeat.kind"); ok {
+				t.Errorf("%s: invalid heartbeat kind %#v survived as %q", native, bad, v.AsString())
+			}
+			if native == "fabric.capture_heartbeat" {
+				if _, ok := span.Attributes().Get("fabric.heartbeat.last_sequence"); !ok {
+					t.Errorf("valid last_sequence removed alongside bad kind %#v", bad)
+				}
+			}
+		}
+	}
+}
+
 func TestWireCapture_InvalidRecordMarkerDoesNotClaimCaptureName(t *testing.T) {
 	for key, bad := range map[string]any{
 		"fabric.heartbeat.last_sequence": "7; DROP TABLE",
@@ -281,6 +319,7 @@ func TestWireCapture_InvalidValuesAreRemoved(t *testing.T) {
 		"fabric.loss.first_sequence":     {int64(-1), "0", []any{int64(1)}},
 		"fabric.loss.last_sequence":      {int64(-1), 3.0},
 		"fabric.heartbeat.last_sequence": {int64(-2), "7", true},
+		"fabric.heartbeat.kind":          {"", "Final", "run_start ", "start", "run-end", "patient Jane Doe", int64(1), true, []any{"final"}},
 		"fabric.wire.truncated":          {"true", int64(0)},
 		"fabric.run.id":                  {"", "-leading", "has space", "a/b", tooLong, "patient\nJane", int64(1)},
 		"fabric.wire.exchange_id":        {"", "ex 1", "exé1", []any{"ex-1"}},
@@ -402,9 +441,9 @@ func TestWireCapture_RawContentKeysStayRejected(t *testing.T) {
 	}
 }
 
-func TestWireCapture_ExactlyFourteenKeysAreAllowlistedAndNotSensitive(t *testing.T) {
-	if len(captureKeys) != 14 {
-		t.Fatalf("captureKeys has %d entries, want 14", len(captureKeys))
+func TestWireCapture_ExactlyFifteenKeysAreAllowlistedAndNotSensitive(t *testing.T) {
+	if len(captureKeys) != 15 {
+		t.Fatalf("captureKeys has %d entries, want 15", len(captureKeys))
 	}
 	for _, key := range captureKeys {
 		if _, ok := TraceAllowedFields[key]; !ok {
@@ -414,7 +453,7 @@ func TestWireCapture_ExactlyFourteenKeysAreAllowlistedAndNotSensitive(t *testing
 			t.Errorf("%q is denied by sensitiveAttributeKey", key)
 		}
 	}
-	// Every allowlisted key in the capture namespaces is one of the fourteen.
+	// Every allowlisted key in the capture namespaces is one of the fifteen.
 	listed := map[string]struct{}{}
 	for _, key := range captureKeys {
 		listed[key] = struct{}{}
