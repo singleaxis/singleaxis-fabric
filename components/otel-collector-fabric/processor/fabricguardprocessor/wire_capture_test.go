@@ -13,16 +13,16 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-// Spec 042 rev 3 §8 Node admission: exactly the fifteen capture keys are
+// Spec 042 rev 3 §8 Node admission: exactly the fourteen capture keys are
 // exact-allowlisted and value-closed; every revision-2 key is dropped; raw
 // content never passes.
 
 func hex64(c string) string { return strings.Repeat(c, 64) }
 
-// captureKeys are the fifteen new spec 042 rev 3 OTLP keys.
+// captureKeys are the fourteen new spec 042 rev 3 OTLP keys.
 var captureKeys = []string{
 	"fabric.source.epoch", "fabric.run.id",
-	"fabric.wire.exchange_id", "fabric.wire.fidelity", "fabric.wire.api",
+	"fabric.wire.exchange_id", "fabric.wire.api",
 	"fabric.wire.request_sha256", "fabric.wire.response_sha256",
 	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
 	"fabric.loss.reason", "fabric.loss.count",
@@ -30,9 +30,11 @@ var captureKeys = []string{
 	"fabric.heartbeat.last_sequence",
 }
 
-// removedCaptureKeys are the revision-2 keys that must no longer be admitted,
-// each paired with a value that would have passed revision-2 validation.
+// removedCaptureKeys are the revision-2 keys (and the removed revision-3
+// fidelity key) that must no longer be admitted, each paired with a value
+// that would have passed earlier validation.
 var removedCaptureKeys = map[string]any{
+	"fabric.wire.fidelity":                    "exact_wire",
 	"fabric.source.component":                 "wire",
 	"fabric.run.id_basis":                     "trace",
 	"fabric.run.sequence":                     int64(2),
@@ -90,7 +92,6 @@ func wireExchangeAttrs() map[string]any {
 		"fabric.source.epoch":         int64(1759800000000000000),
 		"fabric.run.id":               "trace:0af7651916cd43dd8448eb211c80319c",
 		"fabric.wire.exchange_id":     "6b1f0c2e-1d2a-4c3b-9e8f-0a1b2c3d4e5f",
-		"fabric.wire.fidelity":        "exact_wire",
 		"fabric.wire.api":             "openai.chat_completions",
 		"fabric.wire.request_sha256":  hex64("b"),
 		"fabric.wire.response_sha256": hex64("c"),
@@ -113,7 +114,6 @@ func wireErrorExchangeAttrs() map[string]any {
 		"fabric.source.epoch":        int64(1759800000000000000),
 		"fabric.run.id":              "source:wire-0123456789abcdef:1759800000000000000",
 		"fabric.wire.exchange_id":    "ex-2",
-		"fabric.wire.fidelity":       "gateway_normalized",
 		"fabric.wire.api":            "anthropic.messages",
 		"fabric.wire.request_sha256": hex64("d"),
 		"fabric.wire.response_state": "error",
@@ -273,7 +273,6 @@ func TestWireCapture_InvalidRecordMarkerDoesNotClaimCaptureName(t *testing.T) {
 func TestWireCapture_InvalidValuesAreRemoved(t *testing.T) {
 	tooLong := strings.Repeat("a", 129)
 	cases := map[string][]any{
-		"fabric.wire.fidelity":           {"exact", "gateway", int64(1)},
 		"fabric.wire.api":                {"openai.chat", "gemini.generate", ""},
 		"fabric.wire.response_state":     {"done", "transport_error", true},
 		"fabric.wire.store_status":       {"ok", ""},
@@ -404,9 +403,9 @@ func TestWireCapture_RawContentKeysStayRejected(t *testing.T) {
 	}
 }
 
-func TestWireCapture_ExactlyFifteenKeysAreAllowlistedAndNotSensitive(t *testing.T) {
-	if len(captureKeys) != 15 {
-		t.Fatalf("captureKeys has %d entries, want 15", len(captureKeys))
+func TestWireCapture_ExactlyFourteenKeysAreAllowlistedAndNotSensitive(t *testing.T) {
+	if len(captureKeys) != 14 {
+		t.Fatalf("captureKeys has %d entries, want 14", len(captureKeys))
 	}
 	for _, key := range captureKeys {
 		if _, ok := TraceAllowedFields[key]; !ok {
@@ -416,7 +415,7 @@ func TestWireCapture_ExactlyFifteenKeysAreAllowlistedAndNotSensitive(t *testing.
 			t.Errorf("%q is denied by sensitiveAttributeKey", key)
 		}
 	}
-	// Every allowlisted key in the capture namespaces is one of the fifteen.
+	// Every allowlisted key in the capture namespaces is one of the fourteen.
 	listed := map[string]struct{}{}
 	for _, key := range captureKeys {
 		listed[key] = struct{}{}

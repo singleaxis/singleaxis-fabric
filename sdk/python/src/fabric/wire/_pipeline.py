@@ -108,8 +108,8 @@ def exchange_attributes(
     attrs: dict[str, Any] = {
         WireAttr.EXCHANGE_ID: job.exchange_id, WireAttr.RUN_ID: job.run_id,
         WireAttr.SOURCE_ID: job.source_id, WireAttr.SOURCE_EPOCH: job.source_epoch,
-        WireAttr.SOURCE_SEQUENCE: job.source_sequence, WireAttr.FIDELITY: job.fidelity,
-        WireAttr.API: job.api, WireAttr.REQUEST_SHA256: request_sha256,
+        WireAttr.SOURCE_SEQUENCE: job.source_sequence, WireAttr.API: job.api,
+        WireAttr.REQUEST_SHA256: request_sha256,
         WireAttr.RESPONSE_STATE: job.response_state, WireAttr.TRUNCATED: truncated,
         WireAttr.STORE_STATUS: store_status, "http.request.method": "POST",
         "gen_ai.operation.name": OPERATION_NAMES[job.api],
@@ -267,9 +267,8 @@ class CapturePipeline:
         self, job: CaptureJob, body: CapturedBody, data: bytes, sha: str, role: str
     ) -> str | None:
         """Write one body with retries; its ref, or ``None`` when not stored."""
-        gateway = job.fidelity == "gateway_normalized"
-        if self._store is None or (body.truncated and (gateway or not data)):
-            return None  # nothing useful to store: no prefix, or a canonical-JSON prefix
+        if self._store is None or (body.truncated and not data):
+            return None  # nothing useful to store: no retained prefix
         object_id = str(uuid.uuid4())
         for delay in (*self._backoffs, None):
             try:
@@ -290,21 +289,20 @@ class CapturePipeline:
         object_id: str, ref: str,
     ) -> dict[str, Any]:  # fmt: skip
         """Content-v2 descriptor (spec 042 §7): the store is self-describing."""
-        gateway, cut = job.fidelity == "gateway_normalized", body.truncated
+        cut = body.truncated
         partial = role == ROLE_RESPONSE and job.response_state != "complete"
         captured_ns = job.started_ns if role == ROLE_REQUEST else job.ended_ns
         source = {"source_byte_length": max(body.observed_byte_length, len(data) + 1)} if cut else (
-            {} if gateway else {"source_byte_length": len(data), "source_sha256": "sha256:" + sha}
+            {"source_byte_length": len(data), "source_sha256": "sha256:" + sha}
         )  # fmt: skip
         return {
             "schema_version": "fabric.content-object/v2", "object_id": object_id,
             "tenant_id": self._tenant_id, "role": role, "encoding": "binary",
             "media_type": media_type_of(body.media_type),
-            "content_encoding": content_encoding_of("" if gateway else body.content_encoding),
-            "representation": "canonicalized" if gateway else "truncated" if cut
-            else "partial" if partial else "exact",
-            "transformations": ["json_canonicalize"] if gateway else ["truncate"] if cut else [],
-            "provenance": "caller_reported" if gateway else "protocol",
+            "content_encoding": content_encoding_of(body.content_encoding),
+            "representation": "truncated" if cut else "partial" if partial else "exact",
+            "transformations": ["truncate"] if cut else [],
+            "provenance": "protocol",
             "boundary": "provider_bound", "source_id": job.source_id,
             "source_epoch": job.source_epoch, "source_sequence": job.source_sequence,
             "captured_at": datetime.fromtimestamp(captured_ns / 1e9, UTC).isoformat(),

@@ -46,9 +46,6 @@
       "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
       "verdict": "complete_for_declared_scope",
       "declared_scope": {
-        "capture_surfaces": [
-          "exact_wire"
-        ],
         "windows": [
           {
             "source_id": "wire-3f9a1c2b7d4e5f60",
@@ -65,7 +62,6 @@
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
           "source_sequence": 0,
-          "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90200",
@@ -104,7 +100,6 @@
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
           "source_sequence": 1,
-          "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90201",
@@ -146,7 +141,6 @@
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
           "source_sequence": 2,
-          "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90202",
@@ -189,7 +183,6 @@
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
           "source_sequence": 4,
-          "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90204",

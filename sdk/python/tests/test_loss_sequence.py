@@ -89,19 +89,18 @@ def test_default_source_id_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OTEL_SERVICE_NAME", "travel-agent")
     expected = hashlib.sha256(f"{socket.gethostname()}\0travel-agent".encode()).hexdigest()[:16]
     assert default_source_id("wire") == f"wire-{expected}"
-    assert default_source_id("gateway", "other").startswith("gateway-")
+    assert default_source_id("wire", "other").startswith("wire-")
 
 
 def test_get_allocator_applies_source_id_on_first_creation(
     fresh_registry: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("FABRIC_SOURCE_ID", "has space")
     first = get_allocator("wire", source_id="node-1")
     assert get_allocator("wire", source_id="ignored") is first
     assert first.source_id == "node-1"
-    monkeypatch.setenv("FABRIC_SOURCE_ID", "has space")
-    gateway = get_allocator("gateway")
-    assert gateway.source_id == encode_opaque_id("has space")
-    assert gateway.component == "gateway"
+    _sequence._REGISTRY.clear()
+    assert get_allocator("wire").source_id == encode_opaque_id("has space")
 
 
 def test_run_scope_sets_and_restores() -> None:
@@ -125,9 +124,6 @@ def test_resolve_run_id_order() -> None:
         assert resolve_run_id(allocator, trace_id=bad_trace) == source
     with run_scope("scoped"):
         assert resolve_run_id(allocator, trace_id=trace_id) == "scoped"
-        assert resolve_run_id(allocator, explicit="explicit-1") == "explicit-1"
-        assert resolve_run_id(allocator, explicit="bad id") == encode_opaque_id("bad id")
-        assert resolve_run_id(allocator, explicit=7) == "scoped"  # type: ignore[arg-type]
 
 
 def test_source_run_id_stays_opaque_for_long_source_ids() -> None:

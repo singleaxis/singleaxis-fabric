@@ -129,8 +129,8 @@ import fabric.wire
 problems = []
 if not os.path.realpath(fabric.__file__).startswith(root + os.sep):
     problems.append("fabric was not imported from the artifact")
-for name in ("httpx", "litellm", "fabric._autoload", "fabric._autoload.sitecustomize",
-             "fabric.wire._transport", "fabric.gateway", "fabric.reconstruct"):
+for name in ("httpx", "fabric._autoload", "fabric._autoload.sitecustomize",
+             "fabric.wire._transport", "fabric.reconstruct"):
     if name in sys.modules:
         problems.append("import fabric/fabric.wire loaded " + name)
 if threading.active_count() != threads:

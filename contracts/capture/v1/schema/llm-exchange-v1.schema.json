@@ -6,14 +6,13 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "exchange_id", "fidelity", "api", "provider_name", "source",
+    "schema_version", "exchange_id", "api", "provider_name", "source",
     "run_id", "started_at", "ended_at", "request", "response_state", "truncated",
     "store_status"
   ],
   "properties": {
     "schema_version": {"const": "fabric.llm-exchange/v1"},
     "exchange_id": {"$ref": "#/$defs/opaqueId"},
-    "fidelity": {"enum": ["exact_wire", "gateway_normalized"]},
     "api": {"$ref": "#/$defs/api"},
     "provider_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
     "source": {

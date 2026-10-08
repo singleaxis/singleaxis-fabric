@@ -211,7 +211,6 @@ def exchange_document(span: ReadableSpan) -> dict[str, Any]:
     document: dict[str, Any] = {
         "schema_version": "fabric.llm-exchange/v1",
         "exchange_id": a["fabric.wire.exchange_id"],
-        "fidelity": a["fabric.wire.fidelity"],
         "api": a["fabric.wire.api"],
         "provider_name": a["gen_ai.provider.name"],
         "source": {

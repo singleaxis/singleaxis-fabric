@@ -197,7 +197,6 @@ class Capture:
         truncated: str | None = None,
         store_status: str | None = None,
         http_status: int | None = 200,
-        fidelity: str = "exact_wire",
     ) -> Exchange:
         """Capture one exchange. Dict bodies are JSON-encoded; bytes are stored as-is."""
 
@@ -231,7 +230,6 @@ class Capture:
             "fabric.source_id": self.source_id,
             "fabric.source.epoch": self.epoch,
             "fabric.source.sequence": sequence,
-            "fabric.wire.fidelity": fidelity,
             "fabric.wire.api": api,
             "fabric.wire.request_sha256": sha_hex(request_bytes),
             "fabric.wire.response_state": state,
@@ -444,7 +442,6 @@ def test_clean_three_turn_react_run_is_complete(capture: Capture) -> None:
     }
     assert run["gaps"] == []
     assert run["declared_scope"] == {
-        "capture_surfaces": ["exact_wire"],
         "windows": [
             {
                 "source_id": SOURCE,
@@ -1212,17 +1209,16 @@ def test_cli_malformed_span_file_exits_two(tmp_path: Path) -> None:
     assert main(["--spans", str(bad)]) == 2
 
 
-def test_gateway_truncated_body_without_ref_is_only_truncated(capture: Capture) -> None:
+def test_truncated_body_without_ref_is_only_truncated(capture: Capture) -> None:
     turns = react_turns()
-    capture.exchange(*turns[0], fidelity="gateway_normalized")
-    exchange = capture.exchange(*turns[1], fidelity="gateway_normalized")
+    capture.exchange(*turns[0])
+    exchange = capture.exchange(*turns[1])
     attributes = exchange.span["attributes"]
     del attributes["fabric.content.result_ref"]
     attributes["fabric.wire.store_status"] = "partial"
     attributes["fabric.wire.truncated"] = True
     capture.heartbeat()
     run = only_run(capture.reconstruct())
-    assert run["declared_scope"]["capture_surfaces"] == ["gateway_normalized"]
     assert [g["gap_type"] for g in run["gaps"] if g["effect"] != "info"] == ["truncated"]
     assert run["exchanges"][1]["objects"]["response"]["verification"] == "not_stored"
 

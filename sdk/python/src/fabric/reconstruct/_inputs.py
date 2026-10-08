@@ -31,7 +31,6 @@ _SPAN_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]*$")
 _MODEL_MAX = 256
 
-FIDELITIES = frozenset({"exact_wire", "gateway_normalized"})
 APIS = frozenset(
     {
         "openai.chat_completions",
@@ -52,7 +51,6 @@ A_SOURCE_EPOCH = "fabric.source.epoch"
 A_SOURCE_SEQUENCE = "fabric.source.sequence"
 A_RUN_ID = "fabric.run.id"
 A_EXCHANGE_ID = "fabric.wire.exchange_id"
-A_FIDELITY = "fabric.wire.fidelity"
 A_API = "fabric.wire.api"
 A_REQUEST_REF = "fabric.content.request_ref"
 A_RESULT_REF = "fabric.content.result_ref"
@@ -333,7 +331,6 @@ class ExchangeObs:
     source_epoch: int
     source_sequence: int
     run_id: str
-    fidelity: str
     api: str
     response_state: str
     store_status: str
@@ -421,7 +418,6 @@ def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> Exc
     exchange_id = opaque_id(attrs.get(A_EXCHANGE_ID))
     sequence = int_at_least(attrs.get(A_SOURCE_SEQUENCE), 0)
     run_id = opaque_id(attrs.get(A_RUN_ID))
-    fidelity = enum_value(attrs.get(A_FIDELITY), FIDELITIES)
     api = enum_value(attrs.get(A_API), APIS)
     state = enum_value(attrs.get(A_RESPONSE_STATE), RESPONSE_STATES)
     store_status = enum_value(attrs.get(A_STORE_STATUS), STORE_STATUSES)
@@ -430,7 +426,7 @@ def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> Exc
     truncated = attrs.get(A_TRUNCATED)
     if source_id is None or epoch is None or exchange_id is None or sequence is None:
         return None
-    if run_id is None or fidelity is None or api is None or state is None:
+    if run_id is None or api is None or state is None:
         return None
     if store_status is None or request_sha256 is None or not isinstance(truncated, bool):
         return None
@@ -442,7 +438,6 @@ def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> Exc
         source_epoch=epoch,
         source_sequence=sequence,
         run_id=run_id,
-        fidelity=fidelity,
         api=api,
         response_state=state,
         store_status=store_status,

@@ -20,8 +20,8 @@ ids. Capturing the exact request and response bytes of every model call,
 below the framework, lets the run be rebuilt for any agent that talks to a
 model API over HTTP, without per-framework adapters.
 
-Phase 1 has two capture points (an in-process httpx tee and a LiteLLM
-gateway tap), one OTLP span per model call, per-source sequencing with
+Phase 1 has one capture point (an in-process httpx tee storing the exact
+wire bytes), one OTLP span per model call, per-source sequencing with
 visible loss, and an offline verifier that rebuilds runs from the stored
 bytes and states an **integrity** verdict.
 
@@ -30,6 +30,8 @@ the `model.exchange.request` / `model.exchange.response` roles in
 [`contracts/content/v2`](../contracts/content/v2/README.md).
 
 ## Decision record
+
+**2026-10-08 — LiteLLM gateway tap removed** — speculative, no customer runs it; single capture path = exact wire bytes; gateways may return later only when a customer's deployment requires one.
 
 **2026-10-08 — store-only stitching (revision 3).** Revision 2 parsed every
 model call at capture time and put per-message hashes, tool-call ids,
@@ -43,7 +45,7 @@ Why:
 
 1. **Simpler capture.** The code that runs inside the customer's agent
    process is the part that must never fail, block or surprise. It shrinks
-   to a byte tee, a bounded worker and one span (≤ ~1,500 lines, 15 new
+   to a byte tee, a bounded worker and one span (≤ ~1,500 lines, 14 new
    OTLP keys).
 2. **No hash dictionary on the wire.** Unkeyed per-message hashes of short,
    low-entropy messages ("yes", a tool name, a standard system prompt) can
@@ -62,7 +64,7 @@ the verdict is `unverified`, never `complete_for_declared_scope`.
 
 | Element | Layer | Why it is in the OSS core |
 |---|---|---|
-| Wire tee, gateway tap | CAPTURE | Optional SDK instrumentation and an optional adapter. Never enabled by installing the package: it needs an explicit `install()` call or an env-gated autoload the platform sets up. |
+| Wire tee | CAPTURE | Optional SDK instrumentation. Never enabled by installing the package: it needs an explicit `install()` call or an env-gated autoload the platform sets up. |
 | Bytes in customer store, OTLP refs and body digests only | PROTECT | Export allowlisting; content never enters OTLP. New keys are exact-allowlisted with closed value shapes in the Node. |
 | Bounded queue, retries, loss records, heartbeats | DELIVER / Verify | Bounded handoff with explicit, sequenced loss. |
 | `python -m fabric.reconstruct` | Verify | Local offline verification. The verdict says whether the *record* has gaps. It never judges the agent's quality, correctness or policy compliance. |
@@ -70,23 +72,19 @@ the verdict is `unverified`, never `complete_for_declared_scope`.
 Spec [041](041-follow-on-evidence-adapter-scopes.md) says no adapter may
 install a global interceptor *by default*; the tee patches httpx only after
 explicit opt-in. This spec makes no coverage claim: a verdict covers only
-model calls made through httpx in an instrumented process (or through an
-instrumented gateway). Calls through `requests`, `aiohttp`, gRPC, other
+model calls made through httpx in an instrumented process. Calls through `requests`, `aiohttp`, gRPC, other
 processes or unlisted endpoints are bypasses. A missing record cannot prove
 an action did not happen (spec 035 §4). Qualification under spec 038 is
 separate work.
 
-## 1. Capture points and fidelity
+## 1. Capture point
 
-| Fidelity | Capture point | What is stored |
-|---|---|---|
-| `exact_wire` | Patched `httpx.HTTPTransport.handle_request` / `httpx.AsyncHTTPTransport.handle_async_request`, or explicit `WireTransport` / `AsyncWireTransport` wrappers | Request bytes as handed to the transport; response bytes as yielded by the transport stream, **before** content decoding (`Content-Encoding` is recorded, never undone at capture) |
-| `gateway_normalized` | LiteLLM `CustomLogger`-compatible callback in a gateway process (never imports `litellm`) | Spec-029 canonical JSON of the parsed request and response objects LiteLLM exposes |
+| Capture point | What is stored |
+|---|---|
+| Patched `httpx.HTTPTransport.handle_request` / `httpx.AsyncHTTPTransport.handle_async_request`, or explicit `WireTransport` / `AsyncWireTransport` wrappers | Request bytes as handed to the transport; response bytes as yielded by the transport stream, **before** content decoding (`Content-Encoding` is recorded, never undone at capture) |
 
-The OpenAI and Anthropic Python SDKs and LiteLLM's HTTP paths use httpx, so
-the tee covers them without framework knowledge. A gateway record never
-claims wire bytes. A gateway and a wire tee in the same process are
-separate sources and produce separate exchanges; Phase 1 does not join them.
+The OpenAI and Anthropic Python SDKs use httpx, so the tee covers them
+without framework knowledge.
 
 ## 2. Endpoint matching
 
@@ -201,14 +199,14 @@ Per exchange the worker:
 4. emits the exchange span (§8) last.
 
 `store_status`: `disabled` (no store configured), `stored` (every captured
-body has a ref), `failed` (none has), `partial` (some have). A gateway body
-over `max_body_bytes` is not stored (a canonical-JSON prefix is not a useful
-object); its side has a digest but no ref and `truncated` is true.
+body has a ref), `failed` (none has), `partial` (some have). A truncated
+body with no retained prefix is not stored; its side has a digest but no
+ref and `truncated` is true.
 
 ## 6. Sources, runs and completeness
 
 - **Source.** `source_id` is `FABRIC_SOURCE_ID` / config, else
-  `<component>-` + 16 hex of `sha256(hostname NUL service.name)`.
+  `wire-` + 16 hex of `sha256(hostname NUL service.name)`.
   `source_epoch` is `time.time_ns()` at allocator creation, renewed after
   fork.
 - **Sequence.** One monotonic `source_sequence` per `(source_id, epoch)`,
@@ -216,12 +214,10 @@ object); its side has a digest but no ref and `truncated` is true.
   and heartbeats do **not** consume sequences. Invariant: every allocated
   sequence yields exactly one exchange span or is named by a loss record;
   otherwise it is a visible gap.
-- **Run id.** In order: an explicit id (gateway `x-fabric-run-id` header or
-  `fabric_run_id` metadata); the innermost `fabric.wire.run(run_id)` scope;
+- **Run id.** In order: the innermost `fabric.wire.run(run_id)` scope;
   the ambient valid OTel trace id as `trace:<32hex>`;
-  `source:<source_id>:<epoch>`. Invalid explicit ids are hashed to
-  `h-<40hex>`, never rejected on the hot path; `fabric.wire.run()` itself
-  validates its argument. There are no per-run counters and no run index.
+  `source:<source_id>:<epoch>`. `fabric.wire.run()` validates its
+  argument. There are no per-run counters and no run index.
 - **Loss records** (`fabric.capture_loss`): `{reason, count,
   first_sequence, last_sequence}` per `(source, epoch)`. Reasons:
   `queue_full`, `internal_error`, `shutdown`, `span_dropped` (sampled out,
@@ -248,8 +244,8 @@ Each exchange writes up to two objects through
 
 | Role | Bytes | Descriptor specifics |
 |---|---|---|
-| `model.exchange.request` | Request body | wire: `provenance: protocol`, `representation: exact` (source = stored) or `truncated` (`source_byte_length` = observed, `transformations: ["truncate"]`); gateway: `caller_reported`, `canonicalized`, `["json_canonicalize"]` |
-| `model.exchange.response` | Response body as received (SSE included) | as above; wire `partial` when the state is not `complete` |
+| `model.exchange.request` | Request body | `provenance: protocol`, `representation: exact` (source = stored) or `truncated` (`source_byte_length` = observed, `transformations: ["truncate"]`) |
+| `model.exchange.response` | Response body as received (SSE included) | as above; `partial` when the state is not `complete` |
 
 Every descriptor carries `media_type` (`Content-Type` without parameters,
 default `application/octet-stream`), `encoding: binary`,
@@ -263,7 +259,7 @@ the verifier needs nothing from OTLP to decode the bytes.
 
 **Exchange span:** `fabric.model_call`, kind `CLIENT`, start/end = exchange
 timing, parent = the context captured at request time, status `ERROR` on
-`response_state=error` or HTTP ≥ 400. Fifteen new keys in total (ten here,
+`response_state=error` or HTTP ≥ 400. Fourteen new keys in total (nine here,
 five on loss/heartbeat spans):
 
 | Key | Value | |
@@ -272,7 +268,6 @@ five on loss/heartbeat spans):
 | `fabric.run.id` | opaque id | new |
 | `fabric.source_id`, `fabric.source.sequence` | opaque id, int ≥ 0 | existing |
 | `fabric.source.epoch` | int ≥ 0 | new |
-| `fabric.wire.fidelity` | `exact_wire`\|`gateway_normalized` | new |
 | `fabric.wire.api` | §2 enum | new |
 | `fabric.content.request_ref`, `fabric.content.result_ref` | ref | existing; present only when stored |
 | `fabric.wire.request_sha256`, `fabric.wire.response_sha256` | bare 64-hex | new; captured bytes |
@@ -300,7 +295,7 @@ client traceparent, provider request id or body lengths are emitted.
 The JSON forms are `fabric.llm-exchange/v1` and `fabric.loss-record/v1`.
 
 **Node admission (fabricguard).** Exactly the new keys above join
-`TraceAllowedFields`; every revision-2 capture key is removed.
+`TraceAllowedFields`; every earlier capture key is removed.
 `validCaptureValue` closes their values: the enums above, typed ints with
 the stated minimums, bool, opaque-id pattern for ids. Hash keys stay closed
 by `hashAttributeKey` (bare 64-hex). `activityCategory` checks
@@ -345,7 +340,7 @@ absolute path.
    (trace or source runs) the window is R's first..last exchange; a lost
    first or last call of such a run that is not adjacent to it is outside
    its declared scope. Use `fabric.wire.run()` to bound a run. A run with
-   no closed marker pair on a source (every trace, source and gateway run)
+   no closed marker pair on a source (every trace and source run)
    is `unverified` (reason `unattributed`) when that source has a missing
    range not attributable to another run at or after the run's first
    sequence: on a shared source such a range may hold one of its calls.
@@ -415,9 +410,7 @@ Capture (`fabric/wire/**`, `fabric/_autoload/**`, `fabric/_sequence.py`,
 rev-3 cut (down from ~5,300), the remainder being passivity guarantees
 (GC-safe stream reaper, fork reinit, shutdown accounting) and public API. `fabric/wire/_stitch.py`
 moves to `fabric/reconstruct/_stitch.py`; capture imports no parser.
-`fabric.gateway.litellm` submits jobs to the same pipeline and does no
-parsing or hashing itself. `fabric` imports none of `fabric.wire`,
-`fabric.gateway` or `fabric.reconstruct`.
+`fabric` imports neither `fabric.wire` nor `fabric.reconstruct`.
 
 ## 11. Acceptance (Phase 1)
 
@@ -439,9 +432,7 @@ parsing or hashing itself. `fabric` imports none of `fabric.wire`,
    leaves the HTTP result unchanged.
 5. The Node keeps every key in §8 with valid values and drops invalid enum
    values, `sha256:`-prefixed hashes, revision-2 keys and raw-content keys.
-6. The gateway callback produces `gateway_normalized` exchanges from
-   recorded LiteLLM payloads without importing `litellm`.
-7. Wheel qualification: `fabric/_autoload/sitecustomize.py` present; no
+6. Wheel qualification: `fabric/_autoload/sitecustomize.py` present; no
    `*.pth`, no other `sitecustomize.py`/`usercustomize.py`; importing
    `fabric` and `fabric.wire` (with `FABRIC_WIRE_AUTOLOAD=1` set) patches
    nothing, starts no thread and does not import httpx.
@@ -450,14 +441,12 @@ parsing or hashing itself. `fabric` imports none of `fabric.wire`,
 
 Kubernetes injection, VM/serverless packaging, I/O-primitive capture,
 kernel/eBPF reconciliation, hash-chain or WORM anchoring, crypto-shredding,
-TypeScript parity, the deferred endpoints of §2, joining gateway and wire
-records of one call, and any evaluation, judging, scoring or policy decision
+TypeScript parity, the deferred endpoints of §2, and any evaluation, judging, scoring or policy decision
 over captured exchanges. Those belong to systems that consume this record.
 
 ## 13. Open questions
 
 1. Persisting `source_epoch` and the last sequence across restarts (spec
    038) versus the Phase-1 process-lifetime epoch.
-2. Joining `gateway_normalized` and `exact_wire` exchanges of one call.
-3. Whether `spooled` durability (spec 032) should back the worker queue.
-4. Rebuilding runs from store descriptors alone when spans are lost.
+2. Whether `spooled` durability (spec 032) should back the worker queue.
+3. Rebuilding runs from store descriptors alone when spans are lost.

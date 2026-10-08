@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from typing import Literal
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-Component = Literal["wire", "gateway"]
+Component = Literal["wire"]
 _LIVE: weakref.WeakSet[SourceAllocator] = weakref.WeakSet()
 _REGISTRY: dict[str, SourceAllocator] = {}
 _LOCK = threading.Lock()  # guards _LIVE, _REGISTRY and _LAST_EPOCH
@@ -45,8 +45,8 @@ class SourceAllocator:
     __slots__ = ("__weakref__", "_lock", "_next", "component", "epoch", "source_id")
 
     def __init__(self, source_id: str, component: Component) -> None:
-        if component not in ("wire", "gateway") or not OPAQUE_ID_RE.match(str(source_id)):
-            raise ValueError("component must be wire|gateway and source_id an opaque id")
+        if component != "wire" or not OPAQUE_ID_RE.match(str(source_id)):
+            raise ValueError("component must be wire and source_id an opaque id")
         self.source_id, self.component = source_id, component
         self._lock, self._next = threading.Lock(), 0
         with _LOCK:
@@ -99,13 +99,10 @@ def current_run_id() -> str | None:
     return _RUN_ID.get()
 
 
-def resolve_run_id(
-    allocator: SourceAllocator, *, explicit: str | None = None, trace_id: int | None = None
-) -> str:
-    """Explicit id, innermost run scope, ``trace:<32hex>``, else ``source:<id>:<epoch>``."""
-    for candidate in (explicit, _RUN_ID.get()):
-        if isinstance(candidate, str) and candidate:
-            return encode_opaque_id(candidate)
+def resolve_run_id(allocator: SourceAllocator, *, trace_id: int | None = None) -> str:
+    """Innermost run scope, ``trace:<32hex>``, else ``source:<id>:<epoch>``."""
+    if isinstance(scoped := _RUN_ID.get(), str) and scoped:
+        return encode_opaque_id(scoped)
     if isinstance(trace_id, int) and 0 < trace_id < 1 << 128:
         return f"trace:{trace_id:032x}"
     return encode_opaque_id(f"source:{allocator.source_id}:{allocator.epoch}")

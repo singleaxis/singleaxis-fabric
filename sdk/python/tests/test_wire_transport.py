@@ -48,7 +48,7 @@ SECOND = [
 # Spec 042 §8: every key an exchange span may carry.
 EXCHANGE_KEYS = {
     "fabric.wire.exchange_id", "fabric.run.id", "fabric.source_id", "fabric.source.epoch",
-    "fabric.source.sequence", "fabric.wire.fidelity", "fabric.wire.api",
+    "fabric.source.sequence", "fabric.wire.api",
     "fabric.content.request_ref", "fabric.content.result_ref", "fabric.wire.request_sha256",
     "fabric.wire.response_sha256", "fabric.wire.response_state", "fabric.wire.truncated",
     "fabric.wire.store_status", "gen_ai.operation.name", "gen_ai.provider.name",
@@ -88,7 +88,6 @@ def test_openai_chat_loop_is_captured_stored_and_projected(rig: Rig) -> None:
     assert spans[0].kind is SpanKind.CLIENT
     assert set(a) <= EXCHANGE_KEYS and set(b) <= EXCHANGE_KEYS
     assert a["fabric.wire.api"] == "openai.chat_completions"
-    assert a["fabric.wire.fidelity"] == "exact_wire"
     assert (a["gen_ai.provider.name"], a["gen_ai.operation.name"]) == ("openai", "chat")
     assert a["fabric.wire.store_status"] == "stored"
     assert a["fabric.wire.response_state"] == "complete"

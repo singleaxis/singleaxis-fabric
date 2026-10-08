@@ -15,7 +15,7 @@ Run from the repository root::
     sdk/python/.venv/bin/python examples/wire-capture/react_agent.py
 
 Nothing here is framework-specific: any agent that sends its model calls
-through httpx (the OpenAI and Anthropic SDKs, LiteLLM, hand-written clients)
+through httpx (the OpenAI and Anthropic SDKs, hand-written clients)
 is captured the same way.
 """
 

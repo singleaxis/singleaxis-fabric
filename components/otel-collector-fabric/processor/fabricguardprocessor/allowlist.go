@@ -129,7 +129,7 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	// bytes stay in the customer store and all stitching is done offline from
 	// those bytes. Values are further closed by validCaptureValue.
 	"fabric.source.epoch", "fabric.run.id",
-	"fabric.wire.exchange_id", "fabric.wire.fidelity", "fabric.wire.api",
+	"fabric.wire.exchange_id", "fabric.wire.api",
 	"fabric.wire.request_sha256", "fabric.wire.response_sha256",
 	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
 	"fabric.loss.reason", "fabric.loss.count",

@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Cross-workstream integration for spec 042 (rev 3, store-only stitching).
 
-The wire tee, the gateway tap, sequencing/loss, the capture pipeline and the
-offline verifier are tested separately in ``test_wire_*``, ``test_gateway_*``,
-``test_loss_*`` and ``test_reconstruct_*``. Here the *real* components run
+The wire tee, sequencing/loss, the capture pipeline and the offline verifier
+are tested separately in ``test_wire_*``, ``test_loss_*`` and
+``test_reconstruct_*``. Here the *real* components run
 end to end: captured spans are written to a sink JSONL file exactly as an
 exporter would, the bytes land in a real local store, and
 :func:`fabric.reconstruct.reconstruct` must reach the verdicts of spec 042
@@ -34,10 +34,8 @@ import fabric._sequence
 from fabric import wire
 from fabric._loss import LossEmitter
 from fabric.content_store import LocalFilesystemContentStore
-from fabric.gateway.litellm import FabricLiteLLMRecorder
 from fabric.reconstruct import reconstruct
 
-from .test_gateway_litellm import load_fixture, run_hook
 from .test_wire_helpers import capture_schemas, load_validator
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -347,35 +345,6 @@ def test_store_outage_is_a_missing_object_not_a_digest_mismatch(tmp_path: Path) 
     assert reasons == {("missing_object", "not_stored", "response")}
     # The request bodies did reach the store and still verify.
     assert {e["objects"]["request"]["verification"] for e in run["exchanges"]} == {"verified"}
-
-
-# ------------------------------------------------------------- gateway -> verify
-
-
-def test_gateway_tap_reconstructs_react_steps(tmp_path: Path) -> None:
-    spans_path = tmp_path / "spans.jsonl"
-    provider = _provider(spans_path)
-    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id=TENANT)
-    recorder = FabricLiteLLMRecorder(store=store, tracer_provider=provider)
-    for name in (
-        "chat_tool_call_success.json",
-        "chat_tool_result_followup.json",
-        "chat_failure_rate_limit.json",
-    ):
-        run_hook(recorder, load_fixture(name))
-    assert recorder.close(10.0)
-    provider.shutdown()
-
-    run = _only_run(_verify(spans_path, store), "run-travel-42")
-
-    assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
-    assert run["declared_scope"]["capture_surfaces"] == ["gateway_normalized"]
-    # A provider failure with no response body is a recorded transport error,
-    # not an unparsed exchange.
-    assert "unparsed_exchange" not in _gap_types(run)
-    first, second = run["exchanges"][:2]
-    assert second["thread_id"] == first["thread_id"]
-    assert set(first["tool_call_ids_emitted"]) <= set(second["tool_call_ids_consumed"])
 
 
 # ------------------------------------------------------------------- example

@@ -1,7 +1,6 @@
 {
   "schema_version": "fabric.llm-exchange/v1",
   "exchange_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
-  "fidelity": "exact_wire",
   "api": "openai.chat_completions",
   "provider_name": "openai",
   "source": {

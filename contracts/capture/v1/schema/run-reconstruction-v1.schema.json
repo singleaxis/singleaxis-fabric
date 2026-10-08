@@ -129,7 +129,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "exchange_id", "source_id", "source_epoch", "source_sequence", "fidelity", "api",
+        "exchange_id", "source_id", "source_epoch", "source_sequence", "api",
         "started_at", "ended_at", "response_state", "parse_status", "thread_id",
         "tool_call_ids_consumed", "tool_call_ids_emitted", "objects"
       ],
@@ -138,7 +138,6 @@
         "source_id": {"$ref": "#/$defs/opaqueId"},
         "source_epoch": {"type": "integer", "minimum": 0},
         "source_sequence": {"type": "integer", "minimum": 0},
-        "fidelity": {"enum": ["exact_wire", "gateway_normalized"]},
         "api": {"$ref": "#/$defs/api"},
         "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
         "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
@@ -213,14 +212,8 @@
         "declared_scope": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["capture_surfaces", "windows"],
+          "required": ["windows"],
           "properties": {
-            "capture_surfaces": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": {"enum": ["exact_wire", "gateway_normalized"]}
-            },
             "windows": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/window"}}
           }
         },

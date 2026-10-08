@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Capture types shared by the tee, the gateway and the pipeline (spec 042); no httpx."""
+"""Capture types shared by the tee and the pipeline (spec 042); no httpx."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Literal, Protocol
 if TYPE_CHECKING:
     from opentelemetry.context import Context
 
-Fidelity = Literal["exact_wire", "gateway_normalized"]
 WireApi = Literal[
     "openai.chat_completions", "openai.responses", "openai.completions", "openai.embeddings",
     "anthropic.messages",
@@ -26,7 +25,7 @@ class WireAttr:
 
     EXCHANGE_ID, RUN_ID = "fabric.wire.exchange_id", "fabric.run.id"
     SOURCE_ID, SOURCE_SEQUENCE = "fabric.source_id", "fabric.source.sequence"
-    SOURCE_EPOCH, FIDELITY, API = "fabric.source.epoch", "fabric.wire.fidelity", "fabric.wire.api"
+    SOURCE_EPOCH, API = "fabric.source.epoch", "fabric.wire.api"
     REQUEST_REF, RESPONSE_REF = "fabric.content.request_ref", "fabric.content.result_ref"
     REQUEST_SHA256, RESPONSE_SHA256 = "fabric.wire.request_sha256", "fabric.wire.response_sha256"
     RESPONSE_STATE, TRUNCATED = "fabric.wire.response_state", "fabric.wire.truncated"
@@ -63,7 +62,6 @@ class CapturedBody:
 @dataclass(frozen=True, slots=True)
 class CaptureJob:
     exchange_id: str
-    fidelity: Fidelity
     api: WireApi
     provider_name: str
     source_id: str

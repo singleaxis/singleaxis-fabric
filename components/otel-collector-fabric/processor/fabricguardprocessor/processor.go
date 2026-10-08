@@ -613,8 +613,7 @@ func validHostAuditValue(key string, value pcommon.Value) bool {
 }
 
 var (
-	captureFidelities = toSet("exact_wire", "gateway_normalized")
-	captureWireAPIs   = toSet(
+	captureWireAPIs = toSet(
 		"openai.chat_completions", "openai.responses", "openai.completions",
 		"openai.embeddings", "anthropic.messages",
 	)
@@ -631,8 +630,6 @@ var (
 // validHashValue (bare 64-hex).
 func validCaptureValue(key string, value pcommon.Value) bool {
 	switch key {
-	case "fabric.wire.fidelity":
-		return captureEnum(value, captureFidelities)
 	case "fabric.wire.api":
 		return captureEnum(value, captureWireAPIs)
 	case "fabric.wire.response_state":

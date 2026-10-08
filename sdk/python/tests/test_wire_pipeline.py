@@ -46,7 +46,6 @@ def _job(
     allocator: SourceAllocator,
     *,
     api: Any = "openai.chat_completions",
-    fidelity: Any = "gateway_normalized",
     response: Any = None,
     truncated: bool = False,
     state: Any = "complete",
@@ -60,13 +59,12 @@ def _job(
     now = time.time_ns()
     return CaptureJob(
         exchange_id=str(uuid.uuid4()),
-        fidelity=fidelity,
         api=api,
         provider_name="openai",
         source_id=allocator.source_id,
         source_epoch=epoch,
         source_sequence=sequence,
-        run_id="run-gw-1",
+        run_id="run-pipe-1",
         parent_context=None,
         started_ns=now - 1_000_000,
         ended_ns=now,
@@ -94,7 +92,7 @@ def parts(tmp_path: Path) -> Any:
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     loss = LossEmitter(tracer_provider=provider)
     store = LocalFilesystemContentStore(root=str(tmp_path), tenant_id="tenant-a")
-    allocator = SourceAllocator("gw-test-1", "gateway")
+    allocator = SourceAllocator("pipe-test-1", "wire")
     pipeline = CapturePipeline(store=store, tracer_provider=provider, loss=loss)
     yield pipeline, exporter, store, allocator, loss
     pipeline.close(2.0)
@@ -106,7 +104,7 @@ def _descriptors(store: LocalFilesystemContentStore) -> list[dict[str, Any]]:
     return [json.loads(p.read_text()) for p in meta.glob("*.json")]
 
 
-def test_gateway_job_stores_canonical_bodies(parts: Any) -> None:
+def test_job_stores_exact_bodies(parts: Any) -> None:
     pipeline, exporter, store, allocator, _ = parts
     job = _job(allocator)
     assert pipeline.submit(job)
@@ -114,7 +112,6 @@ def test_gateway_job_stores_canonical_bodies(parts: Any) -> None:
     (span,) = [s for s in exporter.get_finished_spans() if s.name == "fabric.model_call"]
     load_validator().validate_document(exchange_document(span), capture_schemas())
     a = attrs(span)
-    assert a["fabric.wire.fidelity"] == "gateway_normalized"
     assert a["fabric.wire.store_status"] == "stored"
     assert span.parent is None
     content = Draft202012Validator(
@@ -124,16 +121,17 @@ def test_gateway_job_stores_canonical_bodies(parts: Any) -> None:
     assert {d["role"] for d in descriptors} == {"model.exchange.request", "model.exchange.response"}
     for descriptor in descriptors:
         assert not list(content.iter_errors(descriptor))
-        assert descriptor["representation"] == "canonicalized"
-        assert descriptor["transformations"] == ["json_canonicalize"]
-        assert descriptor["provenance"] == "caller_reported"
+        assert descriptor["representation"] == "exact"
+        assert descriptor["transformations"] == []
+        assert descriptor["provenance"] == "protocol"
         assert descriptor["content_encoding"] == "identity"
-        assert "source_sha256" not in descriptor and "links" not in descriptor
-        assert (descriptor["run_id"], descriptor["operation_id"]) == ("run-gw-1", job.exchange_id)
+        assert descriptor["source_sha256"] == descriptor["stored_sha256"]
+        assert "links" not in descriptor
+        assert (descriptor["run_id"], descriptor["operation_id"]) == ("run-pipe-1", job.exchange_id)
         assert descriptor["source_sequence"] == job.source_sequence
 
 
-def test_gateway_truncated_body_is_not_stored(parts: Any) -> None:
+def test_truncated_body_without_prefix_is_not_stored(parts: Any) -> None:
     pipeline, exporter, store, allocator, _ = parts
     assert pipeline.submit(_job(allocator, truncated=True))
     assert pipeline.flush(5.0)
@@ -236,7 +234,7 @@ def test_response_metadata_skips_large_bodies_to_bound_gil_hold() -> None:
 
 def test_exchange_attributes_error_and_status_shapes() -> None:
     allocator = SourceAllocator("attr-test", "wire")
-    job = _job(allocator, fidelity="exact_wire", state="error")
+    job = _job(allocator, state="error")
     job = dataclasses.replace(job, error_type="bad name!", http_status_code=700)
     found = exchange_attributes(
         job, request_sha256="a" * 64, response_sha256=None, request_ref=None, response_ref=None,

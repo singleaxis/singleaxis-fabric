@@ -6,7 +6,7 @@ of the published contracts archive until spec 042 is accepted.
 
 | Schema | Document | Produced by |
 |---|---|---|
-| `schema/llm-exchange-v1.schema.json` | `fabric.llm-exchange/v1` — the JSON form of one `fabric.model_call` span: exchange id, source position, run, body digests and refs, cheap response metadata | wire tee / gateway tap (as an OTLP span); normalized by the verifier |
+| `schema/llm-exchange-v1.schema.json` | `fabric.llm-exchange/v1` — the JSON form of one `fabric.model_call` span: exchange id, source position, run, body digests and refs, cheap response metadata | wire tee (as an OTLP span); normalized by the verifier |
 | `schema/loss-record-v1.schema.json` | `fabric.loss-record/v1` — `loss` (a range of exchange sequences that will never produce a span) or `heartbeat` (the source's last allocated sequence) | the capture loss emitter (as `fabric.capture_loss` / `fabric.capture_heartbeat` spans) |
 | `schema/run-reconstruction-v1.schema.json` | `fabric.run-reconstruction/v1` — per-run exchanges, threads, gaps and integrity verdict | `python -m fabric.reconstruct` |
 
@@ -30,9 +30,8 @@ of those UTF-8 bytes. Cases marked `same_digest_as` prove that a message
 hashes identically when returned in a response and when re-sent in the next
 request. These digests never leave the verifier.
 
-The run verdict is an integrity verdict for a declared scope (capture
-surfaces plus per-source sequence windows and the heartbeat that covers
-them), not a quality evaluation: `complete_for_declared_scope` means no
+The run verdict is an integrity verdict for a declared scope (per-source
+sequence windows and the heartbeat that covers them), not a quality evaluation: `complete_for_declared_scope` means no
 known or unexplained capture gap inside that scope, never that the agent
 behaved correctly.
 

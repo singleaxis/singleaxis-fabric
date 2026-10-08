@@ -8,9 +8,8 @@ implementations are deliberately outside this distribution.
 
 LLM wire capture (spec 042) is opt-in and lives in subpackages that this
 module does not import: ``fabric.wire`` (in-process httpx tee; nothing is
-patched until ``fabric.wire.install()``), ``fabric.gateway.litellm`` (LiteLLM
-callback) and ``fabric.reconstruct`` (offline run verifier, also
-``python -m fabric.reconstruct``). Importing ``fabric`` never patches a
+patched until ``fabric.wire.install()``) and ``fabric.reconstruct`` (offline
+run verifier, also ``python -m fabric.reconstruct``). Importing ``fabric`` never patches a
 transport, starts a thread or enables capture.
 """
 

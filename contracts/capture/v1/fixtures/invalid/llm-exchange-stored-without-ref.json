@@ -1,11 +1,10 @@
 {
   "schema_version": "fabric.llm-exchange/v1",
   "exchange_id": "7a2e9d10-3b4c-4d5e-8f60-718293a4b5c6",
-  "fidelity": "gateway_normalized",
   "api": "openai.chat_completions",
   "provider_name": "openai",
   "source": {
-    "source_id": "gateway-litellm-1",
+    "source_id": "wire-node-1",
     "source_epoch": 1791331200000000000,
     "source_sequence": 0
   },

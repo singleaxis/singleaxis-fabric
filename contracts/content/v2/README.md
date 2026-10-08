@@ -30,11 +30,9 @@ in OTLP; the bytes belong in the customer-controlled content store.
 ## Model-exchange roles (spec 042, draft)
 
 `model.exchange.request` and `model.exchange.response` hold the complete
-HTTP body of one model API call — exactly as transmitted/received for the
+HTTP body of one model API call exactly as transmitted/received by the
 in-process wire tee (`provenance: protocol`, `representation: exact`,
-`partial` or `truncated`), or the canonical JSON of the parsed objects a
-gateway callback exposes (`provenance: caller_reported`,
-`representation: canonicalized`). Both use `boundary: provider_bound`,
+`partial` or `truncated`). Both roles use `boundary: provider_bound`,
 `operation_id` = the exchange id, and the exchange's `run_id` and
 `source_*` position, so the store is self-describing.
 

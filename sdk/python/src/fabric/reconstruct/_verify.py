@@ -321,12 +321,10 @@ class _Run:
                 entry["continues_exchange_id"] = continued
         gaps = sort_gaps(self.gaps, self.order)
         checks = self._checks(gaps, bodies, views)
-        surfaces = sorted({exchange.fidelity for exchange in self.members}) or ["exact_wire"]
         return {
             "run_id": self.run_id,
             "verdict": verdict_for(gaps, checks),
             "declared_scope": {
-                "capture_surfaces": surfaces,
                 "windows": [
                     {
                         "source_id": window.key[0],
@@ -486,7 +484,6 @@ class _Run:
             "source_id": exchange.source_id,
             "source_epoch": exchange.source_epoch,
             "source_sequence": exchange.source_sequence,
-            "fidelity": exchange.fidelity,
             "api": exchange.api,
             "started_at": format_ns(exchange.start_ns),
             "ended_at": format_ns(exchange.end_ns),

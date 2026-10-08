@@ -204,7 +204,7 @@ class Exchange:
             tee.forget(self)
             response = self.response.body() if self.response is not None else None
             tee.submit(CaptureJob(
-                exchange_id=self.exchange_id, fidelity="exact_wire", api=self.api,
+                exchange_id=self.exchange_id, api=self.api,
                 provider_name=self.matcher.provider_name, source_id=tee.allocator.source_id,
                 source_epoch=self.epoch, source_sequence=self.sequence, run_id=self.run_id,
                 parent_context=self.parent_context, started_ns=self.started_ns,
