@@ -53,7 +53,6 @@ _CALL_TYPES: Mapping[str, WireApi] = {
 # Keys the request body builder sets itself; an optional parameter with one
 # of these names never overrides the call's own model or payload field.
 _RESERVED_PARAMS = frozenset({"model", "messages", "input", "prompt"})
-_PROVIDER_REQUEST_ID_HEADERS = ("llm_provider-x-request-id", "llm_provider-request-id")
 _MAX_DEPTH = 64
 _NS_THRESHOLD = 10**14  # integers above this are already nanoseconds
 _HTTP_STATUS_MIN = 100
@@ -385,25 +384,6 @@ def provider_name(kwargs: Mapping[str, Any]) -> str:
     return DEFAULT_PROVIDER
 
 
-def provider_request_id(kwargs: Mapping[str, Any], response_obj: Any) -> str | None:
-    """Provider request id LiteLLM forwarded as ``llm_provider-*`` headers."""
-
-    sources: list[Any] = [
-        _mapping(standard_logging_object(kwargs).get("hidden_params")).get("additional_headers")
-    ]
-    hidden = getattr(response_obj, "_hidden_params", None)
-    if isinstance(hidden, Mapping):
-        sources.append(hidden.get("additional_headers"))
-    for source in sources:
-        if not isinstance(source, Mapping):
-            continue
-        for name in _PROVIDER_REQUEST_ID_HEADERS:
-            value = source.get(name)
-            if isinstance(value, str) and value:
-                return str(value)
-    return None
-
-
 def to_ns(value: Any) -> int | None:
     """Epoch nanoseconds from a ``datetime`` (naive = local time, as LiteLLM
     records it), float seconds, or an integer in seconds or nanoseconds."""
@@ -467,7 +447,6 @@ __all__ = [
     "extract_headers",
     "is_stream",
     "provider_name",
-    "provider_request_id",
     "request_object",
     "response_object",
     "run_hint",

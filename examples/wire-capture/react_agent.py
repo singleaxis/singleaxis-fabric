@@ -7,8 +7,8 @@ through a plain ``httpx`` client. The "model" is an ``httpx.MockTransport``
 handler, so the example runs fully offline. ``fabric.wire`` tees the exact
 request and response bytes of every model call into a local content store;
 spans (ids, digests and metadata only) go to a JSONL file. Afterwards
-``python -m fabric.reconstruct`` rebuilds the run from those two inputs and
-states an integrity verdict.
+``python -m fabric.reconstruct`` reads the stored bytes, stitches the run
+offline from them and states an integrity verdict.
 
 Run from the repository root::
 
@@ -87,7 +87,7 @@ TOOLS = [
 
 
 class JsonlSpanExporter(SpanExporter):
-    """Write each span as ``{"kind": "span", ...}`` — ids, digests, metadata."""
+    """Write each span as ``{"kind": "span", ...}``: ids, digests, metadata."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -284,7 +284,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         str(store_root),
         "--tenant",
         TENANT,
-        "--recompute-digests",
         "--out",
         str(report_path),
     ]

@@ -2,8 +2,8 @@
 title: LLM wire capture and run reconstruction
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 2
-last_updated: 2026-10-07
+revision: 3
+last_updated: 2026-10-08
 owner: recorder-engineering
 depends_on: 027, 029, 032, 035, 038
 related: 040, 041
@@ -16,586 +16,448 @@ related: 040, 041
 A ReAct-style or custom-workflow agent's decisions are made by model calls.
 Its model traffic *is* the decision log: request N+1 is request N plus
 response N plus the tool results the agent produced, linked by tool-call
-ids. Framework adapters see only what each framework chooses to surface and
-must be rebuilt per framework. Capturing the exact request and response
-bytes of every model call, below the framework, reconstructs the trajectory
-for any agent that talks to a model API over HTTP.
+ids. Capturing the exact request and response bytes of every model call,
+below the framework, lets the run be rebuilt for any agent that talks to a
+model API over HTTP, without per-framework adapters.
 
-Phase 1 adds two capture points (an in-process httpx wire tee and a LiteLLM
-gateway tap), a metadata-only `fabric.llm-exchange/v1` record, per-source
-sequencing with visible loss, a fixed OTLP projection the Node admits, and an
-offline verifier that reconstructs runs and states an **integrity** verdict.
+Phase 1 has two capture points (an in-process httpx tee and a LiteLLM
+gateway tap), one OTLP span per model call, per-source sequencing with
+visible loss, and an offline verifier that rebuilds runs from the stored
+bytes and states an **integrity** verdict.
 
-Public contracts: [`contracts/capture/v1`](../contracts/capture/v1/README.md)
-and three new roles in [`contracts/content/v2`](../contracts/content/v2/README.md).
+Contracts: [`contracts/capture/v1`](../contracts/capture/v1/README.md) and
+the `model.exchange.request` / `model.exchange.response` roles in
+[`contracts/content/v2`](../contracts/content/v2/README.md).
+
+## Decision record
+
+**2026-10-08 — store-only stitching (revision 3).** Revision 2 parsed every
+model call at capture time and put per-message hashes, tool-call ids,
+system/tool digests, per-run sequence numbers and cumulative loss counters
+on OTLP (48 new keys, ~5,300 lines of capture code). Revision 3 moves all
+parsing and stitching to `fabric.reconstruct`, which reads the exact bytes
+back from the customer store. Capture only copies bytes, stores them,
+and emits one span with ids, digests of the two bodies and refs.
+
+Why:
+
+1. **Simpler capture.** The code that runs inside the customer's agent
+   process is the part that must never fail, block or surprise. It shrinks
+   to a byte tee, a bounded worker and one span (≤ ~1,500 lines, 15 new
+   OTLP keys).
+2. **No hash dictionary on the wire.** Unkeyed per-message hashes of short,
+   low-entropy messages ("yes", a tool name, a standard system prompt) can
+   be confirmed by dictionary attack by anyone who can read the telemetry
+   pipeline. OTLP now carries only the digests of whole request/response
+   bodies.
+3. **Content stays in the customer boundary.** Every derived fact about
+   message content (digests, tool-call ids, thread structure) is computed
+   where the bytes already live, by a tool the customer runs.
+
+Consequence: rebuilding or stitching a run **requires read access to the
+store**. Without it the verifier can check sequence completeness only, and
+the verdict is `unverified`, never `complete_for_declared_scope`.
 
 ## Scope check (AGENTS.md)
 
 | Element | Layer | Why it is in the OSS core |
 |---|---|---|
 | Wire tee, gateway tap | CAPTURE | Optional SDK instrumentation and an optional adapter. Never enabled by installing the package: it needs an explicit `install()` call or an env-gated autoload the platform sets up. |
-| Bytes in customer store, OTLP digests only | PROTECT | Export allowlisting; raw content never enters OTLP. New keys are exact-allowlisted with closed value shapes in the Node. |
-| Bounded queue, retries, loss records, watermarks | DELIVER / Verify | Durable-ish handoff with explicit, counted loss. |
+| Bytes in customer store, OTLP refs and body digests only | PROTECT | Export allowlisting; content never enters OTLP. New keys are exact-allowlisted with closed value shapes in the Node. |
+| Bounded queue, retries, loss records, heartbeats | DELIVER / Verify | Bounded handoff with explicit, sequenced loss. |
 | `python -m fabric.reconstruct` | Verify | Local offline verification. The verdict says whether the *record* has gaps. It never judges the agent's quality, correctness or policy compliance. |
 
 Spec [041](041-follow-on-evidence-adapter-scopes.md) says no adapter may
-install a global interceptor *by default*. The wire tee patches httpx
-transport classes only after explicit opt-in. This spec makes no coverage
-claim: a `complete_for_declared_scope` verdict covers only model calls made
-through httpx in an instrumented process (or through an instrumented
-gateway). Calls through `requests`, `aiohttp`, gRPC, other processes or
-unlisted endpoints are bypasses. They are not covered, and a missing record
-cannot prove an action did not happen (spec 035 §4). Qualification under
-spec 038 is separate work.
+install a global interceptor *by default*; the tee patches httpx only after
+explicit opt-in. This spec makes no coverage claim: a verdict covers only
+model calls made through httpx in an instrumented process (or through an
+instrumented gateway). Calls through `requests`, `aiohttp`, gRPC, other
+processes or unlisted endpoints are bypasses. A missing record cannot prove
+an action did not happen (spec 035 §4). Qualification under spec 038 is
+separate work.
 
 ## 1. Capture points and fidelity
 
-| Fidelity | Capture point | What is observed | Content-v2 descriptor |
-|---|---|---|---|
-| `exact_wire` | In-process tee on `httpx.HTTPTransport.handle_request` / `httpx.AsyncHTTPTransport.handle_async_request`, or explicit `WireTransport` / `AsyncWireTransport` wrappers | Request body bytes as handed to the transport; response bytes as yielded by the transport stream (pre content-decoding) | `provenance: protocol`, `boundary: provider_bound`, `representation: exact`, `partial` or `truncated` |
-| `gateway_normalized` | LiteLLM `CustomLogger`-compatible callback in a gateway process | Parsed request/response objects only | `provenance: caller_reported`, `representation: canonicalized`, `transformations: ["json_canonicalize"]`, no source digest |
+| Fidelity | Capture point | What is stored |
+|---|---|---|
+| `exact_wire` | Patched `httpx.HTTPTransport.handle_request` / `httpx.AsyncHTTPTransport.handle_async_request`, or explicit `WireTransport` / `AsyncWireTransport` wrappers | Request bytes as handed to the transport; response bytes as yielded by the transport stream, **before** content decoding (`Content-Encoding` is recorded, never undone at capture) |
+| `gateway_normalized` | LiteLLM `CustomLogger`-compatible callback in a gateway process (never imports `litellm`) | Spec-029 canonical JSON of the parsed request and response objects LiteLLM exposes |
 
-The OpenAI and Anthropic Python SDKs, and LiteLLM's HTTP paths, use httpx,
-so the tee covers them without framework knowledge. A gateway record never
-claims wire bytes. The gateway and a wire tee in the same gateway process are
-separate sources and produce separate exchanges. Phase 1 does not join them
-(open question 3).
+The OpenAI and Anthropic Python SDKs and LiteLLM's HTTP paths use httpx, so
+the tee covers them without framework knowledge. A gateway record never
+claims wire bytes. A gateway and a wire tee in the same process are
+separate sources and produce separate exchanges; Phase 1 does not join them.
 
 ## 2. Endpoint matching
 
-The tee inspects a request only when all of these hold: the method is
-`POST`, the scheme is allowed by the matcher, the host matches, the port
-matches when the matcher constrains it, the path starts with the matcher's
-`path_prefix`, and the path (query string ignored and never recorded) ends
-with a recognized suffix:
+The tee inspects a request only when the method is `POST`, the scheme is
+allowed by a matcher, the host matches (exact or suffix), the port matches
+when constrained, the path starts with the matcher's `path_prefix`, and the
+path (query ignored, never recorded) ends with a recognized suffix:
 
 | Dialect | Path suffix | `api` | `gen_ai.operation.name` |
 |---|---|---|---|
 | `openai` | `/chat/completions` | `openai.chat_completions` | `chat` |
 | `openai` | `/responses` | `openai.responses` | `chat` |
-| `openai` | `/completions` (not `/chat/completions`) | `openai.completions` | `text_completion` |
+| `openai` | `/completions` | `openai.completions` | `text_completion` |
 | `openai` | `/embeddings` | `openai.embeddings` | `embeddings` |
-| `anthropic` | `/messages` (not `/messages/count_tokens`, `/messages/batches…`) | `anthropic.messages` | `chat` |
+| `anthropic` | `/messages` | `anthropic.messages` | `chat` |
 
-Default matchers (`DEFAULT_ENDPOINTS`):
-
-| `endpoint_id` | Hosts | Dialect | `provider_name` |
-|---|---|---|---|
-| `openai` | `api.openai.com` | openai | `openai` |
-| `anthropic` | `api.anthropic.com` | anthropic | `anthropic` |
-| `azure-openai` | host suffix `.openai.azure.com` | openai | `azure.ai.openai` |
-
-Other endpoints are added as `EndpointMatcher` values: in code, or through
-`FABRIC_WIRE_ENDPOINTS`, a JSON array of `{"endpoint_id", "dialect",
-"hosts", "host_suffixes", "ports", "path_prefix", "provider_name",
-"schemes"}`. Examples are vLLM, Ollama, OpenRouter and internal proxies.
-`http` is accepted only when the matcher lists it in `schemes`. A
-non-matching request passes straight through with no wrapping and no
-allocation. **Deferred:** Bedrock (SigV4, binary event streams), Gemini and
-Vertex (`generateContent`), WebSocket/realtime APIs, and gRPC.
+Defaults: `openai` (`api.openai.com`), `anthropic` (`api.anthropic.com`),
+`azure-openai` (suffix `.openai.azure.com`, provider `azure.ai.openai`).
+More endpoints are `EndpointMatcher` values in code or the JSON array
+`FABRIC_WIRE_ENDPOINTS` (`endpoint_id`, `dialect`, `hosts`,
+`host_suffixes`, `ports`, `path_prefix`, `provider_name`, `schemes`), e.g.
+vLLM, Ollama, OpenRouter or an internal proxy. `http` is accepted only when
+a matcher lists it. A non-matching request passes straight through with no
+wrapping and no allocation. **Deferred:** Bedrock, Gemini/Vertex,
+realtime/WebSocket and gRPC.
 
 ## 3. Activation
 
-- **Explicit:** `fabric.wire.install(config=None, **overrides) -> WireHandle`.
-  It is idempotent. A second call returns the active handle and logs one
-  warning. `handle.uninstall()` restores the original transport methods.
-  `fabric.wire.run(run_id)` is a context manager that scopes an explicit
-  run.
-- **Env-gated autoload:** the wheel ships
-  `fabric/_autoload/sitecustomize.py` and **no `.pth` file and no top-level
-  `sitecustomize`**. A platform enables autoload by putting that directory
-  on `PYTHONPATH`. The path comes from `python -m fabric.wire
-  --print-autoload-path`. The platform also sets `FABRIC_WIRE_AUTOLOAD=1`.
-  The module:
-  1. does nothing unless `FABRIC_WIRE_AUTOLOAD` is `1` or `true`;
-  2. calls `fabric.wire.install_from_env()` inside `try/except BaseException`
-     (re-raising only `KeyboardInterrupt`/`SystemExit`), logging at most
-     one warning on failure;
-  3. then finds the next `sitecustomize` on `sys.path`, excluding its own
-     directory, with `importlib.machinery.PathFinder.find_spec` and
-     executes it, so an existing site customization keeps working.
-- `install_from_env()` reads `FABRIC_TENANT_ID` and `FABRIC_WIRE_STORE`
-  (`file:///abs/dir` → `LocalFilesystemContentStore`; `s3://bucket/prefix`
-  → `S3ContentStore`; unset means metadata-only capture). It also reads
-  `FABRIC_SOURCE_ID`, `FABRIC_RUN_ID`, `FABRIC_WIRE_ENDPOINTS`,
-  `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS`,
-  `FABRIC_WIRE_OTLP_MESSAGE_HASHES` (default `1`) and `FABRIC_WIRE_TRACER`
-  (`private`, the default for autoload, or `global`). With `private`, the
-  tee emits through its own `TracerProvider`, built by
-  `fabric.tracing.build_private_provider()` from the standard
-  `OTEL_EXPORTER_OTLP_*` variables. It never calls
-  `trace.set_tracer_provider`, so the host's later OTel setup is
-  unaffected. Spans still parent to the ambient context. Invalid
-  configuration means nothing is installed and one warning is logged
-  (fail open).
+- **Explicit:** `fabric.wire.install(config=None, **overrides) -> WireHandle`
+  (idempotent; a second call returns the active handle).
+  `handle.close()` restores httpx and drains. `fabric.wire.run(run_id)`
+  scopes an explicit run (§6).
+- **Env-gated autoload:** the wheel ships `fabric/_autoload/sitecustomize.py`
+  and **no `.pth` and no top-level `sitecustomize`**. A platform puts that
+  directory (`python -m fabric.wire --print-autoload-path`) on `PYTHONPATH`
+  and sets `FABRIC_WIRE_AUTOLOAD=1`. The module does nothing otherwise;
+  calls `fabric.wire.install_from_env()` inside `try/except BaseException`
+  (re-raising only `KeyboardInterrupt`/`SystemExit`); runs once per
+  interpreter (a `sys` sentinel guards symlinked or re-spelled paths); then
+  chains to the next `sitecustomize` on `sys.path`, excluding its own
+  directory by `realpath`.
+- `install_from_env()` reads `FABRIC_TENANT_ID`, `FABRIC_WIRE_STORE`
+  (`file:///abs/dir` or `s3://bucket/prefix`; unset = metadata-only),
+  `FABRIC_SOURCE_ID`, `FABRIC_WIRE_ENDPOINTS`, `FABRIC_WIRE_MAX_BODY_BYTES`,
+  `FABRIC_WIRE_QUEUE_MAX_ITEMS` and `FABRIC_WIRE_TRACER` (`private`, the
+  default, or `global`). `private` emits through
+  `fabric.tracing.build_private_provider()`: an always-on `TracerProvider`
+  built from the standard `OTEL_EXPORTER_OTLP_*` variables that is never
+  installed globally, so the host's own OTel setup and sampling are
+  unaffected; spans still parent to the ambient context. Invalid
+  configuration installs nothing and logs one warning (fail open).
 
 ## 4. Passivity rules (normative)
 
 Capture fails **open**: the agent proceeds and the loss is recorded. Export
 protection fails **closed**: the Node drops unknown keys and invalid values.
 
-1. **No mutation.** The tee never changes the URL, headers, request body,
-   timeouts or extensions, and never injects `traceparent`. Response chunks
-   are yielded as the *same* `bytes` objects, in the same order, as soon as
-   the inner stream yields them. No read-ahead, no buffering before yield.
-2. **No new failure modes.** An exception from the inner transport or stream
-   is re-raised as the same object. Any exception in tee code is caught.
-   The exchange becomes pass-through, and an `internal_error` loss is
-   counted.
-3. **Hot-path work is bounded and I/O-free.** The hot path does matching
-   (string compares), allocates a sequence ticket (one short lock), captures
-   the ambient OTel context, appends chunk references (a list append and a
-   length add), and makes one `queue.put_nowait` at finalization. Hashing,
-   JSON parsing, content decoding, store I/O, span creation and logging all
-   run on the pipeline worker thread.
+1. **No mutation.** The tee never changes the URL, headers, body, timeouts
+   or extensions and never injects headers. Response chunks are yielded as
+   the *same* `bytes` objects, in order, as soon as the inner stream yields
+   them. No read-ahead.
+2. **No new failure modes.** Exceptions from the inner transport or stream
+   are re-raised as the same object. Any exception in tee code is caught;
+   the exchange becomes a pass-through and an `internal_error` loss is
+   recorded for its sequence.
+3. **Bounded, I/O-free hot path.** Matching (string compares), one sequence
+   allocation (one short lock), capture of the ambient OTel context and run
+   id, a list append per chunk, and one `put_nowait` at finalization.
+   Hashing, the one permitted parse (§5), store I/O, span creation and
+   logging run on the worker thread.
 4. **Bounded memory.** `max_body_bytes` per side (default 8 MiB, cap
-   64 MiB) and `max_inflight_bytes` across in-flight exchanges (default
-   256 MiB). Bytes beyond either bound are forwarded but not retained. The
-   body is marked truncated and a `buffer_overflow` loss is recorded.
-   Truncated bodies carry `source_byte_length` but no `source_sha256`,
-   because the full body is never hashed inline.
-5. **Never blocks.** `queue_max_items` (default 256, cap 65536). On a full
-   queue the exchange is dropped (`queue_full` loss). Store retries
-   (`store_retry_attempts`, default 3, backoff 0.1/0.4/1.6 s) run on the
-   worker. `flush()`/`close()` block only when called explicitly or from
-   `atexit` (`shutdown_timeout_s`, default 2 s). In-flight or queued
-   exchanges that miss the deadline are recorded as `shutdown_timeout`
-   losses.
-6. **Finalization.** The exchange is finalized when the stream is exhausted
-   (`complete`), closed early (`closed_early`), raises (`transport_error`),
-   or is garbage-collected unclosed (`abandoned`, via `weakref.finalize`).
-   Closing the wrapper closes the inner stream.
-7. **Fork safety.** `os.register_at_fork(after_in_child=…)` restarts the
-   worker, starts a new source epoch and clears inherited in-flight state.
-8. **Diagnostics never carry content.** Logs and stats carry ids, counts and
-   digests only.
-9. **Latency budget (gating, `tests/test_wire_passivity.py`).** On
-   `httpx.MockTransport`, median added latency per matched non-streaming
-   exchange is ≤ 50 µs and per streamed chunk ≤ 2 µs. Byte-identity and
-   order of every chunk are asserted. A non-matching request adds ≤ 5 µs.
+   64 MiB) and `max_inflight_bytes` across exchanges (default 256 MiB).
+   Bytes beyond either bound are forwarded but not retained and the
+   exchange is marked `truncated`.
+5. **Never blocks.** `queue_max_items` (default 256, cap 65,536). A full
+   queue drops the exchange with a `queue_full` loss. Store retries (3
+   attempts, backoff 0.1/0.4/1.6 s) run on the worker. `flush()`/`close()`
+   block only when called (or from `atexit`, `shutdown_timeout_s`, default
+   2 s); exchanges still in flight or queued at the deadline become
+   `shutdown` losses.
+6. **Finalization.** An exchange ends when its stream is exhausted
+   (`complete`), closed early (`closed_early`), raises (`error`), or is
+   garbage-collected unclosed (`abandoned`). The `weakref.finalize`
+   callback only does a `SimpleQueue.put`; a daemon reaper thread finalizes,
+   so GC on a thread holding capture locks cannot deadlock.
+7. **Fork safety.** `os.register_at_fork(after_in_child=…)` re-creates locks,
+   the worker and the reaper, starts a new source epoch and drops inherited
+   in-flight state (the parent reports it).
+8. **Sampling.** The private provider is always-on. Under `global`, an
+   exchange span the host sampler drops is reported as a `span_dropped`
+   loss, so it is never a silent gap.
+9. **Diagnostics never carry content.** Logs and stats carry ids and counts.
+10. **Latency budget (gating, `tests/test_wire_passivity.py`).** On
+    `httpx.MockTransport`: median added latency per matched non-streaming
+    exchange ≤ 50 µs, per streamed chunk ≤ 2 µs, per non-matching request
+    ≤ 5 µs; byte identity and order of every chunk asserted.
 
-## 5. The `fabric.llm-exchange/v1` record
+## 5. Worker: store, then one span
 
-Schema: `contracts/capture/v1/schema/llm-exchange-v1.schema.json`. One per
-model call. It is built by the worker after the store writes and holds **no
-content**:
+Per exchange the worker:
 
-- identity: `exchange_id` (uuid4), `tenant_id`, `fidelity`;
-- `source{source_id, source_epoch, source_sequence, component}` and
-  `run{run_id, basis, run_sequence}` (§7);
-- `trace{trace_id, span_id, parent_span_id, client_traceparent}`, where
-  `span_id` is the exchange span. `client_traceparent` is the `traceparent`
-  header the client sent, validated against the W3C format and omitted
-  otherwise;
-- `endpoint{endpoint_id, api, provider_name, http_method,
-  http_status_code, provider_request_id}`. `provider_request_id` comes from
-  the response header `x-request-id` (OpenAI) or `request-id` (Anthropic);
-- `timing{started_at, first_byte_at, ended_at}`;
-- `request{body, model, stream, previous_response_id, message_count,
-  message_digests[], message_roles[], system_digest, tools_digest,
-  tool_call_ids_consumed[], parse_status}`;
-- `response{state, body, response_id, model, finish_reasons[],
-  message_count, message_digests[], message_roles[], tool_calls[{id,name}],
-  usage, error_type, parse_status}`;
-- `capture{digest_projection: "fabric.stitch/v1", truncated, store_status:
-  stored|partial|failed, loss_record_ids[]}`.
+1. computes `sha256` of the captured request and response bytes (the
+   retained prefix when truncated);
+2. writes each body as a content-v2 byte object (§7), with retries; a
+   failed write leaves that body without a ref;
+3. extracts **only** `model`, response `id`, finish reasons and
+   input/output token usage, and only from a response that is complete,
+   untruncated, `Content-Encoding` identity, `application/json` and at
+   most 256 KiB (one `json.loads`, top-level keys only; larger bodies would
+   hold the GIL too long). Streams and encoded or truncated
+   bodies get none of these; `fabric.reconstruct` derives them;
+4. emits the exchange span (§8) last.
 
-Ids that do not match `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` (tool-call,
-response, previous-response and provider-request ids) are recorded as
-`h-` + the first 40 hex of `sha256(utf8(id))`. The encoding is identical
-everywhere, so emitted and consumed ids still match. A model name that
-fails the schema pattern is omitted.
+`store_status`: `disabled` (no store configured), `stored` (every captured
+body has a ref), `failed` (none has), `partial` (some have). A gateway body
+over `max_body_bytes` is not stored (a canonical-JSON prefix is not a useful
+object); its side has a digest but no ref and `truncated` is true.
 
-## 6. Stitching keys and the `fabric.stitch/v1` projection
+## 6. Sources, runs and completeness
 
-Stitching keys per exchange: provider `response_id`, `previous_response_id`
-(stateful Responses API), tool-call ids emitted (response) and consumed
-(request), W3C trace context, and ordered per-message digests for input and
-output.
+- **Source.** `source_id` is `FABRIC_SOURCE_ID` / config, else
+  `<component>-` + 16 hex of `sha256(hostname NUL service.name)`.
+  `source_epoch` is `time.time_ns()` at allocator creation, renewed after
+  fork.
+- **Sequence.** One monotonic `source_sequence` per `(source_id, epoch)`,
+  from 0, allocated to each matched exchange when it starts. Loss records
+  and heartbeats do **not** consume sequences. Invariant: every allocated
+  sequence yields exactly one exchange span or is named by a loss record;
+  otherwise it is a visible gap.
+- **Run id.** In order: an explicit id (gateway `x-fabric-run-id` header or
+  `fabric_run_id` metadata); the innermost `fabric.wire.run(run_id)` scope;
+  the ambient valid OTel trace id as `trace:<32hex>`;
+  `source:<source_id>:<epoch>`. Invalid explicit ids are hashed to
+  `h-<40hex>`, never rejected on the hot path; `fabric.wire.run()` itself
+  validates its argument. There are no per-run counters and no run index.
+- **Loss records** (`fabric.capture_loss`): `{reason, count,
+  first_sequence, last_sequence}` per `(source, epoch)`. Reasons:
+  `queue_full`, `internal_error`, `shutdown`, `span_dropped` (sampled out,
+  or the private exporter reported failure). `record()` is O(1) and never
+  raises; a 1 s emitter thread coalesces pending losses per
+  `(source, epoch, reason)` into one range (min, max, count) and emits it.
+  The private provider's exporter is wrapped so that a failed export of
+  exchange spans becomes a `span_dropped` loss; a dropped loss or heartbeat
+  span is never re-reported (no cascade). A span lost silently elsewhere
+  (e.g. a full `BatchSpanProcessor` queue) is an unexplained sequence gap,
+  which the verifier treats as partial.
+- **Heartbeats** (`fabric.capture_heartbeat`): `{last_sequence}` = the
+  source's last allocated sequence (`-1` before the first) at the moment
+  it is requested. Emitted every 30 s for sources with new activity, on
+  `flush()`/`close()`/`atexit`, and on entry and exit of
+  `fabric.wire.run(run_id)`, where the heartbeat also carries
+  `fabric.run.id` (a *run marker*, §9).
 
-**Per-message digest** = `"sha256:" + sha256(canonical_json(P(m)))`.
-`canonical_json` is spec-029 canonical JSON (Python
-`json.dumps(v, ensure_ascii=False, separators=(",", ":"),
-sort_keys=True)`, UTF-8 with `surrogatepass`). `P` is the stitch
-projection. It makes a message hash the same in the response that produced
-it and in the next request that re-sends it.
+## 7. Stored bytes (content-v2)
 
-Common step: `strip_nulls` recursively removes object keys whose value is
-`null`.
+Each exchange writes up to two objects through
+`ByteEvidenceStore.put_bytes_object` (layout `<tenant>/evidence/<id>` plus
+`evidence/meta/<id>.json`). There is no stored per-exchange record object.
 
-| `api` | Input messages | Output messages | `P(m)` after `strip_nulls` |
-|---|---|---|---|
-| `openai.chat_completions` | `messages[i]` | `choices[k].message` in `index` order; stream: assembled from deltas | Keep only `role, content, name, tool_calls, tool_call_id, function_call, refusal`. Drop `tool_calls` when `[]`; each tool call becomes `{id, type (default "function"), function{name, arguments}}` (drops `index`). For `role=assistant` with `tool_calls`, drop `content` when `""`. |
-| `openai.responses` | `input` items (a string input becomes `{"type":"message","role":"user","content":s}`) | `output` items; stream: `response.completed`'s `response.output`, else `response.output_item.done` items | Drop `status`. In `content[]` parts, drop `annotations`/`logprobs` when `[]`. |
-| `anthropic.messages` | `messages[i]` | one message `{role, content}` from the response; stream: assembled from `message_start` / `content_block_*` / `message_delta` (tool `input` = `json.loads` of concatenated `partial_json`, `{}` when empty) | Keep only `role, content`. A string `content` becomes `[{"type":"text","text":s}]`. |
-| `openai.completions` | `[{"prompt": prompt}]` | `[{"text": choices[k].text}]` | none |
-| `openai.embeddings` | each `input` element (a string input is one element) | none | none |
-
-- `system_digest`: Anthropic `system` (string normalized to a text-block
-  list) or Responses `instructions`. `tools_digest`: `canonical_json(tools)`.
-- Tool-call ids consumed: chat `role=tool` → `tool_call_id`; Responses
-  `function_call_output` / `custom_tool_call_output` → `call_id`; Anthropic
-  `tool_result` blocks → `tool_use_id`. Emitted: chat `tool_calls[].id`;
-  Responses `function_call` / `custom_tool_call` → `call_id`; Anthropic
-  `tool_use` blocks → `id`.
-- Continuation digests of an exchange (what the next request should re-send)
-  are `output[0]` for chat and completions, and all outputs for Responses
-  and Anthropic.
-- Content decoding (worker only): `identity`, `gzip` and `deflate` are
-  always decoded. `br` and `zstd` are decoded only when the optional module
-  is importable, otherwise `parse_status: undecodable_encoding`. Stored bytes
-  stay exactly as received.
-- `parse_status`: `ok` | `not_json` | `undecodable_encoding` |
-  `unrecognized_shape` | `truncated` | `not_parsed` (gateway object not
-  serializable).
-- Fixture: `contracts/capture/v1/fixtures/digests/stitch-v1-messages.json`.
-  `raw → projected` is the builder's test, and `projected → canonical →
-  sha256` is pinned by the validator.
-
-A **prefix break** means the next request did not start with the previous
-continuation. In other words, the history was rewritten (compaction,
-summarization, editing). It is recorded, never judged (§10).
-
-## 7. Sources, sequences, runs and loss
-
-- **Source identity.** `source_id` comes from `FABRIC_SOURCE_ID` or the
-  config; otherwise it defaults to `<component>-` + the first 16 hex of
-  `sha256(hostname + "\0" + service.name)`. `source_epoch` is
-  `time.time_ns()` when the allocator is created, and is renewed after
-  fork. Components: `wire`, `gateway` and `otel` (a fallback for span drops
-  with no source attributes).
-- **Sequence.** One monotonic `source_sequence` per (source_id, epoch),
-  starting at 0. It is consumed by every exchange (at request time, after
-  a match), every loss record and every watermark. **Invariant:** each
-  allocated sequence yields exactly one emitted span, or appears in a loss
-  record's `affected` list, or is visibly missing.
-- **Run.** The `run_id` resolution order is: an explicit argument or
-  `fabric.wire.run(...)` context (`explicit`); then `FABRIC_RUN_ID`
-  (`explicit`); then the ambient valid OTel trace id → `trace:<32hex>`
-  (`trace`); then `source:<source_id>:<epoch>` (`source`). `run_sequence`
-  is a per-run counter; exiting `fabric.wire.run(...)` does not reset it, so
-  a reused run id keeps numbering. At most 65,536 live runs are tracked with
-  LRU eviction; evicted runs are retired (up to another 65,536) and resume
-  their numbering if they recur, so a finished run is never reported lost.
-  Only when a run forgotten beyond that is allocated again does its counter
-  restart, and that restart emits a `run_index_evicted` loss carrying the
-  `run_id`, so a restarted counter cannot pass silently.
-- **Loss records** (`fabric.loss-record/v1`, `kind: loss`). Reasons are
-  `buffer_overflow`, `queue_full`, `store_failure`, `span_dropped`,
-  `span_export_failed`, `internal_error`, `shutdown_timeout` and
-  `run_index_evicted`. Each one lists `affected[{source_sequence, run_id,
-  run_sequence, exchange_id}]` (at most 64, then `affected_truncated`) and
-  carries cumulative per-reason totals. `LossEmitter.record()` only appends
-  to a bounded in-memory ledger. A 1 s emitter thread turns the ledger into
-  spans: up to 16 detailed records per reason per second, with the rest
-  aggregated. Span-pipeline drops are counted by
-  `LossCountingSpanProcessor`. They are never emitted re-entrantly; they
-  are reported in the next coalesced record, so a dropped loss span cannot
-  cascade.
-- **Watermarks** (`kind: watermark`). A watermark is emitted every 30 s when
-  there has been new activity, on `flush()`/`close()`, and when
-  `fabric.wire.run(...)` exits. The last case is a run-close watermark with
-  `run{run_id, high_water_run_sequence}`. A watermark declares the source
-  high-water sequence and cumulative loss, which is how tail loss becomes
-  detectable.
-
-## 8. Storage of exact bytes (content-v2)
-
-Each exchange writes up to three objects through
-`ByteEvidenceStore.put_bytes_object`. The layout is
-`<tenant>/evidence/<object_id>` plus `evidence/meta/<object_id>.json`.
-New content-v2 roles, now in the schema:
-
-| Role | Bytes | `media_type` | Representation |
-|---|---|---|---|
-| `model.exchange.request` | Request body | `Content-Type` sans parameters (default `application/octet-stream`) | wire: `exact` or `truncated`; gateway: `canonicalized` |
-| `model.exchange.response` | Response body as received (SSE included) | as above, e.g. `text/event-stream` | wire: `exact`; `partial` when state is not `complete` (`source_*` = received bytes); `truncated`; gateway: `canonicalized` |
-| `model.exchange.record` | `canonical_json(llm-exchange)` UTF-8 | `application/vnd.singleaxis.fabric.llm-exchange+json` | `canonicalized`, `provenance: inferred` |
-
-Common descriptor fields: `run_id`, `operation_id = exchange_id`, the
-exchange's `source_id/epoch/sequence`, `boundary: provider_bound`, and
-`encoding: binary`. `captured_at` is the request start (request) or end
-(response, record). Links: response `result_of` request; record
-`derived_from` both. The write order is request, then response, then
-record, and the span is emitted last with final statuses. A failed write is
-retried, then recorded as body `status: failed` plus a `store_failure`
-loss. With no store configured, the tee runs metadata-only: digests and
-spans are emitted and `fabric.wire.store_status=disabled`. The existing
-`model.request.*` / `model.output.messages` roles are not used by the tee.
-
-## 9. OTLP projection
-
-**Exchange span:** name `fabric.model_call`, kind `CLIENT`, start/end = the
-exchange timing, parent = the context captured at request time. Status is
-`ERROR` (no description) on `transport_error` or HTTP ≥ 400. Attributes,
-with arrays omitted when empty:
-
-| Key | Type | Note |
+| Role | Bytes | Descriptor specifics |
 |---|---|---|
-| `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.request.previous_response.id`, `gen_ai.response.finish_reasons`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.request.stream`, `http.request.method`, `http.response.status_code`, `error.type`, `fabric.source_id`, `fabric.source.sequence`, `fabric.content.request_ref`, `fabric.content.result_ref` | existing | already allowlisted |
-| `fabric.source.epoch` | int | **new** |
-| `fabric.source.component` | `wire`\|`gateway`\|`otel` | **new** |
-| `fabric.run.id` | opaque id | **new** |
-| `fabric.run.id_basis` | `explicit`\|`trace`\|`source` | **new** |
-| `fabric.run.sequence` | int ≥ 0 | **new** |
-| `fabric.wire.exchange_id` | opaque id | **new**; marks an exchange span |
-| `fabric.wire.fidelity` | `exact_wire`\|`gateway_normalized` | **new** |
-| `fabric.wire.api` | §2 enum | **new** |
-| `fabric.wire.endpoint_id` | `^[a-z0-9][a-z0-9._-]{0,63}$` | **new**; never the host name |
-| `fabric.wire.exchange_ref` | ref | **new**; record object |
-| `fabric.wire.exchange_sha256` | bare hex | **new**; record object bytes |
-| `fabric.wire.request_body_sha256`, `fabric.wire.response_body_sha256` | bare hex | **new**; captured (stored) bytes |
-| `fabric.wire.request_body_bytes`, `fabric.wire.response_body_bytes` | int ≥ 0 | **new**; observed length |
-| `fabric.wire.input.message_count`, `fabric.wire.output.message_count` | int ≥ 0 | **new** |
-| `fabric.wire.input.message_hashes` | bare-hex[] ≤ 64 | **new**; the *last* 64 input digests |
-| `fabric.wire.input.message_hashes_offset` | int ≥ 0 | **new**; index of the first emitted input digest |
-| `fabric.wire.output.message_hashes` | bare-hex[] ≤ 64 | **new**; the first 64 |
-| `fabric.wire.system_hash`, `fabric.wire.tools_hash` | bare hex | **new** |
-| `fabric.wire.input.tool_call_ids`, `fabric.wire.output.tool_call_ids` | opaque-id[] ≤ 64 | **new**; input keeps the newest 64 distinct ids, output the first 64. A capped list (`arrays_truncated` and 64 ids) makes span-only tool-call matching `skipped` |
-| `fabric.wire.arrays_truncated` | bool | **new**; any array was capped |
-| `fabric.wire.response_state` | `complete`\|`closed_early`\|`transport_error`\|`abandoned` | **new** |
-| `fabric.wire.truncated` | bool | **new** |
-| `fabric.wire.parse_status` | §6 enum | **new** |
-| `fabric.wire.store_status` | `stored`\|`partial`\|`failed`\|`disabled` | **new** |
-| `fabric.wire.client_traceparent` | W3C traceparent | **new** |
-| `fabric.wire.provider_request_id` | opaque id | **new** |
+| `model.exchange.request` | Request body | wire: `provenance: protocol`, `representation: exact` (source = stored) or `truncated` (`source_byte_length` = observed, `transformations: ["truncate"]`); gateway: `caller_reported`, `canonicalized`, `["json_canonicalize"]` |
+| `model.exchange.response` | Response body as received (SSE included) | as above; wire `partial` when the state is not `complete` |
 
-`FABRIC_WIRE_OTLP_MESSAGE_HASHES=0` (or `otlp_message_hashes=False`)
-omits `*.message_hashes`, `system_hash` and `tools_hash` from OTLP. They
-remain in the stored record.
+Every descriptor carries `media_type` (`Content-Type` without parameters,
+default `application/octet-stream`), `encoding: binary`,
+`content_encoding` (lowercased header without whitespace; `identity` when
+absent; `unknown` when not a token list), `boundary: provider_bound`,
+`operation_id` = exchange id, `run_id`, and the exchange's `source_id`,
+`source_epoch`, `source_sequence`. The store is therefore self-describing:
+the verifier needs nothing from OTLP to decode the bytes.
 
-**Loss / watermark span:** a root span, kind `INTERNAL`, zero duration,
-named `fabric.capture_loss` or `fabric.capture_watermark`. Attributes:
-`fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`,
-`fabric.source.component`, plus the following, all **new**:
-`fabric.loss.record_id`, `fabric.loss.record_kind`
-(`loss`\|`watermark`), `fabric.loss.reason`, `fabric.loss.count`,
-`fabric.loss.affected_sequences` (int[] ≤ 64),
-`fabric.loss.affected_run_ids` (string[] aligned with the sequences, `""`
-when unknown), `fabric.loss.affected_run_sequences` (int[] aligned, `-1`
-when unknown), `fabric.loss.affected_truncated`,
-`fabric.loss.high_water_sequence`, `fabric.loss.cumulative_total`,
-`fabric.loss.cumulative_reasons` (string[]),
-`fabric.loss.cumulative_counts` (int[] aligned), and
-`fabric.run.high_water_sequence` (run-close only). A run-close watermark
-also carries `fabric.run.id`. When the emitter has a valid tenant id, loss
-and watermark spans also carry the already-allowlisted `fabric.tenant_id`.
+## 8. OTLP projection
 
-**Node admission (fabricguard).** Add every new key to
-`TraceAllowedFields`. Add `validCaptureValue(key, value)`, called next to
-`validHostAuditValue`, which enforces the closed enums above, int/bool
-types, non-negative ints (except `-1` in `affected_run_sequences` and
-`run.high_water_sequence`), the opaque-id pattern for scalars and array
-elements (including `""` placeholders only in `affected_run_ids`), the
-`endpoint_id` pattern and the traceparent pattern. A failing value removes
-the attribute. Hash keys are already enforced as bare 64-hex by
-`hashAttributeKey`. `activityCategory` checks `fabric.loss.record_kind`
-first (`watermark` → `fabric.capture_watermark`, otherwise
-`fabric.capture_loss`) and treats `fabric.wire.exchange_id` like
-`gen_ai.request.model` (→ `fabric.model_call`). Both new names join the
-pass-through switch. Arrays over `max_slice_elements` (default 64) are
-removed whole, which is why the SDK caps them at 64. The capture array keys
-above are additionally hard-capped at 64 elements, so raising
-`max_slice_elements` never widens them.
+**Exchange span:** `fabric.model_call`, kind `CLIENT`, start/end = exchange
+timing, parent = the context captured at request time, status `ERROR` on
+`response_state=error` or HTTP ≥ 400. Fifteen new keys in total (ten here,
+five on loss/heartbeat spans):
 
-## 10. Run reconstruction verifier
+| Key | Value | |
+|---|---|---|
+| `fabric.wire.exchange_id` | opaque id | new; marks an exchange span |
+| `fabric.run.id` | opaque id | new |
+| `fabric.source_id`, `fabric.source.sequence` | opaque id, int ≥ 0 | existing |
+| `fabric.source.epoch` | int ≥ 0 | new |
+| `fabric.wire.fidelity` | `exact_wire`\|`gateway_normalized` | new |
+| `fabric.wire.api` | §2 enum | new |
+| `fabric.content.request_ref`, `fabric.content.result_ref` | ref | existing; present only when stored |
+| `fabric.wire.request_sha256`, `fabric.wire.response_sha256` | bare 64-hex | new; captured bytes |
+| `fabric.wire.response_state` | `complete`\|`closed_early`\|`error`\|`abandoned` | new |
+| `fabric.wire.truncated` | bool | new |
+| `fabric.wire.store_status` | `stored`\|`partial`\|`failed`\|`disabled` | new |
+| `gen_ai.operation.name`, `gen_ai.provider.name`, `http.request.method`, `http.response.status_code`, `error.type` (exception class, on `error` only) | | existing |
+| `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | | existing; only when extracted (§5) |
 
-`python -m fabric.reconstruct` is offline and read-only. Its output is
-`fabric.run-reconstruction/v1` and contains no content.
+No message hashes, tool-call ids, request model, previous-response id,
+client traceparent, provider request id or body lengths are emitted.
 
-**Inputs.** `--spans PATH` (repeatable) accepts either sink JSONL (rows with
-`kind`, as written by `examples/agent-orchestration/sink.py`) or OTLP/JSON
-(a whole-file `ExportTraceServiceRequest`, or one per line as the
-collector file exporter writes; hex ids, `intValue` as string or int). The
-optional store is given as `--store-root DIR --tenant ID` (local) or
-`--store-uri s3://bucket/prefix --tenant ID`. Other options: `--scope
-bytes|metadata` (default `bytes`), `--run ID` (repeatable; default all),
-`--scan-store` (local only: finds `model.exchange.record` objects whose
-span never arrived), `--recompute-digests` (re-derives stitch keys from
-stored bytes with `fabric.wire._stitch`), and `--out FILE`. Exit codes are
-`0` when every reported run is `complete_for_declared_scope`, `1` when any
-run is `partial` or `unverified`, and `2` for input or usage errors.
-Objects are resolved by `object_id`, which is the last path segment of a ref
-or the id in the record, using `store.evidence_ref_for(object_id)`. They are
-never resolved by a recorded absolute path.
+**Loss / heartbeat span:** root span, kind `INTERNAL`, zero duration, named
+`fabric.capture_loss` or `fabric.capture_heartbeat`, carrying
+`fabric.source_id`, `fabric.source.epoch` and:
 
-**Algorithm (per input set).**
+| Key | Value | On |
+|---|---|---|
+| `fabric.loss.reason` | `queue_full`\|`internal_error`\|`shutdown`\|`span_dropped` | loss |
+| `fabric.loss.count` | int ≥ 1 | loss |
+| `fabric.loss.first_sequence`, `fabric.loss.last_sequence` | int ≥ 0 | loss |
+| `fabric.heartbeat.last_sequence` | int ≥ -1 | heartbeat |
+| `fabric.run.id` | opaque id | heartbeat run marker only |
 
-1. Normalize spans and dedupe. Exchanges are deduped by `exchange_id`
-   (conflicting duplicates → `digest_mismatch`, reason
-   `conflicting_duplicate`). Loss records are deduped by `record_id`.
-   Exchanges are merged with store records (`origin`). Disagreement between
-   a span and its record on sequence, run, body digests or the message-hash
-   window → `digest_mismatch`, reason `span_record_disagree`.
-2. Per source epoch: observed sequences = exchanges ∪ loss records ∪
-   watermarks. `missing` = [0, high_water] − observed. A missing sequence
-   listed in a loss record's `affected` list is *explained*.
-3. Per run R, with `first`/`last` its min/max source sequence per source:
-   - `sequence_gap` (partial) for each unexplained missing sequence with
-     `first < s < last`, or with `s > last` when R has no later tail proof;
-     also for any missing `run_sequence` in `0..max` not explained by an
-     attributed loss.
-   - `loss_record` (partial) for each loss whose `affected` names R, and for
-     each unattributed loss in the epoch emitted after `first`, unless R's
-     run-close watermark precedes it and none of its affected sequences fall
-     inside R's window. `span_dropped`/`span_export_failed` affecting an
-     exchange recovered from the store is downgraded to `info`.
-   - Tail proof: a run-close watermark for R, or the latest watermark W with
-     `W.high_water ≥ last` where every sequence in `(last, W.high_water]` is
-     observed or explained. Without either → `tail_unverified`
-     (unverified). `declared_scope.through` records the watermark sequence
-     used.
-4. Bytes (`--scope bytes`). With no store → `checks.bytes = skipped`. For
-   each object whose status is `stored`/`truncated`: absent →
-   `missing_object` (partial); a hash or sidecar mismatch →
-   `digest_mismatch` (partial); a truncated body → `truncated` (partial).
-   `store_status=disabled` → `missing_object` (unverified, reason
-   `store_disabled`). Failed or dropped bodies are already covered by their
-   `store_failure` loss.
-5. Stitching, in `run_sequence` order:
-   - A Responses API call with `previous_response_id` continues the exchange
-     whose `response_id` matches. If none matches →
-     `unresolved_previous_response` (partial).
-   - Otherwise E continues the earlier exchange A whose `request digests +
-     continuation digests` is a prefix of E's request digests. The longest
-     such prefix wins, and ties go to the latest A. If there is none, the
-     earlier exchange with the longest common prefix ≥ 1 gets a
-     `prefix_break` (info) and E joins its thread without
-     `continues_exchange_id`. A common prefix of 0 starts a new thread.
-     Embeddings are always their own thread.
-   - When only OTLP windows are available, prefixes are compared on the
-     overlapping indices. With no overlap, `checks.stitching = skipped`.
-   - A consumed tool-call id that no earlier exchange emitted, and no earlier
-     request already carried, → `unmatched_tool_call` (partial, reason
-     `consumed_not_emitted`). At `run_sequence 0` it is `info`
-     (`consumed_before_run`), because history may predate the run. Inside a
-     run it signals a missing exchange or an uninstrumented model call. An
-     emitted id never consumed → `info` (`emitted_not_consumed`).
-   - `parse_status ∉ {ok, truncated}` → `unparsed_exchange` (unverified).
-6. Checks: `sequence`, `loss`, `tail`, `bytes` and `stitching`, each one of
-   `passed`, `failed`, `skipped` or `not_applicable`.
-7. **Verdict.** Any gap with effect `partial` gives `partial`. Otherwise any
-   `unverified` gap or `skipped` check gives `unverified`. Otherwise the run
-   is `complete_for_declared_scope`. This is an integrity verdict for the
-   declared scope (capture surfaces, byte scope, `through` sequences). It is
-   not an evaluation of the agent and it is not a coverage claim beyond that
-   scope.
+The JSON forms are `fabric.llm-exchange/v1` and `fabric.loss-record/v1`.
 
-## 11. Implementation layout and ownership
+**Node admission (fabricguard).** Exactly the new keys above join
+`TraceAllowedFields`; every revision-2 capture key is removed.
+`validCaptureValue` closes their values: the enums above, typed ints with
+the stated minimums, bool, opaque-id pattern for ids. Hash keys stay closed
+by `hashAttributeKey` (bare 64-hex). `activityCategory` checks
+`fabric.heartbeat.last_sequence` (→ `fabric.capture_heartbeat`) and
+`fabric.loss.reason` (→ `fabric.capture_loss`) first, and treats
+`fabric.wire.exchange_id` like `gen_ai.request.model` (→
+`fabric.model_call`). Both capture names join the pass-through vocabulary.
 
-Five workstreams each own their files. Nobody but the integrator edits
-`fabric/__init__.py`, `pyproject.toml` or
-`scripts/qualify_recorder_wheel.py`.
+## 9. `python -m fabric.reconstruct`
 
-| Workstream | Owns (paths under `sdk/python/` unless noted) |
-|---|---|
-| `wire_tee` | `src/fabric/wire/` (`__init__`, `__main__`, `_model` (shared types), `_config`, `_match`, `_transport`, `_stream`, `_stitch`, `_pipeline`, `_otlp`), `src/fabric/_autoload/{__init__,sitecustomize}.py`, `tests/test_wire_*.py` |
-| `loss_sequence` | `src/fabric/_sequence.py`, `src/fabric/_loss.py`, edits to `src/fabric/tracing.py`, `tests/test_loss_*.py` |
-| `collector_allowlist` | `components/otel-collector-fabric/processor/fabricguardprocessor/{allowlist,processor}.go`, new `wire_capture_test.go` |
-| `gateway_litellm` | `src/fabric/gateway/` (`__init__`, `litellm`, `_payload`), `tests/test_gateway_*.py`, `tests/gateway_fixtures/*.json` |
-| `reconstruct_verifier` | `src/fabric/reconstruct/` (`__init__`, `__main__`, `_inputs`, `_verify`, `_stitch_check`, `_objects`, `_report`), `tests/test_reconstruct_*.py` |
+Offline and read-only; the only component that parses messages. Output:
+`fabric.run-reconstruction/v1`, no content.
 
-Dependency order: `loss_sequence` lands `_sequence.py` first, then
-`wire_tee` lands `wire/_model.py`. Both follow the exact signatures in the
-interface contract. `gateway_litellm` submits `CaptureJob`s to an
-`ExchangeSink` and does no parsing or hashing itself.
-`reconstruct_verifier` consumes plain JSON and imports `fabric.wire._stitch`
-only for `--recompute-digests`.
+**Inputs.** `--spans PATH` (repeatable; sink JSONL or OTLP/JSON, whole-file
+or one export per line), `--store-root DIR` or `--store-uri
+s3://bucket/prefix` with `--tenant ID`, `--run ID` (repeatable; default
+all), `--out FILE`. Exit `0` when every reported run is
+`complete_for_declared_scope`, `1` when any is not or none was found, `2`
+for input/usage errors. Objects are resolved by the object id (last path
+segment of a ref) through `store.evidence_ref_for`, never by a recorded
+absolute path.
 
-## 12. Acceptance (Phase 1)
+**Algorithm.**
 
-1. Byte identity: for streamed and non-streamed OpenAI chat, OpenAI
-   Responses and Anthropic messages (sync and async, `MockTransport`),
-   stored request/response bytes equal what was sent and received, and the
-   chunks the client sees are identical.
-2. A three-step ReAct fixture run reconstructs into one thread with matched
-   tool calls and verdict `complete_for_declared_scope`. Dropping one
-   exchange span gives `partial` with an explained `loss_record` or a
-   `sequence_gap`. Deleting one store object gives `missing_object`.
-   Flipping one stored byte gives `digest_mismatch`. Removing the final
-   watermark gives `unverified`.
-3. Queue full, buffer cap, store outage, exporter failure and a span
-   processor queue overflow each produce the specified loss reason and
-   never raise into the host.
-4. The passivity latency budgets in §4.9 hold. A tee crash injected at every
-   hook point leaves the HTTP result unchanged.
-5. The Node keeps every key in §9 with valid values. It drops invalid enum
-   values, `sha256:`-prefixed hash values, raw-content keys and over-long
-   arrays. Native span names are normalized to the fixed names.
-6. The gateway callback produces `gateway_normalized` records from recorded
-   LiteLLM payloads without importing `litellm`.
-7. Recorder wheel qualification: `fabric/_autoload/sitecustomize.py` is
-   present. The wheel has no `*.pth` and no top-level `sitecustomize.py`.
-   Importing `fabric` or `fabric.wire` patches nothing.
+1. *Normalize.* Exchange spans → exchanges (dedupe by `exchange_id`;
+   conflicting duplicates → `digest_mismatch`); loss and heartbeat spans →
+   records (dedupe by content). Group exchanges into runs by `run_id`;
+   order a run by `(started_at, source_id, source_epoch, source_sequence)`.
+2. *Completeness per `(source, epoch)`.* `H` = max heartbeat
+   `last_sequence`; `top` = max(`H`, max exchange sequence, max loss
+   `last_sequence`). Missing = `[0, top]` − exchange sequences, as maximal
+   ranges; a missing sub-range covered by loss records is a `loss` gap
+   (with its reason), the rest is a `sequence_gap`. Both are `partial`.
+3. *Run windows.* For run R in `(source, epoch)`: `lo` = min(R's first
+   sequence, `m + 1` for each R marker `m`), `hi` = max(R's last sequence,
+   each R marker `m`), where markers are heartbeats carrying R's run id. A
+   missing range affects R when it intersects `[lo, hi]`, or when R owns the
+   observed exchange immediately before or after it. This is the declared
+   window: R is never reported complete with a loss inside or adjacent to
+   it. Losses outside every window of R are not attributable to R; they
+   stay visible in `sources[].missing_sequences`. Without run markers
+   (trace or source runs) the window is R's first..last exchange; a lost
+   first or last call of such a run that is not adjacent to it is outside
+   its declared scope. Use `fabric.wire.run()` to bound a run. A run with
+   no closed marker pair on a source (every trace, source and gateway run)
+   is `unverified` (reason `unattributed`) when that source has a missing
+   range not attributable to another run at or after the run's first
+   sequence: on a shared source such a range may hold one of its calls.
+   Markers are counted per `(source, epoch)`; an odd count (entry without
+   exit) adds a `tail_unverified` gap with reason `run_not_closed`.
+   Heartbeats are deduplicated per span.
+4. *Tail.* Each window needs `H ≥ hi`; otherwise `tail_unverified`
+   (unverified). `declared_scope.windows` records `lo`, `hi` and `H`.
+5. *Bytes* (needs a store; otherwise `checks.bytes = skipped`). Each body
+   with a ref is fetched and its sha256 compared with the span digest and
+   the descriptor: absent → `missing_object` (partial); mismatch →
+   `digest_mismatch` (partial). A captured body without a ref under
+   `store_status` `failed`/`partial` → `missing_object` (partial);
+   `disabled` → `checks.bytes = skipped`. `truncated` → `truncated`
+   (partial).
+6. *Stitching* (needs verified bytes; otherwise `checks.stitching =
+   skipped`). Decode `content_encoding` (identity, gzip, deflate; br/zstd
+   when the optional module is importable) and parse JSON or SSE by media
+   type. Failure → `unparsed_exchange` (unverified). Derive per message the
+   `fabric.stitch/v1` digest (§9.1), tool-call ids emitted and consumed,
+   `previous_response_id`, model and response id. Then, in run order:
+   - a Responses call with `previous_response_id` continues the exchange
+     whose response id matches; none → `unresolved_previous_response`
+     (partial);
+   - otherwise E continues the earlier exchange A whose request digests +
+     continuation digests are a prefix of E's request digests (longest
+     wins, ties to the latest A); else the earlier exchange with the longest
+     common prefix ≥ 1 gets a `prefix_break` (info) and E joins its thread;
+     a common prefix of 0 starts a new thread; embeddings are always their
+     own thread;
+   - a consumed tool-call id that no earlier exchange emitted and no earlier
+     request carried → `unmatched_tool_call` (partial,
+     `consumed_not_emitted`), or `info` (`consumed_before_run`) on the run's
+     first exchange; an emitted id never consumed → `info`.
+7. *Verdict.* Any `partial` gap → `partial`; else any `unverified` gap or
+   `skipped` check → `unverified`; else `complete_for_declared_scope`. Checks
+   `sequence`, `loss`, `tail`, `bytes`, `stitching` are each `passed`,
+   `failed`, `skipped` or `not_applicable`. This is an integrity verdict for
+   the declared scope, not an evaluation of the agent.
 
-## 13. Non-goals (Phase 2+)
+### 9.1 `fabric.stitch/v1` message projection (verifier only)
 
-Kubernetes injection webhook or operator; VM, serverless or container
-packaging; capture of I/O-primitive actions (subprocess, file, socket);
-kernel/eBPF reconciliation; hash-chain or WORM anchoring;
-crypto-shredding; TypeScript parity; Bedrock, Gemini, Vertex, realtime and
-gRPC endpoints; joining gateway and wire records of the same call; and any
-evaluation, judging, scoring or policy decision over captured exchanges.
-Those belong to Monitor/Evaluate/Govern systems that consume this record.
+Digest = `"sha256:" + sha256(canonical_json(P(m)))` with spec-029 canonical
+JSON, after recursively stripping `null`-valued keys. These digests never
+leave the verifier.
 
-## 14. Phase 1 integration notes (revision 2)
+| `api` | Input messages | Output messages | `P(m)` |
+|---|---|---|---|
+| `openai.chat_completions` | `messages[i]` | `choices[k].message` by `index`; stream: assembled from deltas | keep `role, content, name, tool_calls, tool_call_id, function_call, refusal`; drop empty `tool_calls`; each call → `{id, type (default "function"), function{name, arguments}}`; assistant with tool calls drops `content == ""` |
+| `openai.responses` | `input` items (string → one user message item) | `output` items; stream: `response.completed`, else `response.output_item.done` | drop `status`; in `content[]` drop empty `annotations`/`logprobs` |
+| `anthropic.messages` | `messages[i]` | one `{role, content}`; stream: assembled from `message_start`/`content_block_*`/`message_delta` (tool `input` = parsed `partial_json`, `{}` when empty) | keep `role, content`; string content → `[{"type":"text","text":s}]` |
+| `openai.completions` | `[{"prompt": prompt}]` | `[{"text": choices[k].text}]` | none |
+| `openai.embeddings` | each `input` element | none | none |
 
-These points were settled while integrating the five workstreams. They
-refine, and do not widen, the sections above.
+Tool-call ids consumed: chat `role=tool` `tool_call_id`; Responses
+`function_call_output`/`custom_tool_call_output` `call_id`; Anthropic
+`tool_result.tool_use_id`. Emitted: chat `tool_calls[].id`; Responses
+`function_call`/`custom_tool_call` `call_id`; Anthropic `tool_use.id`.
+Continuation digests: `output[0]` for chat and completions, all outputs for
+Responses and Anthropic. Pinned by
+`contracts/capture/v1/fixtures/digests/stitch-v1-messages.json`.
 
-1. **Span body digests (§9).** `fabric.wire.request_body_sha256` /
-   `response_body_sha256` are the digests of the *stored* object. A body
-   that was dropped (gateway, over `max_body_bytes`) or failed to store
-   carries no digest on the span, exactly as in its record; otherwise the
-   verifier would report a spurious `span_record_disagree`.
-2. **Span `parse_status` and `store_status` (§9).** The single span
-   `fabric.wire.parse_status` is the request status when it is not `ok`,
-   else the response status; with no response (transport error before any
-   byte) it is the request status. A provider failure with no response body
-   is therefore a recorded `transport_error`, not an `unparsed_exchange`.
-   The span `fabric.wire.store_status` is `partial` when both bodies were
-   stored but the `model.exchange.record` write failed; the record's own
-   `capture.store_status` covers only the two bodies.
-3. **Gateway truncation (§8).** A `gateway_normalized` body over
-   `max_body_bytes` is not stored (status `dropped`, representation
-   `unavailable`) plus one `buffer_overflow` loss, because a canonicalized
-   prefix is not a valid content-v2 object. The pipeline records that loss;
-   the gateway callback does not record it again.
-4. **Watermarks for every source (§7).** Both capture points mark their
-   source active on every submitted exchange, and both `WireHandle.flush()`
-   / `close()` and the gateway callback's `flush()` / `close()` flush the
-   loss emitter, so the gateway also gets tail proof without a run scope.
-   A `tracer_provider` given to `fabric.wire.install()` or to
-   `FabricLiteLLMRecorder` is also used for that process's loss and
-   watermark spans. `WireHandle.close()` restores the httpx methods, like
-   `uninstall()`.
-5. **Run grouping (§10).** `run_sequence` is allocated per source, so the
-   verifier reports one run entry per `(run_id, source_id, source_epoch)`;
-   two sources sharing a run id (wire and gateway, or two processes on one
-   trace) are reported as separate entries, sorted by that key. The CLI
-   exits `1` when no run was reconstructed at all, so it never reports
-   success for an empty input.
-6. **Run ids (§7).** Only `fabric.wire.run()` / `run_scope()` reject an
-   invalid run id. An invalid explicit id from `FABRIC_RUN_ID`, an argument
-   or a gateway header is recorded as its `h-<40hex>` encoding instead of
-   raising on the hot path.
-7. **Packaging (§12.7).** `fabric` does not import `fabric.wire`,
-   `fabric.gateway` or `fabric.reconstruct`. The wheel qualifier requires
-   `fabric/wire/__init__.py`, `fabric/_autoload/__init__.py` and
-   `fabric/_autoload/sitecustomize.py`, rejects any `*.pth` and any other
-   `sitecustomize.py` / `usercustomize.py`, and imports the extracted
-   artifact in a fresh interpreter (with `FABRIC_WIRE_AUTOLOAD=1` set) to
-   prove that importing `fabric` and `fabric.wire` patches nothing, starts
-   no thread and does not import httpx.
+## 10. Layout and line budget
 
-## 15. Open questions
+Capture (`fabric/wire/**`, `fabric/_autoload/**`, `fabric/_sequence.py`,
+`fabric/_loss.py`) targets ~1,500 source lines; it measured 1,780 at the
+rev-3 cut (down from ~5,300), the remainder being passivity guarantees
+(GC-safe stream reaper, fork reinit, shutdown accounting) and public API. `fabric/wire/_stitch.py`
+moves to `fabric/reconstruct/_stitch.py`; capture imports no parser.
+`fabric.gateway.litellm` submits jobs to the same pipeline and does no
+parsing or hashing itself. `fabric` imports none of `fabric.wire`,
+`fabric.gateway` or `fabric.reconstruct`.
 
-1. Keyed (HMAC) message digests on OTLP, to resist dictionary attacks on
-   low-entropy messages. The key would be customer-held and the digests
-   would remain comparable within a tenant.
-2. Persisting `source_epoch` and the high-water mark across restarts, as
-   spec 038 asks, versus the Phase-1 process-lifetime epoch.
-3. Joining `gateway_normalized` and `exact_wire` records for the same call,
-   via `client_traceparent` or a gateway-assigned header.
-4. Whether `spooled` durability (spec 032) should back the wire pipeline
-   queue in Phase 2.
+## 11. Acceptance (Phase 1)
+
+1. Byte identity: for streamed and non-streamed OpenAI chat, Responses and
+   Anthropic messages (sync and async, `MockTransport`), stored bytes equal
+   what was sent and received (gzip responses stored compressed), and the
+   chunks the client sees are identical objects in order.
+2. A three-step ReAct run reconstructs into one thread with matched tool
+   calls and `complete_for_declared_scope`. Dropping one exchange span gives
+   `partial` (`sequence_gap`); a `queue_full` loss gives `partial` (`loss`);
+   deleting a store object gives `missing_object`; flipping a stored byte
+   gives `digest_mismatch`; removing the final heartbeat gives `unverified`;
+   omitting the store gives `unverified`.
+3. Queue full, buffer cap, store outage, exporter failure, a sampled-out
+   span and shutdown with an open stream each produce the specified span
+   flag or loss reason and never raise into the host. An abandoned stream
+   finalizes as `abandoned` without deadlock.
+4. The latency budgets in §4.10 hold; a tee crash injected at every hook
+   leaves the HTTP result unchanged.
+5. The Node keeps every key in §8 with valid values and drops invalid enum
+   values, `sha256:`-prefixed hashes, revision-2 keys and raw-content keys.
+6. The gateway callback produces `gateway_normalized` exchanges from
+   recorded LiteLLM payloads without importing `litellm`.
+7. Wheel qualification: `fabric/_autoload/sitecustomize.py` present; no
+   `*.pth`, no other `sitecustomize.py`/`usercustomize.py`; importing
+   `fabric` and `fabric.wire` (with `FABRIC_WIRE_AUTOLOAD=1` set) patches
+   nothing, starts no thread and does not import httpx.
+
+## 12. Non-goals (Phase 2+)
+
+Kubernetes injection, VM/serverless packaging, I/O-primitive capture,
+kernel/eBPF reconciliation, hash-chain or WORM anchoring, crypto-shredding,
+TypeScript parity, the deferred endpoints of §2, joining gateway and wire
+records of one call, and any evaluation, judging, scoring or policy decision
+over captured exchanges. Those belong to systems that consume this record.
+
+## 13. Open questions
+
+1. Persisting `source_epoch` and the last sequence across restarts (spec
+   038) versus the Phase-1 process-lifetime epoch.
+2. Joining `gateway_normalized` and `exact_wire` exchanges of one call.
+3. Whether `spooled` durability (spec 032) should back the worker queue.
+4. Rebuilding runs from store descriptors alone when spans are lost.

@@ -1,11 +1,11 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""``fabric.stitch/v1`` projection and stitching-key extraction (spec 042 §6).
+"""``fabric.stitch/v1`` projection and stitching-key extraction (spec 042 §9.1).
 
-Pure functions, run only on the capture pipeline worker (and by the offline
-verifier). Nothing here raises: malformed input degrades to a
-``parse_status`` other than ``ok``. Nothing here logs or returns content —
-only digests, ids, counts and short metadata strings.
+Pure functions used only by the offline verifier, over bytes read back from
+the customer store; capture never parses messages. Nothing here raises:
+malformed input degrades to a ``parse_status`` other than ``ok``. Nothing
+here logs or returns content — only digests, ids, counts and short metadata.
 """
 
 from __future__ import annotations
@@ -15,18 +15,56 @@ import importlib
 import json
 import zlib
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
-from .._sequence import encode_opaque_id
-from ._model import ParseStatus, StitchKeys, WireApi
+from fabric._sequence import encode_opaque_id
 
 __all__ = [
+    "ParseStatus",
+    "StitchKeys",
+    "WireApi",
     "canonical_json",
     "continuation_digests",
     "extract_stitch_keys",
     "message_digest",
     "project_message",
 ]
+
+WireApi = Literal[
+    "openai.chat_completions",
+    "openai.responses",
+    "openai.completions",
+    "openai.embeddings",
+    "anthropic.messages",
+]
+ParseStatus = Literal[
+    "ok", "not_json", "undecodable_encoding", "unrecognized_shape", "truncated", "not_parsed"
+]
+
+
+@dataclass(frozen=True, slots=True)
+class StitchKeys:
+    """Stitching keys derived from one exchange's stored bodies."""
+
+    model: str | None
+    stream: bool
+    previous_response_id: str | None
+    input_digests: tuple[str, ...]
+    input_roles: tuple[str, ...] | None
+    system_digest: str | None
+    tools_digest: str | None
+    tool_call_ids_consumed: tuple[str, ...]
+    request_parse_status: ParseStatus
+    response_id: str | None
+    response_model: str | None
+    finish_reasons: tuple[str, ...]
+    output_digests: tuple[str, ...]
+    output_roles: tuple[str, ...] | None
+    tool_calls: tuple[tuple[str, str | None], ...]
+    usage: Mapping[str, int]
+    response_parse_status: ParseStatus
+
 
 _CHAT_KEEP = frozenset(
     {"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal"}
@@ -176,9 +214,9 @@ def continuation_digests(api: WireApi, output_digests: Sequence[str]) -> tuple[s
 MAX_DECODED_BYTES = 64 * 1024 * 1024
 """Decoded-size ceiling for compressed bodies (the largest ``max_body_bytes``).
 
-``max_body_bytes`` bounds the *wire* bytes; without this a small, highly
-compressible body could inflate to gigabytes inside the host process. Past
-the ceiling the body is not parsed (``undecodable_encoding``)."""
+``max_body_bytes`` bounds the stored bytes; without this a small, highly
+compressible body could inflate to gigabytes inside the verifier. Past the
+ceiling the body is not parsed (``undecodable_encoding``)."""
 
 
 class _TooLargeError(Exception):

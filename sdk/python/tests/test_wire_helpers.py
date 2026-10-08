@@ -1,9 +1,10 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Shared builders for the wire-tee tests (spec 042).
+"""Shared builders for the wire-capture tests (spec 042 rev 3).
 
-Every tee here is built on a private TracerProvider, a private LossEmitter
-and a private SequenceAllocator so tests never depend on process globals.
+Every tee is built on a private TracerProvider, LossEmitter and SourceAllocator,
+so tests never depend on process globals. ``CAPTURE``, ``load_validator``,
+``capture_schemas``, ``sse`` and ``chat_response`` are imported by other suites.
 """
 
 from __future__ import annotations
@@ -11,19 +12,21 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-import time
-from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from collections import Counter
+from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
+from jsonschema import Draft202012Validator, FormatChecker
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric._loss import LossEmitter
-from fabric._sequence import SequenceAllocator, SourceIdentity
+from fabric._sequence import SourceAllocator
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.wire import WireConfig, WireHandle
 from fabric.wire._model import EndpointMatcher
@@ -79,7 +82,7 @@ class Rig:
     exporter: InMemorySpanExporter
     provider: TracerProvider
     loss: LossEmitter
-    allocator: SequenceAllocator
+    allocator: SourceAllocator
     store: Any
 
     def spans(self, name: str = "fabric.model_call") -> list[ReadableSpan]:
@@ -98,23 +101,19 @@ class Rig:
             transport=AsyncWireTransport(httpx.MockTransport(handler), handle=self.handle)
         )
 
-    def records(self) -> list[dict[str, Any]]:
-        """Stored llm-exchange documents, ordered by source sequence."""
-        root = Path(self.store.root) / self.store.tenant_id / "evidence" / "meta"
-        found = []
-        for meta in root.glob("*.json"):
-            descriptor = json.loads(meta.read_text("utf-8"))
-            if descriptor["role"] == "model.exchange.record":
-                found.append(json.loads(self.store.read(descriptor["ref"])))
-        return sorted(found, key=lambda d: d["source"]["source_sequence"])
-
     def descriptors(self) -> list[dict[str, Any]]:
         root = Path(self.store.root) / self.store.tenant_id / "evidence" / "meta"
         return [json.loads(p.read_text("utf-8")) for p in root.glob("*.json")]
 
-    def loss_counts(self) -> Mapping[str, int]:
-        identity = self.allocator.identity
-        return self.loss.stats().by_source.get((identity.source_id, identity.source_epoch), {})
+    def loss_counts(self) -> dict[str, int]:
+        """Emit pending loss records, then total ``count`` per reason for this rig's source."""
+        assert self.loss.flush(5.0)
+        totals: Counter[str] = Counter()
+        for span in self.spans("fabric.capture_loss"):
+            a = attrs(span)
+            if a["fabric.source_id"] == self.allocator.source_id:
+                totals[a["fabric.loss.reason"]] += a["fabric.loss.count"]
+        return dict(totals)
 
     def close(self) -> None:
         self.tee.close(5.0)
@@ -142,9 +141,7 @@ def make_rig(
         extra_endpoints=extra_endpoints,
         **config,
     )
-    allocator = SequenceAllocator(
-        SourceIdentity(f"wire-test-{_COUNTER[0]}", time.time_ns(), "wire")
-    )
+    allocator = SourceAllocator(f"wire-test-{_COUNTER[0]}", "wire")
     tee = WireTee(wire_config, allocator=allocator, loss=loss)
     handle = WireHandle(wire_config, tee, patched=False)
     return Rig(handle, tee, exporter, provider, loss, allocator, store)
@@ -201,6 +198,99 @@ def chat_response(
 def attrs(span: ReadableSpan) -> dict[str, Any]:
     """Span attributes as a plain dict (typed loosely for assertions)."""
     return dict(span.attributes or {})
+
+
+def _iso(ns: int | None) -> str:
+    assert ns is not None
+    return datetime.fromtimestamp(ns / 1e9, UTC).isoformat(timespec="microseconds")
+
+
+def exchange_document(span: ReadableSpan) -> dict[str, Any]:
+    """The ``fabric.llm-exchange/v1`` JSON form of an exchange span (spec 042 §8)."""
+    a = attrs(span)
+    document: dict[str, Any] = {
+        "schema_version": "fabric.llm-exchange/v1",
+        "exchange_id": a["fabric.wire.exchange_id"],
+        "fidelity": a["fabric.wire.fidelity"],
+        "api": a["fabric.wire.api"],
+        "provider_name": a["gen_ai.provider.name"],
+        "source": {
+            "source_id": a["fabric.source_id"],
+            "source_epoch": a["fabric.source.epoch"],
+            "source_sequence": a["fabric.source.sequence"],
+        },
+        "run_id": a["fabric.run.id"],
+        "started_at": _iso(span.start_time),
+        "ended_at": _iso(span.end_time),
+        "request": {"sha256": "sha256:" + a["fabric.wire.request_sha256"]},
+        "response_state": a["fabric.wire.response_state"],
+        "truncated": a["fabric.wire.truncated"],
+        "store_status": a["fabric.wire.store_status"],
+    }
+    if "fabric.content.request_ref" in a:
+        document["request"]["ref"] = a["fabric.content.request_ref"]
+    if "fabric.wire.response_sha256" in a:
+        document["response"] = {"sha256": "sha256:" + a["fabric.wire.response_sha256"]}
+        if "fabric.content.result_ref" in a:
+            document["response"]["ref"] = a["fabric.content.result_ref"]
+    for key, field in (
+        ("http.response.status_code", "http_status_code"),
+        ("error.type", "error_type"),
+        ("gen_ai.response.model", "model"),
+        ("gen_ai.response.id", "response_id"),
+    ):
+        if key in a:
+            document[field] = a[key]
+    if "gen_ai.response.finish_reasons" in a:
+        document["finish_reasons"] = list(a["gen_ai.response.finish_reasons"])
+    usage = {
+        k: a[f"gen_ai.usage.{k}"]
+        for k in ("input_tokens", "output_tokens")
+        if f"gen_ai.usage.{k}" in a
+    }
+    if usage:
+        document["usage"] = usage
+    return document
+
+
+def loss_document(span: ReadableSpan) -> dict[str, Any]:
+    """The ``fabric.loss-record/v1`` JSON form of a loss or heartbeat span."""
+    a = attrs(span)
+    document: dict[str, Any] = {
+        "schema_version": "fabric.loss-record/v1",
+        "source": {"source_id": a["fabric.source_id"], "source_epoch": a["fabric.source.epoch"]},
+        "emitted_at": _iso(span.start_time),
+    }
+    if span.name == "fabric.capture_heartbeat":
+        document.update(kind="heartbeat", last_sequence=a["fabric.heartbeat.last_sequence"])
+        if "fabric.run.id" in a:
+            document["run_id"] = a["fabric.run.id"]
+    else:
+        document.update(
+            kind="loss",
+            reason=a["fabric.loss.reason"],
+            count=a["fabric.loss.count"],
+            first_sequence=a["fabric.loss.first_sequence"],
+            last_sequence=a["fabric.loss.last_sequence"],
+        )
+    return document
+
+
+def validate_capture(rig: Rig) -> None:
+    """Every emitted capture span and stored descriptor matches its contract."""
+    validator, schemas = load_validator(), capture_schemas()
+    for span in rig.spans():
+        validator.validate_document(exchange_document(span), schemas)
+    for name in ("fabric.capture_loss", "fabric.capture_heartbeat"):
+        for span in rig.spans(name):
+            validator.validate_document(loss_document(span), schemas)
+    if rig.store is not None and hasattr(rig.store, "root"):
+        content = Draft202012Validator(
+            json.loads(CONTENT_SCHEMA.read_text()), format_checker=FormatChecker()
+        )
+        for descriptor in rig.descriptors():
+            errors = list(content.iter_errors(descriptor))
+            assert not errors, errors[0].message
 
 
 def test_chunk_stream_yields_given_objects() -> None:

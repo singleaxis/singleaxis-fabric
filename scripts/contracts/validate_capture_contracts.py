@@ -1,15 +1,14 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Validate the draft LLM wire-capture contracts (contracts/capture/v1, spec 042).
+"""Validate the draft LLM wire-capture contracts (contracts/capture/v1, spec 042 rev 3).
 
 JSON Schema handles closed shapes. The semantic checks below reject what a
-schema cannot express: a gateway record claiming exact wire bytes, digest
-lists that disagree with their counts, inconsistent truncation, cumulative
-loss totals that do not add up, and a reconstruction verdict stronger than
-its own gaps and checks allow. The stitch-digest fixture pins the
-``fabric.stitch/v1`` canonical bytes and SHA-256 every implementation must
-reproduce. This validator does not claim any runtime currently emits these
-documents.
+schema cannot express: a store status that disagrees with the body refs,
+loss ranges that cannot hold their count, and a reconstruction verdict
+stronger than its gaps, checks, sequence windows and heartbeats allow. The
+stitch-digest fixture pins the ``fabric.stitch/v1`` per-message projection
+that ``fabric.reconstruct`` derives offline from stored bytes. This
+validator does not claim any runtime currently emits these documents.
 """
 
 from __future__ import annotations
@@ -33,7 +32,6 @@ SCHEMAS = {
     "fabric.run-reconstruction/v1": "schema/run-reconstruction-v1.schema.json",
 }
 _EXPECTATIONS = frozenset({"schema", "valid", "invalid", "digests"})
-_STORED = frozenset({"stored", "truncated"})
 
 
 @dataclass(frozen=True)
@@ -86,9 +84,8 @@ def _schema_error(document: Mapping[str, Any], schema: Mapping[str, Any]) -> Non
         )
 
 
-def _tenant_bound_ref(ref: str, tenant_id: str) -> bool:
+def _safe_ref(ref: str) -> bool:
     parsed = urlsplit(ref)
-    segments = parsed.path.split("/")
     return (
         parsed.scheme in {"s3", "gs", "file"}
         and parsed.username is None
@@ -96,134 +93,109 @@ def _tenant_bound_ref(ref: str, tenant_id: str) -> bool:
         and not parsed.query
         and not parsed.fragment
         and "%" not in ref
-        and tenant_id in segments[:-1]
-        and not any(part in {".", ".."} for part in segments)
+        and not any(part in {".", ".."} for part in parsed.path.split("/"))
     )
 
 
-def _validate_body(body: Mapping[str, Any], fidelity: str, tenant_id: str, path: str) -> None:
-    representation = body["representation"]
-    if fidelity == "gateway_normalized" and (
-        representation in {"exact", "partial", "truncated"} or "source_sha256" in body
-    ):
-        raise CaptureContractError(
-            "capture.exchange.false_exact",
-            path,
-            "gateway_normalized bodies are canonicalized; they never observed wire bytes",
-        )
-    if fidelity == "exact_wire" and representation == "canonicalized":
-        raise CaptureContractError(
-            "capture.exchange.false_exact",
-            path,
-            "exact_wire bodies store transmitted bytes, never a canonical re-serialization",
-        )
-    if representation == "exact" and body["status"] == "stored" and (
-        body["source_sha256"] != body["stored_sha256"]
-        or body["source_byte_length"] != body["stored_byte_length"]
-    ):
-        raise CaptureContractError(
-            "capture.exchange.false_exact", path, "exact source and stored bytes must match"
-        )
-    if body["status"] == "truncated" and body["source_byte_length"] <= body["stored_byte_length"]:
-        raise CaptureContractError(
-            "capture.exchange.truncation",
-            path,
-            "a truncated body must have observed more bytes than it stored",
-        )
-    if "ref" in body and not _tenant_bound_ref(body["ref"], tenant_id):
-        raise CaptureContractError(
-            "capture.exchange.ref", f"{path}.ref", "ref must be credential-free and tenant-bound"
-        )
-
-
 def _validate_exchange(document: Mapping[str, Any]) -> None:
-    fidelity = document["fidelity"]
-    tenant_id = document["tenant_id"]
-    bodies: list[Mapping[str, Any]] = []
-    for side in ("request", "response"):
-        section = document[side]
-        if len(section["message_digests"]) != section["message_count"]:
+    bodies = [document["request"]] + (
+        [document["response"]] if "response" in document else []
+    )
+    for side, body in zip(("request", "response"), bodies):
+        if "ref" in body and not _safe_ref(body["ref"]):
             raise CaptureContractError(
-                "capture.exchange.count",
-                f"$.{side}.message_digests",
-                "message_digests length must equal message_count",
+                "capture.exchange.ref", f"$.{side}.ref", "ref must be credential-free and plain"
             )
-        roles = section.get("message_roles")
-        if roles is not None and len(roles) != section["message_count"]:
-            raise CaptureContractError(
-                "capture.exchange.count",
-                f"$.{side}.message_roles",
-                "message_roles length must equal message_count",
-            )
-        if "body" in section:
-            _validate_body(section["body"], fidelity, tenant_id, f"$.{side}.body")
-            bodies.append(section["body"])
-    if fidelity == "gateway_normalized" and document["source"]["component"] != "gateway":
-        raise CaptureContractError(
-            "capture.exchange.component", "$.source.component", "gateway records need gateway"
-        )
-    if fidelity == "exact_wire" and document["source"]["component"] != "wire":
-        raise CaptureContractError(
-            "capture.exchange.component", "$.source.component", "exact_wire records need wire"
-        )
-    ids = [call["id"] for call in document["response"]["tool_calls"]]
-    if len(ids) != len(set(ids)):
-        raise CaptureContractError(
-            "capture.exchange.tool_calls", "$.response.tool_calls", "tool call ids must be unique"
-        )
-    truncated = any(body["status"] == "truncated" for body in bodies)
-    if truncated != document["capture"]["truncated"]:
-        raise CaptureContractError(
-            "capture.exchange.truncation",
-            "$.capture.truncated",
-            "capture.truncated must be true exactly when a body is truncated",
-        )
-    stored = [body["status"] in _STORED for body in bodies]
-    expected = "stored" if all(stored) else ("failed" if not any(stored) else "partial")
-    if document["capture"]["store_status"] != expected:
+    stored = [("ref" in body) for body in bodies]
+    status = document["store_status"]
+    if status in {"disabled", "failed"}:
+        consistent = not any(stored)
+    elif status == "stored":
+        consistent = all(stored)
+    else:  # partial
+        consistent = any(stored) and not all(stored)
+    if not consistent:
         raise CaptureContractError(
             "capture.exchange.store_status",
-            "$.capture.store_status",
-            f"store_status must be {expected!r} for the listed body statuses",
+            "$.store_status",
+            f"store_status {status!r} disagrees with the body refs",
+        )
+    if "error_type" in document and document["response_state"] != "error":
+        raise CaptureContractError(
+            "capture.exchange.error_type",
+            "$.error_type",
+            "error_type is only recorded for response_state 'error'",
         )
 
 
 def _validate_loss(document: Mapping[str, Any]) -> None:
-    cumulative = document["cumulative"]
-    if sum(cumulative["by_reason"].values()) != cumulative["total"]:
+    if document["kind"] != "loss":
+        return
+    first, last = document["first_sequence"], document["last_sequence"]
+    if last < first or document["count"] > last - first + 1:
         raise CaptureContractError(
-            "capture.loss.cumulative",
-            "$.cumulative",
-            "cumulative.total must equal the sum of cumulative.by_reason",
+            "capture.loss.range",
+            "$.count",
+            "a loss range needs first <= last and at most last - first + 1 lost exchanges",
         )
-    if document["kind"] == "loss":
-        if cumulative["by_reason"].get(document["reason"], 0) < document["count"]:
+
+
+def _ranges_ok(ranges: Sequence[Sequence[int]]) -> bool:
+    return all(low <= high for low, high in ranges)
+
+
+def _validate_sources(document: Mapping[str, Any]) -> dict[tuple[str, int], Any]:
+    sources: dict[tuple[str, int], Any] = {}
+    for index, source in enumerate(document["sources"]):
+        key = (source["source_id"], source["source_epoch"])
+        loss = [(r["first_sequence"], r["last_sequence"]) for r in source["loss_ranges"]]
+        if key in sources or not _ranges_ok(source["missing_sequences"]) or not _ranges_ok(loss):
             raise CaptureContractError(
-                "capture.loss.cumulative",
-                "$.cumulative.by_reason",
-                "cumulative count for the reason cannot be below this record's count",
+                "capture.reconstruction.source",
+                f"$.sources[{index}]",
+                "sources must be unique with ordered ranges",
             )
-        if len(document["affected"]) > document["count"]:
+        sources[key] = source
+    return sources
+
+
+def _validate_scope(run: Mapping[str, Any], sources: Mapping[Any, Any], path: str) -> None:
+    windows = run["declared_scope"]["windows"]
+    for window in windows:
+        key = (window["source_id"], window["source_epoch"])
+        if key not in sources or window["last_sequence"] < window["first_sequence"]:
             raise CaptureContractError(
-                "capture.loss.affected", "$.affected", "more affected entries than lost items"
+                "capture.reconstruction.scope", f"{path}.declared_scope", "bad window"
             )
-    own = document["source"]["source_sequence"]
-    if document["high_water_sequence"] < own:
-        raise CaptureContractError(
-            "capture.loss.high_water",
-            "$.high_water_sequence",
-            "high-water sequence cannot be below the record's own sequence",
-        )
-    for index, item in enumerate(document["affected"]):
-        if item["source_sequence"] >= own:
+    for exchange in run["exchanges"]:
+        if not any(
+            (w["source_id"], w["source_epoch"]) == (exchange["source_id"], exchange["source_epoch"])
+            and w["first_sequence"] <= exchange["source_sequence"] <= w["last_sequence"]
+            for w in windows
+        ):
             raise CaptureContractError(
-                "capture.loss.affected",
-                f"$.affected[{index}].source_sequence",
-                "a loss record can only report sequences allocated before it",
+                "capture.reconstruction.scope",
+                f"{path}.exchanges",
+                "every exchange must lie inside a declared window",
+            )
+    if run["verdict"] != "complete_for_declared_scope":
+        return
+    for window in windows:
+        source = sources[(window["source_id"], window["source_epoch"])]
+        low, high = window["first_sequence"] - 1, window["last_sequence"] + 1
+        if window["heartbeat_sequence"] < window["last_sequence"] or any(
+            first <= high and last >= low for first, last in source["missing_sequences"]
+        ):
+            raise CaptureContractError(
+                "capture.reconstruction.verdict",
+                f"{path}.declared_scope",
+                "a complete run needs a covering heartbeat and no missing sequence "
+                "inside or adjacent to its windows",
             )
 
 
 def _validate_reconstruction(document: Mapping[str, Any]) -> None:
+    sources = _validate_sources(document)
     for run_index, run in enumerate(document["runs"]):
         path = f"$.runs[{run_index}]"
         effects = {gap["effect"] for gap in run["gaps"]}
@@ -246,17 +218,13 @@ def _validate_reconstruction(document: Mapping[str, Any]) -> None:
                 f"{path}.checks",
                 "a failed check must be explained by a gap",
             )
-        if run["verdict"] == "complete_for_declared_scope" and run["declared_scope"]["bytes"] and (
-            run["checks"]["bytes"] != "passed"
-        ):
-            raise CaptureContractError(
-                "capture.reconstruction.verdict",
-                f"{path}.checks.bytes",
-                "a bytes-scoped complete verdict requires verified bytes",
-            )
         counts: dict[str, int] = {}
         for gap in run["gaps"]:
             counts[gap["gap_type"]] = counts.get(gap["gap_type"], 0) + 1
+            if gap.get("first_sequence", 0) > gap.get("last_sequence", 0):
+                raise CaptureContractError(
+                    "capture.reconstruction.gap", f"{path}.gaps", "gap range out of order"
+                )
         if counts != run["counts"]["gaps_by_type"]:
             raise CaptureContractError(
                 "capture.reconstruction.counts",
@@ -268,16 +236,13 @@ def _validate_reconstruction(document: Mapping[str, Any]) -> None:
             raise CaptureContractError(
                 "capture.reconstruction.counts", f"{path}.counts.exchanges", "count mismatch"
             )
-        sequences = [exchange["run_sequence"] for exchange in exchanges]
-        if sequences != sorted(set(sequences)):
+        known = [exchange["exchange_id"] for exchange in exchanges]
+        if len(known) != len(set(known)):
             raise CaptureContractError(
-                "capture.reconstruction.order",
-                f"{path}.exchanges",
-                "exchanges must be unique and ordered by run_sequence",
+                "capture.reconstruction.order", f"{path}.exchanges", "duplicate exchange_id"
             )
-        known = {exchange["exchange_id"] for exchange in exchanges}
         threaded = [eid for thread in run["threads"] for eid in thread["exchange_ids"]]
-        if sorted(threaded) != sorted(known) or len(threaded) != len(set(threaded)):
+        if sorted(threaded) != sorted(known):
             raise CaptureContractError(
                 "capture.reconstruction.threads",
                 f"{path}.threads",
@@ -291,6 +256,7 @@ def _validate_reconstruction(document: Mapping[str, Any]) -> None:
                     f"{path}.exchanges",
                     "continues_exchange_id must name an exchange in the run",
                 )
+        _validate_scope(run, sources, path)
 
 
 def validate_document(

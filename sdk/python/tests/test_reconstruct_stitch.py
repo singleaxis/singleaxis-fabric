@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from fabric.wire._stitch import (
+from fabric.reconstruct._stitch import (
     canonical_json,
     continuation_digests,
     extract_stitch_keys,

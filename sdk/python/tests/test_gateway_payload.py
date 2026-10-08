@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime, timedelta, timezone
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
 
@@ -273,23 +273,6 @@ def test_provider_name() -> None:
         == "bedrock"
     )
     assert p.provider_name({}) == "litellm"
-
-
-def test_provider_request_id() -> None:
-    kwargs = {
-        "standard_logging_object": {
-            "hidden_params": {"additional_headers": {"llm_provider-request-id": "req_a"}}
-        }
-    }
-    assert p.provider_request_id(kwargs, None) == "req_a"
-
-    class Response:
-        _hidden_params: ClassVar[dict[str, Any]] = {
-            "additional_headers": {"llm_provider-x-request-id": "req_b"}
-        }
-
-    assert p.provider_request_id({}, Response()) == "req_b"
-    assert p.provider_request_id({}, None) is None
 
 
 def test_to_ns() -> None:

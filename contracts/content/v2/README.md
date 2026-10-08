@@ -34,9 +34,13 @@ HTTP body of one model API call — exactly as transmitted/received for the
 in-process wire tee (`provenance: protocol`, `representation: exact`,
 `partial` or `truncated`), or the canonical JSON of the parsed objects a
 gateway callback exposes (`provenance: caller_reported`,
-`representation: canonicalized`). `model.exchange.record` holds the
-metadata-only `fabric.llm-exchange/v1` document
-([capture v1](../../capture/v1/README.md)) that binds both bodies to their
-stitching keys. All three use `boundary: provider_bound`. The narrower
-`model.request.*` / `model.output.messages` roles are unchanged and are
-not emitted by the wire tee.
+`representation: canonicalized`). Both use `boundary: provider_bound`,
+`operation_id` = the exchange id, and the exchange's `run_id` and
+`source_*` position, so the store is self-describing.
+
+`content_encoding` is the HTTP `Content-Encoding` of the stored bytes,
+lowercased with whitespace removed (`identity` when the header was absent,
+`unknown` when it was not a valid token list). Wire bytes are stored as
+received and never decompressed at capture; a reader decodes them. The
+narrower `model.request.*` / `model.output.messages` roles are unchanged
+and are not emitted by the wire tee.

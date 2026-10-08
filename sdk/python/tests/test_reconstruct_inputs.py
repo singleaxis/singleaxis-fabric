@@ -17,6 +17,7 @@ from tests.test_reconstruct_verifier import (
     Capture,
     only_run,
     react_run,
+    react_turns,
     validate,
 )
 
@@ -76,7 +77,7 @@ def test_sink_jsonl_ignores_log_rows(tmp_path: Path) -> None:
             "name": "fabric.model_call",
             "start_ns": 5,
             "end_ns": 9,
-            "attributes": {"fabric.run.sequence": 3},
+            "attributes": {"fabric.source.sequence": 3},
             "resource": {"service.name": "svc"},
         },
     ]
@@ -87,7 +88,7 @@ def test_sink_jsonl_ignores_log_rows(tmp_path: Path) -> None:
     span = spans[0]
     assert span.trace_id == "ab" * 16
     assert span.parent_span_id is None
-    assert span.attributes == {"fabric.run.sequence": 3}
+    assert span.attributes == {"fabric.source.sequence": 3}
     assert (span.start_ns, span.end_ns) == (5, 9)
 
 
@@ -101,8 +102,8 @@ def test_otlp_whole_file_and_per_line(tmp_path: Path) -> None:
             "start_ns": 10,
             "end_ns": 10,
             "attributes": {
-                "fabric.loss.affected_sequences": [1, 2],
-                "fabric.loss.affected_truncated": False,
+                "fabric.loss.first_sequence": 1,
+                "fabric.loss.last_sequence": 2,
                 "fabric.loss.reason": "queue_full",
             },
         }
@@ -116,8 +117,8 @@ def test_otlp_whole_file_and_per_line(tmp_path: Path) -> None:
     fmt, spans = read_span_file(whole)
     assert fmt == "otlp_json"
     assert spans[0].attributes == {
-        "fabric.loss.affected_sequences": [1, 2],
-        "fabric.loss.affected_truncated": False,
+        "fabric.loss.first_sequence": 1,
+        "fabric.loss.last_sequence": 2,
         "fabric.loss.reason": "queue_full",
     }
     assert spans[0].parent_span_id == "ef" * 8
@@ -203,19 +204,8 @@ def test_otlp_capture_reconstructs_like_sink(tmp_path: Path) -> None:
     validate(otlp_document)
     assert otlp_document["inputs"]["span_files"][0]["format"] == "otlp_json"
     assert otlp_document["runs"] == sink_document["runs"]
+    assert otlp_document["sources"] == sink_document["sources"]
     assert only_run(otlp_document)["verdict"] == "complete_for_declared_scope"
-
-
-def test_invalid_attribute_values_unplace_the_exchange(tmp_path: Path) -> None:
-    capture = Capture(tmp_path)
-    exchanges = react_run(capture)
-    # A value the Node would have stripped: the exchange cannot be placed and
-    # its sequence is reported missing instead of being trusted.
-    exchanges[1].span["attributes"]["fabric.run.sequence"] = -4
-    exchanges[1].span["attributes"]["fabric.wire.exchange_ref"] = "file:///x/not a valid id"
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "partial"
-    assert [ex["exchange_id"] for ex in run["exchanges"]] == ["ex-0", "ex-2"]
 
 
 def test_multiple_span_files_are_listed(tmp_path: Path) -> None:
@@ -231,17 +221,42 @@ def test_multiple_span_files_are_listed(tmp_path: Path) -> None:
     assert only_run(document)["verdict"] == "complete_for_declared_scope"
 
 
-def test_reconstruct_rejects_bad_options(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("attributes", "name"),
+    [
+        ({"fabric.heartbeat.last_sequence": -2}, "fabric.capture_heartbeat"),
+        ({"fabric.heartbeat.last_sequence": "3"}, "fabric.capture_heartbeat"),
+        (
+            {
+                "fabric.loss.reason": "buffer_overflow",
+                "fabric.loss.count": 1,
+                "fabric.loss.first_sequence": 3,
+                "fabric.loss.last_sequence": 3,
+            },
+            "fabric.capture_loss",
+        ),
+        (
+            {
+                "fabric.loss.reason": "queue_full",
+                "fabric.loss.count": 3,
+                "fabric.loss.first_sequence": 3,
+                "fabric.loss.last_sequence": 4,
+            },
+            "fabric.capture_loss",
+        ),
+    ],
+)
+def test_invalid_loss_and_heartbeat_spans_are_ignored(
+    tmp_path: Path, attributes: dict[str, Any], name: str
+) -> None:
     capture = Capture(tmp_path)
-    react_run(capture)
-    path = capture.write()
-    with pytest.raises(ReconstructInputError):
-        reconstruct([])
-    with pytest.raises(ReconstructInputError):
-        reconstruct([path], scope="everything")  # type: ignore[arg-type]
-    with pytest.raises(ReconstructInputError):
-        reconstruct([path], scan_store=True)
-    with pytest.raises(ReconstructInputError):
-        reconstruct([path], store=capture.store, tenant_id="other-tenant")
-    with pytest.raises(ReconstructInputError):
-        reconstruct([path], store=object(), tenant_id="tenant-a")
+    react_run(capture, heartbeat=False)
+    capture.skip()
+    capture._record(name, attributes)  # inject a malformed record
+    capture.exchange(*react_turns()[0])
+    capture.heartbeat()
+    document = capture.reconstruct()
+    (source,) = document["sources"]
+    assert source["loss_ranges"] == []
+    assert source["heartbeat_sequence"] == 4
+    assert "sequence_gap" in {gap["gap_type"] for gap in only_run(document)["gaps"]}

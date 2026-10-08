@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Cross-workstream integration for spec 042 Phase 1.
+"""Cross-workstream integration for spec 042 (rev 3, store-only stitching).
 
 The wire tee, the gateway tap, sequencing/loss, the capture pipeline and the
 offline verifier are tested separately in ``test_wire_*``, ``test_gateway_*``,
@@ -8,8 +8,10 @@ offline verifier are tested separately in ``test_wire_*``, ``test_gateway_*``,
 end to end: captured spans are written to a sink JSONL file exactly as an
 exporter would, the bytes land in a real local store, and
 :func:`fabric.reconstruct.reconstruct` must reach the verdicts of spec 042
-§12.2. Every report is checked against the run-reconstruction-v1 schema and
-the contract validator's semantic rules.
+§12. Capture spans carry no message hashes or tool-call ids, so every
+stitching result below is derived offline from the stored bytes. Every report
+is checked against the run-reconstruction-v1 schema and the contract
+validator's semantic rules.
 """
 
 from __future__ import annotations
@@ -92,7 +94,6 @@ def _isolated_process_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     emitter = LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
     monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
-    monkeypatch.delenv("FABRIC_RUN_ID", raising=False)
     yield
     wire.uninstall()
     emitter.close(1.0)
@@ -193,8 +194,8 @@ def _capture_wire_run(tmp_path: Path, *, store: Any = None) -> tuple[Path, Any]:
             ),
         ),
         patch_httpx=False,
-        store_retry_attempts=1,
     )
+    handle._tee.pipeline._backoffs = ()  # one store attempt: outages fail fast
     transport = wire.WireTransport(httpx.MockTransport(_fake_model))
     with httpx.Client(transport=transport) as client, wire.run(RUN_ID):
         assert _react(client) == "It is 64 F in Lisbon."
@@ -234,7 +235,7 @@ def _write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
 def test_wire_react_run_reconstructs_complete(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
 
-    run = _only_run(_verify(spans, store, recompute_digests=True))
+    run = _only_run(_verify(spans, store))
 
     assert run["verdict"] == "complete_for_declared_scope"
     assert run["gaps"] == []
@@ -247,7 +248,22 @@ def test_wire_react_run_reconstructs_complete(tmp_path: Path) -> None:
     consumed = [ids for e in run["exchanges"] for ids in e["tool_call_ids_consumed"]]
     assert emitted == ["call_0", "call_1"]
     assert sorted(set(consumed)) == ["call_0", "call_1"]
-    assert {e["origin"] for e in run["exchanges"]} == {"span_and_store"}
+    assert [e["source_sequence"] for e in run["exchanges"]] == [0, 1, 2]
+    assert all(
+        obj["verification"] == "verified" for e in run["exchanges"] for obj in e["objects"].values()
+    )
+
+
+def test_exchange_spans_carry_no_message_level_keys(tmp_path: Path) -> None:
+    spans, _ = _capture_wire_run(tmp_path)
+    exchanges = [r for r in _rows(spans) if r["name"] == "fabric.model_call"]
+    assert len(exchanges) == 3
+    for row in exchanges:
+        keys = set(row["attributes"])
+        assert not {k for k in keys if "hash" in k or "tool_call" in k or "message" in k}
+        assert "fabric.run.sequence" not in keys
+        assert row["attributes"]["fabric.wire.store_status"] == "stored"
+        assert row["attributes"]["gen_ai.response.model"] == "demo-model"
 
 
 def test_spans_and_report_carry_no_content(tmp_path: Path) -> None:
@@ -266,7 +282,7 @@ def test_spans_and_report_carry_no_content(tmp_path: Path) -> None:
 def test_dropped_exchange_span_is_partial(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
     rows = _rows(spans)
-    middle = next(r for r in rows if r["attributes"].get("fabric.run.sequence") == 1)
+    middle = next(r for r in rows if r["attributes"].get("fabric.source.sequence") == 1)
     _write_rows(spans, [r for r in rows if r is not middle])
 
     run = _only_run(_verify(spans, store))
@@ -277,7 +293,7 @@ def test_dropped_exchange_span_is_partial(tmp_path: Path) -> None:
 
 def test_deleted_store_object_is_missing_object(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
-    row = next(r for r in _rows(spans) if r["attributes"].get("fabric.run.sequence") == 1)
+    row = next(r for r in _rows(spans) if r["attributes"].get("fabric.source.sequence") == 1)
     object_id = row["attributes"]["fabric.content.result_ref"].rsplit("/", 1)[1]
     (tmp_path / "store" / TENANT / "evidence" / object_id).unlink()
 
@@ -289,7 +305,7 @@ def test_deleted_store_object_is_missing_object(tmp_path: Path) -> None:
 
 def test_flipped_stored_byte_is_digest_mismatch(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
-    row = next(r for r in _rows(spans) if r["attributes"].get("fabric.run.sequence") == 0)
+    row = next(r for r in _rows(spans) if r["attributes"].get("fabric.source.sequence") == 0)
     object_id = row["attributes"]["fabric.content.request_ref"].rsplit("/", 1)[1]
     target = tmp_path / "store" / TENANT / "evidence" / object_id
     data = bytearray(target.read_bytes())
@@ -302,10 +318,10 @@ def test_flipped_stored_byte_is_digest_mismatch(tmp_path: Path) -> None:
     assert "digest_mismatch" in _gap_types(run)
 
 
-def test_removed_final_watermark_is_unverified(tmp_path: Path) -> None:
+def test_removed_heartbeats_are_unverified(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
     rows = _rows(spans)
-    kept = [r for r in rows if r["name"] != "fabric.capture_watermark"]
+    kept = [r for r in rows if r["name"] != "fabric.capture_heartbeat"]
     assert len(kept) < len(rows)
     _write_rows(spans, kept)
 
@@ -315,18 +331,22 @@ def test_removed_final_watermark_is_unverified(tmp_path: Path) -> None:
     assert "tail_unverified" in _gap_types(run)
 
 
-def test_store_outage_is_an_explained_loss_not_a_digest_mismatch(tmp_path: Path) -> None:
+def test_store_outage_is_a_missing_object_not_a_digest_mismatch(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path, store=_FailingResponses)
+    statuses = {
+        r["attributes"]["fabric.wire.store_status"]
+        for r in _rows(spans)
+        if r["name"] == "fabric.model_call"
+    }
+    assert statuses == {"partial"}
 
     run = _only_run(_verify(spans, store))
 
     assert run["verdict"] == "partial"
-    reasons = {(g["gap_type"], g.get("reason")) for g in run["gaps"]}
-    assert ("loss_record", "store_failure") in reasons
-    # The span's body digest is the *stored* digest, so a body that never
-    # reached the store cannot disagree with its record.
-    assert "digest_mismatch" not in _gap_types(run)
-    assert all(e["origin"] == "span_and_store" for e in run["exchanges"])
+    reasons = {(g["gap_type"], g.get("reason"), g.get("object_role")) for g in run["gaps"]}
+    assert reasons == {("missing_object", "not_stored", "response")}
+    # The request bodies did reach the store and still verify.
+    assert {e["objects"]["request"]["verification"] for e in run["exchanges"]} == {"verified"}
 
 
 # ------------------------------------------------------------- gateway -> verify
@@ -346,7 +366,7 @@ def test_gateway_tap_reconstructs_react_steps(tmp_path: Path) -> None:
     assert recorder.close(10.0)
     provider.shutdown()
 
-    run = _only_run(_verify(spans_path, store, recompute_digests=True), "run-travel-42")
+    run = _only_run(_verify(spans_path, store), "run-travel-42")
 
     assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
     assert run["declared_scope"]["capture_surfaces"] == ["gateway_normalized"]
@@ -373,3 +393,4 @@ def test_wire_capture_example_runs_to_a_complete_verdict(tmp_path: Path) -> None
     report = json.loads((tmp_path / "out" / "report.json").read_text("utf-8"))
     VALIDATOR.validate_document(report, SCHEMAS)
     assert [run["verdict"] for run in report["runs"]] == ["complete_for_declared_scope"]
+    assert [run["gaps"] for run in report["runs"]] == [[]]

@@ -106,21 +106,28 @@ class FakeSink:
 
 
 class FakeLoss:
+    """Records the calls the recorder (and a real pipeline) make on the loss emitter."""
+
     def __init__(self) -> None:
         self.records: list[dict[str, Any]] = []
+        self.active: list[Any] = []
+        self.providers: list[Any] = []
+        self.flushes = 0
 
-    def record(self, allocator: Any, reason: str, *, count: int = 1, affected: Any = ()) -> str:
-        record_id = str(uuid.uuid4())
+    def record(self, source_id: str, source_epoch: int, reason: str, sequence: int) -> None:
         self.records.append(
-            {
-                "allocator": allocator,
-                "reason": reason,
-                "count": count,
-                "affected": tuple(affected),
-                "record_id": record_id,
-            }
+            {"source_id": source_id, "epoch": source_epoch, "reason": reason, "sequence": sequence}
         )
-        return record_id
+
+    def note_activity(self, allocator: Any) -> None:
+        self.active.append(allocator)
+
+    def set_tracer_provider(self, provider: Any) -> None:
+        self.providers.append(provider)
+
+    def flush(self, timeout_s: float = 2.0) -> bool:
+        self.flushes += 1
+        return True
 
 
 @pytest.fixture()
@@ -128,12 +135,6 @@ def loss(monkeypatch: pytest.MonkeyPatch) -> FakeLoss:
     fake = FakeLoss()
     monkeypatch.setattr(fabric._loss, "get_loss_emitter", lambda: fake)
     return fake
-
-
-@pytest.fixture(autouse=True)
-def _no_ambient_run(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.delenv("FABRIC_RUN_ID", raising=False)
-    yield
 
 
 def body_json(job: CaptureJob, side: str) -> Any:
@@ -187,25 +188,19 @@ def test_tool_call_success_maps_to_gateway_normalized_job(loss: FakeLoss) -> Non
     job = sink.jobs[0]
     assert job.fidelity == "gateway_normalized"
     assert job.api == "openai.chat_completions"
-    assert job.endpoint_id == "litellm"
     assert job.provider_name == "openai"
-    assert job.http_method == "POST"
     assert job.http_status_code is None
-    assert job.provider_request_id == "req_8c1f2a"
     assert job.response_state == "complete"
     assert job.error_type is None
-    assert job.loss_record_ids == ()
     assert uuid.UUID(job.exchange_id).version == 4
 
-    identity = recorder.allocator.identity
-    assert identity.component == "gateway"
-    assert job.ticket.source_id == identity.source_id
-    assert job.ticket.source_epoch == identity.source_epoch
-    assert job.ticket.run_id == "run-travel-42"
-    assert job.ticket.run_id_basis == "explicit"
-    assert job.ticket.run_sequence == 0
+    allocator = recorder.allocator
+    assert allocator.component == "gateway"
+    assert job.source_id == allocator.source_id
+    assert (job.source_epoch, job.source_sequence) == allocator.last_sequence()
+    assert job.run_id == "run-travel-42"
+    assert loss.active == [allocator]  # eligible for periodic and flush heartbeats
 
-    assert job.client_traceparent == f"00-{TRACE_ID_HEX}-a3ce929d0e0e4736-01"
     assert job.parent_context is not None
     parent = trace.get_current_span(job.parent_context).get_span_context()
     assert parent.trace_id == int(TRACE_ID_HEX, 16)
@@ -213,12 +208,11 @@ def test_tool_call_success_maps_to_gateway_normalized_job(loss: FakeLoss) -> Non
 
     assert job.started_ns == 1_791_363_601_120_000_000
     assert job.ended_ns == 1_791_363_602_050_000_000
-    assert job.first_byte_ns is None  # not streamed
 
     for side in (job.request, job.response):
         assert side is not None
         assert side.media_type == "application/json"
-        assert side.content_encoding is None
+        assert side.content_encoding == "identity"
         assert side.truncated is False
         assert side.observed_byte_length == side.captured_byte_length
 
@@ -284,22 +278,18 @@ def test_streaming_uses_complete_streaming_response(loss: FakeLoss) -> None:
     response = body_json(job, "response")
     assert response["object"] == "chat.completion"  # assembled, not the last chunk
     assert response["choices"][0]["message"]["content"] == "Visit the Musée d'Orsay."
-    assert job.first_byte_ns == 1_791_363_610_380_000_000
-    assert job.started_ns < job.first_byte_ns < job.ended_ns
-    assert job.ticket.run_id == "run-museum-7"  # litellm_params.metadata.fabric_run_id
-    assert job.ticket.run_id_basis == "explicit"
+    assert job.started_ns < job.ended_ns
+    assert job.run_id == "run-museum-7"  # litellm_params.metadata.fabric_run_id
 
 
-def test_failure_maps_to_transport_error(loss: FakeLoss) -> None:
+def test_failure_maps_to_error(loss: FakeLoss) -> None:
     sink = FakeSink()
     run_hook(FabricLiteLLMRecorder(sink=sink), load_fixture("chat_failure_rate_limit.json"))
     job = sink.jobs[0]
     assert job.response is None
-    assert job.response_state == "transport_error"
+    assert job.response_state == "error"
     assert job.error_type == "RateLimitError"
     assert job.http_status_code == 429
-    assert job.provider_request_id == "req_fail_42"
-    assert job.first_byte_ns is None
     assert body_json(job, "request")["messages"][1]["role"] == "user"
     assert loss.records == []
 
@@ -334,7 +324,7 @@ def test_sync_hooks_match_async_hooks(loss: FakeLoss) -> None:
     first, second, third, fourth = sink.jobs
     assert first.request == second.request and first.response == second.response
     assert third.request == fourth.request
-    assert third.response_state == fourth.response_state == "transport_error"
+    assert third.response_state == fourth.response_state == "error"
     assert recorder.stats()["submitted"] == 4
 
 
@@ -344,26 +334,38 @@ def test_sync_hooks_match_async_hooks(loss: FakeLoss) -> None:
 def test_consecutive_calls_consume_consecutive_sequences(loss: FakeLoss) -> None:
     sink = FakeSink()
     recorder = FabricLiteLLMRecorder(sink=sink)
-    before = recorder.allocator.high_water()
-    recorder.allocator.close_run("run-travel-42")
+    epoch, before = recorder.allocator.last_sequence()
     run_hook(recorder, load_fixture("chat_tool_call_success.json"))
     run_hook(recorder, load_fixture("chat_tool_result_followup.json"))
     first, second = sink.jobs
-    assert first.ticket.source_sequence == before + 1
-    assert second.ticket.source_sequence == before + 2
-    assert (first.ticket.run_sequence, second.ticket.run_sequence) == (0, 1)
+    assert (first.source_epoch, first.source_sequence) == (epoch, before + 1)
+    assert (second.source_epoch, second.source_sequence) == (epoch, before + 2)
+    assert first.run_id == second.run_id == "run-travel-42"
     assert first.exchange_id != second.exchange_id
-    assert recorder.allocator.run_high_water("run-travel-42") == 1
 
 
-def test_traceparent_only_gives_trace_basis(loss: FakeLoss) -> None:
+def test_recorders_share_the_process_gateway_source(loss: FakeLoss) -> None:
+    one, two = FabricLiteLLMRecorder(sink=FakeSink()), FabricLiteLLMRecorder(sink=FakeSink())
+    assert one.allocator is two.allocator
+
+
+def test_traceparent_only_gives_trace_run(loss: FakeLoss) -> None:
     sink = FakeSink()
     fixture = load_fixture("chat_tool_call_success.json")
     fixture["kwargs"]["litellm_params"]["metadata"]["headers"].pop("x-fabric-run-id")
     run_hook(FabricLiteLLMRecorder(sink=sink), fixture)
-    ticket = sink.jobs[0].ticket
-    assert ticket.run_id == f"trace:{TRACE_ID_HEX}"
-    assert ticket.run_id_basis == "trace"
+    assert sink.jobs[0].run_id == f"trace:{TRACE_ID_HEX}"
+
+
+def test_run_scope_applies_without_explicit_run_id(loss: FakeLoss) -> None:
+    from fabric._sequence import run_scope  # noqa: PLC0415
+
+    sink = FakeSink()
+    fixture = load_fixture("chat_tool_call_success.json")
+    fixture["kwargs"]["litellm_params"]["metadata"]["headers"].pop("x-fabric-run-id")
+    with run_scope("run-scoped-1"):
+        run_hook(FabricLiteLLMRecorder(sink=sink), fixture)
+    assert sink.jobs[0].run_id == "run-scoped-1"
 
 
 def test_ambient_span_context_is_parent_when_no_header(loss: FakeLoss) -> None:
@@ -378,8 +380,7 @@ def test_ambient_span_context_is_parent_when_no_header(loss: FakeLoss) -> None:
         run_hook(FabricLiteLLMRecorder(sink=sink), fixture)
         expected = span.get_span_context()
     job = sink.jobs[0]
-    assert job.client_traceparent is None
-    assert job.ticket.run_id == f"trace:{expected.trace_id:032x}"
+    assert job.run_id == f"trace:{expected.trace_id:032x}"
     assert job.parent_context is not None
     assert trace.get_current_span(job.parent_context).get_span_context() == expected
 
@@ -391,11 +392,9 @@ def test_no_hints_fall_back_to_source_run(loss: FakeLoss) -> None:
     recorder = FabricLiteLLMRecorder(sink=sink)
     run_hook(recorder, fixture)
     job = sink.jobs[0]
-    identity = recorder.allocator.identity
-    assert job.ticket.run_id_basis == "source"
-    assert job.ticket.run_id == f"source:{identity.source_id}:{identity.source_epoch}"
+    allocator = recorder.allocator
+    assert job.run_id == f"source:{allocator.source_id}:{allocator.epoch}"
     assert job.parent_context is None
-    assert job.client_traceparent is None
     assert job.provider_name == "openai"  # from standard_logging_object
 
 
@@ -406,9 +405,8 @@ def test_invalid_header_run_id_is_encoded_not_dropped(loss: FakeLoss) -> None:
         "run with spaces/é"
     )
     run_hook(FabricLiteLLMRecorder(sink=sink), fixture)
-    run_id = sink.jobs[0].ticket.run_id
+    run_id = sink.jobs[0].run_id
     assert run_id.startswith("h-") and len(run_id) == 42
-    assert sink.jobs[0].ticket.run_id_basis == "explicit"
 
 
 # ----------------------------------------------------------- failure isolation
@@ -420,10 +418,10 @@ def test_unknown_call_type_is_skipped_without_sequence(loss: FakeLoss) -> None:
     fixture = load_fixture("chat_tool_call_success.json")
     fixture["kwargs"]["call_type"] = "image_generation"
     fixture["kwargs"]["standard_logging_object"]["call_type"] = "image_generation"
-    before = recorder.allocator.high_water()
+    before = recorder.allocator.last_sequence()
     run_hook(recorder, fixture)
     assert sink.jobs == []
-    assert recorder.allocator.high_water() == before
+    assert recorder.allocator.last_sequence() == before
     assert recorder.stats()["skipped"] == 1
     assert loss.records == []
 
@@ -485,18 +483,20 @@ def test_unserializable_response_falls_back_then_to_none(loss: FakeLoss) -> None
     assert job.response_state == "complete"
 
 
-def test_sink_exception_records_internal_error_with_ticket(loss: FakeLoss) -> None:
+def test_sink_exception_records_internal_error_for_its_sequence(loss: FakeLoss) -> None:
     sink = FakeSink(raise_on_submit=True)
     recorder = FabricLiteLLMRecorder(sink=sink)
     run_hook(recorder, load_fixture("chat_tool_call_success.json"))
     assert recorder.stats()["internal_errors"] == 1
-    (record,) = loss.records
-    assert record["reason"] == "internal_error"
-    assert record["allocator"] is recorder.allocator
-    (item,) = record["affected"]
-    assert item.source_sequence == recorder.allocator.high_water()
-    assert item.run_id == "run-travel-42"
-    assert item.exchange_id is not None
+    epoch, last = recorder.allocator.last_sequence()
+    assert loss.records == [
+        {
+            "source_id": recorder.allocator.source_id,
+            "epoch": epoch,
+            "reason": "internal_error",
+            "sequence": last,
+        }
+    ]
 
 
 def test_mapping_exception_records_internal_error(
@@ -512,23 +512,22 @@ def test_mapping_exception_records_internal_error(
     assert sink.jobs == []
     (record,) = loss.records
     assert record["reason"] == "internal_error"
-    assert len(record["affected"]) == 1
+    assert record["sequence"] == recorder.allocator.last_sequence()[1]
 
 
-def test_failure_before_ticket_records_unattributed_loss(
+def test_failure_before_allocation_consumes_no_sequence(
     loss: FakeLoss, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom(*_: Any, **__: Any) -> Any:
-        raise RuntimeError("header bug")
+        raise RuntimeError("call type bug")
 
-    monkeypatch.setattr(_payload, "extract_headers", boom)
+    monkeypatch.setattr(_payload, "call_type_of", boom)
     recorder = FabricLiteLLMRecorder(sink=FakeSink())
-    before = recorder.allocator.high_water()
+    before = recorder.allocator.last_sequence()
     run_hook(recorder, load_fixture("chat_tool_call_success.json"))
-    assert recorder.allocator.high_water() == before
-    (record,) = loss.records
-    assert record["reason"] == "internal_error"
-    assert record["affected"] == ()
+    assert recorder.allocator.last_sequence() == before
+    assert loss.records == []  # no sequence was allocated, so there is no gap
+    assert recorder.stats()["internal_errors"] == 1
 
 
 def test_loss_emitter_failure_is_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -561,10 +560,8 @@ def test_oversized_body_is_marked_truncated_for_the_sink(loss: FakeLoss) -> None
     assert job.request.captured_byte_length <= 256
     assert job.request.observed_byte_length > 256
     assert job.response is not None and job.response.truncated is True
-    # The sink records the one buffer_overflow loss per job; the recorder
-    # must not double count it.
+    # Truncation is carried on the exchange span, never as a loss.
     assert loss.records == []
-    assert job.loss_record_ids == ()
     assert recorder.stats()["truncated"] == 2
 
 
@@ -575,31 +572,61 @@ def test_closed_recorder_skips(loss: FakeLoss) -> None:
     assert sink.closed is False  # caller-supplied sink is not ours to close
     run_hook(recorder, load_fixture("chat_tool_call_success.json"))
     assert sink.jobs == []
+    assert loss.flushes == 1  # close emits pending losses and the source heartbeat
+
+
+def test_close_racing_a_capture_never_builds_an_unowned_pipeline(loss: FakeLoss) -> None:
+    recorder = FabricLiteLLMRecorder()
+    recorder._fabric_closed = True  # closed after the hook passed its closed check
+    assert recorder._fabric_get_sink() is None
+    recorder._fabric_closed = False
+    real = recorder._fabric_get_sink
+    calls: list[int] = []
+
+    def closing() -> Any:
+        calls.append(1)
+        recorder._fabric_closed = True
+        return real()
+
+    recorder._fabric_get_sink = closing  # type: ignore[method-assign]
+    run_hook(recorder, load_fixture("chat_tool_call_success.json"))
+    assert calls == [1]
+    assert recorder._fabric_sink is None
+    epoch, last = recorder.allocator.last_sequence()
+    assert [(r["reason"], r["epoch"], r["sequence"]) for r in loss.records] == [
+        ("shutdown", epoch, last)
+    ]
+    assert recorder.stats()["dropped"] == 1
+    assert recorder._fabric_budget.used == 0
+
+
+def test_tracer_provider_routes_loss_and_heartbeat_spans(loss: FakeLoss) -> None:
+    provider = TracerProvider()
+    FabricLiteLLMRecorder(sink=FakeSink(), tracer_provider=provider)
+    assert loss.providers == [provider]
 
 
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"endpoint_id": "LiteLLM"},
-        {"endpoint_id": ""},
         {"max_body_bytes": 0},
         {"max_body_bytes": 67_108_865},
         {"queue_max_items": 0},
         {"queue_max_items": 65_537},
+        {"endpoint_id": "litellm"},  # removed: the gateway has no endpoint id
     ],
 )
 def test_constructor_rejects_bad_config(kwargs: dict[str, Any]) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, TypeError)):
         FabricLiteLLMRecorder(sink=FakeSink(), **kwargs)
 
 
-def test_custom_endpoint_id_and_unknown_provider(loss: FakeLoss) -> None:
+def test_unknown_provider_falls_back_to_litellm(loss: FakeLoss) -> None:
     sink = FakeSink()
     fixture = load_fixture("chat_tool_call_success.json")
     fixture["kwargs"]["litellm_params"]["custom_llm_provider"] = "Bad Provider!"
     fixture["kwargs"]["standard_logging_object"]["custom_llm_provider"] = None
-    run_hook(FabricLiteLLMRecorder(sink=sink, endpoint_id="gw-eu.1"), fixture)
-    assert sink.jobs[0].endpoint_id == "gw-eu.1"
+    run_hook(FabricLiteLLMRecorder(sink=sink), fixture)
     assert sink.jobs[0].provider_name == "litellm"
 
 
@@ -651,7 +678,7 @@ def test_build_callback_subclasses_custom_logger(
     run_hook(callback, load_fixture("chat_tool_call_success.json"))
     run_hook(callback, load_fixture("chat_failure_rate_limit.json"))
     assert calls == ["init"]  # CustomLogger's no-op hooks never shadow ours
-    assert [job.response_state for job in sink.jobs] == ["complete", "transport_error"]
+    assert [job.response_state for job in sink.jobs] == ["complete", "error"]
     assert type(build_callback(sink=sink)) is type(callback)  # class is cached
 
 
@@ -747,7 +774,7 @@ def test_store_from_env_rejects(env: dict[str, str]) -> None:
         gw.store_from_env(env)
 
 
-def test_owned_pipeline_is_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_owned_pipeline_is_closed(loss: FakeLoss) -> None:
     recorder = FabricLiteLLMRecorder()
     sink = FakeSink()
     recorder._fabric_sink = sink  # simulate the lazily built, owned pipeline

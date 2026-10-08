@@ -3,16 +3,16 @@
   "version": "1.0.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
-    {"path": "schema/llm-exchange-v1.schema.json", "sha256": "2d9c8615df403464ff87398abb560726cea1ca97ab936e5912453933c86cc69f", "expectation": "schema", "expected_error": null},
-    {"path": "schema/loss-record-v1.schema.json", "sha256": "076b25e4335cacae43005df1ea7701387d766f8285395b8e43528b4db2d7968f", "expectation": "schema", "expected_error": null},
-    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "8affe70172c994d61ff3cc647831c5efaddf066f74b8013a07505e12d56e4446", "expectation": "schema", "expected_error": null},
-    {"path": "fixtures/valid/llm-exchange-chat-tool-result.json", "sha256": "6946c02381f5d1db7db6a54b29aaa07e409ab557aaf78a56ceb3cd2779029e45", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/loss-record-queue-full.json", "sha256": "24d177deaa63ffc1bf25886e3aab68bcbf0c26ee3ece16e8e9cf2a6c0fb0b21c", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/loss-record-run-close-watermark.json", "sha256": "383e49c5690d8c1c0dc869b3bd3420749758fe65997286ec8856cad7b3c60c1f", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/run-reconstruction-partial-loss.json", "sha256": "c898b963e1abe7a213209bfe643c173666c1cc5ac594e528241eb9b24875f98d", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/invalid/llm-exchange-gateway-claims-exact.json", "sha256": "2bd47aa958de64da37e460a216c24066379718101ec3542d8b88ec1f55bfcfbe", "expectation": "invalid", "expected_error": "capture.exchange.false_exact"},
-    {"path": "fixtures/invalid/loss-record-cumulative-mismatch.json", "sha256": "b8607188c723213b50ef37f8ebce324eb9dba388e4f4a7d00cc28972debe561e", "expectation": "invalid", "expected_error": "capture.loss.cumulative"},
-    {"path": "fixtures/invalid/run-reconstruction-false-complete.json", "sha256": "d4132ca115108d18128a2fe302315ddb79f737c4eaa0c8c1c910b5577cb475ad", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
+    {"path": "schema/llm-exchange-v1.schema.json", "sha256": "2982f2bb1d6dd8165953e16e6db6807710ee4ecc1b17f239f1926978cb1975b4", "expectation": "schema", "expected_error": null},
+    {"path": "schema/loss-record-v1.schema.json", "sha256": "21ec6b98d18947e213fde044a52046cfd14d7057143f4954d3592e6014b1fcca", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "f14bbb62d8e513db7504addf2b0698883d9bf9b6a02e677a7a98d7aaafbcad40", "expectation": "schema", "expected_error": null},
+    {"path": "fixtures/valid/llm-exchange-chat.json", "sha256": "854efb3f866944bb80e3addb58f7cae488570d859d6a6865fd9d94327d656f9a", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/loss-record-queue-full.json", "sha256": "fcfd6408ded931f15bac08d30a02782cdf7b652f28ea1668e640f0e728c0e5a1", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/loss-record-heartbeat.json", "sha256": "84fd6e912b43183b4cb9b5b69bdf18213a2310cc70bd04fe84413ee257466eb4", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/run-reconstruction-partial-loss.json", "sha256": "08861d07a671be5f20a88bf1d522a62f60f54f4e86358c7212b0c71903388c43", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/invalid/llm-exchange-stored-without-ref.json", "sha256": "5e69f4028ad26bced9759252ff094e2435a09c8eb6b3097712d65850c01347aa", "expectation": "invalid", "expected_error": "capture.exchange.store_status"},
+    {"path": "fixtures/invalid/loss-record-bad-range.json", "sha256": "4f67411fc2699cf54ef72dfceb69b8049878da703c3a49d0e4a55c5944935639", "expectation": "invalid", "expected_error": "capture.loss.range"},
+    {"path": "fixtures/invalid/run-reconstruction-false-complete.json", "sha256": "5bd882e68ffee2897c215502098aa017b75925cb721810950a1ac6c879dc75b1", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
     {"path": "fixtures/digests/stitch-v1-messages.json", "sha256": "b7b32407f52570cef9af146cde0b5427e398a2c0c41a867d54bdb7395966ab36", "expectation": "digests", "expected_error": null}
   ]
 }

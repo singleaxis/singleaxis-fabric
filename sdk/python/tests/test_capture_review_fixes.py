@@ -1,11 +1,12 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""End-to-end regressions for review findings on spec 042 Phase 1.
+"""End-to-end regressions for review findings on spec 042.
 
 Each test runs the real tee, pipeline, loss emitter and verifier and pins a
-verdict that was wrong before the fix: reused run ids, run-index eviction in
-long-lived services, host head sampling, capped OTLP tool-call id arrays and
-``--recompute-digests`` over a failed response body.
+verdict that was once wrong: reused run ids, many short trace-basis runs in a
+long-lived service, host head sampling, long tool loops (stitching now reads
+every id from the stored bytes, so there is no OTLP array cap to hide behind)
+and stitching over a response body that never reached the store.
 """
 
 from __future__ import annotations
@@ -49,13 +50,18 @@ _FAKE = wire.EndpointMatcher(
 
 
 def _install(provider: TracerProvider, store: Any = None) -> wire.WireHandle:
-    return wire.install(
+    handle = wire.install(
         store=store,
         tracer_provider=provider,
         extra_endpoints=(_FAKE,),
         patch_httpx=False,
-        store_retry_attempts=1,
     )
+    handle._tee.pipeline._backoffs = ()
+    return handle
+
+
+def _store(tmp_path: Path) -> LocalFilesystemContentStore:
+    return LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id=TENANT)
 
 
 def _client(handler: Any = _fake_model) -> httpx.Client:
@@ -68,7 +74,7 @@ def _client(handler: Any = _fake_model) -> httpx.Client:
 def test_reused_run_id_keeps_numbering_and_reconstructs_complete(tmp_path: Path) -> None:
     spans = tmp_path / "spans.jsonl"
     provider = _provider(spans)
-    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id=TENANT)
+    store = _store(tmp_path)
     handle = _install(provider, store)
     with _client() as client:
         for _ in range(2):  # e.g. a retried job under the same id
@@ -79,7 +85,7 @@ def test_reused_run_id_keeps_numbering_and_reconstructs_complete(tmp_path: Path)
     provider.shutdown()
 
     sequences = sorted(
-        row["attributes"]["fabric.run.sequence"]
+        row["attributes"]["fabric.source.sequence"]
         for row in _rows(spans)
         if row["name"] == "fabric.model_call"
     )
@@ -89,14 +95,14 @@ def test_reused_run_id_keeps_numbering_and_reconstructs_complete(tmp_path: Path)
     assert len(run["exchanges"]) == 6
 
 
-# ------------------------------------------------- run-index eviction
+# ------------------------------------------- long-lived service, many runs
 
 
-def test_long_lived_service_eviction_never_marks_finished_runs_partial(tmp_path: Path) -> None:
+def test_many_trace_basis_runs_in_one_service_are_all_complete(tmp_path: Path) -> None:
     spans = tmp_path / "spans.jsonl"
     provider = _provider(spans)
-    handle = _install(provider)
-    handle.allocator._max_runs = 1  # every request evicts the previous run
+    store = _store(tmp_path)
+    handle = _install(provider, store)
     tracer = provider.get_tracer("service")
     with _client() as client:
         for _ in range(4):  # one trace-basis run per request
@@ -106,15 +112,12 @@ def test_long_lived_service_eviction_never_marks_finished_runs_partial(tmp_path:
     handle.close()
     provider.shutdown()
 
-    document = _verify(spans, None, scope="metadata")
+    document = _verify(spans, store)
     runs = [run for run in document["runs"] if run["run_id"].startswith("trace:")]
     assert len(runs) == 4
     assert {run["verdict"] for run in runs} == {"complete_for_declared_scope"}, [
         run["gaps"] for run in runs
     ]
-    assert not any(
-        row["attributes"].get("fabric.loss.reason") == "run_index_evicted" for row in _rows(spans)
-    )
 
 
 # ------------------------------------------------------------ head sampling
@@ -123,20 +126,30 @@ def test_long_lived_service_eviction_never_marks_finished_runs_partial(tmp_path:
 def test_sampled_out_exchange_span_is_a_recorded_loss_not_counted_as_emitted(
     tmp_path: Path,
 ) -> None:
-    exporter_path = tmp_path / "spans.jsonl"
-    provider = TracerProvider(sampler=ALWAYS_OFF)  # host head sampling drops everything
-    provider.add_span_processor(SimpleSpanProcessor(JsonlSpanExporter(exporter_path)))
-    handle = _install(provider)
+    sampled_out = TracerProvider(sampler=ALWAYS_OFF)  # host head sampling drops everything
+    sampled_out.add_span_processor(SimpleSpanProcessor(JsonlSpanExporter(tmp_path / "x.jsonl")))
+    handle = _install(sampled_out)
+    losses = tmp_path / "losses.jsonl"
+    loss_provider = _provider(losses)
+    handle._tee.loss.set_tracer_provider(loss_provider)
     with _client() as client:
         client.post(MODEL_URL, json={"model": "m", "messages": []})
-    assert handle._tee.flush(10.0)
-    stats = handle.stats()
-    assert stats.spans_emitted == 0
-    assert handle._tee.pipeline.stats()["spans_unsampled"] == 1
-    identity = handle.allocator.identity
-    loss = handle._tee.loss.stats().by_source[(identity.source_id, identity.source_epoch)]
-    assert loss == {"span_dropped": 1}
+    assert handle.flush(10.0)
+    assert handle.stats().spans_emitted == 0
     handle.close()
+    loss_provider.shutdown()
+
+    dropped = [
+        row["attributes"]
+        for row in _rows(losses)
+        if row["name"] == "fabric.capture_loss"
+        and row["attributes"]["fabric.loss.reason"] == "span_dropped"
+    ]
+    assert len(dropped) == 1
+    assert dropped[0]["fabric.loss.count"] == 1
+    assert dropped[0]["fabric.loss.first_sequence"] == 0
+    assert dropped[0]["fabric.loss.last_sequence"] == 0
+    assert dropped[0]["fabric.source_id"] == handle.allocator.source_id
 
 
 def test_private_provider_always_samples(monkeypatch: Any) -> None:
@@ -146,7 +159,7 @@ def test_private_provider_always_samples(monkeypatch: Any) -> None:
         assert span.is_recording()
 
 
-# --------------------------------------------- capped tool-call id arrays
+# ------------------------------------------------------- long tool loops
 
 
 def _long_loop(*, ghost_at: int, ghost_position: str) -> Any:
@@ -207,7 +220,7 @@ def _long_loop(*, ghost_at: int, ghost_position: str) -> Any:
                 ]
                 if ghost_position == "end":
                     messages.extend(ghost)
-                else:  # rewritten into early history, outside any OTLP window
+                else:  # rewritten into early history
                     messages[3:3] = ghost
 
     return model, drive
@@ -216,14 +229,15 @@ def _long_loop(*, ghost_at: int, ghost_position: str) -> Any:
 def _capture_long_loop(tmp_path: Path, *, ghost_position: str) -> dict[str, Any]:
     spans = tmp_path / "spans.jsonl"
     provider = _provider(spans)
-    handle = _install(provider)
+    store = _store(tmp_path)
+    handle = _install(provider, store)
     model, drive = _long_loop(ghost_at=67, ghost_position=ghost_position)
     with _client(model) as client, wire.run(RUN_ID):
         drive(client)
     assert handle.flush(10.0)
     handle.close()
     provider.shutdown()
-    return _only_run(_verify(spans, None, scope="metadata"))
+    return _only_run(_verify(spans, store))
 
 
 def test_unmatched_tool_call_beyond_64_ids_is_detected(tmp_path: Path) -> None:
@@ -233,21 +247,23 @@ def test_unmatched_tool_call_beyond_64_ids_is_detected(tmp_path: Path) -> None:
     assert ("unmatched_tool_call", "consumed_not_emitted", "call_ghost") in reasons
 
 
-def test_tool_calls_hidden_by_the_otlp_cap_are_never_a_false_complete(tmp_path: Path) -> None:
+def test_tool_call_rewritten_into_early_history_is_never_a_false_complete(
+    tmp_path: Path,
+) -> None:
     run = _capture_long_loop(tmp_path, ghost_position="early")
-    assert run["verdict"] != "complete_for_declared_scope"
-    assert run["checks"]["stitching"] in ("skipped", "failed")
+    assert run["verdict"] == "partial"
+    reasons = {(g["gap_type"], g.get("reason"), g.get("tool_call_id")) for g in run["gaps"]}
+    assert ("unmatched_tool_call", "consumed_not_emitted", "call_ghost") in reasons
 
 
-# ------------------------------------- recompute over a failed response body
+# ------------------------------------- stitching over a failed response body
 
 
-def test_recompute_skips_exchanges_whose_response_body_failed(tmp_path: Path) -> None:
+def test_failed_response_body_yields_no_false_stitching_gaps(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path, store=_FailingResponses)
 
-    plain = _only_run(_verify(spans, store))
-    recomputed = _only_run(_verify(spans, store, recompute_digests=True))
+    run = _only_run(_verify(spans, store))
 
-    assert _gap_types(recomputed) == _gap_types(plain) == {"loss_record"}
-    assert "digest_mismatch" not in _gap_types(recomputed)
-    assert "unmatched_tool_call" not in _gap_types(recomputed)
+    assert run["verdict"] == "partial"
+    assert _gap_types(run) == {"missing_object"}
+    assert run["checks"]["stitching"] == "skipped"

@@ -32,16 +32,19 @@ reconstruct exit code: 0
    uses `fabric.wire.WireTransport`. (With the default `patch_httpx=True`,
    every `httpx.Client` in the process is covered, including the OpenAI and
    Anthropic SDKs.)
-3. Each model call is teed: the exact request and response bytes go to
-   `output/store/` as content-v2 objects (`model.exchange.request`,
-   `model.exchange.response`, `model.exchange.record`). The
+3. Each model call is teed: the request and response bytes, exactly as the
+   transport saw them, go to `output/store/` as content-v2 objects
+   (`model.exchange.request`, `model.exchange.response`). The
    `fabric.model_call` span written to `output/spans.jsonl` carries only ids,
-   digests, sequence numbers and refs. Leaving `fabric.wire.run(...)` emits a
-   run-close watermark (`fabric.capture_watermark`).
-4. `python -m fabric.reconstruct --spans … --store-root … --tenant …
-   --recompute-digests` reads both. It checks sequences, loss records, tail
-   proof, stored bytes and stitching, then writes
-   `output/report.json` (`fabric.run-reconstruction/v1`).
+   digests, the source sequence number and refs. No message is parsed at
+   capture time. Entering and leaving `fabric.wire.run(...)` emits heartbeat
+   run markers (`fabric.capture_heartbeat`), and closing the handle emits a
+   final heartbeat that proves the tail.
+4. `python -m fabric.reconstruct --spans … --store-root … --tenant …` reads
+   both. It checks sequences, loss records and the heartbeat tail, verifies
+   every stored body against its digest, then parses the bytes to stitch the
+   run (tool-call ids, message prefixes). It writes `output/report.json`
+   (`fabric.run-reconstruction/v1`).
 
 You can re-run the verifier yourself:
 
@@ -53,25 +56,27 @@ sdk/python/.venv/bin/python -m fabric.reconstruct \
 
 Try breaking the record and running it again. Delete a line from
 `spans.jsonl` and you get `partial` (`sequence_gap`). Flip a byte in a store
-object and you get `digest_mismatch`. Remove the `fabric.capture_watermark`
-line and you get `unverified` (`tail_unverified`).
+object and you get `digest_mismatch`. Remove the `fabric.capture_heartbeat`
+lines and you get `unverified` (`tail_unverified`).
 
 ## What the verdict means
 
 `complete_for_declared_scope` is an **integrity** statement about the
 record. Every model call made through the instrumented httpx transport in
 this process was captured, stored, unaltered and stitched without gaps,
-through the declared watermark. It does not judge the agent. It also does
+through the last heartbeat. It does not judge the agent. It also does
 not cover calls made through other clients (`requests`, `aiohttp`, gRPC),
 other processes or unlisted endpoints.
 
 ## Passivity
 
 The tee never changes the request or the response, never injects headers
-and never raises into the agent. Hashing, parsing, storage and span export
+and never raises into the agent. Hashing, storage and span export
 run on a background worker with a bounded queue. If capture fails (queue
-full, buffer cap, store outage, exporter failure), the agent proceeds and a
-`fabric.capture_loss` record makes the gap visible.
+full, exporter failure, shutdown), the agent proceeds and a
+`fabric.capture_loss` record makes the gap visible. A body over the buffer
+cap or a store outage is flagged on the exchange span itself
+(`fabric.wire.truncated`, `fabric.wire.store_status`).
 
 ## Privacy
 

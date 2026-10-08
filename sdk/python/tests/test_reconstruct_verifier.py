@@ -1,25 +1,28 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Run reconstruction verifier (spec 042 §10) over synthetic captures.
+"""Run reconstruction verifier (spec 042 §9) over synthetic captures.
 
-A small builder plays the role of the wire tee: it writes exact request,
-response and ``fabric.llm-exchange/v1`` record objects into a real
-``LocalFilesystemContentStore`` and emits the matching OTLP-projected spans
-as sink JSONL rows. Each scenario then damages the capture in one specific
-way and asserts the gap and verdict the spec requires. Every report is
-validated against the run-reconstruction schema *and* the contract
-validator's semantic rules.
+A small builder plays the role of the capture worker: it writes the exact
+request and response bytes (JSON, SSE, gzip) as content-v2 objects into a
+real ``LocalFilesystemContentStore`` and emits the matching exchange, loss
+and heartbeat spans as sink JSONL rows — with no message hashes or tool-call
+ids, exactly like capture. Every stitching fact is therefore derived from
+the stored bytes. Each scenario damages the capture in one specific way and
+asserts the gap and verdict the spec requires. Every report is validated
+against the run-reconstruction schema *and* the contract validator's
+semantic rules.
 """
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import importlib.util
 import json
 import sys
 import types
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -36,8 +39,10 @@ TENANT = "tenant-a"
 SOURCE = "wire-3f9a1c2b7d4e5f60"
 EPOCH = 1791331200000000000
 TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
-GENERATED_AT = datetime(2026, 10, 7, 9, 10, tzinfo=UTC)
+RUN = f"trace:{TRACE_ID}"
+GENERATED_AT = datetime(2026, 10, 8, 9, 10, tzinfo=UTC)
 BASE_NS = 1_791_331_200_000_000_000
+MODEL = "gpt-4o-2024-08-06"
 
 
 # --------------------------------------------------------------------------
@@ -68,19 +73,8 @@ def validate(document: Mapping[str, Any]) -> None:
     VALIDATOR.validate_document(document, SCHEMAS)
 
 
-def canonical(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
-        "utf-8", "surrogatepass"
-    )
-
-
-def sha(data: bytes) -> str:
-    return "sha256:" + hashlib.sha256(data).hexdigest()
-
-
-def message_digest(message: Mapping[str, Any]) -> str:
-    # Synthetic messages are already in fabric.stitch/v1 projected form.
-    return sha(canonical(message))
+def sha_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def stamp(ns: int) -> str:
@@ -88,6 +82,11 @@ def stamp(ns: int) -> str:
     return datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S") + (
         f".{nanos:09d}Z"
     )
+
+
+def sse(*events: Any, done: bool = True) -> bytes:
+    body = b"".join(f"data: {json.dumps(event)}\n\n".encode() for event in events)
+    return body + (b"data: [DONE]\n\n" if done else b"")
 
 
 # --------------------------------------------------------------------------
@@ -99,14 +98,14 @@ def stamp(ns: int) -> str:
 class Exchange:
     exchange_id: str
     source_sequence: int
-    run_sequence: int
     run_id: str
-    objects: dict[str, str] = field(default_factory=dict)
-    span: dict[str, Any] = field(default_factory=dict)
+    span: dict[str, Any]
+    request_id: str | None
+    response_id: str | None
 
 
 class Capture:
-    """Plays the wire tee: store objects + exchange/loss/watermark spans."""
+    """Plays the capture worker: store byte objects + exchange/loss/heartbeat spans."""
 
     def __init__(
         self,
@@ -128,424 +127,214 @@ class Capture:
         self.epoch = epoch
         self.rows: list[dict[str, Any]] = []
         self.sequence = 0
-        self.run_sequences: dict[str, int] = {}
-        self.cumulative: dict[str, int] = {}
         self.exchanges: list[Exchange] = []
-
-    # -- allocation ------------------------------------------------------
-
-    def _next(self) -> int:
-        value = self.sequence
-        self.sequence += 1
-        return value
-
-    def _next_run(self, run_id: str) -> int:
-        value = self.run_sequences.get(run_id, 0)
-        self.run_sequences[run_id] = value + 1
-        return value
 
     def _ns(self, sequence: int) -> int:
         return BASE_NS + sequence * 1_000_000_000
 
-    # -- store -------------------------------------------------------------
+    def skip(self) -> int:
+        """Allocate a sequence whose span never arrives (silent loss)."""
 
-    def _descriptor(
-        self, object_id: str, role: str, data: bytes, exchange: Exchange, **extra: Any
-    ) -> dict[str, Any]:
+        value = self.sequence
+        self.sequence += 1
+        return value
+
+    def _put(
+        self,
+        exchange_id: str,
+        sequence: int,
+        run_id: str,
+        role: str,
+        data: bytes,
+        *,
+        media_type: str,
+        content_encoding: str,
+        truncated: bool,
+    ) -> str:
         assert self.store is not None
+        object_id = f"{exchange_id}-{role.rsplit('.', 1)[-1]}"
         descriptor: dict[str, Any] = {
             "schema_version": "fabric.content-object/v2",
             "object_id": object_id,
             "tenant_id": TENANT,
             "role": role,
-            "media_type": "application/json",
+            "media_type": media_type,
             "encoding": "binary",
-            "representation": "exact",
+            "content_encoding": content_encoding,
+            "representation": "truncated" if truncated else "exact",
+            "transformations": ["truncate"] if truncated else [],
             "provenance": "protocol",
             "boundary": "provider_bound",
             "source_id": self.source_id,
             "source_epoch": self.epoch,
-            "source_sequence": exchange.source_sequence,
-            "captured_at": stamp(self._ns(exchange.source_sequence)),
-            "status": "stored",
-            "run_id": exchange.run_id,
-            "operation_id": exchange.exchange_id,
-            "source_byte_length": len(data),
-            "source_sha256": sha(data),
+            "source_sequence": sequence,
+            "captured_at": stamp(self._ns(sequence)),
+            "status": "truncated" if truncated else "stored",
+            "run_id": run_id,
+            "operation_id": exchange_id,
             "stored_byte_length": len(data),
-            "stored_sha256": sha(data),
+            "stored_sha256": "sha256:" + sha_hex(data),
             "ref": self.store.evidence_ref_for(object_id),
         }
-        descriptor.update(extra)
-        return descriptor
-
-    def _put(self, descriptor: Mapping[str, Any], data: bytes) -> None:
-        assert self.store is not None
-        self.store.put_bytes_object(descriptor, data)
-
-    def _body(self, object_id: str, role: str, data: bytes) -> dict[str, Any]:
-        assert self.store is not None
-        return {
-            "object_id": object_id,
-            "role": role,
-            "media_type": "application/json",
-            "content_encoding": "identity",
-            "representation": "exact",
-            "status": "stored",
-            "source_byte_length": len(data),
-            "source_sha256": sha(data),
-            "stored_byte_length": len(data),
-            "stored_sha256": sha(data),
-            "ref": self.store.evidence_ref_for(object_id),
-        }
-
-    # -- exchanges ---------------------------------------------------------
-
-    def exchange(  # noqa: PLR0912, PLR0915 - mirrors one wire exchange end to end
-        self,
-        messages: Sequence[Mapping[str, Any]],
-        output: Sequence[Mapping[str, Any]],
-        *,
-        run_id: str = "run-react-1",
-        basis: str = "explicit",
-        api: str = "openai.chat_completions",
-        response_id: str | None = None,
-        previous_response_id: str | None = None,
-        emit_span: bool = True,
-        store_objects: bool = True,
-        store_status: str = "stored",
-        consumed: Sequence[str] | None = None,
-        emitted: Sequence[str] | None = None,
-    ) -> Exchange:
-        sequence = self._next()
-        exchange = Exchange(
-            exchange_id=f"ex-{self.id_prefix}{sequence}",
-            source_sequence=sequence,
-            run_sequence=self._next_run(run_id),
-            run_id=run_id,
-        )
-        self.exchanges.append(exchange)
-        if consumed is None:
-            consumed = _consumed(api, messages)
-        if emitted is None:
-            emitted = _emitted(api, output)
-        request_doc: dict[str, Any] = {"model": "gpt-4o"}
-        if api == "openai.responses":
-            request_doc["input"] = list(messages)
-            if previous_response_id:
-                request_doc["previous_response_id"] = previous_response_id
-            response_doc: dict[str, Any] = {"id": response_id, "output": list(output)}
+        if truncated:
+            descriptor["source_byte_length"] = len(data) * 2
         else:
-            request_doc["messages"] = list(messages)
-            response_doc = {
-                "id": response_id,
-                "choices": [
-                    {"index": index, "message": message, "finish_reason": "stop"}
-                    for index, message in enumerate(output)
-                ],
-            }
-        request_bytes = json.dumps(request_doc).encode()
-        response_bytes = json.dumps(response_doc).encode()
-        input_digests = [message_digest(message) for message in messages]
-        output_digests = [message_digest(message) for message in output]
-        storing = self.store is not None and store_objects and store_status != "disabled"
-        ids = {
-            "request": f"{exchange.exchange_id}-req",
-            "response": f"{exchange.exchange_id}-rsp",
-            "record": f"{exchange.exchange_id}-rec",
-        }
-        span_id = f"{0xA000 + sequence:016x}"
-        record_bytes = b""
-        if storing:
-            exchange.objects = ids
-            self._put(
-                self._descriptor(ids["request"], "model.exchange.request", request_bytes, exchange),
-                request_bytes,
+            descriptor["source_byte_length"] = len(data)
+            descriptor["source_sha256"] = "sha256:" + sha_hex(data)
+        self.store.put_bytes_object(descriptor, data)
+        return object_id
+
+    def exchange(
+        self,
+        request: Any,
+        response: Any = None,
+        *,
+        api: str = "openai.chat_completions",
+        run_id: str = RUN,
+        response_media: str | None = None,
+        response_encoding: str = "identity",
+        state: str = "complete",
+        truncated: str | None = None,
+        store_status: str | None = None,
+        http_status: int | None = 200,
+        fidelity: str = "exact_wire",
+    ) -> Exchange:
+        """Capture one exchange. Dict bodies are JSON-encoded; bytes are stored as-is."""
+
+        sequence = self.skip()
+        exchange_id = f"{self.id_prefix}ex-{sequence}"
+        request_bytes = request if isinstance(request, bytes) else json.dumps(request).encode()
+        response_bytes: bytes | None
+        if response is None:
+            response_bytes = None
+        elif isinstance(response, bytes):
+            response_bytes = response
+        else:
+            response_bytes = json.dumps(response).encode()
+        if response_media is None:
+            response_media = (
+                "text/event-stream"
+                if response_bytes is not None and response_bytes.startswith(b"data:")
+                else "application/json"
             )
-            self._put(
-                self._descriptor(
-                    ids["response"],
-                    "model.exchange.response",
-                    response_bytes,
-                    exchange,
-                    links=[{"relation": "result_of", "object_id": ids["request"]}],
-                ),
-                response_bytes,
-            )
-            record = self._record(
-                exchange,
-                api=api,
-                basis=basis,
-                span_id=span_id,
-                request_bytes=request_bytes,
-                response_bytes=response_bytes,
-                ids=ids,
-                input_digests=input_digests,
-                output_digests=output_digests,
-                messages=messages,
-                output=output,
-                consumed=consumed,
-                emitted=emitted,
-                response_id=response_id,
-                previous_response_id=previous_response_id,
-            )
-            validate(record)
-            record_bytes = canonical(record)
-            self._put(
-                self._descriptor(
-                    ids["record"],
-                    "model.exchange.record",
-                    record_bytes,
-                    exchange,
-                    media_type="application/vnd.singleaxis.fabric.llm-exchange+json",
-                    representation="canonicalized",
-                    provenance="inferred",
-                    links=[
-                        {"relation": "derived_from", "object_id": ids["request"]},
-                        {"relation": "derived_from", "object_id": ids["response"]},
-                    ],
-                ),
-                record_bytes,
-            )
-        attributes: dict[str, Any] = {
+        if response_bytes is not None and response_encoding == "gzip":
+            response_bytes = gzip.compress(response_bytes)
+        if truncated == "response" and response_bytes is not None:
+            response_bytes = response_bytes[: len(response_bytes) // 2]
+        if truncated == "request":
+            request_bytes = request_bytes[: len(request_bytes) // 2]
+        if store_status is None:
+            store_status = "stored" if self.store is not None else "disabled"
+        attrs: dict[str, Any] = {
+            "fabric.wire.exchange_id": exchange_id,
+            "fabric.run.id": run_id,
+            "fabric.source_id": self.source_id,
+            "fabric.source.epoch": self.epoch,
+            "fabric.source.sequence": sequence,
+            "fabric.wire.fidelity": fidelity,
+            "fabric.wire.api": api,
+            "fabric.wire.request_sha256": sha_hex(request_bytes),
+            "fabric.wire.response_state": state,
+            "fabric.wire.truncated": truncated is not None,
+            "fabric.wire.store_status": store_status,
             "gen_ai.operation.name": "chat",
             "gen_ai.provider.name": "openai",
-            "gen_ai.request.model": "gpt-4o",
-            "fabric.source_id": self.source_id,
-            "fabric.source.epoch": self.epoch,
-            "fabric.source.sequence": sequence,
-            "fabric.source.component": "wire",
-            "fabric.run.id": run_id,
-            "fabric.run.id_basis": basis,
-            "fabric.run.sequence": exchange.run_sequence,
-            "fabric.wire.exchange_id": exchange.exchange_id,
-            "fabric.wire.fidelity": "exact_wire",
-            "fabric.wire.api": api,
-            "fabric.wire.endpoint_id": "openai",
-            "fabric.wire.request_body_sha256": sha(request_bytes)[7:],
-            "fabric.wire.response_body_sha256": sha(response_bytes)[7:],
-            "fabric.wire.request_body_bytes": len(request_bytes),
-            "fabric.wire.response_body_bytes": len(response_bytes),
-            "fabric.wire.input.message_count": len(messages),
-            "fabric.wire.output.message_count": len(output),
-            "fabric.wire.input.message_hashes_offset": max(0, len(messages) - 64),
-            "fabric.wire.response_state": "complete",
-            "fabric.wire.truncated": False,
-            "fabric.wire.parse_status": "ok",
-            "fabric.wire.store_status": store_status if self.store is not None else "disabled",
+            "http.request.method": "POST",
         }
-        if input_digests:
-            attributes["fabric.wire.input.message_hashes"] = [d[7:] for d in input_digests[-64:]]
-        if output_digests:
-            attributes["fabric.wire.output.message_hashes"] = [d[7:] for d in output_digests[:64]]
-        if consumed:
-            attributes["fabric.wire.input.tool_call_ids"] = list(consumed)
-        if emitted:
-            attributes["fabric.wire.output.tool_call_ids"] = list(emitted)
-        if response_id:
-            attributes["gen_ai.response.id"] = response_id
-        if previous_response_id:
-            attributes["gen_ai.request.previous_response.id"] = previous_response_id
-        if storing and self.store is not None:
-            store = self.store
-            attributes["fabric.wire.exchange_ref"] = store.evidence_ref_for(ids["record"])
-            attributes["fabric.wire.exchange_sha256"] = sha(record_bytes)[7:]
-            attributes["fabric.content.request_ref"] = store.evidence_ref_for(ids["request"])
-            attributes["fabric.content.result_ref"] = store.evidence_ref_for(ids["response"])
-        exchange.span = {
+        if http_status is not None:
+            attrs["http.response.status_code"] = http_status
+        if response_bytes is not None:
+            attrs["fabric.wire.response_sha256"] = sha_hex(response_bytes)
+        request_id = response_id = None
+        if self.store is not None and store_status == "stored":
+            request_id = self._put(
+                exchange_id,
+                sequence,
+                run_id,
+                "model.exchange.request",
+                request_bytes,
+                media_type="application/json",
+                content_encoding="identity",
+                truncated=truncated == "request",
+            )
+            attrs["fabric.content.request_ref"] = self.store.evidence_ref_for(request_id)
+            if response_bytes is not None:
+                response_id = self._put(
+                    exchange_id,
+                    sequence,
+                    run_id,
+                    "model.exchange.response",
+                    response_bytes,
+                    media_type=response_media,
+                    content_encoding=response_encoding,
+                    truncated=truncated == "response",
+                )
+                attrs["fabric.content.result_ref"] = self.store.evidence_ref_for(response_id)
+        start = self._ns(sequence)
+        span = {
             "kind": "span",
             "trace_id": TRACE_ID,
-            "span_id": span_id,
-            "parent_span_id": "a3ce929d0e0e4736",
+            "span_id": f"{0x00F067AA0BA90200 + sequence + 0x1000 * len(self.id_prefix):016x}",
+            "parent_span_id": None,
             "name": "fabric.model_call",
-            "start_ns": self._ns(sequence),
-            "end_ns": self._ns(sequence) + 500_000_000,
+            "start_ns": start,
+            "end_ns": start + 500_000_000,
+            "attributes": attrs,
             "resource": {"service.name": "react-agent"},
-            "attributes": attributes,
-            "events": [],
         }
-        if emit_span:
-            self.rows.append(exchange.span)
+        self.rows.append(span)
+        exchange = Exchange(exchange_id, sequence, run_id, span, request_id, response_id)
+        self.exchanges.append(exchange)
         return exchange
 
-    def _record(
-        self,
-        exchange: Exchange,
-        *,
-        api: str,
-        basis: str,
-        span_id: str,
-        request_bytes: bytes,
-        response_bytes: bytes,
-        ids: Mapping[str, str],
-        input_digests: Sequence[str],
-        output_digests: Sequence[str],
-        messages: Sequence[Mapping[str, Any]],
-        output: Sequence[Mapping[str, Any]],
-        consumed: Sequence[str],
-        emitted: Sequence[str],
-        response_id: str | None,
-        previous_response_id: str | None,
-    ) -> dict[str, Any]:
-        request: dict[str, Any] = {
-            "body": self._body(ids["request"], "model.exchange.request", request_bytes),
-            "model": "gpt-4o",
-            "stream": False,
-            "message_count": len(input_digests),
-            "message_digests": list(input_digests),
-            "message_roles": [str(m.get("role") or m.get("type")) for m in messages],
-            "tool_call_ids_consumed": list(dict.fromkeys(consumed)),
-            "parse_status": "ok",
-        }
-        if previous_response_id:
-            request["previous_response_id"] = previous_response_id
-        response: dict[str, Any] = {
-            "state": "complete",
-            "body": self._body(ids["response"], "model.exchange.response", response_bytes),
-            "model": "gpt-4o",
-            "finish_reasons": ["stop"],
-            "message_count": len(output_digests),
-            "message_digests": list(output_digests),
-            "message_roles": [str(m.get("role") or m.get("type")) for m in output],
-            "tool_calls": [{"id": call_id, "name": "get_weather"} for call_id in emitted],
-            "parse_status": "ok",
-        }
-        if response_id:
-            response["response_id"] = response_id
-        return {
-            "schema_version": "fabric.llm-exchange/v1",
-            "exchange_id": exchange.exchange_id,
-            "tenant_id": TENANT,
-            "fidelity": "exact_wire",
-            "source": {
-                "source_id": self.source_id,
-                "source_epoch": self.epoch,
-                "source_sequence": exchange.source_sequence,
-                "component": "wire",
-            },
-            "run": {
-                "run_id": exchange.run_id,
-                "basis": basis,
-                "run_sequence": exchange.run_sequence,
-            },
-            "trace": {"trace_id": TRACE_ID, "span_id": span_id},
-            "endpoint": {
-                "endpoint_id": "openai",
-                "api": api,
-                "provider_name": "openai",
-                "http_method": "POST",
-                "http_status_code": 200,
-            },
-            "timing": {
-                "started_at": stamp(self._ns(exchange.source_sequence)),
-                "ended_at": stamp(self._ns(exchange.source_sequence) + 500_000_000),
-            },
-            "request": request,
-            "response": response,
-            "capture": {
-                "digest_projection": "fabric.stitch/v1",
-                "truncated": False,
-                "store_status": "stored",
-                "loss_record_ids": [],
-            },
-        }
-
-    # -- loss and watermarks ----------------------------------------------
-
-    def loss(
-        self,
-        reason: str,
-        affected: Sequence[Exchange | int],
-        *,
-        count: int | None = None,
-        record_id: str | None = None,
-        attributed: bool = True,
-    ) -> str:
-        sequence = self._next()
-        record_id = record_id or f"loss-{sequence}"
-        lost = count if count is not None else max(1, len(affected))
-        self.cumulative[reason] = self.cumulative.get(reason, 0) + lost
-        sequences, run_ids, run_sequences = [], [], []
-        for item in affected:
-            if isinstance(item, Exchange):
-                sequences.append(item.source_sequence)
-                run_ids.append(item.run_id if attributed else "")
-                run_sequences.append(item.run_sequence if attributed else -1)
-            else:
-                sequences.append(item)
-                run_ids.append("")
-                run_sequences.append(-1)
-        attributes = self._record_attributes(sequence, record_id, "loss")
-        attributes.update(
+    def _record(self, name: str, attributes: dict[str, Any]) -> None:
+        ns = self._ns(self.sequence) + 900_000_000
+        self.rows.append(
             {
-                "fabric.loss.reason": reason,
-                "fabric.loss.count": lost,
-                "fabric.loss.affected_truncated": False,
+                "kind": "span",
+                "trace_id": "a" * 32,
+                "span_id": f"{len(self.rows) + 1:016x}",
+                "name": name,
+                "start_ns": ns,
+                "end_ns": ns,
+                "attributes": {
+                    "fabric.source_id": self.source_id,
+                    "fabric.source.epoch": self.epoch,
+                    **attributes,
+                },
+                "resource": {"service.name": "react-agent"},
             }
         )
-        if sequences:
-            attributes["fabric.loss.affected_sequences"] = sequences
-            attributes["fabric.loss.affected_run_ids"] = run_ids
-            attributes["fabric.loss.affected_run_sequences"] = run_sequences
-        self.rows.append(self._record_span(sequence, "fabric.capture_loss", attributes))
-        return record_id
 
-    def watermark(self, *, run_id: str | None = None, run_high_water: int | None = None) -> int:
-        sequence = self._next()
-        attributes = self._record_attributes(sequence, f"wm-{sequence}", "watermark")
-        attributes["fabric.loss.count"] = 0
+    def loss(
+        self, reason: str, first: int, last: int | None = None, count: int | None = None
+    ) -> None:
+        last = first if last is None else last
+        self._record(
+            "fabric.capture_loss",
+            {
+                "fabric.loss.reason": reason,
+                "fabric.loss.count": count if count is not None else last - first + 1,
+                "fabric.loss.first_sequence": first,
+                "fabric.loss.last_sequence": last,
+            },
+        )
+
+    def heartbeat(self, last: int | None = None, *, run_id: str | None = None) -> None:
+        attributes: dict[str, Any] = {
+            "fabric.heartbeat.last_sequence": self.sequence - 1 if last is None else last
+        }
         if run_id is not None:
             attributes["fabric.run.id"] = run_id
-            attributes["fabric.run.high_water_sequence"] = (
-                run_high_water
-                if run_high_water is not None
-                else self.run_sequences.get(run_id, 0) - 1
-            )
-        self.rows.append(self._record_span(sequence, "fabric.capture_watermark", attributes))
-        return sequence
-
-    def _record_attributes(self, sequence: int, record_id: str, kind: str) -> dict[str, Any]:
-        reasons = sorted(self.cumulative)
-        return {
-            "fabric.source_id": self.source_id,
-            "fabric.source.epoch": self.epoch,
-            "fabric.source.sequence": sequence,
-            "fabric.source.component": "wire",
-            "fabric.loss.record_id": record_id,
-            "fabric.loss.record_kind": kind,
-            "fabric.loss.high_water_sequence": sequence,
-            "fabric.loss.cumulative_total": sum(self.cumulative.values()),
-            "fabric.loss.cumulative_reasons": reasons,
-            "fabric.loss.cumulative_counts": [self.cumulative[r] for r in reasons],
-        }
-
-    def _record_span(self, sequence: int, name: str, attributes: dict[str, Any]) -> dict[str, Any]:
-        ns = self._ns(sequence)
-        return {
-            "kind": "span",
-            "trace_id": f"{sequence + 1:032x}",
-            "span_id": f"{0xB000 + sequence:016x}",
-            "parent_span_id": None,
-            "name": name,
-            "start_ns": ns,
-            "end_ns": ns,
-            "resource": {"service.name": "react-agent"},
-            "attributes": attributes,
-            "events": [],
-        }
-
-    # -- output -------------------------------------------------------------
-
-    def write(self, name: str = "records.jsonl") -> Path:
-        path = self.root / name
-        with path.open("w", encoding="utf-8") as stream:
-            stream.write(json.dumps({"kind": "log", "body": "ignored"}) + "\n")
-            for row in self.rows:
-                stream.write(json.dumps(row) + "\n")
-        return path
+        self._record("fabric.capture_heartbeat", attributes)
 
     def object_path(self, object_id: str) -> Path:
         return self.root / "store" / TENANT / "evidence" / object_id
+
+    def write(self, name: str = "spans.jsonl") -> Path:
+        path = self.root / name
+        path.write_text("".join(json.dumps(row) + "\n" for row in self.rows), encoding="utf-8")
+        return path
 
     def reconstruct(self, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("store", self.store)
@@ -555,100 +344,89 @@ class Capture:
         return document
 
 
-def _consumed(api: str, messages: Sequence[Mapping[str, Any]]) -> list[str]:
-    if api == "openai.responses":
-        return [m["call_id"] for m in messages if m.get("type") == "function_call_output"]
-    return [m["tool_call_id"] for m in messages if m.get("role") == "tool"]
+@pytest.fixture
+def capture(tmp_path: Path) -> Capture:
+    return Capture(tmp_path)
 
 
-def _emitted(api: str, output: Sequence[Mapping[str, Any]]) -> list[str]:
-    if api == "openai.responses":
-        return [m["call_id"] for m in output if m.get("type") == "function_call"]
-    return [call["id"] for m in output for call in m.get("tool_calls", [])]
+def only_run(document: Mapping[str, Any]) -> dict[str, Any]:
+    runs = document["runs"]
+    assert len(runs) == 1, [run["run_id"] for run in runs]
+    return dict(runs[0])
 
 
-# --------------------------------------------------------------------------
-# ReAct conversation fixtures (already in fabric.stitch/v1 projected form)
-# --------------------------------------------------------------------------
-
-SYSTEM = {"role": "system", "content": "You are a travel agent. Use tools."}
-USER = {"role": "user", "content": "Weather in Paris and Rome?"}
-
-
-def call(call_id: str, city: str) -> dict[str, Any]:
-    return {
-        "role": "assistant",
-        "tool_calls": [
-            {
-                "id": call_id,
-                "type": "function",
-                "function": {"name": "get_weather", "arguments": json.dumps({"city": city})},
-            }
-        ],
-    }
-
-
-def result(call_id: str, text: str) -> dict[str, Any]:
-    return {"role": "tool", "tool_call_id": call_id, "content": text}
-
-
-FINAL = {"role": "assistant", "content": "Paris 18C rain, Rome 24C sun."}
-
-
-def react_turns() -> list[tuple[list[dict[str, Any]], list[dict[str, Any]]]]:
-    turn0 = [SYSTEM, USER]
-    out0 = [call("call_paris", "Paris")]
-    turn1 = [*turn0, *out0, result("call_paris", "18C, rain")]
-    out1 = [call("call_rome", "Rome")]
-    turn2 = [*turn1, *out1, result("call_rome", "24C, sun")]
-    return [(turn0, out0), (turn1, out1), (turn2, [FINAL])]
-
-
-def react_run(
-    capture: Capture,
-    *,
-    close: bool = True,
-    skip: Callable[[int], bool] = lambda index: False,
-    **kwargs: Any,
-) -> list[Exchange]:
-    exchanges = []
-    for index, (messages, output) in enumerate(react_turns()):
-        exchanges.append(
-            capture.exchange(
-                messages,
-                output,
-                response_id=f"chatcmpl-{index}",
-                emit_span=not skip(index),
-                store_objects=not skip(index),
-                **kwargs,
-            )
-        )
-    if close:
-        capture.watermark(run_id=kwargs.get("run_id", "run-react-1"))
-    return exchanges
+def run_by_id(document: Mapping[str, Any], run_id: str) -> dict[str, Any]:
+    return next(dict(run) for run in document["runs"] if run["run_id"] == run_id)
 
 
 def gap_types(run: Mapping[str, Any]) -> list[str]:
     return [gap["gap_type"] for gap in run["gaps"]]
 
 
-def gaps_of(run: Mapping[str, Any], gap_type: str) -> list[dict[str, Any]]:
-    return [gap for gap in run["gaps"] if gap["gap_type"] == gap_type]
+# --------------------------------------------------------------------------
+# Conversations (real wire shapes)
+# --------------------------------------------------------------------------
+
+SYSTEM = {"role": "system", "content": "You are a weather agent."}
+USER = {"role": "user", "content": "Weather in Paris and Rome?"}
+TOOLS = [{"type": "function", "function": {"name": "get_weather", "parameters": {}}}]
 
 
-def only_run(document: Mapping[str, Any]) -> dict[str, Any]:
-    assert len(document["runs"]) == 1, [run["run_id"] for run in document["runs"]]
-    run: dict[str, Any] = document["runs"][0]
-    return run
+def tool_call(call_id: str, city: str) -> dict[str, Any]:
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": json.dumps({"city": city})},
+    }
 
 
-@pytest.fixture
-def capture(tmp_path: Path) -> Iterator[Capture]:
-    yield Capture(tmp_path)
+def assistant_calls(call_id: str, city: str) -> dict[str, Any]:
+    return {"role": "assistant", "content": None, "tool_calls": [tool_call(call_id, city)]}
+
+
+def tool_result(call_id: str, text: str) -> dict[str, Any]:
+    return {"role": "tool", "tool_call_id": call_id, "content": text}
+
+
+def chat_response(message: dict[str, Any], rid: str, finish: str = "stop") -> dict[str, Any]:
+    return {
+        "id": rid,
+        "object": "chat.completion",
+        "model": MODEL,
+        "choices": [{"index": 0, "message": {**message, "refusal": None}, "finish_reason": finish}],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25},
+    }
+
+
+def chat_request(messages: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
+    return {"model": "gpt-4o", "messages": messages, "tools": TOOLS, **extra}
+
+
+def react_turns() -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """A three-step ReAct loop: two tool calls, then the final answer."""
+
+    first = [SYSTEM, USER]
+    second = [*first, assistant_calls("call_a", "Paris"), tool_result("call_a", "18C")]
+    third = [*second, assistant_calls("call_b", "Rome"), tool_result("call_b", "24C")]
+    return [
+        (chat_request(first), chat_response(assistant_calls("call_a", "Paris"), "chatcmpl-0")),
+        (chat_request(second), chat_response(assistant_calls("call_b", "Rome"), "chatcmpl-1")),
+        (
+            chat_request(third),
+            chat_response({"role": "assistant", "content": "Paris 18C, Rome 24C."}, "chatcmpl-2"),
+        ),
+    ]
+
+
+def react_run(capture: Capture, *, heartbeat: bool = True, **kwargs: Any) -> list[Exchange]:
+    exchanges = [capture.exchange(req, rsp, **kwargs) for req, rsp in react_turns()]
+    if heartbeat:
+        capture.heartbeat()
+    return exchanges
 
 
 # --------------------------------------------------------------------------
-# Scenarios
+# Clean run
 # --------------------------------------------------------------------------
 
 
@@ -656,9 +434,7 @@ def test_clean_three_turn_react_run_is_complete(capture: Capture) -> None:
     react_run(capture)
     document = capture.reconstruct()
     run = only_run(document)
-
     assert run["verdict"] == "complete_for_declared_scope"
-    assert run["gaps"] == []
     assert run["checks"] == {
         "sequence": "passed",
         "loss": "passed",
@@ -666,632 +442,715 @@ def test_clean_three_turn_react_run_is_complete(capture: Capture) -> None:
         "bytes": "passed",
         "stitching": "passed",
     }
-    assert run["run_id"] == "run-react-1"
-    assert run["run_id_basis"] == "explicit"
+    assert run["gaps"] == []
     assert run["declared_scope"] == {
         "capture_surfaces": ["exact_wire"],
-        "bytes": True,
-        "through": [{"source_id": SOURCE, "source_epoch": EPOCH, "through_source_sequence": 3}],
+        "windows": [
+            {
+                "source_id": SOURCE,
+                "source_epoch": EPOCH,
+                "first_sequence": 0,
+                "last_sequence": 2,
+                "heartbeat_sequence": 2,
+            }
+        ],
     }
     assert run["threads"] == [{"thread_id": "thread-0", "exchange_ids": ["ex-0", "ex-1", "ex-2"]}]
-    ex0, ex1, ex2 = run["exchanges"]
-    assert "continues_exchange_id" not in ex0
-    assert ex1["continues_exchange_id"] == "ex-0"
-    assert ex2["continues_exchange_id"] == "ex-1"
-    assert ex1["tool_call_ids_consumed"] == ["call_paris"]
-    assert ex1["tool_call_ids_emitted"] == ["call_rome"]
-    assert ex2["input_message_count"] == 6
-    assert ex0["origin"] == "span_and_store"
-    assert ex0["trace_id"] == TRACE_ID
-    for exchange in run["exchanges"]:
-        assert {obj["verification"] for obj in exchange["objects"].values()} == {"verified"}
-        assert set(exchange["objects"]) == {"request", "response", "record"}
+    first, second, third = run["exchanges"]
+    assert "continues_exchange_id" not in first
+    assert second["continues_exchange_id"] == "ex-0"
+    assert third["continues_exchange_id"] == "ex-1"
+    assert [ex["input_message_count"] for ex in run["exchanges"]] == [2, 4, 6]
+    assert [ex["output_message_count"] for ex in run["exchanges"]] == [1, 1, 1]
+    assert first["tool_call_ids_emitted"] == ["call_a"]
+    assert second["tool_call_ids_consumed"] == ["call_a"]
+    assert third["tool_call_ids_consumed"] == ["call_a", "call_b"]
+    assert third["tool_call_ids_emitted"] == []
+    assert first["model"] == MODEL
+    assert first["response_id"] == "chatcmpl-0"
+    assert first["parse_status"] == "ok"
+    assert first["objects"]["request"]["verification"] == "verified"
+    assert first["objects"]["response"]["object_id"] == "ex-0-response"
     assert document["sources"] == [
         {
             "source_id": SOURCE,
             "source_epoch": EPOCH,
-            "component": "wire",
-            "observed_records": 4,
-            "high_water_sequence": 3,
+            "exchanges": 3,
+            "heartbeat_sequence": 2,
             "missing_sequences": [],
-            "watermark_sequence": 3,
-            "cumulative_lost": 0,
+            "loss_ranges": [],
         }
     ]
     assert document["inputs"]["store"] == {"kind": "local", "tenant_id": TENANT}
-    assert document["inputs"]["span_files"][0]["format"] == "sink_jsonl"
-    assert document["inputs"]["span_files"][0]["records"] == 4
 
 
 def test_report_carries_no_content(capture: Capture) -> None:
     react_run(capture)
     text = json.dumps(capture.reconstruct())
-    for needle in ("Paris 18C", "travel agent", "Weather in Paris", "get_weather", "24C, sun"):
+    for needle in ("Paris 18C", "weather agent", "18C", "get_weather"):
         assert needle not in text
 
 
-def test_missing_exchange_span_and_object_is_a_sequence_gap(capture: Capture) -> None:
-    react_run(capture, skip=lambda index: index == 1)
-    run = only_run(capture.reconstruct())
+def test_report_is_deterministic(capture: Capture) -> None:
+    react_run(capture)
+    assert capture.reconstruct() == capture.reconstruct()
 
+
+# --------------------------------------------------------------------------
+# Completeness: sequences, losses, heartbeats
+# --------------------------------------------------------------------------
+
+
+def test_dropped_exchange_span_is_a_sequence_gap(capture: Capture) -> None:
+    turns = react_turns()
+    capture.exchange(*turns[0])
+    capture.skip()  # ex-1's span never arrives and no loss record names it
+    capture.exchange(*turns[2])
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
     assert run["verdict"] == "partial"
     assert run["checks"]["sequence"] == "failed"
-    sequence_gaps = gaps_of(run, "sequence_gap")
-    assert sequence_gaps == [
-        {
-            "gap_type": "sequence_gap",
-            "effect": "partial",
-            "source_id": SOURCE,
-            "source_epoch": EPOCH,
-            "run_sequences": [1],
-            "reason": "run_sequence_missing",
-        },
-        {
-            "gap_type": "sequence_gap",
-            "effect": "partial",
-            "source_id": SOURCE,
-            "source_epoch": EPOCH,
-            "sequences": [1],
-            "reason": "source_sequence_missing",
-        },
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "sequence_gap")
+    assert (gap["first_sequence"], gap["last_sequence"]) == (1, 1)
+    # call_b was emitted by the missing exchange.
+    unmatched = [
+        g for g in run["gaps"] if g["gap_type"] == "unmatched_tool_call" and g["effect"] != "info"
     ]
-    # The tool call emitted by the lost exchange is consumed without a producer.
-    unmatched = gaps_of(run, "unmatched_tool_call")
-    assert {
-        "gap_type": "unmatched_tool_call",
-        "effect": "partial",
-        "exchange_id": "ex-2",
-        "tool_call_id": "call_rome",
-        "reason": "consumed_not_emitted",
-    } in unmatched
-    assert [ex["exchange_id"] for ex in run["exchanges"]] == ["ex-0", "ex-2"]
+    assert [(g["tool_call_id"], g["reason"]) for g in unmatched] == [
+        ("call_b", "consumed_not_emitted")
+    ]
 
 
-def test_loss_record_explains_dropped_exchange_and_makes_run_partial(capture: Capture) -> None:
-    exchanges = react_run(capture, close=False, skip=lambda index: index == 1)
-    record_id = capture.loss("queue_full", [exchanges[1]])
-    capture.watermark(run_id="run-react-1")
+def test_queue_full_loss_is_partial_for_adjacent_runs_only(capture: Capture) -> None:
+    first_turn = react_turns()[0]
+    runs = ["trace:" + digit * 32 for digit in "123"]
+    capture.exchange(*first_turn, run_id=runs[0])  # 0
+    capture.exchange(*first_turn, run_id=runs[0])  # 1
+    lost = capture.skip()  # 2
+    capture.loss("queue_full", lost)
+    capture.exchange(*first_turn, run_id=runs[1])  # 3
+    capture.exchange(*first_turn, run_id=runs[1])  # 4
+    capture.exchange(*first_turn, run_id=runs[2])  # 5
+    capture.exchange(*first_turn, run_id=runs[2])  # 6
+    capture.heartbeat()
     document = capture.reconstruct()
-    run = only_run(document)
-
-    assert run["verdict"] == "partial"
-    assert gaps_of(run, "sequence_gap") == []
-    assert run["checks"]["sequence"] == "passed"
-    assert run["checks"]["loss"] == "failed"
-    assert gaps_of(run, "loss_record") == [
-        {
-            "gap_type": "loss_record",
+    for run_id in runs[:2]:
+        run = run_by_id(document, run_id)
+        assert run["verdict"] == "partial"
+        assert run["checks"]["loss"] == "failed"
+        assert run["checks"]["sequence"] == "passed"
+        assert run["gaps"][0] == {
+            "gap_type": "loss",
             "effect": "partial",
             "source_id": SOURCE,
             "source_epoch": EPOCH,
-            "sequences": [1],
-            "run_sequences": [1],
-            "loss_record_id": record_id,
+            "first_sequence": 2,
+            "last_sequence": 2,
             "reason": "queue_full",
         }
-    ]
-    assert document["sources"][0]["missing_sequences"] == [[1, 1]]
-    assert document["sources"][0]["cumulative_lost"] == 1
-
-
-def test_unattributed_loss_after_run_start_is_partial(capture: Capture) -> None:
-    exchanges = react_run(capture, close=False)
-    capture.loss("internal_error", [], count=2)
-    capture.watermark()
-    run = only_run(capture.reconstruct())
-    assert exchanges
-    assert run["verdict"] == "partial"
-    assert gaps_of(run, "loss_record")[0]["reason"] == "internal_error"
-
-
-def test_loss_after_run_close_does_not_taint_closed_run(capture: Capture) -> None:
-    react_run(capture)
-    capture.loss("internal_error", [], count=1)
-    capture.watermark()
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "complete_for_declared_scope"
-
-
-def test_prefix_break_is_recorded_not_judged(capture: Capture) -> None:
-    turns = react_turns()
-    capture.exchange(*turns[0], response_id="chatcmpl-0")
-    capture.exchange(*turns[1], response_id="chatcmpl-1")
-    # The agent compacts its history: the user turn is replaced by a summary.
-    summary = {"role": "user", "content": "Summary: Paris is 18C. Now check Rome."}
-    rewritten = [SYSTEM, summary, call("call_rome", "Rome"), result("call_rome", "24C, sun")]
-    capture.exchange(rewritten, [FINAL], response_id="chatcmpl-2")
-    capture.watermark(run_id="run-react-1")
-    run = only_run(capture.reconstruct())
-
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert gaps_of(run, "prefix_break") == [
-        {
-            "gap_type": "prefix_break",
-            "effect": "info",
-            "exchange_id": "ex-2",
-            "reason": "history_rewritten",
-        }
-    ]
-    assert "continues_exchange_id" not in run["exchanges"][2]
-    assert run["threads"] == [{"thread_id": "thread-0", "exchange_ids": ["ex-0", "ex-1", "ex-2"]}]
-    assert run["checks"]["stitching"] == "passed"
-
-
-def test_unrelated_conversation_starts_a_new_thread(capture: Capture) -> None:
-    react_run(capture, close=False)
-    other = [{"role": "system", "content": "Summarize."}, {"role": "user", "content": "x"}]
-    capture.exchange(other, [{"role": "assistant", "content": "y"}])
-    capture.watermark(run_id="run-react-1")
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert [thread["thread_id"] for thread in run["threads"]] == ["thread-0", "thread-1"]
-    assert run["threads"][1]["exchange_ids"] == ["ex-3"]
-
-
-def test_tool_call_emitted_but_never_consumed_is_info(capture: Capture) -> None:
-    turns = react_turns()
-    capture.exchange(*turns[0], response_id="chatcmpl-0")
-    capture.exchange(*turns[1], response_id="chatcmpl-1")
-    capture.watermark(run_id="run-react-1")
-    run = only_run(capture.reconstruct())
-
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert gaps_of(run, "unmatched_tool_call") == [
-        {
-            "gap_type": "unmatched_tool_call",
-            "effect": "info",
-            "exchange_id": "ex-1",
-            "tool_call_id": "call_rome",
-            "reason": "emitted_not_consumed",
-        }
+    assert run_by_id(document, runs[2])["verdict"] == "complete_for_declared_scope"
+    (source,) = document["sources"]
+    assert source["missing_sequences"] == [[2, 2]]
+    assert source["loss_ranges"] == [
+        {"reason": "queue_full", "first_sequence": 2, "last_sequence": 2, "count": 1}
     ]
 
 
-def test_tool_call_consumed_but_never_emitted_is_partial(capture: Capture) -> None:
-    turns = react_turns()
-    capture.exchange(*turns[0], response_id="chatcmpl-0")
-    capture.exchange(*turns[1], consumed=["call_paris", "call_ghost"], response_id="chatcmpl-1")
-    capture.exchange(*turns[2], response_id="chatcmpl-2")
-    capture.watermark(run_id="run-react-1")
+def test_missing_range_split_into_loss_and_unexplained_parts(capture: Capture) -> None:
+    capture.exchange(*react_turns()[0])
+    for _ in range(3):
+        capture.skip()
+    capture.loss("shutdown", 1, 2)
+    capture.exchange(*react_turns()[0])
+    capture.heartbeat()
     run = only_run(capture.reconstruct())
-
-    assert run["verdict"] == "partial"
-    assert run["checks"]["stitching"] == "failed"
-    assert {
-        "gap_type": "unmatched_tool_call",
-        "effect": "partial",
-        "exchange_id": "ex-1",
-        "tool_call_id": "call_ghost",
-        "reason": "consumed_not_emitted",
-    } in run["gaps"]
-
-
-def test_tool_result_before_run_start_is_info(capture: Capture) -> None:
-    turns = react_turns()
-    # The run begins mid-conversation: its first request already carries a result.
-    capture.exchange(*turns[1], response_id="chatcmpl-1")
-    capture.exchange(*turns[2], response_id="chatcmpl-2")
-    capture.watermark(run_id="run-react-1")
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert gaps_of(run, "unmatched_tool_call") == [
-        {
-            "gap_type": "unmatched_tool_call",
-            "effect": "info",
-            "exchange_id": "ex-0",
-            "tool_call_id": "call_paris",
-            "reason": "consumed_before_run",
-        }
+    ranges = [
+        (g["gap_type"], g["first_sequence"], g["last_sequence"], g.get("reason"))
+        for g in run["gaps"]
+        if g["gap_type"] in ("loss", "sequence_gap")
     ]
+    assert ranges == [("loss", 1, 2, "shutdown"), ("sequence_gap", 3, 3, None)]
+    assert run["checks"]["sequence"] == "failed"
+    assert run["checks"]["loss"] == "failed"
 
 
-def test_corrupted_object_is_a_digest_mismatch(capture: Capture) -> None:
-    exchanges = react_run(capture)
-    path = capture.object_path(exchanges[1].objects["response"])
-    data = bytearray(path.read_bytes())
-    data[5] ^= 0x01
-    path.chmod(0o600)
-    path.write_bytes(bytes(data))
-    run = only_run(capture.reconstruct())
-
+def test_loss_inside_open_run_window_is_partial_via_markers(capture: Capture) -> None:
+    scoped = "agent-run-7"
+    other = "trace:" + "9" * 32
+    capture.exchange(*react_turns()[0], run_id=other)  # 0
+    capture.heartbeat(run_id=scoped)  # entry marker: last_sequence 0
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 1
+    capture.exchange(*react_turns()[0], run_id=other)  # 2
+    capture.skip()  # 3: lost while the scoped run was open
+    capture.loss("internal_error", 3)
+    capture.exchange(*react_turns()[0], run_id=other)  # 4
+    capture.heartbeat(run_id=scoped)  # exit marker: last_sequence 4
+    capture.exchange(*react_turns()[0], run_id=other)  # 5
+    capture.heartbeat()
+    run = run_by_id(capture.reconstruct(), scoped)
     assert run["verdict"] == "partial"
-    assert run["checks"]["bytes"] == "failed"
-    assert gaps_of(run, "digest_mismatch") == [
-        {
-            "gap_type": "digest_mismatch",
-            "effect": "partial",
-            "exchange_id": "ex-1",
-            "object_role": "response",
-            "reason": "content_digest",
-        }
-    ]
-    assert run["exchanges"][1]["objects"]["response"]["verification"] == "digest_mismatch"
+    window = run["declared_scope"]["windows"][0]
+    assert (window["first_sequence"], window["last_sequence"]) == (1, 4)
+    assert [g["gap_type"] for g in run["gaps"] if g["effect"] != "info"] == ["loss"]
 
 
-def test_corrupted_sidecar_is_a_digest_mismatch(capture: Capture) -> None:
-    exchanges = react_run(capture)
-    meta = capture.object_path("meta") / f"{exchanges[0].objects['request']}.json"
-    descriptor = json.loads(meta.read_text())
-    descriptor["stored_byte_length"] += 1
-    meta.chmod(0o600)
-    meta.write_text(json.dumps(descriptor))
+def test_without_exit_marker_a_later_loss_is_never_complete(capture: Capture) -> None:
+    """Review fix: an entry marker without its exit marker leaves the run's end unknown."""
+    scoped = "agent-run-8"
+    other = "trace:" + "9" * 32
+    capture.heartbeat(run_id=scoped)  # entry marker: -1
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 0
+    capture.exchange(*react_turns()[0], run_id=other)  # 1
+    capture.skip()  # 2
+    capture.loss("queue_full", 2)
+    capture.exchange(*react_turns()[0], run_id=other)  # 3
+    capture.heartbeat()
+    document = capture.reconstruct()
+    run = run_by_id(document, scoped)
+    window = run["declared_scope"]["windows"][0]
+    assert (window["first_sequence"], window["last_sequence"]) == (0, 0)
+    assert run["verdict"] == "unverified"
+    found = {
+        (g["gap_type"], g["effect"], g.get("reason")) for g in run["gaps"] if g["effect"] != "info"
+    }
+    assert found == {
+        ("loss", "unverified", "queue_full"),
+        ("tail_unverified", "unverified", "run_not_closed"),
+    }
+    assert run_by_id(document, other)["verdict"] == "partial"
+
+
+def test_run_killed_inside_scope_is_not_complete(capture: Capture) -> None:
+    """Review fix: entry marker, two calls, flush, then a crash before the exit marker."""
+    capture.heartbeat(run_id="agent-run-k")  # entry: -1
+    capture.exchange(*react_turns()[0], run_id="agent-run-k")  # 0
+    capture.exchange(*react_turns()[0], run_id="agent-run-k")  # 1
+    capture.heartbeat()  # periodic/flush heartbeat: 1
+    # seq 2 is allocated, then SIGKILL: no span, no loss, no exit marker.
     run = only_run(capture.reconstruct())
-    assert run["verdict"] == "partial"
-    assert gaps_of(run, "digest_mismatch")[0]["reason"] == "sidecar_mismatch"
-
-
-def test_missing_object_is_reported(capture: Capture) -> None:
-    exchanges = react_run(capture)
-    capture.object_path(exchanges[0].objects["request"]).unlink()
-    run = only_run(capture.reconstruct())
-
-    assert run["verdict"] == "partial"
-    assert run["checks"]["bytes"] == "failed"
-    assert gaps_of(run, "missing_object") == [
-        {
-            "gap_type": "missing_object",
-            "effect": "partial",
-            "exchange_id": "ex-0",
-            "object_role": "request",
-            "reason": "absent",
-        }
-    ]
-    assert run["exchanges"][0]["objects"]["request"]["verification"] == "missing"
-
-
-def test_missing_record_object_falls_back_to_span(capture: Capture) -> None:
-    exchanges = react_run(capture)
-    capture.object_path(exchanges[2].objects["record"]).unlink()
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "partial"
-    assert [gap.get("object_role") for gap in gaps_of(run, "missing_object")] == ["record"]
-    assert run["exchanges"][2]["origin"] == "span"
-    assert run["exchanges"][2]["continues_exchange_id"] == "ex-1"
-    assert run["exchanges"][2]["objects"]["request"]["verification"] == "verified"
-
-
-def test_removing_final_watermark_is_unverified(capture: Capture) -> None:
-    react_run(capture, close=False)
-    run = only_run(capture.reconstruct())
-
     assert run["verdict"] == "unverified"
     assert run["checks"]["tail"] == "failed"
-    assert gaps_of(run, "tail_unverified") == [
+    assert [(g["gap_type"], g.get("reason")) for g in run["gaps"] if g["effect"] != "info"] == [
+        ("tail_unverified", "run_not_closed")
+    ]
+
+
+def test_closed_runs_count_markers_per_span_not_per_content(
+    capture: Capture, tmp_path: Path
+) -> None:
+    """Back-to-back run() blocks repeat a last_sequence; a re-read file repeats spans."""
+    scoped = "agent-run-p"
+    capture.heartbeat(run_id=scoped)  # entry: -1
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 0
+    capture.heartbeat(run_id=scoped)  # exit: 0
+    capture.heartbeat(run_id=scoped)  # entry: 0 (same content as the exit)
+    capture.exchange(*react_turns()[0], run_id=scoped)  # 1
+    capture.heartbeat(run_id=scoped)  # exit: 1
+    capture.heartbeat()
+    assert only_run(capture.reconstruct())["verdict"] == "complete_for_declared_scope"
+    path = capture.write()
+    document = reconstruct([path, path], store=capture.store, generated_at=GENERATED_AT)
+    validate(document)
+    assert only_run(document)["verdict"] == "complete_for_declared_scope"
+
+
+def test_interleaved_unscoped_run_with_a_lost_last_call_is_not_complete(
+    capture: Capture, tmp_path: Path
+) -> None:
+    """Review fix: R's lost last call sits between S's calls; R must not be complete."""
+    r_run, s_run = "trace:" + "1" * 32, "trace:" + "2" * 32
+    capture.exchange(*react_turns()[0], run_id=r_run)  # 0
+    capture.exchange(*react_turns()[0], run_id=s_run)  # 1
+    capture.skip()  # 2: R's second call, dropped
+    capture.loss("queue_full", 2)
+    capture.exchange(*react_turns()[0], run_id=s_run)  # 3
+    capture.heartbeat()
+    document = capture.reconstruct()
+    r_report = run_by_id(document, r_run)
+    assert r_report["verdict"] == "unverified"
+    real = [(g["gap_type"], g["effect"]) for g in r_report["gaps"] if g["effect"] != "info"]
+    assert real == [("loss", "unverified")]
+    assert run_by_id(document, s_run)["verdict"] == "partial"
+    argv = ["--spans", str(capture.write()), "--store-root", str(tmp_path / "store")]
+    assert main([*argv, "--tenant", TENANT, "--run", r_run]) == 1
+
+
+def test_unscoped_run_ignores_losses_before_its_first_call(capture: Capture) -> None:
+    capture.exchange(*react_turns()[0], run_id="trace:" + "1" * 32)  # 0
+    capture.skip()  # 1
+    capture.loss("queue_full", 1)
+    capture.exchange(*react_turns()[0], run_id="trace:" + "1" * 32)  # 2
+    capture.exchange(*react_turns()[0], run_id="trace:" + "3" * 32)  # 3
+    capture.exchange(*react_turns()[0], run_id="trace:" + "3" * 32)  # 4
+    capture.heartbeat()
+    document = capture.reconstruct()
+    assert run_by_id(document, "trace:" + "3" * 32)["verdict"] == "complete_for_declared_scope"
+
+
+def test_marker_only_run_with_lost_calls_is_partial(capture: Capture) -> None:
+    capture.heartbeat(run_id="agent-run-9")  # entry: -1
+    capture.skip()  # 0: the run's only call, lost
+    capture.loss("queue_full", 0)
+    capture.heartbeat(run_id="agent-run-9")  # exit: 0
+    run = only_run(capture.reconstruct())
+    assert run["exchanges"] == []
+    assert run["verdict"] == "partial"
+    assert run["checks"]["bytes"] == "not_applicable"
+
+
+def test_missing_heartbeat_is_an_unverified_tail(capture: Capture) -> None:
+    react_run(capture, heartbeat=False)
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert run["checks"]["tail"] == "failed"
+    assert run["gaps"] == [
         {
             "gap_type": "tail_unverified",
             "effect": "unverified",
             "source_id": SOURCE,
             "source_epoch": EPOCH,
-            "reason": "no_watermark",
-        }
-    ]
-    assert run["declared_scope"]["through"] == []
-
-
-def test_periodic_watermark_proves_tail(capture: Capture) -> None:
-    react_run(capture, close=False)
-    capture.watermark()
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert run["declared_scope"]["through"][0]["through_source_sequence"] == 3
-
-
-def test_run_close_watermark_exposes_lost_tail_exchanges(capture: Capture) -> None:
-    react_run(capture, close=False)
-    capture.watermark(run_id="run-react-1", run_high_water=4)
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "partial"
-    assert any(gap.get("run_sequences") == [3, 4] for gap in gaps_of(run, "sequence_gap"))
-
-
-def test_previous_response_id_chain_is_stitched(capture: Capture) -> None:
-    user = {"type": "message", "role": "user", "content": "Book Paris."}
-    fn_call = {"type": "function_call", "call_id": "fc_1", "name": "book", "arguments": "{}"}
-    fn_out = {"type": "function_call_output", "call_id": "fc_1", "output": "ok"}
-    done = {"type": "message", "role": "assistant", "content": [{"type": "output_text"}]}
-    api = "openai.responses"
-    capture.exchange([user], [fn_call], api=api, response_id="resp_0")
-    capture.exchange([fn_out], [done], api=api, response_id="resp_1", previous_response_id="resp_0")
-    capture.watermark(run_id="run-react-1")
-    run = only_run(capture.reconstruct())
-
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert run["exchanges"][1]["continues_exchange_id"] == "ex-0"
-    assert run["exchanges"][1]["previous_response_id"] == "resp_0"
-    assert run["threads"] == [{"thread_id": "thread-0", "exchange_ids": ["ex-0", "ex-1"]}]
-    assert gaps_of(run, "unmatched_tool_call") == []
-
-
-def test_unresolved_previous_response_is_partial(capture: Capture) -> None:
-    fn_out = {"type": "function_call_output", "call_id": "fc_1", "output": "ok"}
-    done = {"type": "message", "role": "assistant", "content": [{"type": "output_text"}]}
-    api = "openai.responses"
-    capture.exchange([{"type": "message", "role": "user", "content": "hi"}], [done], api=api)
-    capture.exchange([fn_out], [done], api=api, previous_response_id="resp_lost", consumed=[])
-    capture.watermark(run_id="run-react-1")
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "partial"
-    assert gaps_of(run, "unresolved_previous_response") == [
-        {
-            "gap_type": "unresolved_previous_response",
-            "effect": "partial",
-            "exchange_id": "ex-1",
-            "previous_response_id": "resp_lost",
+            "first_sequence": 0,
+            "last_sequence": 2,
+            "reason": "no_covering_heartbeat",
         }
     ]
 
 
-def test_store_disabled_is_unverified(tmp_path: Path) -> None:
-    capture = Capture(tmp_path, store=False)
-    react_run(capture)
+def test_stale_heartbeat_does_not_cover_the_tail(capture: Capture) -> None:
+    turns = react_turns()
+    capture.exchange(*turns[0])
+    capture.heartbeat()
+    capture.exchange(*turns[1])
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "unverified"
-    assert run["checks"]["bytes"] == "skipped"
-    disabled = gaps_of(run, "missing_object")
-    assert {gap["reason"] for gap in disabled} == {"store_disabled"}
-    assert {gap["effect"] for gap in disabled} == {"unverified"}
+    gap = run["gaps"][0]
+    assert (gap["gap_type"], gap["first_sequence"], gap["last_sequence"]) == (
+        "tail_unverified",
+        1,
+        1,
+    )
 
 
-def test_bytes_scope_without_store_is_skipped(capture: Capture) -> None:
+def test_heartbeat_reveals_lost_tail_exchange(capture: Capture) -> None:
+    turns = react_turns()
+    capture.exchange(*turns[0])
+    capture.exchange(*turns[1])
+    capture.skip()  # final call allocated but never exported
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    assert "sequence_gap" in gap_types(run)
+
+
+def test_two_epochs_are_accounted_separately(tmp_path: Path) -> None:
+    first = Capture(tmp_path, id_prefix="a")
+    react_run(first)
+    second = Capture(tmp_path, epoch=EPOCH + 1, id_prefix="b")
+    second.exchange(*react_turns()[0])
+    second.skip()
+    second.heartbeat()
+    first.rows.extend(second.rows)
+    document = first.reconstruct()
+    run = only_run(document)
+    assert [w["source_epoch"] for w in run["declared_scope"]["windows"]] == [EPOCH, EPOCH + 1]
+    assert run["verdict"] == "partial"
+    assert [s["missing_sequences"] for s in document["sources"]] == [[], [[1, 1]]]
+
+
+# --------------------------------------------------------------------------
+# Bytes
+# --------------------------------------------------------------------------
+
+
+def test_flipped_stored_byte_is_a_digest_mismatch(capture: Capture) -> None:
+    exchanges = react_run(capture)
+    assert exchanges[1].response_id is not None
+    path = capture.object_path(exchanges[1].response_id)
+    data = bytearray(path.read_bytes())
+    data[10] ^= 0x01
+    path.write_bytes(bytes(data))
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    assert run["checks"]["bytes"] == "failed"
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "digest_mismatch")
+    assert gap == {
+        "gap_type": "digest_mismatch",
+        "effect": "partial",
+        "exchange_id": "ex-1",
+        "object_role": "response",
+        "reason": "content_digest",
+    }
+    exchange = run["exchanges"][1]
+    assert exchange["objects"]["response"]["verification"] == "digest_mismatch"
+    assert exchange["parse_status"] == "not_checked"
+    assert run["checks"]["stitching"] == "skipped"
+
+
+def test_descriptor_disagreement_is_a_digest_mismatch(capture: Capture) -> None:
+    exchanges = react_run(capture)
+    assert exchanges[0].request_id is not None
+    meta = capture.object_path(exchanges[0].request_id).parent / "meta"
+    sidecar = meta / f"{exchanges[0].request_id}.json"
+    descriptor = json.loads(sidecar.read_text())
+    descriptor["operation_id"] = "ex-99"
+    sidecar.write_text(json.dumps(descriptor))
+    run = only_run(capture.reconstruct())
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "digest_mismatch")
+    assert gap["reason"] == "sidecar_mismatch"
+    assert run["verdict"] == "partial"
+
+
+def test_deleted_object_is_a_missing_object(capture: Capture) -> None:
+    exchanges = react_run(capture)
+    assert exchanges[2].request_id is not None
+    capture.object_path(exchanges[2].request_id).unlink()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "missing_object")
+    assert gap == {
+        "gap_type": "missing_object",
+        "effect": "partial",
+        "exchange_id": "ex-2",
+        "object_role": "request",
+        "reason": "absent",
+    }
+    assert run["exchanges"][2]["objects"]["request"]["verification"] == "missing"
+
+
+def test_store_failure_without_ref_is_a_missing_object(capture: Capture) -> None:
+    turns = react_turns()
+    capture.exchange(*turns[0])
+    capture.exchange(*turns[1], store_status="failed")
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    missing = [g for g in run["gaps"] if g["gap_type"] == "missing_object"]
+    assert {(g["object_role"], g["reason"]) for g in missing} == {
+        ("request", "not_stored"),
+        ("response", "not_stored"),
+    }
+    assert run["exchanges"][1]["objects"]["request"]["verification"] == "not_stored"
+
+
+def test_omitting_the_store_is_unverified(capture: Capture) -> None:
     react_run(capture)
     run = only_run(capture.reconstruct(store=None))
     assert run["verdict"] == "unverified"
     assert run["checks"]["bytes"] == "skipped"
-    assert run["exchanges"][0]["objects"]["record"]["verification"] == "not_checked"
-
-
-def test_metadata_scope_without_store_is_complete(capture: Capture) -> None:
-    react_run(capture)
-    document = capture.reconstruct(store=None, scope="metadata")
-    run = only_run(document)
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert run["checks"]["bytes"] == "not_applicable"
-    assert run["declared_scope"]["bytes"] is False
-    assert "store" not in document["inputs"]
-
-
-def test_metadata_scope_ignores_byte_damage(capture: Capture) -> None:
-    exchanges = react_run(capture)
-    capture.object_path(exchanges[0].objects["request"]).unlink()
-    run = only_run(capture.reconstruct(scope="metadata"))
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert run["exchanges"][0]["objects"]["request"]["verification"] == "not_checked"
-
-
-def test_otlp_hashes_withheld_without_store_skips_stitching(capture: Capture) -> None:
-    react_run(capture)
-    for row in capture.rows:
-        for key in ("fabric.wire.input.message_hashes", "fabric.wire.output.message_hashes"):
-            row["attributes"].pop(key, None)
-    run = only_run(capture.reconstruct(store=None, scope="metadata"))
     assert run["checks"]["stitching"] == "skipped"
-    assert run["verdict"] == "unverified"
+    assert run["gaps"] == []
+    assert run["exchanges"][0]["objects"]["request"]["verification"] == "not_checked"
+    assert len(run["threads"]) == 3
 
 
-def test_otlp_windows_alone_stitch_the_run(capture: Capture) -> None:
+def test_store_disabled_at_capture_is_unverified(tmp_path: Path) -> None:
+    capture = Capture(tmp_path, store=False)
     react_run(capture)
-    run = only_run(capture.reconstruct(store=None, scope="metadata"))
-    assert [ex.get("continues_exchange_id") for ex in run["exchanges"]] == [None, "ex-0", "ex-1"]
-    assert {ex["origin"] for ex in run["exchanges"]} == {"span"}
-
-
-def test_span_dropped_but_record_recovered_from_store_scan(capture: Capture) -> None:
-    exchanges = react_run(capture, close=False)
-    capture.rows.remove(exchanges[1].span)
-    capture.loss("span_dropped", [exchanges[1]])
-    capture.watermark(run_id="run-react-1")
-
-    without_scan = only_run(capture.reconstruct())
-    assert without_scan["verdict"] == "partial"
-
-    run = only_run(capture.reconstruct(scan_store=True))
-    assert run["verdict"] == "complete_for_declared_scope"
-    assert run["exchanges"][1]["origin"] == "store"
-    assert run["exchanges"][1]["objects"]["record"]["verification"] == "verified"
-    assert [gap["effect"] for gap in gaps_of(run, "loss_record")] == ["info"]
-
-
-def test_conflicting_duplicate_span_is_a_digest_mismatch(capture: Capture) -> None:
-    exchanges = react_run(capture)
-    duplicate = json.loads(json.dumps(exchanges[0].span))
-    duplicate["attributes"]["fabric.wire.output.tool_call_ids"] = ["call_other"]
-    capture.rows.append(duplicate)
-    capture.rows.append(json.loads(json.dumps(exchanges[1].span)))  # identical: deduped
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "partial"
-    assert gaps_of(run, "digest_mismatch") == [
-        {
-            "gap_type": "digest_mismatch",
-            "effect": "partial",
-            "exchange_id": "ex-0",
-            "reason": "conflicting_duplicate",
-        }
-    ]
-    assert run["counts"]["exchanges"] == 3
-
-
-def test_span_disagreeing_with_record_is_flagged(capture: Capture) -> None:
-    exchanges = react_run(capture)
-    attributes = exchanges[2].span["attributes"]
-    attributes["fabric.wire.input.message_hashes"][1] = "0" * 64
-    run = only_run(capture.reconstruct())
-    assert run["verdict"] == "partial"
-    assert gaps_of(run, "digest_mismatch")[0]["reason"] == "span_record_disagree"
-
-
-def test_unparsed_exchange_is_unverified(capture: Capture) -> None:
-    react_run(capture)
-    for row in capture.rows:
-        if row["attributes"].get("fabric.wire.exchange_id") == "ex-0":
-            row["attributes"]["fabric.wire.parse_status"] = "not_json"
-    run = only_run(capture.reconstruct(store=None, scope="metadata"))
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id=TENANT)
+    run = only_run(capture.reconstruct(store=store))
     assert run["verdict"] == "unverified"
-    assert gaps_of(run, "unparsed_exchange")[0]["reason"] == "not_json"
+    assert run["checks"]["bytes"] == "skipped"
 
 
-def test_runs_are_split_and_sorted(capture: Capture) -> None:
-    react_run(capture, run_id="run-b", close=False)
-    capture.exchange([SYSTEM, USER], [FINAL], run_id="run-a")
-    capture.watermark(run_id="run-a")
-    capture.watermark(run_id="run-b")
-    document = capture.reconstruct()
-    assert [run["run_id"] for run in document["runs"]] == ["run-a", "run-b"]
-    assert {run["verdict"] for run in document["runs"]} == {"complete_for_declared_scope"}
-    selected = capture.reconstruct(run_ids=["run-b"])
-    assert [run["run_id"] for run in selected["runs"]] == ["run-b"]
-
-
-def test_interleaved_run_gap_inside_window_counts_for_both(capture: Capture) -> None:
+def test_truncated_response_is_partial(capture: Capture) -> None:
     turns = react_turns()
-    capture.exchange(*turns[0], run_id="run-a")
-    capture.exchange([SYSTEM, USER], [FINAL], run_id="run-b", emit_span=False, store_objects=False)
-    capture.exchange(*turns[1], run_id="run-a")
-    capture.watermark(run_id="run-a")
-    run_a = only_run(capture.reconstruct(run_ids=["run-a"]))
-    # Sequence 1 is unaccounted for inside run-a's window: it may have been run-a's.
-    assert run_a["verdict"] == "partial"
-    assert gaps_of(run_a, "sequence_gap")[0]["sequences"] == [1]
-
-
-def test_lost_run_with_only_a_loss_record_is_reported(capture: Capture) -> None:
-    lost = capture.exchange([SYSTEM, USER], [FINAL], run_id="run-lost", emit_span=False)
-    capture.loss("queue_full", [lost])
-    capture.watermark()
+    capture.exchange(*turns[0])
+    capture.exchange(*turns[1], truncated="response")
+    capture.heartbeat()
     run = only_run(capture.reconstruct())
-    assert run["run_id"] == "run-lost"
-    assert run["exchanges"] == []
     assert run["verdict"] == "partial"
-    assert run["checks"]["stitching"] == "not_applicable"
-
-
-def test_two_sources_sharing_a_run_id_are_reported_separately(tmp_path: Path) -> None:
-    first = Capture(tmp_path)
-    first.exchange([SYSTEM, USER], [FINAL], run_id="run-shared")
-    first.watermark(run_id="run-shared")
-    second = Capture(tmp_path, source_id="gateway-0011223344556677", epoch=EPOCH + 5, id_prefix="g")
-    second.exchange([SYSTEM, USER], [FINAL], run_id="run-shared")
-    second.watermark(run_id="run-shared")
-    first.rows.extend(second.rows)
-    document = first.reconstruct()
-    assert [(run["run_id"], run["exchanges"][0]["source_id"]) for run in document["runs"]] == [
-        ("run-shared", "gateway-0011223344556677"),
-        ("run-shared", SOURCE),
-    ]
-    assert len(document["sources"]) == 2
-
-
-def test_report_is_deterministic(capture: Capture) -> None:
-    exchanges = react_run(capture, close=False)
-    capture.loss("queue_full", [exchanges[1]])
-    first = capture.reconstruct()
-    second = capture.reconstruct()
-    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "truncated")
+    assert gap["object_role"] == "response"
+    assert run["exchanges"][1]["objects"]["response"]["verification"] == "verified"
+    assert run["exchanges"][1]["parse_status"] == "truncated"
+    assert "unparsed_exchange" not in gap_types(run)
 
 
 def test_store_objects_are_resolved_by_object_id_not_recorded_path(capture: Capture) -> None:
     react_run(capture)
     for row in capture.rows:
         attributes = row["attributes"]
-        if "fabric.wire.exchange_ref" in attributes:
-            object_id = attributes["fabric.wire.exchange_ref"].rsplit("/", 1)[-1]
-            attributes["fabric.wire.exchange_ref"] = f"file:///elsewhere/other/{object_id}"
+        for key in ("fabric.content.request_ref", "fabric.content.result_ref"):
+            if key in attributes:
+                object_id = attributes[key].rsplit("/", 1)[-1]
+                attributes[key] = f"file:///elsewhere/other/{object_id}"
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "complete_for_declared_scope"
-    record = run["exchanges"][0]["objects"]["record"]
-    assert record["ref"].startswith(f"file://{capture.root / 'store'}")
+    ref = run["exchanges"][0]["objects"]["request"]["ref"]
+    assert ref.startswith(f"file://{capture.root / 'store'}")
 
 
-# --------------------------------------------------------------------------
-# --recompute-digests
-# --------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class _Keys:
-    input_digests: tuple[str, ...]
-    output_digests: tuple[str, ...]
-    tool_call_ids_consumed: tuple[str, ...]
-    tool_calls: tuple[tuple[str, str | None], ...]
-    response_id: str | None
-    previous_response_id: str | None
-
-
-def _fake_stitch(tamper: bool = False) -> types.ModuleType:
-    module = types.ModuleType("fabric.wire._stitch")
-
-    def extract_stitch_keys(api: str, request_bytes: bytes, *args: Any) -> _Keys:
-        request = json.loads(request_bytes)
-        response = json.loads(args[3])
-        messages = request["messages"]
-        output = [choice["message"] for choice in response["choices"]]
-        inputs = tuple(message_digest(m) for m in messages)
-        if tamper:
-            inputs = tuple(reversed(inputs))
-        return _Keys(
-            inputs,
-            tuple(message_digest(m) for m in output),
-            tuple(_consumed(api, messages)),
-            tuple((call_id, "get_weather") for call_id in _emitted(api, output)),
-            response.get("id"),
-            None,
-        )
-
-    module.extract_stitch_keys = extract_stitch_keys  # type: ignore[attr-defined]
-    return module
-
-
-def test_recompute_digests_confirms_recorded_keys(
-    capture: Capture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    react_run(capture)
-    monkeypatch.setitem(sys.modules, "fabric.wire._stitch", _fake_stitch())
-    document = capture.reconstruct(recompute_digests=True)
-    assert document["inputs"]["recompute_digests"] is True
-    assert only_run(document)["verdict"] == "complete_for_declared_scope"
-
-
-def test_recompute_digests_flags_disagreeing_record(
-    capture: Capture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    react_run(capture)
-    monkeypatch.setitem(sys.modules, "fabric.wire._stitch", _fake_stitch(tamper=True))
-    run = only_run(capture.reconstruct(recompute_digests=True))
+def test_conflicting_duplicate_span_is_a_digest_mismatch(capture: Capture) -> None:
+    exchanges = react_run(capture)
+    duplicate = json.loads(json.dumps(exchanges[1].span))
+    duplicate["attributes"]["fabric.wire.response_state"] = "closed_early"
+    capture.rows.append(duplicate)
+    capture.rows.append(json.loads(json.dumps(exchanges[0].span)))  # identical: ignored
+    run = only_run(capture.reconstruct())
     assert run["verdict"] == "partial"
-    assert {gap["reason"] for gap in gaps_of(run, "digest_mismatch")} == {
-        "recomputed_keys_disagree"
+    gaps = [g for g in run["gaps"] if g["gap_type"] == "digest_mismatch"]
+    assert [(g["exchange_id"], g["reason"]) for g in gaps] == [("ex-1", "conflicting_duplicate")]
+    assert run["counts"]["exchanges"] == 3
+
+
+def test_invalid_span_values_unplace_the_exchange(capture: Capture) -> None:
+    exchanges = react_run(capture)
+    exchanges[1].span["attributes"]["fabric.wire.response_state"] = "transport_error"
+    exchanges[2].span["attributes"]["fabric.wire.request_sha256"] = "sha256:" + "0" * 64
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    assert [ex["exchange_id"] for ex in run["exchanges"]] == ["ex-0"]
+
+
+# --------------------------------------------------------------------------
+# Stitching from stored bytes
+# --------------------------------------------------------------------------
+
+
+def test_prefix_break_is_recorded_not_judged(capture: Capture) -> None:
+    turns = react_turns()
+    capture.exchange(*turns[0])
+    rewritten = [SYSTEM, {"role": "user", "content": "Only Paris, please."}]
+    capture.exchange(chat_request(rewritten), turns[1][1])
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    breaks = [g for g in run["gaps"] if g["gap_type"] == "prefix_break"]
+    assert breaks == [
+        {
+            "gap_type": "prefix_break",
+            "effect": "info",
+            "exchange_id": "ex-1",
+            "reason": "history_rewritten",
+        }
+    ]
+    assert len(run["threads"]) == 1
+    assert "continues_exchange_id" not in run["exchanges"][1]
+
+
+def test_unrelated_conversation_starts_a_new_thread(capture: Capture) -> None:
+    capture.exchange(*react_turns()[0])
+    other = chat_request([{"role": "user", "content": "Unrelated"}])
+    capture.exchange(other, chat_response({"role": "assistant", "content": "ok"}, "chatcmpl-9"))
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert len(run["threads"]) == 2
+
+
+def test_tool_call_consumed_but_never_emitted_is_partial(capture: Capture) -> None:
+    capture.exchange(*react_turns()[0])
+    messages = [SYSTEM, USER, assistant_calls("call_z", "Oslo"), tool_result("call_z", "2C")]
+    capture.exchange(
+        chat_request(messages), chat_response({"role": "assistant", "content": "x"}, "c-1")
+    )
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    assert run["checks"]["stitching"] == "failed"
+    gaps = {(g.get("tool_call_id"), g["effect"], g["reason"]) for g in run["gaps"]}
+    assert ("call_z", "partial", "consumed_not_emitted") in gaps
+    assert ("call_a", "info", "emitted_not_consumed") in gaps
+
+
+def test_tool_result_before_run_start_is_info(capture: Capture) -> None:
+    capture.exchange(*react_turns()[1])
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    reasons = {(g["tool_call_id"], g["reason"]) for g in run["gaps"]}
+    assert ("call_a", "consumed_before_run") in reasons
+
+
+def test_previous_response_id_chain_is_stitched(capture: Capture) -> None:
+    api = "openai.responses"
+    first = {"model": "gpt-4o", "input": "Weather in Paris?", "tools": TOOLS}
+    first_out = {
+        "id": "resp_1",
+        "model": MODEL,
+        "status": "completed",
+        "output": [
+            {
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call_r1",
+                "name": "get_weather",
+                "arguments": "{}",
+                "status": "completed",
+            }
+        ],
+    }
+    second = {
+        "model": "gpt-4o",
+        "previous_response_id": "resp_1",
+        "input": [{"type": "function_call_output", "call_id": "call_r1", "output": "18C"}],
+    }
+    second_out = {
+        "id": "resp_2",
+        "model": MODEL,
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "18C", "annotations": []}],
+            }
+        ],
+    }
+    capture.exchange(first, first_out, api=api)
+    capture.exchange(second, second_out, api=api)
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    assert run["exchanges"][1]["previous_response_id"] == "resp_1"
+    assert run["exchanges"][1]["continues_exchange_id"] == "ex-0"
+    assert run["exchanges"][0]["tool_call_ids_emitted"] == ["call_r1"]
+    assert len(run["threads"]) == 1
+
+
+def test_unresolved_previous_response_is_partial(capture: Capture) -> None:
+    request = {"model": "gpt-4o", "previous_response_id": "resp_gone", "input": "next"}
+    response = {"id": "resp_3", "model": MODEL, "status": "completed", "output": []}
+    capture.exchange(request, response, api="openai.responses")
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    assert run["gaps"] == [
+        {
+            "gap_type": "unresolved_previous_response",
+            "effect": "partial",
+            "exchange_id": "ex-0",
+            "previous_response_id": "resp_gone",
+        }
+    ]
+
+
+def test_gzip_encoded_stored_response_is_decoded(capture: Capture) -> None:
+    exchanges = react_run(capture, response_encoding="gzip")
+    assert exchanges[0].response_id is not None
+    stored = capture.object_path(exchanges[0].response_id).read_bytes()
+    assert stored[:2] == b"\x1f\x8b"  # stored exactly as received: compressed
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    assert run["exchanges"][2]["continues_exchange_id"] == "ex-1"
+
+
+def test_unknown_content_encoding_is_unparsed(capture: Capture) -> None:
+    react_run(capture, response_encoding="unknown")
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    gaps = [g for g in run["gaps"] if g["gap_type"] == "unparsed_exchange"]
+    assert {g["reason"] for g in gaps} == {"undecodable_encoding"}
+    assert run["checks"]["stitching"] == "failed"
+
+
+def _chunk(delta: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    return {
+        "id": "chatcmpl-s",
+        "model": MODEL,
+        "choices": [{"index": 0, "delta": delta, **extra}],
     }
 
 
-def test_recompute_digests_without_stitch_module_is_input_error(
-    capture: Capture, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    react_run(capture)
-    monkeypatch.setitem(sys.modules, "fabric.wire._stitch", None)
-    with pytest.raises(ReconstructInputError):
-        capture.reconstruct(recompute_digests=True)
-    path = capture.write()
-    code = main(
-        [
-            "--spans",
-            str(path),
-            "--store-root",
-            str(capture.root / "store"),
-            "--tenant",
-            TENANT,
-            "--recompute-digests",
-        ]
+def test_streamed_sse_response_is_stitched(capture: Capture) -> None:
+    first = chat_request([SYSTEM, USER], stream=True)
+    opening = {
+        "index": 0,
+        "id": "call_s1",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": '{"city":'},
+    }
+    stream = sse(
+        _chunk({"role": "assistant"}),
+        _chunk({"tool_calls": [opening]}),
+        _chunk(
+            {"tool_calls": [{"index": 0, "function": {"arguments": ' "Paris"}'}}]},
+            finish_reason="tool_calls",
+        ),
     )
-    assert code == 2
+    capture.exchange(first, stream)
+    resend = assistant_calls("call_s1", "Paris")
+    second = chat_request([SYSTEM, USER, resend, tool_result("call_s1", "18C")], stream=True)
+    capture.exchange(second, sse(_chunk({"role": "assistant", "content": "18C"})))
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
+    first_ex, second_ex = run["exchanges"]
+    assert first_ex["tool_call_ids_emitted"] == ["call_s1"]
+    assert first_ex["response_id"] == "chatcmpl-s"
+    assert second_ex["continues_exchange_id"] == "ex-0"
 
 
-def test_recompute_digests_with_real_stitch_projection(capture: Capture) -> None:
-    stitch = pytest.importorskip("fabric.wire._stitch")
-    if not callable(getattr(stitch, "extract_stitch_keys", None)):
-        pytest.skip("fabric.wire._stitch.extract_stitch_keys not available yet")
-    react_run(capture)
-    run = only_run(capture.reconstruct(recompute_digests=True))
-    assert gaps_of(run, "digest_mismatch") == []
+def test_unparsed_request_is_unverified(capture: Capture) -> None:
+    capture.exchange(b"not json at all", chat_response({"role": "assistant", "content": "x"}, "c"))
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert run["gaps"][0]["gap_type"] == "unparsed_exchange"
+    assert run["gaps"][0]["reason"] == "not_json"
+    assert run["exchanges"][0]["parse_status"] == "not_json"
+
+
+def test_http_error_page_is_not_an_unparsed_exchange(capture: Capture) -> None:
+    capture.exchange(
+        chat_request([SYSTEM, USER]),
+        b"<html>502 Bad Gateway</html>",
+        response_media="text/html",
+        http_status=502,
+    )
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
     assert run["verdict"] == "complete_for_declared_scope"
+    assert run["exchanges"][0]["output_message_count"] == 0
+
+
+def test_transport_error_without_response_is_stitched(capture: Capture) -> None:
+    turns = react_turns()
+    capture.exchange(turns[0][0], None, state="error", http_status=None)
+    capture.exchange(*turns[0])  # the retry continues the failed attempt's thread
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    assert "response" not in run["exchanges"][0]["objects"]
+    assert run["exchanges"][1]["continues_exchange_id"] == "ex-0"
+
+
+def test_embeddings_are_their_own_thread(capture: Capture) -> None:
+    request = {"model": "text-embedding-3-small", "input": ["a", "b"]}
+    response = {"object": "list", "data": [], "model": "text-embedding-3-small"}
+    capture.exchange(request, response, api="openai.embeddings")
+    capture.exchange(request, response, api="openai.embeddings")
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope"
+    assert len(run["threads"]) == 2
+    assert run["exchanges"][0]["input_message_count"] == 2
+
+
+# --------------------------------------------------------------------------
+# Runs and options
+# --------------------------------------------------------------------------
+
+
+def test_run_filter_and_run_order(capture: Capture) -> None:
+    capture.exchange(*react_turns()[0], run_id="run-b")
+    capture.exchange(*react_turns()[0], run_id="run-a")
+    capture.heartbeat()
+    document = capture.reconstruct()
+    assert [run["run_id"] for run in document["runs"]] == ["run-a", "run-b"]
+    filtered = capture.reconstruct(run_ids=["run-b"])
+    assert [run["run_id"] for run in filtered["runs"]] == ["run-b"]
+    assert capture.reconstruct(run_ids=["nope"])["runs"] == []
+
+
+def test_reconstruct_rejects_bad_options(capture: Capture) -> None:
+    react_run(capture)
+    path = capture.write()
+    with pytest.raises(ReconstructInputError):
+        reconstruct([])
+    with pytest.raises(ReconstructInputError):
+        reconstruct([path], store=capture.store, tenant_id="other-tenant")
+    with pytest.raises(ReconstructInputError):
+        reconstruct([path], store=object(), tenant_id=TENANT)
 
 
 # --------------------------------------------------------------------------
@@ -1299,61 +1158,27 @@ def test_recompute_digests_with_real_stitch_projection(capture: Capture) -> None
 # --------------------------------------------------------------------------
 
 
-def _cli(capture: Capture, *extra: str) -> int:
-    return main(
-        [
-            "--spans",
-            str(capture.write()),
-            "--store-root",
-            str(capture.root / "store"),
-            "--tenant",
-            TENANT,
-            *extra,
-        ]
-    )
-
-
-def test_cli_exit_zero_for_complete_run(
-    capture: Capture, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_exit_zero_for_complete_run(capture: Capture, tmp_path: Path) -> None:
     react_run(capture)
+    spans = str(capture.write())
     out = tmp_path / "report.json"
-    assert _cli(capture, "--out", str(out)) == 0
+    argv = ["--spans", spans, "--store-root", str(tmp_path / "store"), "--tenant", TENANT]
+    assert main([*argv, "--out", str(out)]) == 0
     document = json.loads(out.read_text())
     validate(document)
-    assert document["runs"][0]["verdict"] == "complete_for_declared_scope"
-    assert "complete_for_declared_scope" in capsys.readouterr().err
+    assert only_run(document)["verdict"] == "complete_for_declared_scope"
 
 
-def test_cli_exit_one_for_partial_run(capture: Capture, capsys: pytest.CaptureFixture[str]) -> None:
-    exchanges = react_run(capture)
-    capture.object_path(exchanges[0].objects["request"]).unlink()
-    assert _cli(capture) == 1
-    document = json.loads(capsys.readouterr().out)
-    validate(document)
-    assert document["runs"][0]["verdict"] == "partial"
-
-
-def test_cli_exit_one_when_no_run_is_reconstructed(capture: Capture) -> None:
+def test_cli_exit_one_for_unverified(capture: Capture, capsys: pytest.CaptureFixture[str]) -> None:
     react_run(capture)
-    assert _cli(capture, "--run", "run-unknown") == 1
+    assert main(["--spans", str(capture.write())]) == 1  # no store: unverified
+    validate(json.loads(capsys.readouterr().out))
 
 
-def test_cli_local_alias_and_scope_flag(capture: Capture) -> None:
-    react_run(capture)
-    code = main(
-        [
-            "--spans",
-            str(capture.write()),
-            "--local",
-            str(capture.root / "store"),
-            "--tenant",
-            TENANT,
-            "--scope",
-            "metadata",
-        ]
-    )
-    assert code == 0
+def test_cli_exit_one_when_no_run_is_reconstructed(tmp_path: Path) -> None:
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("")
+    assert main(["--spans", str(empty)]) == 1
 
 
 @pytest.mark.parametrize(
@@ -1364,9 +1189,11 @@ def test_cli_local_alias_and_scope_flag(capture: Capture) -> None:
         ["--spans", "SPANS", "--store-root", "/nonexistent-store", "--tenant", TENANT],
         ["--spans", "SPANS", "--store-root", "STORE"],
         ["--spans", "SPANS", "--tenant", TENANT],
-        ["--spans", "SPANS", "--scan-store"],
         ["--spans", "SPANS", "--store-uri", "https://bucket/prefix", "--tenant", TENANT],
-        ["--spans", "SPANS", "--scope", "everything"],
+        ["--spans", "SPANS", "--scan-store"],
+        ["--spans", "SPANS", "--recompute-digests"],
+        ["--spans", "SPANS", "--scope", "bytes"],
+        ["--spans", "SPANS", "--local", "STORE", "--tenant", TENANT],
     ],
 )
 def test_cli_usage_errors_exit_two(capture: Capture, argv: list[str]) -> None:
@@ -1383,3 +1210,76 @@ def test_cli_malformed_span_file_exits_two(tmp_path: Path) -> None:
     bad = tmp_path / "bad.jsonl"
     bad.write_text('{"kind": "span", "trace_id": 12}\nnot json\n')
     assert main(["--spans", str(bad)]) == 2
+
+
+def test_gateway_truncated_body_without_ref_is_only_truncated(capture: Capture) -> None:
+    turns = react_turns()
+    capture.exchange(*turns[0], fidelity="gateway_normalized")
+    exchange = capture.exchange(*turns[1], fidelity="gateway_normalized")
+    attributes = exchange.span["attributes"]
+    del attributes["fabric.content.result_ref"]
+    attributes["fabric.wire.store_status"] = "partial"
+    attributes["fabric.wire.truncated"] = True
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["declared_scope"]["capture_surfaces"] == ["gateway_normalized"]
+    assert [g["gap_type"] for g in run["gaps"] if g["effect"] != "info"] == ["truncated"]
+    assert run["exchanges"][1]["objects"]["response"]["verification"] == "not_stored"
+
+
+def test_ref_without_a_valid_object_id_is_missing(capture: Capture) -> None:
+    exchanges = react_run(capture)
+    exchanges[0].span["attributes"]["fabric.content.request_ref"] = "file:///x/not an id"
+    run = only_run(capture.reconstruct())
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "missing_object")
+    assert gap["reason"] == "invalid_ref"
+
+
+class _FlakyStore:
+    """A store whose reads fail in the ways S3 and broken disks do."""
+
+    tenant_id = TENANT
+
+    def __init__(self, inner: LocalFilesystemContentStore, mode: str) -> None:
+        self.inner = inner
+        self.mode = mode
+
+    def evidence_ref_for(self, object_id: str) -> str:
+        return self.inner.evidence_ref_for(object_id)
+
+    def read(self, uri: str) -> Any:
+        if self.mode == "s3_absent":
+            error = RuntimeError("NoSuchKey")
+            error.response = {"Error": {"Code": "NoSuchKey"}}  # type: ignore[attr-defined]
+            raise error
+        if self.mode == "read_error":
+            raise RuntimeError("disk on fire")
+        if self.mode == "not_bytes":
+            return "text"
+        return self.inner.read(uri)
+
+    def read_descriptor(self, uri: str) -> Any:
+        if self.mode == "descriptor_error":
+            raise RuntimeError("bad sidecar")
+        return self.inner.read_descriptor(uri)
+
+
+@pytest.mark.parametrize(
+    ("mode", "gap_type", "reason"),
+    [
+        ("s3_absent", "missing_object", "absent"),
+        ("read_error", "missing_object", "read_error"),
+        ("not_bytes", "missing_object", "read_error"),
+        ("descriptor_error", "digest_mismatch", "sidecar_mismatch"),
+    ],
+)
+def test_store_read_failures_never_raise(
+    capture: Capture, mode: str, gap_type: str, reason: str
+) -> None:
+    react_run(capture)
+    assert capture.store is not None
+    run = only_run(capture.reconstruct(store=_FlakyStore(capture.store, mode)))
+    assert run["verdict"] == "partial"
+    assert {(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"} == {
+        (gap_type, reason)
+    }

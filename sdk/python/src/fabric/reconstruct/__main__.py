@@ -43,7 +43,6 @@ def _parser() -> argparse.ArgumentParser:
     stores = parser.add_mutually_exclusive_group()
     stores.add_argument(
         "--store-root",
-        "--local",
         dest="store_root",
         metavar="DIR",
         help="local content store root (LocalFilesystemContentStore)",
@@ -52,23 +51,12 @@ def _parser() -> argparse.ArgumentParser:
         "--store-uri", metavar="s3://BUCKET/PREFIX", help="S3 content store location"
     )
     parser.add_argument("--tenant", metavar="ID", help="tenant id of the content store")
-    parser.add_argument("--scope", choices=("bytes", "metadata"), default="bytes")
     parser.add_argument(
         "--run",
         action="append",
         dest="runs",
         metavar="RUN_ID",
         help="only report this run id (repeatable)",
-    )
-    parser.add_argument(
-        "--scan-store",
-        action="store_true",
-        help="also load exchange records whose span never arrived (local store only)",
-    )
-    parser.add_argument(
-        "--recompute-digests",
-        action="store_true",
-        help="re-derive stitch keys from stored bytes with fabric.wire._stitch",
     )
     parser.add_argument("--out", metavar="FILE", help="write the report here instead of stdout")
     return parser
@@ -122,10 +110,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.spans,
             store=_store(args),
             tenant_id=args.tenant,
-            scope=args.scope,
             run_ids=args.runs,
-            scan_store=args.scan_store,
-            recompute_digests=args.recompute_digests,
         )
     except ReconstructInputError as exc:
         print(f"fabric.reconstruct: {exc}", file=sys.stderr)

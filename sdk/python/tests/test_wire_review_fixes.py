@@ -1,18 +1,16 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Wire-tee regressions for review findings (passivity and loss accounting)."""
+"""Wire-tee regressions for review findings: passivity, fork, sampling, autoload."""
 
 from __future__ import annotations
 
 import gc
-import gzip
 import os
 import subprocess
 import sys
 import textwrap
 import threading
 import time
-import tracemalloc
 from pathlib import Path
 from typing import Any
 
@@ -20,12 +18,13 @@ import httpx
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
 
 from fabric import wire
 from fabric._loss import LossEmitter
-from fabric._sequence import SequenceAllocator, SourceIdentity
-from fabric.wire import _stitch, _stream
+from fabric._sequence import SourceAllocator
+from fabric.wire import _stream
 from fabric.wire.__main__ import autoload_path
 from fabric.wire._transport import WireTee, WireTransport
 
@@ -41,17 +40,6 @@ def rig(tmp_path: Path) -> Any:
     built.close()
 
 
-def _wait_submitted(rig: Rig, count: int, timeout: float = 5.0) -> None:
-    deadline = time.monotonic() + timeout
-    while rig.tee.stats()["submitted"] < count and time.monotonic() < deadline:
-        time.sleep(0.005)
-    assert not rig.tee._active
-    rig.flush()
-
-
-# ------------------------------------------------ abandoned stream inside GC
-
-
 def test_abandoned_stream_finalized_by_gc_never_takes_capture_locks(rig: Rig) -> None:
     """GC may run the finalizer on a thread that already holds a capture lock."""
     chunks = [b"data: 1\n\n", b"data: 2\n\n"]
@@ -62,9 +50,7 @@ def test_abandoned_stream_finalized_by_gc_never_takes_capture_locks(rig: Rig) ->
     finished = threading.Event()
 
     def collect_while_holding_locks() -> None:
-        # The loss emitter lock (taken by note_activity/record) and the
-        # finish lock are both non-reentrant; a finalizer that takes either
-        # would deadlock this thread forever.
+        # Both locks are non-reentrant; a finalizer taking either would deadlock here.
         with rig.loss._lock, _stream._FINISH_LOCK:
             gc.collect()
         finished.set()
@@ -73,7 +59,10 @@ def test_abandoned_stream_finalized_by_gc_never_takes_capture_locks(rig: Rig) ->
     worker.start()
     worker.join(5.0)
     assert finished.is_set(), "GC finalizer deadlocked on a capture lock"
-    _wait_submitted(rig, 1)
+    deadline = time.monotonic() + 5
+    while rig.tee.stats()["submitted"] < 1 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    rig.flush()
     assert [attrs(s)["fabric.wire.response_state"] for s in rig.spans()] == ["abandoned"]
 
 
@@ -83,12 +72,18 @@ def test_fork_child_reinitializes_wire_locks() -> None:
         """
         import os, warnings
         warnings.simplefilter("ignore")
+        from fabric import _sequence
         from fabric.wire import _stream
+        allocator = _sequence.SourceAllocator("fork-src", "wire")
+        allocator.next_sequence()
+        parent_epoch = allocator.epoch
         _stream._FINISH_LOCK.acquire()  # held by "another thread" at fork time
+        allocator._lock.acquire()
         pid = os.fork()
         if pid == 0:
-            ok = _stream._FINISH_LOCK.acquire(timeout=2)
-            os._exit(0 if ok and _stream._REAPER_PID is None else 1)
+            ok = _stream._FINISH_LOCK.acquire(timeout=2) and _stream._REAPER_PID is None
+            epoch, sequence = allocator.next_sequence()
+            os._exit(0 if ok and epoch > parent_epoch and sequence == 0 else 1)
         _, status = os.waitpid(pid, 0)
         print("child", os.waitstatus_to_exitcode(status))
         """
@@ -104,32 +99,96 @@ def test_fork_child_reinitializes_wire_locks() -> None:
     assert result.stdout.strip() == "child 0", result.stderr
 
 
-# ----------------------------------------------- setup failure after ticket
-
-
-def test_setup_failure_after_sequence_allocation_is_a_recorded_loss(
+def test_setup_failure_before_sequence_allocation_leaves_no_gap(
     rig: Rig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def boom(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("injected")
 
-    monkeypatch.setattr(_stream, "RequestTee", boom)
-
-    def body() -> Any:
-        yield b'{"messages":[]}'
-
-    request = httpx.Request("POST", OPENAI_CHAT, content=body())
+    monkeypatch.setattr(_stream.Exchange, "_retain", boom)  # fails retaining the request
     with rig.client(lambda r: httpx.Response(200, json={"choices": []})) as client:
-        assert client.send(request).status_code == 200
+        assert client.post(OPENAI_CHAT, json={"messages": []}).status_code == 200
     rig.flush()
-    assert rig.allocator.high_water() == 0  # the sequence was consumed
-    assert rig.loss_counts() == {"internal_error": 1}
+    assert rig.allocator.last_sequence()[1] == -1  # allocated last: nothing consumed
+    assert rig.loss_counts() == {}
     assert rig.tee.stats()["internal_errors"] == 1
     assert rig.tee.stats()["inflight_bytes"] == 0
     assert not rig.tee._active
 
 
-# ------------------------------------------------ shutdown abandon race
+class _Holder:
+    """An openai.Stream-style object: it and its iterator form a cycle only GC frees."""
+
+
+@pytest.mark.parametrize("held", ["loss", "finish", "queue", "budget"])
+def test_started_stream_collected_by_gc_never_takes_capture_locks(rig: Rig, held: str) -> None:
+    """Review fix: GeneratorExit raised inside cyclic GC must not finish synchronously."""
+    chunks = [b"data: 1\n\n", b"data: 2\n\n"]
+    with rig.client(lambda r: httpx.Response(200, stream=ChunkStream(chunks))) as client:
+        response = client.send(client.build_request("POST", OPENAI_CHAT, json={}), stream=True)
+        holder = _Holder()
+        holder.it = response.iter_raw()  # type: ignore[attr-defined]
+        assert next(holder.it) == chunks[0]  # type: ignore[attr-defined]
+        holder.cycle, holder.response = holder, response  # type: ignore[attr-defined]
+        del holder, response
+    lock = {
+        "loss": rig.loss._lock,
+        "finish": _stream._FINISH_LOCK,
+        "queue": rig.tee.pipeline._queue.mutex,
+        "budget": rig.tee.budget._lock,
+    }[held]
+    finished = threading.Event()
+
+    def collect_while_holding() -> None:
+        with lock:  # non-reentrant: a synchronous finish inside GC would deadlock here
+            gc.collect()
+        finished.set()
+
+    gc.disable()
+    try:
+        worker = threading.Thread(target=collect_while_holding, daemon=True)
+        worker.start()
+        worker.join(5.0)
+    finally:
+        gc.enable()
+    assert finished.is_set(), "GC-finalized generator deadlocked on a capture lock"
+    rig.flush()
+    states = [attrs(s)["fabric.wire.response_state"] for s in rig.spans()]
+    assert states in (["closed_early"], ["abandoned"])
+    assert rig.tee.stats()["inflight_bytes"] == 0
+
+
+def test_close_does_not_wait_out_the_deadline_on_a_stream_awaiting_gc(tmp_path: Path) -> None:
+    """Review fix: an unreachable open stream no longer stalls close for the whole timeout."""
+    rig = make_rig(tmp_path, store=None)
+    with rig.client(lambda r: httpx.Response(200, stream=ChunkStream([b"a", b"b"]))) as client:
+        response = client.send(client.build_request("POST", OPENAI_CHAT, json={}), stream=True)
+        holder = _Holder()
+        holder.cycle, holder.response = holder, response  # type: ignore[attr-defined]
+        del holder, response
+    gc.disable()
+    try:
+        started = time.monotonic()
+        assert rig.tee.close(2.0) is False
+        assert time.monotonic() - started < 1.0
+    finally:
+        gc.enable()
+    assert rig.loss_counts() == {"shutdown": 1}
+    assert rig.tee.stats()["inflight_bytes"] == 0
+
+
+def test_close_never_reports_an_exchange_that_finished_after_the_snapshot(rig: Rig) -> None:
+    """Review fix: only exchanges close() itself claims become shutdown losses."""
+    with rig.client(lambda r: httpx.Response(200, json={"choices": []})) as client:
+        client.post(OPENAI_CHAT, json={"messages": []})
+    rig.flush()
+    (finished,) = rig.spans()
+    exchange = _stream.Exchange.__new__(_stream.Exchange)
+    exchange.done, exchange.finalizer = True, None  # already finished and submitted
+    rig.tee._active.add(exchange)  # still in close()'s snapshot when it finished
+    assert rig.tee.close(1.0) is True
+    assert rig.loss_counts() == {}
+    assert len(rig.spans()) == 1 and finished in rig.spans()
 
 
 class _BlockingExporter(SpanExporter):
@@ -148,88 +207,59 @@ class _BlockingExporter(SpanExporter):
         return None
 
 
-def test_close_never_reports_a_span_the_worker_is_already_ending(tmp_path: Path) -> None:
+def test_close_never_reports_a_job_the_worker_is_still_finishing() -> None:
     exporter = _BlockingExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    loss = LossEmitter(tracer_provider=TracerProvider())
+    loss_exporter = InMemorySpanExporter()
+    loss_provider = TracerProvider()
+    loss_provider.add_span_processor(SimpleSpanProcessor(loss_exporter))
+    loss = LossEmitter(tracer_provider=loss_provider)
     config = wire.WireConfig(store=None, tracer_provider=provider, patch_httpx=False)
-    allocator = SequenceAllocator(SourceIdentity("wire-race", time.time_ns(), "wire"))
-    tee = WireTee(config, allocator=allocator, loss=loss)
+    tee = WireTee(config, allocator=SourceAllocator("wire-race", "wire"), loss=loss)
     handle = wire.WireHandle(config, tee, patched=False)
     transport = WireTransport(
         httpx.MockTransport(lambda r: httpx.Response(200, json={})), handle=handle
     )
     with httpx.Client(transport=transport) as client:
         client.post(OPENAI_CHAT, json={"messages": []})
-    assert exporter.entered.wait(5)  # worker is inside span.end()
-    tee.pipeline.close(0.05)  # deadline expires mid-emit
+    assert exporter.entered.wait(5)  # the worker is inside span.end()
+    assert tee.pipeline.close(0.05) is False  # deadline expires mid-emit
     exporter.release.set()
     tee.pipeline._worker.join(5)
-    identity = allocator.identity
-    counts = loss.stats().by_source.get((identity.source_id, identity.source_epoch), {})
+    assert loss.flush(1.0)
     assert len(exporter.spans) == 1
-    assert "shutdown_timeout" not in counts
+    assert [s.name for s in loss_exporter.get_finished_spans()] == ["fabric.capture_heartbeat"]
     loss.close(0.5)
 
 
-# ------------------------------------------------- loss spans and sampling
-
-
-def test_sampled_out_loss_spans_are_not_counted_as_emitted() -> None:
-    provider = TracerProvider(sampler=ALWAYS_OFF)
-    loss = LossEmitter(tracer_provider=provider)
-    allocator = SequenceAllocator(SourceIdentity("wire-sampled", time.time_ns(), "wire"))
-    loss.record(allocator, "queue_full")
-    assert loss.flush(2.0)
-    stats = loss.stats()
-    assert stats.spans_emitted == 0
-    assert loss._spans_unsampled >= 1
-    loss.close(0.5)
-
-
-# --------------------------------------------------- decompression bombs
-
-
-def test_compressed_body_inflation_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_stitch, "MAX_DECODED_BYTES", 1 << 20)
-    bomb = gzip.compress(b'{"messages":[' + b" " * (64 << 20) + b"]}", compresslevel=9)
-    assert len(bomb) < 1 << 20  # small on the wire, 64 MiB decoded
-    tracemalloc.start()
+def test_sampled_out_exchange_span_is_a_span_dropped_loss(tmp_path: Path) -> None:
+    rig = make_rig(tmp_path, store=None)
+    sampled_out = TracerProvider(sampler=ALWAYS_OFF)
+    rig.tee.pipeline._provider = sampled_out  # a host sampler under FABRIC_WIRE_TRACER=global
     try:
-        keys = _stitch.extract_stitch_keys(
-            "openai.chat_completions",
-            bomb,
-            "application/json",
-            "gzip",
-            False,
-            bomb,
-            "application/json",
-            "gzip",
-            False,
-        )
-        _, peak = tracemalloc.get_traced_memory()
+        with rig.client(lambda r: httpx.Response(200, json={})) as client:
+            client.post(OPENAI_CHAT, json={"messages": []})
+        rig.flush()
+        assert rig.spans() == []
+        assert rig.loss_counts() == {"span_dropped": 1}
+        assert rig.tee.stats()["spans_emitted"] == 0
     finally:
-        tracemalloc.stop()
-    assert keys.request_parse_status == "undecodable_encoding"
-    assert keys.response_parse_status == "undecodable_encoding"
-    assert peak < 8 << 20
+        rig.close()
 
 
-def test_compressed_body_under_the_bound_still_parses() -> None:
-    body = gzip.compress(b'{"model":"m","messages":[{"role":"user","content":"hi"}]}')
-    keys = _stitch.extract_stitch_keys(
-        "openai.chat_completions", body, "application/json", "gzip", False, None, None, None, False
-    )
-    assert keys.request_parse_status == "ok"
-    assert len(keys.input_digests) == 1
-    with pytest.raises(_stitch._UnparsedError):
-        _stitch._decode(gzip.compress(b"x" * 4096), "gzip", 1024)
-    with pytest.raises(_stitch._UnparsedError):
-        _stitch._decode(gzip.compress(b"x" * 4096)[:-12], "gzip")  # truncated stream
-
-
-# ------------------------------------------------ sitecustomize chaining
+def test_sampled_out_loss_spans_warn_and_do_not_cascade(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    loss = LossEmitter(tracer_provider=TracerProvider(sampler=ALWAYS_OFF))
+    caplog.set_level("WARNING", logger="fabric.capture")
+    loss.record("wire-sampled", 1, "queue_full", 3)
+    loss.record("wire-sampled", 1, "shutdown", 4)
+    assert loss.flush(2.0)
+    assert loss.spans_unsampled == 2
+    assert not loss._pending  # nothing was re-reported
+    assert len([r for r in caplog.records if r.name == "fabric.capture"]) == 1
+    loss.close(0.5)
 
 
 def _python(env: dict[str, str]) -> subprocess.CompletedProcess[str]:

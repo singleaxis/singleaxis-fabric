@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Activation: install/uninstall, env config, run scopes and autoload (spec 042 §3)."""
+"""Activation: install/uninstall, env config, run markers and autoload (spec 042 §3, §6)."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 import fabric._loss
+import fabric._sequence
 from fabric import wire
 from fabric._loss import LossEmitter
 from fabric.content_store import LocalFilesystemContentStore
@@ -39,6 +40,7 @@ def _isolated_loss_emitter(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Give each test its own process loss emitter so settings never leak."""
     emitter = LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
+    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
     yield
     wire.uninstall()
     emitter.close(1.0)
@@ -95,7 +97,8 @@ def test_install_patches_default_transports_and_uninstall_restores(
     assert handle.flush(5.0)
     spans = [s for s in exporter.get_finished_spans() if s.name == "fabric.model_call"]
     assert len(spans) == 2
-    assert {attrs(s)["fabric.source.component"] for s in spans} == {"wire"}
+    assert {attrs(s)["fabric.source_id"] for s in spans} == {handle.allocator.source_id}
+    assert handle.allocator.component == "wire"
     assert handle.stats().matched == 2
     assert handle.stats().spans_emitted == 2
     assert len(fake_network) == 3
@@ -127,27 +130,33 @@ def test_wrapper_without_install_is_pass_through() -> None:
         assert client.post(OPENAI_CHAT, json={}).content == b"x"
 
 
-def test_run_scope_and_run_close_watermark(
+def test_run_scope_emits_heartbeat_markers_on_entry_and_exit(
     provider: tuple[TracerProvider, InMemorySpanExporter],
     fake_network: list[httpx.Request],
 ) -> None:
     tracer_provider, exporter = provider
     handle = wire.install(tracer_provider=tracer_provider)
-    with wire.run("run-travel-42"), httpx.Client() as client:
-        client.post(OPENAI_CHAT, json={"messages": []})
-        client.post(OPENAI_CHAT, json={"messages": []})
+    with httpx.Client() as client:
+        client.post(OPENAI_CHAT, json={"messages": []})  # outside the run: sequence 0
+        with wire.run("run-travel-42"):
+            client.post(OPENAI_CHAT, json={"messages": []})
+            client.post(OPENAI_CHAT, json={"messages": []})
     assert handle.flush(5.0)
     spans = [s for s in exporter.get_finished_spans() if s.name == "fabric.model_call"]
-    assert [attrs(s)["fabric.run.sequence"] for s in spans] == [0, 1]
-    assert {attrs(s)["fabric.run.id"] for s in spans} == {"run-travel-42"}
-    assert {attrs(s)["fabric.run.id_basis"] for s in spans} == {"explicit"}
-    closes = [
-        s
+    runs = [(attrs(s)["fabric.source.sequence"], attrs(s)["fabric.run.id"]) for s in spans]
+    assert runs[1:] == [(1, "run-travel-42"), (2, "run-travel-42")]
+    assert runs[0][1] != "run-travel-42"
+    markers = [
+        attrs(s)["fabric.heartbeat.last_sequence"]
         for s in exporter.get_finished_spans()
-        if s.name == "fabric.capture_watermark" and attrs(s).get("fabric.run.id")
+        if s.name == "fabric.capture_heartbeat" and attrs(s).get("fabric.run.id") == "run-travel-42"
     ]
-    assert closes
-    assert attrs(closes[-1])["fabric.run.high_water_sequence"] == 1
+    assert markers == [0, 2]  # entry marker m=0 -> window starts at 1; exit marker = 2
+    plain = [
+        s for s in exporter.get_finished_spans()
+        if s.name == "fabric.capture_heartbeat" and "fabric.run.id" not in attrs(s)
+    ]  # fmt: skip
+    assert attrs(plain[-1])["fabric.heartbeat.last_sequence"] == 2  # flush covers the tail
     with pytest.raises(ValueError), wire.run("bad id with spaces"):
         pass
 
@@ -158,9 +167,9 @@ def test_install_rejects_invalid_config() -> None:
     with pytest.raises(ValueError):
         WireConfig(queue_max_items=70000)
     with pytest.raises(ValueError):
-        WireConfig(store_retry_attempts=11)
+        WireConfig(source_id="has space")
     with pytest.raises(ValueError):
-        WireConfig(store=LocalFilesystemContentStore(root="/tmp/x"))  # no tenant
+        wire.install(store=LocalFilesystemContentStore(root="/tmp/x"))  # no tenant
     assert wire.current_handle() is None
 
 
@@ -171,7 +180,6 @@ def test_env_config_parsing(tmp_path: Path) -> None:
         "FABRIC_SOURCE_ID": "wire-node-1",
         "FABRIC_WIRE_MAX_BODY_BYTES": "1024",
         "FABRIC_WIRE_QUEUE_MAX_ITEMS": "8",
-        "FABRIC_WIRE_OTLP_MESSAGE_HASHES": "0",
         "FABRIC_WIRE_TRACER": "global",
         "FABRIC_WIRE_ENDPOINTS": json.dumps(
             [
@@ -191,7 +199,6 @@ def test_env_config_parsing(tmp_path: Path) -> None:
     assert isinstance(config.store, LocalFilesystemContentStore)
     assert config.store.tenant_id == "tenant-a"
     assert config.max_body_bytes == 1024 and config.queue_max_items == 8
-    assert config.otlp_message_hashes is False
     assert config.source_id == "wire-node-1"
     assert config.extra_endpoints[0].ports == frozenset({11434})
     s3_config, _ = config_from_env(
@@ -204,7 +211,10 @@ def test_env_config_parsing(tmp_path: Path) -> None:
         {"FABRIC_WIRE_TRACER": "both"},
         {"FABRIC_WIRE_MAX_BODY_BYTES": "lots"},
         {"FABRIC_WIRE_ENDPOINTS": '[{"endpoint_id": "Bad Id", "dialect": "openai"}]'},
-        {"FABRIC_RUN_ID": "has space"},
+        {"FABRIC_WIRE_ENDPOINTS": '[{"endpoint_id": "x", "hosts": ["h"]}]'},  # no dialect
+        {"FABRIC_WIRE_ENDPOINTS": '[{"endpoint_id": "x", "dialect": "openai", "hosts": "h"}]'},
+        {"FABRIC_WIRE_ENDPOINTS": '[{"endpoint_id": "x", "dialect": "openai", "nope": 1}]'},
+        {"FABRIC_SOURCE_ID": "has space"},
     ):
         with pytest.raises(ValueError):
             config_from_env(bad)

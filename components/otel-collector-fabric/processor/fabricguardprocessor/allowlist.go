@@ -124,28 +124,17 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"fabric.crewai.content_sha256", "fabric.crewai.content_chars",
 	"fabric.crewai.task_description_sha256", "fabric.crewai.task_description_chars",
 	"fabric.crewai.output_chars",
-	// Spec 042 wire capture: LLM exchange spans, capture-loss records and
-	// watermarks. Digests, ids, counts and refs only; exact bytes stay in the
-	// customer store. Values are further closed by validCaptureValue.
-	"fabric.source.epoch", "fabric.source.component",
-	"fabric.run.id", "fabric.run.id_basis", "fabric.run.sequence",
-	"fabric.run.high_water_sequence",
+	// Spec 042 rev 3 wire capture: LLM exchange spans, capture-loss records
+	// and heartbeats. Ids, enums, digests and sequence numbers only; exact
+	// bytes stay in the customer store and all stitching is done offline from
+	// those bytes. Values are further closed by validCaptureValue.
+	"fabric.source.epoch", "fabric.run.id",
 	"fabric.wire.exchange_id", "fabric.wire.fidelity", "fabric.wire.api",
-	"fabric.wire.endpoint_id", "fabric.wire.exchange_ref", "fabric.wire.exchange_sha256",
-	"fabric.wire.request_body_sha256", "fabric.wire.response_body_sha256",
-	"fabric.wire.request_body_bytes", "fabric.wire.response_body_bytes",
-	"fabric.wire.input.message_count", "fabric.wire.output.message_count",
-	"fabric.wire.input.message_hashes", "fabric.wire.input.message_hashes_offset",
-	"fabric.wire.output.message_hashes", "fabric.wire.system_hash", "fabric.wire.tools_hash",
-	"fabric.wire.input.tool_call_ids", "fabric.wire.output.tool_call_ids",
-	"fabric.wire.arrays_truncated", "fabric.wire.response_state", "fabric.wire.truncated",
-	"fabric.wire.parse_status", "fabric.wire.store_status",
-	"fabric.wire.client_traceparent", "fabric.wire.provider_request_id",
-	"fabric.loss.record_id", "fabric.loss.record_kind", "fabric.loss.reason",
-	"fabric.loss.count", "fabric.loss.affected_sequences", "fabric.loss.affected_run_ids",
-	"fabric.loss.affected_run_sequences", "fabric.loss.affected_truncated",
-	"fabric.loss.high_water_sequence", "fabric.loss.cumulative_total",
-	"fabric.loss.cumulative_reasons", "fabric.loss.cumulative_counts",
+	"fabric.wire.request_sha256", "fabric.wire.response_sha256",
+	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
+	"fabric.loss.reason", "fabric.loss.count",
+	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
+	"fabric.heartbeat.last_sequence",
 ))
 
 // BuiltInAllowedFields retains released v1 log classes. The shared envelope

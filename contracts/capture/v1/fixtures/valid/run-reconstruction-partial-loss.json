@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.run-reconstruction/v1",
-  "generated_at": "2026-10-07T09:10:00Z",
+  "generated_at": "2026-10-08T09:10:00Z",
   "verifier": {
     "name": "fabric.reconstruct",
     "version": "0.0.0-draft"
@@ -8,71 +8,73 @@
   "inputs": {
     "span_files": [
       {
-        "path": "out/records.jsonl",
+        "path": "out/spans.jsonl",
         "sha256": "sha256:abababababababababababababababababababababababababababababababab",
         "format": "sink_jsonl",
-        "records": 11
+        "records": 6
       }
     ],
     "store": {
       "kind": "local",
       "tenant_id": "tenant-a"
-    },
-    "scope": "bytes",
-    "recompute_digests": false,
-    "scan_store": false
+    }
   },
   "sources": [
     {
       "source_id": "wire-3f9a1c2b7d4e5f60",
       "source_epoch": 1791331200000000000,
-      "component": "wire",
-      "observed_records": 10,
-      "high_water_sequence": 10,
+      "exchanges": 4,
+      "heartbeat_sequence": 4,
       "missing_sequences": [
         [
-          7,
-          7
+          3,
+          3
         ]
       ],
-      "watermark_sequence": 10,
-      "cumulative_lost": 1
+      "loss_ranges": [
+        {
+          "reason": "queue_full",
+          "first_sequence": 3,
+          "last_sequence": 3,
+          "count": 1
+        }
+      ]
     }
   ],
   "runs": [
     {
-      "run_id": "run-travel-42",
-      "run_id_basis": "explicit",
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
       "verdict": "partial",
       "declared_scope": {
         "capture_surfaces": [
           "exact_wire"
         ],
-        "bytes": true,
-        "through": [
+        "windows": [
           {
             "source_id": "wire-3f9a1c2b7d4e5f60",
             "source_epoch": 1791331200000000000,
-            "through_source_sequence": 10
+            "first_sequence": 0,
+            "last_sequence": 4,
+            "heartbeat_sequence": 4
           }
         ]
       },
       "exchanges": [
         {
           "exchange_id": "ex-0",
-          "run_sequence": 0,
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
-          "source_sequence": 2,
+          "source_sequence": 0,
           "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90200",
-          "started_at": "2026-10-07T09:00:00.100Z",
-          "ended_at": "2026-10-07T09:00:00.900Z",
+          "started_at": "2026-10-08T09:00:00.100Z",
+          "ended_at": "2026-10-08T09:00:00.900Z",
           "model": "gpt-4o-2024-08-06",
           "response_id": "chatcmpl-run42-0",
           "response_state": "complete",
+          "parse_status": "ok",
           "thread_id": "thread-0",
           "input_message_count": 2,
           "output_message_count": 1,
@@ -80,46 +82,38 @@
           "tool_call_ids_emitted": [
             "call_a"
           ],
-          "origin": "span_and_store",
           "objects": {
             "request": {
-              "object_id": "req-ex-0",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req-ex-0",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "req0",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req0",
+              "sha256": "sha256:f162b493dd9bf56e431f6d9db5dcd9dd2af4e4442f711d454b30f50745621c00",
+              "byte_length": 4,
               "verification": "verified"
             },
             "response": {
-              "object_id": "rsp-ex-0",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp-ex-0",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
-              "verification": "verified"
-            },
-            "record": {
-              "object_id": "rec-ex-0",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rec-ex-0",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "rsp0",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp0",
+              "sha256": "sha256:dadd3f33ead60a412074630603ff9a8782b510b501334869533f5fb642b17857",
+              "byte_length": 4,
               "verification": "verified"
             }
           }
         },
         {
           "exchange_id": "ex-1",
-          "run_sequence": 1,
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
-          "source_sequence": 5,
+          "source_sequence": 1,
           "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90201",
-          "started_at": "2026-10-07T09:00:01.120Z",
-          "ended_at": "2026-10-07T09:00:02.050Z",
+          "started_at": "2026-10-08T09:00:01.120Z",
+          "ended_at": "2026-10-08T09:00:02.050Z",
           "model": "gpt-4o-2024-08-06",
           "response_id": "chatcmpl-run42-1",
           "response_state": "complete",
+          "parse_status": "ok",
           "thread_id": "thread-0",
           "input_message_count": 4,
           "output_message_count": 1,
@@ -129,27 +123,19 @@
           "tool_call_ids_emitted": [
             "call_b"
           ],
-          "origin": "span_and_store",
           "objects": {
             "request": {
-              "object_id": "req-ex-1",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req-ex-1",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "req1",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req1",
+              "sha256": "sha256:c84a09757ebaad3dbdc07d455da0b62427fff0f874c83fd5d961f5d4503523a1",
+              "byte_length": 4,
               "verification": "verified"
             },
             "response": {
-              "object_id": "rsp-ex-1",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp-ex-1",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
-              "verification": "verified"
-            },
-            "record": {
-              "object_id": "rec-ex-1",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rec-ex-1",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "rsp1",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp1",
+              "sha256": "sha256:9f583f90d69602712456c8f53125962bfce6fdffb320ffa2b34e6adab3d5f195",
+              "byte_length": 4,
               "verification": "verified"
             }
           },
@@ -157,49 +143,42 @@
         },
         {
           "exchange_id": "ex-2",
-          "run_sequence": 2,
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
-          "source_sequence": 6,
+          "source_sequence": 2,
           "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90202",
-          "started_at": "2026-10-07T09:00:02.300Z",
-          "ended_at": "2026-10-07T09:00:03.000Z",
+          "started_at": "2026-10-08T09:00:02.300Z",
+          "ended_at": "2026-10-08T09:00:03.000Z",
           "model": "gpt-4o-2024-08-06",
           "response_id": "chatcmpl-run42-2",
           "response_state": "complete",
+          "parse_status": "ok",
           "thread_id": "thread-0",
           "input_message_count": 6,
           "output_message_count": 1,
           "tool_call_ids_consumed": [
+            "call_a",
             "call_b"
           ],
           "tool_call_ids_emitted": [
             "call_c"
           ],
-          "origin": "span_and_store",
           "objects": {
             "request": {
-              "object_id": "req-ex-2",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req-ex-2",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "req2",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req2",
+              "sha256": "sha256:0e3cc730d9c08262b256b2ba943e34c5460dbf5747cc864f0cf8065ad068605c",
+              "byte_length": 4,
               "verification": "verified"
             },
             "response": {
-              "object_id": "rsp-ex-2",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp-ex-2",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
-              "verification": "verified"
-            },
-            "record": {
-              "object_id": "rec-ex-2",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rec-ex-2",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "rsp2",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp2",
+              "sha256": "sha256:0ddacccaf1eefed4c03108590690038c18f2c839f35ecb38eba55b1a9189304f",
+              "byte_length": 4,
               "verification": "verified"
             }
           },
@@ -207,47 +186,42 @@
         },
         {
           "exchange_id": "ex-4",
-          "run_sequence": 4,
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
-          "source_sequence": 8,
+          "source_sequence": 4,
           "fidelity": "exact_wire",
           "api": "openai.chat_completions",
           "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
           "span_id": "00f067aa0ba90204",
-          "started_at": "2026-10-07T09:00:04.200Z",
-          "ended_at": "2026-10-07T09:00:04.800Z",
+          "started_at": "2026-10-08T09:00:04.200Z",
+          "ended_at": "2026-10-08T09:00:04.800Z",
           "model": "gpt-4o-2024-08-06",
           "response_id": "chatcmpl-run42-4",
           "response_state": "complete",
+          "parse_status": "ok",
           "thread_id": "thread-0",
           "input_message_count": 10,
           "output_message_count": 1,
           "tool_call_ids_consumed": [
+            "call_a",
+            "call_b",
+            "call_c",
             "call_d"
           ],
           "tool_call_ids_emitted": [],
-          "origin": "span_and_store",
           "objects": {
             "request": {
-              "object_id": "req-ex-4",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req-ex-4",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "req4",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/req4",
+              "sha256": "sha256:fe53a3874e0ce698a53d5936aa4a12825ed878df3010c3ef9bf69ef2207b2ce0",
+              "byte_length": 4,
               "verification": "verified"
             },
             "response": {
-              "object_id": "rsp-ex-4",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp-ex-4",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
-              "verification": "verified"
-            },
-            "record": {
-              "object_id": "rec-ex-4",
-              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rec-ex-4",
-              "sha256": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-              "byte_length": 1,
+              "object_id": "rsp4",
+              "ref": "file:///var/lib/fabric/content/tenant-a/evidence/rsp4",
+              "sha256": "sha256:1441e3bed567a5bb89cc3ad67e341ac59c5bb3b4262343b813739a652730d74f",
+              "byte_length": 4,
               "verification": "verified"
             }
           },
@@ -267,17 +241,12 @@
       ],
       "gaps": [
         {
-          "gap_type": "loss_record",
+          "gap_type": "loss",
           "effect": "partial",
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
-          "sequences": [
-            7
-          ],
-          "run_sequences": [
-            3
-          ],
-          "loss_record_id": "9d0c8b7a-6f5e-4d3c-8b2a-1f0e9d8c7b6a",
+          "first_sequence": 3,
+          "last_sequence": 3,
           "reason": "queue_full"
         },
         {
@@ -286,20 +255,13 @@
           "exchange_id": "ex-4",
           "tool_call_id": "call_d",
           "reason": "consumed_not_emitted"
-        },
-        {
-          "gap_type": "unmatched_tool_call",
-          "effect": "info",
-          "exchange_id": "ex-2",
-          "tool_call_id": "call_c",
-          "reason": "emitted_not_consumed"
         }
       ],
       "counts": {
         "exchanges": 4,
         "gaps_by_type": {
-          "loss_record": 1,
-          "unmatched_tool_call": 2
+          "loss": 1,
+          "unmatched_tool_call": 1
         }
       },
       "checks": {

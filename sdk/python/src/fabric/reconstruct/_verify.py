@@ -1,52 +1,40 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Offline run reconstruction and integrity verdict (spec 042 §10).
+"""Offline run reconstruction and integrity verdict (spec 042 §9).
 
-The verifier is read-only. It normalizes exchange and loss/watermark spans,
-merges them with stored ``fabric.llm-exchange/v1`` records, accounts for
-every allocated source sequence, verifies stored bytes, stitches exchanges
-into threads and states a verdict for a declared scope. The verdict is an
-integrity statement about the *record*; it never judges the agent.
-
-A run is reported per ``(run_id, source_id, source_epoch)``: ``run_sequence``
-is allocated per source, so exchanges that share a run id across processes
-or capture components are verified as separate run entries with the same
-``run_id``.
+The verifier is read-only and the only component that parses messages. It
+normalizes exchange, loss and heartbeat spans, accounts for every allocated
+sequence per ``(source_id, source_epoch)``, verifies stored bytes against
+the span digests and descriptors, derives message digests and tool-call ids
+from those bytes, stitches exchanges into threads and states a verdict for
+a declared scope. The verdict is an integrity statement about the *record*;
+it never judges the agent.
 """
 
 from __future__ import annotations
 
 import hashlib
-import importlib
-import json
 import os
-from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from collections import defaultdict
+from collections.abc import Collection, Iterable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from types import ModuleType
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fabric._version import __version__
 from fabric.reconstruct._inputs import (
-    A_EXCHANGE_ID,
-    L_RECORD_KIND,
-    DigestList,
     ExchangeObs,
+    HeartbeatObs,
     LossObs,
     ReconstructInputError,
     SpanFormat,
-    SpanRecord,
-    exchange_from_record,
-    exchange_from_span,
-    id_list,
-    loss_from_span,
     object_id_from_ref,
+    observe,
     read_span_file,
 )
-from fabric.reconstruct._objects import RECORD_ROLE, ObjectResult, StoreReader
+from fabric.reconstruct._objects import ObjectResult, StoreReader
 from fabric.reconstruct._report import (
-    MAX_GAP_SEQUENCES,
     SCHEMA_VERSION,
     Check,
     Gap,
@@ -56,126 +44,89 @@ from fabric.reconstruct._report import (
     sort_gaps,
     verdict_for,
 )
-from fabric.reconstruct._stitch_check import stitch_run
+from fabric.reconstruct._stitch import WireApi, continuation_digests, extract_stitch_keys
+from fabric.reconstruct._stitch_check import StitchView, stitch_run
 
-Scope = Literal["bytes", "metadata"]
 SourceKey = tuple[str, int]
-RunKey = tuple[str, str, int]
+Segment = tuple[int, int, str | None]
+Side = Literal["request", "response"]
 
-
-_RECOVERABLE_LOSS = frozenset({"span_dropped", "span_export_failed"})
-_BYTE_GAPS = frozenset({"missing_object", "truncated"})
+_ROLES: dict[Side, str] = {
+    "request": "model.exchange.request",
+    "response": "model.exchange.response",
+}
+_BYTE_GAPS = frozenset({"missing_object", "digest_mismatch", "truncated"})
 _STITCH_GAPS = frozenset(
-    {"unmatched_tool_call", "unresolved_previous_response", "unparsed_exchange", "prefix_break"}
+    {"unparsed_exchange", "prefix_break", "unmatched_tool_call", "unresolved_previous_response"}
 )
-_UNSTORED = frozenset({"failed", "dropped"})
-_STORED = frozenset({"stored", "truncated"})
+_MODEL_MAX = 256
+_HTTP_ERROR = 400
 
 
 # --------------------------------------------------------------------------
-# Collected state
+# Per-source sequence accounting
 # --------------------------------------------------------------------------
 
 
 @dataclass(slots=True)
 class _Source:
-    source_id: str
-    epoch: int
-    component: str | None = None
-    exchange_sequences: set[int] = field(default_factory=set)
-    losses: list[LossObs] = field(default_factory=list)
-    watermarks: list[LossObs] = field(default_factory=list)
-    high_water: int = -1
+    key: SourceKey
+    sequences: set[int] = field(default_factory=set)
+    losses: set[LossObs] = field(default_factory=set)
+    heartbeat: int = -1
     missing: list[tuple[int, int]] = field(default_factory=list)
-    explained: set[int] = field(default_factory=set)
-
-    def observed(self) -> set[int]:
-        records = {record.source_sequence for record in (*self.losses, *self.watermarks)}
-        return self.exchange_sequences | records
+    segments: dict[tuple[int, int], list[Segment]] = field(default_factory=dict)
 
     def finalize(self) -> None:
-        observed = self.observed()
-        declared = [
-            record.high_water_sequence
-            for record in (*self.losses, *self.watermarks)
-            if record.high_water_sequence is not None
-        ]
-        self.high_water = max([*observed, *declared], default=-1)
-        self.missing = _complement(observed, self.high_water)
-        self.explained = {item.source_sequence for loss in self.losses for item in loss.affected}
+        top = max([self.heartbeat, *self.sequences, *(loss.last_sequence for loss in self.losses)])
+        previous = -1
+        for sequence in sorted(self.sequences):
+            if sequence > previous + 1:
+                self.missing.append((previous + 1, sequence - 1))
+            previous = sequence
+        if top > previous:
+            self.missing.append((previous + 1, top))
+        ordered = sorted(self.losses, key=lambda x: (x.first_sequence, x.reason, x.last_sequence))
+        for first, last in self.missing:
+            self.segments[(first, last)] = _segments(first, last, ordered)
 
-    def unexplained(self) -> list[tuple[int, int]]:
-        return _subtract_points(self.missing, self.explained)
-
-    def to_json(self) -> dict[str, Any]:
-        cumulative = [
-            record.cumulative_total
-            for record in (*self.losses, *self.watermarks)
-            if record.cumulative_total is not None
-        ]
-        out: dict[str, Any] = {"source_id": self.source_id, "source_epoch": self.epoch}
-        if self.component is not None:
-            out["component"] = self.component
-        out["observed_records"] = len(self.observed())
-        out["high_water_sequence"] = self.high_water
-        out["missing_sequences"] = [[first, last] for first, last in self.missing]
-        if self.watermarks:
-            out["watermark_sequence"] = max(mark.source_sequence for mark in self.watermarks)
-        out["cumulative_lost"] = max(cumulative, default=0)
-        return out
-
-
-@dataclass(slots=True)
-class _ExchangeState:
-    obs: ExchangeObs
-    gaps: list[Gap] = field(default_factory=list)
-    objects: dict[str, ObjectResult] = field(default_factory=dict)
-    record_result: ObjectResult | None = None
+    def to_json(self, exchanges: int) -> dict[str, Any]:
+        return {
+            "source_id": self.key[0],
+            "source_epoch": self.key[1],
+            "exchanges": exchanges,
+            "heartbeat_sequence": self.heartbeat,
+            "missing_sequences": [[first, last] for first, last in self.missing],
+            "loss_ranges": [
+                {
+                    "reason": loss.reason,
+                    "first_sequence": loss.first_sequence,
+                    "last_sequence": loss.last_sequence,
+                    "count": loss.count,
+                }
+                for loss in sorted(
+                    self.losses, key=lambda x: (x.first_sequence, x.last_sequence, x.reason)
+                )
+            ],
+        }
 
 
-def _complement(observed: set[int], high_water: int) -> list[tuple[int, int]]:
-    """Inclusive ranges of ``[0, high_water]`` not in ``observed``."""
+def _segments(first: int, last: int, losses: Sequence[LossObs]) -> list[Segment]:
+    """Split a missing range into loss-covered (with reason) and unexplained parts."""
 
-    missing: list[tuple[int, int]] = []
-    cursor = 0
-    for value in sorted(item for item in observed if 0 <= item <= high_water):
-        if value > cursor:
-            missing.append((cursor, value - 1))
-        cursor = value + 1
-    if cursor <= high_water:
-        missing.append((cursor, high_water))
-    return missing
-
-
-def _subtract_points(spans: Sequence[tuple[int, int]], points: set[int]) -> list[tuple[int, int]]:
-    out: list[tuple[int, int]] = []
-    ordered = sorted(points)
-    for first, last in spans:
-        cursor = first
-        for point in ordered:
-            if point < cursor or point > last:
-                continue
-            if point > cursor:
-                out.append((cursor, point - 1))
-            cursor = point + 1
-        if cursor <= last:
-            out.append((cursor, last))
+    out: list[Segment] = []
+    position = first
+    for loss in losses:
+        low, high = max(loss.first_sequence, position), min(loss.last_sequence, last)
+        if high < low:
+            continue
+        if low > position:
+            out.append((position, low - 1, None))
+        out.append((low, high, loss.reason))
+        position = high + 1
+    if position <= last:
+        out.append((position, last, None))
     return out
-
-
-def _clip(spans: Iterable[tuple[int, int]], low: int, high: int) -> list[tuple[int, int]]:
-    """Intersect inclusive ranges with ``[low, high]``."""
-
-    out: list[tuple[int, int]] = []
-    for first, last in spans:
-        start, end = max(first, low), min(last, high)
-        if start <= end:
-            out.append((start, end))
-    return out
-
-
-def _listing(first: int, last: int) -> tuple[int, ...]:
-    return tuple(range(first, min(last, first + MAX_GAP_SEQUENCES - 1) + 1))
 
 
 # --------------------------------------------------------------------------
@@ -188,61 +139,46 @@ def reconstruct(
     *,
     store: Any | None = None,
     tenant_id: str | None = None,
-    scope: Literal["bytes", "metadata"] = "bytes",
     run_ids: Collection[str] | None = None,
-    scan_store: bool = False,
-    recompute_digests: bool = False,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Reconstruct runs from span files (and an optional store).
+    """Reconstruct runs from span files and an optional customer store.
 
     Returns a ``fabric.run-reconstruction/v1`` document. Raises
     :class:`ReconstructInputError` for unusable input or options.
     """
 
-    if scope not in ("bytes", "metadata"):
-        raise ReconstructInputError(f"scope must be 'bytes' or 'metadata', not {scope!r}")
     paths = list(span_paths)
     if not paths:
         raise ReconstructInputError("at least one span file is required")
-    stitcher = _load_stitcher() if recompute_digests else None
     reader = StoreReader(store, tenant_id) if store is not None else None
-    if scan_store and reader is None:
-        raise ReconstructInputError("--scan-store requires a store")
-    if recompute_digests and reader is None:
-        raise ReconstructInputError("--recompute-digests requires a store")
     span_files: list[dict[str, Any]] = []
-    spans: list[SpanRecord] = []
+    verifier = _Verifier(reader)
     for path in paths:
         fmt, records = read_span_file(path)
         span_files.append(_span_file_entry(path, fmt, len(records)))
-        spans.extend(records)
-    verifier = _Verifier(reader, scope, stitcher)
-    verifier.ingest(spans)
-    if scan_store and reader is not None:
-        verifier.scan(reader)
-    verifier.verify_objects()
-    runs = verifier.build_runs(set(run_ids) if run_ids is not None else None)
+        for record in records:
+            verifier.add(observe(record), (record.trace_id, record.span_id))
+    verifier.finalize()
     inputs: dict[str, Any] = {"span_files": span_files}
     if reader is not None:
         inputs["store"] = {"kind": reader.kind, "tenant_id": reader.tenant_id}
-    inputs.update(
-        {"scope": scope, "recompute_digests": recompute_digests, "scan_store": scan_store}
-    )
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": format_datetime(generated_at or datetime.now(tz=UTC)),
         "verifier": {"name": "fabric.reconstruct", "version": __version__},
         "inputs": inputs,
-        "sources": [verifier.sources[key].to_json() for key in sorted(verifier.sources)],
-        "runs": runs,
+        "sources": [
+            verifier.sources[key].to_json(verifier.exchange_count[key])
+            for key in sorted(verifier.sources)
+        ],
+        "runs": verifier.build_runs(set(run_ids) if run_ids is not None else None),
     }
 
 
 def _span_file_entry(path: str | os.PathLike[str], fmt: SpanFormat, count: int) -> dict[str, Any]:
-    location = Path(path)
     digest = hashlib.sha256()
-    with location.open("rb") as stream:
+    with Path(path).open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return {
@@ -253,796 +189,415 @@ def _span_file_entry(path: str | os.PathLike[str], fmt: SpanFormat, count: int) 
     }
 
 
-def _load_stitcher() -> ModuleType:
-    try:
-        module = importlib.import_module("fabric.wire._stitch")
-    except Exception as exc:
-        raise ReconstructInputError(
-            "--recompute-digests needs fabric.wire._stitch, which is unavailable"
-        ) from exc
-    if not callable(getattr(module, "extract_stitch_keys", None)):
-        raise ReconstructInputError("fabric.wire._stitch has no extract_stitch_keys()")
-    return module
-
-
 # --------------------------------------------------------------------------
-# Verifier
+# Collection
 # --------------------------------------------------------------------------
 
 
 class _Verifier:
-    def __init__(
-        self, reader: StoreReader | None, scope: Scope, stitcher: ModuleType | None
-    ) -> None:
+    def __init__(self, reader: StoreReader | None) -> None:
         self.reader = reader
-        self.scope = scope
-        self.stitcher = stitcher
-        self.exchanges: dict[str, _ExchangeState] = {}
-        self.losses: dict[str, LossObs] = {}
+        self.exchanges: dict[str, ExchangeObs] = {}
+        self.conflicts: set[str] = set()
         self.sources: dict[SourceKey, _Source] = {}
-        self._record_ids: set[str] = set()
+        self.exchange_count: dict[SourceKey, int] = defaultdict(int)
+        self.claims: dict[tuple[SourceKey, int], set[str]] = defaultdict(set)
+        self.markers: dict[str, dict[SourceKey, list[int]]] = defaultdict(lambda: defaultdict(list))
+        self._heartbeats: set[tuple[tuple[str, str] | None, HeartbeatObs]] = set()
 
-    @property
-    def check_bytes(self) -> bool:
-        return self.scope == "bytes"
+    def _source(self, key: SourceKey) -> _Source:
+        if key not in self.sources:
+            self.sources[key] = _Source(key)
+        return self.sources[key]
 
-    # -- ingestion ------------------------------------------------------
-
-    def ingest(self, spans: Iterable[SpanRecord]) -> None:
-        for span in spans:
-            if A_EXCHANGE_ID in span.attributes:
-                self._ingest_exchange_span(span)
-            elif L_RECORD_KIND in span.attributes:
-                loss = loss_from_span(span)
-                if loss is not None:
-                    self.losses.setdefault(loss.record_id, loss)
-        if self.reader is None:
-            return
-        for state in list(self.exchanges.values()):
-            if state.obs.exchange_ref is not None:
-                self._load_record(self.reader, state, object_id_from_ref(state.obs.exchange_ref))
-
-    def _ingest_exchange_span(self, span: SpanRecord) -> None:
-        obs = exchange_from_span(span)
-        if obs is None:
-            return
-        existing = self.exchanges.get(obs.exchange_id)
-        if existing is None:
-            self.exchanges[obs.exchange_id] = _ExchangeState(obs)
-            return
-        if existing.obs.fingerprint() != obs.fingerprint():
-            existing.gaps.append(
-                Gap(
-                    "digest_mismatch",
-                    "partial",
-                    exchange_id=obs.exchange_id,
-                    reason="conflicting_duplicate",
-                )
-            )
-
-    def _load_record(
-        self, reader: StoreReader, state: _ExchangeState, object_id: str | None
+    def add(
+        self, obs: ExchangeObs | LossObs | HeartbeatObs | None, span: tuple[str, str] | None = None
     ) -> None:
-        result = reader.fetch(
-            object_id,
-            role=RECORD_ROLE,
-            expected_sha256=state.obs.exchange_sha256,
-            expected_length=None,
-        )
-        state.record_result = replace(result, data=None)
-        if object_id is not None:
-            self._record_ids.add(object_id)
-        record = self._parse_record(result)
-        if record is None:
-            if result.verification == "verified":
-                state.record_result = replace(
-                    result,
-                    verification="digest_mismatch",
-                    gap_type="digest_mismatch",
-                    reason="record_invalid",
-                )
-            return
-        if record.exchange_id != state.obs.exchange_id:
-            state.record_result = replace(
-                result,
-                verification="digest_mismatch",
-                gap_type="digest_mismatch",
-                reason="record_invalid",
-            )
-            return
-        state.obs, disagree = _merge(state.obs, record)
-        if disagree:
-            state.gaps.append(
-                Gap(
-                    "digest_mismatch",
-                    "partial",
-                    exchange_id=state.obs.exchange_id,
-                    reason="span_record_disagree",
-                )
-            )
+        if isinstance(obs, ExchangeObs):
+            known = self.exchanges.get(obs.exchange_id)
+            if known is None:
+                self.exchanges[obs.exchange_id] = obs
+                source = self._source(obs.source)
+                source.sequences.add(obs.source_sequence)
+                self.exchange_count[obs.source] += 1
+                self.claims[(obs.source, obs.source_sequence)].add(obs.exchange_id)
+            elif known != obs:
+                self.conflicts.add(obs.exchange_id)
+        elif isinstance(obs, LossObs):
+            self._source((obs.source_id, obs.source_epoch)).losses.add(obs)
+        elif isinstance(obs, HeartbeatObs) and (span, obs) not in self._heartbeats:
+            # Deduplicated per span, not per content: a run's entry and exit
+            # markers may carry the same last_sequence and both must count.
+            self._heartbeats.add((span, obs))
+            key = (obs.source_id, obs.source_epoch)
+            source = self._source(key)
+            source.heartbeat = max(source.heartbeat, obs.last_sequence)
+            if obs.run_id is not None:
+                self.markers[obs.run_id][key].append(obs.last_sequence)
 
-    @staticmethod
-    def _parse_record(result: ObjectResult) -> ExchangeObs | None:
-        if result.verification != "verified" or result.data is None:
-            return None
-        try:
-            document = json.loads(result.data.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return None
-        if not isinstance(document, Mapping):
-            return None
-        return exchange_from_record(document, "store")
-
-    def scan(self, reader: StoreReader) -> None:
-        for object_id in reader.scan_record_ids():
-            if object_id in self._record_ids:
-                continue
-            sha, length = reader.descriptor_digest(object_id)
-            result = reader.fetch(
-                object_id, role=RECORD_ROLE, expected_sha256=sha, expected_length=length
-            )
-            record = self._parse_record(result)
-            if record is None:
-                continue
-            self._record_ids.add(object_id)
-            result = replace(result, data=None)
-            existing = self.exchanges.get(record.exchange_id)
-            if existing is not None and not existing.obs.has_record:
-                existing.record_result = result
-                existing.obs, disagree = _merge(existing.obs, record)
-                if disagree:
-                    existing.gaps.append(
-                        Gap(
-                            "digest_mismatch",
-                            "partial",
-                            exchange_id=record.exchange_id,
-                            reason="span_record_disagree",
-                        )
-                    )
-            elif existing is None:
-                self.exchanges[record.exchange_id] = _ExchangeState(record, record_result=result)
-
-    # -- objects ----------------------------------------------------------
-
-    def verify_objects(self) -> None:
-        loss_ids = {loss.record_id for loss in self.losses.values()}
-        for state in self.exchanges.values():
-            self._verify_exchange_objects(state, loss_ids)
-            self._recompute(state)
-            for role, result in list(state.objects.items()):
-                if result.data is not None:
-                    state.objects[role] = replace(result, data=None)
-
-    def _verify_exchange_objects(self, state: _ExchangeState, loss_ids: set[str]) -> None:
-        obs = state.obs
-        if obs.store_status == "disabled":
-            for role in ("request", "response"):
-                state.objects[role] = ObjectResult("not_stored")
-            if self.check_bytes:
-                state.gaps.append(
-                    Gap(
-                        "missing_object",
-                        "unverified",
-                        exchange_id=obs.exchange_id,
-                        reason="store_disabled",
-                    )
-                )
-            return
-        self._record_object(state)
-        for role, body in (("request", obs.request), ("response", obs.response)):
-            if body is None:
-                continue
-            if body.status in _UNSTORED:
-                state.objects[role] = ObjectResult("not_stored", object_id=body.object_id)
-                if self.check_bytes and not set(obs.loss_record_ids) & loss_ids:
-                    state.gaps.append(
-                        Gap(
-                            "missing_object",
-                            "partial",
-                            exchange_id=obs.exchange_id,
-                            object_role="request" if role == "request" else "response",
-                            reason="store_failure_unreported",
-                        )
-                    )
-                continue
-            if body.object_id is None and body.status is None:
-                continue
-            self._body_object(state, role, body)
-        if self.check_bytes and obs.truncated and not obs.has_record:
-            state.gaps.append(
-                Gap("truncated", "partial", exchange_id=obs.exchange_id, reason="span_truncated")
-            )
-
-    def _record_object(self, state: _ExchangeState) -> None:
-        obs = state.obs
-        result = state.record_result
-        if result is not None:
-            if not self.check_bytes:
-                if result.verification != "verified":
-                    result = replace(result, verification="not_checked")
-                state.objects["record"] = result
-                return
-            state.objects["record"] = result
-            if result.gap_type is not None:
-                state.gaps.append(
-                    Gap(
-                        result.gap_type,
-                        "partial",
-                        exchange_id=obs.exchange_id,
-                        object_role="record",
-                        reason=result.reason,
-                    )
-                )
-            return
-        if obs.exchange_ref is not None:
-            state.objects["record"] = ObjectResult(
-                "not_checked",
-                object_id=object_id_from_ref(obs.exchange_ref),
-                ref=obs.exchange_ref,
-                sha256=obs.exchange_sha256,
-            )
-        elif (
-            self.check_bytes
-            and self.reader is not None
-            and obs.store_status in ("stored", "partial")
-        ):
-            state.gaps.append(
-                Gap(
-                    "missing_object",
-                    "partial",
-                    exchange_id=obs.exchange_id,
-                    object_role="record",
-                    reason="record_ref_absent",
-                )
-            )
-
-    def _body_object(self, state: _ExchangeState, role: str, body: Any) -> None:
-        obs = state.obs
-        if obs.has_record:
-            expected_length = body.stored_byte_length
-        else:
-            expected_length = None if obs.truncated else body.observed_byte_length
-        if self.reader is None or not (self.check_bytes or self.stitcher is not None):
-            state.objects[role] = ObjectResult(
-                "not_checked",
-                object_id=body.object_id,
-                ref=body.ref,
-                sha256=body.stored_sha256,
-                byte_length=body.stored_byte_length,
-            )
-            return
-        result = self.reader.fetch(
-            body.object_id,
-            role=f"model.exchange.{role}",
-            expected_sha256=body.stored_sha256,
-            expected_length=expected_length,
-        )
-        if self.stitcher is None:
-            result = replace(result, data=None)
-        if not self.check_bytes:
-            state.objects[role] = replace(result, verification="not_checked")
-            return
-        state.objects[role] = result
-        object_role: Literal["request", "response"] = "request" if role == "request" else "response"
-        if result.gap_type is not None:
-            state.gaps.append(
-                Gap(
-                    result.gap_type,
-                    "partial",
-                    exchange_id=obs.exchange_id,
-                    object_role=object_role,
-                    reason=result.reason,
-                )
-            )
-        if body.status == "truncated":
-            state.gaps.append(
-                Gap(
-                    "truncated",
-                    "partial",
-                    exchange_id=obs.exchange_id,
-                    object_role=object_role,
-                    reason="body_truncated",
-                )
-            )
-
-    def _recompute(self, state: _ExchangeState) -> None:
-        """Re-derive stitch keys from verified stored bytes (--recompute-digests)."""
-
-        obs = state.obs
-        stitcher = self.stitcher
-        request = state.objects.get("request")
-        response = state.objects.get("response")
-        if stitcher is None or not obs.has_record or obs.api is None or obs.request is None:
-            return
-        if request is None or request.data is None:
-            return
-        if obs.request.status not in _STORED:
-            return
-        if obs.response is not None and (
-            obs.response.status not in _STORED or response is None or response.data is None
-        ):
-            # A failed or dropped response body is already reported by its
-            # store_failure / buffer_overflow loss. Re-deriving keys without
-            # it would wipe the record's real output digests and emitted ids.
-            return
-        response_bytes = response.data if response is not None else None
-        try:
-            keys = stitcher.extract_stitch_keys(
-                obs.api,
-                request.data,
-                obs.request.media_type or "application/octet-stream",
-                _encoding(obs.request.content_encoding),
-                obs.request.status == "truncated",
-                response_bytes,
-                obs.response.media_type if obs.response else None,
-                _encoding(obs.response.content_encoding if obs.response else None),
-                bool(obs.response and obs.response.status == "truncated"),
-            )
-            recomputed = _apply_keys(obs, keys)
-        except Exception:
-            state.gaps.append(
-                Gap(
-                    "unparsed_exchange",
-                    "unverified",
-                    exchange_id=obs.exchange_id,
-                    reason="recompute_failed",
-                )
-            )
-            return
-        if _stitch_view(recomputed) != _stitch_view(obs):
-            state.gaps.append(
-                Gap(
-                    "digest_mismatch",
-                    "partial",
-                    exchange_id=obs.exchange_id,
-                    reason="recomputed_keys_disagree",
-                )
-            )
-        state.obs = recomputed
-
-    # -- runs -------------------------------------------------------------
-
-    def build_runs(self, wanted: set[str] | None) -> list[dict[str, Any]]:
-        placed = [state for state in self.exchanges.values() if state.obs.placeable()]
-        for state in placed:
-            obs = state.obs
-            source = self._source(str(obs.source_id), int(obs.source_epoch or 0))
-            source.exchange_sequences.add(int(obs.source_sequence or 0))
-            source.component = source.component or obs.component
-        for loss in sorted(self.losses.values(), key=lambda item: item.source_sequence):
-            source = self._source(loss.source_id, loss.source_epoch)
-            source.component = source.component or loss.component
-            (source.losses if loss.kind == "loss" else source.watermarks).append(loss)
+    def finalize(self) -> None:
         for source in self.sources.values():
             source.finalize()
-        members: dict[RunKey, list[_ExchangeState]] = {}
-        for state in placed:
-            obs = state.obs
-            key = (str(obs.run_id), str(obs.source_id), int(obs.source_epoch or 0))
-            members.setdefault(key, []).append(state)
-        for loss in self.losses.values():
-            run_ids = {item.run_id for item in loss.affected if item.run_id is not None}
-            if loss.run_id is not None:
-                run_ids.add(loss.run_id)
-            for run_id in run_ids:
-                members.setdefault((run_id, loss.source_id, loss.source_epoch), [])
-        runs = []
-        for key in sorted(members):
-            if wanted is not None and key[0] not in wanted:
+
+    def build_runs(self, wanted: set[str] | None) -> list[dict[str, Any]]:
+        members: dict[str, list[ExchangeObs]] = defaultdict(list)
+        for exchange in self.exchanges.values():
+            members[exchange.run_id].append(exchange)
+        runs: list[dict[str, Any]] = []
+        for run_id in sorted(set(members) | set(self.markers)):
+            if wanted is not None and run_id not in wanted:
                 continue
-            runs.append(_RunBuilder(self, key, members[key]).build())
+            run = _Run(self, run_id, members.get(run_id, []), self.markers.get(run_id, {}))
+            if run.windows:
+                runs.append(run.build())
         return runs
 
-    def _source(self, source_id: str, epoch: int) -> _Source:
-        key = (source_id, epoch)
-        source = self.sources.get(key)
-        if source is None:
-            source = self.sources[key] = _Source(source_id, epoch)
-        return source
-
-
-def _encoding(value: str | None) -> str | None:
-    return None if value in (None, "identity") else value
-
-
-def _apply_keys(obs: ExchangeObs, keys: Any) -> ExchangeObs:
-    input_digests = tuple(str(item) for item in keys.input_digests)
-    output_digests = tuple(str(item) for item in keys.output_digests)
-    emitted = tuple(str(call[0]) for call in keys.tool_calls)
-    return replace(
-        obs,
-        input=DigestList(len(input_digests), 0, input_digests),
-        output=DigestList(len(output_digests), 0, output_digests),
-        tool_call_ids_consumed=id_list(list(keys.tool_call_ids_consumed)) or (),
-        tool_call_ids_emitted=id_list(list(emitted)) or (),
-        response_id=keys.response_id,
-        previous_response_id=keys.previous_response_id,
-    )
-
-
-def _stitch_view(obs: ExchangeObs) -> tuple[Any, ...]:
-    return (
-        obs.input.total,
-        obs.input.digests,
-        obs.output.total,
-        obs.output.digests,
-        tuple(dict.fromkeys(obs.tool_call_ids_consumed)),
-        tuple(dict.fromkeys(obs.tool_call_ids_emitted)),
-        obs.response_id,
-        obs.previous_response_id,
-    )
-
-
-def _merge(span: ExchangeObs, record: ExchangeObs) -> tuple[ExchangeObs, bool]:
-    """Merge a span with its stored record; report any disagreement."""
-
-    disagree = any(
-        theirs is not None and theirs != ours
-        for theirs, ours in (
-            (span.source_id, record.source_id),
-            (span.source_epoch, record.source_epoch),
-            (span.source_sequence, record.source_sequence),
-            (span.run_id, record.run_id),
-            (span.run_sequence, record.run_sequence),
-            (
-                span.request.stored_sha256 if span.request else None,
-                record.request.stored_sha256 if record.request else None,
-            ),
-            (
-                span.response.stored_sha256 if span.response else None,
-                record.response.stored_sha256 if record.response else None,
-            ),
-        )
-    )
-    disagree = disagree or not _window_agrees(span.input, record.input)
-    disagree = disagree or not _window_agrees(span.output, record.output)
-    merged = replace(
-        record,
-        origin="span_and_store" if span.origin != "store" else "store",
-        trace_id=record.trace_id or span.trace_id,
-        span_id=span.span_id or record.span_id,
-        start_ns=span.start_ns,
-        end_ns=span.end_ns,
-        exchange_ref=span.exchange_ref,
-        exchange_sha256=span.exchange_sha256,
-    )
-    return merged, disagree
-
-
-def _window_agrees(window: DigestList, full: DigestList) -> bool:
-    if window.total is not None and full.total is not None and window.total != full.total:
-        return False
-    return all(
-        full.at(window.offset + index) in (None, digest)
-        for index, digest in enumerate(window.digests)
-    )
-
 
 # --------------------------------------------------------------------------
-# Per-run evaluation
+# One run
 # --------------------------------------------------------------------------
 
 
-class _RunBuilder:
-    def __init__(self, verifier: _Verifier, key: RunKey, members: list[_ExchangeState]) -> None:
+@dataclass(slots=True)
+class _Window:
+    key: SourceKey
+    low: int
+    high: int
+    markers: int
+
+
+@dataclass(slots=True)
+class _Bodies:
+    request: ObjectResult
+    response: ObjectResult | None
+    skipped: bool
+
+
+class _Run:
+    def __init__(
+        self,
+        verifier: _Verifier,
+        run_id: str,
+        members: list[ExchangeObs],
+        markers: dict[SourceKey, list[int]],
+    ) -> None:
         self.verifier = verifier
-        self.run_id, self.source_id, self.epoch = key
-        self.source = verifier.sources[(self.source_id, self.epoch)]
+        self.run_id = run_id
+        self.members = sorted(
+            members, key=lambda x: (x.start_ns, x.source_id, x.source_epoch, x.source_sequence)
+        )
+        self.order = {exchange.exchange_id: i for i, exchange in enumerate(self.members)}
         self.gaps: list[Gap] = []
-        self.states = self._ordered(members)
-        self.exchanges = [state.obs for state in self.states]
-        self.run_close = max(
-            (mark for mark in self.source.watermarks if mark.run_id == self.run_id),
-            key=lambda mark: mark.source_sequence,
-            default=None,
-        )
-        sequences = [int(obs.source_sequence or 0) for obs in self.exchanges] or [
-            item.source_sequence
-            for loss in self.source.losses
-            for item in loss.affected
-            if item.run_id == self.run_id
-        ]
-        self.first = min(sequences, default=None)
-        self.last = max(sequences, default=None)
+        self.windows = self._windows(markers)
 
-    def _ordered(self, members: list[_ExchangeState]) -> list[_ExchangeState]:
-        ordered = sorted(
-            members,
-            key=lambda state: (
-                state.obs.run_sequence,
-                state.obs.source_sequence,
-                state.obs.exchange_id,
-            ),
-        )
-        kept: list[_ExchangeState] = []
-        for state in ordered:
-            if kept and kept[-1].obs.run_sequence == state.obs.run_sequence:
-                self.gaps.append(
-                    Gap(
-                        "digest_mismatch",
-                        "partial",
-                        exchange_id=state.obs.exchange_id,
-                        reason="conflicting_duplicate",
-                    )
-                )
-                continue
-            kept.append(state)
-            self.gaps.extend(state.gaps)
-        return kept
+    def _windows(self, markers: dict[SourceKey, list[int]]) -> list[_Window]:
+        sequences: dict[SourceKey, list[int]] = defaultdict(list)
+        for exchange in self.members:
+            sequences[exchange.source].append(exchange.source_sequence)
+        windows: list[_Window] = []
+        for key in sorted(set(sequences) | set(markers)):
+            own = sequences.get(key, [])
+            marks = markers.get(key, [])
+            low = min([*own, *(mark + 1 for mark in marks)])
+            high = max([*own, *marks])
+            if low <= high:
+                windows.append(_Window(key, low, high, len(marks)))
+        return windows
 
     def build(self) -> dict[str, Any]:
-        proved, through = self._tail()
-        self._sequence_gaps(proved)
-        self._loss_gaps()
-        stitched = stitch_run(self.exchanges)
+        self._completeness()
+        bodies = {exchange.exchange_id: self._bodies(exchange) for exchange in self.members}
+        exchanges, views = [], []
+        for exchange in self.members:
+            entry, view = self._exchange(exchange, bodies[exchange.exchange_id])
+            exchanges.append(entry)
+            views.append(view)
+        stitched = stitch_run(views)
         self.gaps.extend(stitched.gaps)
-        if not proved:
-            self.gaps.append(
-                Gap(
-                    "tail_unverified",
-                    "unverified",
-                    source_id=self.source_id,
-                    source_epoch=self.epoch,
-                    reason="no_watermark" if not self.source.watermarks else "tail_not_covered",
-                )
-            )
-        checks = self._checks(proved, stitched.skipped)
-        run_sequence_of = {obs.exchange_id: int(obs.run_sequence or 0) for obs in self.exchanges}
-        gaps = sort_gaps(self.gaps, run_sequence_of)
-        threads = [
-            {"thread_id": thread_id, "exchange_ids": list(exchange_ids)}
-            for thread_id, exchange_ids in stitched.threads
-        ]
+        for entry in exchanges:
+            entry["thread_id"] = stitched.thread_of[entry["exchange_id"]]
+            continued = stitched.continues.get(entry["exchange_id"])
+            if continued is not None:
+                entry["continues_exchange_id"] = continued
+        gaps = sort_gaps(self.gaps, self.order)
+        checks = self._checks(gaps, bodies, views)
+        surfaces = sorted({exchange.fidelity for exchange in self.members}) or ["exact_wire"]
         return {
             "run_id": self.run_id,
-            "run_id_basis": self._basis(),
             "verdict": verdict_for(gaps, checks),
             "declared_scope": {
-                "capture_surfaces": self._surfaces(),
-                "bytes": self.verifier.check_bytes,
-                "through": (
-                    [
-                        {
-                            "source_id": self.source_id,
-                            "source_epoch": self.epoch,
-                            "through_source_sequence": through,
-                        }
-                    ]
-                    if proved and through is not None
-                    else []
-                ),
+                "capture_surfaces": surfaces,
+                "windows": [
+                    {
+                        "source_id": window.key[0],
+                        "source_epoch": window.key[1],
+                        "first_sequence": window.low,
+                        "last_sequence": window.high,
+                        "heartbeat_sequence": self.verifier.sources[window.key].heartbeat,
+                    }
+                    for window in self.windows
+                ],
             },
-            "exchanges": [
-                self._exchange_json(state, stitched.thread_of, stitched.continues)
-                for state in self.states
+            "exchanges": exchanges,
+            "threads": [
+                {"thread_id": thread_id, "exchange_ids": list(ids)}
+                for thread_id, ids in stitched.threads
             ],
-            "threads": threads,
             "gaps": [gap.to_json() for gap in gaps],
-            "counts": {"exchanges": len(self.states), "gaps_by_type": gap_counts(gaps)},
+            "counts": {"exchanges": len(exchanges), "gaps_by_type": gap_counts(gaps)},
             "checks": checks,
         }
 
-    # -- sequence, loss and tail ----------------------------------------
+    # -- completeness ------------------------------------------------------
 
-    def _tail(self) -> tuple[bool, int | None]:
-        # A run-close watermark proves the tail only if nothing of the run
-        # came after it (a reused id or a task outliving its run scope).
-        if self.run_close is not None and (
-            self.last is None or self.run_close.source_sequence > self.last
-        ):
-            mark = self.run_close
-            return True, (
-                mark.high_water_sequence
-                if mark.high_water_sequence is not None
-                else mark.source_sequence
-            )
-        if self.last is None:
-            return False, None
-        unexplained = self.source.unexplained()
-        marks = sorted(
-            self.source.watermarks,
-            key=lambda mark: (
-                mark.high_water_sequence
-                if mark.high_water_sequence is not None
-                else mark.source_sequence,
-                mark.source_sequence,
-            ),
-            reverse=True,
-        )
-        for mark in marks:
-            high = (
-                mark.high_water_sequence
-                if mark.high_water_sequence is not None
-                else mark.source_sequence
-            )
-            if high < self.last:
-                break
-            if not _clip(unexplained, self.last + 1, high):
-                return True, high
-        return False, None
-
-    def _sequence_gaps(self, tail_proved: bool) -> None:
-        if self.first is not None and self.last is not None:
-            unexplained = self.source.unexplained()
-            window = _clip(unexplained, self.first + 1, self.last - 1)
-            if not tail_proved:
-                window += _clip(unexplained, self.last + 1, self.source.high_water)
-            for first, last in window:
+    def _completeness(self) -> None:
+        for window in self.windows:
+            key, low, high = window.key, window.low, window.high
+            source = self.verifier.sources[key]
+            # run() emits markers in entry/exit pairs. Without a closed pair the
+            # run's end is unknown, so a later loss may be one of its calls.
+            closed = window.markers > 0 and window.markers % 2 == 0
+            for first, last in source.missing:
+                # Missing ranges are maximal, so the observed exchanges right
+                # before/after one sit at first-1 and last+1: "adjacent to a
+                # run exchange" and "inside the window" both reduce to
+                # intersecting [low - 1, high + 1].
+                if first <= high + 1 and last >= low - 1:
+                    effect: Literal["partial", "unverified"] = "partial"
+                elif not closed and last >= low:
+                    effect = "unverified"  # the run may still have been open
+                else:
+                    continue
+                unexplained = "unattributed" if effect == "unverified" else None
+                for seg_low, seg_high, reason in source.segments[(first, last)]:
+                    self.gaps.append(
+                        Gap(
+                            "loss" if reason is not None else "sequence_gap",
+                            effect,
+                            source_id=key[0],
+                            source_epoch=key[1],
+                            first_sequence=seg_low,
+                            last_sequence=seg_high,
+                            reason=reason or unexplained,
+                        )
+                    )
+            if window.markers % 2:
                 self.gaps.append(
                     Gap(
-                        "sequence_gap",
-                        "partial",
-                        source_id=self.source_id,
-                        source_epoch=self.epoch,
-                        sequences=_listing(first, last),
-                        reason="source_sequence_missing",
+                        "tail_unverified",
+                        "unverified",
+                        source_id=key[0],
+                        source_epoch=key[1],
+                        reason="run_not_closed",
                     )
                 )
-        observed = {int(obs.run_sequence or 0) for obs in self.exchanges}
-        explained = {
-            item.run_sequence
-            for loss in self.source.losses
-            for item in loss.affected
-            if item.run_id == self.run_id and item.run_sequence is not None
-        }
-        declared = [
-            self.run_close.run_high_water
-            if self.run_close is not None and self.run_close.run_high_water is not None
-            else -1
-        ]
-        high = max([*observed, *explained, *declared], default=-1)
-        missing = _subtract_points(_complement(observed, high), explained)
-        for first, last in missing:
-            self.gaps.append(
-                Gap(
-                    "sequence_gap",
-                    "partial",
-                    source_id=self.source_id,
-                    source_epoch=self.epoch,
-                    run_sequences=_listing(first, last),
-                    reason="run_sequence_missing",
+            if source.heartbeat < high:
+                self.gaps.append(
+                    Gap(
+                        "tail_unverified",
+                        "unverified",
+                        source_id=key[0],
+                        source_epoch=key[1],
+                        first_sequence=source.heartbeat + 1,
+                        last_sequence=high,
+                        reason="no_covering_heartbeat",
+                    )
                 )
-            )
 
-    def _loss_gaps(self) -> None:
-        recovered = self.source.exchange_sequences
-        for loss in self.source.losses:
-            items = [item for item in loss.affected if item.run_id == self.run_id]
-            if items:
-                recoverable = loss.reason in _RECOVERABLE_LOSS and all(
-                    item.source_sequence in recovered for item in items
-                )
-                self._loss_gap(loss, items, "info" if recoverable else "partial")
-                continue
-            if loss.fully_attributed() or self.first is None or self.last is None:
-                continue
-            if loss.source_sequence <= self.first:
-                continue
-            inside = any(self.first <= item.source_sequence <= self.last for item in loss.affected)
-            if (
-                self.run_close is not None
-                and self.run_close.source_sequence < loss.source_sequence
-                and not inside
-            ):
-                continue
-            unattributed = [item for item in loss.affected if item.run_id is None]
-            recoverable = (
-                loss.reason in _RECOVERABLE_LOSS
-                and not loss.affected_truncated
-                and len(loss.affected) >= loss.count
-                and all(item.source_sequence in recovered for item in loss.affected)
-            )
-            self._loss_gap(loss, unattributed, "info" if recoverable else "partial")
+    # -- bytes ---------------------------------------------------------------
 
-    def _loss_gap(
-        self, loss: LossObs, items: Sequence[Any], effect: Literal["info", "partial"]
+    def _bodies(self, exchange: ExchangeObs) -> _Bodies:
+        if exchange.exchange_id in self.verifier.conflicts:
+            self._gap(exchange, "digest_mismatch", reason="conflicting_duplicate")
+        if len(self.verifier.claims[(exchange.source, exchange.source_sequence)]) > 1:
+            self._gap(exchange, "digest_mismatch", reason="sequence_conflict")
+        request, skipped = self._body(
+            exchange, "request", exchange.request_sha256, exchange.request_ref
+        )
+        response: ObjectResult | None = None
+        if exchange.response_sha256 is not None:
+            response, response_skipped = self._body(
+                exchange, "response", exchange.response_sha256, exchange.response_ref
+            )
+            skipped = skipped or response_skipped
+        if exchange.truncated:
+            sides: list[Side | None] = []
+            if request.truncated:
+                sides.append("request")
+            if response is not None and response.truncated:
+                sides.append("response")
+            for side in sides or [None]:
+                self._gap(exchange, "truncated", side=side)
+        return _Bodies(request, response, skipped)
+
+    def _body(
+        self, exchange: ExchangeObs, side: Side, digest: str, ref: str | None
+    ) -> tuple[ObjectResult, bool]:
+        """Fetch and verify one body; the bool says the check was skipped."""
+
+        reader = self.verifier.reader
+        if reader is None or exchange.store_status == "disabled":
+            return ObjectResult("not_checked", sha256=digest), True
+        if ref is None:
+            if not exchange.truncated:
+                self._gap(exchange, "missing_object", side=side, reason="not_stored")
+            return ObjectResult("not_stored", sha256=digest), False
+        object_id = object_id_from_ref(ref)
+        if object_id is None:
+            self._gap(exchange, "missing_object", side=side, reason="invalid_ref")
+            return ObjectResult("missing", sha256=digest), False
+        result = reader.fetch(
+            object_id, role=_ROLES[side], operation_id=exchange.exchange_id, expected_sha256=digest
+        )
+        if result.verification == "missing":
+            self._gap(exchange, "missing_object", side=side, reason=result.reason)
+        elif result.verification == "digest_mismatch":
+            self._gap(exchange, "digest_mismatch", side=side, reason=result.reason)
+        return result, False
+
+    def _gap(
+        self,
+        exchange: ExchangeObs,
+        gap_type: Literal["missing_object", "digest_mismatch", "truncated"],
+        *,
+        side: Side | None = None,
+        reason: str | None = None,
     ) -> None:
         self.gaps.append(
             Gap(
-                "loss_record",
-                effect,
-                source_id=self.source_id,
-                source_epoch=self.epoch,
-                sequences=tuple(sorted({item.source_sequence for item in items}))[
-                    :MAX_GAP_SEQUENCES
-                ],
-                run_sequences=tuple(
-                    sorted({item.run_sequence for item in items if item.run_sequence is not None})
-                )[:MAX_GAP_SEQUENCES],
-                loss_record_id=loss.record_id,
-                reason=loss.reason,
+                gap_type,
+                "partial",
+                exchange_id=exchange.exchange_id,
+                object_role=side,
+                reason=reason,
             )
         )
 
-    # -- checks and output ------------------------------------------------
+    # -- stitching -----------------------------------------------------------
 
-    def _checks(self, tail_proved: bool, stitching_skipped: bool) -> dict[str, Check]:
-        def failing(types: Collection[str], *, object_only: bool = False) -> bool:
-            return any(
-                gap.gap_type in types
-                and gap.effect != "info"
-                and (not object_only or gap.object_role is not None)
-                for gap in self.gaps
-            )
+    def _exchange(
+        self, exchange: ExchangeObs, bodies: _Bodies
+    ) -> tuple[dict[str, Any], StitchView]:
+        objects = {"request": bodies.request.to_json()}
+        if bodies.response is not None:
+            objects["response"] = bodies.response.to_json()
+        entry: dict[str, Any] = {
+            "exchange_id": exchange.exchange_id,
+            "source_id": exchange.source_id,
+            "source_epoch": exchange.source_epoch,
+            "source_sequence": exchange.source_sequence,
+            "fidelity": exchange.fidelity,
+            "api": exchange.api,
+            "started_at": format_ns(exchange.start_ns),
+            "ended_at": format_ns(exchange.end_ns),
+            "response_state": exchange.response_state,
+            "parse_status": "not_checked",
+            "thread_id": "",
+            "tool_call_ids_consumed": [],
+            "tool_call_ids_emitted": [],
+            "objects": objects,
+        }
+        if exchange.trace_id is not None:
+            entry["trace_id"] = exchange.trace_id
+        if exchange.span_id is not None:
+            entry["span_id"] = exchange.span_id
+        view = self._parse(exchange, bodies, entry)
+        model = entry.get("model") or exchange.model
+        if isinstance(model, str) and 0 < len(model) <= _MODEL_MAX:
+            entry["model"] = model
+        else:
+            entry.pop("model", None)
+        response_id = entry.get("response_id") or exchange.response_id
+        if response_id is not None:
+            entry["response_id"] = response_id
+        return entry, view
 
-        if not self.verifier.check_bytes:
-            bytes_check: Check = "not_applicable"
-        elif self.verifier.reader is None:
-            bytes_check = "skipped"
-        elif failing(_BYTE_GAPS) or failing({"digest_mismatch"}, object_only=True):
-            bytes_check = "failed"
-        else:
-            bytes_check = "passed"
-        if not self.exchanges:
-            stitching: Check = "not_applicable"
-        elif stitching_skipped:
-            stitching = "skipped"
-        elif failing(_STITCH_GAPS):
-            stitching = "failed"
-        else:
-            stitching = "passed"
+    def _parse(self, exchange: ExchangeObs, bodies: _Bodies, entry: dict[str, Any]) -> StitchView:
+        request, response = bodies.request, bodies.response
+        api = cast("WireApi", exchange.api)
+        unparsed = StitchView(
+            exchange.exchange_id, api, parsed=False, response_id=exchange.response_id
+        )
+        if request.data is None or (response is not None and response.data is None):
+            return unparsed
+        keys = extract_stitch_keys(
+            api,
+            request.data,
+            request.media_type or "application/octet-stream",
+            request.content_encoding,
+            request.truncated,
+            response.data if response is not None else None,
+            response.media_type if response is not None else None,
+            response.content_encoding if response is not None else None,
+            response.truncated if response is not None else False,
+        )
+        status = keys.request_parse_status
+        response_status = keys.response_parse_status
+        if status == "ok" and response_status not in ("ok", "not_parsed"):
+            http_error = exchange.http_status is not None and exchange.http_status >= _HTTP_ERROR
+            status = "ok" if http_error and response_status != "truncated" else response_status
+        entry["parse_status"] = status
+        if status != "ok":
+            if status != "truncated":
+                self.gaps.append(
+                    Gap(
+                        "unparsed_exchange",
+                        "unverified",
+                        exchange_id=exchange.exchange_id,
+                        reason=status,
+                    )
+                )
+            return unparsed
+        entry["model"] = keys.response_model or keys.model
+        if keys.response_id is not None:
+            entry["response_id"] = keys.response_id
+        if keys.previous_response_id is not None:
+            entry["previous_response_id"] = keys.previous_response_id
+        emitted = tuple(call_id for call_id, _ in keys.tool_calls)
+        entry["input_message_count"] = len(keys.input_digests)
+        entry["output_message_count"] = len(keys.output_digests)
+        entry["tool_call_ids_consumed"] = list(keys.tool_call_ids_consumed)
+        entry["tool_call_ids_emitted"] = list(emitted)
+        continuation = keys.input_digests + continuation_digests(api, keys.output_digests)
+        return StitchView(
+            exchange.exchange_id,
+            exchange.api,
+            parsed=True,
+            request=keys.input_digests,
+            continuation=continuation,
+            consumed=keys.tool_call_ids_consumed,
+            emitted=emitted,
+            response_id=keys.response_id or exchange.response_id,
+            previous_response_id=keys.previous_response_id,
+        )
+
+    # -- checks --------------------------------------------------------------
+
+    def _checks(
+        self, gaps: Iterable[Gap], bodies: dict[str, _Bodies], views: Sequence[StitchView]
+    ) -> dict[str, Check]:
+        failing = {gap.gap_type for gap in gaps if gap.effect != "info"}
+
+        def check(failed: bool, skipped: bool = False, applicable: bool = True) -> Check:
+            if not applicable:
+                return "not_applicable"
+            if failed:
+                return "failed"
+            return "skipped" if skipped else "passed"
+
+        has_members = bool(self.members)
         return {
-            "sequence": "failed" if failing({"sequence_gap"}) else "passed",
-            "loss": "failed" if failing({"loss_record"}) else "passed",
-            "tail": "passed" if tail_proved else "failed",
-            "bytes": bytes_check,
-            "stitching": stitching,
+            "sequence": check("sequence_gap" in failing),
+            "loss": check("loss" in failing),
+            "tail": check("tail_unverified" in failing),
+            "bytes": check(
+                bool(failing & _BYTE_GAPS),
+                any(body.skipped for body in bodies.values()),
+                has_members,
+            ),
+            "stitching": check(
+                bool(failing & _STITCH_GAPS),
+                not all(view.parsed for view in views),
+                has_members,
+            ),
         }
-
-    def _basis(self) -> str:
-        for obs in self.exchanges:
-            if obs.run_id_basis is not None:
-                return obs.run_id_basis
-        if self.run_id.startswith("trace:"):
-            return "trace"
-        if self.run_id.startswith("source:"):
-            return "source"
-        return "explicit"
-
-    def _surfaces(self) -> list[str]:
-        surfaces = sorted({str(obs.fidelity) for obs in self.exchanges if obs.fidelity})
-        if surfaces:
-            return surfaces
-        return ["gateway_normalized" if self.source.component == "gateway" else "exact_wire"]
-
-    def _exchange_json(
-        self,
-        state: _ExchangeState,
-        thread_of: Mapping[str, str],
-        continues: Mapping[str, str],
-    ) -> dict[str, Any]:
-        obs = state.obs
-        out: dict[str, Any] = {
-            "exchange_id": obs.exchange_id,
-            "run_sequence": obs.run_sequence,
-            "source_id": obs.source_id,
-            "source_epoch": obs.source_epoch,
-            "source_sequence": obs.source_sequence,
-            "fidelity": obs.fidelity,
-            "api": obs.api,
-        }
-        optional: dict[str, Any] = {
-            "trace_id": obs.trace_id,
-            "span_id": obs.span_id if obs.trace_id else None,
-            "started_at": format_ns(obs.start_ns) if obs.start_ns else obs.started_at,
-            "ended_at": format_ns(obs.end_ns) if obs.end_ns else obs.ended_at,
-            "model": obs.model,
-            "response_id": obs.response_id,
-            "previous_response_id": obs.previous_response_id,
-        }
-        out.update({key: value for key, value in optional.items() if value is not None})
-        out["response_state"] = obs.response_state
-        out["thread_id"] = thread_of[obs.exchange_id]
-        if obs.exchange_id in continues:
-            out["continues_exchange_id"] = continues[obs.exchange_id]
-        out["input_message_count"] = obs.input.total or 0
-        out["output_message_count"] = obs.output.total or 0
-        out["tool_call_ids_consumed"] = list(obs.tool_call_ids_consumed)
-        out["tool_call_ids_emitted"] = list(obs.tool_call_ids_emitted)
-        out["origin"] = obs.origin
-        out["objects"] = {
-            role: state.objects[role].to_json()
-            for role in ("request", "response", "record")
-            if role in state.objects
-        }
-        return out

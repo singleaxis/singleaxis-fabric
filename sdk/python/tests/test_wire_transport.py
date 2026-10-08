@@ -1,11 +1,12 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""In-process httpx tee: byte identity, stitching, storage, loss (spec 042 §4-§9)."""
+"""In-process httpx tee: byte identity, storage, span shape and loss (spec 042 rev 3)."""
 
 from __future__ import annotations
 
 import asyncio
 import gc
+import gzip
 import hashlib
 import json
 import threading
@@ -14,27 +15,23 @@ from typing import Any
 
 import httpx
 import pytest
-from jsonschema import Draft202012Validator, FormatChecker
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, StatusCode
 
 from fabric.wire._model import EndpointMatcher
-from fabric.wire._stitch import continuation_digests
 from fabric.wire._stream import Exchange, TeeSyncStream
 
 from .test_wire_helpers import (
     ANTHROPIC,
-    CONTENT_SCHEMA,
     OPENAI_CHAT,
     OPENAI_RESPONSES,
     ChunkStream,
     Rig,
     attrs,
-    capture_schemas,
     chat_response,
-    load_validator,
     make_rig,
     sse,
+    validate_capture,
 )
 
 TOOL_CALL = {
@@ -42,15 +39,23 @@ TOOL_CALL = {
     "type": "function",
     "function": {"name": "get_weather", "arguments": '{"city":"Paris"}'},
 }
-FIRST_MESSAGES = [
-    {"role": "system", "content": "You are terse."},
-    {"role": "user", "content": "Weather in Paris?"},
-]
-SECOND_MESSAGES = [
-    *FIRST_MESSAGES,
+FIRST = [{"role": "system", "content": "You are terse."}, {"role": "user", "content": "Paris?"}]
+SECOND = [
+    *FIRST,
     {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]},
     {"role": "tool", "tool_call_id": "call_7Qx2", "content": "18C, light rain"},
 ]
+# Spec 042 §8: every key an exchange span may carry.
+EXCHANGE_KEYS = {
+    "fabric.wire.exchange_id", "fabric.run.id", "fabric.source_id", "fabric.source.epoch",
+    "fabric.source.sequence", "fabric.wire.fidelity", "fabric.wire.api",
+    "fabric.content.request_ref", "fabric.content.result_ref", "fabric.wire.request_sha256",
+    "fabric.wire.response_sha256", "fabric.wire.response_state", "fabric.wire.truncated",
+    "fabric.wire.store_status", "gen_ai.operation.name", "gen_ai.provider.name",
+    "http.request.method", "http.response.status_code", "error.type", "gen_ai.response.model",
+    "gen_ai.response.id", "gen_ai.response.finish_reasons", "gen_ai.usage.input_tokens",
+    "gen_ai.usage.output_tokens",
+}  # fmt: skip
 
 
 @pytest.fixture
@@ -60,113 +65,65 @@ def rig(tmp_path: Path) -> Any:
     built.close()
 
 
-def _validate_records(rig: Rig) -> list[dict[str, Any]]:
-    validator = load_validator()
-    schemas = capture_schemas()
-    records = rig.records()
-    for record in records:
-        validator.validate_document(record, schemas)
-    content = Draft202012Validator(
-        json.loads(CONTENT_SCHEMA.read_text()), format_checker=FormatChecker()
-    )
-    for descriptor in rig.descriptors():
-        errors = list(content.iter_errors(descriptor))
-        assert not errors, errors[0].message
-    return records
-
-
 def _chat_handler(request: httpx.Request) -> httpx.Response:
     messages = json.loads(request.content).get("messages") or [{}]
     if messages[-1].get("role") == "tool":
-        return httpx.Response(
-            200,
-            json=chat_response({"role": "assistant", "content": "18C in Paris."}, rid="c-2"),
-            headers={"x-request-id": "req_2"},
-        )
-    return httpx.Response(
-        200,
-        json=chat_response(
-            {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]},
-            rid="c-1",
-            finish="tool_calls",
-        ),
-        headers={"x-request-id": "req_1"},
-    )
+        reply = chat_response({"role": "assistant", "content": "18C in Paris."}, rid="c-2")
+        return httpx.Response(200, json=reply)
+    message = {"role": "assistant", "content": None, "tool_calls": [TOOL_CALL]}
+    return httpx.Response(200, json=chat_response(message, rid="c-1", finish="tool_calls"))
 
 
-def test_openai_chat_react_loop_is_captured_and_stitched(rig: Rig) -> None:
-    traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+def _by_role(rig: Rig) -> dict[tuple[int, str], dict[str, Any]]:
+    return {(d["source_sequence"], d["role"]): d for d in rig.descriptors()}
+
+
+def test_openai_chat_loop_is_captured_stored_and_projected(rig: Rig) -> None:
     with rig.client(_chat_handler) as client:
-        first = client.post(
-            OPENAI_CHAT,
-            json={"model": "gpt-4o", "messages": FIRST_MESSAGES},
-            headers={"traceparent": traceparent},
-        )
-        second = client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": SECOND_MESSAGES})
+        first = client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": FIRST})
+        second = client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": SECOND})
     rig.flush()
-    assert first.json()["id"] == "c-1" and second.json()["id"] == "c-2"
     spans = sorted(rig.spans(), key=lambda s: attrs(s)["fabric.source.sequence"])
-    assert len(spans) == 2
     a, b = (attrs(s) for s in spans)
     assert spans[0].kind is SpanKind.CLIENT
+    assert set(a) <= EXCHANGE_KEYS and set(b) <= EXCHANGE_KEYS
     assert a["fabric.wire.api"] == "openai.chat_completions"
     assert a["fabric.wire.fidelity"] == "exact_wire"
-    assert a["fabric.wire.endpoint_id"] == "openai"
-    assert a["gen_ai.provider.name"] == "openai"
-    assert a["gen_ai.operation.name"] == "chat"
-    assert a["fabric.wire.output.tool_call_ids"] == ("call_7Qx2",)
-    assert b["fabric.wire.input.tool_call_ids"] == ("call_7Qx2",)
-    assert a["fabric.wire.provider_request_id"] == "req_1"
-    assert a["fabric.wire.client_traceparent"] == traceparent
+    assert (a["gen_ai.provider.name"], a["gen_ai.operation.name"]) == ("openai", "chat")
     assert a["fabric.wire.store_status"] == "stored"
     assert a["fabric.wire.response_state"] == "complete"
+    assert a["fabric.wire.truncated"] is False
     assert a["fabric.run.id"] == b["fabric.run.id"]
-    assert (a["fabric.run.sequence"], b["fabric.run.sequence"]) == (0, 1)
     assert b["fabric.source.sequence"] == a["fabric.source.sequence"] + 1
-    # OTLP hashes are bare hex; the next request re-sends the previous continuation.
-    assert all(len(h) == 64 and ":" not in h for h in a["fabric.wire.input.message_hashes"])
-    prefix = list(a["fabric.wire.input.message_hashes"]) + list(
-        a["fabric.wire.output.message_hashes"]
-    )
-    assert list(b["fabric.wire.input.message_hashes"])[: len(prefix)] == prefix
-    # No content ever reaches OTLP.
+    assert a["fabric.source.epoch"] == rig.allocator.epoch
+    # Cheap metadata from a complete, plain JSON response only.
+    assert a["gen_ai.response.model"] == "gpt-4o-2024-08-06"
+    assert a["gen_ai.response.id"] == "c-1"
+    assert a["gen_ai.response.finish_reasons"] == ("tool_calls",)
+    assert (a["gen_ai.usage.input_tokens"], a["gen_ai.usage.output_tokens"]) == (20, 5)
+    # No content, message hashes or tool-call ids reach OTLP.
     flat = json.dumps({k: list(v) if isinstance(v, tuple) else v for k, v in b.items()})
-    assert "Paris" not in flat and "18C" not in flat
-
-    records = _validate_records(rig)
-    assert len(records) == 2
-    one, two = records
-    assert one["response"]["tool_calls"] == [{"id": "call_7Qx2", "name": "get_weather"}]
-    assert two["request"]["tool_call_ids_consumed"] == ["call_7Qx2"]
-    assert one["trace"]["client_traceparent"] == traceparent
-    assert one["endpoint"]["provider_request_id"] == "req_1"
-    expected = one["request"]["message_digests"] + list(
-        continuation_digests("openai.chat_completions", one["response"]["message_digests"])
-    )
-    assert two["request"]["message_digests"][: len(expected)] == expected
-    # Stored bodies are exactly the bytes on the wire.
-    request_bytes = rig.store.read(one["request"]["body"]["ref"])
-    assert json.loads(request_bytes) == {"model": "gpt-4o", "messages": FIRST_MESSAGES}
-    response_bytes = rig.store.read(one["response"]["body"]["ref"])
-    assert response_bytes == first.content
-    assert (
-        one["response"]["body"]["source_sha256"]
-        == "sha256:" + hashlib.sha256(response_bytes).hexdigest()
-    )
-    assert (
-        a["fabric.wire.exchange_sha256"]
-        == hashlib.sha256(rig.store.read(a["fabric.wire.exchange_ref"])).hexdigest()
-    )
+    assert "Paris" not in flat and "call_7Qx2" not in flat and 'gpt-4o"' not in flat
+    # The store holds exactly the wire bytes, and the span digests cover them.
+    stored_request = rig.store.read(a["fabric.content.request_ref"])
+    assert json.loads(stored_request) == {"model": "gpt-4o", "messages": FIRST}
+    assert rig.store.read(a["fabric.content.result_ref"]) == first.content
+    assert a["fabric.wire.request_sha256"] == hashlib.sha256(stored_request).hexdigest()
+    assert a["fabric.wire.response_sha256"] == hashlib.sha256(first.content).hexdigest()
+    assert second.json()["id"] == "c-2"
+    validate_capture(rig)
+    request = _by_role(rig)[(a["fabric.source.sequence"], "model.exchange.request")]
+    assert request["operation_id"] == a["fabric.wire.exchange_id"]
+    assert request["run_id"] == a["fabric.run.id"]
+    assert request["representation"] == "exact" and request["provenance"] == "protocol"
+    assert request["content_encoding"] == "identity"
+    assert request["media_type"] == "application/json"
+    assert request["source_sha256"] == request["stored_sha256"]
 
 
 def test_streamed_chat_chunks_reach_caller_unchanged(rig: Rig) -> None:
     chunks = sse(
-        {
-            "id": "c-s",
-            "model": "gpt-4o",
-            "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}}],
-        },
-        {"id": "c-s", "choices": [{"index": 0, "delta": {"content": "Hi"}}]},
+        {"id": "c-s", "model": "gpt-4o", "choices": [{"index": 0, "delta": {"content": "Hi"}}]},
         {"id": "c-s", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
         done=True,
     )
@@ -177,77 +134,64 @@ def test_streamed_chat_chunks_reach_caller_unchanged(rig: Rig) -> None:
 
     with (
         rig.client(handler) as client,
-        client.stream(
-            "POST", OPENAI_CHAT, json={"model": "gpt-4o", "stream": True, "messages": []}
-        ) as response,
+        client.stream("POST", OPENAI_CHAT, json={"stream": True, "messages": []}) as response,
     ):
         seen = list(response.iter_raw())
-    assert len(seen) == len(chunks)
     assert all(got is sent for got, sent in zip(seen, chunks, strict=True))
     assert stream.closed
     rig.flush()
     (span,) = rig.spans()
-    assert attrs(span)["fabric.wire.response_state"] == "complete"
-    assert attrs(span)["gen_ai.request.stream"] is True
-    assert attrs(span)["gen_ai.response.id"] == "c-s"
-    (record,) = _validate_records(rig)
-    assert record["response"]["body"]["media_type"] == "text/event-stream"
-    assert rig.store.read(record["response"]["body"]["ref"]) == b"".join(chunks)
-    assert record["timing"]["first_byte_at"] >= record["timing"]["started_at"]
+    a = attrs(span)
+    assert a["fabric.wire.response_state"] == "complete"
+    assert "gen_ai.response.id" not in a  # streams are left to fabric.reconstruct
+    assert rig.store.read(a["fabric.content.result_ref"]) == b"".join(chunks)
+    response_descriptor = _by_role(rig)[(0, "model.exchange.response")]
+    assert response_descriptor["media_type"] == "text/event-stream"
+    validate_capture(rig)
+
+
+def test_gzip_response_is_stored_compressed(rig: Rig) -> None:
+    payload = json.dumps(chat_response({"role": "assistant", "content": "ok"})).encode()
+    compressed = gzip.compress(payload)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        headers = {"content-encoding": "GZIP", "content-type": "application/json; charset=utf-8"}
+        return httpx.Response(200, headers=headers, stream=ChunkStream([compressed]))
+
+    with rig.client(handler) as client:
+        response = client.post(OPENAI_CHAT, json={"messages": []})
+    assert response.json()["id"] == "chatcmpl-1"  # the client still decodes as usual
+    rig.flush()
+    (span,) = rig.spans()
+    a = attrs(span)
+    assert rig.store.read(a["fabric.content.result_ref"]) == compressed
+    assert a["fabric.wire.response_sha256"] == hashlib.sha256(compressed).hexdigest()
+    assert "gen_ai.response.model" not in a  # never decompressed at capture
+    descriptor = _by_role(rig)[(0, "model.exchange.response")]
+    assert descriptor["content_encoding"] == "gzip"
+    assert descriptor["media_type"] == "application/json"
+    validate_capture(rig)
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"), [("gzip, br", "gzip,br"), ("x y;z", "unknown"), ("", "identity")]
+)
+def test_content_encoding_is_normalized(rig: Rig, header: str, expected: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-encoding": header}, stream=ChunkStream([b"x"]))
+
+    with rig.client(handler) as client, client.stream("POST", OPENAI_CHAT, json={}) as response:
+        assert list(response.iter_raw()) == [b"x"]
+    rig.flush()
+    assert _by_role(rig)[(0, "model.exchange.response")]["content_encoding"] == expected
+    validate_capture(rig)
 
 
 def _anthropic_handler(request: httpx.Request) -> httpx.Response:
-    body = json.loads(request.content)
-    if body.get("stream"):
-        chunks = sse(
-            (
-                "message_start",
-                {
-                    "type": "message_start",
-                    "message": {
-                        "id": "msg_s",
-                        "role": "assistant",
-                        "model": "claude-x",
-                        "content": [],
-                        "usage": {"input_tokens": 4},
-                    },
-                },
-            ),
-            (
-                "content_block_start",
-                {
-                    "type": "content_block_start",
-                    "index": 0,
-                    "content_block": {
-                        "type": "tool_use",
-                        "id": "toolu_1",
-                        "name": "search",
-                        "input": {},
-                    },
-                },
-            ),
-            (
-                "content_block_delta",
-                {
-                    "type": "content_block_delta",
-                    "index": 0,
-                    "delta": {"type": "input_json_delta", "partial_json": '{"q":"x"}'},
-                },
-            ),
-            (
-                "message_delta",
-                {
-                    "type": "message_delta",
-                    "delta": {"stop_reason": "tool_use"},
-                    "usage": {"output_tokens": 9},
-                },
-            ),
-        )
-        return httpx.Response(
-            200,
-            headers={"content-type": "text/event-stream; charset=utf-8", "request-id": "rq_a"},
-            stream=ChunkStream(chunks),
-        )
+    if json.loads(request.content).get("stream"):
+        chunks = sse(("message_start", {"type": "message_start", "message": {"id": "msg_s"}}))
+        headers = {"content-type": "text/event-stream"}
+        return httpx.Response(200, headers=headers, stream=ChunkStream(chunks))
     return httpx.Response(
         200,
         json={
@@ -262,68 +206,25 @@ def _anthropic_handler(request: httpx.Request) -> httpx.Response:
     )
 
 
-def test_anthropic_stream_then_tool_result(rig: Rig) -> None:
+def test_anthropic_messages(rig: Rig) -> None:
     with rig.client(_anthropic_handler) as client:
-        with client.stream(
-            "POST",
-            ANTHROPIC,
-            json={
-                "model": "claude-x",
-                "stream": True,
-                "messages": [{"role": "user", "content": "find x"}],
-            },
-        ) as response:
+        with client.stream("POST", ANTHROPIC, json={"stream": True, "messages": []}) as response:
             response.read()
-        client.post(
-            ANTHROPIC,
-            json={
-                "model": "claude-x",
-                "messages": [
-                    {"role": "user", "content": "find x"},
-                    {
-                        "role": "assistant",
-                        "content": [
-                            {
-                                "type": "tool_use",
-                                "id": "toolu_1",
-                                "name": "search",
-                                "input": {"q": "x"},
-                            }
-                        ],
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "tool_result", "tool_use_id": "toolu_1", "content": "found"}
-                        ],
-                    },
-                ],
-            },
-        )
+        client.post(ANTHROPIC, json={"model": "claude-x", "messages": []})
     rig.flush()
-    one, two = _validate_records(rig)
-    assert one["endpoint"]["provider_name"] == "anthropic"
-    assert one["endpoint"]["provider_request_id"] == "rq_a"
-    assert one["response"]["tool_calls"] == [{"id": "toolu_1", "name": "search"}]
-    assert one["response"]["usage"] == {"input_tokens": 4, "output_tokens": 9}
-    assert two["request"]["tool_call_ids_consumed"] == ["toolu_1"]
-    prefix = one["request"]["message_digests"] + one["response"]["message_digests"]
-    assert two["request"]["message_digests"][:2] == prefix
+    streamed, plain = sorted(rig.spans(), key=lambda s: attrs(s)["fabric.source.sequence"])
+    assert attrs(streamed)["gen_ai.provider.name"] == "anthropic"
+    assert "gen_ai.response.id" not in attrs(streamed)
+    p = attrs(plain)
+    assert p["fabric.wire.api"] == "anthropic.messages"
+    assert (p["gen_ai.response.id"], p["gen_ai.response.model"]) == ("msg_n", "claude-x")
+    assert p["gen_ai.response.finish_reasons"] == ("end_turn",)
+    assert (p["gen_ai.usage.input_tokens"], p["gen_ai.usage.output_tokens"]) == (9, 1)
+    validate_capture(rig)
 
 
 def test_async_client_capture(rig: Rig) -> None:
-    chunks = sse(
-        {
-            "id": "c-a",
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {"role": "assistant", "content": "ok"},
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-    )
+    chunks = sse({"id": "c-a", "choices": [{"index": 0, "delta": {"content": "ok"}}]})
     stream = ChunkStream(chunks)
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -342,43 +243,30 @@ def test_async_client_capture(rig: Rig) -> None:
     seen = asyncio.run(main())
     assert all(got is sent for got, sent in zip(seen, chunks, strict=True))
     rig.flush()
-    spans = rig.spans()
-    assert len(spans) == 2
-    assert {attrs(s)["fabric.wire.response_state"] for s in spans} == {"complete"}
-    _validate_records(rig)
+    assert [attrs(s)["fabric.wire.response_state"] for s in rig.spans()] == ["complete"] * 2
+    validate_capture(rig)
 
 
-def test_responses_api_previous_response_id(rig: Rig) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={
-                "id": "resp_2",
-                "object": "response",
-                "model": "gpt-5",
-                "status": "completed",
-                "output": [
-                    {
-                        "type": "message",
-                        "id": "m",
-                        "role": "assistant",
-                        "content": [{"type": "output_text", "text": "4", "annotations": []}],
-                    }
-                ],
-            },
-        )
-
-    with rig.client(handler) as client:
-        client.post(
-            OPENAI_RESPONSES,
-            json={"model": "gpt-5", "input": "2+2?", "previous_response_id": "resp_1"},
-        )
+def test_responses_api_metadata(rig: Rig) -> None:
+    body = {
+        "id": "resp_2",
+        "object": "response",
+        "model": "gpt-5",
+        "status": "completed",
+        "output": [],
+        "usage": {"input_tokens": 7, "output_tokens": 2},
+    }
+    with rig.client(lambda r: httpx.Response(200, json=body)) as client:
+        client.post(OPENAI_RESPONSES, json={"input": "2+2?", "previous_response_id": "resp_1"})
     rig.flush()
     (span,) = rig.spans()
-    assert attrs(span)["gen_ai.request.previous_response.id"] == "resp_1"
-    assert attrs(span)["gen_ai.response.id"] == "resp_2"
-    (record,) = _validate_records(rig)
-    assert record["request"]["previous_response_id"] == "resp_1"
+    a = attrs(span)
+    assert a["fabric.wire.api"] == "openai.responses"
+    assert a["gen_ai.response.id"] == "resp_2"
+    assert a["gen_ai.response.finish_reasons"] == ("completed",)
+    assert (a["gen_ai.usage.input_tokens"], a["gen_ai.usage.output_tokens"]) == (7, 2)
+    assert "gen_ai.request.previous_response.id" not in a  # reconstruct reads it from bytes
+    validate_capture(rig)
 
 
 def test_non_matching_requests_are_untouched(rig: Rig) -> None:
@@ -398,10 +286,8 @@ def test_non_matching_requests_are_untouched(rig: Rig) -> None:
     rig.flush()
     assert rig.spans() == []
     assert rig.tee.stats()["matched"] == 0
-    assert rig.allocator.high_water() == -1
-    assert all(
-        isinstance(r.stream, ChunkStream) or not isinstance(r.stream, TeeSyncStream) for r in seen
-    )
+    assert rig.allocator.last_sequence() == (rig.allocator.epoch, -1)
+    assert not any(isinstance(r.stream, TeeSyncStream) for r in seen)
 
 
 def test_extra_endpoint_matching(tmp_path: Path) -> None:
@@ -422,40 +308,39 @@ def test_extra_endpoint_matching(tmp_path: Path) -> None:
             client.post("http://localhost:8000/other/chat/completions", json={"messages": []})
         rig.flush()
         (span,) = rig.spans()
-        assert attrs(span)["fabric.wire.endpoint_id"] == "vllm"
         assert attrs(span)["gen_ai.provider.name"] == "vllm"
         assert attrs(span)["fabric.wire.store_status"] == "disabled"
-        assert "fabric.wire.exchange_ref" not in attrs(span)
-        assert "fabric.wire.request_body_sha256" in attrs(span)
+        assert "fabric.content.request_ref" not in attrs(span)
+        assert "fabric.wire.request_sha256" in attrs(span)
+        validate_capture(rig)
     finally:
         rig.close()
 
 
-def test_buffer_overflow_truncates_and_records_loss(tmp_path: Path) -> None:
+def test_body_cap_truncates_without_a_loss(tmp_path: Path) -> None:
     rig = make_rig(tmp_path, max_body_bytes=64)
     big = [b"x" * 50, b"y" * 50, b"z" * 50]
     try:
         with rig.client(lambda r: httpx.Response(200, stream=ChunkStream(big))) as client:
-            response = client.post(
-                OPENAI_CHAT, json={"messages": [{"role": "user", "content": "q" * 100}]}
-            )
+            response = client.post(OPENAI_CHAT, json={"messages": [{"content": "q" * 100}]})
         assert response.content == b"".join(big)
         rig.flush()
         (span,) = rig.spans()
-        assert attrs(span)["fabric.wire.truncated"] is True
-        assert attrs(span)["fabric.wire.parse_status"] == "truncated"
-        assert attrs(span)["fabric.wire.response_body_bytes"] == 150
-        (record,) = _validate_records(rig)
-        body = record["response"]["body"]
-        assert body["status"] == "truncated" and body["representation"] == "truncated"
-        assert body["stored_byte_length"] == 64 and body["source_byte_length"] == 150
+        a = attrs(span)
+        assert a["fabric.wire.truncated"] is True
+        assert a["fabric.wire.store_status"] == "stored"
+        retained = b"x" * 50 + b"y" * 14
+        assert rig.store.read(a["fabric.content.result_ref"]) == retained
+        assert a["fabric.wire.response_sha256"] == hashlib.sha256(retained).hexdigest()
+        body = _by_role(rig)[(0, "model.exchange.response")]
+        assert (body["status"], body["representation"]) == ("truncated", "truncated")
+        assert body["transformations"] == ["truncate"]
+        assert (body["stored_byte_length"], body["source_byte_length"]) == (64, 150)
         assert "source_sha256" not in body
-        assert rig.store.read(body["ref"]) == (b"x" * 50 + b"y" * 14)
-        assert record["request"]["body"]["status"] == "truncated"
-        assert record["capture"]["truncated"] is True
-        assert record["capture"]["loss_record_ids"]
-        assert rig.loss_counts().get("buffer_overflow") == 1
+        assert rig.loss_counts() == {}  # truncation is a span flag, not a loss
         assert rig.tee.stats()["inflight_bytes"] == 0
+        assert rig.tee.stats()["truncated"] == 1
+        validate_capture(rig)
     finally:
         rig.close()
 
@@ -490,20 +375,21 @@ class _BrokenStore:
 
 def test_store_failure_never_raises_into_caller(tmp_path: Path) -> None:
     store = _BrokenStore()
-    rig = make_rig(tmp_path, store=store, store_retry_attempts=2)
-    rig.tee.pipeline._backoffs = (0.0, 0.0)
+    rig = make_rig(tmp_path, store=store)
+    rig.tee.pipeline._backoffs = (0.0, 0.0, 0.0)
     try:
         with rig.client(_chat_handler) as client:
-            response = client.post(OPENAI_CHAT, json={"messages": FIRST_MESSAGES})
-        assert response.status_code == 200
+            assert client.post(OPENAI_CHAT, json={"messages": FIRST}).status_code == 200
         rig.flush()
         (span,) = rig.spans()
-        assert attrs(span)["fabric.wire.store_status"] == "failed"
-        assert "fabric.content.request_ref" not in attrs(span)
-        assert store.calls == 3 * 3  # request, response, record x (1 + 2 retries)
-        counts = rig.loss_counts()
-        assert counts.get("store_failure") == 3
-        assert rig.tee.stats()["store_failures"] == 3
+        a = attrs(span)
+        assert a["fabric.wire.store_status"] == "failed"
+        assert "fabric.content.request_ref" not in a and "fabric.content.result_ref" not in a
+        assert "fabric.wire.request_sha256" in a and "fabric.wire.response_sha256" in a
+        assert store.calls == 2 * 4  # two bodies x (one try + three retries)
+        assert rig.tee.stats()["store_failures"] == 2
+        assert rig.loss_counts() == {}  # store failure is the span's store_status
+        validate_capture(rig)
     finally:
         rig.close()
 
@@ -519,12 +405,12 @@ def test_transport_error_reraises_same_exception(rig: Rig) -> None:
     assert caught.value is error
     rig.flush()
     (span,) = rig.spans()
-    assert attrs(span)["fabric.wire.response_state"] == "transport_error"
-    assert attrs(span)["error.type"] == "ConnectError"
+    a = attrs(span)
+    assert a["fabric.wire.response_state"] == "error"
+    assert a["error.type"] == "ConnectError"
+    assert "fabric.wire.response_sha256" not in a
     assert span.status.status_code is StatusCode.ERROR
-    (record,) = _validate_records(rig)
-    assert record["response"]["error_type"] == "ConnectError"
-    assert "body" not in record["response"]
+    validate_capture(rig)
 
 
 def test_mid_stream_error_is_partial(rig: Rig) -> None:
@@ -536,25 +422,28 @@ def test_mid_stream_error_is_partial(rig: Rig) -> None:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert caught.value is stream.error
     rig.flush()
-    (record,) = _validate_records(rig)
-    assert record["response"]["state"] == "transport_error"
-    assert record["response"]["body"]["representation"] == "partial"
-    assert record["response"]["body"]["stored_byte_length"] == 10
+    (span,) = rig.spans()
+    assert attrs(span)["fabric.wire.response_state"] == "error"
+    body = _by_role(rig)[(0, "model.exchange.response")]
+    assert (body["representation"], body["stored_byte_length"]) == ("partial", 10)
+    validate_capture(rig)
 
 
 def test_closed_early_and_abandoned(rig: Rig) -> None:
     chunks = [b"data: 1\n\n", b"data: 2\n\n", b"data: 3\n\n"]
     with rig.client(lambda r: httpx.Response(200, stream=ChunkStream(chunks))) as client:
         with client.stream("POST", OPENAI_CHAT, json={"messages": []}) as response:
-            iterator = response.iter_raw()
-            next(iterator)
+            next(response.iter_raw())
         abandoned = client.send(client.build_request("POST", OPENAI_CHAT, json={}), stream=True)
         del abandoned
         gc.collect()
-    rig.flush()
+    for _ in range(200):
+        if len(rig.spans()) == 2:
+            break
+        rig.flush()
     states = sorted(attrs(s)["fabric.wire.response_state"] for s in rig.spans())
     assert states == ["abandoned", "closed_early"]
-    _validate_records(rig)
+    validate_capture(rig)
 
 
 def test_http_error_status_marks_span_error(rig: Rig) -> None:
@@ -567,10 +456,10 @@ def test_http_error_status_marks_span_error(rig: Rig) -> None:
     (span,) = rig.spans()
     assert span.status.status_code is StatusCode.ERROR
     assert attrs(span)["http.response.status_code"] == 429
-    assert attrs(span)["fabric.wire.parse_status"] == "ok"
+    assert attrs(span)["fabric.wire.response_state"] == "complete"
 
 
-def test_queue_full_drops_and_records_loss(tmp_path: Path) -> None:
+def test_queue_full_drops_and_records_a_loss_range(tmp_path: Path) -> None:
     gate = threading.Event()
 
     class SlowStore(_BrokenStore):
@@ -578,25 +467,30 @@ def test_queue_full_drops_and_records_loss(tmp_path: Path) -> None:
             gate.wait(5)
             raise OSError("slow")
 
-    rig = make_rig(tmp_path, store=SlowStore(), queue_max_items=1, store_retry_attempts=1)
-    rig.tee.pipeline._backoffs = (0.0,)
+    rig = make_rig(tmp_path, store=SlowStore(), queue_max_items=1)
+    rig.tee.pipeline._backoffs = ()
     try:
         with rig.client(_chat_handler) as client:
-            for _ in range(4):
+            for _ in range(5):
                 assert client.post(OPENAI_CHAT, json={"messages": []}).status_code == 200
         gate.set()
         rig.flush()
-        assert rig.loss_counts().get("queue_full", 0) >= 1
         stats = rig.tee.stats()
         assert stats["dropped"] >= 1
-        assert stats["submitted"] + stats["dropped"] == 4
+        assert stats["submitted"] + stats["dropped"] == 5
         assert stats["inflight_bytes"] == 0
+        assert rig.loss_counts() == {"queue_full": stats["dropped"]}
+        spanned = {attrs(s)["fabric.source.sequence"] for s in rig.spans()}
+        (loss,) = rig.spans("fabric.capture_loss")
+        first, last = (attrs(loss)[f"fabric.loss.{k}_sequence"] for k in ("first", "last"))
+        assert not spanned & set(range(first, last + 1))
+        validate_capture(rig)
     finally:
         gate.set()
         rig.close()
 
 
-@pytest.mark.parametrize("hook", ["_retain", "_on_head", "finish_build", "submit"])
+@pytest.mark.parametrize("hook", ["_retain", "reaper", "finish_build", "submit"])
 def test_injected_tee_crash_leaves_http_result_unchanged(
     rig: Rig, monkeypatch: pytest.MonkeyPatch, hook: str
 ) -> None:
@@ -605,6 +499,8 @@ def test_injected_tee_crash_leaves_http_result_unchanged(
 
     if hook == "finish_build":
         monkeypatch.setattr("fabric.wire._stream.CaptureJob", boom)
+    elif hook == "reaper":  # inside attach(), after the response head was seen
+        monkeypatch.setattr("fabric.wire._stream._ensure_reaper", boom)
     elif hook == "submit":
         monkeypatch.setattr(rig.tee.pipeline, "submit", boom)
     else:
@@ -614,37 +510,35 @@ def test_injected_tee_crash_leaves_http_result_unchanged(
         response = client.post(OPENAI_CHAT, json={"messages": []})
     assert response.status_code == 200
     assert response.content == b"".join(chunks)
-
-
-def test_tee_crash_records_internal_error(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(*args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("injected")
-
-    monkeypatch.setattr(Exchange, "_on_head", boom)
-    with rig.client(_chat_handler) as client:
-        client.post(OPENAI_CHAT, json={"messages": []})
-    assert rig.loss_counts().get("internal_error") == 1
+    # _retain first runs before the sequence is allocated: no sequence, no loss.
+    assert rig.loss_counts() == ({} if hook == "_retain" else {"internal_error": 1})
     assert rig.tee.stats()["internal_errors"] == 1
     assert rig.tee.stats()["inflight_bytes"] == 0
 
 
-def test_streaming_request_body_is_teed(rig: Rig) -> None:
+def test_streamed_request_body_passes_through_untouched_and_unretained(rig: Rig) -> None:
     body = [b'{"messages":', b"[]}"]
+    sent: list[bytes] = []
 
     def gen() -> Any:
         yield from body
 
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request.read())
+        return httpx.Response(200, json={"choices": []})
+
     request = httpx.Request("POST", OPENAI_CHAT, content=gen())
-    with rig.client(lambda r: httpx.Response(200, json={"choices": []})) as client:
-        response = client.send(request)
-    assert response.status_code == 200
-    # MockTransport read() swapped in a ByteStream; the tee must not undo that.
-    assert isinstance(request.stream, httpx.ByteStream)
-    assert request.content == b"".join(body)
+    with rig.client(handler) as client:
+        assert client.send(request).status_code == 200
+    assert sent == [b"".join(body)]
     rig.flush()
-    (record,) = _validate_records(rig)
-    assert rig.store.read(record["request"]["body"]["ref"]) == b"".join(body)
-    assert record["request"]["parse_status"] == "ok"
+    (span,) = rig.spans()
+    a = attrs(span)
+    assert a["fabric.wire.truncated"] is True  # the request bytes were not retained
+    assert a["fabric.wire.store_status"] == "partial"
+    assert "fabric.content.request_ref" not in a and "fabric.content.result_ref" in a
+    assert a["fabric.wire.request_sha256"] == hashlib.sha256(b"").hexdigest()
+    validate_capture(rig)
 
 
 def test_parent_context_and_run_from_trace(rig: Rig) -> None:
@@ -655,39 +549,17 @@ def test_parent_context_and_run_from_trace(rig: Rig) -> None:
     (span,) = rig.spans()
     context = parent.get_span_context()
     assert span.parent is not None and span.parent.span_id == context.span_id
-    assert attrs(span)["fabric.run.id_basis"] == "trace"
     assert attrs(span)["fabric.run.id"] == f"trace:{context.trace_id:032x}"
-    (record,) = _validate_records(rig)
-    assert record["trace"]["parent_span_id"] == format(context.span_id, "016x")
-    assert record["trace"]["span_id"] == format(span.context.span_id, "016x")
     assert trace.get_current_span().get_span_context().is_valid is False
 
 
-def test_message_hashes_can_be_omitted_from_otlp(tmp_path: Path) -> None:
-    rig = make_rig(tmp_path, otlp_message_hashes=False)
-    try:
-        with rig.client(_chat_handler) as client:
-            client.post(OPENAI_CHAT, json={"messages": FIRST_MESSAGES, "tools": []})
-        rig.flush()
-        (span,) = rig.spans()
-        assert "fabric.wire.input.message_hashes" not in attrs(span)
-        assert "fabric.wire.tools_hash" not in attrs(span)
-        (record,) = _validate_records(rig)
-        assert len(record["request"]["message_digests"]) == 2
-    finally:
-        rig.close()
-
-
-def test_large_message_lists_cap_otlp_arrays(rig: Rig) -> None:
-    messages = [{"role": "user", "content": str(i)} for i in range(70)]
+def test_without_trace_or_scope_the_run_is_the_source_epoch(rig: Rig) -> None:
     with rig.client(_chat_handler) as client:
-        client.post(OPENAI_CHAT, json={"messages": messages})
+        client.post(OPENAI_CHAT, json={"messages": []})
     rig.flush()
     (span,) = rig.spans()
-    assert len(attrs(span)["fabric.wire.input.message_hashes"]) == 64
-    assert attrs(span)["fabric.wire.input.message_hashes_offset"] == 6
-    assert attrs(span)["fabric.wire.arrays_truncated"] is True
-    assert attrs(span)["fabric.wire.input.message_count"] == 70
+    expected = f"source:{rig.allocator.source_id}:{rig.allocator.epoch}"
+    assert attrs(span)["fabric.run.id"] == expected
 
 
 def test_close_reports_stranded_exchanges(tmp_path: Path) -> None:
@@ -695,7 +567,9 @@ def test_close_reports_stranded_exchanges(tmp_path: Path) -> None:
     with rig.client(lambda r: httpx.Response(200, stream=ChunkStream([b"a", b"b"]))) as client:
         response = client.send(client.build_request("POST", OPENAI_CHAT, json={}), stream=True)
         assert rig.tee.close(0.05) is False
-        assert rig.loss_counts().get("shutdown_timeout") == 1
+        assert rig.loss_counts() == {"shutdown": 1}
         assert response.read() == b"ab"  # the caller still gets every byte
         response.close()
     assert rig.tee.stats()["inflight_bytes"] == 0
+    assert rig.spans() == []
+    validate_capture(rig)

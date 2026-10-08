@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Gap model, verdict rule and deterministic report assembly (spec 042 §10)."""
+"""Gap model, verdict rule and deterministic report helpers (spec 042 §9)."""
 
 from __future__ import annotations
 
@@ -12,22 +12,21 @@ from typing import Any, Literal
 
 GapType = Literal[
     "sequence_gap",
-    "prefix_break",
-    "unmatched_tool_call",
+    "loss",
+    "tail_unverified",
     "missing_object",
     "digest_mismatch",
-    "loss_record",
     "truncated",
-    "unresolved_previous_response",
     "unparsed_exchange",
-    "tail_unverified",
+    "prefix_break",
+    "unmatched_tool_call",
+    "unresolved_previous_response",
 ]
 Effect = Literal["info", "partial", "unverified"]
 Check = Literal["passed", "failed", "skipped", "not_applicable"]
 Verdict = Literal["complete_for_declared_scope", "partial", "unverified"]
 
 SCHEMA_VERSION = "fabric.run-reconstruction/v1"
-MAX_GAP_SEQUENCES = 256
 _REASON_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _NS_PER_S = 1_000_000_000
 
@@ -41,12 +40,11 @@ class Gap:
     exchange_id: str | None = None
     source_id: str | None = None
     source_epoch: int | None = None
-    sequences: tuple[int, ...] = ()
-    run_sequences: tuple[int, ...] = ()
+    first_sequence: int | None = None
+    last_sequence: int | None = None
     tool_call_id: str | None = None
     previous_response_id: str | None = None
-    loss_record_id: str | None = None
-    object_role: Literal["request", "response", "record"] | None = None
+    object_role: Literal["request", "response"] | None = None
     reason: str | None = None
 
     def to_json(self) -> dict[str, Any]:
@@ -55,11 +53,10 @@ class Gap:
             "exchange_id": self.exchange_id,
             "source_id": self.source_id,
             "source_epoch": self.source_epoch,
-            "sequences": list(self.sequences[:MAX_GAP_SEQUENCES]) or None,
-            "run_sequences": list(self.run_sequences[:MAX_GAP_SEQUENCES]) or None,
+            "first_sequence": self.first_sequence,
+            "last_sequence": self.last_sequence,
             "tool_call_id": self.tool_call_id,
             "previous_response_id": self.previous_response_id,
-            "loss_record_id": self.loss_record_id,
             "object_role": self.object_role,
             "reason": self.reason if self.reason and _REASON_RE.match(self.reason) else None,
         }
@@ -67,33 +64,29 @@ class Gap:
         return out
 
 
-def sort_gaps(gaps: Iterable[Gap], run_sequence_of: Mapping[str, int]) -> list[Gap]:
-    """Deterministic order: (type, exchange run_sequence, first sequence, tool call id, ...)."""
+def sort_gaps(gaps: Iterable[Gap], order_of: Mapping[str, int]) -> list[Gap]:
+    """Deterministic, de-duplicated order: type, exchange position, range, ids."""
 
     def key(gap: Gap) -> tuple[Any, ...]:
-        run_sequence = run_sequence_of.get(gap.exchange_id, -1) if gap.exchange_id else -1
         return (
             gap.gap_type,
-            run_sequence,
-            gap.sequences[0] if gap.sequences else -1,
-            gap.tool_call_id or "",
-            gap.run_sequences[0] if gap.run_sequences else -1,
-            gap.object_role or "",
-            gap.loss_record_id or "",
+            order_of.get(gap.exchange_id, -1) if gap.exchange_id else -1,
             gap.source_id or "",
             gap.source_epoch if gap.source_epoch is not None else -1,
+            gap.first_sequence if gap.first_sequence is not None else -1,
+            gap.object_role or "",
+            gap.tool_call_id or "",
             gap.reason or "",
             gap.effect,
             gap.exchange_id or "",
             gap.previous_response_id or "",
         )
 
-    unique = dict.fromkeys(gaps)
-    return sorted(unique, key=key)
+    return sorted(dict.fromkeys(gaps), key=key)
 
 
 def verdict_for(gaps: Sequence[Gap], checks: Mapping[str, Check]) -> Verdict:
-    """Spec 042 §10.7: partial beats unverified beats complete."""
+    """Spec 042 §9.7: partial beats unverified beats complete."""
 
     effects = {gap.effect for gap in gaps}
     if "partial" in effects:

@@ -4,19 +4,17 @@
 
 Objects are always resolved by ``object_id`` through
 ``store.evidence_ref_for(object_id)``; a recorded ref is only used to learn
-the id (its last path segment), never opened directly, so a record cannot
+the id (its last path segment), never opened directly, so a span cannot
 point the verifier outside the configured tenant namespace. Every fetched
-object is checked against the digest and length the capture recorded and
-against its content-v2 descriptor sidecar.
+object is checked against the digest the span recorded and against its
+content-v2 descriptor, which also says how to decode the bytes.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal
 
 from fabric.reconstruct._inputs import ReconstructInputError, opaque_id
@@ -24,29 +22,31 @@ from fabric.reconstruct._inputs import ReconstructInputError, opaque_id
 Verification = Literal["verified", "missing", "digest_mismatch", "not_stored", "not_checked"]
 StoreKind = Literal["local", "s3"]
 
-RECORD_ROLE = "model.exchange.record"
 _STORED_STATUSES = frozenset({"stored", "truncated"})
 _ABSENT_CODES = frozenset({"NoSuchKey", "404", "NotFound"})
+_REF_MAX = 2048
 
 
 @dataclass(frozen=True, slots=True)
 class ObjectResult:
-    """Outcome of fetching and verifying one stored object."""
+    """Outcome of fetching and verifying one stored body."""
 
     verification: Verification
     object_id: str | None = None
     ref: str | None = None
     sha256: str | None = None
     byte_length: int | None = None
-    gap_type: Literal["missing_object", "digest_mismatch"] | None = None
     reason: str | None = None
     data: bytes | None = None
+    media_type: str | None = None
+    content_encoding: str = "identity"
+    truncated: bool = False
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
         if self.object_id is not None:
             out["object_id"] = self.object_id
-        if self.ref is not None and 0 < len(self.ref) <= 2048:  # noqa: PLR2004 - schema bound
+        if self.ref is not None and 0 < len(self.ref) <= _REF_MAX:
             out["ref"] = self.ref
         if self.sha256 is not None:
             out["sha256"] = self.sha256
@@ -92,157 +92,71 @@ class StoreReader:
             raise ReconstructInputError(f"store cannot resolve evidence refs: {exc}") from exc
         self.kind: StoreKind = "s3" if probe.startswith("s3://") else "local"
 
-    def fetch(  # noqa: PLR0911 - one return per verification outcome
-        self,
-        object_id: str | None,
-        *,
-        role: str,
-        expected_sha256: str | None,
-        expected_length: int | None,
+    def fetch(
+        self, object_id: str, *, role: str, operation_id: str, expected_sha256: str
     ) -> ObjectResult:
         """Fetch ``object_id`` and verify it; never raises."""
 
-        if object_id is None:
-            return ObjectResult(
-                "missing",
-                sha256=expected_sha256,
-                byte_length=expected_length,
-                gap_type="missing_object",
-                reason="invalid_ref",
-            )
         try:
             uri = str(self._store.evidence_ref_for(object_id))
-        except Exception:
-            return ObjectResult(
-                "missing",
-                object_id=object_id,
-                sha256=expected_sha256,
-                byte_length=expected_length,
-                gap_type="missing_object",
-                reason="invalid_ref",
-            )
-        try:
             data = self._store.read(uri)
         except Exception as exc:
-            return ObjectResult(
-                "missing",
-                sha256=expected_sha256,
-                byte_length=expected_length,
-                gap_type="missing_object",
-                reason="absent" if _is_absent(exc) else "read_error",
-                object_id=object_id,
-                ref=uri,
-            )
+            reason = "absent" if _is_absent(exc) else "read_error"
+            return ObjectResult("missing", object_id, sha256=expected_sha256, reason=reason)
         if not isinstance(data, bytes | bytearray):
-            return ObjectResult(
-                "missing",
-                object_id=object_id,
-                ref=uri,
-                gap_type="missing_object",
-                reason="read_error",
-            )
+            return ObjectResult("missing", object_id, uri, expected_sha256, reason="read_error")
         data = bytes(data)
-        actual = sha256_digest(data)
-        recorded_sha = expected_sha256 or actual
-        recorded_length = expected_length if expected_length is not None else len(data)
-        mismatch = self._mismatch(data, actual, expected_sha256, expected_length)
-        if mismatch is None:
-            mismatch = self._descriptor_mismatch(uri, object_id, role, actual, len(data))
-        if mismatch == "descriptor_missing":
+        try:
+            descriptor: Any = self._store.read_descriptor(uri)
+        except Exception as exc:
+            if _is_absent(exc):
+                return ObjectResult(
+                    "missing", object_id, uri, expected_sha256, reason="descriptor_missing"
+                )
+            descriptor = None
+        if sha256_digest(data) != expected_sha256:
+            reason = "content_digest"
+        elif not isinstance(descriptor, Mapping) or not self._descriptor_ok(
+            descriptor, object_id, role, operation_id, data
+        ):
+            reason = "sidecar_mismatch"
+        else:
+            encoding = descriptor.get("content_encoding", "identity")
+            media_type = descriptor.get("media_type")
             return ObjectResult(
-                "missing",
-                sha256=recorded_sha,
-                byte_length=recorded_length,
-                gap_type="missing_object",
-                reason=mismatch,
-                object_id=object_id,
-                ref=uri,
-            )
-        if mismatch is not None:
-            return ObjectResult(
-                "digest_mismatch",
-                sha256=recorded_sha,
-                byte_length=recorded_length,
-                gap_type="digest_mismatch",
-                reason=mismatch,
-                object_id=object_id,
-                ref=uri,
+                "verified",
+                object_id,
+                uri,
+                expected_sha256,
+                len(data),
+                data=data,
+                media_type=media_type if isinstance(media_type, str) else None,
+                content_encoding=encoding if isinstance(encoding, str) else "unknown",
+                truncated="truncated"
+                in (descriptor.get("representation"), descriptor.get("status")),
             )
         return ObjectResult(
-            "verified",
-            object_id=object_id,
-            ref=uri,
-            sha256=actual,
-            byte_length=len(data),
-            data=data,
+            "digest_mismatch", object_id, uri, expected_sha256, len(data), reason=reason
         )
 
-    @staticmethod
-    def _mismatch(
-        data: bytes, actual: str, expected_sha256: str | None, expected_length: int | None
-    ) -> str | None:
-        if expected_sha256 is not None and expected_sha256 != actual:
-            return "content_digest"
-        if expected_length is not None and expected_length != len(data):
-            return "byte_length"
-        return None
-
-    def _descriptor_mismatch(
-        self, uri: str, object_id: str, role: str, actual: str, length: int
-    ) -> str | None:
-        try:
-            descriptor = self._store.read_descriptor(uri)
-        except Exception as exc:
-            return "descriptor_missing" if _is_absent(exc) else "sidecar_mismatch"
-        if not isinstance(descriptor, Mapping):
-            return "sidecar_mismatch"
+    def _descriptor_ok(
+        self,
+        descriptor: Mapping[str, Any],
+        object_id: str,
+        role: str,
+        operation_id: str,
+        data: bytes,
+    ) -> bool:
         expected = {
             "schema_version": "fabric.content-object/v2",
             "object_id": object_id,
             "tenant_id": self.tenant_id,
             "role": role,
-            "stored_sha256": actual,
-            "stored_byte_length": length,
+            "stored_sha256": sha256_digest(data),
+            "stored_byte_length": len(data),
         }
-        if any(descriptor.get(key) != value for key, value in expected.items()):
-            return "sidecar_mismatch"
-        if descriptor.get("status") not in _STORED_STATUSES:
-            return "sidecar_mismatch"
-        return None
-
-    def scan_record_ids(self) -> list[str]:
-        """Object ids of every ``model.exchange.record`` in a local store."""
-
-        if self.kind != "local" or not hasattr(self._store, "root"):
-            raise ReconstructInputError("--scan-store is supported only for a local store root")
-        meta_dir = Path(str(self._store.root)).resolve() / self.tenant_id / "evidence" / "meta"
-        if not meta_dir.is_dir():
-            return []
-        found: list[str] = []
-        for meta in sorted(meta_dir.glob("*.json")):
-            try:
-                descriptor = json.loads(meta.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
-                continue
-            if not isinstance(descriptor, Mapping) or descriptor.get("role") != RECORD_ROLE:
-                continue
-            object_id = opaque_id(meta.name[: -len(".json")])
-            if object_id is not None and descriptor.get("object_id") == object_id:
-                found.append(object_id)
-        return found
-
-    def descriptor_digest(self, object_id: str) -> tuple[str | None, int | None]:
-        """Recorded digest/length for an object found by scanning (no span)."""
-
-        try:
-            descriptor = self._store.read_descriptor(self._store.evidence_ref_for(object_id))
-        except Exception:
-            return None, None
-        if not isinstance(descriptor, Mapping):
-            return None, None
-        sha = descriptor.get("stored_sha256")
-        length = descriptor.get("stored_byte_length")
         return (
-            sha if isinstance(sha, str) else None,
-            length if isinstance(length, int) and not isinstance(length, bool) else None,
+            all(descriptor.get(key) == value for key, value in expected.items())
+            and descriptor.get("status") in _STORED_STATUSES
+            and descriptor.get("operation_id", operation_id) == operation_id
         )

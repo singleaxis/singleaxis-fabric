@@ -1,0 +1,11 @@
+{
+  "schema_version": "fabric.loss-record/v1",
+  "kind": "heartbeat",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "emitted_at": "2026-10-08T09:00:06.000Z",
+  "last_sequence": 4,
+  "run_id": "run-travel-42"
+}
