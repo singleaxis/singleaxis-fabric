@@ -238,8 +238,14 @@ content:
   enabled: false
   # HTTP only (no gRPC). One record must fit; the agent caps bodies at 63 MiB.
   maxRequestBodyBytes: 67108864
-  # Tenant ids the Node accepts (FABRIC_TENANT_ID of each agent). Required.
+  # Tenant ids the Node accepts (FABRIC_TENANT_ID of each agent). Required;
+  # exactly one unless allowMultipleTenants=true. A content record names its
+  # own tenant, so with several tenants every authenticated agent could write
+  # under any of them.
   allowedTenants: []
+  # Permit more than one allowedTenants entry. This trusts every
+  # authenticated agent to name its tenant; use one Node per tenant otherwise.
+  allowMultipleTenants: false
   # "s3" (S3 or an S3-compatible store) or "file" (a directory on the queue
   # PVC; single replica only). Required when enabled.
   backend: ""
@@ -261,8 +267,10 @@ content:
     # URL; https:// is required whenever exporter.requireTLS=true.
     endpoint: ""
     usePathStyle: false
-    # "aws:kms" (with kmsKeyId) | "AES256" | "" (bucket default)
-    sse: ""
+    # Required for backend=s3: "AES256" (SSE-S3) or "aws:kms" (optionally
+    # with kmsKeyId). The exporter never writes content without requested
+    # server-side encryption, so an empty value fails the render.
+    sse: AES256
     kmsKeyId: ""
     # Static keys are for S3-compatible stores without workload identity.
     # Values never hold keys: name an operator-created Secret. On AWS leave

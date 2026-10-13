@@ -141,7 +141,9 @@ func deepMerge(base, overlay map[string]any) {
 //     (otlp/content*) and the fabriccontent exporter appear only in content
 //     pipelines (logs/content*), which carry only content receivers, only
 //     memory_limiter and only fabriccontent; no content receiver speaks gRPC
-//     and no connector can bridge content into a telemetry pipeline.
+//     and no connector can bridge content into a telemetry pipeline;
+//   - a fabriccontent exporter allows one tenant unless it sets
+//     allow_multiple_tenants: true (the record names its tenant).
 func checkPipelines(cfg map[string]any) error {
 	service, _ := cfg["service"].(map[string]any)
 	pipelines, _ := service["pipelines"].(map[string]any)
@@ -152,6 +154,9 @@ func checkPipelines(cfg map[string]any) error {
 		return fmt.Errorf("connectors are not accepted by the recorder; a connector could bridge content records into a telemetry pipeline")
 	}
 	if err := checkContentReceivers(cfg); err != nil {
+		return err
+	}
+	if err := checkContentTenants(cfg); err != nil {
 		return err
 	}
 	names := make([]string, 0, len(pipelines))
@@ -283,6 +288,61 @@ func checkContentReceivers(cfg map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// checkContentTenants refuses a fabriccontent exporter that allows more than
+// one tenant without allow_multiple_tenants: true. A content record names its
+// own tenant and every authenticated agent reaches the same receiver, so
+// several allowed tenants let any agent write under another tenant's prefix
+// (Codex r2 #1). The exporter enforces the same rule; the gate refuses it
+// before the collector starts.
+func checkContentTenants(cfg map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	ids := make([]string, 0, len(exporters))
+	for id := range exporters {
+		if componentType(id) == "fabriccontent" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		exporter, _ := exporters[id].(map[string]any)
+		if tenantCount(exporter["allowed_tenants"]) > 1 && !configTrue(exporter["allow_multiple_tenants"]) {
+			return fmt.Errorf("exporter %q allows more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant", id)
+		}
+	}
+	return nil
+}
+
+// tenantCount counts allowed_tenants entries; a scalar (e.g. one env
+// reference) is expanded and read as YAML, as the collector would.
+func tenantCount(v any) int {
+	if s, ok := v.(string); ok {
+		var parsed any
+		if err := yaml.Unmarshal([]byte(expandEnvRefs(s)), &parsed); err != nil || parsed == nil {
+			return 1
+		}
+		v = parsed
+	}
+	if items, ok := v.([]any); ok {
+		return len(items)
+	}
+	if v == nil {
+		return 0
+	}
+	return 1
+}
+
+// configTrue: a YAML true, or a string (after env expansion) reading true.
+func configTrue(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return strings.EqualFold(strings.TrimSpace(expandEnvRefs(t)), "true")
+	default:
+		return false
+	}
 }
 
 // inertAfterGuard are the only processor types allowed after fabricguard:

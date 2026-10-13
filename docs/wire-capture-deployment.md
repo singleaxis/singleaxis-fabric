@@ -66,7 +66,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 |---|---|---|
 | `FABRIC_WIRE_CONTENT_ENDPOINT` | node mode | Full URL of the Node's content receiver, used as given (`https://node:4319/v1/logs`). Setting it selects node mode. A URL with user info, a query or a fragment is rejected without echoing it. |
 | `FABRIC_WIRE_STORE` | no | Unset: node mode when a content endpoint is set, else metadata only (no bytes stored; runs can only be `unverified`). `node`: node mode explicitly. `file:///absolute/dir`: the agent writes a local store itself (development, offline or single-host; refused together with a content endpoint). `s3://…` is **refused**: S3 is written by the Node. |
-| `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; the Node writes only tenants on its allowlist. Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix, not an access boundary. |
+| `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix chosen by you, not an access boundary; never personal data (see below). |
 | `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). Optional in file mode, where it enables the same delivery path. |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | no | Spool bound, default 1 GiB, minimum `2 × FABRIC_WIRE_MAX_BODY_BYTES + 1 MiB`. When full, new exchanges are dropped and recorded as `queue_full` losses; the host is unaffected. |
 | `FABRIC_WIRE_MODEL_ALLOWLIST` | no | Comma-separated exact model names or `prefix*` entries emitted as is, in addition to the built-in public families (§3). |
@@ -107,6 +107,24 @@ and holds message content (`0600` files, `0700` directory; host disk
 encryption is the at-rest protection). Several processes may share one
 spool directory: one drains, all write.
 
+**The in-memory window before the spool.** A call's record is durable only
+once its spool file is fsync'd. From the moment the call finishes (the last
+response byte reaches the client, or the stream is closed or fails) until
+then, the exchange exists only in the agent's memory: it waits in the
+capture worker's queue (at most `FABRIC_WIRE_QUEUE_MAX_ITEMS`, default 256
+exchanges, and 256 MiB of bodies), and the worker hashes both bodies, then
+writes, fsyncs and renames the record. With an idle worker that is one
+exchange for a few milliseconds (one SHA-256 pass plus one fsync; longer for
+multi-MiB bodies or slow disks); under a burst it is every queued exchange.
+Run markers have the same short window. The write deliberately stays off
+the agent's thread so capture never adds disk latency to a model call. If
+the process is killed inside the window (SIGKILL, OOM kill, power loss),
+those exchanges are lost without a loss record, but their sequence numbers
+were allocated when the calls started: the run is reported `partial` (a gap
+inside a closed run scope, or before a later recorded call) or `unverified`
+(its end is not proven), never `complete_for_declared_scope`. An orderly
+`close()` or normal exit drains the window before the `final` heartbeat.
+
 **Global mode** (`FABRIC_WIRE_TRACER=global`, or
 `fabric.wire.install(tracer_provider=X)`), file or metadata-only modes
 only. Exchange spans go through the agent's own tracer provider: its
@@ -120,11 +138,21 @@ the agent's provider exports through a Fabric Node, and set
 or heartbeat record the agent's sampler drops makes `flush()` return
 `False` and is not retried.
 
-**Identifiers must not contain personal data.** Run ids
-(`fabric.wire.run(...)`), `FABRIC_SOURCE_ID`, `FABRIC_TENANT_ID` and
-`OTEL_SERVICE_NAME` are checked for shape only and are visible to every
-reader of the telemetry or the store layout. Use opaque or pseudonymous
-values, never patient, customer or user identifiers.
+**Identifiers are labels you choose, and must not contain personal
+data.** Run ids (`fabric.wire.run(run_id)`), source ids
+(`FABRIC_SOURCE_ID`), the tenant id (`FABRIC_TENANT_ID`) and
+`OTEL_SERVICE_NAME` are operator-chosen labels. Fabric checks only their
+shape and copies them as given: run ids, source ids and the service name
+onto every capture span (and so to your OTLP destination and its readers);
+run, source and tenant ids into every content descriptor, with the tenant
+id in every object key (`<prefix><tenant>/evidence/…`); and run, scope,
+source and tenant ids into the reconstruction report. Fabric cannot tell a
+patient number from a job id. Use opaque or pseudonymous values (a random
+UUID, a workload or job name, a keyed hash you can resolve on your side) —
+never a patient, customer, user or account identifier, an email address, a
+name, or a secret. The default source id (`wire-` + 16 hex of host name and
+service name) and the trace-derived run ids (`trace:<trace id>`) are
+already opaque.
 
 ## 2. Run a Fabric Node
 
@@ -143,19 +171,33 @@ runs anything but `memory_limiter` on the content path, gives the content
 receiver gRPC, or uses connectors; every telemetry pipeline must still run
 `fabricguard`, and `--set` overrides are refused.
 
+**One tenant per Node.** A content record names its own tenant, and every
+agent that authenticates to the Node reaches the same receiver; the Node
+cannot tell which agent belongs to which tenant. So the content exporter
+accepts exactly **one** allowed tenant: with two, an agent of tenant A could
+write objects under tenant B's prefix. The exporter, `fabric-gate`, the Helm
+chart and the shipped Compose configs all refuse more than one unless it is
+set explicitly (`allow_multiple_tenants: true`, Helm
+`content.allowMultipleTenants=true`). That flag **trusts every
+authenticated agent to name its tenant**; use one Node per tenant
+otherwise. **S3 content is always encrypted:** the exporter refuses an s3
+backend without `sse: AES256` or `sse: aws:kms`, whatever the launch path.
+
 | Deployment | Ingress authentication (4317, 4318 and 4319 alike) | Content store | Agent settings |
 |---|---|---|---|
-| Helm `shadow-production` ([deployment.md](deployment.md)) | TLS with a verified client certificate; NetworkPolicy admits only labelled agent namespaces to all three ports | `otel-collector.content.backend=s3` with `content.s3.sse` (`aws:kms` + key, or `AES256`), required by the profile; the Node writes with its IRSA role. The file backend is refused in this profile. | `https://` endpoints, `OTEL_EXPORTER_OTLP_CERTIFICATE`, `..._CLIENT_CERTIFICATE`, `..._CLIENT_KEY`. A bearer header alone is refused. |
+| Helm `shadow-production` ([deployment.md](deployment.md)) | TLS with a verified client certificate; NetworkPolicy admits only labelled agent namespaces to all three ports | `otel-collector.content.backend=s3` with `content.s3.sse` (`AES256`, the default, or `aws:kms` + key); the Node writes with its IRSA role. The file backend is refused in this profile. | `https://` endpoints, `OTEL_EXPORTER_OTLP_CERTIFICATE`, `..._CLIENT_CERTIFICATE`, `..._CLIENT_KEY`. A bearer header alone is refused. |
 | Compose production overlay ([deploy/compose](../deploy/compose/README.md)) | Bearer token; ports bound to `127.0.0.1` unless every published receiver has TLS (preflight) | `fabric-content` volume by default, or `FABRIC_CONTENT_BACKEND=s3` (bucket, region and SSE on the Node; instance role or a credentials-file secret) | `http://127.0.0.1:4318` and `:4319`, `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<token>`. Use `https://` and receiver TLS before leaving the host. |
 | Compose evaluation + MinIO (`make up-minio`) | None (loopback evaluation only) | Local MinIO bucket with SSE-S3, path-style addressing, Node-only writer keys | `http://127.0.0.1:4318` and `:4319`, `FABRIC_TENANT_ID=evaluation` |
 
 **Helm.** Enable content with `otel-collector.content.enabled=true`,
-`content.allowedTenants`, `content.backend` and the backend settings. The
-chart refuses to render without allowed tenants or a backend, with an s3
-backend lacking a valid bucket, a KMS key without `aws:kms`, an endpoint
-with credentials, query or fragment, or a memory limiter at or above the
-container memory limit. `shadow-production` also refuses missing SSE, the
-file backend, an `http://` store endpoint, and missing
+`content.allowedTenants` (one tenant), `content.backend` and the backend
+settings. The chart refuses to render without allowed tenants or a backend,
+with more than one tenant and no `content.allowMultipleTenants=true`, with
+an s3 backend lacking a valid bucket or `content.s3.sse` (default
+`AES256`), a KMS key without `aws:kms`, an endpoint with credentials, query
+or fragment, or a memory limiter at or above the container memory limit.
+`shadow-production` also refuses the file backend, an `http://` store
+endpoint, and missing
 `networkPolicy.contentEgress` peers for the store (S3 endpoint CIDRs or VPC
 endpoint, plus STS for IRSA). Put the Node writer role on
 `otel-collector.serviceAccount.annotations` (`eks.amazonaws.com/role-arn`);
@@ -165,6 +207,121 @@ identity, name an operator-created Secret in `content.s3.credentialsSecret`
 (values never hold keys). The content queue lives on the queue PVC
 (`<persistence.directory>/content-queue`); size the PVC for
 `content.queue.queueSize × 64 MiB` on top of the telemetry queue.
+
+*Secrets and certificates (Helm).* `shadow-production` expects three
+operator-created Secrets in the Node's namespace and verifies every agent's
+client certificate. The commands below use the release name `fabric` in
+namespace `fabric-system` (Node Service `fabric-otel-collector`) and
+self-managed CAs; with your own PKI, issue the same certificates from it.
+Keep the CA keys off the cluster.
+
+```bash
+NS=fabric-system
+NODE=fabric-otel-collector.$NS.svc
+kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+
+# CA that signs the Node's server certificate (agents trust it).
+openssl req -x509 -newkey rsa:3072 -sha256 -days 730 -nodes \
+  -keyout node-ca.key -out node-ca.crt -subj "/CN=fabric-node-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+# CA that signs agent client certificates (the Node trusts it).
+openssl req -x509 -newkey rsa:3072 -sha256 -days 730 -nodes \
+  -keyout client-ca.key -out client-ca.crt -subj "/CN=fabric-agent-client-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+# Node server certificate for the in-cluster Service name.
+openssl req -newkey rsa:3072 -sha256 -nodes -keyout node.key -out node.csr -subj "/CN=$NODE"
+printf 'subjectAltName=DNS:%s,DNS:%s.cluster.local\nextendedKeyUsage=serverAuth\n' \
+  "$NODE" "$NODE" > node.ext
+openssl x509 -req -in node.csr -CA node-ca.crt -CAkey node-ca.key -CAcreateserial \
+  -days 90 -sha256 -extfile node.ext -out node.crt
+
+# The three Secrets the profile references (names and keys are fixed by it).
+kubectl -n "$NS" create secret tls fabric-node-receiver-tls --cert=node.crt --key=node.key
+kubectl -n "$NS" create secret generic fabric-node-client-ca --from-file=ca.crt=client-ca.crt
+# Outbound Authorization value for your OTLP destination, without a trailing
+# newline and without putting the token on the command line:
+umask 077; read -rs DEST_TOKEN; printf 'Bearer %s' "$DEST_TOKEN" > authorization; unset DEST_TOKEN
+kubectl -n "$NS" create secret generic fabric-node-export-auth --from-file=authorization=authorization
+rm -f authorization
+```
+
+Issue one client certificate per agent workload from the client CA and give
+it to the agent together with the Node CA (not the client CA):
+
+```bash
+AGENT=billing-agent                 # an opaque workload label, not a person
+openssl req -newkey rsa:3072 -sha256 -nodes -keyout "$AGENT.key" -out "$AGENT.csr" \
+  -subj "/CN=$AGENT"
+printf 'extendedKeyUsage=clientAuth\nbasicConstraints=critical,CA:FALSE\n' > client.ext
+openssl x509 -req -in "$AGENT.csr" -CA client-ca.crt -CAkey client-ca.key -CAcreateserial \
+  -days 90 -sha256 -extfile client.ext -out "$AGENT.crt"
+kubectl -n monitored-agents create secret generic fabric-agent-tls \
+  --from-file=tls.crt="$AGENT.crt" --from-file=tls.key="$AGENT.key" \
+  --from-file=ca.crt=node-ca.crt
+```
+
+Every certificate the client CA signs can write content for the Node's
+allowed tenant (see "One tenant per Node"); revoke by rotating the client
+CA, or issue short-lived certificates.
+
+*Agent Pod.* Mount the agent's certificate Secret read-only and give the
+spool a volume. Point `FABRIC_WIRE_SPOOL_DIR` at a **subdirectory** of the
+mount: the agent creates it `0700` under its own uid, whereas the mount
+point itself is created by the kubelet and is refused as not owned by the
+agent.
+
+```yaml
+spec:
+  securityContext:
+    runAsUser: 10001
+    runAsNonRoot: true
+    fsGroup: 10001
+  containers:
+    - name: agent
+      image: registry.example.com/billing-agent:1.4.2
+      env:
+        - {name: FABRIC_WIRE_AUTOLOAD, value: "1"}
+        # The directory printed by `python -m fabric.wire --print-autoload-path`
+        # in this image, prepended to any PYTHONPATH the image already sets.
+        - {name: PYTHONPATH, value: /usr/local/lib/python3.12/site-packages/fabric/_autoload}
+        - {name: FABRIC_TENANT_ID, value: tenant-7f3a}        # = content.allowedTenants[0]
+        - {name: FABRIC_SOURCE_ID, value: billing-agent}      # optional, opaque
+        - {name: OTEL_SERVICE_NAME, value: billing-agent}
+        - {name: FABRIC_WIRE_SPOOL_DIR, value: /var/lib/fabric/spool}
+        - {name: FABRIC_WIRE_CONTENT_ENDPOINT,
+           value: "https://fabric-otel-collector.fabric-system.svc:4319/v1/logs"}
+        - {name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+           value: "https://fabric-otel-collector.fabric-system.svc:4318/v1/traces"}
+        - {name: OTEL_EXPORTER_OTLP_CERTIFICATE, value: /etc/fabric-agent-tls/ca.crt}
+        - {name: OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE, value: /etc/fabric-agent-tls/tls.crt}
+        - {name: OTEL_EXPORTER_OTLP_CLIENT_KEY, value: /etc/fabric-agent-tls/tls.key}
+      volumeMounts:
+        - {name: fabric-agent-tls, mountPath: /etc/fabric-agent-tls, readOnly: true}
+        - {name: fabric-spool, mountPath: /var/lib/fabric}
+  volumes:
+    - name: fabric-agent-tls
+      secret: {secretName: fabric-agent-tls, defaultMode: 0440}  # group-readable via fsGroup
+    - name: fabric-spool
+      emptyDir: {sizeLimit: 2Gi}   # or a PersistentVolumeClaim, see below
+```
+
+The agent's namespace (`monitored-agents` above) must carry the label the
+Node's NetworkPolicy admits (`fabric.singleaxis.ai/agent=true`).
+
+*emptyDir or PVC for the spool.* An `emptyDir` lives as long as the Pod: it
+survives container restarts (a crashed agent's records are replayed when the
+container restarts), but records still on disk when the Pod is deleted,
+evicted or rescheduled are lost, and their sequences show as gaps (runs
+`partial` or `unverified`, never falsely complete). That is enough when the
+Node is normally reachable and Pods are long-lived; set `sizeLimit` at or
+above `FABRIC_WIRE_SPOOL_MAX_BYTES` (default 1 GiB) so an outage fills the
+spool, not the node's disk. Use a PersistentVolumeClaim (one per Pod, e.g. a
+StatefulSet `volumeClaimTemplate`, on an encrypted StorageClass) when
+records must also survive Pod deletion and rescheduling, for example
+during rolling deploys while the Node is down; a restarted Pod with the
+same claim delivers the earlier records first. Several containers or
+processes may share one spool directory.
 
 **Compose.** The image runs as uid/gid 65532. Make the token file and any
 TLS key owned by the operator who runs `make preflight-prod`, with group
@@ -183,7 +340,7 @@ and SSE.
 |---|---|---|---|
 | Span metadata: exchange, run, scope and source ids, sequence numbers, heartbeat kinds, body SHA-256 digests, store object ids (uuid4), API, response state, HTTP status, error class name, model name (see below), finish reasons (closed list), token counts; trace id, span id and flags of the agent's current span (its trace state and baggage are not copied); resource `service.name` | agent spool → OTLP 4317/4318 → Fabric Node (`fabricguard`, queued on disk) → your OTLP destination | Anyone with access to the agent's spool directory, the Node host or queue volume, and every reader of the destination | Node ingress auth (mTLS or bearer), host access, destination ACLs and retention |
 | Request and response bytes (prompts, completions, tool arguments and results, anything the provider echoes) and their descriptor JSON | agent spool → OTLP/HTTP 4319 → Fabric Node content queue → your store. Never sent to the OTLP destination | In transit: the agent host's spool directory (`0600`/`0700`) and the Node's content-queue volume. At rest: principals with `s3:GetObject` on the evidence prefix **and** `kms:Decrypt` on the key, or filesystem users who can read the Node's content directory | Agent host access; Node host and volume access; bucket policy, IAM and KMS key policy; filesystem permissions (files `0600`, directories `0700`) |
-| Reconstruction report (`python -m fabric.reconstruct`) | written where the operator runs it | Whoever receives the file | File permissions. It holds run, scope, source, exchange and store object ids, digests, counts, model names (same rule as spans), pseudonyms of provider ids, the span file paths given on the command line and the tenant id; never message content and never the resolved store location of an object |
+| Reconstruction report (`python -m fabric.reconstruct`) | written where the operator runs it | Whoever receives the file | File permissions. It holds run, scope, source, exchange and store object ids, digests, counts, model names (same rule as spans), pseudonyms of provider ids and the tenant id; span files appear only by digest, format and record count. Never message content, input file paths (span files, store root) or the resolved store location of an object |
 | Fabric warnings | agent's own logging; Node logs | Agent and Node log readers | Fixed text, exception class names and HTTP status codes only. The Node logs a dropped content record with its reason only (no tenant, id, path, URL or byte) |
 
 Who can touch content:
@@ -340,8 +497,10 @@ Each window in the report names its proof in `closed_by` (`run_markers` or
   `requests`, `aiohttp`, `boto3` (including Bedrock), gRPC clients, other
   languages and other processes are not captured.
 - **What the spool does not cover.** An exchange still in the agent's
-  in-memory worker queue (not yet spooled) is lost with a crash or kill;
-  its sequence number makes the gap visible (`partial`). A full spool drops
+  in-memory window (§1: finished, not yet fsync'd; typically one exchange
+  for a few milliseconds, at most the worker queue) is lost with a kill;
+  its sequence number makes the gap visible, so the run is `partial` or
+  `unverified`, never complete. A full spool drops
   new exchanges as `queue_full` losses. Records stay on the agent host until
   the Node accepts them; a spool directory that is never drained again
   (host decommissioned, directory deleted) never delivers them.

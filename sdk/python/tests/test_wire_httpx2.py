@@ -70,6 +70,15 @@ OPENAI_EVENTS = sse(
 )  # fmt: skip
 
 
+def _read_chunked(stream: Any) -> bytes:
+    body = b""
+    while size := int(stream.readline().split(b";")[0], 16):
+        body += stream.read(size)
+        stream.readline()  # CRLF after the chunk
+    stream.readline()  # CRLF after the last (empty) chunk
+    return body
+
+
 @dataclass
 class Exchange:
     path: str
@@ -100,7 +109,10 @@ class FakeLLM:
             protocol_version = "HTTP/1.1"
 
             def do_POST(self) -> None:
-                request = self.rfile.read(int(self.headers.get("content-length", "0")))
+                if self.headers.get("transfer-encoding", "").lower() == "chunked":
+                    request = _read_chunked(self.rfile)  # a streamed request body
+                else:
+                    request = self.rfile.read(int(self.headers.get("content-length", "0")))
                 media, chunks = fake.reply(self.path, json.loads(request or b"{}"))
                 self.send_response(200)
                 self.send_header("content-type", media)
@@ -251,6 +263,34 @@ def test_sync_async_and_streamed_calls_capture_exact_bytes(
         "openai.chat_completions", "anthropic.messages",
         "anthropic.messages", "openai.chat_completions",
     ]  # fmt: skip
+
+
+@pytest.mark.parametrize("module_name", ["httpx", "httpx2"])
+def test_streamed_request_bodies_are_captured_exactly(
+    installed: Installed, fake_llm: FakeLLM, module_name: str
+) -> None:
+    """Codex r1 #1: a generator request body (chunked on the wire) is stored byte-exact."""
+    module: Any = httpx if module_name == "httpx" else httpx2
+    chat = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
+    parts = [b'{"model":"m",', b'"messages":[{"role":"user","content":"', b"x" * 9000, b'"}]}']
+
+    def gen() -> Iterator[bytes]:
+        yield from parts
+
+    async def agen() -> Any:
+        for part in parts:
+            yield part
+
+    with module.Client() as client:
+        assert client.post(chat, content=gen()).json()["id"]
+
+    async def run_async() -> None:
+        async with module.AsyncClient() as client:
+            assert (await client.post(chat, content=agen())).json()["id"]
+
+    asyncio.run(run_async())
+    assert [seen.request for seen in fake_llm.seen] == [b"".join(parts)] * 2
+    assert_exact_capture(installed, fake_llm, ["complete"] * 2)
 
 
 def test_explicit_wrapper_over_httpx2_mock_transport(installed: Installed) -> None:

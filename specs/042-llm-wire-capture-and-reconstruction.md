@@ -2,7 +2,7 @@
 title: LLM wire capture and run reconstruction
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 5
+revision: 6
 last_updated: 2026-10-13
 owner: recorder-engineering
 depends_on: 027, 029, 032, 035, 038
@@ -41,6 +41,13 @@ resend logic and the private `BatchSpanProcessor` on the capture path);
 pairs markers by scope; model names outside an allowlist are emitted as
 `m-<16 hex>`; the boot gate separates content and telemetry pipelines.
 Sections below are marked *(→ 043)* where 043 wins.
+
+**2026-10-13 — revision 6 (Codex review of the 043 cut).** A streamed
+request body (not already `bytes`) was marked truncated and never captured;
+it is now teed like the response stream (§1, §4 rule 1). Truncation no
+longer slices a chunk on the host's thread: retention keeps whole chunks
+only (§4 rule 4). The reconstruction report no longer carries input file
+paths (§9).
 
 **2026-10-08 — revision 5 (re-review hardening).** A second review round
 found that a heartbeat covering the last *observed* exchange could make a
@@ -169,7 +176,7 @@ separate work.
 
 | Capture point | What is stored |
 |---|---|
-| Patched `httpx.HTTPTransport.handle_request` / `httpx.AsyncHTTPTransport.handle_async_request` and the same methods of `httpx2.HTTPTransport` / `httpx2.AsyncHTTPTransport` (whichever packages are installed), or explicit `WireTransport` / `AsyncWireTransport` wrappers | Request bytes as handed to the transport; response bytes as yielded by the transport stream, **before** content decoding (`Content-Encoding` is recorded, never undone at capture) |
+| Patched `httpx.HTTPTransport.handle_request` / `httpx.AsyncHTTPTransport.handle_async_request` and the same methods of `httpx2.HTTPTransport` / `httpx2.AsyncHTTPTransport` (whichever packages are installed), or explicit `WireTransport` / `AsyncWireTransport` wrappers | Request bytes as handed to the transport (an in-memory body as is; a streamed body as the transport reads it from the teed request stream); response bytes as yielded by the transport stream, **before** content decoding (`Content-Encoding` is recorded, never undone at capture) |
 
 **Supported SDKs.** Any client that sends through the default httpx or
 httpx2 transport. The OpenAI Python SDK below 3 and the Anthropic Python
@@ -285,7 +292,14 @@ protection fails **closed**: the Node drops unknown keys and invalid values.
 1. **No mutation.** The tee never changes the URL, headers, body, timeouts
    or extensions and never injects headers. Response chunks are yielded as
    the *same* `bytes` objects, in order, as soon as the inner stream yields
-   them. No read-ahead.
+   them. No read-ahead. A streamed request body (one that is not already
+   `bytes`) is teed the same way: for the duration of the transport call
+   `request.stream` is a wrapper with exactly the original stream's
+   sync/async byte-stream base classes, yielding the original chunks as the
+   transport reads them; the original stream is put back when the call
+   returns or raises (unless the transport replaced it itself, e.g. by
+   `request.read()`). A body the transport did not read to its end is
+   stored as `truncated`.
 2. **No new failure modes.** Exceptions from the inner transport or stream
    are re-raised as the same object. Any exception in tee code is caught;
    the exchange becomes a pass-through and an `internal_error` loss is
@@ -299,8 +313,14 @@ protection fails **closed**: the Node drops unknown keys and invalid values.
    logging run on the worker thread.
 4. **Bounded memory.** `max_body_bytes` per side (default 8 MiB, cap
    64 MiB) and `max_inflight_bytes` across exchanges (default 256 MiB).
-   Bytes beyond either bound are forwarded but not retained and the
-   exchange is marked `truncated`.
+   Retention keeps **whole chunks only**: the first chunk (request or
+   response side) that would exceed either bound ends retention for that
+   side and marks the exchange `truncated`; it and every later chunk are
+   forwarded but not retained. No chunk is sliced, so truncation never
+   copies a prefix on the host's thread. The stored prefix is therefore the
+   whole chunks retained before the cut (at most `max_body_bytes`, possibly
+   less, and empty when the first chunk — e.g. a single in-memory body —
+   is already too large; such a side has a digest but no ref, §5).
 5. *(→ 043 §2 for delivery: in spool mode exports run on the sender
    thread from fsync'd records; undelivered records survive exit.)*
    **Never blocks.** `queue_max_items` (default 256, cap 65,536). A full
@@ -558,9 +578,12 @@ older span's `gen_ai.response.id`) are always pseudonymised as `p-` + the
 first 16 hex of their sha256, the same way everywhere in the report, so
 correlation and stitching are preserved but the value is not. Object
 checks carry the object id, digest, length and verification result, never
-the location the store resolved (no path, no `s3://` URI). The report is
-still customer data: it names runs, sources, exchanges, the tenant and the
-span file paths given on the command line.
+the location the store resolved (no path, no `s3://` URI). Input files
+are named by digest, format and record count only: neither the span file
+paths nor the store root given on the command line appear (a path can name
+a user's home directory). The report is still customer data: it names runs,
+scopes, sources, exchanges and the tenant, which are operator-chosen labels
+that must not contain personal data (§6).
 
 **Algorithm.**
 

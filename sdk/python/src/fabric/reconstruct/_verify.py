@@ -288,12 +288,13 @@ def _allowlist(entries: Sequence[str]) -> tuple[str, ...]:
 
 
 def _span_file_entry(path: str | os.PathLike[str], fmt: SpanFormat, count: int) -> dict[str, Any]:
+    """A span file by digest, format and record count; never its path, which can name a
+    user (home directory) or host layout the report's readers need not see."""
     digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return {
-        "path": str(path)[:4096],
         "sha256": "sha256:" + digest.hexdigest(),
         "format": fmt,
         "records": count,

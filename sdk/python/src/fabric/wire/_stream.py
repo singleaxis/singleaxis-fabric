@@ -1,8 +1,8 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Hot-path exchange state and httpx/httpx2 response tees (042 §4): chunks pass through
-unchanged and in order; tee failures are pass-throughs plus ``internal_error`` losses; each
-exchange is finalized once and hands its retained chunks to its one job (or drops them)."""
+"""Hot-path exchange state and httpx/httpx2 request and response tees (042 §4): chunks pass
+through unchanged and in order; tee failures are pass-throughs plus ``internal_error`` losses;
+each exchange is finalized once and hands its retained chunks to its one job (or drops them)."""
 
 from __future__ import annotations
 
@@ -139,6 +139,27 @@ def _flavor_types(module: ModuleType) -> tuple[type[Any], type[Any], type[Any]]:
     return module.ByteStream, sync, async_
 
 
+def _request_tee_type(stream: Any) -> type[Any] | None:
+    """A request-stream tee type with exactly the stream's sync/async byte-stream bases (so
+    every transport type check and protocol error stays the same), or ``None``."""
+    for name in FLAVORS:
+        module = sys.modules.get(name)
+        if module is None:
+            continue
+        is_sync = isinstance(stream, module.SyncByteStream)
+        is_async = isinstance(stream, module.AsyncByteStream)
+        if is_sync or is_async:
+            return _request_flavor_type(module, is_sync, is_async)
+    return None
+
+
+@functools.cache
+def _request_flavor_type(module: ModuleType, is_sync: bool, is_async: bool) -> type[Any]:
+    mixins = [_SyncRequestTee] * is_sync + [_AsyncRequestTee] * is_async
+    bases = [module.SyncByteStream] * is_sync + [module.AsyncByteStream] * is_async
+    return type("TeeRequestStream", (*mixins, *bases), {})
+
+
 def _capture_parent() -> tuple[Context, int | None]:
     """The parent context for a capture span, and the host trace id if there is one."""
     current = otel_context.get_current()
@@ -152,8 +173,8 @@ class Exchange:
 
     __slots__ = (
         "__weakref__", "api", "done", "epoch", "exchange_id", "finalizer", "matcher",
-        "parent_context", "request", "response", "run_id", "scope", "sequence", "started_ns",
-        "status_code", "tee",
+        "parent_context", "request", "request_sent", "request_tee", "response", "run_id", "scope",
+        "sequence", "started_ns", "status_code", "tee",
     )  # fmt: skip
 
     def __init__(
@@ -165,6 +186,8 @@ class Exchange:
         self.finalizer: weakref.finalize[Any, Any] | None = None
         self.status_code: int | None = None
         self.request = _Side({})  # replaced by start()
+        self.request_tee: _RequestTee | None = None  # set while a streamed body is teed
+        self.request_sent = True  # False until a teed request stream is exhausted
         self.response: _Side | None = None
 
     def start(self, request: Any) -> None:
@@ -179,8 +202,25 @@ class Exchange:
         content = getattr(request, "_content", None)
         if isinstance(content, bytes):
             self._retain(side, content)
-        else:  # a streamed request body passes through untouched and unretained
+        elif (kind := _request_tee_type(stream := request.stream)) is not None:
+            self.request_tee, self.request_sent = kind(stream, self), False
+            request.stream = self.request_tee  # yields the same chunks; restored by end_request
+        else:  # not an httpx byte stream: the transport handles it, unretained
             side.truncated = True
+
+    def end_request(self, request: Any) -> None:
+        """After the transport call: restore a teed request stream; a body the transport did
+        not read to its end is ``truncated``. Never raises."""
+        if (tee := self.request_tee) is None:
+            return
+        try:
+            self.request_tee = None
+            if request.stream is tee:
+                request.stream = tee._inner
+            if not self.request_sent:
+                self.request.truncated = True
+        except Exception:
+            self.detach(lost=True)
 
     def _retain(self, side: _Side, chunk: bytes) -> None:
         size = len(chunk)
@@ -189,20 +229,25 @@ class Exchange:
         side.observed += size
         if side.truncated or self.done:
             return
-        room = self.tee.max_body_bytes - side.retained
-        if size <= room and self.tee.budget.try_reserve(size):
+        # Whole chunks only: a chunk that does not fit ends retention without slicing it,
+        # so the host's thread never copies a large prefix (the stored prefix = the whole
+        # chunks retained before it).
+        if size <= self.tee.max_body_bytes - side.retained and self.tee.budget.try_reserve(size):
             side.retained += size  # counted first: detach() releases what was reserved
             side.keep(chunk)
-            return
-        side.truncated = True  # keep the largest prefix that still fits
-        if 0 < room < size and self.tee.budget.try_reserve(room):
-            side.retained += room
-            side.keep(chunk[:room])
+        else:
+            side.truncated = True
 
     def add(self, chunk: bytes) -> None:
         try:
             if self.response is not None:
                 self._retain(self.response, chunk)
+        except Exception:
+            self.detach(lost=True)
+
+    def add_request(self, chunk: bytes) -> None:
+        try:
+            self._retain(self.request, chunk)
         except Exception:
             self.detach(lost=True)
 
@@ -281,6 +326,39 @@ class Exchange:
                     side.chunks = []
                     self.tee.budget.release(side.retained)
         return True
+
+
+class _RequestTee:
+    """Request body tee: the transport iterates it and gets the inner stream's chunks, the
+    same objects in order, as it reads them; combined per flavor with the inner stream's
+    own sync/async byte-stream bases (:func:`_request_tee_type`)."""
+
+    def __init__(self, inner: Any, exchange: Exchange) -> None:
+        self._inner, self._exchange = inner, exchange
+
+
+class _SyncRequestTee(_RequestTee):
+    def __iter__(self) -> Iterator[bytes]:
+        exchange = self._exchange
+        for chunk in self._inner:
+            exchange.add_request(chunk)
+            yield chunk
+        exchange.request_sent = True
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+class _AsyncRequestTee(_RequestTee):
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        exchange = self._exchange
+        async for chunk in self._inner:
+            exchange.add_request(chunk)
+            yield chunk
+        exchange.request_sent = True
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 class TeeSyncStream:

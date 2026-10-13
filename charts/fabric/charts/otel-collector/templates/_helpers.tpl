@@ -266,6 +266,9 @@ a profile that requires encryption.
 {{- fail (printf "content.allowedTenants[%d] must match %s" $i $tenantRe) -}}
 {{- end -}}
 {{- end -}}
+{{- if and (gt (len $c.allowedTenants) 1) (not $c.allowMultipleTenants) -}}
+{{- fail "content.allowedTenants lists more than one tenant: a content record names its own tenant, so any authenticated agent could write under another tenant. Run one Node per tenant, or set content.allowMultipleTenants=true to trust every authenticated agent to name its tenant" -}}
+{{- end -}}
 {{- if not (has $c.backend (list "file" "s3")) -}}
 {{- fail "content.enabled=true requires content.backend: s3 or file" -}}
 {{- end -}}
@@ -307,8 +310,11 @@ a profile that requires encryption.
 {{- fail "exporter.requireTLS=true requires an https:// content.s3.endpoint" -}}
 {{- end -}}
 {{- end -}}
-{{- if not (has $s3.sse (list "" "AES256" "aws:kms")) -}}
-{{- fail "content.s3.sse must be \"aws:kms\", \"AES256\" or empty" -}}
+{{- if not $s3.sse -}}
+{{- fail "content.backend=s3 requires content.s3.sse (AES256, or aws:kms with an optional content.s3.kmsKeyId): content is never written without server-side encryption" -}}
+{{- end -}}
+{{- if not (has $s3.sse (list "AES256" "aws:kms")) -}}
+{{- fail "content.s3.sse must be \"aws:kms\" or \"AES256\"" -}}
 {{- end -}}
 {{- if and $s3.kmsKeyId (ne $s3.sse "aws:kms") -}}
 {{- fail "content.s3.kmsKeyId is only valid with content.s3.sse=aws:kms" -}}

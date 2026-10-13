@@ -232,9 +232,11 @@ def test_chunk_references_are_bounded_by_the_body_limit(tmp_path: Path) -> None:
             chunk = b"b" * _stream._COALESCE_BYTES if index % 7 == 0 else b"s"
             exchange._retain(side, chunk)
         bound = 2 * limit // _stream._COALESCE_BYTES + 1
-        assert side.truncated and side.retained == limit
+        # Whole chunks only (Codex r1 #3): the first chunk that would cross the limit ends
+        # retention, so the stored prefix is within one chunk of it, never above it.
+        assert side.truncated and limit - _stream._COALESCE_BYTES < side.retained <= limit
         assert len(side.chunks) <= bound
-        assert sum(len(c) for c in side.body().chunks) == limit
+        assert sum(len(c) for c in side.body().chunks) == side.retained
         rig.tee.budget.release(side.retained)
         exchange.detach()
     finally:

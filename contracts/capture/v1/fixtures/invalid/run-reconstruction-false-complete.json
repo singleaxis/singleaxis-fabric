@@ -8,7 +8,6 @@
   "inputs": {
     "span_files": [
       {
-        "path": "out/spans.jsonl",
         "sha256": "sha256:abababababababababababababababababababababababababababababababab",
         "format": "sink_jsonl",
         "records": 6

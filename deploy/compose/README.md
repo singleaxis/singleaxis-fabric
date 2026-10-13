@@ -140,7 +140,8 @@ Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
 secrets/ingress.token>`. Requests without a valid token are rejected on all
 three ports; there is no unauthenticated fallback. Set `FABRIC_TENANT_ID`
 in `.env` to the tenant id your agents send (required; the content exporter
-writes no other tenant).
+writes no other tenant, and the shipped configs allow exactly one: run one
+Node per tenant).
 
 **Content store.** By default content lands on the `fabric-content` volume
 (back it up with `fabric-queue`; its encryption at rest is the host disk's,

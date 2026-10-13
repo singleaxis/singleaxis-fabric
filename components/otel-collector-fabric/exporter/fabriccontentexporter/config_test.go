@@ -84,7 +84,7 @@ func TestConfigValidation(t *testing.T) {
 		}
 	}
 	s3 := func(extra map[string]any) map[string]any {
-		m := map[string]any{"bucket": "customer-evidence"}
+		m := map[string]any{"bucket": "customer-evidence", "sse": "AES256"}
 		for k, v := range extra {
 			m[k] = v
 		}
@@ -98,7 +98,9 @@ func TestConfigValidation(t *testing.T) {
 		"s3 kms":         s3(map[string]any{"sse": "aws:kms", "kms_key_id": "alias/fabric"}),
 		"s3 kms default": s3(map[string]any{"sse": "aws:kms"}),
 		"s3 prefix":      s3(map[string]any{"prefix": "a/b/"}),
-		"two tenants":    with(file(), "allowed_tenants", []any{"tenant-a", "t.b_c-1"}),
+		"two tenants opted in": with(with(file(), "allowed_tenants", []any{"tenant-a", "t.b_c-1"}),
+			"allow_multiple_tenants", true),
+		"one tenant with the flag": with(file(), "allow_multiple_tenants", true),
 	}
 	for name, raw := range valid {
 		t.Run("valid/"+name, func(t *testing.T) {
@@ -132,7 +134,15 @@ func TestConfigValidation(t *testing.T) {
 		"endpoint no host":    s3(map[string]any{"endpoint": "https://"}),
 		"bad sse":             s3(map[string]any{"sse": "aws:kms:dsse"}),
 		"kms without aws:kms": s3(map[string]any{"sse": "AES256", "kms_key_id": "alias/x"}),
-		"kms without sse":     s3(map[string]any{"kms_key_id": "alias/x"}),
+		"kms without sse":     s3(map[string]any{"sse": "", "kms_key_id": "alias/x"}),
+		// Codex r2 #3: S3 content is never written without requested SSE.
+		"s3 without sse": s3(map[string]any{"sse": ""}),
+		"s3 sse unset":   func() map[string]any { m := s3(nil); delete(m["s3"].(map[string]any), "sse"); return m }(),
+		// Codex r2 #1: a record names its tenant, so several tenants on one
+		// Node need the explicit trust flag.
+		"two tenants":          with(file(), "allowed_tenants", []any{"tenant-a", "tenant-b"}),
+		"two tenants flag off": with(with(file(), "allowed_tenants", []any{"tenant-a", "tenant-b"}), "allow_multiple_tenants", false),
+		"duplicate tenant":     with(with(file(), "allowed_tenants", []any{"tenant-a", "tenant-a"}), "allow_multiple_tenants", true),
 	}
 	for name, raw := range invalid {
 		t.Run("invalid/"+name, func(t *testing.T) {

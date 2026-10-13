@@ -97,6 +97,7 @@ class WireTee:
                 if exchange is None:
                     self.lose(epoch, sequence, "internal_error")
                 else:
+                    exchange.end_request(request)  # put back a request stream it teed
                     exchange.detach(lost=True)
             return True, None
 
@@ -109,11 +110,13 @@ class WireTee:
             response = call(transport, request)
         except BaseException as exc:
             if exchange is not None:
+                exchange.end_request(request)
                 exchange.fail(exc)
             raise
         finally:
             _IN_TEE.reset(token)
         if exchange is not None:
+            exchange.end_request(request)  # the transport has sent the body (or stopped)
             exchange.attach(response, is_async=False)
         return response
 
@@ -126,11 +129,13 @@ class WireTee:
             response = await call(transport, request)
         except BaseException as exc:
             if exchange is not None:
+                exchange.end_request(request)
                 exchange.fail(exc)
             raise
         finally:
             _IN_TEE.reset(token)
         if exchange is not None:
+            exchange.end_request(request)  # the transport has sent the body (or stopped)
             exchange.attach(response, is_async=True)
         return response
 

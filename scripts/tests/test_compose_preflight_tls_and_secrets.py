@@ -140,3 +140,83 @@ def test_operator_owned_group_readable_token_passes(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stdout
     assert "single-entry-safe format" in result.stdout
+
+
+SECRET = "s3cr3t-MARKER"
+_ENV_VARS = (
+    "FABRIC_EXPORT_ENDPOINT", "FABRIC_EXPORT_AUTH_HEADER", "FABRIC_INGRESS_TOKEN_FILE",
+    "FABRIC_INGRESS_TLS_DIR", "FABRIC_BIND_ADDR", "FABRIC_EXPORT_CA_FILE",
+    "FABRIC_INGRESS_TLS_CERT_FILE", "FABRIC_INGRESS_TLS_KEY_FILE", "FABRIC_TENANT_ID",
+    "FABRIC_CONTENT_BACKEND", "FABRIC_CONTENT_S3_BUCKET", "FABRIC_CONTENT_S3_PREFIX",
+    "FABRIC_CONTENT_S3_REGION", "FABRIC_CONTENT_S3_ENDPOINT", "FABRIC_CONTENT_S3_PATH_STYLE",
+    "FABRIC_CONTENT_S3_SSE", "FABRIC_CONTENT_S3_KMS_KEY_ID", "FABRIC_NODE_UID", "FABRIC_NODE_GID",
+)  # fmt: skip
+
+
+def _secret_config(tmp_path: Path) -> None:
+    """Receivers published with TLS, an egress ca_file and a content exporter, so every
+    file, address and content check runs."""
+    _config(tmp_path, grpc_tls=True, http_tls=True)
+    config = tmp_path / "collector-config" / "collector-production.yaml"
+    text = config.read_text(encoding="utf-8").replace(
+        "exporters:\n  otlp_http:\n",
+        "exporters:\n  fabriccontent:\n    backend: file\n  otlp_http:\n"
+        "    tls:\n      ca_file: ${env:FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}\n",
+    )
+    config.write_text(text, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["malformed", "plausible-paths", "world-readable-files", "plaintext-bind"],
+)
+def test_preflight_never_echoes_configured_values(tmp_path: Path, case: str) -> None:
+    """Codex r3: a credential pasted into any variable (or into a path) must not reach the
+    preflight output, which lands in terminals and CI logs."""
+    _secret_config(tmp_path)
+    token = H._token(tmp_path, 0o600)
+    values = {name: f"{SECRET}-{name}" for name in _ENV_VARS}
+    if case == "malformed":
+        values |= {
+            "FABRIC_EXPORT_ENDPOINT": f"ftp://user:{SECRET}@otlp.example.invalid",
+            "FABRIC_INGRESS_TOKEN_FILE": f"/nonexistent/{SECRET}",
+            "FABRIC_EXPORT_CA_FILE": f"/etc/{SECRET}.pem",
+            "FABRIC_INGRESS_TLS_CERT_FILE": f"/elsewhere/{SECRET}.crt",
+        }
+    elif case == "plausible-paths":
+        tls = tmp_path / f"tls-{SECRET}"
+        tls.mkdir()
+        values |= {
+            "FABRIC_EXPORT_ENDPOINT": f"http://{SECRET}.example.invalid",
+            "FABRIC_INGRESS_TLS_DIR": str(tls),
+            "FABRIC_INGRESS_TLS_CERT_FILE": f"/run/fabric-node/tls/{SECRET}.crt",
+            "FABRIC_INGRESS_TLS_KEY_FILE": f"/run/fabric-node/tls/{SECRET}.key",
+            "FABRIC_EXPORT_CA_FILE": f"/run/fabric-node/tls/{SECRET}.pem",
+            "FABRIC_INGRESS_TOKEN_FILE": str(tmp_path / f"{SECRET}-empty"),
+            "FABRIC_CONTENT_BACKEND": "s3",
+            "FABRIC_CONTENT_S3_ENDPOINT": f"https://{SECRET}@minio:9000",
+        }
+        (tmp_path / f"{SECRET}-empty").write_text("", encoding="utf-8")
+    elif case == "world-readable-files":
+        tls = tmp_path / f"tls-{SECRET}"
+        tls.mkdir()
+        for name in ("server.crt", "server.key", "ca.crt"):
+            (tls / name).write_text("x", encoding="utf-8")
+            (tls / name).chmod(0o644)
+        secret_token = tmp_path / f"token-{SECRET}"
+        secret_token.write_bytes(b"token")
+        secret_token.chmod(0o644)
+        values |= {
+            "FABRIC_INGRESS_TLS_DIR": str(tls), "FABRIC_INGRESS_TOKEN_FILE": str(secret_token),
+            "FABRIC_INGRESS_TLS_CERT_FILE": "/run/fabric-node/tls/server.crt",
+            "FABRIC_INGRESS_TLS_KEY_FILE": "/run/fabric-node/tls/server.key",
+            "FABRIC_EXPORT_CA_FILE": "/run/fabric-node/tls/ca.crt",
+            "FABRIC_NODE_UID": str(os.getuid()), "FABRIC_NODE_GID": str(os.getgid()),
+        }  # fmt: skip
+    else:  # plaintext receivers published on a non-loopback address
+        _config(tmp_path, grpc_tls=False, http_tls=False)
+        values |= {"FABRIC_INGRESS_TOKEN_FILE": str(token)}
+    result = _run(tmp_path, token, **values)
+    assert result.returncode == 1, result.stdout
+    assert SECRET not in result.stdout, result.stdout
+    assert "FAIL" in result.stdout

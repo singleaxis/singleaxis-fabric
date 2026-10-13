@@ -210,7 +210,7 @@
       "type": "object",
       "additionalProperties": false,
       "description": "Spec 043 content delivery path: otlp/content receiver -> logs/content -> fabriccontent exporter.",
-      "required": ["enabled", "maxRequestBodyBytes", "allowedTenants", "backend", "requireServerSideEncryption", "file", "s3", "queue", "retry", "timeout", "memoryLimiterMiB"],
+      "required": ["enabled", "maxRequestBodyBytes", "allowedTenants", "allowMultipleTenants", "backend", "requireServerSideEncryption", "file", "s3", "queue", "retry", "timeout", "memoryLimiterMiB"],
       "properties": {
         "enabled": {"type": "boolean"},
         "maxRequestBodyBytes": {"type": "integer", "minimum": 1048576, "maximum": 67108864},
@@ -219,6 +219,7 @@
           "uniqueItems": true,
           "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"}
         },
+        "allowMultipleTenants": {"type": "boolean"},
         "backend": {"enum": ["", "file", "s3"]},
         "requireServerSideEncryption": {"type": "boolean"},
         "file": {

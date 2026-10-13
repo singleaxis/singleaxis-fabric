@@ -321,20 +321,20 @@ def test_body_cap_truncates_without_a_loss(tmp_path: Path) -> None:
     big = [b"x" * 50, b"y" * 50, b"z" * 50]
     try:
         with rig.client(lambda r: httpx.Response(200, stream=ChunkStream(big))) as client:
-            response = client.post(OPENAI_CHAT, json={"messages": [{"content": "q" * 100}]})
+            response = client.post(OPENAI_CHAT, json={"messages": [{"content": "q" * 20}]})
         assert response.content == b"".join(big)
         rig.flush()
         (span,) = rig.spans()
         a = attrs(span)
         assert a["fabric.wire.truncated"] is True
         assert a["fabric.wire.store_status"] == "stored"
-        retained = b"x" * 50 + b"y" * 14
+        retained = b"x" * 50  # whole chunks only: 'y' would cross the 64-byte cap
         assert rig.read_ref(a["fabric.content.result_ref"]) == retained
         assert a["fabric.wire.response_sha256"] == hashlib.sha256(retained).hexdigest()
         body = _by_role(rig)[(0, "model.exchange.response")]
         assert (body["status"], body["representation"]) == ("truncated", "truncated")
         assert body["transformations"] == ["truncate"]
-        assert (body["stored_byte_length"], body["source_byte_length"]) == (64, 150)
+        assert (body["stored_byte_length"], body["source_byte_length"]) == (50, 150)
         assert "source_sha256" not in body
         assert rig.loss_counts() == {}  # truncation is a span flag, not a loss
         assert rig.tee.stats()["inflight_bytes"] == 0
@@ -515,7 +515,7 @@ def test_injected_tee_crash_leaves_http_result_unchanged(
     assert rig.tee.stats()["inflight_bytes"] == 0
 
 
-def test_streamed_request_body_passes_through_untouched_and_unretained(rig: Rig) -> None:
+def test_streamed_request_body_is_retained_as_sent(rig: Rig) -> None:
     body = [b'{"messages":', b"[]}"]
     sent: list[bytes] = []
 
@@ -533,10 +533,10 @@ def test_streamed_request_body_passes_through_untouched_and_unretained(rig: Rig)
     rig.flush()
     (span,) = rig.spans()
     a = attrs(span)
-    assert a["fabric.wire.truncated"] is True  # the request bytes were not retained
-    assert a["fabric.wire.store_status"] == "partial"
-    assert "fabric.content.request_ref" not in a and "fabric.content.result_ref" in a
-    assert a["fabric.wire.request_sha256"] == hashlib.sha256(b"").hexdigest()
+    assert a["fabric.wire.truncated"] is False  # the request stream was teed (Codex r1 #1)
+    assert a["fabric.wire.store_status"] == "stored"
+    assert rig.read_ref(a["fabric.content.request_ref"]) == b"".join(body)
+    assert a["fabric.wire.request_sha256"] == hashlib.sha256(b"".join(body)).hexdigest()
     validate_capture(rig)
 
 

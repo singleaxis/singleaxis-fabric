@@ -82,6 +82,7 @@ s3_args=(
   --set content.enabled=true
   --set 'content.allowedTenants[0]=tenant-a'
   --set 'content.allowedTenants[1]=tenant-b'
+  --set content.allowMultipleTenants=true
   --set content.backend=s3
   --set content.s3.bucket=customer-evidence
   --set content.s3.prefix=fabric/content/
@@ -100,6 +101,7 @@ expect_contains "content receiver read timeout sized for 64 MiB" "${s3_config}" 
 content_receiver="$(awk '/^      otlp\/content:$/ { on = 1; next } on && /^      [^ ]/ { on = 0 } on && /^$/ { on = 0 } on { print }' <<<"${s3_config}")"
 expect_not_contains "content receiver is HTTP only" "${content_receiver}" "grpc"
 expect_contains "exporter allows the named tenants" "${s3_config}" '- "tenant-b"'
+expect_contains "several tenants render the explicit trust flag" "${s3_config}" "allow_multiple_tenants: true"
 expect_contains "exporter uses the s3 backend" "${s3_config}" 'backend: "s3"'
 expect_contains "exporter bucket" "${s3_config}" 'bucket: "customer-evidence"'
 expect_contains "exporter prefix" "${s3_config}" 'prefix: "fabric/content/"'
@@ -144,6 +146,11 @@ expect_contains "access key comes from the Secret" "${minio_render}" "name: AWS_
 expect_contains "secret key comes from the Secret" "${minio_render}" "name: AWS_SECRET_ACCESS_KEY"
 expect_contains "Secret is referenced by name" "${minio_render}" "name: fabric-node-minio"
 expect_not_contains "no kms key for AES256" "${minio_render}" "kms_key_id"
+expect_not_contains "one tenant needs no trust flag" "${minio_render}" "allow_multiple_tenants"
+default_sse="$(helm template ci "${chart_dir}" --set content.enabled=true \
+  --set 'content.allowedTenants[0]=tenant-a' --set content.backend=s3 \
+  --set content.s3.bucket=customer-evidence --show-only templates/configmap.yaml)"
+expect_contains "s3 encrypts with SSE-S3 by default" "${default_sse}" 'sse: "AES256"'
 
 printf '\n=== Durable content queue and file backend on the queue PVC ===\n'
 durable_args=(
@@ -219,6 +226,13 @@ expect_fail "content requires allowed tenants" "requires content.allowedTenants"
   "${chart_dir}" --set content.enabled=true --set content.backend=s3 --set content.s3.bucket=customer-evidence
 expect_fail "content requires a backend" "requires content.backend" \
   "${chart_dir}" --set content.enabled=true --set 'content.allowedTenants[0]=tenant-a'
+expect_fail "several tenants need the explicit trust flag" "lists more than one tenant" \
+  "${chart_dir}" --set content.enabled=true --set 'content.allowedTenants[0]=tenant-a' \
+  --set 'content.allowedTenants[1]=tenant-b' --set content.backend=s3 \
+  --set content.s3.bucket=customer-evidence
+expect_fail "s3 without sse is refused" "requires content.s3.sse" \
+  "${chart_dir}" --set content.enabled=true --set 'content.allowedTenants[0]=tenant-a' \
+  --set content.backend=s3 --set content.s3.bucket=customer-evidence --set content.s3.sse=
 expect_fail "unsafe tenant ids are refused" "allowedTenants" \
   "${chart_dir}" --set content.enabled=true --set 'content.allowedTenants[0]=../etc' \
   --set content.backend=s3 --set content.s3.bucket=customer-evidence
@@ -246,7 +260,8 @@ expect_fail "prefix must end with a slash" "prefix" \
   --set content.backend=s3 --set content.s3.bucket=customer-evidence --set content.s3.prefix=fabric
 expect_fail "required encryption refuses s3 without sse" "requires content.s3.sse" \
   "${chart_dir}" --set content.enabled=true --set 'content.allowedTenants[0]=tenant-a' \
-  --set content.backend=s3 --set content.s3.bucket=customer-evidence --set content.requireServerSideEncryption=true
+  --set content.backend=s3 --set content.s3.bucket=customer-evidence --set content.s3.sse= \
+  --set content.requireServerSideEncryption=true
 expect_fail "required encryption refuses the file backend" "refuses content.backend=file" \
   "${chart_dir}" --set content.enabled=true --set 'content.allowedTenants[0]=tenant-a' \
   --set content.backend=file --set content.requireServerSideEncryption=true

@@ -1,6 +1,12 @@
 #!/usr/bin/env sh
 # Pre-flight checks for the client-VM production overlay. Run before
 # `make up-prod` so a broken deployment fails here, not on the customer's box.
+#
+# Output never echoes a configured value (endpoints, paths, addresses, ids):
+# any of them could hold a credential pasted into the wrong variable, and this
+# output lands in terminals and CI logs. Messages name the variable instead.
+# The only values printed are fixed text, values from a closed set after they
+# matched it (e.g. the SSE mode), numeric uid/gids and file mode bits.
 set -eu
 
 fail=0
@@ -68,6 +74,12 @@ FABRIC_CONTENT_S3_KMS_KEY_ID="$(envget FABRIC_CONTENT_S3_KMS_KEY_ID)"
 # Override only for an image built with a different nonroot user.
 NODE_UID="$(envget FABRIC_NODE_UID)"; NODE_UID="${NODE_UID:-65532}"
 NODE_GID="$(envget FABRIC_NODE_GID)"; NODE_GID="${NODE_GID:-65532}"
+case "${NODE_UID}" in
+  ''|*[!0-9]*) bad "FABRIC_NODE_UID must be a numeric uid"; NODE_UID=65532 ;;
+esac
+case "${NODE_GID}" in
+  ''|*[!0-9]*) bad "FABRIC_NODE_GID must be a numeric gid"; NODE_GID=65532 ;;
+esac
 
 # file_meta PATH -> "uid gid mode" (GNU stat, then BSD stat).
 file_meta() {
@@ -101,11 +113,12 @@ OPERATOR_UID="$(id -u 2>/dev/null || printf 'OPERATOR')"
 SECRET_FIX="chown ${OPERATOR_UID}:${NODE_GID} + chmod 0440 (operator-owned, group ${NODE_GID}, no access for others)"
 
 # check_node_secret LABEL PATH: readable by the node user, closed to others.
+# LABEL is fixed text naming the file; PATH is never printed.
 check_node_secret() {
   if [ "$(other_bits "$2")" != "0" ]; then
-    bad "$1 $2 is accessible to every host user; ${SECRET_FIX}"
+    bad "$1 is accessible to every host user; ${SECRET_FIX}"
   elif ! node_access "$2" 4; then
-    bad "$1 $2 is not readable by the container user ${NODE_UID}:${NODE_GID}; ${SECRET_FIX}"
+    bad "$1 is not readable by the container user ${NODE_UID}:${NODE_GID}; ${SECRET_FIX}"
   else
     ok "$1 readable by container user ${NODE_UID}:${NODE_GID} and closed to other users"
   fi
@@ -116,7 +129,7 @@ check_node_readable() {
   if node_access "$2" 4; then
     ok "$1 readable by container user ${NODE_UID}:${NODE_GID}"
   else
-    bad "$1 $2 is not readable by the container user ${NODE_UID}:${NODE_GID}; chmod 0444 or chgrp ${NODE_GID}"
+    bad "$1 is not readable by the container user ${NODE_UID}:${NODE_GID}; chmod 0444 or chgrp ${NODE_GID}"
   fi
 }
 
@@ -135,7 +148,7 @@ case "${FABRIC_EXPORT_ENDPOINT:-}" in
   "")        bad "FABRIC_EXPORT_ENDPOINT unset" ;;
   https://*) ok "egress endpoint is https" ;;
   http://*)  bad "FABRIC_EXPORT_ENDPOINT is http://; production egress requires https" ;;
-  *)         bad "FABRIC_EXPORT_ENDPOINT is not a URL: ${FABRIC_EXPORT_ENDPOINT}" ;;
+  *)         bad "FABRIC_EXPORT_ENDPOINT is not an https:// URL (value not shown)" ;;
 esac
 
 if [ -z "${FABRIC_EXPORT_AUTH_HEADER:-}" ]; then
@@ -157,15 +170,15 @@ token_last_byte() {
 if [ -z "${FABRIC_INGRESS_TOKEN_FILE:-}" ]; then
   bad "FABRIC_INGRESS_TOKEN_FILE unset; ingress would have no bearer token"
 elif [ ! -f "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
-  bad "FABRIC_INGRESS_TOKEN_FILE points at a missing file: ${FABRIC_INGRESS_TOKEN_FILE}"
+  bad "FABRIC_INGRESS_TOKEN_FILE points at a missing file"
 elif [ ! -r "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
-  bad "cannot read ingress token file ${FABRIC_INGRESS_TOKEN_FILE} as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
+  bad "cannot read ingress token file (FABRIC_INGRESS_TOKEN_FILE) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
 elif [ ! -s "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
-  bad "ingress token file is empty: ${FABRIC_INGRESS_TOKEN_FILE}"
+  bad "ingress token file (FABRIC_INGRESS_TOKEN_FILE) is empty"
 elif blank_lines=$(token_blank_lines "${FABRIC_INGRESS_TOKEN_FILE}")
   last_byte=$(token_last_byte "${FABRIC_INGRESS_TOKEN_FILE}")
   [ -z "${blank_lines}" ] || [ -z "${last_byte}" ]; then
-  bad "reading ingress token file ${FABRIC_INGRESS_TOKEN_FILE} failed, so its format cannot be checked; ${SECRET_FIX}"
+  bad "reading ingress token file (FABRIC_INGRESS_TOKEN_FILE) failed, so its format cannot be checked; ${SECRET_FIX}"
 elif [ "${blank_lines}" != "0" ]; then
   # bearertokenauth v0.150.0 splits the file on newlines and keeps EMPTY
   # entries: a blank line mints "Bearer " (empty token) as a valid
@@ -355,12 +368,12 @@ if receiver_tls_enabled; then
   if [ -z "${cert_path}" ] || [ -z "${key_path}" ]; then
     bad "FABRIC_INGRESS_TLS_CERT_FILE/KEY_FILE must be under /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR)"
   elif [ -s "${cert_path}" ] && [ -s "${key_path}" ]; then
-    ok "ingress TLS cert/key present in ${tlsdir}"
-    node_access "${tlsdir}" 1 || bad "TLS directory ${tlsdir} is not searchable by the container user ${NODE_UID}:${NODE_GID}"
+    ok "ingress TLS cert/key present in FABRIC_INGRESS_TLS_DIR"
+    node_access "${tlsdir}" 1 || bad "FABRIC_INGRESS_TLS_DIR is not searchable by the container user ${NODE_UID}:${NODE_GID}"
     check_node_readable "ingress TLS certificate" "${cert_path}"
     check_node_secret "ingress TLS private key" "${key_path}"
   else
-    bad "tls: stanzas enabled but ${cert_path} or ${key_path} missing"
+    bad "tls: stanzas enabled but the certificate or key (FABRIC_INGRESS_TLS_CERT_FILE / FABRIC_INGRESS_TLS_KEY_FILE in FABRIC_INGRESS_TLS_DIR) is missing or empty"
   fi
 else
   ok "receiver TLS disabled (loopback-only deployment is consistent with this)"
@@ -376,12 +389,12 @@ export_ca_enabled() {
 if export_ca_enabled; then
   ca_container="${FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}"
   if ! ca_path=$(host_tls_path "${ca_container}"); then
-    bad "FABRIC_EXPORT_CA_FILE=${ca_container} must be under /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR)"
+    bad "FABRIC_EXPORT_CA_FILE must be under /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR)"
   elif [ ! -s "${ca_path}" ]; then
-    bad "egress ca_file enabled but ${ca_path} (container ${ca_container}) is missing or empty"
+    bad "egress ca_file enabled but the CA bundle (FABRIC_EXPORT_CA_FILE in FABRIC_INGRESS_TLS_DIR) is missing or empty"
   else
-    ok "egress CA bundle present: ${ca_path}"
-    node_access "${tlsdir}" 1 || bad "TLS directory ${tlsdir} is not searchable by the container user ${NODE_UID}:${NODE_GID}"
+    ok "egress CA bundle present"
+    node_access "${tlsdir}" 1 || bad "FABRIC_INGRESS_TLS_DIR is not searchable by the container user ${NODE_UID}:${NODE_GID}"
     check_node_readable "egress CA bundle" "${ca_path}"
   fi
 elif [ -n "${FABRIC_EXPORT_CA_FILE:-}" ]; then
@@ -410,11 +423,11 @@ else
   served="${exposure%% *}"
   plaintext="${exposure#* }"
   if [ -n "${plaintext}" ]; then
-    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but TLS is not enabled on: ${plaintext% }; each needs an uncommented tls: mapping with non-empty cert_file and key_file (a commented, empty, {} or null tls: is disabled) -- or keep FABRIC_BIND_ADDR=127.0.0.1"
+    bad "FABRIC_BIND_ADDR publishes OTLP beyond loopback but TLS is not enabled on: ${plaintext% }; each needs an uncommented tls: mapping with non-empty cert_file and key_file (a commented, empty, {} or null tls: is disabled) -- or keep FABRIC_BIND_ADDR=127.0.0.1"
   elif [ "${served}" = "1" ]; then
-    ok "non-loopback bind (${bind}) with TLS on every published OTLP receiver"
+    ok "non-loopback bind with TLS on every published OTLP receiver"
   else
-    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but no OTLP receiver serves ${PUBLISHED_OTLP_PORTS} in ${COLLECTOR_CONFIG}"
+    bad "FABRIC_BIND_ADDR publishes OTLP beyond loopback but no OTLP receiver serves ${PUBLISHED_OTLP_PORTS} in ${COLLECTOR_CONFIG}"
   fi
 fi
 

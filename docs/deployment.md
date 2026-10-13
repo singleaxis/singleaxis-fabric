@@ -114,6 +114,13 @@ add:
   --set 'otel-collector.networkPolicy.contentEgress.ports[0].port=443'
 ```
 
+`allowedTenants` takes exactly one tenant: a content record names its own
+tenant, so a Node allowing several would let any authenticated agent write
+under another tenant's prefix. Run one Node per tenant; only
+`otel-collector.content.allowMultipleTenants=true` permits more, and it
+trusts every authenticated agent to name its tenant. `content.s3.sse` is
+required for the s3 backend (`AES256` by default, or `aws:kms`).
+
 The content receiver uses the same server certificate, client CA and
 NetworkPolicy ingress peers as 4317/4318. The content queue shares the
 queue PVC (`<persistence.directory>/content-queue`, fsync); size the PVC for

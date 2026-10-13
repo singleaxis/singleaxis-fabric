@@ -46,16 +46,25 @@ type S3Config struct {
 	Region       string `mapstructure:"region"`
 	Endpoint     string `mapstructure:"endpoint"`
 	UsePathStyle bool   `mapstructure:"use_path_style"`
-	SSE          string `mapstructure:"sse"`
-	KMSKeyID     string `mapstructure:"kms_key_id"`
+	// SSE is required: AES256 (SSE-S3) or aws:kms. Content is never written
+	// without requested server-side encryption, whatever the launch path.
+	SSE      string `mapstructure:"sse"`
+	KMSKeyID string `mapstructure:"kms_key_id"`
 }
 
 // Config is the fabriccontent exporter configuration (spec 043 §4).
 type Config struct {
-	AllowedTenants []string   `mapstructure:"allowed_tenants"`
-	Backend        string     `mapstructure:"backend"`
-	File           FileConfig `mapstructure:"file"`
-	S3             S3Config   `mapstructure:"s3"`
+	// AllowedTenants names the tenant ids this Node writes. Exactly one is
+	// allowed unless AllowMultipleTenants is set: the tenant comes from the
+	// record, so every listed tenant is writable by every authenticated agent.
+	AllowedTenants []string `mapstructure:"allowed_tenants"`
+	// AllowMultipleTenants permits more than one allowed tenant. It trusts
+	// every authenticated agent to name its tenant; use one Node per tenant
+	// otherwise.
+	AllowMultipleTenants bool       `mapstructure:"allow_multiple_tenants"`
+	Backend              string     `mapstructure:"backend"`
+	File                 FileConfig `mapstructure:"file"`
+	S3                   S3Config   `mapstructure:"s3"`
 
 	TimeoutConfig exporterhelper.TimeoutConfig                             `mapstructure:",squash"`
 	QueueConfig   configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
@@ -88,10 +97,21 @@ func (c *Config) Validate() error {
 	if len(c.AllowedTenants) == 0 {
 		return errors.New("allowed_tenants must list at least one tenant id")
 	}
+	seen := map[string]bool{}
 	for i, tenant := range c.AllowedTenants {
 		if !tenantPattern.MatchString(tenant) {
 			return fmt.Errorf("allowed_tenants[%d] is not a valid tenant id", i)
 		}
+		if seen[tenant] {
+			return fmt.Errorf("allowed_tenants[%d] repeats an earlier tenant id", i)
+		}
+		seen[tenant] = true
+	}
+	if len(c.AllowedTenants) > 1 && !c.AllowMultipleTenants {
+		// The record names its tenant and agents share one ingress identity
+		// model: with several tenants any authenticated agent could write
+		// under another tenant's prefix (Codex r2 #1).
+		return errors.New("allowed_tenants lists more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant")
 	}
 	switch c.Backend {
 	case backendFile:
@@ -129,13 +149,15 @@ func (s S3Config) validate() error {
 		}
 	}
 	switch s.SSE {
-	case "", "AES256":
+	case "AES256":
 		if s.KMSKeyID != "" {
 			return errors.New("s3.kms_key_id requires s3.sse: aws:kms")
 		}
 	case "aws:kms":
+	case "":
+		return errors.New("s3.sse is required (AES256 or aws:kms): content is never written without server-side encryption")
 	default:
-		return errors.New("s3.sse must be empty, AES256 or aws:kms")
+		return errors.New("s3.sse must be AES256 or aws:kms")
 	}
 	return nil
 }

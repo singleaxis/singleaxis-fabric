@@ -25,9 +25,12 @@ per request; the same server certificate and client CA as 4317/4318), a
 `logs/content` pipeline running only `memory_limiter`, and the
 `fabriccontent` exporter, which verifies digest, length and tenant and
 writes bodies + descriptors to `backend: s3` (bucket, prefix, region,
-optional endpoint and path-style for S3-compatible stores, `sse`
-`aws:kms`/`AES256`, `kmsKeyId`) or `backend: file` (single replica, inside
-the queue PVC). Content is never routed to `exporter.endpoint` and never
+optional endpoint and path-style for S3-compatible stores, required `sse`
+`AES256` (default) or `aws:kms`, `kmsKeyId`) or `backend: file` (single
+replica, inside the queue PVC). `allowedTenants` holds exactly one tenant
+unless `allowMultipleTenants=true`, which trusts every authenticated agent
+to name its tenant (a content record names its own); use one Node per tenant
+otherwise. Content is never routed to `exporter.endpoint` and never
 passes `fabricguard` (bodies must pass unchanged). The Node is the only
 writer: give its ServiceAccount the writer role (IRSA via
 `serviceAccount.annotations`); `content.s3.credentialsSecret` references
@@ -36,8 +39,9 @@ never contain keys. The content queue lives at
 `<persistence.directory>/content-queue` on the queue PVC (memory-only
 without persistence). `networkPolicy.contentEgress` names the store (and
 STS) peers; NetworkPolicy ingress opens 4319 to the same `ingressFrom`
-peers. Render fails without `allowedTenants` or a backend, on an invalid
-bucket, prefix or endpoint, on `kmsKeyId` without `aws:kms`, and with
+peers. Render fails without `allowedTenants` or a backend, on more than one
+tenant without `allowMultipleTenants`, on an s3 backend without `sse`, on an
+invalid bucket, prefix or endpoint, on `kmsKeyId` without `aws:kms`, and with
 `requireServerSideEncryption=true` (pinned by `shadow-production`) on
 missing SSE or the file backend. `tests/test-content-delivery.sh` is the
 render contract.

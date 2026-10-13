@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/run-reconstruction-v1.schema.json",
   "title": "Fabric run reconstruction v1 (draft, spec 042 rev 5, spec 043)",
-  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store. It is not a quality evaluation and carries no content: provider-derived ids appear only as pseudonyms and store locations never appear.",
+  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store. It is not a quality evaluation and carries no content: provider-derived ids appear only as pseudonyms, and neither store locations nor input file paths appear (span files are named by digest).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "generated_at", "verifier", "inputs", "sources", "runs"],
@@ -29,9 +29,8 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "sha256", "format", "records"],
+            "required": ["sha256", "format", "records"],
             "properties": {
-              "path": {"type": "string", "minLength": 1, "maxLength": 4096},
               "sha256": {"$ref": "#/$defs/digest"},
               "format": {"enum": ["sink_jsonl", "otlp_json"]},
               "records": {"type": "integer", "minimum": 0}

@@ -16,8 +16,11 @@ destination. SingleAxis Platform is optional.
 - `fabriccontent` — the Node's content writer for LLM wire capture (spec 043):
   it accepts only content log records (the closed content-v2 descriptor
   attribute set, the exact bytes as the body), recomputes their length and
-  SHA-256, admits only `allowed_tenants`, and writes body then descriptor to a
-  directory or an S3(-compatible) bucket with the SDK store layout
+  SHA-256, admits only `allowed_tenants` (exactly one unless
+  `allow_multiple_tenants: true`, which trusts every authenticated agent to
+  name its tenant; use one Node per tenant otherwise), and writes body then
+  descriptor to a directory or an S3(-compatible) bucket (`sse: AES256` or
+  `aws:kms` required) with the SDK store layout
   (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`). It
   never overwrites (S3 `If-None-Match: *`, hard-link creation on disk):
   identical bytes are a successful replay, different bytes a conflict. Refused

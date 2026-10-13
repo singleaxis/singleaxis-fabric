@@ -584,3 +584,32 @@ def test_chart_and_compose_share_the_content_request_bound() -> None:
         ]["http"]["max_request_body_size"]
         == 67_108_864
     )
+
+
+def _shipped_content_exporters() -> list[tuple[str, str, dict[str, Any]]]:
+    found = []
+    for path in sorted((COMPOSE_DIR / "collector-config").glob("*.yaml")) + sorted(
+        FIXTURES.glob("*.yaml")
+    ):
+        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for name, exporter in (config.get("exporters") or {}).items():
+            if name.split("/")[0] == "fabriccontent":
+                found.append((path.name, name, exporter))
+    return found
+
+
+def test_every_shipped_content_exporter_has_one_tenant_and_encrypted_s3() -> None:
+    """Codex r2 #1 and #3 for Compose: a content record names its own tenant, so each
+    shipped exporter allows exactly one (``FABRIC_TENANT_ID``) and never opts into
+    ``allow_multiple_tenants``; every s3 exporter requests SSE (AES256 or aws:kms) by
+    default."""
+    exporters = _shipped_content_exporters()
+    assert {name for _, name, _ in exporters} >= {"fabriccontent", "fabriccontent/s3"}
+    for path, name, exporter in exporters:
+        where = f"{path}:{name}"
+        assert exporter["allowed_tenants"] == ["${env:FABRIC_TENANT_ID}"], where
+        assert "allow_multiple_tenants" not in exporter, where
+        if exporter["backend"] == "s3":
+            sse = str(exporter["s3"].get("sse") or "")
+            default = re.fullmatch(r"\$\{env:[A-Z0-9_]+:-([^}]*)\}", sse)
+            assert (default.group(1) if default else sse) in {"AES256", "aws:kms"}, where

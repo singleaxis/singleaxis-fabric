@@ -419,3 +419,24 @@ def test_otlp_json_negative_int_values_are_read(tmp_path: Path) -> None:
     )
     with pytest.raises(ReconstructInputError):
         read_span_file(path)
+
+
+def test_report_names_no_input_paths(tmp_path: Path) -> None:
+    """Codex r2 #2: span file and store root paths (which can name a user's home directory)
+    never reach the report; span files are identified by digest, format and count."""
+    from fabric.reconstruct.__main__ import main  # noqa: PLC0415
+
+    home = tmp_path / "home" / "jane.doe-patient-0042"
+    capture = Capture(home)
+    react_run(capture)
+    spans = capture.write()
+    out = tmp_path / "report.json"
+    argv = ["--spans", str(spans), "--store-root", str(home / "store"), "--tenant", "tenant-a"]
+    assert main([*argv, "--out", str(out)]) == 0
+    text = out.read_text("utf-8")
+    assert "jane.doe" not in text and str(tmp_path) not in text
+    document = json.loads(text)
+    validate(document)
+    (entry,) = document["inputs"]["span_files"]
+    assert set(entry) == {"sha256", "format", "records"}
+    assert document["inputs"]["store"] == {"kind": "local", "tenant_id": "tenant-a"}

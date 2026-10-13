@@ -138,6 +138,52 @@ func TestContentOverlayRerouteRejected(t *testing.T) {
 	}
 }
 
+// Codex r2 #1: a content record names its tenant, so a Node allowing several
+// tenants lets any authenticated agent write under another tenant's prefix.
+// The gate refuses more than one tenant unless the exporter opts in.
+func TestContentTenantsNeedOneTenantOrTheTrustFlag(t *testing.T) {
+	exporter := func(body string) string {
+		return contentConfig + "exporters:\n  fabriccontent:\n" + body + "    backend: file\n    file:\n      directory: /var/lib/fabric-node/content\n"
+	}
+	t.Setenv("GATE_TEST_TENANTS", "[tenant-a, tenant-b]")
+	t.Setenv("GATE_TEST_TRUE", "true")
+	refused := map[string]string{
+		"two tenants":                 exporter("    allowed_tenants: [tenant-a, tenant-b]\n"),
+		"two tenants flag false":      exporter("    allowed_tenants: [tenant-a, tenant-b]\n    allow_multiple_tenants: false\n"),
+		"two tenants via env":         exporter("    allowed_tenants: ${env:GATE_TEST_TENANTS}\n"),
+		"named exporter, two tenants": strings.Replace(exporter("    allowed_tenants: [a, b]\n"), "  fabriccontent:\n    allowed", "  fabriccontent/eu:\n    allowed", 1),
+	}
+	for name, cfg := range refused {
+		t.Run("refused/"+name, func(t *testing.T) {
+			_, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)})
+			if err == nil || !strings.Contains(err.Error(), "allows more than one tenant") {
+				t.Fatalf("multi-tenant content exporter not refused: %v", err)
+			}
+		})
+	}
+	accepted := map[string]string{
+		"one tenant":           exporter("    allowed_tenants: [tenant-a]\n"),
+		"one env tenant":       exporter("    allowed_tenants: [\"${env:FABRIC_TENANT_ID}\"]\n"),
+		"two tenants opted in": exporter("    allowed_tenants: [tenant-a, tenant-b]\n    allow_multiple_tenants: true\n"),
+		"opted in through env": exporter("    allowed_tenants: [tenant-a, tenant-b]\n    allow_multiple_tenants: ${env:GATE_TEST_TRUE}\n"),
+	}
+	for name, cfg := range accepted {
+		t.Run("accepted/"+name, func(t *testing.T) {
+			if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err != nil {
+				t.Fatalf("rejected: %v", err)
+			}
+		})
+	}
+	// An overlay cannot add a second tenant after the base was checked.
+	_, err := validateArgs([]string{
+		"--config=" + writeConfig(t, exporter("    allowed_tenants: [tenant-a]\n")),
+		"--config=" + writeConfig(t, "exporters:\n  fabriccontent:\n    allowed_tenants: [tenant-a, tenant-b]\n"),
+	})
+	if err == nil {
+		t.Fatal("overlay adding a tenant accepted")
+	}
+}
+
 func TestEmptyConnectorsAccepted(t *testing.T) {
 	for _, prefix := range []string{"connectors: {}\n", "connectors:\n"} {
 		if _, err := validateArgs([]string{"--config=" + writeConfig(t, prefix+contentConfig)}); err != nil {

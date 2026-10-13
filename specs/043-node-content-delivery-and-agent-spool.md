@@ -2,7 +2,7 @@
 title: Node content delivery, agent durable spool and run scopes
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 1
+revision: 2
 last_updated: 2026-10-13
 owner: recorder-engineering
 depends_on: 029, 032, 038, 042
@@ -56,6 +56,23 @@ Decisions F1–F10:
   that receiver's TLS genuinely enabled (§9).
 - **F10 Reconstruct** reads Node-written content from the same file/S3
   layout, including S3-compatible stores (endpoint, path-style) (§10).
+
+**2026-10-13 — revision 2 (Codex review).** Decisions F11–F13:
+
+- **F11 One tenant per Node by default.** A content record names its own
+  tenant and every authenticated agent reaches the same receiver, so a Node
+  allowing tenants A and B lets an agent of A write under B. The exporter,
+  `fabric-gate`, the Helm chart and the Compose configs allow exactly one
+  tenant unless `allow_multiple_tenants: true` is set explicitly; that flag
+  trusts every authenticated agent to name its tenant. Use one Node per
+  tenant otherwise (§4, §5).
+- **F12 S3 encryption is not optional.** The exporter's own configuration
+  validation requires `sse: AES256 | aws:kms`, so no launch path (Helm,
+  Compose, a hand-written collector config) can write content without
+  requested server-side encryption (§4).
+- **F13 The window before the spool write is stated, not moved** (§2
+  "Window"): the durable write stays off the host's thread; a kill inside
+  the window can never yield `complete_for_declared_scope`.
 
 **Why.**
 
@@ -164,6 +181,29 @@ exchange records; loss records are written by the sender thread from the
 O(1) in-memory loss table; a marker's `last_sequence` is read on the host
 thread under the allocator lock (042 §6) and the record is queued in memory
 (bounded, 1,024) for the sender thread to write.
+
+**Window before the spool write.** A record is durable only once its
+file is fsync'd. Between a call finishing (the stream is exhausted, closed
+or failed) and that point the exchange exists only in the agent's memory:
+it waits in the capture worker's queue (bounded by `queue_max_items`,
+default 256, and `max_inflight_bytes`, default 256 MiB), then the worker
+digests both bodies, builds the record, writes, fsyncs and renames it. With
+an idle worker the window is one exchange for the time of one SHA-256 pass
+over its bodies plus one `fsync` — typically a few milliseconds, tens of
+milliseconds for multi-MiB bodies or slow disks; under a burst it also
+covers every exchange queued behind it. Run markers have the same kind of
+window (the bounded in-memory marker queue, written by the sender thread).
+The write is **not** moved onto the host's thread: disk latency and fsync
+stalls on the call path would violate passivity (042 §4 rules 3 and 10).
+A process killed inside the window (SIGKILL, OOM kill, power loss) loses
+those exchanges with no loss record. Their sequences were allocated when
+the calls started, so they remain unexplained gaps, and the verifier can
+never report the affected run `complete_for_declared_scope`: `partial` when
+a later sequence or the scope's `run_end` marker was recorded (a gap inside
+the window), `unverified` when the run's end is unproven (no `run_end`, or
+no `final` heartbeat for an unscoped run, which a killed process never
+writes). `tests/test_wire_spool_window.py` kills an agent with its worker
+parked inside the window and checks exactly this.
 
 **Bound.** `spool_bytes` = own writes + a directory rescan every 5 s on the
 sender thread. An exchange record is admitted only while `spool_bytes +
@@ -287,7 +327,12 @@ attribute set itself.
 1. Accept only records whose attributes are exactly the §3 set (no unknown
    key), every value valid, `event_class = content`, body of type bytes.
 2. Recompute SHA-256 and length of the body; mismatch → reject.
-3. `tenant_id` must be in `allowed_tenants` → else reject.
+3. `tenant_id` must be in `allowed_tenants` → else reject. The tenant is
+   the record's claim, not derived from the agent's identity, so the
+   exporter configuration must list **exactly one** tenant unless
+   `allow_multiple_tenants: true` is set (F11); the flag trusts every
+   authenticated agent to name its tenant. Use one Node per tenant
+   otherwise. Duplicate entries are refused.
 4. Write body to `<prefix><tenant>/evidence/<object_id>`, **then** the
    descriptor to `<prefix><tenant>/evidence/meta/<object_id>.json`.
    Descriptor = the attributes minus `event_class`, plus `"encoding":
@@ -302,8 +347,9 @@ attribute set itself.
 Backends: `file` (`directory`; files `0600`, directories `0700`, temp +
 fsync + rename + dir fsync) and `s3` (aws-sdk-go-v2 default credential chain
 incl. IRSA; optional `endpoint` and `use_path_style` for MinIO and other
-S3-compatible stores; `region`; `sse: AES256 | aws:kms`; `kms_key_id` only
-with `aws:kms`; `PutObject` with `If-None-Match: *`, on 412 `GetObject` and
+S3-compatible stores; `region`; `sse: AES256 | aws:kms`, **required** —
+an empty or missing `sse` fails configuration validation (F12);
+`kms_key_id` only with `aws:kms`; `PutObject` with `If-None-Match: *`, on 412 `GetObject` and
 byte-compare). A store without conditional-write support is a retryable
 error, never an unconditional write.
 
@@ -337,7 +383,10 @@ where:
    unchanged, including "only `batch`/`memory_limiter` after the guard");
 5. a content receiver configures `grpc`;
 6. `connectors` is non-empty (a connector could bridge content into a
-   telemetry pipeline).
+   telemetry pipeline);
+7. a `fabriccontent` exporter lists more than one `allowed_tenants` entry
+   without `allow_multiple_tenants: true` (F11; the exporter refuses it
+   too).
 
 ## 6. Run scopes (F6; supersedes 042 §6 run markers and §9 step 3 (a))
 
@@ -466,6 +515,10 @@ boto3 chain. The e2e qualifies the path agent → Node → MinIO (SSE via
 8. F7, F8 and F9 tests as stated.
 9. 042 §4.10 latency budgets still hold; capture line count outside spool,
    sender and content client does not grow.
+10. Revision 2: two tenants without `allow_multiple_tenants` are refused by
+    the exporter, the gate and the Helm render; S3 without `sse` is refused
+    by the exporter and the Helm render; a SIGKILL inside the spool window
+    (scoped or unscoped run) never verifies as complete.
 
 ## 12. Open questions
 

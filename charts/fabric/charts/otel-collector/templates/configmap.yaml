@@ -157,6 +157,9 @@ data:
           {{- range $content.allowedTenants }}
           - {{ . | quote }}
           {{- end }}
+        {{- if $content.allowMultipleTenants }}
+        allow_multiple_tenants: true
+        {{- end }}
         backend: {{ $content.backend | quote }}
         {{- if eq $content.backend "file" }}
         file:
@@ -172,9 +175,7 @@ data:
           endpoint: {{ . | quote }}
           {{- end }}
           use_path_style: {{ $content.s3.usePathStyle }}
-          {{- with $content.s3.sse }}
-          sse: {{ . | quote }}
-          {{- end }}
+          sse: {{ $content.s3.sse | quote }}
           {{- with $content.s3.kmsKeyId }}
           kms_key_id: {{ . | quote }}
           {{- end }}
