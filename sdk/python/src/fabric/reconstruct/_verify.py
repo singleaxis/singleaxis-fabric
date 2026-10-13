@@ -15,6 +15,7 @@ what the record holds: a scoped run is at best ``complete_for_observed_scopes``
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import os
 from collections import defaultdict
@@ -26,10 +27,12 @@ from typing import Any, Literal, cast
 
 from fabric._model_names import HASHED_MODEL_RE, expose_model, parse_model_allowlist
 from fabric._version import __version__
+from fabric.reconstruct._ids import report_run_id, report_source_id, report_tenant_id
 from fabric.reconstruct._inputs import (
     ExchangeObs,
     HeartbeatObs,
     LossObs,
+    MalformedMarkerObs,
     ReconstructInputError,
     SpanFormat,
     object_id_from_ref,
@@ -64,8 +67,9 @@ _STITCH_GAPS = frozenset(
     {"unparsed_exchange", "prefix_break", "unmatched_tool_call", "unresolved_previous_response"}
 )
 _HTTP_ERROR = 400
-# Response states that say a response was received: its digest must be recorded.
-_RESPONSE_EXPECTED = frozenset({"complete", "closed_early"})
+# Response states that say a response was received: its digest must be recorded. An
+# ``abandoned`` stream had a response; an ``error`` one did when its status was recorded.
+_RESPONSE_EXPECTED = frozenset({"complete", "closed_early", "abandoned"})
 
 
 # --------------------------------------------------------------------------
@@ -239,13 +243,17 @@ def reconstruct(
     run_ids: Collection[str] | None = None,
     generated_at: datetime | None = None,
     model_allowlist: Sequence[str] = (),
+    id_key: bytes | None = None,
 ) -> dict[str, Any]:
     """Reconstruct runs from span files and an optional customer store.
 
     ``model_allowlist`` extends the built-in model allowlist (spec 043 §7):
-    exact names or ``prefix*`` entries. Returns a
-    ``fabric.run-reconstruction/v1`` document. Raises
-    :class:`ReconstructInputError` for unusable input or options.
+    exact names or ``prefix*`` entries. ``id_key`` (``FABRIC_WIRE_ID_KEY``) keys
+    the label pseudonyms: the report shows tenant, source and run ids only in
+    pseudonymous form (decision J1); ``run_ids`` (clear, pseudonym or fallback ids)
+    are matched through the same projection (:func:`report_run_id`). Returns a
+    ``fabric.run-reconstruction/v1`` document.
+    Raises :class:`ReconstructInputError` for unusable input or options.
     """
 
     paths = list(span_paths)
@@ -254,17 +262,25 @@ def reconstruct(
     allowlist = _allowlist(model_allowlist)
     reader = StoreReader(store, tenant_id) if store is not None else None
     span_files: list[dict[str, Any]] = []
-    verifier = _Verifier(reader, allowlist)
+    verifier = _Verifier(reader, allowlist, id_key)
     for index, path in enumerate(paths, start=1):
         fmt, records = read_span_file(path, label=f"span file {index}")
         span_files.append(_span_file_entry(path, fmt, len(records)))
-        for record in records:
-            verifier.add(observe(record))
+        for number, record in enumerate(records, start=1):
+            try:
+                observation = observe(record)
+            except ReconstructInputError:
+                raise ReconstructInputError(
+                    f"span file {index} span {number}: an exchange span has a malformed identity"
+                ) from None
+            verifier.add(observation)
     verifier.finalize()
     inputs: dict[str, Any] = {"span_files": span_files}
     if reader is not None:
-        inputs["store"] = {"kind": reader.kind, "tenant_id": reader.tenant_id}
-    runs, scopes = verifier.build_runs(set(run_ids) if run_ids is not None else None)
+        tenant = report_tenant_id(reader.tenant_id, id_key)
+        inputs["store"] = {"kind": reader.kind, "tenant_id": tenant}
+    wanted = None if run_ids is None else {report_run_id(value, id_key) for value in run_ids}
+    runs, scopes = verifier.build_runs(wanted)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": format_datetime(generated_at or datetime.now(tz=UTC)),
@@ -318,9 +334,12 @@ def _span_file_entry(path: str | os.PathLike[str], fmt: SpanFormat, count: int) 
 
 
 class _Verifier:
-    def __init__(self, reader: StoreReader | None, allowlist: Sequence[str] = ()) -> None:
+    def __init__(
+        self, reader: StoreReader | None, allowlist: Sequence[str] = (), key: bytes | None = None
+    ) -> None:
         self.reader = reader
         self.allowlist = tuple(allowlist)
+        self.key = key
         # Every distinct observation per exchange id, in input order. Identical
         # retries are one observation; differing ones are all kept (each claim
         # of a sequence, run and scope counts) and mark the id conflicting.
@@ -333,6 +352,8 @@ class _Verifier:
         self.scopes: dict[str, _Scope] = {}
         self.run_scopes: dict[str, set[str]] = defaultdict(set)
         self._heartbeats: set[HeartbeatObs] = set()
+        # Scopes named by a run marker with malformed fields: never closed (sol2 #5).
+        self.malformed_scopes: set[str] = set()
 
     def _scope(self, scope_id: str, run_id: str) -> _Scope:
         self.run_scopes[run_id].add(scope_id)
@@ -345,8 +366,28 @@ class _Verifier:
             self.sources[key] = _Source(key)
         return self.sources[key]
 
-    def add(self, obs: ExchangeObs | LossObs | HeartbeatObs | None) -> None:
-        if isinstance(obs, ExchangeObs):
+    def _labels(
+        self, obs: ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs | None
+    ) -> ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs | None:
+        """Source and run ids in their report form (decision J1), before any accounting, so
+        legacy clear and pseudonymous records of one source or run are one."""
+        if obs is None:
+            return None
+        if isinstance(obs, MalformedMarkerObs):
+            heartbeat = self._labels(obs.heartbeat)
+            return MalformedMarkerObs(obs.scope_id, cast("HeartbeatObs | None", heartbeat))
+        changes: dict[str, Any] = {"source_id": report_source_id(obs.source_id, self.key)}
+        run_id = getattr(obs, "run_id", None)
+        if run_id is not None:
+            changes["run_id"] = report_run_id(run_id, self.key)
+        return dataclasses.replace(obs, **changes)
+
+    def add(self, obs: ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs | None) -> None:
+        obs = self._labels(obs)
+        if isinstance(obs, MalformedMarkerObs):
+            self.malformed_scopes.add(obs.scope_id)
+            self.add(obs.heartbeat)
+        elif isinstance(obs, ExchangeObs):
             seen = self.observations.setdefault(obs.exchange_id, [])
             if obs in seen:
                 return  # an identical retry (at-least-once delivery)
@@ -386,6 +427,8 @@ class _Verifier:
                 self.sources[key].conflicted.add(sequence)
         for scope in self.scopes.values():
             scope.finalize()
+            if scope.scope_id in self.malformed_scopes:  # a malformed marker names it
+                scope.state, scope.problem = "conflict", "malformed_record"
 
     def build_runs(
         self, wanted: set[str] | None
@@ -482,7 +525,8 @@ class _Run:
         representative: dict[str, ExchangeObs] = {}
         self.scopes_of: dict[str, set[str]] = defaultdict(set)
         for exchange in observed:
-            representative.setdefault(exchange.exchange_id, exchange)
+            if not exchange.malformed:  # a malformed observation's payload is never used
+                representative.setdefault(exchange.exchange_id, exchange)
             if exchange.scope_id is not None:
                 self.scopes_of[exchange.exchange_id].add(exchange.scope_id)
         self.members = sorted(
@@ -677,6 +721,17 @@ class _Run:
     def build(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """The run's report entry and one verdict entry per scope (decision H5)."""
 
+        for exchange in self.observed:
+            if exchange.malformed:  # its claims count; its payload proves nothing (sol2 #5)
+                self._add(
+                    Gap(
+                        "digest_mismatch",
+                        "partial",
+                        exchange_id=exchange.exchange_id,
+                        reason="malformed_record",
+                    ),
+                    () if exchange.scope_id is None else (exchange.scope_id,),
+                )
         bodies = {exchange.exchange_id: self._bodies(exchange) for exchange in self.members}
         exchanges, views = [], []
         for exchange in self.members:
@@ -767,9 +822,9 @@ class _Run:
                 exchange, "response", exchange.response_sha256, exchange.response_ref
             )
             skipped = skipped or response_skipped
-        elif exchange.response_state in _RESPONSE_EXPECTED:
-            # A complete or closed_early exchange received a response; a record
-            # without its digest proves only the request (sol1 #4).
+        elif exchange.response_state in _RESPONSE_EXPECTED or exchange.http_status is not None:
+            # The exchange received a response (its state, or a recorded HTTP status, says
+            # so); a record without its digest proves only the request (sol1 #4, sol2 #4).
             self._gap(exchange, "missing_object", side="response", reason="response_not_recorded")
         if exchange.truncated:
             sides: list[Side | None] = []

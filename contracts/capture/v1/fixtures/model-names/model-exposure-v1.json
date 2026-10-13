@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.model-exposure-vectors/v1",
-  "rule": "Exact allowlist entries match exactly. A 'prefix*' entry (built-in or FABRIC_WIRE_MODEL_ALLOWLIST) matches when the value starts with prefix and the rest, split on [-._:/@] with empty tokens ignored, consists only of tokens matching ^(v?\\d+[a-z]{0,2}|\\d+[a-z]\\d*|[a-z]\\d+)$ or words of 'suffix_words' (case-sensitive). Values must also match ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$ and contain no '://'. Anything else is exposed as 'm-' + the first 16 hex of sha256(utf-8 value).",
+  "rule": "Exact allowlist entries match exactly. A 'prefix*' entry (built-in or FABRIC_WIRE_MODEL_ALLOWLIST) matches when the value starts with prefix and the rest, split on [-._:/@] with empty tokens ignored, consists only of: purely numeric tokens of at most 4 digits ('numbers'); a decimal version N.N (two numeric tokens of 1-2 digits each joined by exactly '.') counted as one number; a date, either one 8-digit token matching ^20\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])$ or three numeric tokens of 4, 2 and 2 digits joined by exactly '-' whose concatenation matches that pattern, which is not a number; tokens matching ^(v?\\d+[a-z]{0,2}|\\d+[a-z]\\d*|[a-z]\\d+)$ that are not purely numeric; or words of 'suffix_words' (case-sensitive). At most two numbers and at most one date (decision J2); tokens are read left to right, a date or decimal taking its tokens first. Values must also match ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$ and contain no '://'. Anything else is exposed as 'm-' + the first 16 hex of sha256(utf-8 value).",
   "default_allowlist": [
     "gpt-*",
     "o1*",
@@ -407,6 +407,136 @@
       ],
       "allowed": true,
       "exposed": "gpt-4o"
+    },
+    {
+      "name": "SSN-shaped numeric suffix (Sol counterexample)",
+      "value": "gpt-4o-123-45-6789",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-b2cac3b519f16d7a"
+    },
+    {
+      "name": "12-digit numeric suffix (Sol counterexample)",
+      "value": "gpt-4o-919876543210",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-f6f336707be87245"
+    },
+    {
+      "name": "five-digit number",
+      "value": "gpt-4o-12345",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-435628bf1862b1bf"
+    },
+    {
+      "name": "three numbers",
+      "value": "gpt-1-2-3",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-895933a889a12499"
+    },
+    {
+      "name": "SSN split by a dot",
+      "value": "gpt-4o-123.45-6789",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-ec1ca446cd6a09b1"
+    },
+    {
+      "name": "decimal with a long component is two numbers",
+      "value": "gpt-4o-12.345-6789",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-e1eba83bc93cb73b"
+    },
+    {
+      "name": "two four-digit numbers",
+      "value": "gpt-4o-1234-5678",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4o-1234-5678"
+    },
+    {
+      "name": "snapshot number",
+      "value": "gpt-4-0613",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4-0613"
+    },
+    {
+      "name": "two numbers and an 8-digit date",
+      "value": "claude-3-7-sonnet-20250219",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "claude-3-7-sonnet-20250219"
+    },
+    {
+      "name": "decimal and split date",
+      "value": "gpt-4.1-2025-04-14",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4.1-2025-04-14"
+    },
+    {
+      "name": "decimal and two numbers",
+      "value": "gemini-2.5-flash-preview-05-20",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-b59039c157fa86bd"
+    },
+    {
+      "name": "8 digits that are not a 20xx date",
+      "value": "gpt-4o-19990101",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-61bd01307cb12387"
+    },
+    {
+      "name": "8 digits with an invalid month",
+      "value": "gpt-4o-20241301",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-c9556aec30d1b05d"
+    },
+    {
+      "name": "split date with an invalid month is three numbers",
+      "value": "gpt-4o-2024-13-01",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-0c833764ab5af1ee"
+    },
+    {
+      "name": "two dates",
+      "value": "gpt-4o-20240101-20240102",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-22147563f1ad32bc"
+    },
+    {
+      "name": "split date and 8-digit date",
+      "value": "gpt-4o-2024-08-06-20240807",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-0170ae7cac8ba840"
+    },
+    {
+      "name": "custom prefix, numeric identifier",
+      "value": "acme-7b-5551234567",
+      "allowlist": [
+        "acme-*"
+      ],
+      "allowed": false,
+      "exposed": "m-80e4b10086528f60"
+    },
+    {
+      "name": "custom prefix, two short numbers",
+      "value": "acme-7b-1-2",
+      "allowlist": [
+        "acme-*"
+      ],
+      "allowed": true,
+      "exposed": "acme-7b-1-2"
     }
   ]
 }

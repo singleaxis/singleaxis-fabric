@@ -142,6 +142,12 @@ fabric:
     # families (spec 043 §7). Set the same list as the agents'
     # FABRIC_WIRE_MODEL_ALLOWLIST, or the Node hashes the extra names to m-...
     captureModelAllowlist: []
+    # Capture labels (spec 043 J1): `pseudonymous` (default) admits
+    # fabric.source_id and the capture service.name only as s-/svc- + 32 hex,
+    # dropping anything else. `clear` is the Node counterpart of agents
+    # running with FABRIC_WIRE_LABELS=clear: operator-chosen labels are
+    # exported unchanged; you guarantee they contain no personal data.
+    captureLabels: pseudonymous
 
 # OTLP/HTTP egress target.
 #

@@ -15,7 +15,17 @@ import time
 from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
-from .._sequence import RunScope, SourceAllocator, get_allocator, id_key_from_env, run_scope
+from .._sequence import (
+    RunScope,
+    SourceAllocator,
+    default_source_id,
+    encode_opaque_id,
+    get_allocator,
+    id_key_from_env,
+    labels_from_env,
+    run_scope,
+    source_label,
+)
 from ._config import DEFAULT_ENDPOINTS, WireConfig
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
 
@@ -165,12 +175,14 @@ def install(
         config = dataclasses.replace(config, **overrides) if config else WireConfig(**overrides)
         if config.id_key is None and (key := id_key_from_env(os.environ)) is not None:
             config = dataclasses.replace(config, id_key=key)
+        if config.labels is None:
+            config = dataclasses.replace(config, labels=labels_from_env(os.environ))
         loss = get_loss_emitter()
         sender = build_sender(config, loss, span_exporter, content_client)
         if config.tracer_provider is not None:
             loss.set_tracer_provider(config.tracer_provider)
         loss.exit_timeout_s = config.shutdown_timeout_s
-        allocator = get_allocator("wire", source_id=config.source_id)
+        allocator = get_allocator("wire", source_id=_source_id(config))
         tee = _transport.WireTee(config, allocator=allocator, loss=loss, sender=sender)
         loss.attach(sender.wake if sender is not None else None)
         if sender is not None:  # starts draining: replays what earlier processes left
@@ -183,18 +195,30 @@ def install(
         return _HANDLE
 
 
+def _source_id(config: WireConfig) -> str:
+    """The emitted source id (J1): the configured, ``FABRIC_SOURCE_ID`` or default label as
+    its ``s-`` pseudonym, unchanged only under ``labels="clear"``."""
+    chosen = config.source_id or os.environ.get("FABRIC_SOURCE_ID") or default_source_id("wire")
+    return source_label(encode_opaque_id(chosen), config.id_key, clear=config.labels == "clear")
+
+
 def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | None:
     """Install from ``FABRIC_*`` (042 §3, 043 §1); invalid settings log one warning naming the
     error class only. Without a spool losses use the private provider (global mode: exchanges
     the host's, and losses too without an OTLP endpoint)."""
     try:
         from .._loss import get_loss_emitter  # noqa: PLC0415
-        from ..tracing import build_private_provider, otlp_endpoint_configured  # noqa: PLC0415
+        from ..tracing import (  # noqa: PLC0415
+            build_private_provider,
+            capture_service_name,
+            otlp_endpoint_configured,
+        )
         from ._config import config_from_env  # noqa: PLC0415
 
         config, tracer_mode = config_from_env(os.environ if environ is None else environ)
         if config.spool_dir is None and (tracer_mode == "private" or otlp_endpoint_configured()):
-            private = build_private_provider()
+            private = build_private_provider(service_name=capture_service_name(
+                id_key=config.id_key, clear=config.labels == "clear"))  # fmt: skip
             get_loss_emitter().set_tracer_provider(private)
             if tracer_mode == "private":
                 config = dataclasses.replace(config, tracer_provider=private)

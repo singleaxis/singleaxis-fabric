@@ -56,7 +56,7 @@ production_args=(
   "${umbrella_dir}"
   --values "${profile}"
   --set tenant.id=tenant-a
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
@@ -250,6 +250,75 @@ expect_fail "development refuses an operator-supplied open peer" "does not restr
   --set-json 'networkPolicy.ingressFrom=[{"namespaceSelector":{}}]'
 expect_ok "development keeps its default ingress when no peer is supplied" \
   "${chart_dir}" --set networkPolicy.enabled=true
+
+printf '\n=== Label selector values are strings (sol2_3 #2) ===\n'
+# Kubernetes types matchLabels as map<string,string>. `--set ...=true` makes a
+# YAML boolean, which renders unquoted and is rejected by the API server at
+# apply time; the chart refuses it at render time and names --set-string.
+documented_peer=(
+  "${umbrella_dir}" --values "${profile}" --set tenant.id=tenant-a
+  --set otel-collector.exporter.endpoint=https://otlp.example.com
+  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP'
+  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
+)
+agent_label='otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+expect_fail "the boolean label value from --set is refused" \
+  "networkPolicy.ingressFrom[0].namespaceSelector.matchLabels values must be strings" \
+  "${documented_peer[@]}" --set "${agent_label}"
+expect_fail "the refusal names the --set-string fix" "--set-string" \
+  "${documented_peer[@]}" --set "${agent_label}"
+expect_fail "a numeric label value from --set is refused" "matchLabels values must be strings" \
+  "${documented_peer[@]}" \
+  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.team=42'
+string_render="$(helm template ci "${documented_peer[@]}" --set-string "${agent_label}" \
+  --show-only charts/otel-collector/templates/networkpolicy.yaml 2>&1)" || true
+if grep -q -E '^ +fabric\.singleaxis\.ai/agent: "true"$' <<<"${string_render}"; then
+  pass "the documented --set-string command renders the label value as the string \"true\""
+else
+  fail "--set-string did not render a quoted string label value: ${string_render}"
+fi
+
+expect_peer_fail "a boolean podSelector label in egress is refused" \
+  "networkPolicy.exporterEgress.to[0].podSelector.matchLabels values must be strings" \
+  "${ingress_ok}" '[{"podSelector":{"matchLabels":{"app":true}}}]' "${content_ok}"
+expect_peer_fail "a numeric namespace label in content egress is refused" \
+  "networkPolicy.contentEgress.to[0].namespaceSelector.matchLabels values must be strings" \
+  "${ingress_ok}" "${egress_ok}" '[{"namespaceSelector":{"matchLabels":{"zone":1}}}]'
+expect_peer_fail "a boolean label in egressTo is refused" \
+  "networkPolicy.egressTo[0].podSelector.matchLabels values must be strings" \
+  "${ingress_ok}" "${egress_ok}" "${content_ok}" '[{"podSelector":{"matchLabels":{"app":false}}}]'
+expect_peer_fail "a boolean label beside a valid one is refused" "matchLabels values must be strings" \
+  '[{"namespaceSelector":{"matchLabels":{"team":"ai","fabric.singleaxis.ai/agent":true}}}]' "${egress_ok}" "${content_ok}"
+expect_peer_fail "a non-string matchExpressions value is refused" \
+  "networkPolicy.ingressFrom[0].namespaceSelector.matchExpressions[0].values must be strings" \
+  '[{"namespaceSelector":{"matchExpressions":[{"key":"tier","operator":"In","values":[1]}]}}]' "${egress_ok}" "${content_ok}"
+expect_peer_fail "a matchLabels list is refused" "matchLabels must be a map" \
+  '[{"namespaceSelector":{"matchLabels":["fabric"]}}]' "${egress_ok}" "${content_ok}"
+expect_peer_fail "an invalid label value is refused without echoing it" "valid Kubernetes label values" \
+  "[{\"namespaceSelector\":{\"matchLabels\":{\"team\":\"${marker} x\"}}}]" "${egress_ok}" "${content_ok}"
+expect_peer_ok "a quoted \"true\" in a values file is accepted" \
+  '[{"namespaceSelector":{"matchLabels":{"fabric.singleaxis.ai/agent":"true"}}}]' "${egress_ok}" "${content_ok}"
+peers "${ingress_ok}" "${egress_ok}" "${content_ok}"
+expect_fail "a boolean monitoring namespace label is refused" \
+  "networkPolicy.monitoringNamespaceSelector.matchLabels values must be strings" \
+  "${peer_args[@]}" --set 'otel-collector.networkPolicy.monitoringNamespaceSelector.matchLabels.monitoring=true'
+expect_fail "outside production a boolean ingress label is refused too" "matchLabels values must be strings" \
+  "${chart_dir}" --set networkPolicy.enabled=true \
+  --set 'networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+
+# Every shipped Helm command that sets a matchLabels value uses --set-string
+# (docs, chart READMEs and these tests alike).
+repo_root="$(cd "${umbrella_dir}/../.." && pwd)"
+bad_docs="$(grep -rn -E --include='*.md' --include='*.sh' --include='*.txt' --include='*.yaml' \
+  -e "--set +'?[^ ]*matchLabels\\.[^ ]*=" \
+  "${repo_root}/docs" "${repo_root}/charts" "${repo_root}/deploy" \
+  | grep -v -F "${BASH_SOURCE[0]##*/}" | sed -E 's/:[0-9]+:.*$//' | sort -u || true)"
+if [[ -z "${bad_docs}" ]]; then
+  pass "every documented and tested matchLabels value is passed with --set-string"
+else
+  fail "matchLabels values set with --set instead of --set-string in: ${bad_docs//$'\n'/ }"
+fi
 
 printf '\n=== One content exporter per Node (H2) ===\n'
 peers "${ingress_ok}" "${egress_ok}" "${content_ok}"

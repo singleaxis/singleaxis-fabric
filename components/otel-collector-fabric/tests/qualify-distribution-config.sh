@@ -112,6 +112,8 @@ extensions:
     directory: ${config_root}/content-queue
     create_directory: true
     fsync: true
+  # Spec 043 H1: refuses every redirect on the OTLP/HTTP exporter.
+  noredirect: {}
 
 receivers:
   otlp:
@@ -169,6 +171,8 @@ exporters:
     # Loopback port 1 is deliberately unreachable. No telemetry is emitted,
     # so the test never contacts an exporter; it only starts the pipeline.
     endpoint: https://127.0.0.1:1
+    middlewares:
+      - id: noredirect
     tls:
       insecure: false
       insecure_skip_verify: false
@@ -200,7 +204,7 @@ exporters:
       max_elapsed_time: 0s
 
 service:
-  extensions: [health_check, file_storage/fabric, file_storage/fabric_content]
+  extensions: [health_check, noredirect, file_storage/fabric, file_storage/fabric_content]
   telemetry:
     logs:
       level: error
@@ -252,6 +256,8 @@ grep -q '^  otlp_http/fabric:' "${runtime}/config.yaml" \
 grep -q '^  file_storage/fabric:' "${runtime}/config.yaml" \
   || fail "file-storage extension is missing"
 grep -q 'storage: file_storage/fabric' "${runtime}/config.yaml" || fail "persistent queue binding is missing"
+grep -q -- '- id: noredirect' "${runtime}/config.yaml" \
+  || fail "the OTLP/HTTP exporter must use the noredirect middleware"
 [[ "$(grep -c 'block_on_overflow: true' "${runtime}/config.yaml")" -eq 2 ]] \
   || fail "both exporters must apply backpressure via block_on_overflow (default false drops records)"
 if grep -n 'batch' "${runtime}/config.yaml" >/dev/null; then
@@ -343,7 +349,18 @@ content_violation_configs() {
   # A credential-bearing destination URL (the secret must not be echoed).
   printf 'exporters:\n  otlp_http/fabric:\n    endpoint: https://user:QUALIFY_SECRET@127.0.0.1:1\n' \
     >"${dir}/bad-content-endpoint.yaml"
-  chmod 0644 "$1" "${dir}"/bad-content-*.yaml
+  # J3: a second tenant on a separate receiver and pipeline is still the
+  # same Node.
+  printf 'receivers:\n  otlp/content-b:\n    protocols:\n      http:\n        endpoint: 127.0.0.1:4320\nexporters:\n  fabriccontent/b:\n    allowed_tenants: [tenant-b]\n    backend: file\n    file:\n      directory: /tmp/fabric-content-b\nservice:\n  pipelines:\n    logs/content-b:\n      receivers: [otlp/content-b]\n      exporters: [fabriccontent/b]\n' \
+    >"${dir}/bad-content-node-tenants.yaml"
+  # J3: a fabriccontent block the gate cannot read (whole-block reference).
+  # shellcheck disable=SC2016 # the reference is literal config text
+  printf 'exporters:\n  fabriccontent: ${env:QUALIFY_CONTENT_BLOCK}\n' \
+    >"${dir}/bad-content-block.yaml"
+  # J4: the OTLP/HTTP exporter without the noredirect middleware.
+  printf 'exporters:\n  otlp_http/fabric:\n    middlewares: []\n' \
+    >"${dir}/bad-redirect.yaml"
+  chmod 0644 "$1" "${dir}"/bad-content-*.yaml "${dir}/bad-redirect.yaml"
 }
 
 # The shipped image's fabric-gate entrypoint must refuse configurations the
@@ -421,7 +438,17 @@ if [[ "${mode}" == "image" ]]; then
     "together allow more than one tenant" --config=/fabric-config-test/bad-content-tenants.yaml
   gate_expect_refusal "${container_name}-endpoint-userinfo" "a credential-bearing destination endpoint" \
     "must not contain user info, a query or a fragment" --config=/fabric-config-test/bad-content-endpoint.yaml
-  printf '%s PASS: image entrypoint refused unprotected pipelines, content misrouting, split tenants, credential URLs, unsafe token material and --set overrides\n' "${prefix}"
+  gate_expect_refusal "${container_name}-node-tenants" "two tenants on separate content receivers of one Node" \
+    "together allow more than one tenant" --config=/fabric-config-test/bad-content-node-tenants.yaml
+  gate_expect_refusal "${container_name}-content-block" "a whole-block fabriccontent reference" \
+    "is not a literal mapping" --config=/fabric-config-test/bad-content-block.yaml
+  gate_expect_refusal "${container_name}-redirect" "an OTLP/HTTP exporter without the noredirect middleware" \
+    "does not list the noredirect middleware" --config=/fabric-config-test/bad-redirect.yaml
+  # Diagnostics identify sources by position and never echo them: a
+  # malformed inline yaml: source carrying an Authorization header.
+  gate_expect_refusal "${container_name}-inline-secret" "a malformed inline config source" \
+    "--config #2 is not a valid YAML mapping" '--config=yaml:exporters: {otlp_http/x: {headers: {Authorization: "Bearer QUALIFY_SECRET"}'
+  printf '%s PASS: image entrypoint refused unprotected pipelines, content misrouting, split tenants, unreadable content blocks, missing redirect refusal, credential URLs, unsafe token material and --set overrides without echoing sources\n' "${prefix}"
 elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
   # Binary mode: the same refusal invariants run through dist/fabric-gate,
   # which resolves the sibling collector and exits non-zero before exec.
@@ -465,7 +492,15 @@ elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
     --config="${runtime}/bad-content-tenants.yaml"
   gate_expect_refusal_bin "a credential-bearing destination endpoint" "must not contain user info, a query or a fragment" \
     --config="${runtime}/bad-content-endpoint.yaml"
-  printf '%s PASS: fabric-gate binary refused unprotected pipelines, content misrouting, split tenants, credential URLs, unsafe token material and --set overrides\n' "${prefix}"
+  gate_expect_refusal_bin "two tenants on separate content receivers of one Node" "together allow more than one tenant" \
+    --config="${runtime}/bad-content-node-tenants.yaml"
+  gate_expect_refusal_bin "a whole-block fabriccontent reference" "is not a literal mapping" \
+    --config="${runtime}/bad-content-block.yaml"
+  gate_expect_refusal_bin "an OTLP/HTTP exporter without the noredirect middleware" "does not list the noredirect middleware" \
+    --config="${runtime}/bad-redirect.yaml"
+  gate_expect_refusal_bin "a malformed inline config source" "--config #2 is not a valid YAML mapping" \
+    '--config=yaml:exporters: {otlp_http/x: {headers: {Authorization: "Bearer QUALIFY_SECRET"}'
+  printf '%s PASS: fabric-gate binary refused unprotected pipelines, content misrouting, split tenants, unreadable content blocks, missing redirect refusal, credential URLs, unsafe token material and --set overrides without echoing sources\n' "${prefix}"
 fi
 
 printf '%s PASS: recorder artifact accepted mTLS ingress, protection, durable OTLP/HTTP export and the content path\n' "${prefix}"

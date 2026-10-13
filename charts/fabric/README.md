@@ -67,14 +67,17 @@ helm upgrade --install fabric-node charts/fabric \
   --values charts/fabric/profiles/shadow-production.yaml \
   --set tenant.id=customer-production \
   --set otel-collector.exporter.endpoint=https://telemetry.customer.example \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
 
 Label the monitored workload namespace with `fabric.singleaxis.ai/agent=true` or
-replace the ingress selector with an operator-approved peer. The documentation
+replace the ingress selector with an operator-approved peer. Pass label values
+with `--set-string` (or quote them in a values file): Kubernetes types
+`matchLabels` as `map<string,string>`, `--set ...=true` produces a boolean, and
+the chart refuses a non-string label value at render time. The documentation
 CIDR is not a working destination. Replace it with the
 customer's approved backend or egress gateway. Provision these Secrets first:
 

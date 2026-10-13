@@ -382,7 +382,7 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
-		if !validCaptureValue(key, value) {
+		if !g.validCaptureValue(key, value) {
 			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
@@ -627,6 +627,7 @@ func (g *guard) applyCaptureProfile(span ptrace.Span) {
 		g.stats.notAllowedRemoved.Add(1)
 		return true
 	})
+	g.applyCaptureLabels(span.Attributes())
 	g.exposeCaptureModel(span.Attributes())
 	g.filterAttributes(span.Attributes(), TraceAllowedFields, "capture-span")
 	g.scopeIDOnlyWhereDefined(span.Attributes())
@@ -663,10 +664,12 @@ func (g *guard) scopeIDOnlyWhereDefined(attrs pcommon.Map) {
 // applyCaptureResource keeps only a well-formed service.name on a resource
 // holding any capture span: the SDK's private capture provider sets nothing
 // else, and in global-tracer mode the host resource it shares with
-// application spans must not ride along with capture records.
+// application spans must not ride along with capture records. By default
+// (capture_labels: pseudonymous) the service.name must be the SDK's
+// svc-<32 hex> pseudonym (J1).
 func (g *guard) applyCaptureResource(attrs pcommon.Map) {
 	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
-		if key == "service.name" && matches(captureServiceNamePattern)(value) {
+		if key == "service.name" && g.validServiceLabel(value) {
 			return false
 		}
 		g.stats.notAllowedRemoved.Add(1)
@@ -683,10 +686,14 @@ func (g *guard) removeAll(attrs pcommon.Map) {
 
 // validCaptureValue closes the values of the fifteen spec 042 keys wherever
 // they appear (resources, scopes, events, links and non-capture spans), with
-// the same validators the capture profile uses.
-func validCaptureValue(key string, value pcommon.Value) bool {
+// the same validators the capture profile uses (and the capture_labels rule
+// for fabric.run.id).
+func (g *guard) validCaptureValue(key string, value pcommon.Value) bool {
 	if _, ok := captureNewKeys[key]; !ok {
 		return true
+	}
+	if key == "fabric.run.id" {
+		return g.validRunIDLabel(value)
 	}
 	return captureProfile[key](value)
 }

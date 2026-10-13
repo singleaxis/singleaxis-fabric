@@ -126,6 +126,50 @@ egress_render="$(helm template ci "${chart_dir}" "${egress_args[@]}")"
 expect_contains "explicit exporter CIDR renders" "${egress_render}" "cidr: 203.0.113.10/32"
 expect_contains "explicit exporter port renders" "${egress_render}" "port: 443"
 
+printf '\n=== Exporter refuses redirects (spec 043 H1, J4) ===\n'
+# expect_noredirect LABEL RENDER: every otlp_http exporter in the rendered
+# collector config lists the noredirect middleware, the extension is defined,
+# and the service enables it (a middleware that is not a started extension
+# fails collector startup).
+expect_noredirect() {
+  local label="$1" render="$2" verdict
+  verdict="$(awk '
+    /^    exporters:$/ { section = "exporters"; next }
+    /^    extensions:$/ { section = "extensions"; next }
+    /^    service:$/ { section = "service"; next }
+    /^    [a-z]/ { section = "" }
+    section == "exporters" && /^      [^ #]/ {
+      if (name != "" && !mw) bad = bad " " name
+      name = ""; mw = 0
+      if ($1 ~ /^otlp_?http(\/|:)/) { name = $1; total++ }
+      next
+    }
+    section == "exporters" && name != "" && /^          - id: noredirect$/ { mw = 1 }
+    section == "extensions" && /^      noredirect: \{\}$/ { defined = 1 }
+    section == "service" && /^        - noredirect$/ { enabled = 1 }
+    END {
+      if (name != "" && !mw) bad = bad " " name
+      if (total == 0) print "no otlp_http exporter rendered"
+      else if (bad != "") print "missing middleware on" bad
+      else if (!defined) print "noredirect extension not defined"
+      else if (!enabled) print "noredirect not in service.extensions"
+      else print "ok"
+    }' <<<"${render}")"
+  if [[ "${verdict}" == "ok" ]]; then
+    pass "${label}"
+  else
+    fail "${label}: ${verdict}"
+  fi
+}
+expect_noredirect "development exporter lists the noredirect middleware" \
+  "$(helm template ci "${chart_dir}" --set exporter.endpoint=https://otlp.example.com --show-only templates/configmap.yaml)"
+expect_noredirect "authenticated exporter lists the noredirect middleware" \
+  "$(helm template ci "${chart_dir}" --set exporter.endpoint=https://otlp.example.com \
+    --set exporter.auth.secret.name=export-auth --set exporter.auth.secret.key=authorization \
+    --show-only templates/configmap.yaml)"
+debug_only="$(helm template ci "${chart_dir}" --show-only templates/configmap.yaml)"
+expect_not_contains "no destination renders no OTLP/HTTP exporter and no unused middleware" "${debug_only}" "noredirect"
+
 printf '\n=== Degenerate peer rejection ===\n'
 expect_fail "empty ingress peer is rejected" "empty peer" \
   "${chart_dir}" --set networkPolicy.enabled=true \
@@ -160,7 +204,7 @@ np_default="$(helm template ci "${chart_dir}" --set networkPolicy.enabled=true \
   --show-only templates/networkpolicy.yaml)"
 expect_not_contains "health port is not opened by default" "${np_default}" "port: 13133"
 np_monitoring="$(helm template ci "${chart_dir}" --set networkPolicy.enabled=true \
-  --set 'networkPolicy.monitoringNamespaceSelector.matchLabels.kubernetes\.io/metadata\.name=monitoring' \
+  --set-string 'networkPolicy.monitoringNamespaceSelector.matchLabels.kubernetes\.io/metadata\.name=monitoring' \
   --show-only templates/networkpolicy.yaml)"
 expect_contains "named monitoring namespace can reach health" "${np_monitoring}" "kubernetes.io/metadata.name: monitoring"
 expect_contains "scoped health rule keeps the health port" "${np_monitoring}" "port: 13133"
@@ -178,7 +222,7 @@ production_args=(
   --values "${profile}"
   --set tenant.id=11111111-1111-4111-8111-111111111111
   --set otel-collector.exporter.endpoint=https://otlp.example.com
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
@@ -188,7 +232,7 @@ expect_fail "production profile requires an operator exporter peer" "exporterEgr
   "${umbrella_dir}" --values "${profile}" \
   --set tenant.id=11111111-1111-4111-8111-111111111111 \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 
 expect_fail "production profile requires an operator ingress peer" "networkPolicy.ingressFrom peer" \
   "${umbrella_dir}" --values "${profile}" \
@@ -204,6 +248,8 @@ expect_contains "production profile names receiver identity Secret" "${productio
 expect_contains "production profile names client CA Secret" "${production_render}" "name: fabric-node-client-ca"
 expect_contains "production profile renders explicit egress peer" "${production_render}" "cidr: 203.0.113.10/32"
 expect_contains "production profile always refreshes a mutable image tag" "${production_render}" "imagePullPolicy: Always"
+expect_noredirect "production exporter lists the noredirect middleware" \
+  "$(helm template ci "${umbrella_dir}" "${production_args[@]}" --show-only charts/otel-collector/templates/configmap.yaml)"
 
 expect_fail "production receiver TLS cannot be disabled" "profile shadow-production requires" \
   "${umbrella_dir}" "${production_args[@]}" \

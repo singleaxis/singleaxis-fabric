@@ -101,6 +101,58 @@ labels; neither restricts anything.
 {{- end -}}
 
 {{/*
+Kubernetes types LabelSelector.matchLabels as map<string,string> and
+matchExpressions[].values as []string. `--set ...matchLabels.k=true` (or an
+unquoted `true`/`1` in a values file) yields a YAML boolean or number, which
+renders unquoted and fails the API server's type check, so the install would
+fail only at apply time. Refuse it at render time and name the --set-string
+fix. A value must also be a valid label value (at most 63 characters,
+alphanumeric at both ends, [-_.A-Za-z0-9] inside). Diagnostics name the field
+only, never a configured value.
+Arguments: (dict "selector" SELECTOR "field" NAME).
+*/}}
+{{- define "otel-collector.validateSelectorTypes" -}}
+{{- $s := .selector -}}
+{{- $f := .field -}}
+{{- $labelValue := "^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$" -}}
+{{- if kindIs "map" $s -}}
+{{- $labels := index $s "matchLabels" -}}
+{{- if and (hasKey $s "matchLabels") (not (kindIs "invalid" $labels)) (not (kindIs "map" $labels)) -}}
+{{- fail (printf "%s.matchLabels must be a map of label names to string values" $f) -}}
+{{- end -}}
+{{- if kindIs "map" $labels -}}
+{{- range $k := keys $labels | sortAlpha -}}
+{{- $v := index $labels $k -}}
+{{- if not (kindIs "string" $v) -}}
+{{- fail (printf "%s.matchLabels values must be strings (Kubernetes types matchLabels as map<string,string>); a boolean or number renders an invalid NetworkPolicy. Pass the value with --set-string, or quote it (\"true\") in a values file" $f) -}}
+{{- end -}}
+{{- if or (gt (len $v) 63) (not (regexMatch $labelValue $v)) -}}
+{{- fail (printf "%s.matchLabels values must be valid Kubernetes label values (at most 63 characters, alphanumeric at both ends, '-', '_' or '.' inside)" $f) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $expressions := index $s "matchExpressions" -}}
+{{- if kindIs "slice" $expressions -}}
+{{- range $j, $e := $expressions -}}
+{{- if kindIs "map" $e -}}
+{{- $values := index $e "values" -}}
+{{- if and (hasKey $e "values") (not (kindIs "invalid" $values)) (not (kindIs "slice" $values)) -}}
+{{- fail (printf "%s.matchExpressions[%d].values must be a list of strings" $f $j) -}}
+{{- end -}}
+{{- if kindIs "slice" $values -}}
+{{- range $v := $values -}}
+{{- if not (kindIs "string" $v) -}}
+{{- fail (printf "%s.matchExpressions[%d].values must be strings (Kubernetes types them as []string); pass them with --set-string, or quote them in a values file" $f $j) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Every NetworkPolicyPeer an operator supplies must name an effective
 restriction; anything that selects every source/destination silently bypasses
 the explicit-peers model and is rejected at render time, in every profile:
@@ -145,6 +197,11 @@ Diagnostics name the field and index only, never a configured value.
 {{- fail (printf "%s[%d].ipBlock cannot be combined with namespaceSelector or podSelector in one peer" $.field $i) -}}
 {{- end -}}
 {{- else -}}
+{{- range $sel := list "namespaceSelector" "podSelector" -}}
+{{- if hasKey $peer $sel -}}
+{{- include "otel-collector.validateSelectorTypes" (dict "selector" (index $peer $sel) "field" (printf "%s[%d].%s" $.field $i $sel)) -}}
+{{- end -}}
+{{- end -}}
 {{- $nsRestricts := and (hasKey $peer "namespaceSelector") (include "otel-collector.selectorRestricts" (index $peer "namespaceSelector")) -}}
 {{- $podRestricts := and (hasKey $peer "podSelector") (include "otel-collector.selectorRestricts" (index $peer "podSelector")) -}}
 {{- if not (or $nsRestricts $podRestricts) -}}
@@ -164,6 +221,7 @@ Diagnostics name the field and index only, never a configured value.
 {{- include "otel-collector.validatePeers" (dict "peers" $ee.to "field" "networkPolicy.exporterEgress.to") -}}
 {{- include "otel-collector.validatePeers" (dict "peers" $np.egressTo "field" "networkPolicy.egressTo") -}}
 {{- if and (kindIs "map" $np.monitoringNamespaceSelector) (gt (len $np.monitoringNamespaceSelector) 0) -}}
+{{- include "otel-collector.validateSelectorTypes" (dict "selector" $np.monitoringNamespaceSelector "field" "networkPolicy.monitoringNamespaceSelector") -}}
 {{- if not (include "otel-collector.selectorRestricts" $np.monitoringNamespaceSelector) -}}
 {{- fail "networkPolicy.monitoringNamespaceSelector must name matchLabels or an In/Exists matchExpression; an empty or exclusion-only selector would open the health port to every namespace" -}}
 {{- end -}}

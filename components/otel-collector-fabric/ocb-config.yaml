@@ -4,8 +4,8 @@
 #   ocb --config ocb-config.yaml
 #
 # This produces a custom collector binary at ./dist/otelcol-fabric that
-# includes only the recorder's metadata protection processor and content
-# writer (spec 043) alongside the standard contrib receiver, durable storage,
+# includes only the recorder's metadata protection processor, content
+# writer (spec 043) and redirect-refusing client middleware alongside the standard contrib receiver, durable storage,
 # and exporter components.
 
 dist:
@@ -26,6 +26,12 @@ extensions:
   # Terminates token-authenticated OTLP ingress for non-Kubernetes
   # deployments — wired on both receivers by the compose production overlay.
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
+  # HTTP client middleware that refuses redirects (spec 043 H1): every
+  # otlphttp exporter lists it (fabric-gate enforces), so a 3xx from a
+  # destination is a retryable failure, never a re-send of the body and
+  # Authorization header to another location and never a false success.
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
+    path: ./extension/noredirectextension
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
@@ -62,3 +68,4 @@ replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver => ./receiver/auditreceiver
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter => ./exporter/fabriccontentexporter
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension => ./extension/noredirectextension

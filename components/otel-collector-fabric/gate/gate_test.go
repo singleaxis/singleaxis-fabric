@@ -170,6 +170,8 @@ func TestShippedConfigsPass(t *testing.T) {
 		"../../../deploy/compose/collector-config/collector.yaml",
 		"../../../deploy/compose/collector-config/collector-production.yaml",
 		"../../../deploy/compose/collector-config/collector-host-monitor.yaml",
+		// The agent-orchestration demo boots the same image through fabric-gate.
+		"../../../examples/agent-orchestration/collector.demo.yaml",
 	} {
 		t.Run(rel, func(t *testing.T) {
 			raw, err := os.ReadFile(rel)

@@ -645,3 +645,37 @@ def test_verify_prod_does_not_claim_content_delivery() -> None:
     assert "## 5. Verify a run" in (REPO_ROOT / "docs" / "wire-capture-deployment.md").read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("collector.yaml",),
+        ("collector-production.yaml",),
+        ("collector.yaml", "collector-content-s3.yaml"),
+        ("collector-production.yaml", "collector-content-s3.yaml"),
+    ],
+    ids=lambda names: "+".join(names),
+)
+def test_effective_config_has_one_tenant_across_all_content_exporters(
+    names: tuple[str, ...],
+) -> None:
+    """J3: fabric-gate counts every fabriccontent exporter of the effective config,
+    used or not and whatever receiver it sits behind; each must be a literal map
+    (not a whole-block ``${env:...}``) and together they name one tenant without
+    ``allow_multiple_tenants``. The S3 overlay leaves the base exporter defined."""
+    config: dict[str, Any] = {}
+    for name in names:
+        _deep_merge(config, _collector(name))
+    content = {
+        name: exporter
+        for name, exporter in config["exporters"].items()
+        if name.split("/")[0] == "fabriccontent"
+    }
+    assert content
+    tenants: set[str] = set()
+    for name, exporter in content.items():
+        assert isinstance(exporter, dict), name
+        assert "allow_multiple_tenants" not in exporter, name
+        tenants.update(exporter["allowed_tenants"])
+    assert tenants == {"${env:FABRIC_TENANT_ID}"}

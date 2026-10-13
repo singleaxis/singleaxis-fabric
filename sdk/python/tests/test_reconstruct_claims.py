@@ -242,10 +242,11 @@ def test_a_received_response_without_evidence_blocks_completeness(
     assert [s["verdict"] for s in document["scopes"]] == ["partial"]
 
 
-@pytest.mark.parametrize("state", ["error", "abandoned"])
-def test_states_without_a_response_need_no_response_evidence(capture: Capture, state: str) -> None:
+def test_an_error_before_any_response_needs_no_response_evidence(capture: Capture) -> None:
+    """``error`` with no HTTP status: the transport failed before a response arrived. (An
+    ``abandoned`` stream did receive one: ``test_wire_hardening_round4``.)"""
     capture.run_start(R)
-    capture.exchange(TURN[0], None, run_id=R, state=state, http_status=None)
+    capture.exchange(TURN[0], None, run_id=R, state="error", http_status=None)
     capture.run_end(R)
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "complete_for_observed_scopes", run["gaps"]

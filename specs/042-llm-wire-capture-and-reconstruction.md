@@ -2,7 +2,7 @@
 title: LLM wire capture and run reconstruction
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 7
+revision: 8
 last_updated: 2026-10-13
 owner: recorder-engineering
 depends_on: 027, 029, 032
@@ -40,6 +40,29 @@ resend logic and the private `BatchSpanProcessor` on the capture path);
 pairs markers by scope; model names outside an allowlist are emitted as
 `m-<16 hex>`; the boot gate separates content and telemetry pipelines.
 Sections below are marked *(→ 043)* where 043 wins.
+
+**2026-10-13 — revision 8 (Sol re-check of `03484d5`; decisions in 043
+rev 4).** Verified gaps: a `error`/`abandoned` exchange without response
+evidence still verified complete; a duplicate with a malformed digest was
+discarded before its claims counted; operator labels (source id,
+`service.name`, tenant) and numeric model suffixes left capture or the report
+unchanged. Revision 8 decides:
+
+- **G2 extended.** An `abandoned` exchange, and an `error` one whose record
+  carries an HTTP status, received a response: without its digest it is
+  `response_not_recorded` (partial) (§9 step 5).
+- **G6 malformed records.** An exchange span with a valid identity (exchange
+  id, source, epoch, sequence, run id, scope id when present) but malformed
+  payload fields keeps every claim it makes and is a `digest_mismatch`
+  (`malformed_record`, partial) of every run and scope it names; its payload
+  is never used or reported. A malformed identity refuses the input (exit
+  `2`, fixed text naming only the span position). A `run_start`/`run_end`
+  naming a valid scope id with malformed other fields bounds nothing and
+  leaves that scope `conflict` (`malformed_record`) (§9 step 1).
+- **Labels (043 J1).** Source ids and `service.name` leave capture as `s-`/
+  `svc-` pseudonyms unless `FABRIC_WIRE_LABELS=clear`; the report shows
+  tenant, source and run ids only in pseudonymous form (§6, §9).
+- Model names follow 043 §7 J2 (numeric suffixes).
 
 **2026-10-13 — revision 7 (Sol review of `faac3d2`; decisions in 043
 rev 3).** The verifier claimed a reused run id complete although a whole
@@ -287,8 +310,9 @@ realtime/WebSocket and gRPC.
   and without bound); Fabric's exit handler flushes and shuts it down
   (§4.5). Its resource is only `service.name`
   (`OTEL_SERVICE_NAME` when it matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`,
-  else `fabric-wire`); `OTEL_RESOURCE_ATTRIBUTES` and resource detectors
-  are ignored. The exporter follows
+  else `fabric-wire`, emitted as its `svc-` pseudonym unless
+  `FABRIC_WIRE_LABELS=clear`, 043 J1); `OTEL_RESOURCE_ATTRIBUTES` and
+  resource detectors are ignored. The exporter follows
   `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`, then `OTEL_EXPORTER_OTLP_PROTOCOL`:
   `http/protobuf` (default) or `grpc` (needs
   `opentelemetry-exporter-otlp-proto-grpc`); endpoint, certificate, client
@@ -436,11 +460,13 @@ ref and `truncated` is true.
   pseudonym, keyed by `FABRIC_WIRE_ID_KEY` when set.)* There are no per-run
   counters and no run index.
 - **Customer-chosen identifiers.** A caller-supplied run id never leaves
-  the agent in clear (043 H3). `FABRIC_SOURCE_ID` and `OTEL_SERVICE_NAME`
-  are checked for shape only and travel on spans; the tenant id names store
-  paths and descriptors. These are operator-chosen labels and must be
-  opaque: none of them may contain personal data or secrets, because the
-  Node cannot tell a patient number from a job id.
+  the agent in clear (043 H3). *(043 J1, revision 8:)* `FABRIC_SOURCE_ID`
+  and `OTEL_SERVICE_NAME` travel only as their `s-`/`svc-` pseudonyms
+  unless `FABRIC_WIRE_LABELS=clear`; the tenant id names store paths and
+  descriptors (routing) and appears in the report only as `t-` + 32 hex.
+  The labels should still be opaque: in clear mode, and in the store layout,
+  they are exported unchanged, and the Node cannot tell a patient number
+  from a job id.
 - *(→ 043 §2: with the spool, loss ranges and run/final markers are
   spooled records; `LossExporter`, requeue and resend are removed.)*
   **Loss records** (`fabric.capture_loss`): `{reason, count,
@@ -626,10 +652,10 @@ checks carry the object id, digest, length and verification result, never
 the location the store resolved (no path, no `s3://` URI). Input files
 are named by digest, format and record count only: neither the span file
 paths nor the store root given on the command line appear (a path can name
-a user's home directory). Run ids appear as recorded: capture writes a
-caller-supplied run id only as its `r-` pseudonym (043 H3). The report is
-still customer data: it names scopes, sources, exchanges and the tenant,
-operator-chosen labels that must not contain personal data (§6).
+a user's home directory). *(Revision 8, 043 J1 and §10:)* tenant, source
+and run ids appear only in pseudonymous form (`t-`, `s-`, `r-`, keyed by
+`--id-key-env`), clear values from older capture projected through capture's
+own function. The report is still customer data.
 
 **Algorithm.**
 
@@ -638,7 +664,10 @@ operator-chosen labels that must not contain personal data (§6).
    kept, and every claim each makes counts: its sequence is claimed, it is
    a member of the run and scope it names, and each such exchange gets a
    `digest_mismatch` (`conflicting_duplicate`, partial) in every run it
-   appears in. A sequence claimed by conflicting observations, or by more
+   appears in. *(Revision 8, G6:)* an observation with a valid identity but
+   malformed payload fields counts the same way and is also a
+   `digest_mismatch` (`malformed_record`, partial) of the run and scope it
+   names; a malformed identity refuses the input. A sequence claimed by conflicting observations, or by more
    than one exchange id (`sequence_conflict` on each exchange), is
    *conflicted*: any window holding it (or, for a window without a scope,
    adjacent to it) gets a `digest_mismatch` gap (`conflicting_claim`,
@@ -700,8 +729,10 @@ operator-chosen labels that must not contain personal data (§6).
    `digest_mismatch` (partial). A captured body without a ref under
    `store_status` `failed`/`partial` → `missing_object` (partial);
    `disabled` → `checks.bytes = skipped`. `truncated` → `truncated`
-   (partial). An exchange whose `response_state` is `complete` or
-   `closed_early` received a response, so a span without
+   (partial). An exchange whose `response_state` is `complete`,
+   `closed_early` or `abandoned`, or that carries
+   `http.response.status_code` (an `error` after the response arrived,
+   revision 8), received a response, so a span without
    `fabric.wire.response_sha256` → `missing_object` (`object_role:
    response`, `response_not_recorded`, partial), with or without a store:
    the record proves only the request.

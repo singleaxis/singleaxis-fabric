@@ -29,7 +29,7 @@ from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
 from fabric._model_names import parse_model_allowlist
-from fabric.reconstruct._ids import ID_KEY_ENV, MIN_ID_KEY_BYTES, run_id_pseudonym
+from fabric.reconstruct._ids import ID_KEY_ENV, MIN_ID_KEY_BYTES
 from fabric.reconstruct._inputs import ReconstructInputError
 from fabric.reconstruct._report import COMPLETE, COMPLETE_VERDICTS
 from fabric.reconstruct._verify import reconstruct
@@ -111,8 +111,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--id-key-env",
         metavar="NAME",
-        help=f"environment variable holding the run-id key (default: {ID_KEY_ENV}; when the "
-        "default is unset, run ids are pseudonymised without a key, as capture does)",
+        help=f"environment variable holding the label key (default: {ID_KEY_ENV}; when the "
+        "default is unset, tenant, source and run ids are pseudonymised without a key, as "
+        "capture does)",
     )
     parser.add_argument(
         "--out",
@@ -237,23 +238,6 @@ def _id_key(args: argparse.Namespace, environ: Mapping[str, str]) -> bytes | Non
     return key
 
 
-def _wanted_runs(args: argparse.Namespace, environ: Mapping[str, str]) -> set[str] | None:
-    """``--run`` values as the record carries them: as given, and as their pseudonym.
-
-    Capture emits a caller-supplied run id only as its ``r-`` pseudonym
-    (decision H3); generated ``trace:``/``source:`` ids and an ``r-`` value
-    given directly match as given.
-    """
-
-    if args.runs is None:
-        return None
-    key = _id_key(args, environ)
-    wanted: set[str] = set()
-    for value in args.runs:
-        wanted.update((value, run_id_pseudonym(value, key)))
-    return wanted
-
-
 def _write_report(path: str, text: str) -> None:
     """Write ``text`` to ``path`` atomically, readable by the owner only.
 
@@ -289,12 +273,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         allowlist = _model_allowlist(args, os.environ)
+        key = _id_key(args, os.environ)
         document = reconstruct(
             args.spans,
             store=_store(args),
             tenant_id=args.tenant,
-            run_ids=_wanted_runs(args, os.environ),
+            # --run: a clear run id given to fabric.wire.run(), its r- pseudonym or a
+            # trace:/source: fallback id, projected like the report (decisions H3, J1).
+            run_ids=args.runs,
             model_allowlist=allowlist,
+            id_key=key,
         )
     except ReconstructInputError as exc:
         _fail(str(exc))

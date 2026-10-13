@@ -29,15 +29,21 @@ from typing import Any
 
 import pytest
 
+from fabric._sequence import run_pseudonym as rid
+from fabric._sequence import source_label
 from fabric.content_store.local import LocalFilesystemContentStore
 from fabric.reconstruct import ReconstructInputError, reconstruct
 from fabric.reconstruct.__main__ import main
+from fabric.reconstruct._ids import report_tenant_id
 from fabric.reconstruct._inputs import pseudonym as pid
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAPTURE_ROOT = REPO_ROOT / "contracts" / "capture" / "v1"
 TENANT = "tenant-a"
-SOURCE = "wire-3f9a1c2b7d4e5f60"
+# Current capture emits source ids as s- pseudonyms and caller run ids as r- pseudonyms
+# (decisions J1, H3): the report keeps those forms; legacy clear values are projected.
+SOURCE = source_label("wire-3f9a1c2b7d4e5f60")
+SOURCE_2 = source_label("wire-0000000000000002")
 EPOCH = 1791331200000000000
 TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 RUN = f"trace:{TRACE_ID}"
@@ -558,7 +564,8 @@ def test_clean_three_turn_react_run_is_complete(capture: Capture) -> None:
             "final_heartbeat_sequence": 2,
         }
     ]
-    assert document["inputs"]["store"] == {"kind": "local", "tenant_id": TENANT}
+    tenant = report_tenant_id(TENANT)  # the report never names the tenant in clear (J1)
+    assert document["inputs"]["store"] == {"kind": "local", "tenant_id": tenant}
 
 
 def test_report_carries_no_content(capture: Capture) -> None:
@@ -652,7 +659,7 @@ def test_missing_range_split_into_loss_and_unexplained_parts(capture: Capture) -
 
 
 def test_loss_inside_open_run_window_is_partial_via_markers(capture: Capture) -> None:
-    scoped = "agent-run-7"
+    scoped = rid("agent-run-7")
     other = "trace:" + "9" * 32
     capture.exchange(*react_turns()[0], run_id=other)  # 0
     capture.run_start(scoped)  # last_sequence 0
@@ -674,7 +681,7 @@ def test_loss_inside_open_run_window_is_partial_via_markers(capture: Capture) ->
 
 def test_without_run_end_a_later_loss_is_never_complete(capture: Capture) -> None:
     """Review fix: a run_start without its run_end leaves the run's end unknown."""
-    scoped = "agent-run-8"
+    scoped = rid("agent-run-8")
     other = "trace:" + "9" * 32
     capture.run_start(scoped)  # -1
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
@@ -701,9 +708,9 @@ def test_without_run_end_a_later_loss_is_never_complete(capture: Capture) -> Non
 
 def test_run_killed_inside_scope_is_not_complete(capture: Capture) -> None:
     """Review fix: run_start, two calls, flush, then a crash before run_end."""
-    capture.run_start("agent-run-k")  # -1
-    capture.exchange(*react_turns()[0], run_id="agent-run-k")  # 0
-    capture.exchange(*react_turns()[0], run_id="agent-run-k")  # 1
+    capture.run_start(rid("agent-run-k"))  # -1
+    capture.exchange(*react_turns()[0], run_id=rid("agent-run-k"))  # 0
+    capture.exchange(*react_turns()[0], run_id=rid("agent-run-k"))  # 1
     capture.periodic()  # 1
     # seq 2 is allocated, then SIGKILL: no span, no loss, no run_end.
     run = only_run(capture.reconstruct())
@@ -718,7 +725,7 @@ def test_back_to_back_runs_and_reread_files_dedupe_by_logical_identity(
     capture: Capture, tmp_path: Path
 ) -> None:
     """Back-to-back run() blocks repeat a last_sequence; a re-read file repeats spans."""
-    scoped = "agent-run-p"
+    scoped = rid("agent-run-p")
     capture.run_start(scoped)  # -1
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
     capture.run_end(scoped)  # 0
@@ -767,10 +774,10 @@ def test_unscoped_run_ignores_losses_before_its_first_call(capture: Capture) -> 
 
 
 def test_marker_only_run_with_lost_calls_is_partial(capture: Capture) -> None:
-    capture.run_start("agent-run-9")  # -1
+    capture.run_start(rid("agent-run-9"))  # -1
     capture.skip()  # 0: the run's only call, lost
     capture.loss("queue_full", 0)
-    capture.run_end("agent-run-9")  # 0
+    capture.run_end(rid("agent-run-9"))  # 0
     run = only_run(capture.reconstruct())
     assert run["exchanges"] == []
     assert run["verdict"] == "partial"
@@ -855,7 +862,7 @@ def test_retried_run_start_never_closes_a_run(capture: Capture) -> None:
     made two markers look like an entry/exit pair. Deduplicated by logical
     identity it is one run_start without a run_end.
     """
-    scoped = "open-run"
+    scoped = rid("open-run")
     capture.run_start(scoped)  # -1
     capture.repeat()  # the retry: same record, new span id
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
@@ -869,7 +876,7 @@ def test_retried_run_start_never_closes_a_run(capture: Capture) -> None:
 
 
 def test_retried_run_start_with_a_final_heartbeat_is_still_unverified(capture: Capture) -> None:
-    scoped = "open-run"
+    scoped = rid("open-run")
     capture.run_start(scoped)
     capture.repeat()  # retry duplicate
     capture.exchange(*react_turns()[0], run_id=scoped)
@@ -887,7 +894,7 @@ def test_clean_final_heartbeat_completes_an_unmarked_run(capture: Capture) -> No
 
 
 def test_closed_run_markers_complete_a_run_without_a_final_heartbeat(capture: Capture) -> None:
-    scoped = "agent-run-c"
+    scoped = rid("agent-run-c")
     capture.run_start(scoped)
     capture.repeat()  # a retried duplicate is harmless
     for request, response in react_turns():
@@ -908,7 +915,7 @@ def test_closed_run_markers_complete_a_run_without_a_final_heartbeat(capture: Ca
 
 
 def test_second_run_block_without_its_run_end_is_not_closed(capture: Capture) -> None:
-    scoped = "agent-run-twice"
+    scoped = rid("agent-run-twice")
     capture.run_start(scoped)  # -1
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
     capture.run_end(scoped)  # 0
@@ -922,7 +929,7 @@ def test_second_run_block_without_its_run_end_is_not_closed(capture: Capture) ->
 
 
 def test_exchange_after_run_end_is_outside_the_markers(capture: Capture) -> None:
-    scoped = "agent-run-leak"
+    scoped = rid("agent-run-leak")
     capture.run_start(scoped)  # -1
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
     capture.run_end(scoped)  # 0
@@ -934,19 +941,19 @@ def test_exchange_after_run_end_is_outside_the_markers(capture: Capture) -> None
 
 
 def test_run_end_alone_never_closes_a_run(capture: Capture) -> None:
-    capture.exchange(*react_turns()[0], run_id="agent-run-e")  # 0
-    capture.run_end("agent-run-e")  # 0; the run_start was lost
+    capture.exchange(*react_turns()[0], run_id=rid("agent-run-e"))  # 0
+    capture.run_end(rid("agent-run-e"))  # 0; the run_start was lost
     capture.heartbeat()
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "unverified"
 
 
 def test_open_run_with_only_a_run_start_is_reported_unverified(capture: Capture) -> None:
-    capture.run_start("agent-run-s")  # -1
+    capture.run_start(rid("agent-run-s"))  # -1
     capture.skip()  # 0: its only call, lost with the process
     capture.periodic()
     run = only_run(capture.reconstruct())
-    assert run["run_id"] == "agent-run-s"
+    assert run["run_id"] == rid("agent-run-s")
     assert run["verdict"] == "partial"  # sequence 0 is known missing inside its window
     assert ("tail_unverified", "run_not_closed") in real_gaps(run)
 
@@ -964,20 +971,18 @@ def test_activity_after_the_final_heartbeat_reopens_the_epoch(capture: Capture) 
 
 def test_an_unscoped_exchange_on_another_source_keeps_a_scoped_run_open(tmp_path: Path) -> None:
     first = Capture(tmp_path, id_prefix="a")
-    first.run_start("agent-run-m")
-    first.exchange(*react_turns()[0], run_id="agent-run-m")
-    first.run_end("agent-run-m")
-    second = Capture(tmp_path, source_id="wire-0000000000000002", id_prefix="b")
-    second.exchange(*react_turns()[0], run_id="agent-run-m")
+    first.run_start(rid("agent-run-m"))
+    first.exchange(*react_turns()[0], run_id=rid("agent-run-m"))
+    first.run_end(rid("agent-run-m"))
+    second = Capture(tmp_path, source_id=SOURCE_2, id_prefix="b")
+    second.exchange(*react_turns()[0], run_id=rid("agent-run-m"))
     second.heartbeat()  # final, but the run is scoped and this call is in no scope
     first.rows.extend(second.rows)
     run = only_run(first.reconstruct())
     assert run["verdict"] == "unverified"
     assert ("tail_unverified", "exchange_outside_run_markers") in real_gaps(run)
     unscoped = [w for w in run["declared_scope"]["windows"] if "scope_id" not in w]
-    assert [(w["source_id"], "closed_by" in w) for w in unscoped] == [
-        ("wire-0000000000000002", False)
-    ]
+    assert [(w["source_id"], "closed_by" in w) for w in unscoped] == [(SOURCE_2, False)]
 
 
 @pytest.mark.parametrize(
@@ -985,20 +990,20 @@ def test_an_unscoped_exchange_on_another_source_keeps_a_scoped_run_open(tmp_path
     [
         {"fabric.heartbeat.kind": "shutdown"},  # outside the closed vocabulary
         {"fabric.heartbeat.kind": "run_end"},  # a marker that names no run
-        {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "agent-run-x"},  # 042: no scope
+        {"fabric.heartbeat.kind": "run_end", "fabric.run.id": rid("agent-run-x")},  # 042: no scope
         {
             "fabric.heartbeat.kind": "run_end",
-            "fabric.run.id": "agent-run-x",
+            "fabric.run.id": rid("agent-run-x"),
             "fabric.run.scope_id": "00000001-0000-4000-8000-00000000000Z",  # not a uuid4
         },
-        {"fabric.heartbeat.kind": "final", "fabric.run.id": "agent-run-x"},
+        {"fabric.heartbeat.kind": "final", "fabric.run.id": rid("agent-run-x")},
     ],
 )
 def test_malformed_heartbeat_kinds_never_close_a_run(
     capture: Capture, attributes: dict[str, Any]
 ) -> None:
-    capture.run_start("agent-run-x")
-    capture.exchange(*react_turns()[0], run_id="agent-run-x")
+    capture.run_start(rid("agent-run-x"))
+    capture.exchange(*react_turns()[0], run_id=rid("agent-run-x"))
     capture._record(
         "fabric.capture_heartbeat",
         {"fabric.heartbeat.last_sequence": capture.sequence - 1, **attributes},
@@ -1016,7 +1021,7 @@ def test_codex_tail_probe_spans_are_never_complete(tmp_path: Path) -> None:
     """
     for retried in (False, True):
         capture = Capture(tmp_path / str(retried))
-        run_id = "open-run" if retried else RUN
+        run_id = rid("open-run") if retried else RUN
         if retried:
             capture.heartbeat(run_id=run_id, kind=None)  # entry marker
             capture.heartbeat(run_id=run_id, kind=None)  # its retry, new span id
@@ -1469,9 +1474,11 @@ def test_run_filter_and_run_order(capture: Capture) -> None:
     capture.exchange(*react_turns()[0], run_id="run-a")
     capture.heartbeat()
     document = capture.reconstruct()
-    assert [run["run_id"] for run in document["runs"]] == ["run-a", "run-b"]
+    # Legacy clear run ids are reported as their r- pseudonyms (J1) and selected either way.
+    assert [run["run_id"] for run in document["runs"]] == sorted([rid("run-a"), rid("run-b")])
     filtered = capture.reconstruct(run_ids=["run-b"])
-    assert [run["run_id"] for run in filtered["runs"]] == ["run-b"]
+    assert [run["run_id"] for run in filtered["runs"]] == [rid("run-b")]
+    assert capture.reconstruct(run_ids=[rid("run-b")])["runs"] == filtered["runs"]
     assert capture.reconstruct(run_ids=["nope"])["runs"] == []
 
 

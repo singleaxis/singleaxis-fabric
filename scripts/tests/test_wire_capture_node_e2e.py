@@ -32,6 +32,9 @@ and proves, against the running stack:
   token appears in the sink output, the raw delivered bytes, the Node logs
   or the Node's telemetry queue volume (while the content store does hold
   the content);
+- by default (spec 043 J1) the agents' clear source ids, service names and
+  the tenant id appear in none of the sink output, the delivered bytes, the
+  Node logs or the reconstruction reports: only their s-/svc-/t- pseudonyms;
 - the run reconstructs ``complete_for_declared_scope`` with zero gaps;
 - spans accepted while the destination is down survive a Node restart in
   the persistent queue and arrive afterwards, still reconstructing cleanly;
@@ -72,6 +75,7 @@ from _wire_capture_common import (
     compose_available,
     free_port,
     production_config_with_tls,
+    pseudonym,
     spool_header,
     spool_records,
     volume_grep,
@@ -101,6 +105,11 @@ ID_KEY = f"{MARK}_idkey"
 SECRET_MARKERS = [
     API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token", TRACE_STATE, ID_KEY
 ]  # fmt: skip
+
+
+def source_of(service: str) -> str:
+    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1)."""
+    return f"{MARK}-src-{service}"
 
 # Spec 042 §8: the fifteen capture keys, plus spec 043's run scope id, plus
 # the reused, already allowlisted keys a capture span may carry. Anything
@@ -197,7 +206,10 @@ class Stack:
         token_file.write_text(INGRESS_TOKEN, "utf-8")
         token_file.chmod(0o644)
         write_tls(self.tls)
-        self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH)
+        self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
+        # Clear labels the agents were given, and every report: the J1 leak scan.
+        self.services: set[str] = set()
+        self.reports: list[str] = []
         self.config = root / "collector-production.yaml"
         production_config_with_tls(self.config)
         self.override = root / "compose.override.yml"
@@ -343,6 +355,7 @@ class Stack:
     # -- agent ---------------------------------------------------------------
 
     def agent_env(self, service: str, spool: Path, token: str) -> dict[str, str]:
+        self.services.add(service)
         base = {
             k: v for k, v in os.environ.items()
             if not k.startswith(("FABRIC_", "OTEL_", "AWS_")) and k != "PYTHONPATH"
@@ -359,6 +372,8 @@ class Stack:
             "FABRIC_WIRE_SPOOL_DIR": str(spool),
             "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
             "FABRIC_WIRE_ID_KEY": ID_KEY,
+            # Default labels (no FABRIC_WIRE_LABELS): leave only as s-/svc- (J1).
+            "FABRIC_SOURCE_ID": source_of(service),
             "OTEL_SERVICE_NAME": service,
             "OTEL_EXPORTER_OTLP_ENDPOINT": f"https://127.0.0.1:{self.ports['otlp_http']}",
             "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=" + quote(f"Bearer {token}"),
@@ -410,10 +425,15 @@ class Stack:
         result = subprocess.run(
             [sys.executable, "-m", "fabric.reconstruct", "--spans", str(self.records),
              "--store-root", str(store), "--tenant", TENANT, "--out", str(out)],
+            env={**os.environ, "FABRIC_WIRE_ID_KEY": ID_KEY},
             capture_output=True, text=True, timeout=300, check=False,
         )  # fmt: skip
         assert result.returncode in (0, 1), f"reconstruct usage error:\n{result.stderr}"
-        return result.returncode, json.loads(out.read_text("utf-8"))
+        text = out.read_text("utf-8")
+        self.reports.append(text + result.stdout + result.stderr)
+        report: dict[str, Any] = json.loads(text)
+        _assert_report_labels(report, text)
+        return result.returncode, report
 
 
 @pytest.fixture(scope="module")
@@ -445,6 +465,33 @@ def _store_descriptors(store: Path) -> dict[str, dict[str, Any]]:
     }
 
 
+def _assert_report_labels(report: dict[str, Any], text: str) -> None:
+    """J1: the report names the tenant only as t-, sources only as s-."""
+    assert report["inputs"]["store"]["tenant_id"] == pseudonym("t-", TENANT, ID_KEY)
+    assert TENANT not in text, "the clear tenant id appeared in a report"
+    sources = set(_values_of(report, "source_id"))
+    assert sources and all(re.fullmatch(r"s-[0-9a-f]{32}", s) for s in sources), sources
+
+
+def _values_of(node: Any, key: str) -> Iterator[Any]:
+    """Every value stored under ``key`` anywhere in a JSON document."""
+    if isinstance(node, dict):
+        for name, value in node.items():
+            if name == key:
+                yield value
+            yield from _values_of(value, key)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _values_of(item, key)
+
+
+def _label_markers(stack: Stack) -> list[str]:
+    """Clear labels that must never leave an agent by default (J1), plus the tenant."""
+    return sorted(
+        {TENANT} | stack.services | {source_of(service) for service in stack.services}
+    )
+
+
 def _assert_no_leak(stack: Stack) -> None:
     sink_text = stack.records.read_text("utf-8")
     raw = stack.sink.raw_bytes()
@@ -455,6 +502,19 @@ def _assert_no_leak(stack: Stack) -> None:
         assert marker not in sink_text, f"{marker} reached the decoded sink output"
         assert marker.encode() not in raw, f"{marker} reached the delivered OTLP bytes"
         assert marker not in logs, f"{marker} appeared in the Node logs"
+    # J1: pseudonymous labels by default. The scan is not vacuous: some agent's
+    # svc-/s- pseudonyms reached the sink.
+    assert any(
+        pseudonym("svc-", service, ID_KEY) in sink_text
+        and pseudonym("s-", source_of(service), ID_KEY) in sink_text
+        for service in stack.services
+    ), "a label leak scan would be vacuous"
+    reports = "\n".join(stack.reports)
+    for marker in _label_markers(stack):
+        assert marker not in sink_text, f"clear label {marker} reached the sink"
+        assert marker.encode() not in raw, f"clear label {marker} reached the OTLP bytes"
+        assert marker not in logs, f"clear label {marker} appeared in the Node logs"
+        assert marker not in reports, f"clear label {marker} appeared in a report"
     assert volume_grep(f"{stack.project}_fabric-queue", MARK) == "", (
         "a marker persisted in the Node's telemetry queue volume"
     )
@@ -736,6 +796,11 @@ def test_wrong_ingress_token_is_rejected_and_agent_is_unaffected(stack: Stack) -
         for h in headers if h["record_kind"] == "exchange"
     }  # fmt: skip
     assert len(rejected_ids) == 3, [h["record_kind"] for h in headers]
+    # J1: undelivered records carry the source only as its pseudonym.
+    spooled = b"".join(path.read_bytes() for path in spool_records(bad.spool))
+    assert pseudonym("s-", source_of(bad.service), ID_KEY).encode() in spooled
+    for label in (bad.service, source_of(bad.service)):
+        assert label.encode() not in spooled, f"clear label {label} was spooled"
 
     # Barrier: a correctly authenticated run sent afterwards arrives, so
     # anything the rejected agent sent would have arrived by now.

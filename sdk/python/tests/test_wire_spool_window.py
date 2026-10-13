@@ -153,6 +153,10 @@ def _read_until(process: subprocess.Popen[str], *markers: str) -> None:
 COMPLETE = ("complete_for_declared_scope", "complete_for_observed_scopes")
 
 
+def _exchange_ids(node: RecordingNode) -> set[str]:
+    return {str(span["fabric.wire.exchange_id"]) for span in node.named("fabric.model_call")}
+
+
 def _verdicts(node: RecordingNode, tmp_path: Path) -> dict[str, dict[str, Any]]:
     spans = tmp_path / "spans.jsonl"
     with node.lock:
@@ -189,7 +193,7 @@ def test_sigkill_inside_the_window_is_never_complete(
                 for b in node.named("fabric.capture_heartbeat")
             ), 30)  # fmt: skip
         delivered = block_at - 1
-        assert wait_for(lambda: len(node.named("fabric.model_call")) == delivered, 30)
+        assert wait_for(lambda: len(_exchange_ids(node)) == delivered, 30)
         os.kill(agent.pid, signal.SIGKILL)  # inside the window: worker parked before the write
         agent.wait(10)
     finally:
@@ -199,8 +203,10 @@ def test_sigkill_inside_the_window_is_never_complete(
     out, err = drainer.communicate(timeout=90)
     assert "CLOSED True" in out, err
     assert records(tmp_path / "spool") == []
-    # The exchanges still in memory at the kill (in the window) are gone.
-    assert len(node.named("fabric.model_call")) == block_at - 1
+    # The exchanges still in memory at the kill (in the window) are gone. A
+    # delivered record the kill caught before its deletion is re-sent by the
+    # drainer (at-least-once, 043 §2), so count distinct exchanges.
+    assert len(_exchange_ids(node)) == block_at - 1
     runs = _agent_runs(_verdicts(node, tmp_path), scoped)
     assert runs
     for run in runs:

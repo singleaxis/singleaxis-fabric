@@ -2,7 +2,7 @@
 title: Node content delivery, agent durable spool and run scopes
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 3
+revision: 4
 last_updated: 2026-10-13
 owner: recorder-engineering
 depends_on: 029, 032, 042
@@ -89,7 +89,8 @@ Decisions F1–F10:
   `allow_multiple_tenants: true`; `fabric-gate` enforces it on the
   effective configuration, the Helm chart renders a single `fabriccontent`
   exporter (so its one-tenant check is the per-Node check), and the
-  exporter-local check stays (§4, §5 rule 7).
+  exporter-local check stays (§4, §5 rule 7). *Superseded by J3 (revision
+  4): the rule spans all `fabriccontent` exporters, shared ingress or not.*
 - **H3 Run-id pseudonyms.** A caller-supplied run id never leaves the agent
   in clear: spans, markers, spool records, content descriptors and reports
   carry `r-` + the first 32 hex of `HMAC-SHA256(key, run_id)` when
@@ -98,13 +99,64 @@ Decisions F1–F10:
   fallback ids (`trace:…`, `source:…`) are unchanged. `fabric.reconstruct
   --run` takes the clear id and computes the pseudonym (§6, §10). Source
   id, tenant id and `service.name` remain operator-chosen labels that must
-  be opaque; they are validated by pattern only.
+  be opaque; they are validated by pattern only. *Superseded for source id
+  and `service.name` by J1 (revision 4): pseudonymous by default.*
 - **H4 Bounded model prefixes.** A `prefix*` allowlist entry matches only
   version-like suffixes; exact entries match exactly (§7).
 - **H5 Per-scope claims.** Completeness is claimed per `fabric.wire.run()`
   scope and per unscoped source epoch; a scoped run is at best
   `complete_for_observed_scopes`, because a scope that left no record cannot
   be claimed (§2 "Window", §6).
+
+**2026-10-13 — revision 4 (Sol re-check of `03484d5`).** Decisions J1–J4
+and the capture/verifier fixes:
+
+- **J1 Pseudonymous labels by default.** Capture emits `fabric.source_id`
+  (exchange spans, run markers, loss and heartbeat records, spool records and
+  content descriptors) as `s-` + the first 32 hex of `HMAC-SHA256(key,
+  source_id)` and the private provider's `service.name` as `svc-` + 32 hex of
+  the same function (`key` = `FABRIC_WIRE_ID_KEY`; SHA-256 without one, as for
+  run ids). `FABRIC_WIRE_LABELS=clear` is the documented opt-in that exports
+  both unchanged ("operator-chosen labels are exported unchanged; you
+  guarantee they contain no personal data"); any value other than
+  `pseudonymous`/`clear` fails installation. The reconstruction report shows
+  tenant ids as `t-` + 32 hex and source and run ids only in pseudonymous
+  form, projecting clear values from older capture (or clear-mode capture)
+  through the same function (§10). Tenant ids in storage paths and
+  `allowed_tenants` stay clear: they route content. fabricguard validates the
+  `s-`/`svc-` forms (clear labels by pattern in clear mode). Vectors:
+  `run-id-pseudonym-v1.json` (same hex, prefix `s-`/`svc-`/`t-`).
+- **J2 Numeric model suffixes.** Within a `prefix*` match at most two
+  numbers of at most 4 digits each; a date (`20YYMMDD`, or `20YY-MM-DD` as
+  three tokens) is not a number and may appear once; a decimal `N.N` (1–2
+  digits each) is one number (§7). `gpt-4o-123-45-6789` and
+  `gpt-4o-919876543210` are hashed.
+- **J3 One tenant per Node, whatever the wiring.** `fabric-gate` enforces one
+  tenant across **all** `fabriccontent` exporters of the effective
+  configuration, regardless of receivers or authenticators, unless every one
+  sets `allow_multiple_tenants: true`; a `fabriccontent` exporter whose block
+  is not a literal map after the gate's own resolution (e.g. a whole-block
+  `${env:…}`) is refused with fixed text (§5 rule 7).
+- **J4 The Node never follows a redirect.** The distribution ships a
+  `noredirect` HTTP client middleware that turns any `3xx` into a retryable
+  failure (the body is closed; nothing is re-sent); `fabric-gate` requires
+  every `otlphttp` exporter to list it, and the Helm and Compose configs wire
+  it (H1 extended to the Node).
+- **Settled outcomes across processes (§2).** A drainer leaves a receipt
+  (`<record>.ack`, empty) before deleting another process's record; a writer
+  counts its record delivered only on that receipt, and as a failure when it
+  was quarantined (`*.corrupt`) or disappeared without one. `flush()`/
+  `close()` run their whole settle, the admission check included, on a
+  bounded helper thread, so they return by their deadline even while another
+  pump holds the lock during stalled disk I/O.
+- **Response evidence and malformed records (042 §9 steps 1 and 5).** An
+  `abandoned` exchange, and an `error` one with an HTTP status, received a
+  response and need its digest. An exchange span with a valid identity but
+  malformed payload keeps its claims and is a `digest_mismatch`
+  (`malformed_record`, partial) of every run and scope it names; a malformed
+  identity refuses the input (exit 2, fixed text). A run marker naming a
+  valid scope with malformed other fields leaves that scope `conflict`
+  (`malformed_record`).
 
 **Why.**
 
@@ -160,6 +212,8 @@ spool is in use. Capture outside the new spool, sender and content client
 | `FABRIC_WIRE_SPOOL_DIR` | absolute directory | Required in `node` mode; optional otherwise (enables spool delivery). |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | int | Default 1 GiB; minimum `2 × max_body_bytes + 1 MiB`. |
 | `FABRIC_WIRE_MODEL_ALLOWLIST` | comma list | §7. |
+| `FABRIC_WIRE_ID_KEY` | secret, ≥ 16 bytes | Keys every label pseudonym (`r-` run ids; `s-`/`svc-` by default). Recommended in production. |
+| `FABRIC_WIRE_LABELS` | unset, `pseudonymous`, `clear` | J1. Default pseudonymous `fabric.source_id` and `service.name`; `clear` exports them unchanged (you guarantee they contain no personal data); anything else → `ValueError`. |
 | `FABRIC_WIRE_STORE_SSE`, `FABRIC_WIRE_STORE_KMS_KEY_ID` | — | Removed. Set → `ValueError` ("encryption is configured on the Fabric Node"). |
 | `OTEL_EXPORTER_OTLP_LOGS_{HEADERS,CERTIFICATE,CLIENT_CERTIFICATE,CLIENT_KEY,TIMEOUT}` | | Content client; each falls back to the `OTEL_EXPORTER_OTLP_*` general variable (§3). |
 
@@ -296,8 +350,17 @@ gap the verifier still detects. Leftover `.tmp-*` files older than one hour
 are removed by the drainer.
 
 **flush / close.** `flush(timeout)` waits until every record this process
-wrote before the call is deleted (by whichever process drains), then sends a
-periodic heartbeat; `False` on timeout. `close()` drains, seals the epoch,
+wrote before the call is *settled* — deleted with a delivery outcome known,
+by whichever process drains — then sends a periodic heartbeat; `False` on
+timeout. A drainer deleting another process's record first creates an empty
+receipt `<record>.ack` (fsync'd with the deletion); the writer consumes it
+and counts the record delivered. A record of this process that was
+quarantined (by any drainer) or that disappeared without a receipt (an
+operator, an older drainer) is a failure, never a delivery. The drainer
+removes receipts older than one hour (a writer that exited). The whole
+settle — pump, admission check and wait — runs on a helper thread: the
+caller waits only until its deadline, even while another pump holds the
+lock during stalled disk I/O (042 E9). `close()` drains, seals the epoch,
 writes the `final` marker, and waits for delivery within the 042 budget;
 whatever is undelivered stays on disk for replay and `close()` returns
 `False`. Neither acknowledges a record that never reached the spool:
@@ -305,7 +368,8 @@ whatever is undelivered stays on disk for replay and `close()` returns
 was lost before the spool (any recorded loss: `queue_full`, `shutdown`,
 `internal_error`, spool full or a failed spool write), a marker was dropped
 (queue overflow or a failed write), one of this process's own records was
-quarantined, or a loss range is still only in memory after the pump;
+quarantined or disappeared without a receipt, or a loss range is still only
+in memory after the pump;
 `close()` returns `False` when any of these happened during the sender's
 lifetime. Both still wait for delivery first. The exit handler is bounded
 exactly as 042 E9.
@@ -394,8 +458,10 @@ attribute set itself.
    `allow_multiple_tenants: true` is set (F11); the flag trusts every
    authenticated agent to name its tenant. Use one Node per tenant
    otherwise. Duplicate entries are refused. The rule holds per Node, not
-   per exporter (H2): exporters that share a receiver or pipeline together
-   allow one tenant unless every one of them sets the flag (§5 rule 7).
+   per exporter (H2, J3): all `fabriccontent` exporters of the effective
+   configuration together allow one tenant, whatever receivers or
+   authenticators they sit behind, unless every one of them sets the flag
+   (§5 rule 7).
 4. Write body to `<prefix><tenant>/evidence/<object_id>`, **then** the
    descriptor to `<prefix><tenant>/evidence/meta/<object_id>.json`.
    Descriptor = the attributes minus `event_class`, plus `"encoding":
@@ -457,8 +523,13 @@ where:
    in the effective configuration (transitively) together allow more than
    one tenant while any of them lacks `allow_multiple_tenants: true` (H2;
    the Helm chart renders exactly one `fabriccontent` exporter, whose tenant
-   list it checks the same way). The diagnostic names exporter ids,
-   never tenant ids.
+   list it checks the same way). Revision 4 (J3): the check spans **all**
+   `fabriccontent` exporters of the effective configuration, whatever
+   receivers or authenticators they sit behind, and an exporter block that
+   is not a literal map after the gate's own resolution is refused with
+   fixed text. The diagnostic names exporter ids, never tenant ids.
+8. (J4) an `otlphttp` exporter does not list the `noredirect` client
+   middleware.
 
 ## 6. Run scopes (F6; supersedes 042 §6 run markers and §9 step 3 (a))
 
@@ -468,7 +539,9 @@ pseudonym (H3): `r-` + the first 32 hex of `HMAC-SHA256(key, run_id)` with
 `key` = `FABRIC_WIRE_ID_KEY` (UTF-8, at least 16 bytes; set it in
 production so the pseudonym cannot be confirmed by guessing), else of
 `SHA-256(run_id)`. Only `r` is written anywhere (spans, markers, spool,
-descriptors, reports); the vectors in
+descriptors, reports); the source id and `service.name` follow the same
+function with prefixes `s-` and `svc-` unless `FABRIC_WIRE_LABELS=clear`
+(J1); the vectors in
 `contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json` pin it.
 fabricguard admits `fabric.run.id` only in the `r-` form or a generated
 fallback form (`trace:<32 hex>`, `source:<source_id>:<epoch>`, `h-<40
@@ -557,15 +630,23 @@ than its worst scope.
   (case-sensitive);
 - matching (H4): an exact entry matches exactly. A `prefix*` entry matches
   only when the value starts with the prefix and the rest, split on
-  `[-._:/@]` (empty tokens ignored), consists solely of digits and dates
-  (`4`, `3.5`, `20240620`, `2024-08-06`), short version tokens matching
-  `^(v?\d+[a-z]{0,2}|\d+[a-z]\d*|[a-z]\d+)$` (`4o`, `o1`, `v2`, `70b`) or
-  words of a fixed vocabulary (`mini`, `turbo`, `preview`, `latest`,
-  `instruct`, `sonnet`, `flash`, … — the list is pinned by the vectors).
-  Matching is case-sensitive. So `gpt-4o-mini-2024-07-18` is kept and
-  `gpt-patient-Jane-Doe-12345` is hashed; so are names whose suffix is not
-  version-like, such as `openai/gpt-4o` or `meta-llama/Llama-3-70b`, which
-  need an exact allowlist entry;
+  `[-._:/@]` (empty tokens ignored), consists solely of numbers, dates,
+  short version tokens matching `^(v?\d+[a-z]{0,2}|\d+[a-z]\d*|[a-z]\d+)$`
+  that are not all digits (`4o`, `o1`, `v2`, `70b`) or words of a fixed
+  vocabulary (`mini`, `turbo`, `preview`, `latest`, `instruct`, `sonnet`,
+  `flash`, … — the list is pinned by the vectors). J2: a *number* is an
+  all-digit token of at most 4 digits, or a decimal `N.N` (two all-digit
+  tokens of 1–2 digits joined by exactly `.`); a *date* is an 8-digit token
+  matching `^20\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$` or three
+  all-digit tokens of 4, 2 and 2 digits joined by exactly `-` that form one;
+  tokens are read left to right, a date or decimal taking its tokens first.
+  At most two numbers and one date; any longer all-digit token fails.
+  Matching is case-sensitive. So `gpt-4o-mini-2024-07-18` and
+  `claude-3-5-sonnet-20240620` are kept and `gpt-patient-Jane-Doe-12345`,
+  `gpt-4o-123-45-6789` and `gpt-4o-919876543210` are hashed; so are names
+  whose suffix is not version-like, such as `openai/gpt-4o`,
+  `meta-llama/Llama-3-70b` or `gemini-2.5-flash-preview-05-20` (three
+  numbers), which need an exact allowlist entry;
 - a non-empty string that matches the pattern, has no `://` and is
   allowlisted is emitted as is; any other string as `m-` + the first 16 hex
   of `sha256(utf-8)`; a non-string is omitted.
@@ -646,6 +727,15 @@ default is unset the unkeyed form is used, as capture does; a named
 variable that is unset, or a key under 16 bytes, is a usage error). The
 key and the clear id are never written to stdout, stderr or the report.
 
+**Report labels (J1).** The same key projects every label the report
+shows: the tenant (`--tenant`, clear because it names the store prefix) as
+`t-` + 32 hex; every source id not already of the `s-` form as its `s-`
+pseudonym (so records of one source from older, clear-label capture and
+from current capture are one source); every run id not of the `r-`,
+`trace:<32 hex>` or `h-<40 hex>` form as its `r-` pseudonym, except that a
+`source:<source_id>:<epoch>` fallback keeps its form with the source id
+projected. `--run` values go through the same projection.
+
 ## 11. Acceptance
 
 1. Node mode: an agent with no AWS variables captures a three-step ReAct run;
@@ -690,6 +780,30 @@ key and the clear id are never written to stdout, stderr or the report.
     a `complete`/`closed_early` exchange without response evidence is
     `partial`, and a conflicting duplicate invalidates every run and scope
     it names (H5).
+12. Revision 4 (`tests/test_wire_hardening_round4.py`): a writer's record
+    quarantined, or removed without a receipt, by another process makes its
+    `flush()`/`close()` `False`, and one delivered elsewhere is acknowledged;
+    `flush(0.3)`/`close(0.3)` return within a second while another pump
+    stalls in a disk write; actual `error` (after a 200) and `abandoned`
+    captures without response evidence are `partial`; a malformed duplicate
+    claiming another run's scope and sequence makes both runs and scopes
+    `partial`, and a malformed identity is exit `2` with fixed text; an
+    actual capture with identifying source, service, tenant and run labels
+    and the model `gpt-4o-123-45-6789` leaves none of them in telemetry,
+    spool records, descriptors or the report (keyed and unkeyed), and
+    `FABRIC_WIRE_LABELS=clear` restores clear source/service labels; the
+    J2 vectors pass in Python and Go.
+13. Revision 4, Node (`gate/gate_node_test.go`,
+    `extension/noredirectextension`, `capture_labels_test.go`): two
+    `fabriccontent` exporters with different tenants are refused whether or
+    not they share a receiver or authenticator, and a whole-block `${env:…}`
+    exporter is refused with fixed text (J3); the pinned `otlphttp` exporter
+    with the `noredirect` middleware never sends a byte or the
+    `Authorization` header to a `3xx` target and never reports a redirect to
+    an HTML page as success, an `otlphttp` exporter without the middleware
+    is refused by the gate, and the S3 client never follows a redirect, on
+    the replay read included (J4); fabricguard drops a clear
+    `fabric.source_id`/`service.name` unless `capture_labels: clear` (J1).
 
 ## 12. Open questions
 

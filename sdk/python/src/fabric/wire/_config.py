@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
 from .._model_names import parse_model_allowlist
-from .._sequence import OPAQUE_ID_RE, check_id_key, id_key_from_env
+from .._sequence import OPAQUE_ID_RE, Labels, check_id_key, id_key_from_env, labels_from_env
 from ..content_store.s3 import S3ContentStore  # boto3 stays lazy
 from ..tracing import check_endpoint_url
 from ._model import EndpointMatcher
@@ -86,10 +86,15 @@ class WireConfig:
     model_allowlist: tuple[str, ...] = ()
     # Run-id pseudonym key (H3; FABRIC_WIRE_ID_KEY): a secret, so never in repr or logs.
     id_key: bytes | None = field(default=None, repr=False)
+    # J1: source id and service.name pseudonymous (default) or "clear" (FABRIC_WIRE_LABELS);
+    # None = from the environment at install.
+    labels: Labels | None = None
 
     def __post_init__(self) -> None:
         _int("max_body_bytes", self.max_body_bytes, 1, MAX_BODY_BYTES_CAP)
         check_id_key(self.id_key)
+        if self.labels not in (None, "pseudonymous", "clear"):
+            raise ValueError("labels must be 'pseudonymous' or 'clear'")
         self._check_delivery()
         _int("max_inflight_bytes", self.max_inflight_bytes, 1)
         _int("queue_max_items", self.queue_max_items, 1, 65536)
@@ -195,7 +200,7 @@ def config_from_env(
         "content_endpoint": endpoint if node else None,
         "spool_dir": environ.get("FABRIC_WIRE_SPOOL_DIR") or None,
         "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
-        "id_key": id_key_from_env(environ),
+        "id_key": id_key_from_env(environ), "labels": labels_from_env(environ),
     }  # fmt: skip
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])

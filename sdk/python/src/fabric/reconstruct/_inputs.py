@@ -5,9 +5,13 @@
 Two input shapes are accepted: the demo sink's JSONL rows (``{"kind":
 "span", ...}``; ``log`` rows are ignored) and OTLP/JSON, either as one
 whole-file ``ExportTraceServiceRequest`` or one per line as the collector
-file exporter writes it. Every attribute value is re-validated here: an
-exchange, loss or heartbeat span whose fields are absent or malformed is
-not used, so its sequence shows up as missing instead of being trusted.
+file exporter writes it. Every attribute value is re-validated here: a loss
+or heartbeat span whose fields are absent or malformed is not used. An
+exchange span whose identity (exchange id, source, epoch, sequence, run id,
+scope id when present) is malformed makes the input unusable
+(:class:`ReconstructInputError`); one with a valid identity but malformed
+payload fields keeps its identity claims and is marked ``malformed``, which
+the verifier reports as a completeness-blocking gap (sol2 #5).
 """
 
 from __future__ import annotations
@@ -383,6 +387,9 @@ class ExchangeObs:
     response_id: str | None = None
     http_status: int | None = None
     scope_id: str | None = None
+    # A valid identity with malformed payload fields: its claims count, its payload
+    # (placeholders) is never used, and it is a ``malformed_record`` gap (partial).
+    malformed: bool = False
 
     @property
     def source(self) -> tuple[str, int]:
@@ -423,11 +430,22 @@ class HeartbeatObs:
     scope_id: str | None = None
 
 
-Observation = ExchangeObs | LossObs | HeartbeatObs
+@dataclass(frozen=True, slots=True)
+class MalformedMarkerObs:
+    """A ``run_start``/``run_end`` naming a valid scope id whose other fields are malformed
+    (sol2 #5): it bounds nothing, but a scope it names can never be closed. ``heartbeat``
+    is what it still says about allocated sequences, when its source fields are valid."""
+
+    scope_id: str
+    heartbeat: HeartbeatObs | None
+
+
+Observation = ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs
 
 
 def observe(span: SpanRecord) -> Observation | None:
-    """Classify and validate one span; ``None`` for other or invalid spans."""
+    """Classify and validate one span; ``None`` for other or invalid loss/heartbeat spans;
+    ``ReconstructInputError`` for an exchange span with a malformed identity."""
 
     attrs = span.attributes
     source_id = opaque_id(attrs.get(A_SOURCE_ID))
@@ -443,19 +461,27 @@ def observe(span: SpanRecord) -> Observation | None:
 
 def _heartbeat(
     attrs: Mapping[str, Any], source_id: str | None, epoch: int | None
-) -> HeartbeatObs | None:
+) -> HeartbeatObs | MalformedMarkerObs | None:
     last = int_at_least(attrs.get(H_LAST), -1)
-    if source_id is None or epoch is None or last is None:
-        return None
     kind = cast("HeartbeatKind | None", enum_value(attrs.get(H_KIND), HEARTBEAT_KINDS))
-    if kind not in RUN_MARKER_KINDS:
-        return HeartbeatObs(source_id, epoch, kind, None, last)
+    plain = (
+        HeartbeatObs(source_id, epoch, None, None, last)
+        if source_id is not None and epoch is not None and last is not None
+        else None
+    )
     run_id = opaque_id(attrs.get(A_RUN_ID))
     scope_id = scope_id_value(attrs.get(A_SCOPE_ID))
+    if kind in RUN_MARKER_KINDS and scope_id is not None and (run_id is None or plain is None):
+        return MalformedMarkerObs(scope_id, plain)  # names a scope it cannot bound
+    if plain is None:
+        return None
+    if kind not in RUN_MARKER_KINDS:
+        return HeartbeatObs(plain.source_id, plain.source_epoch, kind, None, plain.last_sequence)
     if run_id is None or scope_id is None:
-        # A marker that names no run, or no scope (042 capture), bounds nothing.
-        return HeartbeatObs(source_id, epoch, None, None, last)
-    return HeartbeatObs(source_id, epoch, kind, run_id, last, scope_id)
+        # A marker that names no scope (042 capture) bounds nothing.
+        return plain
+    return HeartbeatObs(plain.source_id, plain.source_epoch, kind, run_id, plain.last_sequence,
+                        scope_id)  # fmt: skip
 
 
 def _loss(attrs: Mapping[str, Any], source_id: str | None, epoch: int | None) -> LossObs | None:
@@ -476,48 +502,74 @@ def _ref(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> ExchangeObs | None:
+def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> ExchangeObs:
+    """An exchange observation; ``ReconstructInputError`` (fixed text) when its identity is
+    malformed, ``malformed=True`` when only its payload is."""
     attrs = span.attributes
     exchange_id = opaque_id(attrs.get(A_EXCHANGE_ID))
     sequence = int_at_least(attrs.get(A_SOURCE_SEQUENCE), 0)
     run_id = opaque_id(attrs.get(A_RUN_ID))
+    scope_id = scope_id_value(attrs.get(A_SCOPE_ID))
+    if source_id is None or epoch is None or exchange_id is None or sequence is None:
+        raise ReconstructInputError("an exchange span has a malformed identity")
+    if run_id is None or (A_SCOPE_ID in attrs and scope_id is None):
+        raise ReconstructInputError("an exchange span has a malformed identity")
+    identity: dict[str, Any] = {
+        "exchange_id": exchange_id,
+        "source_id": source_id,
+        "source_epoch": epoch,
+        "source_sequence": sequence,
+        "run_id": run_id,
+        "scope_id": scope_id,
+        "start_ns": span.start_ns,
+        "end_ns": max(span.end_ns, span.start_ns),
+        "trace_id": _trace_id(span.trace_id),
+        "span_id": _span_id(span.span_id),
+    }
     api = enum_value(attrs.get(A_API), APIS)
     state = enum_value(attrs.get(A_RESPONSE_STATE), RESPONSE_STATES)
     store_status = enum_value(attrs.get(A_STORE_STATUS), STORE_STATUSES)
     request_sha256 = digest_value(attrs.get(A_REQUEST_SHA256))
     response_sha256 = digest_value(attrs.get(A_RESPONSE_SHA256))
     truncated = attrs.get(A_TRUNCATED)
-    if source_id is None or epoch is None or exchange_id is None or sequence is None:
-        return None
-    if run_id is None or api is None or state is None:
-        return None
-    if store_status is None or request_sha256 is None or not isinstance(truncated, bool):
-        return None
-    if A_RESPONSE_SHA256 in attrs and response_sha256 is None:
-        return None
+    http_status = _http_status(attrs.get(A_HTTP_STATUS))
+    malformed = (
+        api is None
+        or state is None
+        or store_status is None
+        or request_sha256 is None
+        or not isinstance(truncated, bool)
+        or (A_RESPONSE_SHA256 in attrs and response_sha256 is None)
+        or (A_HTTP_STATUS in attrs and http_status is None)
+        or any(key in attrs and _ref(attrs[key]) is None for key in (A_REQUEST_REF, A_RESULT_REF))
+    )
+    if malformed:
+        return ExchangeObs(
+            **identity,
+            api="",
+            response_state="",
+            store_status="",
+            truncated=False,
+            request_sha256="",
+            response_sha256=None,
+            request_ref=None,
+            response_ref=None,
+            malformed=True,
+        )
     return ExchangeObs(
-        exchange_id=exchange_id,
-        source_id=source_id,
-        source_epoch=epoch,
-        source_sequence=sequence,
-        run_id=run_id,
-        api=api,
-        response_state=state,
-        store_status=store_status,
-        truncated=truncated,
-        request_sha256=request_sha256,
+        **identity,
+        api=cast("str", api),
+        response_state=cast("str", state),
+        store_status=cast("str", store_status),
+        truncated=cast("bool", truncated),
+        request_sha256=cast("str", request_sha256),
         response_sha256=response_sha256,
         request_ref=_ref(attrs.get(A_REQUEST_REF)),
         response_ref=_ref(attrs.get(A_RESULT_REF)),
-        start_ns=span.start_ns,
-        end_ns=max(span.end_ns, span.start_ns),
-        trace_id=_trace_id(span.trace_id),
-        span_id=_span_id(span.span_id),
         # Kept as recorded; the report applies the spec 043 §7 exposure rule.
         model=_ref(attrs.get(A_RESPONSE_MODEL)),
         response_id=_response_id(attrs.get(A_RESPONSE_ID)),
-        http_status=_http_status(attrs.get(A_HTTP_STATUS)),
-        scope_id=scope_id_value(attrs.get(A_SCOPE_ID)),
+        http_status=http_status,
     )
 
 

@@ -482,7 +482,12 @@ def test_queue_full_drops_and_records_a_loss_range(tmp_path: Path) -> None:
         spanned = {attrs(s)["fabric.source.sequence"] for s in rig.spans()}
         (loss,) = rig.spans("fabric.capture_loss")
         first, last = (attrs(loss)[f"fabric.loss.{k}_sequence"] for k in ("first", "last"))
-        assert not spanned & set(range(first, last + 1))
+        # One coalesced (min, max, count) range per key (042 §6): when the
+        # worker frees a slot between drops the range spans an admitted
+        # sequence, so the count, not the bounds, says how many were lost.
+        lost = set(range(first, last + 1)) - spanned
+        assert attrs(loss)["fabric.loss.count"] == stats["dropped"] == len(lost)
+        assert spanned | lost == set(range(5))
         validate_capture(rig)
     finally:
         gate.set()

@@ -208,6 +208,15 @@ loopback.
   `ca_file` in `collector-config/collector-production.yaml` and set
   `FABRIC_EXPORT_CA_FILE=/run/fabric-node/tls/<bundle>`; preflight checks
   that the file exists and is readable by the container user.
+- Egress never follows an HTTP redirect: every shipped config attaches the
+  distribution's `noredirect` middleware to its OTLP/HTTP exporter, so a
+  `3xx` from the destination (or a proxy in front of it) is a retried
+  failure; the batch and its Authorization header are never re-sent to the
+  redirect target, and a redirect to a login page is never a successful
+  export. `fabric-gate` refuses an OTLP/HTTP exporter without it. Configure
+  the destination's final `https://` URL; a redirecting URL stalls delivery
+  (watch `otelcol_exporter_send_failed_*`). See
+  [wire-capture-deployment.md §2](../../docs/wire-capture-deployment.md).
 - The collector runs as nonroot with a read-only root filesystem, all
   capabilities dropped, and `no-new-privileges`.
 - This deployment proves the same thing `make qualify` proves at a different

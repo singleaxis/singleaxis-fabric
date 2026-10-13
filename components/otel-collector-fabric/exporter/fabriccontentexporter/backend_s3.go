@@ -13,6 +13,7 @@ import (
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -43,6 +44,7 @@ func newS3Backend(ctx context.Context, cfg S3Config, extra ...func(*awsconfig.Lo
 		return nil, errors.New("fabriccontent: s3.region is not set and no AWS region is configured")
 	}
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.HTTPClient = noRedirectClient(awsCfg.HTTPClient)
 		if cfg.Endpoint != "" {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
 		}
@@ -54,6 +56,27 @@ func newS3Backend(ctx context.Context, cfg S3Config, extra ...func(*awsconfig.Lo
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 	return &s3Backend{client: client, cfg: cfg}, nil
+}
+
+// noRedirectClient returns an HTTP client that never follows a redirect
+// (spec 043 H1). The SDK's default client follows 307/308; a GetObject (the
+// replay comparison) has no body to stop it, so a redirect could make the
+// comparison read another host's bytes. With ErrUseLastResponse the 3xx is
+// returned to the SDK, which reports it as a failed operation (retried). The
+// transport is the configured one (custom CA bundle, proxy, timeouts).
+func noRedirectClient(configured aws.HTTPClient) *http.Client {
+	var transport http.RoundTripper
+	if bc, ok := configured.(*awshttp.BuildableClient); ok {
+		transport = bc.GetTransport()
+	} else {
+		transport = awshttp.NewBuildableClient().GetTransport()
+	}
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 func (b *s3Backend) prefix() string { return b.cfg.Prefix }

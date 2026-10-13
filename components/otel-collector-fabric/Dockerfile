@@ -42,6 +42,7 @@ COPY ocb-config.yaml ./
 COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
 COPY receiver/auditreceiver ./receiver/auditreceiver
 COPY exporter/fabriccontentexporter ./exporter/fabriccontentexporter
+COPY extension/noredirectextension ./extension/noredirectextension
 COPY gate ./gate
 
 RUN ocb --config ocb-config.yaml \

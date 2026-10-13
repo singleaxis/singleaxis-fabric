@@ -98,7 +98,7 @@ class NodeContentClient:
 
 
 def content_client_from_env(
-    environ: Mapping[str, str], *, endpoint: str | None = None
+    environ: Mapping[str, str], *, endpoint: str | None = None, service_name: str | None = None
 ) -> NodeContentClient:
     """The Node content client: ``FABRIC_WIRE_CONTENT_ENDPOINT`` (or ``endpoint``) plus the
     ``OTEL_EXPORTER_OTLP_LOGS_*`` > ``OTEL_EXPORTER_OTLP_*`` TLS, header and timeout settings."""
@@ -115,5 +115,5 @@ def content_client_from_env(
     cert = (s.client_certificate, s.client_key) if s.client_certificate and s.client_key else None
     return NodeContentClient(
         url, headers=s.headers, timeout_s=s.timeout_s, verify=s.certificate or True, cert=cert,
-        service_name=tracing.capture_service_name(),
+        service_name=service_name or tracing.capture_service_name(environ),
     )  # fmt: skip

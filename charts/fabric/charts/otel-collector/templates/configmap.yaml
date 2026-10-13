@@ -77,6 +77,13 @@ data:
     extensions:
       health_check:
         endpoint: 0.0.0.0:{{ .Values.service.ports.health }}
+      {{- if .Values.exporter.endpoint }}
+      # Spec 043 H1: refuse HTTP redirects on the OTLP/HTTP exporter. Any 3xx
+      # from the destination is a retryable failure; the batch and its
+      # Authorization header are never re-sent to another location.
+      # fabric-gate refuses an otlp_http exporter without this middleware.
+      noredirect: {}
+      {{- end }}
       {{- if .Values.exporter.sendingQueue.persistence.enabled }}
       file_storage/fabric:
         directory: {{ .Values.exporter.sendingQueue.persistence.directory | quote }}
@@ -100,6 +107,7 @@ data:
         event_class_attribute: {{ .Values.fabric.guard.eventClassAttribute | quote }}
         drop_unknown_classes: {{ .Values.fabric.guard.dropUnknownClasses }}
         max_field_bytes: {{ .Values.fabric.guard.maxFieldBytes }}
+        capture_labels: {{ .Values.fabric.guard.captureLabels | default "pseudonymous" | quote }}
         {{- with .Values.fabric.guard.extraAllowedFields }}
         extra_allowed_fields:
           {{- toYaml . | nindent 10 }}
@@ -123,6 +131,8 @@ data:
       otlp_http/fabric:
         endpoint: {{ .Values.exporter.endpoint | quote }}
         timeout: {{ .Values.exporter.timeout | quote }}
+        middlewares:
+          - id: noredirect
         {{- if .Values.exporter.auth.secret.name }}
         headers:
           {{ .Values.exporter.auth.headerName | quote }}: "${env:FABRIC_EXPORT_AUTH}"
@@ -208,6 +218,9 @@ data:
     service:
       extensions:
         - health_check
+        {{- if .Values.exporter.endpoint }}
+        - noredirect
+        {{- end }}
         {{- if .Values.exporter.sendingQueue.persistence.enabled }}
         - file_storage/fabric
         {{- if $content.enabled }}

@@ -18,7 +18,8 @@ fail() {
 # ---- 1. Exact component inventory ----------------------------------------
 # Every `gomod:` entry in the manifest must appear in this list and nothing
 # else may be listed. The list is the recorder's release promise:
-#   extensions: health_check, file_storage, bearertokenauth
+#   extensions: health_check, file_storage, bearertokenauth,
+#               noredirect (local path — spec 043 H1)
 #   receivers:  otlp, audit (local path — spec 030)
 #   processors: memory_limiter, batch, fabricguard (local path)
 #   exporters:  debug, otlphttp, fabriccontent (local path — spec 043)
@@ -27,6 +28,7 @@ expected_gomods='github.com/open-telemetry/opentelemetry-collector-contrib/exten
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter v0.1.0
+github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver v0.1.0
 go.opentelemetry.io/collector/confmap/provider/envprovider v1.56.0
@@ -52,23 +54,25 @@ fi
 
 # Local path references (`path:` keys and `replaces:` targets) may resolve
 # only to the in-repo component source trees (fabricguard, auditreceiver,
-# fabriccontent).
+# fabriccontent, noredirect).
 actual_paths="$( { grep -E '(^|[[:space:]])path:[[:space:]]*\./' "${manifest}" | sed -E 's/^[[:space:]-]*path:[[:space:]]*//';
                  grep -E '=>[[:space:]]*\./' "${manifest}" | sed -E 's/.*=>[[:space:]]*//'; } \
                | sed -E 's/[[:space:]]+$//' | sort -u )"
 expected_paths='./exporter/fabriccontentexporter
+./extension/noredirectextension
 ./processor/fabricguardprocessor
 ./receiver/auditreceiver'
 [ "${actual_paths}" = "$(printf '%s\n' "${expected_paths}" | sort)" ] \
   || fail "manifest resolves unexpected local paths: ${actual_paths}"
 
 # ---- 2. Dockerfile may only COPY the in-repo component sources -----------
-# Any processor/, receiver/ or exporter/ token inside a COPY instruction must
-# be one of the three local components (covers both source and destination
+# Any processor/, receiver/, exporter/ or extension/ token inside a COPY
+# instruction must be one of the four local components (covers both source and destination
 # args).
 copy_local="$(grep -E '^[[:space:]]*COPY([[:space:]]|$)' "${dockerfile}" \
-              | grep -oE '(processor|receiver|exporter)/[A-Za-z0-9_.-]+' | sort -u)" || true
+              | grep -oE '(processor|receiver|exporter|extension)/[A-Za-z0-9_.-]+' | sort -u)" || true
 expected_copy='exporter/fabriccontentexporter
+extension/noredirectextension
 processor/fabricguardprocessor
 receiver/auditreceiver'
 [ "${copy_local}" = "$(printf '%s\n' "${expected_copy}" | sort)" ] \
@@ -93,7 +97,7 @@ train_stable="$(grep -E 'gomod:.*opentelemetry' "${manifest}" | grep -oE 'v1\.[0
 [ "$(printf '%s\n' "${train_stable}" | grep -c .)" -eq 1 ] \
   || fail "manifest has divergent v1.x collector trains: ${train_stable}"
 
-local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod"
+local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod ${root}/extension/noredirectextension/go.mod"
 for gomod in ${local_gomods}; do
   for req in $(grep -oE 'go\.opentelemetry\.io/collector/[A-Za-z0-9/._-]+ v[0-9]+\.[0-9]+\.[0-9]+' "${gomod}" | tr ' ' ':'); do
     mod="${req%%:*}"

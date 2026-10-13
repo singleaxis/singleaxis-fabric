@@ -27,6 +27,12 @@ receivers:
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  # Spec 043 H1: HTTP client middleware that refuses redirects. Every
+  # otlp_http exporter lists it (fabric-gate refuses one that does not): a
+  # 3xx from the destination is a retryable failure, so the batch and its
+  # Authorization header are never re-sent to another location and a
+  # redirect to a login page is never a successful export.
+  noredirect: {}
   file_storage/fabric:
     directory: /var/lib/fabric-node/queue
     timeout: 1s
@@ -47,11 +53,17 @@ processors:
     event_class_attribute: event_class
     drop_unknown_classes: true
     max_field_bytes: 8192
+    # Spec 043 J1: capture spans keep fabric.source_id and service.name only
+    # as s-/svc- pseudonyms. Set `clear` only for agents that run with
+    # FABRIC_WIRE_LABELS=clear (you guarantee the labels hold no personal data).
+    capture_labels: pseudonymous
 
 exporters:
   otlp_http/test_sink:
     endpoint: http://test-sink:8080
     timeout: 5s
+    middlewares:
+      - id: noredirect
     tls:
       insecure: true
     sending_queue:
@@ -87,7 +99,7 @@ exporters:
       max_elapsed_time: 0s
 
 service:
-  extensions: [health_check, file_storage/fabric, file_storage/fabric_content]
+  extensions: [health_check, noredirect, file_storage/fabric, file_storage/fabric_content]
   pipelines:
     traces:
       receivers: [otlp]

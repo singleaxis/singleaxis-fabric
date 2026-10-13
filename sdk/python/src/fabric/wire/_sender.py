@@ -56,17 +56,17 @@ class Sender:
         self._pump_lock, self._start_lock = threading.Lock(), threading.Lock()
         self._stats: dict[str, int] = dict.fromkeys(_STATS, 0)
         self._progress: dict[str, int] = {}  # bodies the Node already accepted, per record
-        self._own_quarantined = 0  # records this process wrote that came back corrupt
         # Admission failures (lost exchanges, dropped markers) at start and at the last flush.
         self._failed_at_start = self._failed_at_flush = self._failures()
 
     def _failures(self) -> int:
         """Capture events of this process that will never be delivered: exchanges lost
         before the spool (each one is a recorded loss), markers dropped (queue overflow or a
-        failed write) and own records quarantined as corrupt."""
+        failed write) and own records quarantined as corrupt by any drainer, or gone without a
+        drainer's delivery receipt."""
         loss = self.loss
         dropped = loss.markers_dropped + self._stats["markers_dropped"]
-        return loss.recorded + dropped + self._own_quarantined
+        return loss.recorded + dropped + self.spool.failed
 
     def wake(self) -> None:
         self._wake.set()
@@ -122,6 +122,7 @@ class Sender:
             try:
                 if (now := time.monotonic()) - scanned >= _RESCAN_S:
                     self.spool.rescan()
+                    self.spool.settle()  # own records drained elsewhere: consume receipts
                     scanned = now
                 self.pump()
                 if not self.spool.holder and now - locked >= _LOCK_RETRY_S:
@@ -166,8 +167,7 @@ class Sender:
         return state if state == "retry" or not names else "more"
 
     def _quarantine(self, name: str, doc: Mapping[str, Any] | None) -> None:
-        self._own_quarantined += name in self.spool.mine  # counted before it disappears
-        self.spool.quarantine(name)
+        self.spool.quarantine(name)  # an own record is a failure; another writer's settles
         self._stats["quarantined"] += 1
         _LOG.warning("fabric.wire: corrupt spool record quarantined")
         with contextlib.suppress(Exception):  # header parsed: its sequence is an explained loss
@@ -226,25 +226,30 @@ class Sender:
             instrumentation_scope=InstrumentationScope("fabric.wire", __version__),
         )  # fmt: skip
 
-    def _admitted(self) -> bool:
-        """After a pump: no loss range is still waiting in memory (one the spool could not
-        take stays there, undelivered). A marker the spool refused is counted as dropped."""
-        with self._pump_lock:
-            return not self.loss.has_pending_losses()
-
     def _settle(self, deadline: float) -> bool:
-        """Spool pending losses/markers; wait until this process's records are deleted.
+        """Spool pending losses/markers; wait until this process's records are settled
+        (delivered, or failed: quarantined or gone without a receipt). All of it, the
+        admission check included, runs on a helper thread: the caller waits only until
+        ``deadline``, even while another pump holds the lock during stalled disk I/O.
         ``False`` also when a loss range could not be spooled."""
-        if not _loss.run_bounded(lambda: self.pump() or True, deadline, "fabric-wire-flush"):
-            return False
-        admitted = self._admitted()
-        pending = set(self.spool.mine)
-        self.wake()
-        while pending := {name for name in pending if self.spool.exists(name)}:
-            if time.monotonic() >= deadline:
+
+        def work() -> bool:
+            self.pump()
+            if not self._pump_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
                 return False
-            time.sleep(0.02)
-        return admitted
+            try:  # after a pump: no loss range is still waiting in memory
+                admitted = not self.loss.has_pending_losses()
+            finally:
+                self._pump_lock.release()
+            pending = self.spool.pending()
+            self.wake()
+            while self.spool.settle(pending):
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.02)
+            return admitted
+
+        return _loss.run_bounded(work, deadline, "fabric-wire-flush")
 
     def flush(self, timeout_s: float) -> bool:
         """:meth:`_settle`, then a periodic heartbeat for every source; within ``timeout_s``.
@@ -278,12 +283,13 @@ def build_sender(
 ) -> Sender | None:  # fmt: skip
     if config.spool_dir is None:  # no spool: the direct provider path
         return None
+    service = tracing.capture_service_name(id_key=config.id_key, clear=config.labels == "clear")
     if config.content_endpoint is not None and content is None:
-        content = content_client_from_env(os.environ, endpoint=config.content_endpoint)
+        content = content_client_from_env(
+            os.environ, endpoint=config.content_endpoint, service_name=service)  # fmt: skip
     spool = Spool(config.spool_dir, config.spool_max_bytes)
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
-    return Sender(spool, exporter, loss, content=content,
-                  service_name=tracing.capture_service_name())  # fmt: skip
+    return Sender(spool, exporter, loss, content=content, service_name=service)
 
 
 def _after_fork_in_child() -> None:

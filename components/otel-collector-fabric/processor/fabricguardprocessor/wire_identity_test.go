@@ -19,8 +19,7 @@ func TestCaptureRunID_OnlyPseudonymAndFallbackForms(t *testing.T) {
 	good := []string{
 		"r-0123456789abcdef0123456789abcdef",
 		"trace:0af7651916cd43dd8448eb211c80319c",
-		"source:wire-0123456789abcdef:1759800000000000000",
-		"source:h-0123456789abcdef0123456789abcdef01234567:1759800000000000000",
+		"source:" + testSourceLabel + ":1759800000000000000",
 		"h-0123456789abcdef0123456789abcdef01234567",
 	}
 	bad := []any{
@@ -144,9 +143,7 @@ func TestCaptureModel_DefaultAllowlistMatchesSharedFixture(t *testing.T) {
 }
 
 // The Sol probe values: run id and model must not retain the identifying
-// value. service.name and fabric.source_id are operator-chosen labels (H3:
-// documented as must-be-opaque, validated by pattern only) and are not
-// rewritten here.
+// value. (Source and service labels: capture_labels_test.go, J1.)
 func TestCaptureIdentity_SolProbeValuesScrubbed(t *testing.T) {
 	const identifying = "patient-Jane-Doe-12345"
 	attrs := wireExchangeAttrs()

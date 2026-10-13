@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -132,6 +133,11 @@ def test_private_provider_resource_is_only_a_valid_service_name(
 ) -> None:
     monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "process.command_args=--key=sk-live,k=v")
     monkeypatch.setenv("OTEL_SERVICE_NAME", "agent-1")
+    monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
+    provider = fabric.tracing.build_private_provider(exporter=InMemorySpanExporter())
+    pseudonym = "svc-" + hashlib.sha256(b"agent-1").hexdigest()[:32]  # J1: pseudonymous
+    assert dict(provider.resource.attributes) == {"service.name": pseudonym}
+    monkeypatch.setenv("FABRIC_WIRE_LABELS", "clear")  # the documented opt-in
     provider = fabric.tracing.build_private_provider(exporter=InMemorySpanExporter())
     assert dict(provider.resource.attributes) == {"service.name": "agent-1"}
     monkeypatch.setenv("OTEL_SERVICE_NAME", "alice@example.com")
@@ -181,7 +187,7 @@ def test_global_mode_sends_losses_through_the_private_always_on_provider(
 ) -> None:
     private, exporter = _memory_provider()
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", ENDPOINT)
-    monkeypatch.setattr(fabric.tracing, "build_private_provider", lambda: private)
+    monkeypatch.setattr(fabric.tracing, "build_private_provider", lambda **_: private)
     handle = wire.install_from_env({"FABRIC_WIRE_TRACER": "global"})
     assert handle is not None and handle.config.tracer_provider is None  # exchanges: global
     _isolated.record(handle.allocator.source_id, handle.allocator.epoch, "span_dropped", 0)

@@ -16,7 +16,7 @@ import stat
 import struct
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from .._loss import _Beat, _Range
@@ -24,6 +24,7 @@ from .._loss import _Beat, _Range
 MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
 RESERVE_BYTES = 1024 * 1024  # loss and marker records may exceed the bound by this much
 QUARANTINE_SUFFIX = ".corrupt"  # quarantined records count against the bound until removed
+ACK_SUFFIX = ".ack"  # a drainer's delivery receipt for another process's record (empty file)
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
 _KEYS = {"exchange": {"service_name", "span", "bodies"}, "loss": {"loss"}, "marker": {"marker"}}
@@ -144,7 +145,9 @@ def _secure_dir(path: str) -> None:
 
 class Spool:
     """Bounded record directory; ``bytes`` = own writes, corrected by :meth:`rescan` (pending
-    and quarantined records both count against ``max_bytes``)."""
+    and quarantined records both count against ``max_bytes``). ``mine`` holds this process's
+    records until their outcome is known; ``failed`` counts those that will never be
+    delivered: quarantined (by any drainer) or gone without a drainer's receipt."""
 
     def __init__(self, directory: str, max_bytes: int) -> None:
         try:
@@ -158,7 +161,9 @@ class Spool:
 
     def _init_state(self) -> None:
         self._lock, self._order, self.holder, self.bytes = threading.Lock(), 0, False, 0
-        self.mine: set[str] = set()  # names this process wrote, until seen deleted
+        self._settle_lock = threading.Lock()  # one receipt consumer at a time (never the host)
+        self.mine: set[str] = set()  # names this process wrote, until their outcome is known
+        self.failed = 0  # own records quarantined, or gone without a delivery receipt
         self._lock_fd = os.open(self._path(".lock"), os.O_RDWR | os.O_CREAT | _NOFOLLOW, 0o600)
 
     def _path(self, name: str) -> str:
@@ -235,29 +240,66 @@ class Spool:
         return os.path.lexists(self._path(name))
 
     def delete(self, name: str, size: int) -> None:
+        """Remove a delivered record. Its outcome is settled first: an own record leaves
+        ``mine``; another process's gets a receipt (``<name>.ack``) before it disappears, so
+        its writer never takes a disappearance for a delivery."""
+        with self._lock:
+            own = name in self.mine
+            self.mine.discard(name)
+        if not own:
+            os.close(os.open(self._path(name + ACK_SUFFIX),
+                             os.O_WRONLY | os.O_CREAT | _NOFOLLOW, 0o600))  # fmt: skip
         os.unlink(self._path(name))
-        self._sync_dir()
+        self._sync_dir()  # also persists the receipt
         with self._lock:
             self.bytes = max(0, self.bytes - size)
-            self.mine.discard(name)
 
     def quarantine(self, name: str) -> None:
         """Kept for the operator, never retried; its bytes stay counted against the bound
-        (an operator removes ``*.corrupt`` files to free the space)."""
+        (an operator removes ``*.corrupt`` files to free the space). An own record is a
+        failure now; another process's, when its writer settles (no receipt)."""
+        with self._lock:
+            if name in self.mine:
+                self.mine.discard(name)
+                self.failed += 1
         os.rename(self._path(name), self._path(name + QUARANTINE_SUFFIX))
         self._sync_dir()
+
+    def settle(self, names: Collection[str] | None = None) -> int:
+        """Resolve own records another process drained: gone with a receipt = delivered
+        (the receipt is consumed); gone without one (quarantined, or removed by anyone
+        else) = ``failed``. Returns how many of ``names`` (default: all own) are pending."""
+        with self._settle_lock:
+            pending = self.pending()
+            present = set(os.listdir(self.dir)) if pending else set()
+            for name in pending:
+                if name in present or self.exists(name):
+                    continue
+                receipt = True
+                try:
+                    os.unlink(self._path(name + ACK_SUFFIX))
+                except FileNotFoundError:
+                    receipt = False
+                with self._lock:
+                    if name in self.mine:  # else settled in this process meanwhile
+                        self.mine.discard(name)
+                        self.failed += not receipt
         with self._lock:
-            self.mine.discard(name)
+            return len(self.mine if names is None else self.mine.intersection(names))
+
+    def pending(self) -> set[str]:
+        with self._lock:
+            return set(self.mine)
 
     def rescan(self) -> None:
         """Recount pending and quarantined bytes on disk (all writers); the drainer removes
-        stale temp files."""
+        temp files and receipts older than an hour."""
         total, stale = 0, time.time() - 3600  # temp files older than 1 h
         for name in os.listdir(self.dir):
             with contextlib.suppress(OSError):
                 info, tmp = os.lstat(self._path(name)), name.startswith(".tmp-")
-                if tmp and self.holder and info.st_mtime < stale:
-                    os.unlink(self._path(name))
+                if (tmp or name.endswith(ACK_SUFFIX)) and self.holder and info.st_mtime < stale:
+                    os.unlink(self._path(name))  # unconsumed receipts too (writer gone)
                 elif tmp or name.endswith((".rec", QUARANTINE_SUFFIX)):
                     total += info.st_size
         with self._lock:

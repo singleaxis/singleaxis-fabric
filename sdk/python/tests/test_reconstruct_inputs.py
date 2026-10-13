@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 
 from fabric.reconstruct import ReconstructInputError, SpanRecord, read_span_file, reconstruct
-from fabric.reconstruct._inputs import HeartbeatObs, observe
+from fabric.reconstruct._ids import report_tenant_id
+from fabric.reconstruct._inputs import HeartbeatObs, MalformedMarkerObs, observe
 from tests.test_reconstruct_verifier import (
     GENERATED_AT,
     Capture,
@@ -301,13 +302,7 @@ def _heartbeat_span(span_id: str, attributes: dict[str, Any]) -> SpanRecord:
             "run_end",
             "r-1",
         ),
-        # A marker that names no valid run, or no valid scope (042 capture), bounds nothing.
-        ({"fabric.heartbeat.kind": "run_end", SCOPE_KEY: SCOPE}, None, None),
-        (
-            {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "bad id", SCOPE_KEY: SCOPE},
-            None,
-            None,
-        ),
+        # A marker that names no valid scope (042 capture) bounds nothing.
         ({"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1"}, None, None),
         (
             {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE.upper()},
@@ -348,6 +343,25 @@ def test_heartbeat_kind_is_a_closed_vocabulary(
     assert observed == HeartbeatObs("wire-1", 7, kind, run_id, 3, scope)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {"fabric.heartbeat.kind": "run_end", SCOPE_KEY: SCOPE},
+        {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "bad id", SCOPE_KEY: SCOPE},
+        {"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE,
+         "fabric.heartbeat.last_sequence": "x"},
+    ],
+)  # fmt: skip
+def test_a_marker_naming_a_valid_scope_with_malformed_fields_flags_that_scope(
+    attributes: dict[str, Any],
+) -> None:
+    """It bounds nothing, but the scope it names can never be closed (sol2 #5)."""
+    observed = observe(_heartbeat_span("b" * 16, attributes))
+    assert isinstance(observed, MalformedMarkerObs) and observed.scope_id == SCOPE
+    if attributes.get("fabric.heartbeat.last_sequence") != "x":
+        assert observed.heartbeat == HeartbeatObs("wire-1", 7, None, None, 3)
+
+
 def test_heartbeat_identity_ignores_the_span_id() -> None:
     """A retried export re-sends the same record under a new span id (spec 042 E1)."""
     attributes = {"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE}
@@ -373,6 +387,7 @@ def test_heartbeat_identity_includes_the_scope_id() -> None:
 def test_exchange_scope_id_must_be_a_lowercase_uuid4(
     tmp_path: Path, value: Any, expected: str | None
 ) -> None:
+    """A scope id is identity: a malformed one refuses the input (sol2 #5), never "absent"."""
     capture = Capture(tmp_path)
     exchange = capture.exchange(*react_turns()[0], scope_id=value)
     record = SpanRecord(
@@ -385,6 +400,10 @@ def test_exchange_scope_id_must_be_a_lowercase_uuid4(
         attributes=exchange.span["attributes"],
         resource={},
     )
+    if expected is None:
+        with pytest.raises(ReconstructInputError, match="malformed identity"):
+            observe(record)
+        return
     observed = observe(record)
     assert observed is not None
     assert getattr(observed, "scope_id") == expected  # noqa: B009
@@ -439,4 +458,7 @@ def test_report_names_no_input_paths(tmp_path: Path) -> None:
     validate(document)
     (entry,) = document["inputs"]["span_files"]
     assert set(entry) == {"sha256", "format", "records"}
-    assert document["inputs"]["store"] == {"kind": "local", "tenant_id": "tenant-a"}
+    assert document["inputs"]["store"] == {
+        "kind": "local",
+        "tenant_id": report_tenant_id("tenant-a"),
+    }

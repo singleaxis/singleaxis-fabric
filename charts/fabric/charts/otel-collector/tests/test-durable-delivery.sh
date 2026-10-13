@@ -143,7 +143,7 @@ profile_render="$(helm template ci "${umbrella_dir}" \
   --values "${profile}" \
   --set tenant.id=11111111-1111-4111-8111-111111111111 \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443')"
@@ -155,7 +155,7 @@ if helm template ci "${umbrella_dir}" \
   --values "${profile}" \
   --set tenant.id=11111111-1111-4111-8111-111111111111 \
   --set otel-collector.exporter.endpoint=http://otlp.example.com \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' >/dev/null 2>&1; then

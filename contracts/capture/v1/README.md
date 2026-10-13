@@ -66,7 +66,15 @@ capture gap inside that scope, never that the agent behaved correctly.
 The reconstruction report carries provider-derived ids (response,
 previous-response and tool-call ids) only as `p-` + the first 16 hex of
 their sha256, consistently within the report, and never names the location
-a store resolved for an object.
+a store resolved for an object. Operator labels follow spec 043 J1: capture
+emits `fabric.source_id` and `service.name` as `s-`/`svc-` + the first 32
+hex of `HMAC-SHA256(FABRIC_WIRE_ID_KEY, value)` (SHA-256 without a key)
+unless `FABRIC_WIRE_LABELS=clear`, and the report shows the tenant as `t-` +
+32 hex and source and run ids only in pseudonymous form;
+`fixtures/run-ids/run-id-pseudonym-v1.json` pins the function (the same hex
+under every prefix). A model name after a built-in or configured `prefix*`
+carries at most two numbers of at most 4 digits and one date (spec 043 §7,
+J2; `fixtures/model-names/model-exposure-v1.json`).
 
 **Spec 043 additions.** `scope_id` (`fabric.run.scope_id`, a lowercase
 uuid4, unique per `fabric.wire.run()` block entry) appears on exchanges

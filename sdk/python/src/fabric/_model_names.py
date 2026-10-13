@@ -5,10 +5,13 @@
 A provider ``model`` value is emitted as is only when it matches the 042 pattern, has no
 ``://`` and is allowlisted; any other string becomes ``m-`` + 16 hex of its SHA-256. An
 exact allowlist entry matches exactly. A ``prefix*`` entry matches only when the rest of
-the value, split on ``[-._:/@]``, consists solely of version tokens: digits (and dates),
-short version tokens (``4o``, ``o1``, ``v2``, ``70b``) or words of a fixed vocabulary
-(``mini``, ``turbo``, ``sonnet`` ...). So ``gpt-4o-mini-2024-07-18`` is kept and
-``gpt-patient-jane-doe`` is hashed. fabricguard (Go) applies the same rule; both are pinned
+the value, split on ``[-._:/@]``, consists solely of version tokens: numbers, short version
+tokens (``4o``, ``o1``, ``v2``, ``70b``) or words of a fixed vocabulary (``mini``, ``turbo``,
+``sonnet`` ...), with at most two numbers (J2): a number has at most 4 digits; a decimal
+version ``N.N`` (1-2 digits each) is one number; a date (``20YYMMDD``, or ``20YY-MM-DD`` as
+three tokens) is not a number and may appear once. So ``gpt-4o-mini-2024-07-18`` is kept
+and ``gpt-patient-jane-doe``, ``gpt-4o-123-45-6789`` and ``gpt-4o-919876543210`` are
+hashed. fabricguard (Go) applies the same rule; both are pinned
 by ``contracts/capture/v1/fixtures/model-names/model-exposure-v1.json``.
 Imports neither ``fabric.wire`` nor ``fabric.reconstruct``.
 """
@@ -16,6 +19,7 @@ Imports neither ``fabric.wire`` nor ``fabric.reconstruct``.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import re
 from collections.abc import Sequence
 
@@ -27,7 +31,11 @@ DEFAULT_MODEL_ALLOWLIST: tuple[str, ...] = (
     "qwen*", "grok*", "anthropic/*", "openai/*", "google/*",
 )  # fmt: skip
 SUFFIX_SEPARATORS = re.compile(r"[-._:/@]")
-VERSION_TOKEN = re.compile(r"^(?:\d+|v?\d+[a-z]{0,2}|\d+[a-z]\d*|[a-z]\d+)$")
+_SUFFIX_TOKEN = re.compile(r"[^-._:/@]+")
+VERSION_TOKEN = re.compile(r"^(?:v?[0-9]+[a-z]{0,2}|[0-9]+[a-z][0-9]*|[a-z][0-9]+)$")
+_NUMBER = re.compile(r"^[0-9]+$")
+_DATE = re.compile(r"^20[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$")
+MAX_SUFFIX_NUMBERS, MAX_NUMBER_DIGITS, MAX_SUFFIX_DATES = 2, 4, 1
 SUFFIX_WORDS = frozenset({
     "mini", "nano", "micro", "turbo", "preview", "latest", "instruct", "chat", "vision",
     "audio", "realtime", "search", "codex", "embedding", "embed", "large", "small", "medium",
@@ -51,12 +59,37 @@ def parse_model_allowlist(text: str | None) -> tuple[str, ...]:
     return entries
 
 
+def _digits(token: str, most: int = MAX_NUMBER_DIGITS) -> bool:
+    return bool(_NUMBER.fullmatch(token)) and len(token) <= most
+
+
 def version_suffix(suffix: str) -> bool:
-    """Whether ``suffix`` (what follows a ``prefix*`` entry's prefix) is only version tokens."""
-    return all(
-        VERSION_TOKEN.fullmatch(token) or token in SUFFIX_WORDS
-        for token in SUFFIX_SEPARATORS.split(suffix) if token
-    )  # fmt: skip
+    """Whether ``suffix`` (what follows a ``prefix*`` entry's prefix) is only version tokens,
+    with at most two numbers and one date (J2; pinned by the shared vectors)."""
+    matches = list(_SUFFIX_TOKEN.finditer(suffix))
+    tokens = [match.group() for match in matches]
+    seps = [suffix[a.end() : b.start()] for a, b in itertools.pairwise(matches)]
+    numbers = dates = index = 0
+    while index < len(tokens):
+        token, ahead, between = tokens[index], tokens[index : index + 3], seps[index : index + 2]
+        if between == ["-", "-"] and _DATE.fullmatch("".join(ahead)) and [
+                len(t) for t in ahead] == [4, 2, 2] and all(map(_digits, ahead)):  # fmt: skip
+            dates, index = dates + 1, index + 3  # 20YY-MM-DD as three tokens: one date
+        elif between[:1] == ["."] and _digits(token, 2) and _digits(ahead[1], 2):
+            numbers, index = numbers + 1, index + 2  # a decimal version N.N: one number
+        elif _NUMBER.fullmatch(token):
+            if _DATE.fullmatch(token):
+                dates += 1
+            elif len(token) <= MAX_NUMBER_DIGITS:
+                numbers += 1
+            else:
+                return False
+            index += 1
+        elif VERSION_TOKEN.fullmatch(token) or token in SUFFIX_WORDS:
+            index += 1
+        else:
+            return False
+    return numbers <= MAX_SUFFIX_NUMBERS and dates <= MAX_SUFFIX_DATES
 
 
 def model_allowed(value: str, allowlist: Sequence[str] = ()) -> bool:

@@ -32,6 +32,15 @@ destination. SingleAxis Platform is optional.
 - upstream OTLP receiver, memory limiter and optional development batch
   processor;
 - OTLP/HTTP and local debug exporters;
+- `noredirect` — an HTTP client middleware extension that refuses every
+  redirect: listed in an OTLP/HTTP exporter's `middlewares`, it turns a
+  `3xx` answer into a retryable transport failure before the client can
+  follow it, so a body or `Authorization` header is never re-sent to
+  another location and a redirect to an HTML page is never acknowledged as
+  an export. `fabric-gate` requires it on every OTLP/HTTP exporter
+  (`middlewares: [{id: noredirect}]`, with `noredirect: {}` under
+  `extensions` and in `service.extensions`). The `fabriccontent` S3 client
+  never follows a redirect either;
 - health-check and persistent file-storage extensions;
 - the bearer-token auth extension is compiled in for non-Kubernetes
   deployments that terminate token-authenticated OTLP ingress without a
@@ -64,13 +73,22 @@ pseudonym `r-<32 hex>` or a generated fallback (`trace:<32 hex>`,
 `source:<source id>:<epoch>`, `h-<40 hex>`), never as a clear caller id.
 `gen_ai.response.model` is kept only when allowlisted — built-in prefixes such
 as `gpt-*` or `claude-*` admit only version-token suffixes (`gpt-4o-mini`,
-`claude-3-5-sonnet-20240620`), exact names or `prefix*` entries can be added
+`claude-3-5-sonnet-20240620`) with at most two numbers of at most 4 digits
+(`N.N` counts as one) and one date, so `gpt-4o-123-45-6789` is hashed; exact
+names or `prefix*` entries can be added
 with `capture_model_allowlist` (the Node counterpart of the SDK's
 `FABRIC_WIRE_MODEL_ALLOWLIST`) — and is otherwise replaced by
 `m-` + 16 hex of its SHA-256, the same value the SDK emits; the vectors in
 `contracts/capture/v1/fixtures/model-names/` pin the rule for both.
-`service.name`, `fabric.source_id` and the tenant id are operator-chosen
-labels checked by pattern only: keep them opaque.
+By default (`capture_labels: pseudonymous`) capture spans may carry
+`fabric.source_id` only as the SDK's `s-<32 hex>` pseudonym, a source
+fallback run id only as `source:s-<32 hex>:<epoch>`, and their resource
+`service.name` only as `svc-<32 hex>`; a clear label from an old or
+non-conforming agent is dropped. Set `capture_labels: clear` only when the
+agents run with `FABRIC_WIRE_LABELS=clear`: operator-chosen labels are then
+exported unchanged (checked by pattern), and you guarantee they contain no
+personal data. In global-tracer mode the capture spans share the host's
+resource, whose clear `service.name` is dropped by default.
 
 Content (spec 043) has its own path: an `otlp/content*` receiver (OTLP/HTTP
 only, port 4319) feeds a `logs/content*` pipeline that runs only
@@ -80,9 +98,16 @@ descriptor itself. `fabric-gate` refuses a content receiver or
 `fabriccontent` in any other pipeline, any other receiver, processor or
 exporter in a content pipeline, gRPC on a content receiver, and any
 `connectors`, so content can never reach the OTLP destination exporter. The
-single-tenant rule is per Node: all `fabriccontent` exporters that share a
-receiver or a pipeline together allow one tenant unless every one of them
-sets `allow_multiple_tenants: true`. The gate also refuses an OTLP exporter
+single-tenant rule is per Node: all `fabriccontent` exporters in the
+effective configuration, whatever receivers, pipelines or authenticators
+they sit behind (and whether or not a pipeline uses them), together allow
+one tenant unless every one of them sets `allow_multiple_tenants: true`. A
+`fabriccontent` or OTLP/HTTP exporter block must be a literal map after the
+gate's own resolution: a whole block given as `${env:...}`, or any provider
+reference other than `${env:...}` inside it, is refused with a fixed
+message. Every OTLP/HTTP exporter must list the `noredirect` middleware.
+Gate diagnostics name config sources by position (`--config #2`) and never
+echo source text, paths, URLs or underlying error text. The gate also refuses an OTLP exporter
 endpoint (`endpoint`, `traces_endpoint`, `logs_endpoint`, ...) or a
 `fabriccontent` `s3.endpoint` with user info, a query or a fragment; put
 destination credentials in Secret-backed headers.

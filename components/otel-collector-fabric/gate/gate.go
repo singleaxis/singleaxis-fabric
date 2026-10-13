@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -34,14 +35,16 @@ func validateArgs(args []string) ([]tokenFile, error) {
 		return nil, fmt.Errorf("no --config supplied; refusing to boot an unverifiable configuration")
 	}
 	merged := map[string]any{}
-	for _, src := range sources {
-		raw, err := readConfigSource(src)
+	for i, src := range sources {
+		raw, err := readConfigSource(i+1, src)
 		if err != nil {
 			return nil, err
 		}
 		var parsed map[string]any
+		// The YAML error is not wrapped: it can quote the source text (an
+		// inline yaml: source may carry an Authorization header).
 		if err := yaml.Unmarshal(raw, &parsed); err != nil {
-			return nil, fmt.Errorf("%s: %w", src, err)
+			return nil, fmt.Errorf("--config #%d is not a valid YAML mapping", i+1)
 		}
 		deepMerge(merged, parsed)
 	}
@@ -84,32 +87,33 @@ func configSources(args []string) ([]string, error) {
 
 // readConfigSource loads a confmap URI. Only local sources are verifiable;
 // a remote or unknown scheme is refused because the gate cannot assert the
-// invariants over content it cannot read.
-func readConfigSource(src string) ([]byte, error) {
+// invariants over content it cannot read. Diagnostics name the source by its
+// position among the --config flags (#1, #2, ...) and never echo the source
+// text, a path, a URL or an underlying error: a source can be an inline
+// yaml: document holding a credential, or a URL with a token in its query.
+func readConfigSource(position int, src string) ([]byte, error) {
 	switch {
 	case strings.HasPrefix(src, "env:"):
-		name := strings.TrimPrefix(src, "env:")
-		v, ok := os.LookupEnv(name)
+		v, ok := os.LookupEnv(strings.TrimPrefix(src, "env:"))
 		if !ok {
-			return nil, fmt.Errorf("config source env:%s is not set", name)
+			return nil, fmt.Errorf("--config #%d names an environment variable that is not set", position)
 		}
 		return []byte(v), nil
 	case strings.HasPrefix(src, "yaml:"):
 		return []byte(strings.TrimPrefix(src, "yaml:")), nil
 	case strings.HasPrefix(src, "file:"):
-		return readLocalConfig(strings.TrimPrefix(src, "file:"))
+		return readLocalConfig(position, strings.TrimPrefix(src, "file:"))
 	case strings.Contains(src, "://") || strings.HasPrefix(src, "http:") || strings.HasPrefix(src, "https:"):
-		return nil, fmt.Errorf("remote config source %q cannot be verified by the recorder gate", src)
+		return nil, fmt.Errorf("--config #%d is a remote config source; the recorder gate cannot verify it", position)
 	default:
-		return readLocalConfig(src)
+		return readLocalConfig(position, src)
 	}
 }
 
-func readLocalConfig(path string) ([]byte, error) {
-	path = expandEnvRefs(path)
-	data, err := os.ReadFile(path)
+func readLocalConfig(position int, path string) ([]byte, error) {
+	data, err := os.ReadFile(expandEnvRefs(path))
 	if err != nil {
-		return nil, fmt.Errorf("cannot read collector config %q: %w", path, err)
+		return nil, fmt.Errorf("--config #%d cannot be read", position)
 	}
 	return data, nil
 }
@@ -142,10 +146,11 @@ func deepMerge(base, overlay map[string]any) {
 //     pipelines (logs/content*), which carry only content receivers, only
 //     memory_limiter and only fabriccontent; no content receiver speaks gRPC
 //     and no connector can bridge content into a telemetry pipeline;
-//   - a fabriccontent exporter allows one tenant unless it sets
-//     allow_multiple_tenants: true (the record names its tenant), and all
-//     fabriccontent exporters sharing a receiver or pipeline together allow
-//     one tenant unless every one of them sets it;
+//   - all fabriccontent exporters of the Node together allow one tenant
+//     unless every one of them sets allow_multiple_tenants: true (the record
+//     names its tenant), and each is a literal map the gate can read;
+//   - every OTLP/HTTP exporter lists the noredirect client middleware, so a
+//     3xx is a retryable failure, never a re-send or a false success;
 //   - no OTLP destination or fabriccontent S3 endpoint carries user info, a
 //     query or a fragment (credentials belong in Secret-backed headers or
 //     the AWS credential chain, never in the URL).
@@ -161,10 +166,13 @@ func checkPipelines(cfg map[string]any) error {
 	if err := checkContentReceivers(cfg); err != nil {
 		return err
 	}
+	if err := checkExportersReadable(cfg); err != nil {
+		return err
+	}
 	if err := checkContentTenants(cfg); err != nil {
 		return err
 	}
-	if err := checkSharedIngressTenants(cfg, pipelines); err != nil {
+	if err := checkRedirectMiddleware(cfg); err != nil {
 		return err
 	}
 	if err := checkExporterEndpoints(cfg); err != nil {
@@ -301,112 +309,154 @@ func checkContentReceivers(cfg map[string]any) error {
 	return nil
 }
 
-// checkContentTenants refuses a fabriccontent exporter that allows more than
-// one tenant without allow_multiple_tenants: true. A content record names its
-// own tenant and every authenticated agent reaches the same receiver, so
-// several allowed tenants let any agent write under another tenant's prefix
-// (Codex r2 #1). The exporter enforces the same rule; the gate refuses it
-// before the collector starts.
-func checkContentTenants(cfg map[string]any) error {
-	exporters, _ := cfg["exporters"].(map[string]any)
-	ids := make([]string, 0, len(exporters))
-	for id := range exporters {
-		if componentType(id) == "fabriccontent" {
-			ids = append(ids, id)
-		}
+// checkExportersReadable refuses an exporters section, or a fabriccontent
+// or OTLP/HTTP exporter block, that the gate cannot read as a literal map
+// after its own resolution: a whole block given as ${env:...} or
+// ${file:...} would hide the tenants, the middleware list or the endpoint
+// from every check below while the collector expands it at startup. Inside
+// those blocks only ${env:...} references are resolved by the gate; any
+// other provider reference (${file:...}, ${yaml:...}, ...) is refused for
+// the same reason. Diagnostics name the exporter id only.
+func checkExportersReadable(cfg map[string]any) error {
+	raw, present := cfg["exporters"]
+	if !present || raw == nil {
+		return nil
 	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		exporter, _ := exporters[id].(map[string]any)
-		if len(tenantList(exporter["allowed_tenants"])) > 1 && !configTrue(exporter["allow_multiple_tenants"]) {
-			return fmt.Errorf("exporter %q allows more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant", id)
+	exporters, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("the exporters section is not a literal mapping; fabric-gate cannot verify it")
+	}
+	for _, id := range sortedKeys(exporters) {
+		typ := componentType(id)
+		if typ != "fabriccontent" && !otlpHTTPExporterTypes[typ] {
+			continue
+		}
+		if _, ok := exporters[id].(map[string]any); !ok {
+			return fmt.Errorf("exporter %q is not a literal mapping after fabric-gate's resolution; write it as a map (individual fields may use ${env:...})", id)
+		}
+		if hasNonEnvReference(exporters[id]) {
+			return fmt.Errorf("exporter %q uses a config provider reference other than ${env:...}; fabric-gate cannot verify it", id)
 		}
 	}
 	return nil
 }
 
-// checkSharedIngressTenants enforces the single-tenant rule per Node rather
-// than per exporter (H2). Every authenticated agent reaching a content
-// receiver can send a record naming any tenant, and each exporter authorizes
-// only the record's claim; so fabriccontent/a allowing tenant A and
-// fabriccontent/b allowing tenant B behind the same receiver let an agent of
-// A write under B. Exporters are grouped when they share a pipeline or a
-// receiver (transitively); a group may allow more than one distinct tenant
-// only when every exporter in it sets allow_multiple_tenants: true. An
-// exporter in no pipeline is never instantiated and is checked only by
-// checkContentTenants. The diagnostic names exporter ids, never tenant ids.
-func checkSharedIngressTenants(cfg map[string]any, pipelines map[string]any) error {
+// checkContentTenants enforces one tenant per Node (F11, H2, J3). A content
+// record names its own tenant and the exporter authorizes only that claim,
+// so every agent able to reach any content receiver of the Node can write
+// under any tenant some fabriccontent exporter allows; separate receivers,
+// ports or authenticators do not bind an agent to a tenant. All
+// fabriccontent exporters in the effective configuration, whether or not a
+// pipeline uses them, together may allow more than one distinct tenant only
+// when every one of them sets allow_multiple_tenants: true. The diagnostic
+// names exporter ids, never tenant ids.
+func checkContentTenants(cfg map[string]any) error {
 	exporters, _ := cfg["exporters"].(map[string]any)
-	parent := map[string]string{}
-	var find func(string) string
-	find = func(x string) string {
-		if parent[x] == x {
-			return x
-		}
-		root := find(parent[x])
-		parent[x] = root
-		return root
-	}
-	union := func(a, b string) {
-		for _, n := range []string{a, b} {
-			if _, ok := parent[n]; !ok {
-				parent[n] = n
-			}
-		}
-		if ra, rb := find(a), find(b); ra != rb {
-			parent[ra] = rb
-		}
-	}
-	// Nodes are "e:<exporter>" and "r:<receiver>"; a pipeline joins its
-	// fabriccontent exporters with each other and with its receivers.
-	for _, node := range pipelines {
-		pipeline, _ := node.(map[string]any)
-		var members []string
-		for _, id := range idList(pipeline["exporters"]) {
-			if componentType(id) == "fabriccontent" {
-				members = append(members, "e:"+id)
-			}
-		}
-		if len(members) == 0 {
+	var ids []string
+	tenants := map[string]bool{}
+	allOptedIn := true
+	for _, id := range sortedKeys(exporters) {
+		if componentType(id) != "fabriccontent" {
 			continue
 		}
-		for _, id := range idList(pipeline["receivers"]) {
-			members = append(members, "r:"+id)
+		ids = append(ids, id)
+		exporter, _ := exporters[id].(map[string]any)
+		own := tenantList(exporter["allowed_tenants"])
+		optedIn := configTrue(exporter["allow_multiple_tenants"])
+		if len(own) > 1 && !optedIn {
+			return fmt.Errorf("exporter %q allows more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant", id)
 		}
-		for _, m := range members {
-			union(members[0], m)
+		for _, tenant := range own {
+			tenants[tenant] = true
 		}
+		allOptedIn = allOptedIn && optedIn
 	}
-	groups := map[string][]string{}
-	for n := range parent {
-		if id, ok := strings.CutPrefix(n, "e:"); ok {
-			groups[find(n)] = append(groups[find(n)], id)
+	if len(tenants) > 1 && !allOptedIn {
+		return fmt.Errorf("fabriccontent exporters %s together allow more than one tenant on this Node; any authenticated agent could write under another tenant. Run one Node per tenant, or set allow_multiple_tenants: true on every one of them", strings.Join(ids, ", "))
+	}
+	return nil
+}
+
+// otlpHTTPExporterTypes are the OTLP/HTTP exporter type names (current and
+// legacy spellings): their net/http client follows redirects unless the
+// noredirect middleware wraps it.
+var otlpHTTPExporterTypes = map[string]bool{"otlphttp": true, "otlp_http": true}
+
+// checkRedirectMiddleware requires every OTLP/HTTP exporter to list a
+// noredirect middleware that is defined under extensions and enabled in
+// service.extensions (spec 043 H1, J4). Without it the pinned upstream
+// client follows a 307 to another URL with the body and Authorization
+// header, and acknowledges a 302 to an HTML page as a successful export.
+func checkRedirectMiddleware(cfg map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	extensions, _ := cfg["extensions"].(map[string]any)
+	service, _ := cfg["service"].(map[string]any)
+	enabled := map[string]bool{}
+	for _, id := range idList(service["extensions"]) {
+		enabled[id] = true
+	}
+	for _, id := range sortedKeys(exporters) {
+		if !otlpHTTPExporterTypes[componentType(id)] {
+			continue
 		}
-	}
-	roots := make([]string, 0, len(groups))
-	for root := range groups {
-		roots = append(roots, root)
-	}
-	sort.Strings(roots)
-	for _, root := range roots {
-		ids := groups[root]
-		sort.Strings(ids)
-		tenants := map[string]bool{}
-		allOptedIn := true
-		for _, id := range ids {
-			exporter, _ := exporters[id].(map[string]any)
-			for _, tenant := range tenantList(exporter["allowed_tenants"]) {
-				tenants[tenant] = true
+		exporter, _ := exporters[id].(map[string]any)
+		middlewares, _ := exporter["middlewares"].([]any)
+		found := false
+		for _, m := range middlewares {
+			entry, _ := m.(map[string]any)
+			mid, _ := entry["id"].(string)
+			if componentType(mid) != "noredirect" {
+				continue
 			}
-			if !configTrue(exporter["allow_multiple_tenants"]) {
-				allOptedIn = false
+			if _, defined := extensions[mid]; !defined || !enabled[mid] {
+				return fmt.Errorf("exporter %q lists middleware %q, which is not defined under extensions and enabled in service.extensions", id, mid)
 			}
+			found = true
 		}
-		if len(tenants) > 1 && !allOptedIn {
-			return fmt.Errorf("fabriccontent exporters %s share content ingress and together allow more than one tenant; any agent reaching that receiver could write under another tenant. Run one Node per tenant, or set allow_multiple_tenants: true on every one of them", strings.Join(ids, ", "))
+		if !found {
+			return fmt.Errorf("exporter %q does not list the noredirect middleware; every OTLP/HTTP exporter needs middlewares: [{id: noredirect}] so a redirect is never followed", id)
 		}
 	}
 	return nil
+}
+
+// providerReference matches the start of a collector config provider
+// reference with an explicit scheme: ${file:..., ${yaml:..., ${env:...
+var providerReference = regexp.MustCompile(`\$\{([A-Za-z][A-Za-z0-9+.-]*):`)
+
+// hasNonEnvReference reports whether any string inside v carries a provider
+// reference other than ${env:...}, which only the collector would resolve.
+func hasNonEnvReference(v any) bool {
+	switch t := v.(type) {
+	case string:
+		for _, m := range providerReference.FindAllStringSubmatch(t, -1) {
+			if m[1] != "env" {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range t {
+			if hasNonEnvReference(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range t {
+			if hasNonEnvReference(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // tenantList returns the allowed_tenants values as the collector would see
@@ -454,12 +504,7 @@ var otlpEndpointFields = []string{"endpoint", "traces_endpoint", "logs_endpoint"
 // field only: the URL itself is never echoed.
 func checkExporterEndpoints(cfg map[string]any) error {
 	exporters, _ := cfg["exporters"].(map[string]any)
-	ids := make([]string, 0, len(exporters))
-	for id := range exporters {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
+	for _, id := range sortedKeys(exporters) {
 		exporter, _ := exporters[id].(map[string]any)
 		switch typ := componentType(id); {
 		case otlpExporterTypes[typ]:
@@ -586,18 +631,18 @@ func checkBearerTokenAuth(cfg map[string]any) ([]tokenFile, error) {
 func checkTokenFile(extension, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("extension %q token file %q: %w", extension, path, err)
+		return fmt.Errorf("extension %q token file cannot be read", extension)
 	}
 	if len(data) == 0 {
-		return fmt.Errorf("extension %q token file %q is empty", extension, path)
+		return fmt.Errorf("extension %q token file is empty", extension)
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.TrimSpace(line) == "" {
-			return fmt.Errorf("extension %q token file %q contains a blank line; an empty \"Bearer \" credential would authenticate", extension, path)
+			return fmt.Errorf("extension %q token file contains a blank line; an empty \"Bearer \" credential would authenticate", extension)
 		}
 	}
 	if data[len(data)-1] == '\n' {
-		return fmt.Errorf("extension %q token file %q ends with a newline; an empty \"Bearer \" credential would authenticate (rewrite with printf %%s, not echo)", extension, path)
+		return fmt.Errorf("extension %q token file ends with a newline; an empty \"Bearer \" credential would authenticate (rewrite with printf %%s, not echo)", extension)
 	}
 	return nil
 }

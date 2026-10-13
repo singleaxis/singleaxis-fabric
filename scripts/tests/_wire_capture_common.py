@@ -10,12 +10,15 @@ and real sockets with:
 - ``collector-production.yaml`` with exactly its documented TLS edits applied;
 - a fake OpenAI-compatible model on a real TCP socket;
 - the HTTPS, fsync'ing OTLP sink (``_wire_capture_sink.py``) as a host process;
-- readers for the agent's spool directory (spec 043 §2 framing).
+- readers for the agent's spool directory (spec 043 §2 framing);
+- the label pseudonym function (spec 043 J1), computed independently of Fabric.
 """
 
 from __future__ import annotations
 
 import datetime
+import hashlib
+import hmac
 import ipaddress
 import json
 import re
@@ -41,6 +44,13 @@ AGENT = Path(__file__).with_name("_wire_capture_agent.py")
 SINK = Path(__file__).with_name("_wire_capture_sink.py")
 DEFAULT_NODE_IMAGE = "fabric/node:wire-capture-e2e"
 SPOOL_MAGIC = b"FWSPOOL1"
+
+
+def pseudonym(prefix: str, value: str, key: str | None) -> str:
+    """Spec 043 J1/H3: ``prefix`` + 32 hex of HMAC-SHA256(key, value) (SHA-256 unkeyed)."""
+    data = value.encode("utf-8")
+    digest = hmac.new(key.encode("utf-8"), data, hashlib.sha256) if key else hashlib.sha256(data)
+    return prefix + digest.hexdigest()[:32]
 
 
 def compose_available() -> bool:
@@ -330,8 +340,13 @@ class FakeModel:
 class Sink:
     """The customer-selected destination behind the Node."""
 
-    def __init__(self, directory: Path, tls: Path, egress_auth: str) -> None:
+    def __init__(
+        self, directory: Path, tls: Path, egress_auth: str, *, id_key: str | None = None
+    ) -> None:
         self.directory = directory
+        # The agents' FABRIC_WIRE_ID_KEY: capture spans carry service.name only
+        # as its svc- pseudonym by default (spec 043 J1).
+        self.id_key = id_key
         self.tls = tls
         self.egress_auth = egress_auth
         self.port = free_port()
@@ -382,9 +397,11 @@ class Sink:
         return [json.loads(line) for line in lines if line.strip()]
 
     def spans_of(self, service: str) -> list[dict[str, Any]]:
+        """Spans whose resource ``service.name`` is the J1 pseudonym of ``service``."""
+        emitted = pseudonym("svc-", service, self.id_key)
         return [
             row for row in self.rows()
-            if row.get("kind") == "span" and row["resource"].get("service.name") == service
+            if row.get("kind") == "span" and row["resource"].get("service.name") == emitted
         ]  # fmt: skip
 
     def raw_bytes(self) -> bytes:

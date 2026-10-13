@@ -52,7 +52,7 @@ helm upgrade --install fabric charts/fabric \
   --values charts/fabric/profiles/shadow-production.yaml \
   --set tenant.id=TENANT_UUID \
   --set otel-collector.exporter.endpoint=https://otlp.example.com \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
@@ -83,7 +83,12 @@ Operational notes:
   `podSelector` that narrows it; an empty `podSelector` alone (every pod in
   the namespace); an `ipBlock` with prefix length 0 (`0.0.0.0/0`, `::/0`,
   `10.0.0.0/0`, …); an `ipBlock` combined with a selector. A selector
-  restricts when it has `matchLabels` or an `In`/`Exists` expression. An
+  restricts when it has `matchLabels` or an `In`/`Exists` expression.
+  Label values are strings in Kubernetes (`matchLabels` is
+  `map<string,string>`): pass them with `--set-string`, as above, or quote
+  them (`"true"`) in a values file. `--set ...=true` makes a boolean, which
+  the API server rejects, so the chart refuses a boolean or numeric
+  `matchLabels` or `matchExpressions` value at render time. An
   empty `ingressFrom` keeps the development default (any namespace) and is
   refused by `shadow-production`. The health extension is not exposed by
   NetworkPolicy by default — kubelet probes are node traffic. To let a
@@ -97,6 +102,13 @@ Operational notes:
   would land in the rendered ConfigMap. Put the destination credential in
   the `fabric-node-export-auth` Secret. `shadow-production` requires
   `https://`. Render errors name the field and never echo the value.
+- **Redirects.** The chart attaches the distribution's `noredirect` client
+  middleware to the OTLP/HTTP exporter: a `3xx` from the destination is a
+  retried failure, never a re-send of the batch and its Authorization
+  header to another location and never a false success (a `302` to a login
+  page). `fabric-gate` refuses an OTLP/HTTP exporter without it. Configure
+  the destination's final URL; a redirecting one stalls delivery until
+  corrected.
 - **Pull secrets.** Set `otel-collector.imagePullSecrets`; there is no
   parent-level `imagePullSecrets` key.
 - **`helm test` is dev-only.** The bundled test pod matches no ingress
@@ -135,9 +147,13 @@ under another tenant's prefix. Run one Node per tenant; only
 `otel-collector.content.allowMultipleTenants=true` permits more, and it
 trusts every authenticated agent to name its tenant. The rule is per Node:
 the chart renders one `fabriccontent` exporter, and `fabric-gate` refuses a
-hand-written or overlaid configuration whose `fabriccontent` exporters share
-a receiver or pipeline but do not all allow the same single tenant (unless
-every one of them sets `allow_multiple_tenants: true`). `content.s3.sse` is
+hand-written or overlaid configuration whose `fabriccontent` exporters,
+taken together across the whole effective configuration (whatever
+receivers, pipelines or authenticators they sit behind), allow more than one
+tenant, unless every one of them sets `allow_multiple_tenants: true`. A
+`fabriccontent` block the gate cannot read as a literal map after its own
+resolution (for example a whole-block `${env:…}`) is refused with a fixed
+message. `content.s3.sse` is
 required for the s3 backend (`AES256` by default, or `aws:kms`).
 
 The content receiver uses the same server certificate, client CA and

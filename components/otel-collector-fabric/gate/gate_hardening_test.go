@@ -8,6 +8,28 @@ import (
 	"testing"
 )
 
+// sharedAuthTwoReceivers is Sol's data-exposure repro on 03484d5: two
+// content receivers on different ports behind the same bearer
+// authenticator, each pipeline exporting to a different tenant.
+const sharedAuthTwoReceivers = `extensions:
+  bearertokenauth: {tokens: [shared-node-credential]}
+receivers:
+  otlp/content-a:
+    protocols:
+      http: {endpoint: '127.0.0.1:44319', auth: {authenticator: bearertokenauth}}
+  otlp/content-b:
+    protocols:
+      http: {endpoint: '127.0.0.1:44320', auth: {authenticator: bearertokenauth}}
+exporters:
+  fabriccontent/a: {allowed_tenants: [tenant-a], backend: file, file: {directory: /var/lib/fabric-node/a}}
+  fabriccontent/b: {allowed_tenants: [tenant-b], backend: file, file: {directory: /var/lib/fabric-node/b}}
+service:
+  extensions: [bearertokenauth]
+  pipelines:
+    logs/content-a: {receivers: [otlp/content-a], exporters: [fabriccontent/a]}
+    logs/content-b: {receivers: [otlp/content-b], exporters: [fabriccontent/b]}
+`
+
 // fileExporter is one fabriccontent exporter block with the given tenant list
 // line(s) and extra lines.
 func fileExporter(id, body string) string {
@@ -18,7 +40,7 @@ func fileExporter(id, body string) string {
 // exporter. Two fabriccontent exporters each allowing one different tenant,
 // fed by the same content receiver (same pipeline or sibling pipelines), let
 // an agent of tenant A write a record claiming tenant B.
-func TestContentTenantsOnePerSharedIngress(t *testing.T) {
+func TestContentTenantsOnePerNode(t *testing.T) {
 	twoInOnePipeline := strings.Replace(contentConfig, "exporters: [fabriccontent]", "exporters: [fabriccontent/a, fabriccontent/b]", 1)
 	siblingPipelines := contentConfig + "    logs/content-b:\n      receivers: [otlp/content]\n      processors: [memory_limiter]\n      exporters: [fabriccontent/b]\n"
 	siblingA := strings.Replace(siblingPipelines, "exporters: [fabriccontent]\n", "exporters: [fabriccontent/a]\n", 1)
@@ -47,6 +69,19 @@ func TestContentTenantsOnePerSharedIngress(t *testing.T) {
 		"only one exporter opted in": twoInOnePipeline + "exporters:\n" +
 			fileExporter("fabriccontent/a", "    allowed_tenants: [tenant-a]\n    allow_multiple_tenants: true\n") +
 			fileExporter("fabriccontent/b", "    allowed_tenants: [tenant-b]\n"),
+		// J3: one tenant per Node, not per receiver. Separate receivers
+		// and pipelines do not bind an agent to a tenant (Sol data
+		// exposure #1: two receivers behind one bearer authenticator).
+		"separate ingress": strings.Replace(contentConfig, "exporters: [fabriccontent]\n", "exporters: [fabriccontent/a]\n", 1) +
+			"    logs/content-b:\n      receivers: [otlp/content-b]\n      exporters: [fabriccontent/b]\n" +
+			"exporters:\n" +
+			fileExporter("fabriccontent/a", "    allowed_tenants: [tenant-a]\n") +
+			fileExporter("fabriccontent/b", "    allowed_tenants: [tenant-b]\n"),
+		"separate receivers, shared bearer authenticator": sharedAuthTwoReceivers,
+		// An exporter in no pipeline still counts: the rule is per Node.
+		"unused exporter": contentConfig + "exporters:\n" +
+			fileExporter("fabriccontent", "    allowed_tenants: [tenant-a]\n") +
+			fileExporter("fabriccontent/unused", "    allowed_tenants: [tenant-b]\n"),
 	}
 	for name, cfg := range refused {
 		t.Run("refused/"+name, func(t *testing.T) {
@@ -71,16 +106,6 @@ func TestContentTenantsOnePerSharedIngress(t *testing.T) {
 		"every exporter opted in": twoInOnePipeline + "exporters:\n" +
 			fileExporter("fabriccontent/a", "    allowed_tenants: [tenant-a]\n    allow_multiple_tenants: true\n") +
 			fileExporter("fabriccontent/b", "    allowed_tenants: [tenant-b]\n    allow_multiple_tenants: ${env:GATE_TEST_TRUE}\n"),
-		// Separate receivers and pipelines: separate ingress, separate tenants.
-		"separate ingress": strings.Replace(contentConfig, "exporters: [fabriccontent]\n", "exporters: [fabriccontent/a]\n", 1) +
-			"    logs/content-b:\n      receivers: [otlp/content-b]\n      exporters: [fabriccontent/b]\n" +
-			"exporters:\n" +
-			fileExporter("fabriccontent/a", "    allowed_tenants: [tenant-a]\n") +
-			fileExporter("fabriccontent/b", "    allowed_tenants: [tenant-b]\n"),
-		// An exporter in no pipeline is never instantiated by the collector.
-		"unused exporter": contentConfig + "exporters:\n" +
-			fileExporter("fabriccontent", "    allowed_tenants: [tenant-a]\n") +
-			fileExporter("fabriccontent/unused", "    allowed_tenants: [tenant-b]\n"),
 	}
 	for name, cfg := range accepted {
 		t.Run("accepted/"+name, func(t *testing.T) {
@@ -111,6 +136,7 @@ func TestExporterEndpointCredentialsRejected(t *testing.T) {
 	t.Setenv("GATE_TEST_ENDPOINT", "https://user:"+secret+"@otlp.example.com")
 	destination := func(typ, field, value string) string {
 		return contentConfig + "exporters:\n  " + typ + "/fabric:\n    " + field + ": " + value + "\n" +
+			"    middlewares: [{id: noredirect}]\n" +
 			fileExporter("fabriccontent", "    allowed_tenants: [tenant-a]\n")
 	}
 	s3 := func(endpoint string) string {
@@ -137,7 +163,7 @@ func TestExporterEndpointCredentialsRejected(t *testing.T) {
 	}
 	for name, cfg := range refused {
 		t.Run("refused/"+name, func(t *testing.T) {
-			_, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)})
+			_, err := validateArgs(withNoRedirect(t, cfg))
 			if err == nil || !strings.Contains(err.Error(), "must not contain user info, a query or a fragment") {
 				t.Fatalf("credential-bearing endpoint not refused: %v", err)
 			}
@@ -158,16 +184,15 @@ func TestExporterEndpointCredentialsRejected(t *testing.T) {
 	}
 	for name, cfg := range accepted {
 		t.Run("accepted/"+name, func(t *testing.T) {
-			if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err != nil {
+			if _, err := validateArgs(withNoRedirect(t, cfg)); err != nil {
 				t.Fatalf("rejected: %v", err)
 			}
 		})
 	}
 	// An overlay cannot add credentials after the base was checked.
-	_, err := validateArgs([]string{
-		"--config=" + writeConfig(t, destination("otlp_http", "endpoint", "https://otlp.example.com")),
-		"--config=" + writeConfig(t, "exporters:\n  otlp_http/fabric:\n    endpoint: https://u:"+secret+"@otlp.example.com\n"),
-	})
+	_, err := validateArgs(append(withNoRedirect(t, destination("otlp_http", "endpoint", "https://otlp.example.com")),
+		"--config="+writeConfig(t, "exporters:\n  otlp_http/fabric:\n    endpoint: https://u:"+secret+"@otlp.example.com\n"),
+	))
 	if err == nil || strings.Contains(err.Error(), secret) {
 		t.Fatalf("overlay adding credentials not refused cleanly: %v", err)
 	}

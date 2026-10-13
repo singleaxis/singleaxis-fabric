@@ -33,6 +33,7 @@ from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.sampling import ALWAYS_ON, Sampler
 
+from ._sequence import LABELS_ENV, id_key_from_env, label_pseudonym
 from ._version import __version__
 
 _LOG = logging.getLogger("fabric")
@@ -457,21 +458,23 @@ def is_private_provider(provider: object) -> bool:
     return isinstance(provider, TracerProvider) and provider in _PRIVATE_PROVIDERS
 
 
-def build_private_provider(*, exporter: SpanExporter | None = None) -> TracerProvider:
+def build_private_provider(
+    *, exporter: SpanExporter | None = None, service_name: str | None = None
+) -> TracerProvider:
     """A :class:`TracerProvider` for Fabric's direct capture path, never installed globally.
 
     The exporter is ``exporter``, else the OTLP exporter of
     :func:`build_capture_span_exporter` when an OTLP endpoint is set (otherwise none, with
     a WARN); either is guarded (sanitized diagnostics, exceptions as ``FAILURE``). The
-    resource is only ``service.name`` (a valid ``OTEL_SERVICE_NAME``, else
-    ``fabric-wire``); sampling is ``ALWAYS_ON``. Spans a failed or evicted export loses
+    resource is only ``service.name`` (``service_name``, else :func:`capture_service_name`:
+    pseudonymous by default); sampling is ``ALWAYS_ON``. Spans a failed or evicted export loses
     stay sequence gaps the verifier reports (spec 042 §6); the spool (spec 043) closes
     them. No exit handler of its own: ``fabric.wire`` shuts it down within its budget.
     """
     resolved = exporter if exporter is not None else _otlp_exporter()
     provider = TracerProvider(
         sampler=ALWAYS_ON,
-        resource=Resource({"service.name": capture_service_name()}),
+        resource=Resource({"service.name": service_name or capture_service_name()}),
         span_limits=SpanLimits(max_span_attribute_length=_MAX_ATTR_VALUE_LEN),
         shutdown_on_exit=False,
     )
@@ -487,7 +490,17 @@ def build_private_provider(*, exporter: SpanExporter | None = None) -> TracerPro
     return provider
 
 
-def capture_service_name() -> str:
-    """``OTEL_SERVICE_NAME`` when it is a safe name, else ``fabric-wire`` (042 D3)."""
-    name = os.environ.get("OTEL_SERVICE_NAME", "")
-    return name if _SERVICE_NAME_RE.fullmatch(name) else "fabric-wire"
+def capture_service_name(
+    environ: Mapping[str, str] | None = None, *, id_key: bytes | None = None,
+    clear: bool | None = None,
+) -> str:  # fmt: skip
+    """The capture ``service.name``: ``OTEL_SERVICE_NAME`` when it is a safe name, else
+    ``fabric-wire`` (042 D3), exported as ``svc-`` + 32 hex of HMAC-SHA256(``id_key``, name)
+    (SHA-256 without a key) unless ``clear`` (J1). ``id_key``/``clear`` default to
+    ``FABRIC_WIRE_ID_KEY`` and ``FABRIC_WIRE_LABELS=clear``."""
+    env = os.environ if environ is None else environ
+    name = env.get("OTEL_SERVICE_NAME", "")
+    name = name if _SERVICE_NAME_RE.fullmatch(name) else "fabric-wire"
+    if clear if clear is not None else (env.get(LABELS_ENV) or "").strip() == "clear":
+        return name
+    return label_pseudonym("svc-", name, id_key if id_key is not None else id_key_from_env(env))

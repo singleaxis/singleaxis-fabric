@@ -21,12 +21,14 @@ from typing import Any
 
 import pytest
 
+from fabric._sequence import run_pseudonym as rid
 from fabric.reconstruct import reconstruct
 from tests.test_reconstruct_inputs import to_otlp
 from tests.test_reconstruct_verifier import (
     EPOCH,
     GENERATED_AT,
     SOURCE,
+    SOURCE_2,
     Capture,
     only_run,
     react_turns,
@@ -36,7 +38,7 @@ from tests.test_reconstruct_verifier import (
     validate,
 )
 
-R, Q, S = "agent-run-r", "agent-run-q", "agent-run-s"
+R, Q, S = rid("agent-run-r"), rid("agent-run-q"), rid("agent-run-s")
 TURN = react_turns()[0]
 
 
@@ -421,7 +423,7 @@ def test_scoped_exchange_on_another_source_is_outside(tmp_path: Path) -> None:
     scope = first.run_start(R)
     first.exchange(*TURN, run_id=R)
     first.run_end(R)
-    second = Capture(tmp_path, source_id="wire-0000000000000002", id_prefix="b")
+    second = Capture(tmp_path, source_id=SOURCE_2, id_prefix="b")
     second.exchange(*TURN, run_id=R, scope_id=scope)
     second.heartbeat()
     first.rows.extend(second.rows)
@@ -431,7 +433,7 @@ def test_scoped_exchange_on_another_source_is_outside(tmp_path: Path) -> None:
     other = [w for w in run["declared_scope"]["windows"] if w["source_id"] != SOURCE]
     assert other == [
         {
-            "source_id": "wire-0000000000000002",
+            "source_id": SOURCE_2,
             "source_epoch": EPOCH,
             "first_sequence": 0,
             "last_sequence": 0,
@@ -440,17 +442,13 @@ def test_scoped_exchange_on_another_source_is_outside(tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    "scope_value", [None, "NOT-A-UUID", "8C1F0E2D-4A5B-4C6D-9E7F-2A3B4C5D6E7F"]
-)
-def test_unscoped_exchange_of_a_scoped_run_is_outside(
-    capture: Capture, scope_value: str | None
-) -> None:
-    """A call that started outside every open block (or with a malformed scope id)."""
+def test_unscoped_exchange_of_a_scoped_run_is_outside(capture: Capture) -> None:
+    """A call that started outside every open block. (A malformed scope id is a malformed
+    identity: the input is refused, ``test_reconstruct_inputs``.)"""
     capture.run_start(R)  # -1
     capture.exchange(*TURN, run_id=R)  # 0
     capture.run_end(R)  # 0
-    capture.exchange(*TURN, run_id=R, scope_id=scope_value)  # 1
+    capture.exchange(*TURN, run_id=R)  # 1
     capture.heartbeat()
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "unverified"

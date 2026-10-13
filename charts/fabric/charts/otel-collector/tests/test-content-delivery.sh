@@ -196,7 +196,7 @@ expect_count "gRPC, HTTP and content receivers verify client certificates" "${tl
 printf '\n=== NetworkPolicy ===\n'
 np_render="$(helm template ci "${chart_dir}" "${s3_args[@]}" \
   --set networkPolicy.enabled=true \
-  --set 'networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'networkPolicy.contentEgress.to[0].ipBlock.cidr=198.51.100.0/24' \
   --set 'networkPolicy.contentEgress.ports[0].protocol=TCP' \
   --set 'networkPolicy.contentEgress.ports[0].port=443' \
@@ -288,7 +288,7 @@ production_args=(
   --values "${profile}"
   --set tenant.id=11111111-1111-4111-8111-111111111111
   --set otel-collector.exporter.endpoint=https://otlp.example.com
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'

@@ -8,6 +8,7 @@ disk for a retry; on the direct path it stays a sequence gap the verifier report
 
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Iterator, Sequence
 from typing import Any
@@ -122,10 +123,12 @@ def test_build_private_provider_is_always_on_guarded_and_never_global(
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", raising=False)
     monkeypatch.setenv("OTEL_TRACES_SAMPLER", "always_off")
     monkeypatch.setenv("OTEL_SERVICE_NAME", "wire-svc")
+    monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
     exporter = InMemorySpanExporter()
     private = build_private_provider(exporter=exporter)
     assert trace._TRACER_PROVIDER is None
-    assert dict(private.resource.attributes) == {"service.name": "wire-svc"}
+    pseudonym = "svc-" + hashlib.sha256(b"wire-svc").hexdigest()[:32]  # J1
+    assert dict(private.resource.attributes) == {"service.name": pseudonym}
     (processor,) = _processors(private)
     assert isinstance(processor, BatchSpanProcessor)
     assert processor.span_exporter._inner is exporter  # guarded, no loss requeue

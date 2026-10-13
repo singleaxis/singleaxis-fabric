@@ -34,7 +34,7 @@
     {"path": "fixtures/invalid/run-reconstruction-scoped-run-claims-declared-scope.json", "sha256": "1ff2ebe8d5d1a85b1b6ea3250274ad26020785597c59a8cfe033538e908f1566", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
     {"path": "fixtures/invalid/run-reconstruction-scope-verdict-stronger.json", "sha256": "6075c1931e4c415500861e494317659de4b8bc3a72b773722d17e21e69ef12af", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
     {"path": "fixtures/invalid/run-reconstruction-scope-without-verdict.json", "sha256": "6d9fb7c6b9463c1f8bd6fe803264496f31fdf0a9229fedfc515c776aa7d27d38", "expectation": "invalid", "expected_error": "capture.reconstruction.scope"},
-    {"path": "fixtures/model-names/model-exposure-v1.json", "sha256": "9612a2c3f0d3e44bf0ef7e7c0d2ff7972031a5b8966fdf53d8c38a0c86c42bce", "expectation": "vectors", "expected_error": null},
-    {"path": "fixtures/run-ids/run-id-pseudonym-v1.json", "sha256": "7d1e1d5e4cb9c7d410e4cb6441a5f0bea68383a7393952239bce9ac6337816d2", "expectation": "vectors", "expected_error": null}
+    {"path": "fixtures/model-names/model-exposure-v1.json", "sha256": "635ea3ac269d0d60b125ea3d3f6e0cfbbfddf577cd26c89501238ba78291aaf0", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/run-ids/run-id-pseudonym-v1.json", "sha256": "5d606abfae8566c98bb0f858a2c05fafea6faf0126b4241164a7ae5a043528e5", "expectation": "vectors", "expected_error": null}
   ]
 }

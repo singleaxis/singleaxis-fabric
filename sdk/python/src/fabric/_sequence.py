@@ -1,7 +1,8 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """Source identity, one monotonic sequence per ``(source_id, epoch)``, run scopes (043 §6)
-and run-id pseudonyms (H3): a caller-supplied run id never leaves the process in clear."""
+and label pseudonyms: a caller-supplied run id never leaves the process in clear (H3), and
+by default neither does the source id nor the private provider's ``service.name`` (J1)."""
 
 from __future__ import annotations
 
@@ -18,11 +19,14 @@ import weakref
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RUN_PSEUDONYM_RE = re.compile(r"^r-[0-9a-f]{32}$")
+SOURCE_PSEUDONYM_RE = re.compile(r"^s-[0-9a-f]{32}$")
 ID_KEY_ENV = "FABRIC_WIRE_ID_KEY"
+LABELS_ENV = "FABRIC_WIRE_LABELS"  # "clear": operator labels exported unchanged (opt-in)
+Labels = Literal["pseudonymous", "clear"]
 MIN_ID_KEY_BYTES = 16
 Component = Literal["wire"]
 _LIVE: weakref.WeakSet[SourceAllocator] = weakref.WeakSet()
@@ -58,14 +62,37 @@ def encode_opaque_id(value: str) -> str:
     return "h-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:40]
 
 
-def run_pseudonym(run_id: str, key: bytes | None = None) -> str:
-    """The emitted form of a caller-supplied run id (H3): ``r-`` + the first 32 hex of
-    HMAC-SHA256(``key``, run id), or of SHA-256(run id) without a key. Spans, markers, spool
-    records, content descriptors and reports carry only this; ``fabric.reconstruct --run``
-    maps a clear id the same way."""
-    data = run_id.encode("utf-8", "surrogatepass")
+def label_pseudonym(prefix: str, value: str, key: bytes | None = None) -> str:
+    """``prefix`` + the first 32 hex of HMAC-SHA256(``key``, value), or of SHA-256(value)
+    without a key: one function for run (``r-``), source (``s-``), service (``svc-``) and
+    report tenant (``t-``) labels, pinned by ``run-id-pseudonym-v1.json``."""
+    data = value.encode("utf-8", "surrogatepass")
     digest = hmac.new(key, data, hashlib.sha256) if key else hashlib.sha256(data)
-    return "r-" + digest.hexdigest()[:32]
+    return prefix + digest.hexdigest()[:32]
+
+
+def run_pseudonym(run_id: str, key: bytes | None = None) -> str:
+    """The emitted form of a caller-supplied run id (H3): ``r-`` + :func:`label_pseudonym`.
+    Spans, markers, spool records, content descriptors and reports carry only this;
+    ``fabric.reconstruct --run`` maps a clear id the same way."""
+    return label_pseudonym("r-", run_id, key)
+
+
+def source_label(source_id: str, key: bytes | None = None, *, clear: bool = False) -> str:
+    """The emitted source id (J1): ``s-`` + :func:`label_pseudonym`, or the operator's label
+    unchanged when ``clear`` (``FABRIC_WIRE_LABELS=clear``). An ``s-`` value is kept."""
+    if clear or SOURCE_PSEUDONYM_RE.fullmatch(source_id):
+        return source_id
+    return label_pseudonym("s-", source_id, key)
+
+
+def labels_from_env(environ: Mapping[str, str]) -> Labels:
+    """``FABRIC_WIRE_LABELS``: unset/``pseudonymous`` (default) or ``clear``; else
+    ``ValueError`` (fixed text, never the value)."""
+    value = (environ.get(LABELS_ENV) or "pseudonymous").strip()
+    if value not in ("pseudonymous", "clear"):
+        raise ValueError(f"{LABELS_ENV} must be 'pseudonymous' or 'clear'")
+    return cast("Labels", value)
 
 
 def check_id_key(key: bytes | None) -> bytes | None:

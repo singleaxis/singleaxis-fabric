@@ -21,6 +21,7 @@ import pytest
 
 from fabric.content_store.s3 import S3ContentStore
 from fabric.reconstruct.__main__ import main
+from fabric.reconstruct._ids import report_tenant_id
 from fabric.reconstruct._objects import StoreReader
 from tests.test_reconstruct_verifier import (
     CAPTURE_ROOT,
@@ -207,7 +208,7 @@ def test_reconstruct_reads_node_content_through_an_s3_compatible_endpoint(
     assert main(argv) == 0, capsys.readouterr().err
     document = json.loads(out.read_text())
     validate(document)
-    assert document["inputs"]["store"] == {"kind": "s3", "tenant_id": TENANT}
+    assert document["inputs"]["store"] == {"kind": "s3", "tenant_id": report_tenant_id(TENANT)}
     run = only_run(document)
     assert run["verdict"] == "complete_for_declared_scope"
     assert {obj["verification"] for e in run["exchanges"] for obj in e["objects"].values()} == {

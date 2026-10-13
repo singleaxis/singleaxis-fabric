@@ -70,13 +70,14 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). Optional in file mode, where it enables the same delivery path. |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | no | Spool bound, default 1 GiB, minimum `2 × FABRIC_WIRE_MAX_BODY_BYTES + 1 MiB`. When full, new exchanges are dropped and recorded as `queue_full` losses; the host is unaffected. |
 | `FABRIC_WIRE_MODEL_ALLOWLIST` | no | Comma-separated model names emitted as is, in addition to the built-in public families. An exact entry matches only that name; a `prefix*` entry matches only a version-like suffix (§3). Any other model name is emitted as `m-` + a hash. |
-| `FABRIC_WIRE_ID_KEY` | recommended in production | Secret key for run-id pseudonyms: a run id passed to `fabric.wire.run(run_id)` is emitted as `r-` + 32 hex of `HMAC-SHA256(key, run_id)`; unset, an unkeyed SHA-256 that anyone who can guess a run id can recompute. Never logged. See "The run-id key" below. |
-| `FABRIC_SOURCE_ID` | no | Opaque id of this capture source. Default `wire-` + 16 hex derived from host name and `service.name`. |
+| `FABRIC_WIRE_ID_KEY` | recommended in production | Secret key for identifier pseudonyms: a run id passed to `fabric.wire.run(run_id)` is emitted as `r-` + 32 hex of `HMAC-SHA256(key, run_id)`, and (by default, see `FABRIC_WIRE_LABELS`) the source id as `s-` + 32 hex and `service.name` as `svc-` + 32 hex of the same function. Unset, an unkeyed SHA-256 that anyone who can guess the value can recompute. Never logged. See "The id key" below. |
+| `FABRIC_WIRE_LABELS` | no | Unset or `pseudonymous` (default): source id and `service.name` leave the agent only as `s-`/`svc-` pseudonyms. `clear`: they are emitted unchanged; **operator-chosen labels are exported unchanged; you guarantee they contain no personal data**. Any other value is a configuration error. Run ids are pseudonymised in both modes. |
+| `FABRIC_SOURCE_ID` | no | Id of this capture source, emitted as its `s-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`). Default `wire-` + 16 hex derived from host name and `service.name`. |
 | `FABRIC_WIRE_ENDPOINTS` | no | JSON array of extra endpoint matchers (vLLM, Ollama, an internal proxy). OpenAI, Anthropic and Azure OpenAI are matched by default. |
 | `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and worker queue length (default 256). |
 | `FABRIC_WIRE_TRACER` | no | `private` (default, and required in node mode). `global` sends exchange spans through the agent's own provider without the spool; it is refused in node mode (see "Global mode" below). |
 | `FABRIC_WIRE_STORE_SSE`, `FABRIC_WIRE_STORE_KMS_KEY_ID` | — | **Removed.** Setting either is an error: encryption is configured on the Fabric Node. |
-| `OTEL_SERVICE_NAME` | no | The capture spans' one resource attribute (must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, else `fabric-wire`); `OTEL_RESOURCE_ATTRIBUTES` and resource detectors are ignored. |
+| `OTEL_SERVICE_NAME` | no | Source of the capture spans' one resource attribute, `service.name` (must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, else `fabric-wire`), emitted as its `svc-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`); `OTEL_RESOURCE_ATTRIBUTES` and resource detectors are ignored. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` | yes | Node span ingress. Over HTTP the traces-specific variable takes the full URL (`https://node:4318/v1/traces`) and the general one gets `/v1/traces` appended; over gRPC use `https://node:4317`. User info, query or fragment is rejected. |
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` / `OTEL_EXPORTER_OTLP_PROTOCOL` | no | `http/protobuf` (default, port 4318) or `grpc` (port 4317). The content endpoint is always OTLP/HTTP protobuf. |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | over TLS | CA bundle that signs the Node's server certificate. |
@@ -118,6 +119,20 @@ and holds message content (`0600` files, `0700` directory; host disk
 encryption is the at-rest protection). Several processes may share one
 spool directory: one drains, all write.
 
+*Delivery receipts in a shared spool.* Before the draining process deletes
+a record another process wrote, it leaves an empty receipt file
+`<record>.ack` next to it; the writer consumes the receipt and only then
+counts that record delivered. A record of a process that was quarantined
+(`*.corrupt`) by any drainer, or that disappeared without a receipt, is a
+failure for that process's `flush()`/`close()` (`False`), never a delivery.
+So removing a pending `*.rec` by hand makes its writer report `False`, and
+a drainer from an older Fabric version (which leaves no receipts) makes a
+newer writer sharing the spool report `False` too: conservative, not lost
+data. Upgrade every process sharing a spool together. The drainer removes
+receipts older than one hour (left by writers that exited). `flush()` and
+`close()` return by their deadline even while another process's drain is
+stalled in disk I/O.
+
 **The in-memory window before the spool.** A call's record is durable only
 once its spool file is fsync'd. From the moment the call finishes (the last
 response byte reaches the client, or the stream is closed or fails) until
@@ -149,31 +164,60 @@ the agent's provider exports through a Fabric Node, and set
 or heartbeat record the agent's sampler drops makes `flush()` return
 `False` and is not retried.
 
-**Run ids are pseudonymised; other identifiers are labels you choose.** A
-run id you pass to `fabric.wire.run(run_id)` never leaves the agent in the
-clear: spans, run markers, spool records, content descriptors and
-reconstruction reports carry `r-` + the first 32 hex of
-`HMAC-SHA256(FABRIC_WIRE_ID_KEY, run_id)`, or of `SHA-256(run_id)` when the
-key is unset. Generated fallback run ids (`trace:<trace id>` and
-`source:<source id>:<epoch>`) are already opaque and are emitted unchanged.
-An unkeyed pseudonym is only a hash: anyone who can guess a run id (a
-sequential job number, an order id) can confirm it, so set the key in
-production.
+**Identifiers are pseudonymous by default.** An identifier you choose
+leaves the agent's telemetry and appears in reports only as a pseudonym
+wherever it is not needed to route content: the first 32 hex of
+`HMAC-SHA256(FABRIC_WIRE_ID_KEY, value)` (UTF-8 key and value), or of
+`SHA-256(value)` when the key is unset, behind a prefix naming its kind:
 
-Source ids (`FABRIC_SOURCE_ID`), the tenant id (`FABRIC_TENANT_ID`) and
-`OTEL_SERVICE_NAME` are different: they are operator-chosen labels that
-Fabric validates by pattern only and copies as given. Source ids and the
-service name go onto every capture span (and so to your OTLP destination
-and its readers); source and tenant ids go into every content descriptor,
-with the tenant id in every object key (`<prefix><tenant>/evidence/…`); and
-all of them appear in the reconstruction report. Fabric cannot tell a
-patient number from a job id, so these labels **must be opaque**: a random
-UUID, a workload or job name, or a keyed hash you can resolve on your side;
-never a patient, customer, user or account identifier, an email address, a
-name, or a secret. The default source id (`wire-` + 16 hex of host name and
+| Identifier | Emitted as | Where the pseudonym appears |
+|---|---|---|
+| Run id passed to `fabric.wire.run(run_id)` | `r-` + 32 hex | Spans, run markers, spool records, content descriptors, reconstruction reports |
+| Source id (`FABRIC_SOURCE_ID` or the default) | `s-` + 32 hex | `fabric.source_id` on every capture span, run marker, loss and heartbeat record, and in the report |
+| `service.name` of the capture spans (`OTEL_SERVICE_NAME`) | `svc-` + 32 hex | The capture spans' resource |
+| Tenant id (`FABRIC_TENANT_ID`) | `t-` + 32 hex | The reconstruction report only (see below) |
+
+Generated fallback run ids (`trace:<trace id>`, and `source:<source
+id>:<epoch>` with the source id in its emitted form) are not caller-chosen.
+The report shows every run id and source id only in pseudonymous form; run
+ids recorded in the clear by older agents are projected through the same
+function, so old and new records of one run compare equal. The Node (`fabricguard`)
+validates `fabric.source_id` and `service.name` as `s-`/`svc-` pseudonyms
+and drops any other value (its `capture_labels: pseudonymous` default), or
+by the label pattern when it is set to `capture_labels: clear` for agents
+running with `FABRIC_WIRE_LABELS=clear`.
+
+An unkeyed pseudonym is only a hash: anyone who can guess the value (a
+sequential job number, an order id, a host name) can confirm it, so set the
+key in production. One key covers all four kinds; with the same key, equal
+values always give equal pseudonyms, so your OTLP destination can still
+group spans by source and service.
+
+**The tenant id stays clear where it routes content.** `FABRIC_TENANT_ID`
+is deployment routing configuration: it travels with every content record,
+must equal the Node's `allowed_tenants` entry, and names the object key
+(`<prefix><tenant>/evidence/…`). It is never put on a capture span. Spool
+records (agent host) and content descriptors (your store) carry the clear
+tenant id and the source id in its emitted form (the `s-` pseudonym by
+default). These labels must still be **opaque**: a random UUID, a workload
+or job name, or a keyed hash you can resolve on your side; never a patient,
+customer, user or account identifier, an email address, a name, or a
+secret. Fabric cannot tell a patient number from a job id.
+
+**Clear labels (`FABRIC_WIRE_LABELS=clear`).** For operators who want
+readable source and service names in their OTLP backend. Operator-chosen
+labels are exported unchanged; you guarantee they contain no personal data.
+Source ids and `service.name` then reach every reader of your OTLP
+destination as given, so use them only for workload names you would publish
+in a dashboard. Give the Node the same choice — Helm:
+`--set otel-collector.fabric.guard.captureLabels=clear`; Compose or a
+hand-written collector config: `capture_labels: clear` under
+`processors.fabricguard` — or it drops the clear `fabric.source_id` and
+`service.name`. Run ids stay pseudonymised and the report still shows
+pseudonyms. The default source id (`wire-` + 16 hex of host name and
 service name) is already opaque.
 
-*The run-id key (`FABRIC_WIRE_ID_KEY`).* Treat it like any other secret.
+*The id key (`FABRIC_WIRE_ID_KEY`).* Treat it like any other secret.
 
 - **Generate** 256 random bits, without a trailing newline (the key is the
   variable's exact UTF-8 value, so a stray newline gives a different key):
@@ -186,18 +230,21 @@ service name) is already opaque.
   user. Never put it in an image, a Helm values file, a command line or a
   log. Fabric never logs it or writes it to a record or report.
 - **Share** one key across every agent whose runs you verify together, and
-  give it to whoever runs `fabric.reconstruct --run` (§5). It is read when
-  capture is installed; a change takes effect when the process restarts.
+  give it to whoever runs `fabric.reconstruct --run` or looks up a source
+  (§5). It is read when capture is installed; a change takes effect when
+  the process restarts.
 - **Rotate** between runs, and roll every agent of a deployment together.
-  Rotation changes the pseudonym of every run id from then on and leaves
-  records already written under their old pseudonyms: a run that is open
-  while agents switch keys, or whose replicas run with different keys,
-  appears as two unrelated run ids, each verified on its own. To look up
-  older runs by their clear id, keep the retired key (disabled, not
-  destroyed) and pass it with `--id-key-env`. Destroying a retired key
-  makes the old pseudonyms permanently unlinkable to clear ids, which is a
-  deliberate way to end that linkage. Verdicts never need the key: without
-  `--run`, `fabric.reconstruct` reports every run by its pseudonym.
+  Rotation changes the pseudonym of every run id, source id and service
+  name from then on and leaves records already written under their old
+  pseudonyms: a run that is open while agents switch keys, or whose
+  replicas run with different keys, appears as two unrelated run ids, each
+  verified on its own, and a source appears under two `s-` ids in your
+  OTLP backend. To look up older records by their clear id, keep the
+  retired key (disabled, not destroyed) and pass it with `--id-key-env`.
+  Destroying a retired key makes the old pseudonyms permanently unlinkable
+  to clear ids, which is a deliberate way to end that linkage. Verdicts
+  never need the key: without `--run`, `fabric.reconstruct` reports every
+  run by its pseudonym.
 
 ## 2. Run a Fabric Node
 
@@ -214,7 +261,41 @@ until the store accepts it. `fabric-gate` refuses to start a configuration
 that routes content into a telemetry pipeline or to the OTLP destination,
 runs anything but `memory_limiter` on the content path, gives the content
 receiver gRPC, or uses connectors; every telemetry pipeline must still run
-`fabricguard`, and `--set` overrides are refused.
+`fabricguard`, every OTLP/HTTP exporter must use the `noredirect`
+middleware (below), and `--set` overrides are refused.
+
+**The Node never follows a redirect either.** The upstream OTLP/HTTP
+exporter would follow a `3xx` from your destination (or a proxy in front of
+it), re-sending the batch and its `Authorization` header to the new
+location, including a downgrade from `https://` to `http://`, and a `302`
+to a login page would count as a successful export. The Fabric distribution
+ships a `noredirect` HTTP client middleware that turns any `3xx` answer into
+a retryable failure without following it: the body and headers go only to
+the configured URL, the batch stays in the durable queue, and the exporter
+retries until the destination answers without a redirect. The Helm chart
+and every shipped Compose configuration attach it to each `otlp_http`
+exporter, and `fabric-gate` refuses a configuration with an OTLP/HTTP
+exporter that does not list it (as with `fabriccontent`, an OTLP/HTTP
+exporter block must be a literal map the gate can read; individual fields
+may still use `${env:…}`). A hand-written configuration needs both parts:
+
+```yaml
+extensions:
+  noredirect: {}
+exporters:
+  otlp_http/fabric:
+    endpoint: https://otlp.example.com
+    middlewares:
+      - id: noredirect
+service:
+  extensions: [health_check, noredirect]   # plus your storage/auth extensions
+```
+
+Configure the destination's final `https://` URL: a redirecting endpoint
+stalls delivery (the queue grows, `otelcol_exporter_send_failed_*` rises)
+until the URL is corrected; it never yields a false success. The S3
+content writer does not use this middleware: a redirect answer from the
+store is a failed write there, retried like any other store error.
 
 **One tenant per Node.** A content record names its own tenant, and every
 agent that authenticates to the Node reaches the same receiver; the Node
@@ -225,12 +306,18 @@ chart and the shipped Compose configs all refuse more than one unless it is
 set explicitly (`allow_multiple_tenants: true`, Helm
 `content.allowMultipleTenants=true`). That flag **trusts every
 authenticated agent to name its tenant**; use one Node per tenant
-otherwise. The rule covers the whole Node, not each exporter: when a
-hand-written or overlaid configuration has several `fabriccontent`
-exporters that share a receiver or a pipeline, `fabric-gate` refuses to
-start unless they all allow the same single tenant, or every one of them
-sets `allow_multiple_tenants: true`. The Helm chart renders exactly one
-`fabriccontent` exporter. **S3 content is always encrypted:** the exporter refuses an s3
+otherwise. The rule covers the whole Node, not each exporter or pipeline:
+`fabric-gate` takes every `fabriccontent` exporter in the effective
+configuration, whatever receivers, pipelines or authenticators it sits
+behind, and refuses to start unless together they allow exactly one tenant,
+or every one of them sets `allow_multiple_tenants: true`. Separate
+receivers or separate client CAs do not make two tenants safe on one Node;
+run two Nodes. The gate must be able to read each exporter's settings: a
+`fabriccontent` block that is not a literal map after the gate's own
+resolution (for example the whole block given as `${env:…}` or `${file:…}`)
+is refused with a fixed message, so write the exporter as a map and
+substitute individual fields if you need to. The Helm chart renders exactly
+one `fabriccontent` exporter. **S3 content is always encrypted:** the exporter refuses an s3
 backend without `sse: AES256` or `sse: aws:kms`, whatever the launch path.
 
 | Deployment | Ingress authentication (4317, 4318 and 4319 alike) | Content store | Agent settings |
@@ -273,7 +360,12 @@ must restrict something, in every profile: an empty or exclusion-only
 `matchLabels` or an `In`/`Exists` expression, an empty `podSelector` alone
 (every pod in the Node's namespace) is refused, and an `ipBlock` with prefix
 length 0 (`0.0.0.0/0`, `::/0`, `10.0.0.0/0`, …) is refused as equivalent to
-no policy.
+no policy. Label values are strings (`matchLabels` is `map<string,string>`
+in Kubernetes): pass them with `--set-string`, for example
+`--set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'`,
+or quote them (`"true"`) in a values file. `--set …=true` makes a boolean
+that the API server rejects, so the chart refuses a boolean or numeric
+`matchLabels` or `matchExpressions` value at render time.
 
 *Secrets and certificates (Helm).* `shadow-production` expects three
 operator-created Secrets in the Node's namespace and verifies every agent's
@@ -354,7 +446,7 @@ spec:
         - {name: PYTHONPATH, value: /usr/local/lib/python3.12/site-packages/fabric/_autoload}
         - {name: FABRIC_TENANT_ID, value: tenant-7f3a}        # = content.allowedTenants[0]
         - {name: FABRIC_SOURCE_ID, value: billing-agent}      # optional, opaque
-        - name: FABRIC_WIRE_ID_KEY                            # run-id pseudonym key (§1)
+        - name: FABRIC_WIRE_ID_KEY                            # identifier pseudonym key (§1)
           valueFrom: {secretKeyRef: {name: fabric-wire-id-key, key: key}}
         - {name: OTEL_SERVICE_NAME, value: billing-agent}
         - {name: FABRIC_WIRE_SPOOL_DIR, value: /var/lib/fabric/spool}
@@ -376,7 +468,9 @@ spec:
 ```
 
 The agent's namespace (`monitored-agents` above) must carry the label the
-Node's NetworkPolicy admits (`fabric.singleaxis.ai/agent=true`).
+Node's NetworkPolicy admits
+(`kubectl label namespace monitored-agents fabric.singleaxis.ai/agent=true`,
+matched by the `--set-string` selector shown in [deployment.md](deployment.md)).
 
 *emptyDir or PVC for the spool.* An `emptyDir` lives as long as the Pod: it
 survives container restarts (a crashed agent's records are replayed when the
@@ -409,9 +503,9 @@ prefix, region and SSE.
 
 | Data | Path | Who can read it | Controlled by |
 |---|---|---|---|
-| Span metadata: exchange, scope and source ids, run ids (`r-` pseudonyms of the ids you pass to `fabric.wire.run()`), sequence numbers, heartbeat kinds, body SHA-256 digests, store object ids (uuid4), API, response state, HTTP status, error class name, model name (see below), finish reasons (closed list), token counts; trace id, span id and flags of the agent's current span (its trace state and baggage are not copied); resource `service.name` | agent spool → OTLP 4317/4318 → Fabric Node (`fabricguard`, queued on disk) → your OTLP destination | Anyone with access to the agent's spool directory, the Node host or queue volume, and every reader of the destination | Node ingress auth (mTLS or bearer), host access, destination ACLs and retention |
+| Span metadata: exchange and scope ids (uuid4), source ids (`s-` pseudonyms; clear only with `FABRIC_WIRE_LABELS=clear`), run ids (`r-` pseudonyms of the ids you pass to `fabric.wire.run()`), sequence numbers, heartbeat kinds, body SHA-256 digests, store object ids (uuid4), API, response state, HTTP status, error class name, model name (see below), finish reasons (closed list), token counts; trace id, span id and flags of the agent's current span (its trace state and baggage are not copied); resource `service.name` (`svc-` pseudonym; clear only with `FABRIC_WIRE_LABELS=clear`) | agent spool → OTLP 4317/4318 → Fabric Node (`fabricguard`, queued on disk) → your OTLP destination | Anyone with access to the agent's spool directory, the Node host or queue volume, and every reader of the destination | Node ingress auth (mTLS or bearer), host access, destination ACLs and retention |
 | Request and response bytes (prompts, completions, tool arguments and results, anything the provider echoes) and their descriptor JSON | agent spool → OTLP/HTTP 4319 → Fabric Node content queue → your store. Never sent to the OTLP destination | In transit: the agent host's spool directory (`0600`/`0700`) and the Node's content-queue volume. At rest: principals with `s3:GetObject` on the evidence prefix **and** `kms:Decrypt` on the key, or filesystem users who can read the Node's content directory | Agent host access; Node host and volume access; bucket policy, IAM and KMS key policy; filesystem permissions (files `0600`, directories `0700`) |
-| Reconstruction report (`python -m fabric.reconstruct`) | written where the operator runs it | Whoever receives the file | File permissions. It holds run ids (pseudonyms), scope, source, exchange and store object ids, digests, counts, model names (same rule as spans), pseudonyms of provider ids and the tenant id; span files appear only by digest, format and record count. Never message content, input file paths (span files, store root) or the resolved store location of an object |
+| Reconstruction report (`python -m fabric.reconstruct`) | written where the operator runs it | Whoever receives the file | File permissions. It holds run ids and source ids (pseudonyms only, whatever `FABRIC_WIRE_LABELS` was), the tenant id as `t-` + 32 hex of the id-key function, scope, exchange and store object ids, digests, counts, model names (same rule as spans) and pseudonyms of provider ids; span files appear only by digest, format and record count. Never message content, input file paths (span files, store root) or the resolved store location of an object |
 | Fabric warnings | agent's own logging; Node logs | Agent and Node log readers | Fixed text, exception class names and HTTP status codes only. The Node logs a dropped content record with its reason only (no tenant, id, path, URL or byte) |
 
 Who can touch content:
@@ -545,11 +639,43 @@ python -m fabric.reconstruct --spans spans.json \
 python -m fabric.reconstruct --spans spans.json --store-root <content dir> --tenant <tenant>
 ```
 
-To check particular runs, pass the run id you gave `fabric.wire.run()` in
-the clear with `--run` (repeatable). `fabric.reconstruct` computes its
-pseudonym with the key in the environment variable named by `--id-key-env`
-(default `FABRIC_WIRE_ID_KEY`); use the key the agents ran with, or the run
-is not found. Without `--run` every run is reported by its pseudonym.
+`--tenant` takes the clear tenant id (it names the store prefix); the
+report shows it only as its `t-` pseudonym.
+
+*Looking up a run or a source by its clear id.* The report, the spans in
+your OTLP destination and the Node's logs carry only pseudonyms, so you map
+a clear id to its pseudonym, never the other way round. To check particular
+runs, pass the run id you gave `fabric.wire.run()` in the clear with
+`--run` (repeatable). `fabric.reconstruct` computes its pseudonym with the
+key in the environment variable named by `--id-key-env` (default
+`FABRIC_WIRE_ID_KEY`); use the key the agents ran with, or the run is not
+found. An `r-` pseudonym or a `trace:` fallback id is matched as given, and
+a `source:<source id>:<epoch>` fallback id may name the source in the clear
+(it is projected to its `s-` form). Without `--run` every run is reported
+by its pseudonym. The key is read and checked on every invocation, with or
+without `--run`: a named variable that is set to fewer than 16 bytes is a
+usage error (exit `2`).
+
+To find a source, a service or a tenant in the report or in your OTLP
+backend, compute its pseudonym with the same key, read from the environment
+so it never appears on a command line:
+
+```bash
+# FABRIC_WIRE_ID_KEY in the environment (from your secret manager);
+# prefix r- (run id), s- (source id), svc- (service.name) or t- (tenant id).
+python3 - s- billing-agent <<'PY'
+import hashlib, hmac, os, sys
+prefix, value = sys.argv[1], sys.argv[2].encode("utf-8")
+key = os.environ.get("FABRIC_WIRE_ID_KEY", "").encode("utf-8")
+digest = hmac.new(key, value, hashlib.sha256) if key else hashlib.sha256(value)
+print(prefix + digest.hexdigest()[:32])
+PY
+```
+
+Search the report (`"source_id": "s-…"`) or filter your OTLP backend on
+`fabric.source_id` / `service.name` with the printed value. Keep a private
+table of the pseudonyms of your sources and services next to the key if
+operators need it often; the table is as sensitive as the key.
 
 The report judges each `fabric.wire.run()` entry and each run without
 entries on its own. It claims completeness only for what the record proves:
@@ -637,12 +763,18 @@ exposing content.
   (likewise `DefaultAsyncHttpxClient` with `AsyncWireTransport`, and the
   `openai` equivalents).
 - **Windows** cannot run node mode (the spool needs POSIX `fcntl`).
-- **Identifiers.** Run ids you pass to `fabric.wire.run()` are emitted
-  only as `r-` pseudonyms; source ids, the tenant id and `service.name` are
-  shape-checked labels copied as given and must be opaque (§1). An
-  allowlisted model name is copied as is (§3).
-- **Redirects** from a Node endpoint are retried, never followed (§1); a
-  redirecting proxy in front of the Node stalls delivery.
+- **Identifiers.** Run ids, source ids and `service.name` leave the agent
+  only as `r-`/`s-`/`svc-` pseudonyms (source ids and `service.name` in the
+  clear only with `FABRIC_WIRE_LABELS=clear`); the report shows tenant ids
+  as `t-` pseudonyms. A pseudonym hides a label only as well as its key:
+  without `FABRIC_WIRE_ID_KEY` anyone who can guess a label can confirm it.
+  The tenant id stays clear in content routing and object keys, so all
+  labels must still be opaque (§1). An allowlisted model name is copied as
+  is (§3).
+- **Redirects** are retried, never followed: from a Node endpoint by the
+  agent (§1), and from your OTLP destination by the Node's `noredirect`
+  middleware (§2). A redirecting proxy on either leg stalls delivery until
+  its URL is corrected.
 - **Global mode and `tracer_provider=`** bypass the spool: a span or marker
   the agent's provider samples out or loses is not retried, which leaves a
   gap unexplained or a run `unverified`.

@@ -134,8 +134,8 @@ func TestCaptureProfile_ValueValidators(t *testing.T) {
 			good: []any{int64(0), int64(18)},
 		},
 		"fabric.source_id": {
-			bad:  []any{"alice@example.com", "has space", "", "-x"},
-			good: []any{"wire-0123456789abcdef"},
+			bad:  []any{"alice@example.com", "has space", "", "-x", "wire-0123456789abcdef", "s-0123456789ABCDEF0123456789ABCDEF"},
+			good: []any{testSourceLabel},
 		},
 		"fabric.source.sequence": {
 			bad:  []any{int64(-1), "7"},
@@ -231,7 +231,7 @@ func TestCaptureProfile_ClassificationCannotBeEvaded(t *testing.T) {
 		{"fabric.capture_heartbeat", map[string]any{}},
 	} {
 		g := newTestGuard(t, nil)
-		attrs := map[string]any{"fabric.tenant_id": "alice@example.com", "fabric.source_id": "wire-1"}
+		attrs := map[string]any{"fabric.tenant_id": "alice@example.com", "fabric.source_id": testSourceLabel}
 		for key, value := range tc.attrs {
 			attrs[key] = value
 		}
@@ -284,8 +284,9 @@ func TestCaptureProfile_CaptureOnlyResourceKeepsOnlyServiceName(t *testing.T) {
 		service string
 		keep    bool
 	}{
-		{"billing-agent", true},
-		{"fabric-wire", true},
+		{testServiceLabel, true},
+		{"billing-agent", false}, // clear labels need capture_labels: clear (J1)
+		{"fabric-wire", false},
 		{"alice@example.com", false},
 		{"https://user:pass@host/x", false},
 		{"Patient Alice", false},
@@ -338,7 +339,7 @@ func TestCaptureProfile_GovernedSpansUnaffected(t *testing.T) {
 	}
 	g := newTestGuard(t, nil)
 	td := captureResourceTraces(map[string]any{
-		"service.name":        "billing-agent",
+		"service.name":        testServiceLabel,
 		"service.instance.id": "pod-7",
 	},
 		spanFixture{name: "chat gpt-4o", attrs: governed},
@@ -350,7 +351,7 @@ func TestCaptureProfile_GovernedSpansUnaffected(t *testing.T) {
 	}
 	rs := out.ResourceSpans().At(0)
 	res := rs.Resource().Attributes()
-	if v, ok := res.Get("service.name"); !ok || v.Str() != "billing-agent" {
+	if v, ok := res.Get("service.name"); !ok || v.Str() != testServiceLabel {
 		t.Error("mixed resource lost a valid service.name")
 	}
 	if res.Len() != 1 {

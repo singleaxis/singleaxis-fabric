@@ -37,7 +37,11 @@ Proves, in order (the tests share one stack):
    no sink output, delivered OTLP byte, Node log or telemetry queue — only
    in MinIO objects and the agent spool; the clear run ids and the run-id
    pseudonym key (``FABRIC_WIRE_ID_KEY``, H3) appear nowhere, not even in
-   the spool, the MinIO objects or the reconstruction reports.
+   the spool, the MinIO objects or the reconstruction reports; by default
+   (spec 043 J1) the agents' clear source ids and service names appear in
+   none of the sink, the delivered bytes, the Node logs, the reports, the
+   MinIO objects or any spool, and the clear tenant id (which routes content
+   and names object keys) in none of the sink, bytes, logs or reports.
 
 Gates: Docker Compose (else skip) and boto3 for the reconstruct/MinIO
 reader side, which is never installed into the agent: either importable
@@ -80,6 +84,7 @@ from _wire_capture_common import (
     compose_available,
     free_port,
     production_config_with_tls,
+    pseudonym,
     spool_header,
     spool_records,
     volume_grep,
@@ -128,6 +133,11 @@ RUN_BEFORE = f"{MARK}-run-before"
 RUN_AFTER = f"{MARK}-run-after"
 RUN_BARRIER = f"{MARK}-run-barrier"
 RUN_MARKERS = [RUN_REACT, RUN_OUTAGE, RUN_BEFORE, RUN_AFTER, RUN_BARRIER]
+
+
+def source_of(service: str) -> str:
+    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1)."""
+    return f"{MARK}-src-{service}"
 
 
 def emitted(run_id: str) -> str:
@@ -199,12 +209,14 @@ class Stack:
         self.model = FakeModel(api_key=API_KEY, city=CITY, completion=COMPLETION)
         # Every reconstruct report and its stdout/stderr, for the leak scan.
         self.reports: list[str] = []
+        # Clear service names the agents were given (J1 leak scan).
+        self.services: set[str] = set()
         token_file = root / "secrets" / "ingress.token"
         token_file.parent.mkdir()
         token_file.write_text(INGRESS_TOKEN, "utf-8")  # no trailing newline
         token_file.chmod(0o644)  # nonroot in the container reads the bind mount
         write_tls(self.tls)
-        self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH)
+        self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
         self.config = root / "collector-production.yaml"
         production_config_with_tls(self.config)
         self.override = root / "compose.override.yml"
@@ -393,6 +405,7 @@ class Stack:
     # -- agent -----------------------------------------------------------------
 
     def agent_env(self, service: str, spool: Path, token: str) -> dict[str, str]:
+        self.services.add(service)
         home = self.root / "agent-home"  # an empty HOME: no ~/.aws to fall back on
         home.mkdir(exist_ok=True)
         base = {
@@ -411,6 +424,8 @@ class Stack:
             "FABRIC_WIRE_SPOOL_DIR": str(spool),
             "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
             "FABRIC_WIRE_ID_KEY": ID_KEY,
+            # Default labels (no FABRIC_WIRE_LABELS): leave only as s-/svc- (J1).
+            "FABRIC_SOURCE_ID": source_of(service),
             "OTEL_SERVICE_NAME": service,
             "OTEL_EXPORTER_OTLP_ENDPOINT": f"https://127.0.0.1:{self.ports['otlp_http']}",
             "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=" + quote(f"Bearer {token}"),
@@ -478,7 +493,12 @@ class Stack:
         assert result.returncode in (0, 1), f"reconstruct usage error:\n{result.stderr}"
         text = out.read_text("utf-8")
         self.reports.append(text + result.stdout + result.stderr)
-        return result.returncode, json.loads(text)
+        report: dict[str, Any] = json.loads(text)
+        # J1: the tenant only as t-, every source only as s-.
+        assert report["inputs"]["store"]["tenant_id"] == pseudonym("t-", TENANT, ID_KEY)
+        sources = set(_values_of(report, "source_id"))
+        assert sources and all(re.fullmatch(r"s-[0-9a-f]{32}", v) for v in sources), sources
+        return result.returncode, report
 
 
 def _keys(object_id: str) -> tuple[str, str]:
@@ -785,6 +805,18 @@ def test_unscoped_run_killed_mid_run_is_not_complete(stack: Stack) -> None:
     assert code == 1
 
 
+def _values_of(node: Any, key: str) -> Iterator[Any]:
+    """Every value stored under ``key`` anywhere in a JSON document."""
+    if isinstance(node, dict):
+        for name, value in node.items():
+            if name == key:
+                yield value
+            yield from _values_of(value, key)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _values_of(item, key)
+
+
 def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
     """(4) Leak scan over everything the stack wrote."""
     sink_text = stack.sink.records.read_text("utf-8")
@@ -802,6 +834,20 @@ def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
         assert marker not in logs, f"{marker} appeared in the Node logs"
     for marker in SECRET_MARKERS + RUN_MARKERS:
         assert marker not in reports, f"{marker} appeared in a reconstruction report"
+    # J1: clear source ids and service names never leave an agent by default;
+    # the tenant id only where it routes content (records, descriptors, keys).
+    labels = sorted(stack.services | {source_of(s) for s in stack.services})
+    assert any(
+        pseudonym("svc-", s, ID_KEY) in sink_text
+        and pseudonym("s-", source_of(s), ID_KEY) in sink_text
+        and pseudonym("s-", source_of(s), ID_KEY) in reports
+        for s in stack.services
+    ), "a label leak scan would be vacuous"
+    for marker in [*labels, TENANT]:
+        assert marker not in sink_text, f"clear label {marker} reached the sink"
+        assert marker.encode() not in raw, f"clear label {marker} reached the OTLP bytes"
+        assert marker not in logs, f"clear label {marker} appeared in the Node logs"
+        assert marker not in reports, f"clear label {marker} appeared in a report"
     assert volume_grep(f"{stack.project}_fabric-queue", MARK) == "", (
         "a marker persisted in the Node's telemetry queue volume"
     )
@@ -817,7 +863,7 @@ def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
     stored = b"".join(_decode(objects, key) for key in objects)
     for marker in CONTENT_MARKERS:
         assert marker.encode() in stored, f"{marker} is not in the MinIO objects"
-    for secret in SECRET_MARKERS + RUN_MARKERS:
+    for secret in SECRET_MARKERS + RUN_MARKERS + labels:
         assert secret.encode() not in stored, f"{secret} was written to MinIO"
     # The wrong-token agent's undelivered records still hold its content.
     spooled = b"".join(
@@ -835,5 +881,5 @@ def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
         for path in (stack.root / "spool").rglob("*")
         if path.is_file()
     )
-    for marker in [ID_KEY, *RUN_MARKERS]:
+    for marker in [ID_KEY, *RUN_MARKERS, *labels]:
         assert marker.encode() not in every_spool, f"{marker} was written to a spool"

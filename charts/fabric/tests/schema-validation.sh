@@ -12,7 +12,7 @@ production_args=(
   --values "${chart_dir}/profiles/shadow-production.yaml"
   --set tenant.id=customer-production
   --set otel-collector.exporter.endpoint=https://otlp.example.invalid
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP'
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
@@ -54,17 +54,17 @@ render_ok "shadow-production renders with customer-owned references" "${producti
 reject "production requires tenant identity" "requires tenant.id" \
   "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
   --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 reject "production requires destination" "exporter.endpoint is empty" \
   "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" --set tenant.id=test \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 reject "production requires explicit egress peer" "requires an operator-supplied networkPolicy.exporterEgress.to peer" \
   "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
   --set tenant.id=test --set otel-collector.exporter.endpoint=https://otlp.example.invalid \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
 
 reject "production requires explicit ingress peer" "requires an operator-supplied networkPolicy.ingressFrom peer" \
   "${chart_dir}" --values "${chart_dir}/profiles/shadow-production.yaml" \
@@ -143,6 +143,24 @@ fi
 pass "production passes captureModelAllowlist to fabricguard"
 reject_any "captureModelAllowlist entries must be non-empty strings" \
   "${production_args[@]}" --set-json 'otel-collector.fabric.guard.captureModelAllowlist=[""]'
+
+# Spec 043 J1: fabricguard admits only pseudonymous capture labels unless the
+# operator opts in to clear labels (the Node side of FABRIC_WIRE_LABELS=clear).
+labels_default="$(helm template fabric-test "${production_args[@]}")"
+if ! grep -Fq 'capture_labels: "pseudonymous"' <<<"${labels_default}"; then
+  printf 'not ok - fabricguard does not default to pseudonymous capture labels\n' >&2
+  exit 1
+fi
+pass "production renders capture_labels: pseudonymous by default"
+labels_clear="$(helm template fabric-test "${production_args[@]}" \
+  --set otel-collector.fabric.guard.captureLabels=clear)"
+if ! grep -Fq 'capture_labels: "clear"' <<<"${labels_clear}"; then
+  printf 'not ok - captureLabels=clear is not rendered into fabricguard\n' >&2
+  exit 1
+fi
+pass "captureLabels=clear reaches fabricguard"
+reject_any "captureLabels accepts only pseudonymous or clear" \
+  "${production_args[@]}" --set otel-collector.fabric.guard.captureLabels=plain
 
 printf 'PASS: %d Fabric Node profile checks\n' "${pass_count}"
 "${script_dir}/test-package-boundary.sh"

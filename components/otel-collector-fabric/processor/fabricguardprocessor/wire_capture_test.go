@@ -87,7 +87,7 @@ func wireExchangeAttrs() map[string]any {
 		"gen_ai.usage.output_tokens":     int64(18),
 		"http.request.method":            "POST",
 		"http.response.status_code":      int64(200),
-		"fabric.source_id":               "wire-0123456789abcdef",
+		"fabric.source_id":               testSourceLabel,
 		"fabric.source.sequence":         int64(7),
 		"fabric.content.request_ref":     "0f8fad5b-d9cb-469f-a165-70867728950e",
 		"fabric.content.result_ref":      "7c9e6679-7425-40de-944b-e07fc1f90ae7",
@@ -111,11 +111,11 @@ func wireErrorExchangeAttrs() map[string]any {
 		"gen_ai.provider.name":       "anthropic",
 		"http.request.method":        "POST",
 		"error.type":                 "httpx.ReadTimeout",
-		"fabric.source_id":           "wire-0123456789abcdef",
+		"fabric.source_id":           testSourceLabel,
 		"fabric.source.sequence":     int64(8),
 		"fabric.content.request_ref": "e4eaaaf2-d142-41ed-a6ab-2c1f1e2d3b4a",
 		"fabric.source.epoch":        int64(1759800000000000000),
-		"fabric.run.id":              "source:wire-0123456789abcdef:1759800000000000000",
+		"fabric.run.id":              "source:" + testSourceLabel + ":1759800000000000000",
 		"fabric.wire.exchange_id":    "ex-2",
 		"fabric.wire.api":            "anthropic.messages",
 		"fabric.wire.request_sha256": hex64("d"),
@@ -128,7 +128,7 @@ func wireErrorExchangeAttrs() map[string]any {
 // wireLossAttrs is a valid loss record span.
 func wireLossAttrs() map[string]any {
 	return map[string]any{
-		"fabric.source_id":           "wire-0123456789abcdef",
+		"fabric.source_id":           testSourceLabel,
 		"fabric.source.epoch":        int64(1759800000000000000),
 		"fabric.loss.reason":         "queue_full",
 		"fabric.loss.count":          int64(2),
@@ -140,7 +140,7 @@ func wireLossAttrs() map[string]any {
 // wireHeartbeatAttrs is a valid heartbeat span carrying a run marker.
 func wireHeartbeatAttrs() map[string]any {
 	return map[string]any{
-		"fabric.source_id":               "wire-0123456789abcdef",
+		"fabric.source_id":               testSourceLabel,
 		"fabric.source.epoch":            int64(1759800000000000000),
 		"fabric.heartbeat.last_sequence": int64(-1),
 		"fabric.heartbeat.kind":          "run_start",
@@ -300,7 +300,7 @@ func TestWireCapture_InvalidRecordMarkerDoesNotClaimCaptureName(t *testing.T) {
 		"fabric.loss.reason":             "patient Jane Doe",
 	} {
 		g := newTestGuard(t, nil)
-		span := processOne(t, g, "native name", map[string]any{key: bad, "fabric.source_id": "wire-1"})
+		span := processOne(t, g, "native name", map[string]any{key: bad, "fabric.source_id": testSourceLabel})
 		if _, ok := span.Attributes().Get(key); ok {
 			t.Fatalf("invalid %s survived", key)
 		}
@@ -337,7 +337,7 @@ func TestWireCapture_InvalidValuesAreRemoved(t *testing.T) {
 	for _, key := range keys {
 		for i, bad := range cases[key] {
 			g := newTestGuard(t, nil)
-			attrs := map[string]any{"fabric.source_id": "wire-1", key: bad}
+			attrs := map[string]any{"fabric.source_id": testSourceLabel, key: bad}
 			span := processOne(t, g, "fabric.model_call", attrs)
 			if _, ok := span.Attributes().Get(key); ok {
 				t.Errorf("%s[%d] = %#v survived validation", key, i, bad)
