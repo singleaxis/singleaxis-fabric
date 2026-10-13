@@ -11,6 +11,7 @@ call.
 from __future__ import annotations
 
 import hashlib
+import io
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -21,6 +22,7 @@ import pytest
 from fabric import (
     ContentRef,
     ContentStore,
+    CorruptedObjectError,
     Fabric,
     FabricConfig,
     LocalFilesystemContentStore,
@@ -330,3 +332,74 @@ def test_content_ref_store_failure_warns_but_does_not_raise(
     event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
     assert "fabric.content.ref" not in dict(event.attributes or {})
     assert any("content store" in r.message for r in caplog.records)
+
+
+# --------------------------------------------------------------------------- #
+# Per-observation v2 byte objects (wire-capture content path)
+# --------------------------------------------------------------------------- #
+
+
+def _v2_descriptor(store: Any, object_id: str, data: bytes) -> dict[str, Any]:
+    digest = "sha256:" + hashlib.sha256(data).hexdigest()
+    return {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": object_id,
+        "tenant_id": store.tenant_id,
+        "stored_sha256": digest,
+        "stored_byte_length": len(data),
+        "ref": store.evidence_ref_for(object_id),
+    }
+
+
+def test_local_bytes_object_rejects_tamper_cross_tenant_and_divergence(
+    tmp_path: Path,
+) -> None:
+    store = LocalFilesystemContentStore(str(tmp_path / "store"), tenant_id="tenant-a")
+    descriptor = _v2_descriptor(store, "obj-1", b"exact")
+    ref = store.put_bytes_object(descriptor, b"exact")
+    assert ref.uri == descriptor["ref"]
+    assert store.put_bytes_object(descriptor, b"exact") == ref  # idempotent
+    with pytest.raises(ValueError, match="stored_sha256"):
+        store.put_bytes_object(descriptor, b"tampered")
+    with pytest.raises(ValueError, match="stored_byte_length"):
+        store.put_bytes_object({**descriptor, "stored_byte_length": 4}, b"exact")
+    with pytest.raises(ValueError, match="tenant_id"):
+        store.put_bytes_object({**descriptor, "tenant_id": "tenant-b"}, b"exact")
+    with pytest.raises(ValueError, match="namespace"):
+        store.put_bytes_object({**descriptor, "ref": "file:///elsewhere/obj-1"}, b"exact")
+    with pytest.raises(ValueError, match="content-object/v2"):
+        store.put_bytes_object({**descriptor, "schema_version": "x"}, b"exact")
+    with pytest.raises(CorruptedObjectError):
+        store.put_bytes_object({**descriptor, "run_id": "other"}, b"exact")
+
+
+def test_s3_bytes_object_conditional_write_is_idempotent_and_detects_divergence() -> None:
+    class PreconditionFailedError(Exception):
+        def __init__(self) -> None:
+            super().__init__("precondition failed")
+            self.response = {"Error": {"Code": "PreconditionFailed"}}
+
+    class FakeS3:
+        def __init__(self) -> None:
+            self.objects: dict[str, bytes] = {}
+            self.writes: list[dict[str, Any]] = []
+
+        def put_object(self, **kwargs: Any) -> None:
+            self.writes.append(kwargs)
+            if kwargs["Key"] in self.objects:
+                raise PreconditionFailedError()
+            self.objects[kwargs["Key"]] = kwargs["Body"]
+
+        def get_object(self, **kwargs: Any) -> dict[str, Any]:
+            return {"Body": io.BytesIO(self.objects[kwargs["Key"]])}
+
+    fake = FakeS3()
+    store = S3ContentStore(bucket="evidence-bucket", tenant_id="tenant-a")
+    store._client = fake
+    descriptor = _v2_descriptor(store, "obj-1", b"\x00\xff")
+    store.put_bytes_object(descriptor, b"\x00\xff")
+    store.put_bytes_object(descriptor, b"\x00\xff")  # same bytes: accepted
+    assert all(item["IfNoneMatch"] == "*" for item in fake.writes)
+    assert all("tenant-a/evidence/" in item["Key"] for item in fake.writes)
+    with pytest.raises(CorruptedObjectError):
+        store.put_bytes_object({**descriptor, "run_id": "other"}, b"\x00\xff")

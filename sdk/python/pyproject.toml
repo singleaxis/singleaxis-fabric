@@ -141,6 +141,11 @@ exclude = [
   "/src/fabric/judge_runner.py",
   "/src/fabric/policy_adapters",
   "/src/fabric/queue_transports",
+  "/src/fabric/adapters/synthetic_evidence.py",
+  "/src/fabric/byte_evidence.py",
+  "/src/fabric/source_spool.py",
+  "/src/fabric/synthetic_otlp.py",
+  "/src/fabric/synthetic_reconcile.py",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -166,6 +171,11 @@ exclude = [
   "/src/fabric/judge_runner.py",
   "/src/fabric/policy_adapters",
   "/src/fabric/queue_transports",
+  "/src/fabric/adapters/synthetic_evidence.py",
+  "/src/fabric/byte_evidence.py",
+  "/src/fabric/source_spool.py",
+  "/src/fabric/synthetic_otlp.py",
+  "/src/fabric/synthetic_reconcile.py",
 ]
 
 [tool.pytest.ini_options]

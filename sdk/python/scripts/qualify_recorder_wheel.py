@@ -33,6 +33,13 @@ FORBIDDEN_MEMBERS = {
     "fabric/tool_auth.py",
     "fabric/adapters/agent_framework.py",
     "fabric/adapters/langgraph.py",
+    # Withdrawn draft AEEP / synthetic-evidence slice (specs 035-041). Kept in
+    # git history only; a recorder artifact must never ship them again.
+    "fabric/adapters/synthetic_evidence.py",
+    "fabric/byte_evidence.py",
+    "fabric/source_spool.py",
+    "fabric/synthetic_otlp.py",
+    "fabric/synthetic_reconcile.py",
 }
 FORBIDDEN_PREFIXES = (
     "fabric/guardrail_adapters/",
@@ -54,6 +61,8 @@ FORBIDDEN_EXTRAS = {
     "redis",
 }
 FORBIDDEN_ROOT_SYMBOLS = {
+    "ByteEvidenceConfig",
+    "ByteEvidenceRecorder",
     "CedarAdapter",
     "CheckerVerdict",
     "DeepEvalJudge",

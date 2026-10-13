@@ -75,8 +75,8 @@ jobs:
         run: python -m pytest scripts/tests -q
       - name: Validate public data-plane contracts
         run: python scripts/contracts/validate_data_plane_contracts.py
-      - name: Validate draft AEEP evidence and content-v2 fixtures
-        run: python scripts/contracts/validate_evidence_contracts.py
+      - name: Validate draft byte-content v2 fixtures
+        run: python scripts/contracts/validate_content_v2_contracts.py
       - name: Validate draft LLM wire-capture contracts
         run: python scripts/contracts/validate_capture_contracts.py
       - name: Verify coordinated artifact identity

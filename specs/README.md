@@ -13,6 +13,19 @@ remains in place with `Status: superseded by NNN`.
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
 next unused public number is 044.
 
+Numbers 035-041 are **withdrawn drafts**: the Agent Execution Evidence
+Profile (AEEP) for OpenTelemetry (035), its evidence-capture build plan
+(036), bounded enterprise deployment and control applicability (037),
+capture-boundary and source-loss qualification (038), protected storage,
+exact-artifact release and shadow-pilot qualification (039), the synthetic
+model-terminal-artifact evidence slice (040, recorded NO-GO), and follow-on
+evidence adapter scopes (041). They proposed a run-completeness evidence
+profile that expands the OSS product promise beyond
+Capture -> Protect -> Deliver, so they were removed from the tree together
+with their contracts (`contracts/evidence/v1`), synthetic-slice code and
+`agent.evidence.*` Node admission. They are kept in git history and their
+numbers are not reused.
+
 Spec [027](027-recorder-v1.md) is the authoritative product and release scope
 for the first stable OSS recorder. Specs describing capabilities outside
 that scope (guardrails, judges, policy engines, the telemetry bridge, the
@@ -61,12 +74,6 @@ Every spec declares a `Status` in its header:
 | [032](032-passive-content-delivery.md) | Passive asynchronous content recording and durable delivery | draft |
 | [033](033-content-storage-resolution.md) | Customer content storage and authorized resolution | draft |
 | [034](034-eval-interoperability.md) | External evaluation interoperability and qualification | draft |
-| [035](035-agent-execution-evidence-profile.md) | Agent Execution Evidence Profile for OpenTelemetry | draft |
-| [036](036-evidence-capture-implementation-plan.md) | Bounded agent evidence capture — implementation and conformance plan | draft |
-| [037](037-bounded-enterprise-deployment-and-controls.md) | Bounded enterprise evidence deployment and control applicability | draft |
-| [038](038-capture-boundary-and-loss-qualification.md) | Capture-boundary and source-loss qualification | draft |
-| [039](039-storage-release-and-shadow-pilot.md) | Protected storage, exact-artifact release, and shadow-pilot qualification | draft |
-| [040](040-synthetic-agent-evidence-slice.md) | First bounded synthetic model-terminal-artifact evidence slice | draft; NO-GO |
-| [041](041-follow-on-evidence-adapter-scopes.md) | Separately scoped SSH, DB, browser/cloud, sandbox and other adapters | draft; no coverage claim |
+| 035–041 | Agent Execution Evidence Profile (AEEP) drafts | withdrawn; in git history only |
 | [042](042-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | draft; no coverage claim; partly superseded by 043 |
 | [043](043-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | draft; no coverage claim |

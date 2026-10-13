@@ -105,11 +105,7 @@ for:
 9. applicable legal, privacy, residency, and records-management obligations.
 
 See [deployment](deployment.md), [auditor checklist](auditor-checklist.md), and
-[qualification status](recorder-v1-qualification-status.md). For terminal,
-SSH, sandbox, database, and artifact capture claims, also use the
-[agent-activity coverage and production gates](agent-activity-coverage.md).
-The proposed critical-enterprise evidence qualification is specified by
-[bounded deployment and control applicability](../specs/037-bounded-enterprise-deployment-and-controls.md),
-[capture and source-loss tests](../specs/038-capture-boundary-and-loss-qualification.md),
-and [storage, exact-artifact and shadow-pilot gates](../specs/039-storage-release-and-shadow-pilot.md).
-These specs are draft; they do not constitute a current go decision.
+[qualification status](recorder-v1-qualification-status.md). Fabric makes
+no complete terminal, SSH, sandbox, database or artifact capture claim; the
+optional host sensors (specs 030/031) are corroborative only, and a missing
+record cannot prove that an action did not happen.

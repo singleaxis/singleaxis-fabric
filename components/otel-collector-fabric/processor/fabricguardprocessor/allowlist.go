@@ -144,16 +144,6 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 // fields are added by mergeAllowed.
 var BuiltInAllowedFields = map[string]map[string]struct{}{
 	"activity": {},
-	// AEEP projection is deliberately narrower than the shared envelope.
-	// No content ref, path, command, or operator extension is admitted.
-	"evidence": toSet(
-		"event_class", "schema_version", "record_id", "tenant_id", "run_id",
-		"source_id", "source_epoch", "source_sequence", "operation_id", "attempt_id",
-		"boundary", "provenance", "role", "status", "content_object_id",
-		"content_sha256", "observed_at", "loss_count", "loss_reason",
-		"coverage_phase", "receipt_id", "receipt_stage", "receipt_subject_id",
-		"receipt_subject_type",
-	),
 	// Host-layer audit events emitted by the auditreceiver (spec 030) and the
 	// host emitter (spec 031). argv is hash-only; no raw command lines.
 	"audit": toSet(
@@ -199,9 +189,6 @@ func mergeAllowed(class string, extra map[string][]string) (map[string]struct{},
 	base, ok := BuiltInAllowedFields[class]
 	if !ok {
 		return nil, false
-	}
-	if class == "evidence" {
-		return unionSets(base), true
 	}
 	merged := unionSets(EnvelopeAllowedFields, base)
 	for _, key := range extra[class] {

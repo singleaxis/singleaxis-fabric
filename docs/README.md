@@ -21,19 +21,6 @@ that specification, 027 controls the recorder release.
   `shadow-production` installation.
 - [Integration models](integration-models.md) — SDK, existing OTLP pipeline,
   framework adapter, gateway, and vendor integration choices.
-- [Agent activity coverage](agent-activity-coverage.md) — terminal, SSH,
-  sandbox, database, network, file, and artifact evidence levels, blind spots,
-  and production qualification gates.
-- [Agent Execution Evidence Profile](../specs/035-agent-execution-evidence-profile.md)
-  — draft OTLP/W3C protocol for interoperable operations, evidence references,
-  and run-level completeness.
-- [Evidence capture build plan](../specs/036-evidence-capture-implementation-plan.md)
-  — draft contracts, adapter sequence, conformance gates, and honest coverage
-  claims; not a shipped capture capability.
-- [Enterprise go/no-go qualification](../specs/037-bounded-enterprise-deployment-and-controls.md)
-  — draft bounded deployment and control matrix, with
-  [capture/loss gates](../specs/038-capture-boundary-and-loss-qualification.md)
-  and [storage/release/shadow-pilot gates](../specs/039-storage-release-and-shadow-pilot.md).
 - [Capturing interactions](capturing-interactions.md) — model, tool, retrieval,
   memory, delegation, side-effect, failure, and retry activity.
 - [Exporting to your backend](exporting-to-your-observability-backend.md) —
@@ -58,9 +45,9 @@ that specification, 027 controls the recorder release.
 - [Activity Envelope v2](../contracts/activity/v2/README.md)
 - [Connector capability contract](../contracts/connect/v1/README.md)
 - [Content objects and transcript manifests](../contracts/content/v1/README.md)
-- [Draft AEEP evidence contract](../contracts/evidence/v1/README.md) and
-  [draft byte-content v2 contract](../contracts/content/v2/README.md) —
-  schemas and conformance fixtures only; recorder v1 does not emit them.
+- [Draft byte-content v2 contract](../contracts/content/v2/README.md) —
+  exact-byte content descriptors, used by LLM wire capture (specs 042/043).
+- [Draft LLM wire-capture contracts](../contracts/capture/v1/README.md)
 - [Recorder configuration](../contracts/recorder/v1/README.md)
 - [Privacy assertion](../contracts/privacy/v1/README.md)
 - [Delivery batch and receipt](../contracts/delivery/v1/README.md)

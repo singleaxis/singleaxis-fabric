@@ -20,7 +20,6 @@ from ._content import CONTENT_ROLES, ContentRole, ContentStatus
 from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._version import __version__
 from .baseline import Baseline, BaselineCheck
-from .byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder
 from .checkpoint import CheckpointEvent
 from .client import DEFAULT_PROFILE, Fabric, FabricConfig
 from .content_store import (
@@ -75,8 +74,6 @@ __all__ = [
     "SCHEMA_VERSION",
     "Baseline",
     "BaselineCheck",
-    "ByteEvidenceConfig",
-    "ByteEvidenceRecorder",
     "ByteEvidenceStore",
     "CheckpointEvent",
     "ConcurrentDecisionUseError",

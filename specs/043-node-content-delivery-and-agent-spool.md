@@ -5,7 +5,7 @@ qualification: NO_COVERAGE_CLAIM
 revision: 2
 last_updated: 2026-10-13
 owner: recorder-engineering
-depends_on: 029, 032, 038, 042
+depends_on: 029, 032, 042
 supersedes_in_part: 042 (§3 store activation, §4.5/§4.8 delivery, §6 loss resend and run markers, §7 store writer, §8 model value and boot gate, §9 step 3 run windows)
 ---
 

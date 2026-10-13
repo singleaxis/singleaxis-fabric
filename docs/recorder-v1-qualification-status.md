@@ -4,74 +4,47 @@ This document distinguishes implemented runtime behavior from public contracts
 and from checks that require the release CI environment. It is a development
 status record, not a certification or legal compliance statement.
 
-## First synthetic evidence slice — NO-GO
+## Removed from the tree: AEEP drafts and the synthetic evidence slice
 
-[Spec 040](../specs/040-synthetic-agent-evidence-slice.md) records the phase-1
-gap ledger, provisional scope and control/coverage matrix, and documents
-phases 2–8 before code changes. The declared test workflow is a non-sensitive
-Python 3.11 model → no-shell terminal/tool → file artifact → model flow using
-a controlled endpoint and independent fixture/filesystem truth. The scope is
-not a signed customer deployment approval. Draft contracts and caller-supplied
-byte storage are locally tested. Opt-in loopback HTTP, no-shell terminal and
-allowlisted-file adapters now have **source-checkout local** binary-byte
-tests. An offline resolver checks tenant-scoped refs and source/stored SHA-256
-and length, and a conservative reconciler reports known missing/corrupt
-bytes as `partial`. Matching fixture bytes remain `unverified`, never
-complete. An optional metadata-only source journal now persists an epoch,
-events and outcomes off the action path, with restart recovery and explicit
-overflow/corruption tests. Its bounded handoff still has an unverified
-pre-fsync crash window. An offline, post-run, loopback-only AEEP metadata
-projection now reaches the real Fabric Node. Its closed evidence guard
-preserves fixed names and strips bodies/unknown fields; OTLP partial success
-is counted without blind retry. This is Node acceptance only: source IDs
-remain unauthenticated, with no continuous AEEP publication or durable
-destination receipt,
-and reachable direct bypasses. The optional host emitter now quarantines
-partly accepted OTLP batches without replay, retaining the rejected count
-across restart; it remains corroborative and excluded from the complete
-source set.
-The terminal proxy and synchronous artifact observer are test-harness
-adapters, **not** proven non-interfering passive production capture; their
-timing/backpressure remains a release gate.
+The draft Agent Execution Evidence Profile (AEEP, specs 035–041), its
+`contracts/evidence/v1` schemas and validator, the synthetic
+model → terminal → artifact evidence slice (`qualification/synthetic-slice`,
+recorded **NO-GO**), the experimental Python and TypeScript
+`ByteEvidenceRecorder`, the Python synthetic-slice modules
+(`fabric.byte_evidence`, `fabric.source_spool`, `fabric.synthetic_otlp`,
+`fabric.synthetic_reconcile`, `fabric.adapters.synthetic_evidence`) and the
+Fabric Node's `evidence` log class (`agent.evidence.*` events) were removed
+from the tree. They proposed run-level completeness evidence and enterprise
+go/no-go gates that expand the OSS product promise beyond
+Capture → Protect → Deliver, and none of them reached a qualified state. They
+remain in git history. The Node now drops `event_class=evidence` records like
+any other unknown class, and the recorder wheel/sdist qualifier and release
+policy forbid the removed modules so they cannot ship again.
 
-Phase evidence as of 2026-09-27: `sdk/python/.venv/bin/pytest -q -o
-addopts= tests/test_synthetic_otlp.py tests/test_synthetic_evidence.py
-tests/test_source_spool.py` passed 25/25 locally with an
-ephemeral loopback endpoint (the default sandbox denied the bind; the bounded
-test was rerun with network permission). Targeted Python Ruff and mypy
-passed; `GOCACHE=/private/tmp/fabric-go-cache go test -race ./...` passed
-for `components/host-emitter`; the Node guard race suite also passed. The full
-Python SDK suite passed 690/690 (85.10% coverage); package-boundary tests passed 21 with one skip because
-case-colliding files are unavailable on this filesystem. The
-source-checkout synthetic pilot compared twelve byte objects and five outcomes
-with independent fixture/endpoint/filesystem values and found zero local
-discrepancies; its verdict is still `unverified`. See the
-[local discrepancy report](../qualification/synthetic-slice/local-pilot-report.md).
-The follow-up fixture projects all twelve reconciled byte events to offline
-AEEP metadata and verifies their IDs, roles, statuses and digests; the
-focused synthetic suite passed 25/25. This does not constitute live delivery.
-With elevated Docker socket permission, uniquely tagged local Node and host
-images were built; a disposable Python wheel and chart were packaged. The
-latest installed local wheel passed 24/24 focused tests. A pre-resource-hardening
-Node image passed 3/3 real-Node governed-content, AEEP privacy/export,
-and controlled-sink outage/restart tests in an isolated random Compose
-project. A later guard fix clears evidence resource/scope attributes and
-passed `go test -race`; its rebuilt image **could not start the persistent
-queue** in the shared Docker daemon (`no space left on device`), so its
-live privacy probe remains unverified. Exact local digests and commands
-are in the [artifact ledger](../qualification/synthetic-slice/local-artifact-ledger.md).
-No privileged BPF run or customer deployment was performed. The dirty
-worktree has no clean tagged artifact identity, and these tests are not
-target-Linux BPF, target-storage or live-customer-destination proofs.
-A complete-run or critical-enterprise claim remains **NO-GO**.
+What stayed: the byte-content v2 descriptor (`contracts/content/v2`, now
+validated by `scripts/contracts/validate_content_v2_contracts.py`) and the
+content store's `ByteEvidenceStore.put_bytes_object`, both used by LLM wire
+capture.
+
+## LLM wire capture (specs 042–043, draft)
+
+The optional in-process wire tee, agent durable spool, Node content
+delivery (`fabriccontent` exporter) and offline `fabric.reconstruct`
+verifier are in the SDK and Node source and are exercised by unit,
+contract and Docker-backed real-Node tests (local directory and MinIO
+stores). They carry **no coverage claim**: a verdict covers only model
+calls made through httpx/httpx2 in an instrumented process, and
+qualification of the capture boundary and source loss is separate work.
+See [Deploying LLM wire capture](wire-capture-deployment.md).
+
+## Isolated Linux CI qualification
 
 Isolated Linux qualification has now started in draft PR
 [#164](https://github.com/singleaxis/singleaxis-fabric/pull/164). The first
 Ubuntu/kind smoke run on commit `75afeb1` passed Collector install, the
 controlled fsync sink, protection/delivery, destination outage and restart
-recovery. It did **not** run the synthetic model/terminal/artifact byte
-reconciliation, scoped BPF, or target storage/retention tests. The same
-commit's security and recorder CI runs failed: dependency scans found
+recovery. It did **not** run scoped BPF or target storage/retention
+tests. The same commit's security and recorder CI runs failed: dependency scans found
 `google.golang.org/grpc` 1.82.1 and AnyIO 4.13.0; the history-wide secret
 scan reported seven findings in older commits; clean Python installation
 exposed an S3 fake-client test failure; CI typing and repository-test setup
@@ -91,41 +64,8 @@ The next run on commit `3073142` passed Recorder CI, CodeQL, license
 compliance, and the Linux/kind smoke, including queue outage/restart recovery.
 Recorder security remained red **only** on the same history-wide secret scan;
 all current released-dependency scans passed. These CI results establish a
-bounded Node smoke on that commit, not a synthetic exact-byte pilot, target
-storage qualification, or enterprise GO.
-
-### Decision rule for the first bounded GO
-
-`GO` applies only to the signed synthetic model → terminal → artifact → model
-scope, not to every AI tool or compliance regime. All gates below must pass
-on the **same clean, tagged, digest-pinned artifact set**; a unit test, OTLP
-200, or self-reported manifest cannot substitute for a missing gate.
-
-| Gate | Required evidence | Current blocker |
-| --- | --- | --- |
-| Approved boundary | Signed route/version/source/role/privacy/capacity record and proof excluded routes are unreachable or explicitly outside the claim | Scope unsigned; direct HTTP/subprocess bypasses are reachable |
-| Capture and loss | Exact bytes, outcomes, order, causal IDs and source high-water for every required operation; crash/overflow/partial-success injection always lowers verdict without altering the action | Wrappers not passive-qualified; source pre-fsync blind window and missing authenticated gap chain |
-| Identity and receipts | Authenticated tenant/source binding; independently checked source-spooled, Node, destination-accepted and destination-durable stages | IDs caller-supplied; no complete trusted receipt chain |
-| Protection and retention | Final image canary-free outbound telemetry/logs/queue/errors/receipts; tenant isolation, encryption, retention, restore and key rotation proved on target stores | Final image live test blocked by shared Docker disk; target controls absent |
-| Exact release | Installed SDKs, chart, Node and any shipped host image by digest; security/package/race/E2E gates on isolated target Linux/Kubernetes; scoped BPF if a host route is included, only with approval | Dirty checkout and no isolated target runner; privileged BPF not authorized |
-| Independent shadow pilot | Every expected operation and required byte object reconciles against separately authenticated endpoint, terminal and filesystem records; zero unexplained discrepancies; reviewer reproduces verdict | Only local fixture, no authenticated feeds or independent sign-off |
-
-Engineering can close code and fixture gaps in this repository. Customer
-platform, security, privacy, records and release owners must supply the
-bounded target environment, signed scope and trust roots, storage policies,
-destination readback and independent review. No recorder code can honestly
-manufacture those proofs. When any gate is unavailable, status remains
-`NO-GO` or `unverified`; it is never inferred from a passing schema test.
-
-| Phase | State | Exact missing gate / environment / owner / next action |
-| --- | --- | --- |
-| 1–2 scope and contract | Documented, provisional | Customer platform/security must sign route, identity, privacy and target limits in an isolated deployment record. |
-| 3 boundary adapters | Partly locally tested | Recorder engineering: process crash, partial-stream, backpressure/non-interference and direct-bypass closure in disposable Python 3.11 fixture; replace any intrusive observation before promotion. |
-| 4 loss and receipts | Local source journal, host partial success and offline AEEP Node acceptance tested; slice unverified | Crash-before-fsync test proves a blind window; recorder engineering must reconcile it against authenticated independent truth, publish gaps and qualify distinct source/Node/destination/durable receipts. Audit receiver remains excluded. |
-| 5 resolver/reconciliation | Local partial/unverified only | Customer verifier: authenticate independent feeds and durable receipt proof before enabling `verified_complete_for_declared_scope`. |
-| 6 privacy/storage | Pre-hardening AEEP Node/sink/log/queue canary passed; final resource-attribute guard passed unit/race only | Customer privacy/storage: rerun final image on runner with free disk, then canary across errors/receipts and live encryption, retention, backup/restore, key rotation and disk-full tests for each store. |
-| 7 exact artifacts | Local dirty-checkout wheel/chart/images built and partly smoke-tested; final Node image live test blocked by Docker disk exhaustion | Release engineering: isolated runner with free disk, clean tagged SHA and digest-pinned installed SDKs, chart, Node and host images on Linux/Kubernetes; privileged scoped BPF requires explicit approval. |
-| 8 shadow pilot | Not run | Customer pilot owner: pre-register independent endpoint/terminal/filesystem records, run exact artifacts, reconcile every operation/object and obtain independent review. |
+bounded Node smoke on that commit, not target storage qualification or an
+enterprise production qualification.
 
 ## Implemented in release artifacts
 
@@ -154,29 +94,6 @@ interoperability shapes and validation rules. Recorder v1 does not yet claim
 that Fabric Node materializes Activity Envelope v2 on its OTLP wire path,
 automatically emits a signed privacy assertion for every batch, or obtains
 durable-persistence proof from arbitrary destinations.
-
-The AEEP profile (specs 035–036) now has **draft, pinned contract fixtures**
-for `agent.evidence.*` event projections, source capabilities, a bounded
-run manifest, and binary content-object v2. The validator and tests check
-schema closure, exact-byte digests, tenant/ref safety, source lifecycle,
-loss/sampling, independent-feed and durable-receipt structure, and false
-completeness verdicts. The Python and TypeScript SDKs now locally test an
-explicit opt-in content-v2 **byte** recorder: it persists caller-supplied
-bytes per observation in a tenant-bound local or S3-compatible store. Its
-bounded queue is process-memory only; it does not automatically intercept
-model/tool/terminal calls, produce run manifests or obtain durable
-destination receipts. A separate offline synthetic adapter projects settled
-metadata to AEEP OTLP logs for a controlled loopback Node; it is not an
-automatic production publisher. The schemas are not an implemented
-complete-evidence runtime and are not qualified as a production capture
-surface. Proof fields in fixtures are structural, not authenticated proof.
-Draft specs [037](../specs/037-bounded-enterprise-deployment-and-controls.md),
-[038](../specs/038-capture-boundary-and-loss-qualification.md), and
-[039](../specs/039-storage-release-and-shadow-pilot.md) define the
-customer-specific control matrix, capture/loss qualification,
-protected-storage proof, exact-artifact tests, and shadow-pilot
-reconciliation required for a critical-enterprise go decision. No such
-go decision or pilot evidence is present in this repository today.
 
 ### Governed content (specs 028–034, draft)
 

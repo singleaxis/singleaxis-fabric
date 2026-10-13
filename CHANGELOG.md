@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Added opt-in LLM wire capture (spec 042, draft): an in-process httpx/httpx2
+  tee records the exact request/response bytes of each model call to a
+  customer store, emits one digest-only span per call with sequenced loss
+  records and heartbeats, and `python -m fabric.reconstruct` verifies a run
+  offline. No coverage claim beyond instrumented httpx/httpx2 calls.
+- Added Fabric Node content delivery and the agent durable spool (spec 043,
+  draft): agents spool capture events to disk and deliver bodies to the
+  Node's `fabriccontent` exporter, so only the Node writes to S3, MinIO or a
+  directory store; run scopes bracket exchanges with run markers.
+
+### Removed
+
+- Removed the draft Agent Execution Evidence Profile (AEEP, specs 035–041),
+  `contracts/evidence/v1`, the NO-GO synthetic evidence slice, the
+  experimental `ByteEvidenceRecorder` (Python and TypeScript), the Python
+  synthetic-slice modules and the Node's `agent.evidence.*` log class from
+  the tree. They expanded the OSS promise beyond Capture -> Protect ->
+  Deliver; they remain in git history, and release qualification forbids
+  the removed modules.
+
 ## [0.8.0-rc.1] - 2026-08-31
 
 ### Added

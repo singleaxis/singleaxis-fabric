@@ -5,8 +5,7 @@ qualification: NO_COVERAGE_CLAIM
 revision: 6
 last_updated: 2026-10-13
 owner: recorder-engineering
-depends_on: 027, 029, 032, 035, 038
-related: 040, 041
+depends_on: 027, 029, 032
 superseded_in_part_by: 043
 ---
 
@@ -163,13 +162,13 @@ the verdict is `unverified`, never `complete_for_declared_scope`.
 | Bounded queue, retries, loss records, heartbeats | DELIVER / Verify | Bounded handoff with explicit, sequenced loss. |
 | `python -m fabric.reconstruct` | Verify | Local offline verification. The verdict says whether the *record* has gaps. It never judges the agent's quality, correctness or policy compliance. |
 
-Spec [041](041-follow-on-evidence-adapter-scopes.md) says no adapter may
-install a global interceptor *by default*; the tee patches httpx/httpx2 only
-after explicit opt-in. This spec makes no coverage claim: a verdict covers
+No adapter may install a global interceptor *by default*; the tee patches
+httpx/httpx2 only after explicit opt-in. This spec makes no coverage claim: a verdict covers
 only model calls made through httpx or httpx2 in an instrumented process.
 Calls through `requests`, `aiohttp`, `boto3` (Bedrock), gRPC, other
 processes or unlisted endpoints are bypasses. A missing record cannot prove
-an action did not happen (spec 035 §4). Qualification under spec 038 is
+an action did not happen. Qualifying the capture boundary and source loss
+(bypass closure, crash and overflow injection against independent truth) is
 separate work.
 
 ## 1. Capture point
@@ -743,8 +742,8 @@ over captured exchanges. Those belong to systems that consume this record.
 
 ## 13. Open questions
 
-1. Persisting `source_epoch` and the last sequence across restarts (spec
-   038) versus the Phase-1 process-lifetime epoch.
+1. Persisting `source_epoch` and the last sequence across restarts versus
+   the Phase-1 process-lifetime epoch.
 2. ~~Whether `spooled` durability (spec 032) should back the worker queue.~~
    Decided by spec 043 §2 (agent durable spool).
 3. Rebuilding runs from store descriptors alone when spans are lost.

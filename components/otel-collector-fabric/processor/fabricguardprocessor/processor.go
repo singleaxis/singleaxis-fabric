@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -86,28 +85,11 @@ func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) 
 		// xpdata/entity package reaches the proto field directly.
 		clearEntityRefs(resourceLog.Resource(), g)
 		scopeLogs := resourceLog.ScopeLogs()
-		resourceContainsEvidence := false
-		for si := 0; si < scopeLogs.Len(); si++ {
-			if scopeContainsEvidence(scopeLogs.At(si), g.cfg.EventClassAttribute) {
-				resourceContainsEvidence = true
-				break
-			}
-		}
-		if resourceContainsEvidence {
-			// Evidence metadata lives on the record itself. The untyped
-			// resource bag could otherwise carry a secret as service.name.
-			resourceLog.Resource().Attributes().Clear()
-		} else {
-			g.filterAttributes(resourceLog.Resource().Attributes(), TraceAllowedFields, "log-resource")
-		}
+		g.filterAttributes(resourceLog.Resource().Attributes(), TraceAllowedFields, "log-resource")
 		for si := 0; si < scopeLogs.Len(); si++ {
 			scopeLog := scopeLogs.At(si)
 			g.scrubLogScope(scopeLog)
-			if scopeContainsEvidence(scopeLog, g.cfg.EventClassAttribute) {
-				scopeLog.Scope().Attributes().Clear()
-			} else {
-				g.filterAttributes(scopeLog.Scope().Attributes(), TraceAllowedFields, "log-scope")
-			}
+			g.filterAttributes(scopeLog.Scope().Attributes(), TraceAllowedFields, "log-scope")
 			records := scopeLog.LogRecords()
 			records.RemoveIf(func(record plog.LogRecord) bool {
 				return g.applyToRecord(record)
@@ -115,17 +97,6 @@ func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) 
 		}
 	}
 	return ld, nil
-}
-
-func scopeContainsEvidence(scopeLog plog.ScopeLogs, classKey string) bool {
-	records := scopeLog.LogRecords()
-	for i := 0; i < records.Len(); i++ {
-		value, ok := records.At(i).Attributes().Get(classKey)
-		if ok && value.Type() == pcommon.ValueTypeStr && value.Str() == "evidence" {
-			return true
-		}
-	}
-	return false
 }
 
 func (g *guard) applyToRecord(record plog.LogRecord) bool {
@@ -159,10 +130,6 @@ func (g *guard) applyToRecord(record plog.LogRecord) bool {
 	}
 
 	g.filterAttributes(attrs, allowed, "log-record")
-	if class == "evidence" && !validEvidenceRecord(record) {
-		g.stats.notAllowedRemoved.Add(1)
-		return true
-	}
 	if attrs.Len() == 0 {
 		g.stats.emptySignalDropped.Add(1)
 		return true
@@ -171,9 +138,6 @@ func (g *guard) applyToRecord(record plog.LogRecord) bool {
 	// receives the same fixed-vocabulary normalization as span and span-event
 	// names, decided only from allowlisted metadata.
 	if name := record.EventName(); name != "" {
-		if class == "evidence" {
-			return false // validEvidenceRecord accepted only fixed AEEP names.
-		}
 		if normalized := activityCategory(name, attrs); normalized != name {
 			record.SetEventName(normalized)
 			g.stats.nativeTextNormalized.Add(1)
@@ -182,19 +146,10 @@ func (g *guard) applyToRecord(record plog.LogRecord) bool {
 	return false
 }
 
-var evidenceNames = toSet("agent.evidence.content", "agent.evidence.artifact", "agent.evidence.coverage", "agent.evidence.loss", "agent.evidence.receipt")
-var evidenceBoundaries = toSet("caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service")
-var evidenceStatuses = toSet("pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed", "observed")
-var evidenceRoles = toSet(
-	"model.request.instructions", "model.request.messages", "model.request.tool_definitions", "model.request.parameters", "model.output.messages",
-	"tool.definition", "tool.call.arguments", "tool.call.result", "retrieval.query", "retrieval.results", "memory.write.content", "memory.read.content",
-	"side_effect.request", "side_effect.result", "context.file", "interaction.payload", "terminal.argv", "terminal.stdin", "terminal.stdout",
-	"terminal.stderr", "remote.request", "remote.result", "remote.stream", "database.query", "database.parameters", "database.rows",
-	"database.mutation", "network.request", "network.response", "network.stream", "sandbox.config", "sandbox.output", "artifact.before",
-	"artifact.after", "service.receipt",
-)
-
-func evidenceID(value pcommon.Value) bool {
+// safeID admits an identifier of 1-128 ASCII letters, digits and ._:-
+// (not leading). It closes capture ids that the guard must not let carry
+// free-form text.
+func safeID(value pcommon.Value) bool {
 	if value.Type() != pcommon.ValueTypeStr || len(value.Str()) < 1 || len(value.Str()) > 128 {
 		return false
 	}
@@ -205,115 +160,6 @@ func evidenceID(value pcommon.Value) bool {
 		return false
 	}
 	return true
-}
-
-func validEvidenceRecord(record plog.LogRecord) bool {
-	if _, ok := evidenceNames[record.EventName()]; !ok {
-		return false
-	}
-	a := record.Attributes()
-	for _, key := range []string{"record_id", "tenant_id", "source_id", "operation_id", "attempt_id", "run_id", "content_object_id", "receipt_id", "receipt_subject_id"} {
-		if value, ok := a.Get(key); ok {
-			if !evidenceID(value) {
-				return false
-			}
-		} else if key == "record_id" || key == "tenant_id" || key == "source_id" {
-			return false
-		}
-	}
-	for _, key := range []string{"source_epoch", "source_sequence"} {
-		v, ok := a.Get(key)
-		if !ok || v.Type() != pcommon.ValueTypeInt || v.Int() < 0 {
-			return false
-		}
-	}
-	for key, choices := range map[string]map[string]struct{}{
-		"event_class": toSet("evidence"), "schema_version": toSet("agent.evidence.event/v1"),
-		"boundary": evidenceBoundaries, "provenance": toSet("caller_reported", "native", "protocol", "inferred"),
-		"status": evidenceStatuses,
-	} {
-		v, ok := a.Get(key)
-		if !ok || v.Type() != pcommon.ValueTypeStr {
-			return false
-		}
-		if _, valid := choices[v.Str()]; !valid {
-			return false
-		}
-	}
-	if v, ok := a.Get("role"); ok {
-		if v.Type() != pcommon.ValueTypeStr {
-			return false
-		}
-		if _, valid := evidenceRoles[v.Str()]; !valid {
-			return false
-		}
-	} else if record.EventName() == "agent.evidence.content" || record.EventName() == "agent.evidence.artifact" {
-		return false
-	}
-	observed, ok := a.Get("observed_at")
-	if !ok || observed.Type() != pcommon.ValueTypeStr {
-		return false
-	}
-	if _, err := time.Parse(time.RFC3339Nano, observed.Str()); err != nil {
-		return false
-	}
-	if v, ok := a.Get("content_sha256"); ok && !validSHA256Prefixed(v) {
-		return false
-	}
-	status, _ := a.Get("status")
-	switch record.EventName() {
-	case "agent.evidence.loss":
-		count, ok := a.Get("loss_count")
-		if !ok || count.Type() != pcommon.ValueTypeInt || count.Int() < 1 || status.Str() != "dropped" || !evidenceEnum(a, "loss_reason", toSet("rate_limit", "queue_full", "spool_full", "export_failure", "kernel_loss", "unknown")) {
-			return false
-		}
-	case "agent.evidence.coverage":
-		if status.Str() != "observed" || !evidenceEnum(a, "coverage_phase", toSet("start", "stop", "heartbeat", "restart", "scope_changed")) {
-			return false
-		}
-	case "agent.evidence.receipt":
-		if status.Str() != "observed" || !evidenceEnum(a, "receipt_stage", toSet("source_spooled", "node_accepted", "destination_accepted", "destination_durable")) || !evidenceEnum(a, "receipt_subject_type", toSet("evidence_event", "content_object")) {
-			return false
-		}
-		for _, key := range []string{"receipt_id", "receipt_subject_id"} {
-			if _, ok := a.Get(key); !ok {
-				return false
-			}
-		}
-	}
-	if record.EventName() != "agent.evidence.content" && record.EventName() != "agent.evidence.artifact" {
-		for _, key := range []string{"content_object_id", "content_sha256", "role"} {
-			if _, ok := a.Get(key); ok {
-				return false
-			}
-		}
-	}
-	if status.Str() == "stored" {
-		if _, ok := a.Get("content_object_id"); !ok {
-			return false
-		}
-		if _, ok := a.Get("content_sha256"); !ok {
-			return false
-		}
-	} else if status.Str() == "not_captured" || status.Str() == "unsupported" || status.Str() == "dropped" || status.Str() == "failed" {
-		if _, ok := a.Get("content_sha256"); ok {
-			return false
-		}
-	}
-	return true
-}
-
-func evidenceEnum(attrs pcommon.Map, key string, allowed map[string]struct{}) bool {
-	v, ok := attrs.Get(key)
-	if !ok || v.Type() != pcommon.ValueTypeStr {
-		return false
-	}
-	_, accepted := allowed[v.Str()]
-	return accepted
-}
-
-func validSHA256Prefixed(value pcommon.Value) bool {
-	return value.Type() == pcommon.ValueTypeStr && strings.HasPrefix(value.Str(), "sha256:") && validSHA256Hex(strings.TrimPrefix(value.Str(), "sha256:"))
 }
 
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
@@ -540,7 +386,7 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
-		if key == "content_sha256" && !validSHA256Prefixed(value) || key != "content_sha256" && hashAttributeKey(key) && !validHashValue(value) {
+		if hashAttributeKey(key) && !validHashValue(value) {
 			g.stats.invalidHashRemoved.Add(1)
 			return true
 		}
@@ -673,9 +519,9 @@ var (
 // dropped from a capture span; the general trace allowlist and
 // extra_allowed_trace_fields do not apply to these spans.
 var captureProfile = map[string]func(pcommon.Value) bool{
-	"fabric.wire.exchange_id":        evidenceID,
-	"fabric.run.id":                  evidenceID,
-	"fabric.source_id":               evidenceID,
+	"fabric.wire.exchange_id":        safeID,
+	"fabric.run.id":                  safeID,
+	"fabric.source_id":               safeID,
 	"fabric.source.sequence":         intAtLeast(0),
 	"fabric.source.epoch":            intAtLeast(0),
 	"fabric.wire.api":                oneOf(captureWireAPIs),

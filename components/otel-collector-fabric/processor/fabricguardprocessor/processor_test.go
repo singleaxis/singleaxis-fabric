@@ -73,62 +73,23 @@ func recordCount(ld plog.Logs) int {
 	return n
 }
 
-func TestEvidenceProjectionClosedMetadata(t *testing.T) {
-	base := map[string]any{
+// The withdrawn draft AEEP "evidence" class (agent.evidence.*) is not a
+// recorder log class: the Node drops it like any other unknown class.
+func TestWithdrawnEvidenceClassIsNotAdmitted(t *testing.T) {
+	ld := makeLogs(map[string]any{
 		"event_class": "evidence", "schema_version": "agent.evidence.event/v1",
-		"record_id": "evt-1", "tenant_id": "tenant-1", "run_id": "run-1",
-		"source_id": "source-1", "source_epoch": 1, "source_sequence": 2,
-		"operation_id": "op-1", "attempt_id": "try-1", "boundary": "terminal",
-		"provenance": "caller_reported", "role": "terminal.stdout", "status": "stored",
-		"content_object_id": "obj-1", "content_sha256": "sha256:" + strings.Repeat("a", 64),
-		"observed_at": "2026-09-26T10:00:00Z", "raw_output": "CANARY-SECRET",
-		"content_ref": "file:///private/CANARY-SECRET",
-	}
-	ld := makeLogs(base)
-	lr := firstRecord(t, ld)
-	lr.SetEventName("agent.evidence.content")
-	lr.Body().SetStr("CANARY-SECRET")
-	resource := ld.ResourceLogs().At(0)
-	resource.Resource().Attributes().PutStr("service.name", "CANARY-SECRET")
-	resource.ScopeLogs().At(0).Scope().Attributes().PutStr("service.name", "CANARY-SECRET")
+		"record_id": "evt-1", "tenant_id": "tenant-1", "source_id": "source-1",
+		"source_epoch": 1, "source_sequence": 2, "boundary": "terminal",
+		"provenance": "caller_reported", "status": "observed",
+		"observed_at": "2026-09-26T10:00:00Z",
+	})
+	firstRecord(t, ld).SetEventName("agent.evidence.coverage")
 	out, err := newTestGuard(t, nil).processLogs(context.Background(), ld)
-	if err != nil || recordCount(out) != 1 {
-		t.Fatalf("valid projection rejected: count=%d err=%v", recordCount(out), err)
+	if err != nil || recordCount(out) != 0 {
+		t.Fatalf("evidence class admitted: count=%d err=%v", recordCount(out), err)
 	}
-	lr = firstRecord(t, out)
-	if lr.EventName() != "agent.evidence.content" || lr.Body().Type() != pcommon.ValueTypeEmpty {
-		t.Fatal("name not preserved or body not cleared")
-	}
-	if out.ResourceLogs().At(0).Resource().Attributes().Len() != 0 || out.ResourceLogs().At(0).ScopeLogs().At(0).Scope().Attributes().Len() != 0 {
-		t.Fatal("evidence resource/scope metadata not cleared")
-	}
-	for _, key := range []string{"raw_output", "content_ref"} {
-		if _, ok := lr.Attributes().Get(key); ok {
-			t.Fatalf("unsafe key retained: %s", key)
-		}
-	}
-	for _, test := range []struct {
-		key   string
-		value any
-		name  string
-	}{
-		{"role", "CANARY-SECRET", "agent.evidence.content"},
-		{"tenant_id", "tenant/CANARY-SECRET", "agent.evidence.content"},
-		{"status", "CANARY-SECRET", "agent.evidence.content"},
-		{"content_sha256", "sha256:CANARY-SECRET", "agent.evidence.content"},
-		{"role", "terminal.stdout", "CANARY-SECRET"},
-	} {
-		attrs := make(map[string]any, len(base))
-		for key, value := range base {
-			attrs[key] = value
-		}
-		attrs[test.key] = test.value
-		bad := makeLogs(attrs)
-		firstRecord(t, bad).SetEventName(test.name)
-		filtered, err := newTestGuard(t, nil).processLogs(context.Background(), bad)
-		if err != nil || recordCount(filtered) != 0 {
-			t.Fatalf("invalid %s/%s survived: count=%d err=%v", test.key, test.name, recordCount(filtered), err)
-		}
+	if _, known := BuiltInAllowedFields["evidence"]; known {
+		t.Fatal("evidence must not be a built-in log class")
 	}
 }
 

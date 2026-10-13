@@ -10,6 +10,8 @@ import fabric
 from fabric import Decision, Fabric
 
 FORBIDDEN_ROOT_SYMBOLS = {
+    "ByteEvidenceConfig",
+    "ByteEvidenceRecorder",
     "EscalationSummary",
     "EvalRecord",
     "GuardrailBlocked",
@@ -79,6 +81,12 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/queue_transports",
     "/src/fabric/stream.py",
     "/src/fabric/tool_auth.py",
+    # Withdrawn draft AEEP / synthetic-evidence slice (specs 035-041).
+    "/src/fabric/adapters/synthetic_evidence.py",
+    "/src/fabric/byte_evidence.py",
+    "/src/fabric/source_spool.py",
+    "/src/fabric/synthetic_otlp.py",
+    "/src/fabric/synthetic_reconcile.py",
 }
 
 

@@ -52,6 +52,12 @@ def test_release_policy_is_recorder_only() -> None:
         "fabric/policy.py",
         "fabric/presidio.py",
         "fabric/tool_auth.py",
+        # Withdrawn draft AEEP / synthetic-evidence slice (specs 035-041).
+        "fabric/adapters/synthetic_evidence.py",
+        "fabric/byte_evidence.py",
+        "fabric/source_spool.py",
+        "fabric/synthetic_otlp.py",
+        "fabric/synthetic_reconcile.py",
     }.issubset(forbidden)
     assert set(policy["contracts"]["public_families"]) == {
         "activity",

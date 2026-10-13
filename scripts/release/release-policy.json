@@ -40,6 +40,8 @@
       "fabric/_uds.py",
       "fabric/adapters/agent_framework.py",
       "fabric/adapters/langgraph.py",
+      "fabric/adapters/synthetic_evidence.py",
+      "fabric/byte_evidence.py",
       "fabric/cli.py",
       "fabric/deployment.py",
       "fabric/escalation.py",
@@ -50,7 +52,10 @@
       "fabric/nemo.py",
       "fabric/policy.py",
       "fabric/presidio.py",
+      "fabric/source_spool.py",
       "fabric/stream.py",
+      "fabric/synthetic_otlp.py",
+      "fabric/synthetic_reconcile.py",
       "fabric/tool_auth.py"
     ],
     "forbidden_wheel_prefixes": [
@@ -99,6 +104,8 @@
       "src/fabric/_uds.py",
       "src/fabric/adapters/agent_framework.py",
       "src/fabric/adapters/langgraph.py",
+      "src/fabric/adapters/synthetic_evidence.py",
+      "src/fabric/byte_evidence.py",
       "src/fabric/cli.py",
       "src/fabric/deployment.py",
       "src/fabric/escalation.py",
@@ -109,7 +116,10 @@
       "src/fabric/nemo.py",
       "src/fabric/policy.py",
       "src/fabric/presidio.py",
+      "src/fabric/source_spool.py",
       "src/fabric/stream.py",
+      "src/fabric/synthetic_otlp.py",
+      "src/fabric/synthetic_reconcile.py",
       "src/fabric/tool_auth.py"
     ],
     "forbidden_sdist_prefixes": [

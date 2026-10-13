@@ -93,43 +93,6 @@ Use `fabric.execution(...)` to correlate multiple decisions. `Decision` also
 captures retrieval, memory, side effects, checkpoints, delegation, MCP
 inventory, skills, hooks, file access and generic interactions.
 
-## Opt-in exact-byte evidence (draft)
-
-The separate content-v2 `ByteEvidenceRecorder` stores **only bytes explicitly
-passed by the caller**. It preserves binary data without UTF-8 conversion,
-keeps distinct observations separate even when their bytes match, and records
-`caller_reported` provenance. It is not an automatic terminal, SSH, database,
-or provider interceptor.
-
-```ts
-import { ByteEvidenceRecorder, LocalFilesystemContentStore } from "@singleaxis/fabric";
-
-const evidence = new ByteEvidenceRecorder({
-  store: new LocalFilesystemContentStore("/customer-controlled/evidence", "acme"),
-  roles: new Set(["terminal.stdout"]),
-});
-const descriptor = evidence.capture(stdoutBytes, {
-  role: "terminal.stdout",
-  boundary: "terminal",
-  sourceId: "instrumented-terminal-1",
-  sourceEpoch: 0,
-  sourceSequence: 1,
-  runId: "run-42",
-  operationId: "command-7",
-});
-const counts = await evidence.flush();
-const settled = evidence.drainSettled(); // persist these descriptors in your own manifest
-await evidence.close();
-// Inspect `descriptor.status`, `settled`, and `counts` (including unretained_drops).
-// Pending/dropped/failed is not stored.
-```
-
-The handoff is bounded and asynchronous but **process-memory-only**. It does
-not issue durable source or destination receipts, emit OTLP evidence events,
-build a run manifest, or prove run completeness. A process crash can lose
-pending content. Configure customer-controlled storage permissions, encryption,
-retention, and authorized resolution separately before production use.
-
 ## Propagation across services
 
 When one instrumented service calls another, inject the decision's Fabric

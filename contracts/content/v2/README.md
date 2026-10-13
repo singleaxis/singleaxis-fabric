@@ -1,9 +1,15 @@
-# Governed byte evidence contract v2 (draft)
+# Byte-content contract v2 (draft)
 
-This contract is a proposed extension of [content v1](../v1/README.md),
-specified by [AEEP](../../../specs/035-agent-execution-evidence-profile.md)
-and its [build plan](../../../specs/036-evidence-capture-implementation-plan.md).
-It is not emitted by recorder v1. Content v1 remains unchanged.
+This contract extends [content v1](../v1/README.md) to exact binary bytes.
+LLM wire capture ([spec 042](../../../specs/042-llm-wire-capture-and-reconstruction.md),
+[spec 043](../../../specs/043-node-content-delivery-and-agent-spool.md))
+writes `model.exchange.*` objects with this descriptor. It is not part of
+the released recorder v1 contract set, and content v1 remains unchanged.
+The role vocabulary is wider than the roles any runtime emits today; a role
+in the schema is not a capture claim.
+
+`scripts/contracts/validate_content_v2_contracts.py` validates the pinned
+schema and fixtures.
 
 The descriptor records the relationship between *source bytes* and *stored
 bytes*. A source digest is present only when those bytes were actually
