@@ -116,9 +116,9 @@ class _Side:
             chunks.append(bytearray(chunk))
 
     def body(self) -> CapturedBody:
-        """The retained bytes; ownership moves to the caller (the job)."""
-        chunks = tuple(bytes(c) if isinstance(c, bytearray) else c for c in self.chunks)
-        self.chunks = []
+        """The retained chunks; ownership of the list (coalescing buffers included) moves to
+        the job. No copy here: the capture worker joins them off the host's thread."""
+        chunks, self.chunks = self.chunks, []
         return CapturedBody(chunks, self.observed, self.truncated, self.media_type, self.encoding)
 
 

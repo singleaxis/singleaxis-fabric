@@ -57,7 +57,19 @@ def scopes(run: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def complete(run: Mapping[str, Any]) -> bool:
-    return bool(run["verdict"] == "complete_for_declared_scope")
+    """Complete as far as the record can say (decision H5).
+
+    A run with scopes is at best ``complete_for_observed_scopes``; only a run
+    without scopes is judged over its declared scope.
+    """
+    expected = (
+        "complete_for_observed_scopes" if run.get("scopes") else "complete_for_declared_scope"
+    )
+    return bool(run["verdict"] == expected)
+
+
+def scope_verdicts(document: Mapping[str, Any], run_id: str) -> dict[str, str]:
+    return {s["scope_id"]: s["verdict"] for s in document["scopes"] if s["run_id"] == run_id}
 
 
 # --------------------------------------------------------------------------
@@ -582,12 +594,22 @@ def test_scoped_runs_are_never_falsely_complete(tmp_path: Path, seed: int) -> No
     if drops:
         _drop(capture, truth, rng)
     document = capture.reconstruct()  # schema + contract semantics validated
+    blocks = {block.scope_id: block for run in truth.blocks.values() for block in run}
+    for entry in document["scopes"]:
+        # Decision H5: a scope verdict is a claim about that block alone.
+        block = blocks[entry["scope_id"]]
+        if entry["verdict"] == "complete_for_declared_scope":
+            assert block.closed, (seed, entry)
+            assert not set(block.rows) & truth.dropped, (seed, entry)
     for run in document["runs"]:
         if run["run_id"] not in truth.blocks:
             continue  # an unscoped fallback run (042 rule b, tested elsewhere)
         intact = truth.intact(run["run_id"])
         if complete(run):
             assert intact, (seed, run["run_id"], run["gaps"])
+            assert set(scope_verdicts(document, run["run_id"]).values()) <= {
+                "complete_for_declared_scope"
+            }
         elif not drops and intact:
             # Liveness: with nothing lost, a run whose blocks all closed is complete.
             assert real_gaps(run) == [], (seed, run["run_id"], run["gaps"])

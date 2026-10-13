@@ -21,7 +21,7 @@ import fabric._loss
 import fabric._sequence
 from fabric import wire
 from fabric._loss import LossEmitter
-from fabric._sequence import current_run_id
+from fabric._sequence import current_run_id, run_pseudonym
 
 from .test_wire_helpers import (
     OPENAI_CHAT,
@@ -97,7 +97,8 @@ def test_reused_and_serial_run_ids_get_distinct_scopes(
     assert "fabric.run.scope_id" not in exchanges[0]
     first, second = exchanges[1]["fabric.run.scope_id"], exchanges[2]["fabric.run.scope_id"]
     assert UUID4.fullmatch(first) and UUID4.fullmatch(second) and first != second
-    assert exchanges[1]["fabric.run.id"] == exchanges[2]["fabric.run.id"] == "run-same"
+    same = run_pseudonym("run-same")
+    assert exchanges[1]["fabric.run.id"] == exchanges[2]["fabric.run.id"] == same
     assert markers == {
         first: {"run_start": 0, "run_end": 1},
         second: {"run_start": 1, "run_end": 2},
@@ -112,14 +113,15 @@ def test_nested_scopes_tag_the_innermost_and_bound_their_windows(
     with wire.run("outer"):
         _call()  # 0
         with wire.run("inner"):
-            assert current_run_id() == "inner"
+            assert current_run_id() == run_pseudonym("inner")
             _call()  # 1
         _call()  # 2
     assert handle.flush(5.0)
     exchanges, markers = _exchanges(exporter), _markers(exporter)
     outer, inner = exchanges[0]["fabric.run.scope_id"], exchanges[1]["fabric.run.scope_id"]
     assert exchanges[2]["fabric.run.scope_id"] == outer != inner
-    assert [exchanges[i]["fabric.run.id"] for i in range(3)] == ["outer", "inner", "outer"]
+    outer_id, inner_id = run_pseudonym("outer"), run_pseudonym("inner")
+    assert [exchanges[i]["fabric.run.id"] for i in range(3)] == [outer_id, inner_id, outer_id]
     assert markers[outer] == {"run_start": -1, "run_end": 2}
     assert markers[inner] == {"run_start": 0, "run_end": 1}
     _validate(exporter)
@@ -162,13 +164,13 @@ def test_a_call_started_after_its_block_closed_carries_no_scope(
     assert handle.flush(5.0)
     (exchange,) = _exchanges(exporter).values()
     assert "fabric.run.scope_id" not in exchange
-    assert exchange["fabric.run.id"] != "run-late"  # the 042 fallback run id
+    assert exchange["fabric.run.id"] != run_pseudonym("run-late")  # the 042 fallback run id
 
 
 def test_scope_without_an_installed_handle_only_scopes_the_context() -> None:
     assert wire.current_handle() is None
     with wire.run("run-quiet"):
-        assert current_run_id() == "run-quiet"
+        assert current_run_id() == run_pseudonym("run-quiet")
     assert current_run_id() is None
     with pytest.raises(ValueError), wire.run("bad id"):
         pass

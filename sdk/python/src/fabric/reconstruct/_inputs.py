@@ -108,34 +108,44 @@ class SpanRecord:
 
 def read_span_file(
     path: str | os.PathLike[str],
+    *,
+    label: str = "span file",
 ) -> tuple[SpanFormat, list[SpanRecord]]:
-    """Read one span file; raise :class:`ReconstructInputError` when malformed."""
+    """Read one span file; raise :class:`ReconstructInputError` when malformed.
+
+    Error messages name the file only by ``label`` (e.g. ``span file 2``) and a
+    line number: never its path, which can name a user or host layout, and
+    never an underlying exception's text (spec 042 §9 "Diagnostics").
+    """
 
     location = Path(path)
     try:
-        text = location.read_bytes().decode("utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise ReconstructInputError(f"cannot read span file {location}: {exc}") from exc
+        data = location.read_bytes()
+    except OSError:
+        raise ReconstructInputError(f"{label}: cannot be read") from None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ReconstructInputError(f"{label}: not UTF-8 text") from None
     stripped = text.strip()
     if stripped.startswith("{"):
         try:
             whole = json.loads(stripped)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             whole = None
         if isinstance(whole, dict) and "resourceSpans" in whole:
-            return "otlp_json", _otlp_spans(whole, str(location))
+            return "otlp_json", _otlp_spans(whole, label)
     fmt: SpanFormat | None = None
     records: list[SpanRecord] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
-        kind, spans = _parse_line(line, f"{location}:{lineno}")
+        where = f"{label} line {lineno}"
+        kind, spans = _parse_line(line, where)
         if fmt is None:
             fmt = kind
         elif fmt != kind:
-            raise ReconstructInputError(
-                f"{location}:{lineno}: sink rows and OTLP exports are mixed"
-            )
+            raise ReconstructInputError(f"{where}: sink rows and OTLP exports are mixed")
         records.extend(spans)
     return fmt or "sink_jsonl", records
 
@@ -143,8 +153,8 @@ def read_span_file(
 def _parse_line(line: str, where: str) -> tuple[SpanFormat, list[SpanRecord]]:
     try:
         row = json.loads(line)
-    except json.JSONDecodeError as exc:
-        raise ReconstructInputError(f"{where}: not JSON ({exc.msg})") from exc
+    except (json.JSONDecodeError, RecursionError):
+        raise ReconstructInputError(f"{where}: not JSON") from None
     if not isinstance(row, dict):
         raise ReconstructInputError(f"{where}: expected a JSON object")
     if "resourceSpans" in row:
@@ -199,8 +209,8 @@ def _hex_id(value: Any, where: str, what: str) -> str | None:
         return value.lower()
     try:
         return base64.b64decode(value, validate=True).hex()
-    except (binascii.Error, ValueError) as exc:
-        raise ReconstructInputError(f"{where}: {what} is neither hex nor base64") from exc
+    except (binascii.Error, ValueError):
+        raise ReconstructInputError(f"{where}: {what} is neither hex nor base64") from None
 
 
 def _any_value(value: Any, where: str) -> Any:  # noqa: PLR0911 - one return per AnyValue kind

@@ -143,7 +143,12 @@ func deepMerge(base, overlay map[string]any) {
 //     memory_limiter and only fabriccontent; no content receiver speaks gRPC
 //     and no connector can bridge content into a telemetry pipeline;
 //   - a fabriccontent exporter allows one tenant unless it sets
-//     allow_multiple_tenants: true (the record names its tenant).
+//     allow_multiple_tenants: true (the record names its tenant), and all
+//     fabriccontent exporters sharing a receiver or pipeline together allow
+//     one tenant unless every one of them sets it;
+//   - no OTLP destination or fabriccontent S3 endpoint carries user info, a
+//     query or a fragment (credentials belong in Secret-backed headers or
+//     the AWS credential chain, never in the URL).
 func checkPipelines(cfg map[string]any) error {
 	service, _ := cfg["service"].(map[string]any)
 	pipelines, _ := service["pipelines"].(map[string]any)
@@ -157,6 +162,12 @@ func checkPipelines(cfg map[string]any) error {
 		return err
 	}
 	if err := checkContentTenants(cfg); err != nil {
+		return err
+	}
+	if err := checkSharedIngressTenants(cfg, pipelines); err != nil {
+		return err
+	}
+	if err := checkExporterEndpoints(cfg); err != nil {
 		return err
 	}
 	names := make([]string, 0, len(pipelines))
@@ -307,30 +318,187 @@ func checkContentTenants(cfg map[string]any) error {
 	sort.Strings(ids)
 	for _, id := range ids {
 		exporter, _ := exporters[id].(map[string]any)
-		if tenantCount(exporter["allowed_tenants"]) > 1 && !configTrue(exporter["allow_multiple_tenants"]) {
+		if len(tenantList(exporter["allowed_tenants"])) > 1 && !configTrue(exporter["allow_multiple_tenants"]) {
 			return fmt.Errorf("exporter %q allows more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant", id)
 		}
 	}
 	return nil
 }
 
-// tenantCount counts allowed_tenants entries; a scalar (e.g. one env
-// reference) is expanded and read as YAML, as the collector would.
-func tenantCount(v any) int {
+// checkSharedIngressTenants enforces the single-tenant rule per Node rather
+// than per exporter (H2). Every authenticated agent reaching a content
+// receiver can send a record naming any tenant, and each exporter authorizes
+// only the record's claim; so fabriccontent/a allowing tenant A and
+// fabriccontent/b allowing tenant B behind the same receiver let an agent of
+// A write under B. Exporters are grouped when they share a pipeline or a
+// receiver (transitively); a group may allow more than one distinct tenant
+// only when every exporter in it sets allow_multiple_tenants: true. An
+// exporter in no pipeline is never instantiated and is checked only by
+// checkContentTenants. The diagnostic names exporter ids, never tenant ids.
+func checkSharedIngressTenants(cfg map[string]any, pipelines map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(x string) string {
+		if parent[x] == x {
+			return x
+		}
+		root := find(parent[x])
+		parent[x] = root
+		return root
+	}
+	union := func(a, b string) {
+		for _, n := range []string{a, b} {
+			if _, ok := parent[n]; !ok {
+				parent[n] = n
+			}
+		}
+		if ra, rb := find(a), find(b); ra != rb {
+			parent[ra] = rb
+		}
+	}
+	// Nodes are "e:<exporter>" and "r:<receiver>"; a pipeline joins its
+	// fabriccontent exporters with each other and with its receivers.
+	for _, node := range pipelines {
+		pipeline, _ := node.(map[string]any)
+		var members []string
+		for _, id := range idList(pipeline["exporters"]) {
+			if componentType(id) == "fabriccontent" {
+				members = append(members, "e:"+id)
+			}
+		}
+		if len(members) == 0 {
+			continue
+		}
+		for _, id := range idList(pipeline["receivers"]) {
+			members = append(members, "r:"+id)
+		}
+		for _, m := range members {
+			union(members[0], m)
+		}
+	}
+	groups := map[string][]string{}
+	for n := range parent {
+		if id, ok := strings.CutPrefix(n, "e:"); ok {
+			groups[find(n)] = append(groups[find(n)], id)
+		}
+	}
+	roots := make([]string, 0, len(groups))
+	for root := range groups {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+	for _, root := range roots {
+		ids := groups[root]
+		sort.Strings(ids)
+		tenants := map[string]bool{}
+		allOptedIn := true
+		for _, id := range ids {
+			exporter, _ := exporters[id].(map[string]any)
+			for _, tenant := range tenantList(exporter["allowed_tenants"]) {
+				tenants[tenant] = true
+			}
+			if !configTrue(exporter["allow_multiple_tenants"]) {
+				allOptedIn = false
+			}
+		}
+		if len(tenants) > 1 && !allOptedIn {
+			return fmt.Errorf("fabriccontent exporters %s share content ingress and together allow more than one tenant; any agent reaching that receiver could write under another tenant. Run one Node per tenant, or set allow_multiple_tenants: true on every one of them", strings.Join(ids, ", "))
+		}
+	}
+	return nil
+}
+
+// tenantList returns the allowed_tenants values as the collector would see
+// them: a scalar (e.g. one env reference) is expanded and read as YAML, and
+// each list entry is env-expanded.
+func tenantList(v any) []string {
 	if s, ok := v.(string); ok {
 		var parsed any
 		if err := yaml.Unmarshal([]byte(expandEnvRefs(s)), &parsed); err != nil || parsed == nil {
-			return 1
+			return []string{expandEnvRefs(s)}
 		}
 		v = parsed
 	}
-	if items, ok := v.([]any); ok {
-		return len(items)
+	items, ok := v.([]any)
+	if !ok {
+		if v == nil {
+			return nil
+		}
+		items = []any{v}
 	}
-	if v == nil {
-		return 0
+	tenants := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok {
+			tenants = append(tenants, strings.TrimSpace(expandEnvRefs(s)))
+			continue
+		}
+		tenants = append(tenants, fmt.Sprint(item))
 	}
-	return 1
+	return tenants
+}
+
+// otlpExporterTypes are the OTLP exporter type names (current and legacy
+// spellings) whose endpoints the gate checks.
+var otlpExporterTypes = map[string]bool{"otlp": true, "otlp_grpc": true, "otlphttp": true, "otlp_http": true}
+
+// otlpEndpointFields are the URL-valued fields of the OTLP exporters.
+var otlpEndpointFields = []string{"endpoint", "traces_endpoint", "logs_endpoint", "metrics_endpoint", "profiles_endpoint"}
+
+// checkExporterEndpoints refuses a credential- or query-bearing endpoint on
+// any OTLP exporter and on a fabriccontent S3 endpoint (Sol deployment #2).
+// A pasted https://user:secret@host or ?token=... URL would put the secret
+// in the rendered ConfigMap and in every component that logs the endpoint;
+// authorization belongs in Secret-backed headers. Values are env-expanded the
+// way the collector resolves them. The diagnostic names the exporter and the
+// field only: the URL itself is never echoed.
+func checkExporterEndpoints(cfg map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	ids := make([]string, 0, len(exporters))
+	for id := range exporters {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		exporter, _ := exporters[id].(map[string]any)
+		switch typ := componentType(id); {
+		case otlpExporterTypes[typ]:
+			for _, field := range otlpEndpointFields {
+				if unsafeEndpoint(exporter[field]) {
+					return fmt.Errorf("exporter %q %s must not contain user info, a query or a fragment; put credentials in Secret-backed headers", id, field)
+				}
+			}
+		case typ == "fabriccontent":
+			s3, _ := exporter["s3"].(map[string]any)
+			if unsafeEndpoint(s3["endpoint"]) {
+				return fmt.Errorf("exporter %q s3.endpoint must not contain user info, a query or a fragment; S3 credentials come from the AWS credential chain", id)
+			}
+		}
+	}
+	return nil
+}
+
+// unsafeEndpoint reports whether an endpoint value (after env expansion)
+// carries user info ('@' in the authority), a query ('?') or a fragment
+// ('#'). It works on host:port gRPC endpoints without a scheme as well as on
+// URLs, and does not depend on the value parsing as a URL.
+func unsafeEndpoint(v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	s = strings.TrimSpace(expandEnvRefs(s))
+	if s == "" {
+		return false
+	}
+	if strings.ContainsAny(s, "?#") {
+		return true
+	}
+	if _, rest, ok := strings.Cut(s, "://"); ok {
+		s = rest
+	}
+	authority, _, _ := strings.Cut(s, "/")
+	return strings.Contains(authority, "@")
 }
 
 // configTrue: a YAML true, or a string (after env expansion) reading true.

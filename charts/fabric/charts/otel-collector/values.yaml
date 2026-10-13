@@ -137,6 +137,11 @@ fabric:
     # Optional exact metadata keys for traces. The processor rejects known
     # credential/content-shaped names; prefix wildcards are not supported.
     extraAllowedTraceFields: []
+    # Model names (exact, or prefix* matching only a version-like suffix)
+    # that capture spans may carry in clear, beyond the built-in public
+    # families (spec 043 §7). Set the same list as the agents'
+    # FABRIC_WIRE_MODEL_ALLOWLIST, or the Node hashes the extra names to m-...
+    captureModelAllowlist: []
 
 # OTLP/HTTP egress target.
 #
@@ -165,6 +170,12 @@ fabric:
 #
 # Fabric recorder v1 does not install a backend or a second Relay hop. For
 # fan-out, send to a customer-controlled Collector and configure its exporters.
+#
+# The endpoint must be scheme://host[:port][/path]: a DNS name, dotted IPv4
+# or bracketed IPv6 host, a port 1-65535, and no user info, query or
+# fragment (a credential in the URL would land in the ConfigMap; use
+# exporter.auth.secret). requireTLS=true also requires https://. Render
+# errors name the field and never echo the value.
 exporter:
   endpoint: ""
   # Transport security. `insecure=true` is retained as the dev default
@@ -263,8 +274,9 @@ content:
     bucket: ""
     prefix: fabric/content/
     region: ""
-    # Only for S3-compatible stores (MinIO, Ceph RGW). No credentials in the
-    # URL; https:// is required whenever exporter.requireTLS=true.
+    # Only for S3-compatible stores (MinIO, Ceph RGW). Same URL rule as
+    # exporter.endpoint (no user info, query or fragment; valid host/port);
+    # https:// is required whenever exporter.requireTLS=true.
     endpoint: ""
     usePathStyle: false
     # Required for backend=s3: "AES256" (SSE-S3) or "aws:kms" (optionally
@@ -352,6 +364,14 @@ networkPolicy:
   # Production enables this so a successful install cannot silently expose
   # the OTLP receiver to every namespace in the cluster.
   requireExplicitIngress: false
+  # Every peer supplied in ingressFrom, exporterEgress.to, contentEgress.to
+  # and egressTo must restrict its sources/destinations, in every profile.
+  # Rejected at render time: {}; a namespaceSelector that is empty, null or
+  # exclusion-only (NotIn/DoesNotExist) without a podSelector that narrows
+  # it; an empty podSelector alone (every pod in this namespace); an ipBlock
+  # with prefix length 0 (0.0.0.0/0, ::/0, 10.0.0.0/0, ...); an ipBlock
+  # combined with a selector. A selector restricts when it has matchLabels
+  # or an In/Exists matchExpression.
   ingressFrom: []
   # Exporter egress is distinct from additional destinations so regulated
   # profiles can prove that an operator deliberately named both a peer and
@@ -363,7 +383,7 @@ networkPolicy:
     ports: []
   # Additional non-exporter peers. This compatibility surface remains for
   # DNS-independent internal services and operator extensions. The same
-  # non-empty, non-world peer rule applies.
+  # peer rule applies.
   egressTo: []
   # Egress from the Node to the content store (content.backend=s3), e.g. the
   # S3 VPC endpoint CIDRs plus STS for IRSA, or the MinIO Service. Required

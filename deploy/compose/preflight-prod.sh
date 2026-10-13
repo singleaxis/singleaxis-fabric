@@ -143,13 +143,98 @@ host_tls_path() {
   esac
 }
 
+# --- destination URL shape ----------------------------------------------------
+# url_check URL: sets URL_PROBLEM to a fixed reason (empty when URL is valid),
+# URL_SCHEME, URL_HOST (brackets stripped) and URL_PORT (empty when absent).
+# Same rule as the Helm chart's otel-collector.validateURL: an absolute
+# http(s) URL whose authority is exactly host[:port] -- a DNS name, a dotted
+# IPv4 address or a bracketed IPv6 address, and a port 1-65535 -- plus an
+# optional path. User info, a query or a fragment could carry a credential or
+# a signed token into the collector config, so they are refused; credentials
+# belong in FABRIC_EXPORT_AUTH_HEADER or the store's credential chain. Runs in
+# the current shell (no subshell) and never prints anything.
+url_check() {
+  URL_PROBLEM=""; URL_SCHEME=""; URL_HOST=""; URL_PORT=""
+  case "$1" in
+    https://*) URL_SCHEME=https; url_rest=${1#https://} ;;
+    http://*) URL_SCHEME=http; url_rest=${1#http://} ;;
+    *) URL_PROBLEM="is not an absolute http(s):// URL"; return 0 ;;
+  esac
+  case "$1" in
+    *[[:space:]]*|*[[:cntrl:]]*|*\\*)
+      URL_PROBLEM="must not contain whitespace, control characters or a backslash"; return 0 ;;
+  esac
+  case "$1" in
+    *@*) URL_PROBLEM="must not contain user info (user:password@ or any '@')"; return 0 ;;
+  esac
+  case "$1" in
+    *\?*|*\#*) URL_PROBLEM="must not contain a query or fragment ('?' or '#')"; return 0 ;;
+  esac
+  url_authority=${url_rest%%/*}
+  url_has_port=0
+  case "${url_authority}" in
+    \[*\]) URL_HOST=${url_authority} ;;
+    \[*\]:*) URL_HOST=${url_authority%%]:*}]; URL_PORT=${url_authority#*]:}; url_has_port=1 ;;
+    \[*) URL_HOST="" ;;
+    *:*) URL_HOST=${url_authority%:*}; URL_PORT=${url_authority##*:}; url_has_port=1 ;;
+    *) URL_HOST=${url_authority} ;;
+  esac
+  url_host_ok=0
+  case "${URL_HOST}" in
+    \[*)
+      if matches '^\[[0-9A-Fa-f.]*:[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*\]$' "${URL_HOST}"; then
+        url_host_ok=1
+        URL_HOST=${URL_HOST#\[}; URL_HOST=${URL_HOST%\]}
+      fi
+      ;;
+    *[!0-9.]*|'')
+      if [ "${#URL_HOST}" -le 253 ] \
+        && matches '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$' "${URL_HOST}"; then
+        url_host_ok=1
+      fi
+      ;;
+    *)
+      if matches '^([0-9]{1,3}\.){3}[0-9]{1,3}$' "${URL_HOST}"; then
+        url_host_ok=1
+        url_octets=${URL_HOST}
+        while [ -n "${url_octets}" ]; do
+          url_octet=${url_octets%%.*}
+          [ "${url_octet}" -le 255 ] || url_host_ok=0
+          case "${url_octets}" in *.*) url_octets=${url_octets#*.} ;; *) url_octets="" ;; esac
+        done
+      fi
+      ;;
+  esac
+  if [ "${url_host_ok}" -ne 1 ]; then
+    URL_PROBLEM="host must be a DNS name, a dotted IPv4 address or a bracketed IPv6 address"
+    return 0
+  fi
+  if [ "${url_has_port}" -eq 1 ]; then
+    if ! matches '^[1-9][0-9]{0,4}$' "${URL_PORT}" || [ "${URL_PORT}" -gt 65535 ]; then
+      URL_PROBLEM="port must be a number from 1 to 65535"
+    fi
+  fi
+  return 0
+}
+matches() { printf '%s' "$2" | grep -Eq -- "$1"; }
+
 # --- required egress settings ------------------------------------------------
-case "${FABRIC_EXPORT_ENDPOINT:-}" in
-  "")        bad "FABRIC_EXPORT_ENDPOINT unset" ;;
-  https://*) ok "egress endpoint is https" ;;
-  http://*)  bad "FABRIC_EXPORT_ENDPOINT is http://; production egress requires https" ;;
-  *)         bad "FABRIC_EXPORT_ENDPOINT is not an https:// URL (value not shown)" ;;
-esac
+export_endpoint_ok=0
+if [ -z "${FABRIC_EXPORT_ENDPOINT:-}" ]; then
+  bad "FABRIC_EXPORT_ENDPOINT unset"
+else
+  url_check "${FABRIC_EXPORT_ENDPOINT}"
+  if [ -n "${URL_PROBLEM}" ]; then
+    bad "FABRIC_EXPORT_ENDPOINT ${URL_PROBLEM} (value not shown); put credentials in FABRIC_EXPORT_AUTH_HEADER"
+  elif [ "${URL_SCHEME}" != https ]; then
+    bad "FABRIC_EXPORT_ENDPOINT is http://; production egress requires https"
+  else
+    ok "egress endpoint is a valid https URL"
+    export_endpoint_ok=1
+    export_host=${URL_HOST}
+    export_port=${URL_PORT:-443}
+  fi
+fi
 
 if [ -z "${FABRIC_EXPORT_AUTH_HEADER:-}" ]; then
   bad "FABRIC_EXPORT_AUTH_HEADER unset; egress delivery would be unauthenticated"
@@ -440,8 +525,6 @@ content_configured() {
     n == 2 && k[1] == "exporters" && k[2] ~ /^fabriccontent(\/|$)/ { found = 1 }
     END { exit(found ? 0 : 1) }'
 }
-matches() { printf '%s' "$2" | grep -Eq -- "$1"; }
-
 if content_configured; then
   if [ -z "${FABRIC_TENANT_ID:-}" ]; then
     bad "FABRIC_TENANT_ID unset; the content exporter would accept no tenant"
@@ -479,16 +562,17 @@ if content_configured; then
       if [ -z "${FABRIC_CONTENT_S3_REGION:-}" ]; then
         bad "FABRIC_CONTENT_S3_REGION unset; set the bucket region"
       fi
-      endpoint="${FABRIC_CONTENT_S3_ENDPOINT:-}"
-      if [ -z "${endpoint}" ]; then
+      if [ -z "${FABRIC_CONTENT_S3_ENDPOINT:-}" ]; then
         ok "content store is AWS S3 (default endpoint)"
-      elif matches '^https?://[^/?#@[:space:]]+(/[^?#@[:space:]]*)?$' "${endpoint}"; then
-        case "${endpoint}" in
-          https://*) ok "content store endpoint uses https" ;;
-          *) bad "FABRIC_CONTENT_S3_ENDPOINT is plaintext http; content would leave the Node unencrypted in transit -- use https" ;;
-        esac
       else
-        bad "FABRIC_CONTENT_S3_ENDPOINT must be an http(s) URL without user info, query or fragment"
+        url_check "${FABRIC_CONTENT_S3_ENDPOINT}"
+        if [ -n "${URL_PROBLEM}" ]; then
+          bad "FABRIC_CONTENT_S3_ENDPOINT ${URL_PROBLEM} (value not shown); store credentials come from the instance role or the credentials-file overlay"
+        elif [ "${URL_SCHEME}" != https ]; then
+          bad "FABRIC_CONTENT_S3_ENDPOINT is plaintext http; content would leave the Node unencrypted in transit -- use https"
+        else
+          ok "content store endpoint uses https"
+        fi
       fi
       case "${FABRIC_CONTENT_S3_PATH_STYLE:-false}" in
         true|false) ;;
@@ -510,10 +594,10 @@ if content_configured; then
 fi
 
 # --- optional reachability probe (warn-only: destination may not exist yet) ---
-if [ -n "${FABRIC_EXPORT_ENDPOINT:-}" ]; then
-  hostport=$(printf '%s' "${FABRIC_EXPORT_ENDPOINT}" | sed -e 's|^https\?://||' -e 's|/.*||')
+# Only a validated endpoint is probed, and nc receives its host and port only.
+if [ "${export_endpoint_ok}" -eq 1 ]; then
   if command -v nc >/dev/null 2>&1; then
-    if nc -z -w 3 "${hostport%%:*}" "${hostport##*:}" >/dev/null 2>&1 || nc -z -w 3 "${hostport%%:*}" 443 >/dev/null 2>&1; then
+    if nc -z -w 3 "${export_host}" "${export_port}" >/dev/null 2>&1; then
       ok "egress destination host reachable"
     else
       warn "egress destination not reachable yet (ok if provisioned later; queue buffers)"

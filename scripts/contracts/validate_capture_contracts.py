@@ -7,9 +7,11 @@ schema cannot express: a store status that disagrees with the stored body
 object ids, loss ranges that cannot hold their count, a scope id on a
 heartbeat that is not a run marker, a spool record whose bodies, descriptors
 and span disagree, a content log record whose body or representation
-disagrees with its descriptor, and a reconstruction verdict stronger than
-its gaps, checks, scopes, sequence windows and heartbeats allow. The
-stitch-digest fixture pins the ``fabric.stitch/v1`` per-message projection
+disagrees with its descriptor, and a reconstruction verdict (per run or
+per scope) stronger than its gaps, checks, scopes, sequence windows and
+heartbeats allow. The vector fixtures pin the model-name exposure rule and
+the run-id pseudonym that capture, fabricguard and ``fabric.reconstruct``
+share (spec 043 §6-§7). The stitch-digest fixture pins the ``fabric.stitch/v1`` per-message projection
 that ``fabric.reconstruct`` derives offline from stored bytes; the golden
 fixtures pin the exact descriptor bytes and keys a content writer (the
 Fabric Node's ``fabriccontent`` exporter or the SDK local store) produces.
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import sys
 from dataclasses import dataclass
@@ -37,8 +40,12 @@ SCHEMAS = {
     "fabric.wire-spool-record/v1": "schema/spool-record-v1.schema.json",
     "fabric.content-log-record/v1": "schema/content-log-record-v1.schema.json",
 }
-_EXPECTATIONS = frozenset({"schema", "valid", "invalid", "digests", "golden"})
+_EXPECTATIONS = frozenset({"schema", "valid", "invalid", "digests", "golden", "vectors"})
 _RUN_MARKERS = frozenset({"run_start", "run_end"})
+_COMPLETE = "complete_for_declared_scope"
+_COMPLETE_OBSERVED = "complete_for_observed_scopes"
+_COMPLETE_VERDICTS = frozenset({_COMPLETE, _COMPLETE_OBSERVED})
+_RANK = {_COMPLETE: 0, _COMPLETE_OBSERVED: 0, "unverified": 1, "partial": 2}
 _ROLE_REF = {
     "model.exchange.request": "fabric.content.request_ref",
     "model.exchange.response": "fabric.content.result_ref",
@@ -277,7 +284,7 @@ def _check_run_scopes(run: Mapping[str, Any], path: str) -> None:
                 f"{path}.declared_scope",
                 "a scope window names a listed scope; a proven one is its [start + 1, end]",
             )
-    if run["verdict"] == "complete_for_declared_scope" and any(
+    if run["verdict"] in _COMPLETE_VERDICTS and any(
         scope["state"] != "closed" for scope in scopes.values()
     ):
         raise CaptureContractError(
@@ -308,7 +315,7 @@ def _validate_scope(run: Mapping[str, Any], sources: Mapping[Any, Any], path: st
                 f"{path}.exchanges",
                 "every exchange must lie inside a declared window",
             )
-    if run["verdict"] != "complete_for_declared_scope":
+    if run["verdict"] not in _COMPLETE_VERDICTS:
         return
     for window in windows:
         if window.get("closed_by") not in ("run_markers", "final_heartbeat"):
@@ -333,25 +340,33 @@ def _validate_scope(run: Mapping[str, Any], sources: Mapping[Any, Any], path: st
             )
 
 
+def _expected_verdict(gaps: Sequence[Mapping[str, Any]], checks: Mapping[str, str]) -> str:
+    """Spec 042 §9.7: partial beats unverified beats complete."""
+
+    effects = {gap["effect"] for gap in gaps}
+    if "partial" in effects:
+        return "partial"
+    if "unverified" in effects or "skipped" in checks.values():
+        return "unverified"
+    return _COMPLETE
+
+
 def _validate_reconstruction(document: Mapping[str, Any]) -> None:
     sources = _validate_sources(document)
     for run_index, run in enumerate(document["runs"]):
         path = f"$.runs[{run_index}]"
-        effects = {gap["effect"] for gap in run["gaps"]}
         checks = set(run["checks"].values())
-        if "partial" in effects:
-            expected = "partial"
-        elif "unverified" in effects or "skipped" in checks:
-            expected = "unverified"
-        else:
-            expected = "complete_for_declared_scope"
+        expected = _expected_verdict(run["gaps"], run["checks"])
+        if expected == _COMPLETE and run.get("scopes"):
+            # A scoped run claims only the scopes the record holds (decision H5).
+            expected = _COMPLETE_OBSERVED
         if run["verdict"] != expected:
             raise CaptureContractError(
                 "capture.reconstruction.verdict",
                 f"{path}.verdict",
                 f"gaps and checks require verdict {expected!r}",
             )
-        if expected == "complete_for_declared_scope" and "failed" in checks:
+        if expected in _COMPLETE_VERDICTS and "failed" in checks:
             raise CaptureContractError(
                 "capture.reconstruction.verdict",
                 f"{path}.checks",
@@ -396,6 +411,81 @@ def _validate_reconstruction(document: Mapping[str, Any]) -> None:
                     "continues_exchange_id must name an exchange in the run",
                 )
         _validate_scope(run, sources, path)
+    _validate_scope_verdicts(document, sources)
+
+
+def _validate_scope_verdicts(document: Mapping[str, Any], sources: Mapping[Any, Any]) -> None:
+    """Per-scope verdicts (spec 043 §6, decision H5).
+
+    Every scope a reported run lists has exactly one verdict entry with the
+    same listing; its verdict follows from its own gaps and checks; each of
+    its gaps is also a gap of its run; a complete scope is closed by its own
+    markers with no missing sequence inside its window; and a run is never
+    better than its worst scope.
+    """
+
+    runs = {run["run_id"]: run for run in document["runs"]}
+    listed = {
+        (run_id, scope["scope_id"]): scope
+        for run_id, run in runs.items()
+        for scope in run.get("scopes", [])
+    }
+    seen: set[tuple[str, str]] = set()
+    for index, entry in enumerate(document["scopes"]):
+        path = f"$.scopes[{index}]"
+        key = (entry["run_id"], entry["scope_id"])
+        listing = {k: v for k, v in entry.items() if k not in ("run_id", "verdict", "gaps", "checks")}
+        if key in seen or listed.get(key) != listing:
+            raise CaptureContractError(
+                "capture.reconstruction.scope",
+                path,
+                "a scope verdict names a scope its run lists, once, with the same listing",
+            )
+        seen.add(key)
+        expected = _expected_verdict(entry["gaps"], entry["checks"])
+        if entry["verdict"] != expected or (
+            expected == _COMPLETE and "failed" in entry["checks"].values()
+        ):
+            raise CaptureContractError(
+                "capture.reconstruction.verdict",
+                f"{path}.verdict",
+                f"the scope's gaps and checks require verdict {expected!r}",
+            )
+        run = runs[entry["run_id"]]
+        if any(gap not in run["gaps"] for gap in entry["gaps"]):
+            raise CaptureContractError(
+                "capture.reconstruction.scope", f"{path}.gaps", "every scope gap is a run gap"
+            )
+        if _RANK[run["verdict"]] < _RANK[entry["verdict"]]:
+            raise CaptureContractError(
+                "capture.reconstruction.verdict",
+                f"$.runs[{list(runs).index(entry['run_id'])}].verdict",
+                "a run is never better than its worst scope",
+            )
+        if expected != _COMPLETE:
+            continue
+        source = sources.get((entry["source_id"], entry["source_epoch"]))
+        start, end = entry.get("start_sequence"), entry.get("end_sequence")
+        if (
+            entry["state"] != "closed"
+            or source is None
+            or start is None
+            or end is None
+            or source["heartbeat_sequence"] < end
+            or any(
+                max(first, start + 1) <= min(last, end)
+                for first, last in source["missing_sequences"]
+            )
+        ):
+            raise CaptureContractError(
+                "capture.reconstruction.verdict",
+                path,
+                "a complete scope is closed by its markers with no missing sequence inside",
+            )
+    if set(listed) != seen:
+        raise CaptureContractError(
+            "capture.reconstruction.scope", "$.scopes", "every listed scope needs a verdict"
+        )
 
 
 def validate_document(
@@ -459,6 +549,61 @@ def validate_digest_fixture(document: Mapping[str, Any], path: Path) -> None:
                 f"{path}#cases[{index}]",
                 f"case must hash equal to {twin!r}",
             )
+
+
+_MODEL_VECTOR_KEYS = frozenset(
+    {"schema_version", "rule", "default_allowlist", "suffix_words", "cases"}
+)
+_RUN_ID_VECTOR_KEYS = frozenset({"schema_version", "rule", "cases"})
+
+
+def _model_digest(value: str) -> str:
+    return "m-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
+def _run_pseudonym(run_id: str, key: str | None) -> str:
+    data = run_id.encode("utf-8", "surrogatepass")
+    if key:
+        digest = hmac.new(key.encode("utf-8"), data, hashlib.sha256).hexdigest()
+    else:
+        digest = hashlib.sha256(data).hexdigest()
+    return "r-" + digest[:32]
+
+
+def validate_vector_fixture(document: Mapping[str, Any], path: Path) -> None:
+    """Shared test vectors: closed shape, unique names and self-consistent outputs.
+
+    The vectors are what capture, fabricguard and ``fabric.reconstruct`` test
+    against (spec 043 §6-§7); this check pins only what follows from a vector
+    itself: the ``m-`` digest of a value that is not allowed, and the ``r-``
+    pseudonym of a run id.
+    """
+
+    kind = document.get("schema_version")
+    if kind == "fabric.model-exposure-vectors/v1":
+        shape, fields = _MODEL_VECTOR_KEYS, {"name", "value", "allowlist", "allowed", "exposed"}
+    elif kind == "fabric.run-id-pseudonym-vectors/v1":
+        shape, fields = _RUN_ID_VECTOR_KEYS, {"name", "run_id", "key", "pseudonym"}
+    else:
+        raise CaptureContractError("capture.vectors.shape", str(path), "unknown vector fixture")
+    cases = document.get("cases")
+    if set(document) != shape or not isinstance(cases, list) or not cases:
+        raise CaptureContractError("capture.vectors.shape", str(path), "bad vector fixture")
+    names: set[str] = set()
+    for index, case in enumerate(cases):
+        where = f"{path}#cases[{index}]"
+        if not isinstance(case, dict) or set(case) != fields or case["name"] in names:
+            raise CaptureContractError("capture.vectors.shape", where, "bad or duplicate case")
+        names.add(case["name"])
+        if kind == "fabric.model-exposure-vectors/v1":
+            value = case["value"]
+            wanted = value if case["allowed"] is True else _model_digest(str(value))
+            if not isinstance(value, str) or case["exposed"] != wanted:
+                raise CaptureContractError(
+                    "capture.vectors.model", where, "exposed value disagrees with allowed"
+                )
+        elif case["pseudonym"] != _run_pseudonym(case["run_id"], case["key"]):
+            raise CaptureContractError("capture.vectors.run_id", where, "pseudonym mismatch")
 
 
 def _golden_location(backend: Mapping[str, Any], tenant: str, object_id: str) -> tuple[str, str, str]:
@@ -591,6 +736,8 @@ def validate_capture_contracts(repo_root: Path) -> list[str]:
             validate_digest_fixture(_load(path), path)
         elif expectation == "golden":
             validate_golden_fixture(_load(path), schemas, path)
+        elif expectation == "vectors":
+            validate_vector_fixture(_load(path), path)
         elif expectation == "valid":
             validate_document(_load(path), schemas)
         elif expectation == "invalid":

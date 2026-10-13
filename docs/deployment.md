@@ -75,13 +75,28 @@ Operational notes:
   empty-tag appVersion fallback. Prefer
   `--set otel-collector.image.digest=sha256:<64-hex>`; an explicit
   non-latest `otel-collector.image.tag` is accepted.
-- **Peer rules.** Every NetworkPolicy peer in `ingressFrom`,
-  `exporterEgress.to`, and `egressTo` must be non-empty and must not use a
-  world CIDR (`0.0.0.0/0`, `::/0`); such entries are equivalent to no
-  policy and are rejected at render time. The health extension is not
-  exposed by NetworkPolicy by default — kubelet probes are node traffic.
-  To let a monitoring stack scrape it, set
-  `otel-collector.networkPolicy.monitoringNamespaceSelector`.
+- **Peer rules.** Every NetworkPolicy peer you supply in `ingressFrom`,
+  `exporterEgress.to`, `contentEgress.to` and `egressTo` must restrict
+  something, in every profile; anything equivalent to no policy is
+  rejected at render time: an empty peer; a `namespaceSelector` that is
+  empty, null or exclusion-only (`NotIn`/`DoesNotExist`) without a
+  `podSelector` that narrows it; an empty `podSelector` alone (every pod in
+  the namespace); an `ipBlock` with prefix length 0 (`0.0.0.0/0`, `::/0`,
+  `10.0.0.0/0`, …); an `ipBlock` combined with a selector. A selector
+  restricts when it has `matchLabels` or an `In`/`Exists` expression. An
+  empty `ingressFrom` keeps the development default (any namespace) and is
+  refused by `shadow-production`. The health extension is not exposed by
+  NetworkPolicy by default — kubelet probes are node traffic. To let a
+  monitoring stack scrape it, set
+  `otel-collector.networkPolicy.monitoringNamespaceSelector` (the same
+  restriction rule applies).
+- **Destination URLs.** `exporter.endpoint` (and `content.s3.endpoint`
+  when set) must be `scheme://host[:port][/path]` with a DNS name, dotted
+  IPv4 address or bracketed IPv6 address and a port 1–65535, and must not
+  carry user info, a query or a fragment: a credential pasted into the URL
+  would land in the rendered ConfigMap. Put the destination credential in
+  the `fabric-node-export-auth` Secret. `shadow-production` requires
+  `https://`. Render errors name the field and never echo the value.
 - **Pull secrets.** Set `otel-collector.imagePullSecrets`; there is no
   parent-level `imagePullSecrets` key.
 - **`helm test` is dev-only.** The bundled test pod matches no ingress
@@ -118,7 +133,11 @@ add:
 tenant, so a Node allowing several would let any authenticated agent write
 under another tenant's prefix. Run one Node per tenant; only
 `otel-collector.content.allowMultipleTenants=true` permits more, and it
-trusts every authenticated agent to name its tenant. `content.s3.sse` is
+trusts every authenticated agent to name its tenant. The rule is per Node:
+the chart renders one `fabriccontent` exporter, and `fabric-gate` refuses a
+hand-written or overlaid configuration whose `fabriccontent` exporters share
+a receiver or pipeline but do not all allow the same single tenant (unless
+every one of them sets `allow_multiple_tenants: true`). `content.s3.sse` is
 required for the s3 backend (`AES256` by default, or `aws:kms`).
 
 The content receiver uses the same server certificate, client CA and
@@ -133,12 +152,18 @@ and refuses the file backend. For an S3-compatible store without workload
 identity, reference an operator-created Secret with
 `otel-collector.content.s3.credentialsSecret.name`; keys never go in values.
 
+A successful rollout does not prove that content reaches the store (bucket
+policy, IRSA trust, KMS grants and store egress are only exercised by a real
+upload). After each deployment change run the content canary described in
+[wire-capture-deployment.md](wire-capture-deployment.md#5-verify-a-run).
+
 ## Production invariants
 
 `shadow-production` must render only when all of these are true:
 
 - OTLP receivers require TLS and a verified client certificate;
-- the export endpoint is HTTPS and authenticated;
+- the export endpoint is an HTTPS URL with a valid host and port, no user
+  info, query or fragment, and is authenticated through a Secret;
 - metadata-only protection is enabled;
 - custom allowlist extensions are empty in the named production profile;
 - at least one operator-supplied workload ingress peer is present;
@@ -151,7 +176,8 @@ identity, reference an operator-created Secret with
 - the Collector Service is ClusterIP (no NodePort/LoadBalancer exposure);
 - the Collector image is pinned by digest or explicit non-latest tag;
 - the pod runs as non-root and cannot escalate privileges;
-- every declared network peer is non-empty and non-world;
+- every declared network peer restricts its sources or destinations (no
+  empty, unrestricted-selector or prefix-length-0 peer);
 - when content delivery is enabled: allowed tenants, an s3 backend with
   server-side encryption, the same mTLS on port 4319, a persistent content
   queue and explicit store egress;

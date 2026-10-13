@@ -8,7 +8,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 GapType = Literal[
     "sequence_gap",
@@ -25,6 +25,13 @@ GapType = Literal[
 Effect = Literal["info", "partial", "unverified"]
 Check = Literal["passed", "failed", "skipped", "not_applicable"]
 Verdict = Literal["complete_for_declared_scope", "partial", "unverified"]
+RunVerdict = Literal[
+    "complete_for_declared_scope", "complete_for_observed_scopes", "partial", "unverified"
+]
+COMPLETE: Final = "complete_for_declared_scope"
+COMPLETE_OBSERVED: Final = "complete_for_observed_scopes"
+#: Verdicts that make no completeness-blocking statement (CLI exit code 0).
+COMPLETE_VERDICTS: frozenset[str] = frozenset({COMPLETE, COMPLETE_OBSERVED})
 
 SCHEMA_VERSION = "fabric.run-reconstruction/v1"
 _REASON_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -93,7 +100,20 @@ def verdict_for(gaps: Sequence[Gap], checks: Mapping[str, Check]) -> Verdict:
         return "partial"
     if "unverified" in effects or "skipped" in checks.values():
         return "unverified"
-    return "complete_for_declared_scope"
+    return COMPLETE
+
+
+def run_verdict(verdict: Verdict, *, scoped: bool) -> RunVerdict:
+    """A run's verdict (spec 043 §6, decision H5).
+
+    A run without scopes keeps the declared-scope verdict (042 rule b). A run
+    with ``fabric.wire.run()`` scopes aggregates the scopes the record holds:
+    it is never better than its worst observed scope, and at best
+    ``complete_for_observed_scopes``: a scope whose markers and calls all
+    died in the agent's memory left no record and cannot be claimed.
+    """
+
+    return COMPLETE_OBSERVED if scoped and verdict == COMPLETE else verdict
 
 
 def gap_counts(gaps: Iterable[Gap]) -> dict[str, int]:

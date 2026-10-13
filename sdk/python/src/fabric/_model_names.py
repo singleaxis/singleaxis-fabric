@@ -1,9 +1,15 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Model-name exposure rule shared by capture and ``fabric.reconstruct`` (spec 043 §7).
+"""Model-name exposure rule shared by capture and ``fabric.reconstruct`` (spec 043 §7, H4).
 
-A provider ``model`` value is emitted as is only when it matches the 042 pattern, has
-no ``://`` and is allowlisted; any other string becomes ``m-`` + 16 hex of its SHA-256.
+A provider ``model`` value is emitted as is only when it matches the 042 pattern, has no
+``://`` and is allowlisted; any other string becomes ``m-`` + 16 hex of its SHA-256. An
+exact allowlist entry matches exactly. A ``prefix*`` entry matches only when the rest of
+the value, split on ``[-._:/@]``, consists solely of version tokens: digits (and dates),
+short version tokens (``4o``, ``o1``, ``v2``, ``70b``) or words of a fixed vocabulary
+(``mini``, ``turbo``, ``sonnet`` ...). So ``gpt-4o-mini-2024-07-18`` is kept and
+``gpt-patient-jane-doe`` is hashed. fabricguard (Go) applies the same rule; both are pinned
+by ``contracts/capture/v1/fixtures/model-names/model-exposure-v1.json``.
 Imports neither ``fabric.wire`` nor ``fabric.reconstruct``.
 """
 
@@ -20,6 +26,16 @@ DEFAULT_MODEL_ALLOWLIST: tuple[str, ...] = (
     "llama*", "meta-llama/*", "mistral*", "mixtral*", "codestral*", "command*", "deepseek*",
     "qwen*", "grok*", "anthropic/*", "openai/*", "google/*",
 )  # fmt: skip
+SUFFIX_SEPARATORS = re.compile(r"[-._:/@]")
+VERSION_TOKEN = re.compile(r"^(?:\d+|v?\d+[a-z]{0,2}|\d+[a-z]\d*|[a-z]\d+)$")
+SUFFIX_WORDS = frozenset({
+    "mini", "nano", "micro", "turbo", "preview", "latest", "instruct", "chat", "vision",
+    "audio", "realtime", "search", "codex", "embedding", "embed", "large", "small", "medium",
+    "base", "pro", "flash", "lite", "ultra", "sonnet", "opus", "haiku", "exp", "thinking",
+    "reasoning", "coder", "code", "omni", "hd", "fast", "high", "low", "it", "hf", "gguf",
+    "fp8", "fp16", "bf16", "awq", "gptq", "q4", "q8",
+})  # fmt: skip
+"""Closed suffix vocabulary (case-sensitive, like the allowlist itself)."""
 
 
 def _valid_name(value: str) -> bool:
@@ -35,11 +51,26 @@ def parse_model_allowlist(text: str | None) -> tuple[str, ...]:
     return entries
 
 
+def version_suffix(suffix: str) -> bool:
+    """Whether ``suffix`` (what follows a ``prefix*`` entry's prefix) is only version tokens."""
+    return all(
+        VERSION_TOKEN.fullmatch(token) or token in SUFFIX_WORDS
+        for token in SUFFIX_SEPARATORS.split(suffix) if token
+    )  # fmt: skip
+
+
 def model_allowed(value: str, allowlist: Sequence[str] = ()) -> bool:
     if not isinstance(value, str) or not _valid_name(value):
         return False
     for entry in (*DEFAULT_MODEL_ALLOWLIST, *allowlist):
-        if value == entry or (entry.endswith("*") and value.startswith(entry[:-1])):
+        if value == entry:
+            return True
+        prefix = entry[:-1]
+        if (
+            entry.endswith("*")
+            and value.startswith(prefix)
+            and version_suffix(value[len(prefix) :])
+        ):
             return True
     return False
 

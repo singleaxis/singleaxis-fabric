@@ -22,8 +22,12 @@ destination. SingleAxis Platform is optional.
   descriptor to a directory or an S3(-compatible) bucket (`sse: AES256` or
   `aws:kms` required) with the SDK store layout
   (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`). It
-  never overwrites (S3 `If-None-Match: *`, hard-link creation on disk):
-  identical bytes are a successful replay, different bytes a conflict. Refused
+  never overwrites (S3 `If-None-Match: *`; on disk an fsync'd temp file is
+  hard-linked into place, or renamed with an atomic no-replace rename —
+  `renameat2(RENAME_NOREPLACE)` on Linux — where the filesystem has no hard
+  links; a filesystem offering neither fails the write retryably, never a
+  check-then-rename): identical bytes are a successful replay, different
+  bytes a conflict. Refused
   records are dropped, counted and logged by reason only;
 - upstream OTLP receiver, memory limiter and optional development batch
   processor;
@@ -55,7 +59,18 @@ guard could re-add values it removed. On the wire-capture spans
 `fabricguard` applies a strict profile: only the spec 042 §8 keys, each with a
 value validator, everything else dropped. `fabric.run.scope_id` (a lowercase
 uuid4, spec 043 §6) survives only on exchange spans and on `run_start` /
-`run_end` heartbeats.
+`run_end` heartbeats. `fabric.run.id` is admitted only as the SDK's run-id
+pseudonym `r-<32 hex>` or a generated fallback (`trace:<32 hex>`,
+`source:<source id>:<epoch>`, `h-<40 hex>`), never as a clear caller id.
+`gen_ai.response.model` is kept only when allowlisted — built-in prefixes such
+as `gpt-*` or `claude-*` admit only version-token suffixes (`gpt-4o-mini`,
+`claude-3-5-sonnet-20240620`), exact names or `prefix*` entries can be added
+with `capture_model_allowlist` (the Node counterpart of the SDK's
+`FABRIC_WIRE_MODEL_ALLOWLIST`) — and is otherwise replaced by
+`m-` + 16 hex of its SHA-256, the same value the SDK emits; the vectors in
+`contracts/capture/v1/fixtures/model-names/` pin the rule for both.
+`service.name`, `fabric.source_id` and the tenant id are operator-chosen
+labels checked by pattern only: keep them opaque.
 
 Content (spec 043) has its own path: an `otlp/content*` receiver (OTLP/HTTP
 only, port 4319) feeds a `logs/content*` pipeline that runs only
@@ -64,7 +79,13 @@ that path — bodies must pass unchanged and the exporter enforces the closed
 descriptor itself. `fabric-gate` refuses a content receiver or
 `fabriccontent` in any other pipeline, any other receiver, processor or
 exporter in a content pipeline, gRPC on a content receiver, and any
-`connectors`, so content can never reach the OTLP destination exporter.
+`connectors`, so content can never reach the OTLP destination exporter. The
+single-tenant rule is per Node: all `fabriccontent` exporters that share a
+receiver or a pipeline together allow one tenant unless every one of them
+sets `allow_multiple_tenants: true`. The gate also refuses an OTLP exporter
+endpoint (`endpoint`, `traces_endpoint`, `logs_endpoint`, ...) or a
+`fabriccontent` `s3.endpoint` with user info, a query or a fragment; put
+destination credentials in Secret-backed headers.
 Give `fabriccontent` its own `file_storage` queue (`block_on_overflow: true`)
 and `retry_on_failure.max_elapsed_time: 0`; S3 credentials come from the AWS
 default chain (IRSA on EKS), never from the agent.

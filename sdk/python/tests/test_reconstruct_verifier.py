@@ -725,11 +725,12 @@ def test_back_to_back_runs_and_reread_files_dedupe_by_logical_identity(
     capture.run_start(scoped)  # 0 (same last_sequence as the run_end, other kind)
     capture.exchange(*react_turns()[0], run_id=scoped)  # 1
     capture.run_end(scoped)  # 1
-    assert only_run(capture.reconstruct())["verdict"] == "complete_for_declared_scope"
+    assert only_run(capture.reconstruct())["verdict"] == "complete_for_observed_scopes"
     path = capture.write()
     document = reconstruct([path, path], store=capture.store, generated_at=GENERATED_AT)
     validate(document)
-    assert only_run(document)["verdict"] == "complete_for_declared_scope"
+    assert only_run(document)["verdict"] == "complete_for_observed_scopes"
+    assert [scope["verdict"] for scope in document["scopes"]] == ["complete_for_declared_scope"] * 2
 
 
 def test_interleaved_unscoped_run_with_a_lost_last_call_is_not_complete(
@@ -896,7 +897,7 @@ def test_closed_run_markers_complete_a_run_without_a_final_heartbeat(capture: Ca
     capture.exchange(*react_turns()[0], run_id="trace:" + "5" * 32)  # later, other work
     capture.skip()  # a later loss belongs to other work: the run's end is proven
     run = run_by_id(capture.reconstruct(), scoped)
-    assert run["verdict"] == "complete_for_declared_scope"
+    assert run["verdict"] == "complete_for_observed_scopes"
     window = run["declared_scope"]["windows"][0]
     assert (window["first_sequence"], window["last_sequence"], window["closed_by"]) == (
         0,
@@ -1198,7 +1199,10 @@ def test_conflicting_duplicate_span_is_a_digest_mismatch(capture: Capture) -> No
     run = only_run(capture.reconstruct())
     assert run["verdict"] == "partial"
     gaps = [g for g in run["gaps"] if g["gap_type"] == "digest_mismatch"]
-    assert [(g["exchange_id"], g["reason"]) for g in gaps] == [("ex-1", "conflicting_duplicate")]
+    assert [(g.get("exchange_id"), g.get("first_sequence"), g["reason"]) for g in gaps] == [
+        (None, 1, "conflicting_claim"),  # the window holding the conflicted sequence
+        ("ex-1", None, "conflicting_duplicate"),
+    ]
     assert run["counts"]["exchanges"] == 3
 
 
@@ -1688,20 +1692,43 @@ def test_model_outside_the_capture_pattern_is_reported_as_a_digest(
 
 @pytest.mark.parametrize(
     "good",
-    [
-        "gpt-4o:latest",
-        "claude-sonnet-4-5",
-        "meta-llama/Llama-3.1-8B",
-        "o3-mini",
-        "text-embedding-3-small",
-        "anthropic/claude-3-haiku",
-    ],
+    ["gpt-4o:latest", "claude-sonnet-4-5", "o3-mini", "text-embedding-3-small"],
 )
 def test_allowlisted_model_names_are_kept(capture: Capture, good: str) -> None:
     request, response = react_turns()[0]
     capture.exchange(request, {**response, "model": good})
     capture.heartbeat()
     assert only_run(capture.reconstruct())["exchanges"][0]["model"] == good
+
+
+MODEL_VECTORS = json.loads(
+    (CAPTURE_ROOT / "fixtures" / "model-names" / "model-exposure-v1.json").read_text("utf-8")
+)
+
+
+@pytest.mark.parametrize("case", MODEL_VECTORS["cases"], ids=lambda case: case["name"])
+def test_report_model_follows_the_shared_exposure_vectors(
+    tmp_path: Path, case: Mapping[str, Any]
+) -> None:
+    """Decision H4: capture, fabricguard and the verifier share one set of vectors.
+
+    The value arrives both in the stored response body (what the verifier
+    parses) and on the span (an older capture's raw value); either way the
+    report exposes exactly the vector's ``exposed`` form.
+    """
+    for where in ("body", "span"):
+        capture = Capture(tmp_path / where)
+        request, response = react_turns()[0]
+        if where == "body":
+            capture.exchange(request, {**response, "model": case["value"]})
+        else:
+            exchange = capture.exchange(_modelless_request(), None, state="error", http_status=None)
+            exchange.span["attributes"]["gen_ai.response.model"] = case["value"]
+        capture.heartbeat()
+        document = capture.reconstruct(model_allowlist=case["allowlist"])
+        assert only_run(document)["exchanges"][0]["model"] == case["exposed"], where
+        if not case["allowed"]:
+            assert json.dumps(case["value"]) not in json.dumps(document)
 
 
 @pytest.mark.parametrize(

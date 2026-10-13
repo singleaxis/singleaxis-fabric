@@ -7,12 +7,12 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
 from .._model_names import parse_model_allowlist
-from .._sequence import OPAQUE_ID_RE
+from .._sequence import OPAQUE_ID_RE, check_id_key, id_key_from_env
 from ..content_store.s3 import S3ContentStore  # boto3 stays lazy
 from ..tracing import check_endpoint_url
 from ._model import EndpointMatcher
@@ -84,9 +84,12 @@ class WireConfig:
     spool_dir: str | None = None
     spool_max_bytes: int = 1 << 30
     model_allowlist: tuple[str, ...] = ()
+    # Run-id pseudonym key (H3; FABRIC_WIRE_ID_KEY): a secret, so never in repr or logs.
+    id_key: bytes | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         _int("max_body_bytes", self.max_body_bytes, 1, MAX_BODY_BYTES_CAP)
+        check_id_key(self.id_key)
         self._check_delivery()
         _int("max_inflight_bytes", self.max_inflight_bytes, 1)
         _int("queue_max_items", self.queue_max_items, 1, 65536)
@@ -192,6 +195,7 @@ def config_from_env(
         "content_endpoint": endpoint if node else None,
         "spool_dir": environ.get("FABRIC_WIRE_SPOOL_DIR") or None,
         "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
+        "id_key": id_key_from_env(environ),
     }  # fmt: skip
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])

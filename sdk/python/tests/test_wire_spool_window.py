@@ -27,6 +27,7 @@ import pytest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
 import fabric
+from fabric._sequence import run_pseudonym
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.reconstruct import reconstruct
 from fabric.wire.__main__ import autoload_path
@@ -149,6 +150,9 @@ def _read_until(process: subprocess.Popen[str], *markers: str) -> None:
     raise AssertionError(f"agent ended early: {process.stderr.read() if process.stderr else ''}")
 
 
+COMPLETE = ("complete_for_declared_scope", "complete_for_observed_scopes")
+
+
 def _verdicts(node: RecordingNode, tmp_path: Path) -> dict[str, dict[str, Any]]:
     spans = tmp_path / "spans.jsonl"
     with node.lock:
@@ -159,9 +163,10 @@ def _verdicts(node: RecordingNode, tmp_path: Path) -> dict[str, dict[str, Any]]:
 
 
 def _agent_runs(runs: dict[str, dict[str, Any]], scoped: str) -> list[dict[str, Any]]:
+    window = run_pseudonym("run-window")  # reports carry the run id's pseudonym only
     if scoped == "1":
-        return [runs["run-window"]]
-    return [run for run_id, run in runs.items() if run_id != "run-window"]
+        return [runs[window]]
+    return [run for run_id, run in runs.items() if run_id != window]
 
 
 @pytest.mark.parametrize(
@@ -199,7 +204,7 @@ def test_sigkill_inside_the_window_is_never_complete(
     runs = _agent_runs(_verdicts(node, tmp_path), scoped)
     assert runs
     for run in runs:
-        assert run["verdict"] != "complete_for_declared_scope"
+        assert run["verdict"] not in COMPLETE
         assert run["verdict"] == expected
 
 
@@ -211,4 +216,6 @@ def test_control_run_without_the_kill_is_complete(
     out, err = agent.communicate(timeout=90)
     assert "CLOSED True" in out, err
     runs = _agent_runs(_verdicts(node, tmp_path), scoped)
-    assert [run["verdict"] for run in runs] == ["complete_for_declared_scope"]
+    # H5: a scoped run claims at most its observed scopes; an unscoped one its epoch.
+    best = "complete_for_observed_scopes" if scoped == "1" else "complete_for_declared_scope"
+    assert [run["verdict"] for run in runs] == [best]

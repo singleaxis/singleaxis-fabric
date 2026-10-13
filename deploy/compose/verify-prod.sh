@@ -126,6 +126,10 @@ if [ -n "${content_addr}" ]; then
     -H 'Content-Type: application/x-protobuf' --data-binary '')
   if [ "${code}" = "401" ] || [ "${code}" = "403" ]; then
     ok "unauthenticated content upload rejected (${code})"
+    # Accepting an authenticated upload into the store is NOT checked here:
+    # that needs a real, digest-valid record and exercises the bucket policy,
+    # credentials, KMS and egress. Say so instead of implying it.
+    note "NOTE" "content delivery to the store is not verified here; run the content canary (docs/wire-capture-deployment.md, section 5)"
   else
     bad "unauthenticated content upload on ${content_addr} returned ${code}, expected 401/403"
   fi
@@ -174,4 +178,8 @@ if [ "${fail}" -ne 0 ]; then
   printf 'Verification FAILED -- inspect: make logs-prod ARGS=fabric-node\n' >&2
   exit 1
 fi
-printf 'Verification passed -- recorder is capturing, protecting, and delivering\n'
+if [ -n "${content_addr}" ]; then
+  printf 'Verification passed -- health, ingress authentication and span delivery checked; content-to-store delivery needs the content canary\n'
+else
+  printf 'Verification passed -- recorder is capturing, protecting, and delivering\n'
+fi

@@ -331,6 +331,43 @@ def _read_tls_file(name: str, path: str) -> bytes:
         raise ValueError(f"the file named by {name} is not readable") from None
 
 
+def _refuse_redirect(response: Any, *args: Any, **kwargs: Any) -> Any:
+    """Response hook: any 3xx is a delivery failure, raised before requests could follow it
+    (no body or header is ever re-sent elsewhere). Fixed text: no URL or location."""
+    if 300 <= int(getattr(response, "status_code", 0)) < 400:  # noqa: PLR2004
+        import requests  # type: ignore[import-untyped]  # noqa: PLC0415
+
+        with contextlib.suppress(Exception):
+            response.close()
+        raise requests.exceptions.TooManyRedirects("redirect refused by Fabric delivery")
+    return response
+
+
+def no_redirect_session(session: Any = None) -> Any:
+    """``session`` (default: a new ``requests.Session``) hardened for Fabric delivery (H1): it
+    never follows a redirect, and every 3xx response raises ``TooManyRedirects`` (an
+    ``OSError``), so delivery fails and is retried later, never counted as success."""
+    import requests  # noqa: PLC0415
+
+    session = requests.Session() if session is None else session
+    if not isinstance(session, requests.Session):
+        raise ValueError("Fabric delivery needs a requests session")
+    session.max_redirects = 0
+    hooks = session.hooks.setdefault("response", [])
+    if _refuse_redirect not in hooks:
+        hooks.insert(0, _refuse_redirect)
+    return session
+
+
+def _harden_exporter_session(exporter: object) -> None:
+    """Make the OTLP/HTTP exporter's ``requests`` session refuse redirects (H1); a session
+    that cannot be found fails construction rather than delivering with redirects on."""
+    session = getattr(exporter, "_session", None)
+    if session is None:
+        raise ValueError("the OTLP exporter session cannot be hardened")
+    no_redirect_session(session)
+
+
 def _grpc_credentials(settings: OtlpSettings) -> Any:
     """gRPC channel credentials with CA, client key and client certificate resolved one by
     one; ``None`` when none is set. (The gRPC exporter resolves the three as a group, which
@@ -398,6 +435,8 @@ def _otlp_exporter() -> SpanExporter | None:
                 module.OTLPSpanExporter() if credentials is None
                 else module.OTLPSpanExporter(credentials=credentials)
             )  # fmt: skip
+            if name == "http":  # its own (or a credential plugin's) session, never redirecting
+                _harden_exporter_session(exporter)
     except Exception as exc:
         raise ValueError(f"OTLP span exporter construction failed ({type(exc).__name__})") from None
     return exporter

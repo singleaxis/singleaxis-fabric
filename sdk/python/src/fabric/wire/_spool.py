@@ -23,6 +23,7 @@ from .._loss import _Beat, _Range
 
 MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
 RESERVE_BYTES = 1024 * 1024  # loss and marker records may exceed the bound by this much
+QUARANTINE_SUFFIX = ".corrupt"  # quarantined records count against the bound until removed
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
 _KEYS = {"exchange": {"service_name", "span", "bodies"}, "loss": {"loss"}, "marker": {"marker"}}
@@ -142,7 +143,8 @@ def _secure_dir(path: str) -> None:
 
 
 class Spool:
-    """Bounded record directory; ``bytes`` = own writes, corrected by :meth:`rescan`."""
+    """Bounded record directory; ``bytes`` = own writes, corrected by :meth:`rescan` (pending
+    and quarantined records both count against ``max_bytes``)."""
 
     def __init__(self, directory: str, max_bytes: int) -> None:
         try:
@@ -239,21 +241,24 @@ class Spool:
             self.bytes = max(0, self.bytes - size)
             self.mine.discard(name)
 
-    def quarantine(self, name: str) -> None:  # kept for the operator, never retried
-        os.rename(self._path(name), self._path(name + ".corrupt"))
+    def quarantine(self, name: str) -> None:
+        """Kept for the operator, never retried; its bytes stay counted against the bound
+        (an operator removes ``*.corrupt`` files to free the space)."""
+        os.rename(self._path(name), self._path(name + QUARANTINE_SUFFIX))
         self._sync_dir()
         with self._lock:
             self.mine.discard(name)
 
     def rescan(self) -> None:
-        """Recount pending bytes on disk (all writers); the drainer removes stale temp files."""
+        """Recount pending and quarantined bytes on disk (all writers); the drainer removes
+        stale temp files."""
         total, stale = 0, time.time() - 3600  # temp files older than 1 h
         for name in os.listdir(self.dir):
             with contextlib.suppress(OSError):
                 info, tmp = os.lstat(self._path(name)), name.startswith(".tmp-")
                 if tmp and self.holder and info.st_mtime < stale:
                     os.unlink(self._path(name))
-                elif tmp or name.endswith(".rec"):
+                elif tmp or name.endswith((".rec", QUARANTINE_SUFFIX)):
                     total += info.st_size
         with self._lock:
             self.bytes = total

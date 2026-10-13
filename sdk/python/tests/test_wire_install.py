@@ -25,6 +25,7 @@ import fabric._loss
 import fabric._sequence
 from fabric import wire
 from fabric._loss import LossEmitter
+from fabric._sequence import run_pseudonym
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.wire import WireConfig
 from fabric.wire.__main__ import autoload_path, main
@@ -144,12 +145,13 @@ def test_run_scope_emits_heartbeat_markers_on_entry_and_exit(
     assert handle.flush(5.0)
     spans = [s for s in exporter.get_finished_spans() if s.name == "fabric.model_call"]
     runs = [(attrs(s)["fabric.source.sequence"], attrs(s)["fabric.run.id"]) for s in spans]
-    assert runs[1:] == [(1, "run-travel-42"), (2, "run-travel-42")]
-    assert runs[0][1] != "run-travel-42"
+    travel = run_pseudonym("run-travel-42")  # the clear run id never leaves the process
+    assert runs[1:] == [(1, travel), (2, travel)]
+    assert runs[0][1] != travel
     markers = [
         attrs(s)["fabric.heartbeat.last_sequence"]
         for s in exporter.get_finished_spans()
-        if s.name == "fabric.capture_heartbeat" and attrs(s).get("fabric.run.id") == "run-travel-42"
+        if s.name == "fabric.capture_heartbeat" and attrs(s).get("fabric.run.id") == travel
     ]
     assert markers == [0, 2]  # entry marker m=0 -> window starts at 1; exit marker = 2
     plain = [

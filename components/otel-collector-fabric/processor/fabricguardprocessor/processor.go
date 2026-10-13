@@ -520,7 +520,7 @@ var (
 // extra_allowed_trace_fields do not apply to these spans.
 var captureProfile = map[string]func(pcommon.Value) bool{
 	"fabric.wire.exchange_id":        safeID,
-	"fabric.run.id":                  safeID,
+	"fabric.run.id":                  validRunID, // H3: r- pseudonym or a generated fallback form
 	"fabric.source_id":               safeID,
 	"fabric.source.sequence":         intAtLeast(0),
 	"fabric.source.epoch":            intAtLeast(0),
@@ -610,8 +610,10 @@ func anyCaptureSpan(scopeSpans ptrace.ScopeSpansSlice) bool {
 
 // validCaptureModel admits a provider model identifier only when it is a
 // plain name (captureModelPattern) and not a URL; anything else is omitted.
+// An admitted name that is not allowlisted is then pseudonymized by
+// exposeCaptureModel (H4).
 func validCaptureModel(value pcommon.Value) bool {
-	return matches(captureModelPattern)(value) && !strings.Contains(value.Str(), "://")
+	return value.Type() == pcommon.ValueTypeStr && validModelName(value.Str())
 }
 
 // applyCaptureProfile admits only captureProfile keys with valid values, then
@@ -625,6 +627,7 @@ func (g *guard) applyCaptureProfile(span ptrace.Span) {
 		g.stats.notAllowedRemoved.Add(1)
 		return true
 	})
+	g.exposeCaptureModel(span.Attributes())
 	g.filterAttributes(span.Attributes(), TraceAllowedFields, "capture-span")
 	g.scopeIDOnlyWhereDefined(span.Attributes())
 	if removed := span.Events().Len() + span.Links().Len(); removed > 0 {

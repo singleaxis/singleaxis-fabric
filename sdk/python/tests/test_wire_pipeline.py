@@ -195,9 +195,9 @@ def test_pipeline_rejects_bad_settings(tmp_path: Path) -> None:
         ),
         (
             "anthropic.messages",
-            {"id": "msg 1", "model": "claude-x", "stop_reason": "tool_use",
+            {"id": "msg 1", "model": "claude-haiku-4-5", "stop_reason": "tool_use",
              "usage": {"input_tokens": 9, "output_tokens": -1}},
-            {"model": "claude-x", "finish_reasons": ["tool_use"], "input_tokens": 9},
+            {"model": "claude-haiku-4-5", "finish_reasons": ["tool_use"], "input_tokens": 9},
         ),
         (
             "openai.embeddings",

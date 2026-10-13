@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/run-reconstruction-v1.schema.json",
-  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 5, spec 043)",
-  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store. It is not a quality evaluation and carries no content: provider-derived ids appear only as pseudonyms, and neither store locations nor input file paths appear (span files are named by digest).",
+  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 7, spec 043 rev 3)",
+  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store: one verdict per fabric.wire.run() scope (scopes[]) and one per run (runs[]). An unscoped run is judged over its declared scope (final heartbeat rule); a scoped run aggregates the scopes the record holds and is at best complete_for_observed_scopes, because a scope that left no record cannot be claimed. It is not a quality evaluation and carries no content: provider-derived ids appear only as pseudonyms, and neither store locations nor input file paths appear (span files are named by digest).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "generated_at", "verifier", "inputs", "sources", "runs"],
+  "required": ["schema_version", "generated_at", "verifier", "inputs", "sources", "runs", "scopes"],
   "properties": {
     "schema_version": {"const": "fabric.run-reconstruction/v1"},
     "generated_at": {"type": "string", "format": "date-time"},
@@ -84,7 +84,12 @@
         }
       }
     },
-    "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}}
+    "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}},
+    "scopes": {
+      "description": "One verdict per fabric.wire.run() scope of every reported run (spec 043 §6, decision H5), in run order. Completeness is claimed per scope: a scope is complete_for_declared_scope only when it is closed by its own markers, holds no missing or conflicting sequence inside its window and every exchange it tags verified. A scope that left no record (its markers and calls all lost before the agent's spool write) cannot appear here.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/scopeVerdict"}
+    }
   },
   "$defs": {
     "opaqueId": {
@@ -121,6 +126,54 @@
       ]
     },
     "check": {"enum": ["passed", "failed", "skipped", "not_applicable"]},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "loss", "tail", "bytes", "stitching"],
+      "properties": {
+        "sequence": {"$ref": "#/$defs/check"},
+        "loss": {"$ref": "#/$defs/check"},
+        "tail": {"$ref": "#/$defs/check"},
+        "bytes": {"$ref": "#/$defs/check"},
+        "stitching": {"$ref": "#/$defs/check"}
+      }
+    },
+    "scopeListing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope_id", "source_id", "source_epoch", "state", "exchanges"],
+      "properties": {
+        "scope_id": {"$ref": "#/$defs/scopeId"},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "state": {"enum": ["closed", "open", "conflict"]},
+        "start_sequence": {"type": "integer", "minimum": -1},
+        "end_sequence": {"type": "integer", "minimum": -1},
+        "exchanges": {"type": "integer", "minimum": 0}
+      }
+    },
+    "scopeVerdict": {
+      "description": "A scope's own verdict: its gaps (sequence, loss, tail and conflict gaps inside its window, and byte/stitching gaps of the exchanges it tags) and its checks. Every gap listed here is also listed by its run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope_id", "run_id", "source_id", "source_epoch", "state", "exchanges",
+        "verdict", "gaps", "checks"
+      ],
+      "properties": {
+        "scope_id": {"$ref": "#/$defs/scopeId"},
+        "run_id": {"$ref": "#/$defs/opaqueId"},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "state": {"enum": ["closed", "open", "conflict"]},
+        "start_sequence": {"type": "integer", "minimum": -1},
+        "end_sequence": {"type": "integer", "minimum": -1},
+        "exchanges": {"type": "integer", "minimum": 0},
+        "verdict": {"enum": ["complete_for_declared_scope", "partial", "unverified"]},
+        "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+        "checks": {"$ref": "#/$defs/checks"}
+      }
+    },
     "objectCheck": {
       "type": "object",
       "additionalProperties": false,
@@ -227,7 +280,10 @@
       ],
       "properties": {
         "run_id": {"$ref": "#/$defs/opaqueId"},
-        "verdict": {"enum": ["complete_for_declared_scope", "partial", "unverified"]},
+        "verdict": {
+          "description": "complete_for_declared_scope only for a run without scopes (final heartbeat rule); a run with scopes is at best complete_for_observed_scopes and never better than its worst scope.",
+          "enum": ["complete_for_declared_scope", "complete_for_observed_scopes", "partial", "unverified"]
+        },
         "declared_scope": {
           "type": "object",
           "additionalProperties": false,
@@ -237,22 +293,9 @@
           }
         },
         "scopes": {
-          "description": "Every fabric.wire.run() scope seen for this run id (spec 043 §6). A complete run has only closed scopes.",
+          "description": "Every fabric.wire.run() scope seen for this run id (spec 043 §6); each one's verdict is in the top-level scopes[]. A complete run has only closed scopes.",
           "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["scope_id", "source_id", "source_epoch", "state", "exchanges"],
-            "properties": {
-              "scope_id": {"$ref": "#/$defs/scopeId"},
-              "source_id": {"$ref": "#/$defs/opaqueId"},
-              "source_epoch": {"type": "integer", "minimum": 0},
-              "state": {"enum": ["closed", "open", "conflict"]},
-              "start_sequence": {"type": "integer", "minimum": -1},
-              "end_sequence": {"type": "integer", "minimum": -1},
-              "exchanges": {"type": "integer", "minimum": 0}
-            }
-          }
+          "items": {"$ref": "#/$defs/scopeListing"}
         },
         "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange"}},
         "threads": {
@@ -281,18 +324,7 @@
             }
           }
         },
-        "checks": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["sequence", "loss", "tail", "bytes", "stitching"],
-          "properties": {
-            "sequence": {"$ref": "#/$defs/check"},
-            "loss": {"$ref": "#/$defs/check"},
-            "tail": {"$ref": "#/$defs/check"},
-            "bytes": {"$ref": "#/$defs/check"},
-            "stitching": {"$ref": "#/$defs/check"}
-          }
-        }
+        "checks": {"$ref": "#/$defs/checks"}
       }
     }
   }

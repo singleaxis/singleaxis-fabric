@@ -29,6 +29,7 @@ import fabric._loss
 import fabric._sequence
 from fabric import wire
 from fabric._loss import LossEmitter
+from fabric._sequence import run_pseudonym
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.wire import WireConfig, _spool
 from fabric.wire._spool import Spool, unframe
@@ -208,7 +209,7 @@ def test_node_mode_delivers_content_then_span_and_empties_the_spool(
     by_role = {attrs["role"]: data for attrs, data in node.content}
     assert by_role["model.exchange.response"] == body  # exact bytes
     assert span["fabric.wire.store_status"] == "stored"
-    assert span["fabric.run.id"] == "run-a" and "fabric.run.scope_id" in span
+    assert span["fabric.run.id"] == run_pseudonym("run-a") and "fabric.run.scope_id" in span
     for attrs, data in node.content:
         VALIDATOR.validate_document({
             "schema_version": "fabric.content-log-record/v1", "attributes": attrs,
@@ -317,7 +318,8 @@ def test_spool_full_drops_the_exchange_as_a_queue_full_loss(node: FakeNode, tmp_
     assert sum(loss["count"] for loss in losses) == stats.spool_full_drops
     assert {loss["reason"] for loss in losses} == {"queue_full"}
     node.mode = "ok"
-    assert handle.flush(60.0)
+    assert not handle.flush(60.0)  # everything spooled is delivered, but exchanges were lost
+    assert records(spool) == [] and handle.flush(10.0)  # nothing lost since that flush
     explained = node.named("fabric.capture_loss")
     assert sum(x["fabric.loss.count"] for x in explained) == stats.spool_full_drops
 
@@ -370,7 +372,8 @@ def test_slow_disk_never_blocks_the_host(
     assert time.monotonic() - start < 5.0 and bodies == ["chatcmpl-1"] * 50
     assert handle.stats().dropped >= 40  # the bounded queue absorbs a stuck disk
     stuck.set()
-    assert handle.flush(30.0)
+    assert not handle.flush(30.0)  # dropped exchanges: the record is incomplete
+    assert handle.flush(10.0)
 
 
 def test_metadata_only_spool_and_file_mode_bodies(node: FakeNode, tmp_path: Path) -> None:

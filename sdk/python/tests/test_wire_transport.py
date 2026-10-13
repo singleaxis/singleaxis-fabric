@@ -197,7 +197,7 @@ def _anthropic_handler(request: httpx.Request) -> httpx.Response:
             "id": "msg_n",
             "type": "message",
             "role": "assistant",
-            "model": "claude-x",
+            "model": "claude-haiku-4-5",
             "content": [{"type": "text", "text": "done"}],
             "stop_reason": "end_turn",
             "usage": {"input_tokens": 9, "output_tokens": 1},
@@ -209,14 +209,14 @@ def test_anthropic_messages(rig: Rig) -> None:
     with rig.client(_anthropic_handler) as client:
         with client.stream("POST", ANTHROPIC, json={"stream": True, "messages": []}) as response:
             response.read()
-        client.post(ANTHROPIC, json={"model": "claude-x", "messages": []})
+        client.post(ANTHROPIC, json={"model": "claude-haiku-4-5", "messages": []})
     rig.flush()
     streamed, plain = sorted(rig.spans(), key=lambda s: attrs(s)["fabric.source.sequence"])
     assert attrs(streamed)["gen_ai.provider.name"] == "anthropic"
     assert "gen_ai.response.id" not in attrs(streamed)
     p = attrs(plain)
     assert p["fabric.wire.api"] == "anthropic.messages"
-    assert "gen_ai.response.id" not in p and p["gen_ai.response.model"] == "claude-x"
+    assert "gen_ai.response.id" not in p and p["gen_ai.response.model"] == "claude-haiku-4-5"
     assert p["gen_ai.response.finish_reasons"] == ("end_turn",)
     assert (p["gen_ai.usage.input_tokens"], p["gen_ai.usage.output_tokens"]) == (9, 1)
     validate_capture(rig)

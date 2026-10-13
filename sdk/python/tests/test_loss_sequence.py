@@ -23,6 +23,7 @@ from fabric._sequence import (
     encode_opaque_id,
     get_allocator,
     resolve_run_id,
+    run_pseudonym,
     run_scope,
 )
 
@@ -107,8 +108,8 @@ def test_run_scope_sets_and_restores() -> None:
     assert current_run_id() is None
     with run_scope("outer"):
         with run_scope("inner"):
-            assert current_run_id() == "inner"
-        assert current_run_id() == "outer"
+            assert current_run_id() == run_pseudonym("inner")
+        assert current_run_id() == run_pseudonym("outer")
     assert current_run_id() is None
     with pytest.raises(ValueError), run_scope("bad id"):
         pass
@@ -123,7 +124,7 @@ def test_resolve_run_id_order() -> None:
     for bad_trace in (0, 1 << 128, -1):
         assert resolve_run_id(allocator, trace_id=bad_trace) == source
     with run_scope("scoped"):
-        assert resolve_run_id(allocator, trace_id=trace_id) == "scoped"
+        assert resolve_run_id(allocator, trace_id=trace_id) == run_pseudonym("scoped")
 
 
 def test_source_run_id_stays_opaque_for_long_source_ids() -> None:

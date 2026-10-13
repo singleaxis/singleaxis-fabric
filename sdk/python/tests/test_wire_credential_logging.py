@@ -111,6 +111,7 @@ def secret_env(tmp_path: Path, port: int) -> dict[str, str]:
         "FABRIC_WIRE_ENDPOINTS": '[{"endpoint_id": "secret-ep", "dialect": "openai",'
                                  f' "hosts": ["{MARK.lower()}.example"]}}]',
         "FABRIC_WIRE_MAX_BODY_BYTES": "65536",
+        "FABRIC_WIRE_ID_KEY": f"idkey-{MARK}-0123456789",
     }  # fmt: skip
 
 
@@ -158,6 +159,7 @@ def test_export_and_post_failures_log_no_secret(
         {"FABRIC_WIRE_STORE_SSE": f"{MARK}"},
         {"FABRIC_WIRE_SPOOL_MAX_BYTES": f"{MARK}"},
         {"FABRIC_WIRE_TRACER": f"{MARK}"},
+        {"FABRIC_WIRE_ID_KEY": f"{MARK}"},  # too short for a pseudonym key
     ],
 )  # fmt: skip
 def test_construction_failures_log_no_secret(

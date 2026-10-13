@@ -36,7 +36,7 @@ import fabric.tracing
 from fabric import wire
 from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter
 from fabric._model_names import expose_model, hashed_model
-from fabric._sequence import RunScope, SourceAllocator
+from fabric._sequence import RunScope, SourceAllocator, run_pseudonym
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.tracing import guarded_exporter
 
@@ -279,7 +279,8 @@ def test_run_markers_and_final_heartbeat_carry_their_kind() -> None:
     sealed_epoch = allocator.epoch
     assert handle.close(2.0)
     beats = _beats(exporter)
-    assert ("run_start", "run-k", 0) in beats and ("run_end", "run-k", 1) in beats
+    run_k = run_pseudonym("run-k")
+    assert ("run_start", run_k, 0) in beats and ("run_end", run_k, 1) in beats
     assert beats[-1] == ("final", None, 1)
     final = _named(exporter, SPAN_HEARTBEAT)[-1]
     assert final["fabric.source.epoch"] == sealed_epoch

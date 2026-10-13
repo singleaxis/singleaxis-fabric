@@ -4,7 +4,8 @@ Specified by [spec 042](../../../specs/042-llm-wire-capture-and-reconstruction.m
 (revision 5: store-only stitching, object-id refs, closed metadata values,
 heartbeat kinds, proven-end verdicts, pseudonymised report ids) and
 [spec 043](../../../specs/043-node-content-delivery-and-agent-spool.md)
-(Node content delivery, agent durable spool, run scopes, model exposure).
+(Node content delivery, agent durable spool, run scopes, model exposure;
+revision 3: run-id pseudonyms, bounded model prefixes, per-scope verdicts).
 Not emitted by recorder v1 and not part of the published contracts archive
 until those specs are accepted.
 
@@ -12,7 +13,7 @@ until those specs are accepted.
 |---|---|---|
 | `schema/llm-exchange-v1.schema.json` | `fabric.llm-exchange/v1` — the JSON form of one `fabric.model_call` span: exchange id, source position, run, body digests and store object ids, closed-shape response metadata | wire tee (as an OTLP span); normalized by the verifier |
 | `schema/loss-record-v1.schema.json` | `fabric.loss-record/v1` — `loss` (a range of exchange sequences that will never produce a span) or `heartbeat` (the source's last allocated sequence, with `heartbeat_kind` `periodic`, `run_start`, `run_end` or `final`) | the capture loss emitter (as `fabric.capture_loss` / `fabric.capture_heartbeat` spans) |
-| `schema/run-reconstruction-v1.schema.json` | `fabric.run-reconstruction/v1` — per-run exchanges, threads, gaps and integrity verdict | `python -m fabric.reconstruct` |
+| `schema/run-reconstruction-v1.schema.json` | `fabric.run-reconstruction/v1` — per-run exchanges, threads, gaps and integrity verdict, plus one verdict per `fabric.wire.run()` scope (`scopes[]`) | `python -m fabric.reconstruct` |
 | `schema/spool-record-v1.schema.json` | `fabric.wire-spool-record/v1` — the header of one agent spool record (spec 043 §2): an `exchange` (fully resolved `fabric.model_call` span + up to two content descriptors addressing the record's byte blob), a `loss` range, or a `run_start`/`run_end`/`final` marker | the agent's capture worker and sender (on disk, never on the wire) |
 | `schema/content-log-record-v1.schema.json` | `fabric.content-log-record/v1` — the JSON form of one OTLP `LogRecord` on the content path: body length and digest, and the exact closed attribute set (`event_class: content` + content-v2 descriptor fields) | agent sender → Fabric Node `otlp/content` → `fabriccontent` exporter |
 
@@ -77,6 +78,28 @@ with its state. A complete run has only closed scopes; a scope window is
 inside it decide completeness. A model name is kept as is only when it also
 matches the model allowlist; otherwise it appears as `m-` + 16 hex of its
 SHA-256.
+
+**Spec 043 revision 3 additions.** A caller-supplied run id appears only
+as `r-` + 32 hex of `HMAC-SHA256(FABRIC_WIRE_ID_KEY, run_id)` (or
+`SHA-256(run_id)` without a key); `fixtures/run-ids/run-id-pseudonym-v1.json`
+pins the function. A `prefix*` model allowlist entry matches only
+version-like suffixes; `fixtures/model-names/model-exposure-v1.json` holds
+the vectors capture (Python), fabricguard (Go) and `fabric.reconstruct`
+all test against. Both are `vectors` artifacts in the manifest; the
+validator checks their shape and that each output follows from its input
+(the `m-` digest of a value that is not allowed, the `r-` pseudonym).
+
+Completeness is claimed per scope and per unscoped run. The top-level
+`scopes[]` gives each scope of a reported run its own `verdict`, `gaps`
+(each also a gap of its run) and `checks`. A run without scopes is
+`complete_for_declared_scope` at best; a run with scopes is never better
+than its worst scope and at best `complete_for_observed_scopes`: a scope
+whose records were all lost before reaching the agent's spool leaves no
+trace, so the report makes no claim about it. A sequence claimed by
+conflicting observations invalidates every window holding it
+(`digest_mismatch`, `conflicting_claim`), and a `complete` or
+`closed_early` exchange without a response digest is a `missing_object`
+gap (`response_not_recorded`).
 
 The content descriptor definition is identical in the spool and content
 log-record schemas: the content-v2 descriptor fields without `encoding`

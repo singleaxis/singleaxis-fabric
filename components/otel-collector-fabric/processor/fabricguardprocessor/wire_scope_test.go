@@ -119,9 +119,11 @@ func TestWireScope_InvalidValuesDropped(t *testing.T) {
 }
 
 // Spec 043 §7: the SDK emits a non-allowlisted model as "m-" + 16 hex; the
-// Node's model rule (pattern, no "://") admits that form unchanged.
+// Node admits that form and allowlisted names unchanged (H4: a prefix entry
+// admits only version-token suffixes, so "meta-llama/Llama-3.1-8B" is now
+// pseudonymized; see wire_identity_test.go).
 func TestWireModel_HashedFormKept(t *testing.T) {
-	for _, model := range []string{"m-0123456789abcdef", "gpt-4o-2024-08-06", "meta-llama/Llama-3.1-8B"} {
+	for _, model := range []string{"m-0123456789abcdef", "gpt-4o-2024-08-06", "claude-sonnet-4-5"} {
 		attrs := wireExchangeAttrs()
 		attrs["gen_ai.response.model"] = model
 		g := newTestGuard(t, nil)

@@ -56,6 +56,17 @@ class Sender:
         self._pump_lock, self._start_lock = threading.Lock(), threading.Lock()
         self._stats: dict[str, int] = dict.fromkeys(_STATS, 0)
         self._progress: dict[str, int] = {}  # bodies the Node already accepted, per record
+        self._own_quarantined = 0  # records this process wrote that came back corrupt
+        # Admission failures (lost exchanges, dropped markers) at start and at the last flush.
+        self._failed_at_start = self._failed_at_flush = self._failures()
+
+    def _failures(self) -> int:
+        """Capture events of this process that will never be delivered: exchanges lost
+        before the spool (each one is a recorded loss), markers dropped (queue overflow or a
+        failed write) and own records quarantined as corrupt."""
+        loss = self.loss
+        dropped = loss.markers_dropped + self._stats["markers_dropped"]
+        return loss.recorded + dropped + self._own_quarantined
 
     def wake(self) -> None:
         self._wake.set()
@@ -155,14 +166,17 @@ class Sender:
         return state if state == "retry" or not names else "more"
 
     def _quarantine(self, name: str, doc: Mapping[str, Any] | None) -> None:
+        self._own_quarantined += name in self.spool.mine  # counted before it disappears
         self.spool.quarantine(name)
         self._stats["quarantined"] += 1
+        _LOG.warning("fabric.wire: corrupt spool record quarantined")
         with contextlib.suppress(Exception):  # header parsed: its sequence is an explained loss
             attrs = doc["span"]["attributes"] if doc else {}
             keys = ("fabric.source_id", "fabric.source.epoch", "fabric.source.sequence")
             source, epoch, sequence = (attrs[key] for key in keys)
             if isinstance(source, str) and type(epoch) is int and type(sequence) is int:
-                self.loss.record(source, epoch, "internal_error", sequence)
+                # retain, not record: the record existed; it is not an admission failure
+                self.loss.retain(((source, epoch, "internal_error"), (sequence, sequence, 1)))
 
     def _send_bodies(self, name: str, doc: Mapping[str, Any], blob: memoryview) -> bool:
         for index, body in enumerate(doc["bodies"]):
@@ -212,28 +226,42 @@ class Sender:
             instrumentation_scope=InstrumentationScope("fabric.wire", __version__),
         )  # fmt: skip
 
+    def _admitted(self) -> bool:
+        """After a pump: no loss range is still waiting in memory (one the spool could not
+        take stays there, undelivered). A marker the spool refused is counted as dropped."""
+        with self._pump_lock:
+            return not self.loss.has_pending_losses()
+
     def _settle(self, deadline: float) -> bool:
-        """Spool pending losses/markers; wait until this process's records are deleted."""
+        """Spool pending losses/markers; wait until this process's records are deleted.
+        ``False`` also when a loss range could not be spooled."""
         if not _loss.run_bounded(lambda: self.pump() or True, deadline, "fabric-wire-flush"):
             return False
+        admitted = self._admitted()
         pending = set(self.spool.mine)
         self.wake()
         while pending := {name for name in pending if self.spool.exists(name)}:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.02)
-        return True
+        return admitted
 
     def flush(self, timeout_s: float) -> bool:
-        """:meth:`_settle`, then a periodic heartbeat for every source; within ``timeout_s``."""
+        """:meth:`_settle`, then a periodic heartbeat for every source; within ``timeout_s``.
+        ``False`` too when, since the previous flush, an exchange was lost before the spool
+        or a marker was dropped (the record is incomplete even once all is delivered)."""
         deadline = time.monotonic() + max(0.0, timeout_s)
-        return self._settle(deadline) and _loss.run_bounded(
+        delivered = self._settle(deadline) and _loss.run_bounded(
             lambda: self.pump(every_source=True), deadline, "fabric-wire-flush")  # fmt: skip
+        previous, self._failed_at_flush = self._failed_at_flush, self._failures()
+        return delivered and self._failed_at_flush == previous
 
     def close(self, timeout_s: float) -> bool:
-        """:meth:`_settle` (``final`` included), stop; undelivered records stay on disk."""
+        """:meth:`_settle` (``final`` included), stop; undelivered records stay on disk.
+        ``False`` too when any exchange was lost before the spool or any marker was dropped
+        since this sender started."""
         deadline = time.monotonic() + max(0.0, timeout_s)
-        delivered = self._settle(deadline)
+        delivered = self._settle(deadline) and self._failures() == self._failed_at_start
         self.loss.attach(None)  # later losses go to the direct path
         self._stop.set()
         self._wake.set()

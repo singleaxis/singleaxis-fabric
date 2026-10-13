@@ -131,5 +131,18 @@ reject_any "production rejects custom trace-field allowlist extensions" \
   "${production_args[@]}" \
   --set 'otel-collector.fabric.guard.extraAllowedTraceFields[0]=customer.region'
 
+# Spec 043 §7: the Node counterpart of FABRIC_WIRE_MODEL_ALLOWLIST is a
+# production-compatible extension that reaches fabricguard unchanged.
+model_config="$(helm template fabric-test "${production_args[@]}" \
+  --set 'otel-collector.fabric.guard.captureModelAllowlist[0]=acme-chat-v1' \
+  --set 'otel-collector.fabric.guard.captureModelAllowlist[1]=acme-*')"
+if ! grep -A2 -F 'capture_model_allowlist:' <<<"${model_config}" | grep -Fq -- '- acme-*'; then
+  printf 'not ok - captureModelAllowlist is not rendered into fabricguard\n' >&2
+  exit 1
+fi
+pass "production passes captureModelAllowlist to fabricguard"
+reject_any "captureModelAllowlist entries must be non-empty strings" \
+  "${production_args[@]}" --set-json 'otel-collector.fabric.guard.captureModelAllowlist=[""]'
+
 printf 'PASS: %d Fabric Node profile checks\n' "${pass_count}"
 "${script_dir}/test-package-boundary.sh"

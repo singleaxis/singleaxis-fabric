@@ -220,3 +220,93 @@ def test_preflight_never_echoes_configured_values(tmp_path: Path, case: str) -> 
     assert result.returncode == 1, result.stdout
     assert SECRET not in result.stdout, result.stdout
     assert "FAIL" in result.stdout
+
+
+# --------------------------------------------------------------------------
+# Destination URL shape (Codex sol3 #2): the export endpoint is validated as a
+# whole URL -- https, a valid host and port, and no user info, query or
+# fragment -- with fixed diagnostics that never echo the value.
+# --------------------------------------------------------------------------
+
+URL_MARKER = "probe-secret-5e1b"
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "expected"),
+    [
+        (f"https://user:{URL_MARKER}@otlp.example.invalid", "must not contain user info"),
+        (f"https://{URL_MARKER}@otlp.example.invalid", "must not contain user info"),
+        (f"https://otlp.example.invalid/v1?token={URL_MARKER}", "must not contain a query or fragment"),
+        (f"https://otlp.example.invalid/#{URL_MARKER}", "must not contain a query or fragment"),
+        (f"http://otlp-{URL_MARKER}.example.invalid", "production egress requires https"),
+        (f"ftp://user:{URL_MARKER}@otlp.example.invalid", "not an absolute http(s):// URL"),
+        ("https:///v1/traces", "FABRIC_EXPORT_ENDPOINT host must be"),
+        (f"https://otlp_{URL_MARKER}.example.invalid", "FABRIC_EXPORT_ENDPOINT host must be"),
+        ("https://203.0.113.300", "FABRIC_EXPORT_ENDPOINT host must be"),
+        ("https://otlp.example.invalid:", "FABRIC_EXPORT_ENDPOINT port must be"),
+        ("https://otlp.example.invalid:0", "FABRIC_EXPORT_ENDPOINT port must be"),
+        ("https://otlp.example.invalid:65536", "FABRIC_EXPORT_ENDPOINT port must be"),
+        ("https://otlp.example.invalid:0443", "FABRIC_EXPORT_ENDPOINT port must be"),
+        (f"https://otlp.example.invalid:{URL_MARKER}", "FABRIC_EXPORT_ENDPOINT port must be"),
+        (f"https://otlp.example.invalid/a b{URL_MARKER}", "whitespace"),
+        (f"https://otlp.example.invalid\\{URL_MARKER}", "backslash"),
+    ],
+)
+def test_export_endpoint_is_validated_without_echo(
+    tmp_path: Path, endpoint: str, expected: str
+) -> None:
+    token = H._token(tmp_path, 0o600)
+    H._write_collector_config(tmp_path)
+    result = _run(tmp_path, token, FABRIC_EXPORT_ENDPOINT=endpoint)
+    assert result.returncode == 1, result.stdout
+    assert expected in result.stdout, result.stdout
+    assert URL_MARKER not in result.stdout, result.stdout
+    # An invalid URL is never handed to the reachability probe.
+    assert "egress destination" not in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://otlp.example.invalid",
+        "https://otlp.example.invalid:4318/otlp",
+        "https://203.0.113.10:443",
+        "https://[2001:db8::10]:443",
+    ],
+)
+def test_valid_export_endpoints_pass(tmp_path: Path, endpoint: str) -> None:
+    token = H._token(tmp_path, 0o600)
+    H._write_collector_config(tmp_path)
+    result = _run(tmp_path, token, FABRIC_EXPORT_ENDPOINT=endpoint)
+    assert result.returncode == 0, result.stdout
+    assert "egress endpoint is a valid https URL" in result.stdout
+
+
+def test_reachability_probe_gets_only_host_and_port(tmp_path: Path) -> None:
+    """The nc probe receives the parsed host and port (443 by default), never the URL."""
+    token = H._token(tmp_path, 0o600)
+    H._write_collector_config(tmp_path)
+    env = H._preflight_environment(tmp_path, token)
+    log = tmp_path / "nc.args"
+    H._write_executable(
+        tmp_path / "bin" / "nc", f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\nexit 0\n'
+    )
+    for endpoint, want in (
+        ("https://otlp.example.invalid/v1", "-z -w 3 otlp.example.invalid 443"),
+        ("https://otlp.example.invalid:4318", "-z -w 3 otlp.example.invalid 4318"),
+        ("https://[2001:db8::10]:8443/x", "-z -w 3 2001:db8::10 8443"),
+    ):
+        log.unlink(missing_ok=True)
+        env["FABRIC_EXPORT_ENDPOINT"] = endpoint
+        result = subprocess.run(
+            ["sh", str(H.PREFLIGHT)],
+            cwd=tmp_path,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=10,
+        )
+        assert result.returncode == 0, result.stdout
+        assert log.read_text(encoding="utf-8").splitlines() == [want]

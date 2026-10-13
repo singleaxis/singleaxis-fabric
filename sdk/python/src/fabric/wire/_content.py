@@ -50,29 +50,28 @@ def encode_content_request(
 
 
 class NodeContentClient:
-    """POSTs content log records; ``send`` never raises."""
+    """POSTs content log records; ``send`` never raises. Redirects are never followed: a 3xx
+    is a delivery failure retried later (H1), so content never reaches another host."""
 
     def __init__(
         self, endpoint: str, *, headers: Mapping[str, str], timeout_s: float,
         verify: str | bool, cert: tuple[str, str] | None, service_name: str,
     ) -> None:  # fmt: skip
-        import requests  # type: ignore[import-untyped]  # noqa: PLC0415
-
         self._endpoint, self._timeout, self._service = endpoint, timeout_s, service_name
-        self._session = requests.Session()
+        self._session = tracing.no_redirect_session()
         self._session.headers.update(headers)
         self._session.verify, self._session.cert = verify, cert
 
     def send(self, descriptor: Mapping[str, Any], body: bytes | memoryview) -> Result:
-        """``ok``; ``rejected`` (400/413/415/422, a rejected record or an unencodable one:
-        never retried); else ``retry``."""
+        """``ok`` (2xx only); ``rejected`` (400/413/415/422, a rejected record or an
+        unencodable one: never retried); else ``retry`` (3xx included)."""
         from opentelemetry.proto.collector.logs.v1 import logs_service_pb2  # noqa: PLC0415
 
         try:
             payload = encode_content_request(descriptor, body, service_name=self._service)
             with tracing.sanitized_export_diagnostics():
                 response = self._session.post(
-                    self._endpoint, data=payload, timeout=self._timeout,
+                    self._endpoint, data=payload, timeout=self._timeout, allow_redirects=False,
                     headers={"Content-Type": "application/x-protobuf"},
                 )  # fmt: skip
             code, content = int(response.status_code), response.content
@@ -104,7 +103,7 @@ def content_client_from_env(
     """The Node content client: ``FABRIC_WIRE_CONTENT_ENDPOINT`` (or ``endpoint``) plus the
     ``OTEL_EXPORTER_OTLP_LOGS_*`` > ``OTEL_EXPORTER_OTLP_*`` TLS, header and timeout settings."""
     try:
-        import requests  # noqa: F401, PLC0415
+        import requests  # type: ignore[import-untyped]  # noqa: F401, PLC0415
         from opentelemetry.proto.collector.logs.v1 import logs_service_pb2  # noqa: F401, PLC0415
     except ImportError:
         raise ValueError("node mode needs the [otlp] extra (requests, protobuf)") from None

@@ -64,12 +64,13 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `FABRIC_WIRE_CONTENT_ENDPOINT` | node mode | Full URL of the Node's content receiver, used as given (`https://node:4319/v1/logs`). Setting it selects node mode. A URL with user info, a query or a fragment is rejected without echoing it. |
+| `FABRIC_WIRE_CONTENT_ENDPOINT` | node mode | Full URL of the Node's content receiver, used as given (`https://node:4319/v1/logs`). Setting it selects node mode. A URL with user info, a query or a fragment is rejected without echoing it. Redirects are never followed (below). |
 | `FABRIC_WIRE_STORE` | no | Unset: node mode when a content endpoint is set, else metadata only (no bytes stored; runs can only be `unverified`). `node`: node mode explicitly. `file:///absolute/dir`: the agent writes a local store itself (development, offline or single-host; refused together with a content endpoint). `s3://…` is **refused**: S3 is written by the Node. |
 | `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix chosen by you, not an access boundary; never personal data (see below). |
 | `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). Optional in file mode, where it enables the same delivery path. |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | no | Spool bound, default 1 GiB, minimum `2 × FABRIC_WIRE_MAX_BODY_BYTES + 1 MiB`. When full, new exchanges are dropped and recorded as `queue_full` losses; the host is unaffected. |
-| `FABRIC_WIRE_MODEL_ALLOWLIST` | no | Comma-separated exact model names or `prefix*` entries emitted as is, in addition to the built-in public families (§3). |
+| `FABRIC_WIRE_MODEL_ALLOWLIST` | no | Comma-separated model names emitted as is, in addition to the built-in public families. An exact entry matches only that name; a `prefix*` entry matches only a version-like suffix (§3). Any other model name is emitted as `m-` + a hash. |
+| `FABRIC_WIRE_ID_KEY` | recommended in production | Secret key for run-id pseudonyms: a run id passed to `fabric.wire.run(run_id)` is emitted as `r-` + 32 hex of `HMAC-SHA256(key, run_id)`; unset, an unkeyed SHA-256 that anyone who can guess a run id can recompute. Never logged. See "The run-id key" below. |
 | `FABRIC_SOURCE_ID` | no | Opaque id of this capture source. Default `wire-` + 16 hex derived from host name and `service.name`. |
 | `FABRIC_WIRE_ENDPOINTS` | no | JSON array of extra endpoint matchers (vLLM, Ollama, an internal proxy). OpenAI, Anthropic and Azure OpenAI are matched by default. |
 | `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and worker queue length (default 256). |
@@ -87,6 +88,16 @@ Span settings resolve `OTEL_EXPORTER_OTLP_TRACES_*` before the general
 `OTEL_EXPORTER_OTLP_LOGS_{HEADERS,CERTIFICATE,CLIENT_CERTIFICATE,CLIENT_KEY,TIMEOUT}`
 before the same general variables, so one set of general variables
 configures both. An unreadable TLS file fails installation.
+
+**Redirects are not followed.** The content client and the private OTLP/HTTP
+span exporter that Fabric builds for delivery never follow an HTTP redirect.
+Any `3xx` answer is a delivery failure: the record stays in the spool and is
+retried later, and its body and headers (including the ingress credential)
+are never sent to the redirect target. Configure both endpoints with the
+Node's final `https://` URL. A proxy or load balancer in front of the Node
+that redirects (`http://` to `https://`, a trailing-slash rewrite, a login
+page) stalls delivery and grows the spool until the URL is corrected; it
+never yields a false success.
 
 Invalid configuration installs nothing and logs one warning naming only the
 error class; the agent runs unchanged. Fabric never logs environment
@@ -138,21 +149,55 @@ the agent's provider exports through a Fabric Node, and set
 or heartbeat record the agent's sampler drops makes `flush()` return
 `False` and is not retried.
 
-**Identifiers are labels you choose, and must not contain personal
-data.** Run ids (`fabric.wire.run(run_id)`), source ids
-(`FABRIC_SOURCE_ID`), the tenant id (`FABRIC_TENANT_ID`) and
-`OTEL_SERVICE_NAME` are operator-chosen labels. Fabric checks only their
-shape and copies them as given: run ids, source ids and the service name
-onto every capture span (and so to your OTLP destination and its readers);
-run, source and tenant ids into every content descriptor, with the tenant
-id in every object key (`<prefix><tenant>/evidence/…`); and run, scope,
-source and tenant ids into the reconstruction report. Fabric cannot tell a
-patient number from a job id. Use opaque or pseudonymous values (a random
-UUID, a workload or job name, a keyed hash you can resolve on your side) —
+**Run ids are pseudonymised; other identifiers are labels you choose.** A
+run id you pass to `fabric.wire.run(run_id)` never leaves the agent in the
+clear: spans, run markers, spool records, content descriptors and
+reconstruction reports carry `r-` + the first 32 hex of
+`HMAC-SHA256(FABRIC_WIRE_ID_KEY, run_id)`, or of `SHA-256(run_id)` when the
+key is unset. Generated fallback run ids (`trace:<trace id>` and
+`source:<source id>:<epoch>`) are already opaque and are emitted unchanged.
+An unkeyed pseudonym is only a hash: anyone who can guess a run id (a
+sequential job number, an order id) can confirm it, so set the key in
+production.
+
+Source ids (`FABRIC_SOURCE_ID`), the tenant id (`FABRIC_TENANT_ID`) and
+`OTEL_SERVICE_NAME` are different: they are operator-chosen labels that
+Fabric validates by pattern only and copies as given. Source ids and the
+service name go onto every capture span (and so to your OTLP destination
+and its readers); source and tenant ids go into every content descriptor,
+with the tenant id in every object key (`<prefix><tenant>/evidence/…`); and
+all of them appear in the reconstruction report. Fabric cannot tell a
+patient number from a job id, so these labels **must be opaque**: a random
+UUID, a workload or job name, or a keyed hash you can resolve on your side;
 never a patient, customer, user or account identifier, an email address, a
 name, or a secret. The default source id (`wire-` + 16 hex of host name and
-service name) and the trace-derived run ids (`trace:<trace id>`) are
-already opaque.
+service name) is already opaque.
+
+*The run-id key (`FABRIC_WIRE_ID_KEY`).* Treat it like any other secret.
+
+- **Generate** 256 random bits, without a trailing newline (the key is the
+  variable's exact UTF-8 value, so a stray newline gives a different key):
+  `umask 077; openssl rand -hex 32 | tr -d '\n' > id-key`.
+- **Store** it in your secret manager and inject it into the agent's
+  environment from there: on Kubernetes a Secret
+  (`kubectl -n monitored-agents create secret generic fabric-wire-id-key
+  --from-file=key=id-key`, then `rm -f id-key`) referenced with
+  `valueFrom.secretKeyRef`; on a VM an env file readable only by the agent
+  user. Never put it in an image, a Helm values file, a command line or a
+  log. Fabric never logs it or writes it to a record or report.
+- **Share** one key across every agent whose runs you verify together, and
+  give it to whoever runs `fabric.reconstruct --run` (§5). It is read when
+  capture is installed; a change takes effect when the process restarts.
+- **Rotate** between runs, and roll every agent of a deployment together.
+  Rotation changes the pseudonym of every run id from then on and leaves
+  records already written under their old pseudonyms: a run that is open
+  while agents switch keys, or whose replicas run with different keys,
+  appears as two unrelated run ids, each verified on its own. To look up
+  older runs by their clear id, keep the retired key (disabled, not
+  destroyed) and pass it with `--id-key-env`. Destroying a retired key
+  makes the old pseudonyms permanently unlinkable to clear ids, which is a
+  deliberate way to end that linkage. Verdicts never need the key: without
+  `--run`, `fabric.reconstruct` reports every run by its pseudonym.
 
 ## 2. Run a Fabric Node
 
@@ -180,7 +225,12 @@ chart and the shipped Compose configs all refuse more than one unless it is
 set explicitly (`allow_multiple_tenants: true`, Helm
 `content.allowMultipleTenants=true`). That flag **trusts every
 authenticated agent to name its tenant**; use one Node per tenant
-otherwise. **S3 content is always encrypted:** the exporter refuses an s3
+otherwise. The rule covers the whole Node, not each exporter: when a
+hand-written or overlaid configuration has several `fabriccontent`
+exporters that share a receiver or a pipeline, `fabric-gate` refuses to
+start unless they all allow the same single tenant, or every one of them
+sets `allow_multiple_tenants: true`. The Helm chart renders exactly one
+`fabriccontent` exporter. **S3 content is always encrypted:** the exporter refuses an s3
 backend without `sse: AES256` or `sse: aws:kms`, whatever the launch path.
 
 | Deployment | Ingress authentication (4317, 4318 and 4319 alike) | Content store | Agent settings |
@@ -194,8 +244,8 @@ backend without `sse: AES256` or `sse: aws:kms`, whatever the launch path.
 settings. The chart refuses to render without allowed tenants or a backend,
 with more than one tenant and no `content.allowMultipleTenants=true`, with
 an s3 backend lacking a valid bucket or `content.s3.sse` (default
-`AES256`), a KMS key without `aws:kms`, an endpoint with credentials, query
-or fragment, or a memory limiter at or above the container memory limit.
+`AES256`), a KMS key without `aws:kms`, an invalid store endpoint (see
+below), or a memory limiter at or above the container memory limit.
 `shadow-production` also refuses the file backend, an `http://` store
 endpoint, and missing
 `networkPolicy.contentEgress` peers for the store (S3 endpoint CIDRs or VPC
@@ -207,6 +257,23 @@ identity, name an operator-created Secret in `content.s3.credentialsSecret`
 (values never hold keys). The content queue lives on the queue PVC
 (`<persistence.directory>/content-queue`); size the PVC for
 `content.queue.queueSize × 64 MiB` on top of the telemetry queue.
+
+*Destination URLs and network peers.* `exporter.endpoint` and
+`content.s3.endpoint` must be absolute URLs of the form
+`scheme://host[:port][/path]`: the host a DNS name, a dotted IPv4 address
+or a bracketed IPv6 address, the port 1–65535, and no user info
+(`user:password@`), query or fragment, which would put a credential or a
+signed token into the rendered ConfigMap. `shadow-production` also requires
+`https://` for both. Credentials belong in `exporter.auth.secret` and, for
+the store, in the Node's IRSA role or `content.s3.credentialsSecret`.
+Diagnostics name the field, never the value. Every NetworkPolicy peer you
+supply (`ingressFrom`, `exporterEgress.to`, `contentEgress.to`, `egressTo`)
+must restrict something, in every profile: an empty or exclusion-only
+(`NotIn`/`DoesNotExist`) `namespaceSelector` needs a `podSelector` with
+`matchLabels` or an `In`/`Exists` expression, an empty `podSelector` alone
+(every pod in the Node's namespace) is refused, and an `ipBlock` with prefix
+length 0 (`0.0.0.0/0`, `::/0`, `10.0.0.0/0`, …) is refused as equivalent to
+no policy.
 
 *Secrets and certificates (Helm).* `shadow-production` expects three
 operator-created Secrets in the Node's namespace and verifies every agent's
@@ -287,6 +354,8 @@ spec:
         - {name: PYTHONPATH, value: /usr/local/lib/python3.12/site-packages/fabric/_autoload}
         - {name: FABRIC_TENANT_ID, value: tenant-7f3a}        # = content.allowedTenants[0]
         - {name: FABRIC_SOURCE_ID, value: billing-agent}      # optional, opaque
+        - name: FABRIC_WIRE_ID_KEY                            # run-id pseudonym key (§1)
+          valueFrom: {secretKeyRef: {name: fabric-wire-id-key, key: key}}
         - {name: OTEL_SERVICE_NAME, value: billing-agent}
         - {name: FABRIC_WIRE_SPOOL_DIR, value: /var/lib/fabric/spool}
         - {name: FABRIC_WIRE_CONTENT_ENDPOINT,
@@ -330,17 +399,19 @@ TLS key owned by the operator who runs `make preflight-prod`, with group
 protocol serving one of them has TLS genuinely enabled (an uncommented
 `tls:` mapping with non-empty `cert_file` and `key_file`; a commented,
 empty, `{}` or `null` stanza counts as disabled), and it always requires
-every receiver to authenticate. It also checks `FABRIC_TENANT_ID` and, for
-S3, the bucket, prefix, region, an `https://` endpoint without credentials,
-and SSE.
+every receiver to authenticate. It validates `FABRIC_EXPORT_ENDPOINT` and
+`FABRIC_CONTENT_S3_ENDPOINT` with the same URL rule as the Helm chart
+(`https://`, valid host and port, no user info, query or fragment; the value
+is never printed), checks `FABRIC_TENANT_ID` and, for S3, the bucket,
+prefix, region and SSE.
 
 ## 3. What is streamed and who can read it
 
 | Data | Path | Who can read it | Controlled by |
 |---|---|---|---|
-| Span metadata: exchange, run, scope and source ids, sequence numbers, heartbeat kinds, body SHA-256 digests, store object ids (uuid4), API, response state, HTTP status, error class name, model name (see below), finish reasons (closed list), token counts; trace id, span id and flags of the agent's current span (its trace state and baggage are not copied); resource `service.name` | agent spool → OTLP 4317/4318 → Fabric Node (`fabricguard`, queued on disk) → your OTLP destination | Anyone with access to the agent's spool directory, the Node host or queue volume, and every reader of the destination | Node ingress auth (mTLS or bearer), host access, destination ACLs and retention |
+| Span metadata: exchange, scope and source ids, run ids (`r-` pseudonyms of the ids you pass to `fabric.wire.run()`), sequence numbers, heartbeat kinds, body SHA-256 digests, store object ids (uuid4), API, response state, HTTP status, error class name, model name (see below), finish reasons (closed list), token counts; trace id, span id and flags of the agent's current span (its trace state and baggage are not copied); resource `service.name` | agent spool → OTLP 4317/4318 → Fabric Node (`fabricguard`, queued on disk) → your OTLP destination | Anyone with access to the agent's spool directory, the Node host or queue volume, and every reader of the destination | Node ingress auth (mTLS or bearer), host access, destination ACLs and retention |
 | Request and response bytes (prompts, completions, tool arguments and results, anything the provider echoes) and their descriptor JSON | agent spool → OTLP/HTTP 4319 → Fabric Node content queue → your store. Never sent to the OTLP destination | In transit: the agent host's spool directory (`0600`/`0700`) and the Node's content-queue volume. At rest: principals with `s3:GetObject` on the evidence prefix **and** `kms:Decrypt` on the key, or filesystem users who can read the Node's content directory | Agent host access; Node host and volume access; bucket policy, IAM and KMS key policy; filesystem permissions (files `0600`, directories `0700`) |
-| Reconstruction report (`python -m fabric.reconstruct`) | written where the operator runs it | Whoever receives the file | File permissions. It holds run, scope, source, exchange and store object ids, digests, counts, model names (same rule as spans), pseudonyms of provider ids and the tenant id; span files appear only by digest, format and record count. Never message content, input file paths (span files, store root) or the resolved store location of an object |
+| Reconstruction report (`python -m fabric.reconstruct`) | written where the operator runs it | Whoever receives the file | File permissions. It holds run ids (pseudonyms), scope, source, exchange and store object ids, digests, counts, model names (same rule as spans), pseudonyms of provider ids and the tenant id; span files appear only by digest, format and record count. Never message content, input file paths (span files, store root) or the resolved store location of an object |
 | Fabric warnings | agent's own logging; Node logs | Agent and Node log readers | Fixed text, exception class names and HTTP status codes only. The Node logs a dropped content record with its reason only (no tenant, id, path, URL or byte) |
 
 Who can touch content:
@@ -362,11 +433,30 @@ allowlisted: the built-in public families (`gpt-*`, `o1*`, `o3*`, `o4*`,
 `chatgpt-*`, `claude-*`, `gemini-*`, `text-embedding-*`, `llama*`,
 `meta-llama/*`, `mistral*`, `mixtral*`, `codestral*`, `command*`,
 `deepseek*`, `qwen*`, `grok*`, `anthropic/*`, `openai/*`, `google/*`) plus
-`FABRIC_WIRE_MODEL_ALLOWLIST`. Any other model string is emitted as `m-` +
-the first 16 hex of its SHA-256, so fine-tuned or internal deployment names
-stay pseudonymous unless you allowlist them. `fabric.reconstruct
---model-allowlist` applies the same rule. Response ids are not emitted on
-OTLP.
+`FABRIC_WIRE_MODEL_ALLOWLIST`.
+
+An exact allowlist entry (no `*`) matches only that name. A `prefix*`
+entry matches a name that starts with the prefix **only when the rest is a
+version**: split on `-`, `.`, `_`, `:`, `/` or `@`, every part must be
+digits or a date (`4`, `3.5`, `20240620`, `2024-08-06`), a short version
+token (`4o`, `o1`, `v2`, `8b`, `70b`), or one of a fixed list of model
+words (`mini`, `nano`, `turbo`, `preview`, `latest`, `instruct`, `chat`,
+`vision`, `audio`, `realtime`, `pro`, `flash`, `lite`, `sonnet`, `opus`,
+`haiku`, `thinking`, `coder`, quantisation tags such as `fp8` or `gguf`,
+and similar; the full list and test vectors are in
+`contracts/capture/v1/fixtures/model-names/model-exposure-v1.json`). So
+`gpt-4o-mini-2024-07-18` and `claude-3-5-sonnet-20240620` are emitted as
+is, while `gpt-4o-acme-claims-triage` or `llama-3-70b-patient-notes` are
+not: a fine-tuned or internal deployment name hiding behind a public prefix
+is emitted as `m-` + the first 16 hex of its SHA-256, as is any other
+non-allowlisted name. Add an exact entry for a deployment name you want to
+see in the clear. The Node (`fabricguard`) and `fabric.reconstruct
+--model-allowlist` apply the same rule. When you extend the agents' list,
+give the Node the same entries — Helm:
+`otel-collector.fabric.guard.captureModelAllowlist`; Compose or a
+hand-written collector config: `capture_model_allowlist` under
+`processors.fabricguard` — or the Node hashes the extra names again.
+Response ids are not emitted on OTLP.
 
 Authorization, cookie and API-key headers are not stored or emitted; they
 travel only to the provider, as before. Body bytes can still contain
@@ -455,39 +545,67 @@ python -m fabric.reconstruct --spans spans.json \
 python -m fabric.reconstruct --spans spans.json --store-root <content dir> --tenant <tenant>
 ```
 
-Exit code `0` means every reported run is `complete_for_declared_scope`;
-`1` means at least one run is `partial` or `unverified`, or none was
-found; `2` is a usage error. Without store access the verdict is at best
-`unverified`.
+To check particular runs, pass the run id you gave `fabric.wire.run()` in
+the clear with `--run` (repeatable). `fabric.reconstruct` computes its
+pseudonym with the key in the environment variable named by `--id-key-env`
+(default `FABRIC_WIRE_ID_KEY`); use the key the agents ran with, or the run
+is not found. Without `--run` every run is reported by its pseudonym.
 
-A run is `complete_for_declared_scope` only when its end is proven and no
-sequence is missing in its scope:
+The report judges each `fabric.wire.run()` entry and each run without
+entries on its own. It claims completeness only for what the record proves:
 
-- **Runs wrapped in `fabric.wire.run(run_id)`.** Every entry into the block
-  is its own *scope* with a unique `fabric.run.scope_id`, carried on its
-  `run_start` and `run_end` heartbeats and on every call started inside it.
-  A scope is closed when both its markers arrived; its window is the
-  sequences between them. The run is complete when every scope is closed,
-  every call of the run belongs to one of its scopes, and no sequence
-  inside any scope window is missing. Reusing a run id, serial blocks,
-  nested blocks and concurrent blocks on one source are separate scopes and
-  are never paired with each other's markers. A missing `run_end` (the
-  process died inside the block, or the marker could not be spooled) leaves
-  the run `unverified`, and so does a call recorded under the run id
-  outside every scope (for example from a task that outlived the block).
-- **Other runs** (trace and source runs). The source's capture epoch must
-  end with a `final` heartbeat, written when capture closes cleanly
-  (`handle.close()` or normal interpreter exit within the shutdown budget),
-  and no sequence may be missing from the run's first recorded call up to
-  that heartbeat. A killed process writes no `final` heartbeat, so its
-  runs are `unverified` (its spooled records are still delivered on the
-  next start). Use `fabric.wire.run()` when the start must be proven too.
+- **Scopes (`scopes[]`).** Every entry into a `fabric.wire.run(run_id)`
+  block is its own *scope* with a unique `fabric.run.scope_id`, carried on
+  its `run_start` and `run_end` heartbeats and on every call started inside
+  it. A scope is `complete_for_declared_scope` when both markers arrived,
+  every call tagged with it lies between them, and no sequence inside that
+  window is missing; a missing sequence inside it makes the scope
+  `partial`, and a missing marker (the process died inside the block, or
+  the marker could not be spooled) leaves it `unverified`. Reusing a run
+  id, serial blocks, nested blocks and concurrent blocks on one source are
+  separate scopes and are never paired with each other's markers.
+- **Runs with scopes (`runs[]`).** A run's verdict is the worst of its
+  observed scopes, and at best `complete_for_observed_scopes`: every scope
+  the record holds is complete, and nothing is claimed about a block whose
+  markers and calls all died in the agent's memory before reaching the
+  spool, because it left no record. A call recorded under the run id
+  outside every scope (for example from a task that outlived its block)
+  makes the run `unverified`.
+- **Runs without scopes** (trace and source runs). The source's capture
+  epoch must end with a `final` heartbeat, written when capture closes
+  cleanly (`handle.close()` or normal interpreter exit within the shutdown
+  budget), and no sequence may be missing from the run's first recorded
+  call up to that heartbeat; then the run is `complete_for_declared_scope`.
+  A killed process writes no `final` heartbeat, so its runs are
+  `unverified` (its spooled records are still delivered on the next start).
+  Use `fabric.wire.run()` when the start must be proven too.
+
+Exit code `0` means every reported scope and every run without scopes is
+complete (`complete_for_declared_scope`; a run with scopes is then
+`complete_for_observed_scopes`); `1` means at least one is `partial` or
+`unverified`, or nothing was found; `2` is a usage error. Without store
+access the verdict is at best `unverified`.
 
 Heartbeats are counted by their content (source, epoch, kind, run id,
 scope id, last sequence), so a record re-sent after a crash counts once.
 Each window in the report names its proof in `closed_by` (`run_markers` or
 `final_heartbeat`) and, for run scopes, its `scope_id`; a window without
 `closed_by` is not proven.
+
+**Content canary after every deployment change.** A healthy Node and a
+passing `make verify-prod` (Compose) or Helm rollout do not prove that an
+authenticated content upload reaches the store: `verify-prod` only checks
+that unauthenticated content is rejected, and the store path also depends
+on the bucket policy, the Node's IRSA trust or instance role, KMS grants,
+conditional-write support and the store egress peers. Run one canary with
+the production agent settings: make a single model call through an
+instrumented process inside `fabric.wire.run("fabric-canary-<date>")`, close
+capture (`handle.close()` or a normal exit), export its spans from your
+destination and run `python -m fabric.reconstruct --run
+fabric-canary-<date>` with the reader credentials. Exit code `0` (the run
+`complete_for_observed_scopes` with one complete scope) proves the whole
+path; `missing_object` or `unverified` names the broken leg without
+exposing content.
 
 ## 6. Known limits
 
@@ -519,8 +637,12 @@ Each window in the report names its proof in `closed_by` (`run_markers` or
   (likewise `DefaultAsyncHttpxClient` with `AsyncWireTransport`, and the
   `openai` equivalents).
 - **Windows** cannot run node mode (the spool needs POSIX `fcntl`).
-- **Identifiers are shape-checked only** (see §1). An allowlisted model
-  name is copied as is (§3).
+- **Identifiers.** Run ids you pass to `fabric.wire.run()` are emitted
+  only as `r-` pseudonyms; source ids, the tenant id and `service.name` are
+  shape-checked labels copied as given and must be opaque (§1). An
+  allowlisted model name is copied as is (§3).
+- **Redirects** from a Node endpoint are retried, never followed (§1); a
+  redirecting proxy in front of the Node stalls delivery.
 - **Global mode and `tracer_provider=`** bypass the spool: a span or marker
   the agent's provider samples out or loses is not retried, which leaves a
   gap unexplained or a run `unverified`.

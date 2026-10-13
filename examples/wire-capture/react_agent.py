@@ -284,6 +284,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         str(store_root),
         "--tenant",
         TENANT,
+        # The clear id given to fabric.wire.run(); the record carries only its
+        # pseudonym (spec 043 §6), which the verifier computes from it.
+        "--run",
+        RUN_ID,
         "--out",
         str(report_path),
     ]
@@ -292,6 +296,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = json.loads(report_path.read_text("utf-8"))
     for run in report["runs"]:
         print(f"run {run['run_id']}: verdict={run['verdict']}")
+        for scope in report.get("scopes", []):
+            if scope["run_id"] == run["run_id"]:
+                print(f"  scope {scope['scope_id']}: verdict={scope['verdict']}")
         for thread in run.get("threads", []):
             print(f"  {thread.get('thread_id')}: exchanges={thread.get('exchange_ids')}")
         for gap in run.get("gaps", []):

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 )
 
@@ -46,12 +45,24 @@ func (e *storeError) Error() string {
 
 // fileBackend stores objects below an absolute directory with the SDK's
 // local layout: files 0600, directories 0700, written to a temp file,
-// fsync'd, then hard-linked into place (link never replaces an existing
-// object) and the directory fsync'd.
+// fsync'd, then put into place with an atomic no-replace primitive and the
+// directory fsync'd. The primitive is link(2), which never replaces an
+// existing name; on a filesystem without hard links it is an atomic
+// no-replace rename (renameat2 RENAME_NOREPLACE on Linux, renamex_np
+// RENAME_EXCL on macOS). When neither works the write fails retryably:
+// there is no check-then-rename fallback, because two exporter processes
+// sharing the directory could both see the name free and overwrite an
+// accepted object (Sol data-exposure #5).
 type fileBackend struct {
 	dir string
-	mu  sync.Mutex // serializes the no-hard-link fallback only
 }
+
+// linkFile and renameNoReplace are the no-replace primitives; tests replace
+// them to simulate filesystems without hard links or without either.
+var (
+	linkFile        = os.Link
+	renameNoReplace = platformRenameNoReplace
+)
 
 func newFileBackend(dir string) *fileBackend { return &fileBackend{dir: dir} }
 
@@ -80,33 +91,23 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 	if err := writeSynced(tmp, data); err != nil {
 		return err
 	}
-	if err := os.Link(tmpName, target); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			done, err := existing(target, data)
-			if err == nil && !done {
-				return &storeError{op: "file link"} // vanished: retry
-			}
-			return err
-		}
-		if err := b.renameNoReplace(tmpName, target, data); err != nil {
-			return err
+	err = linkFile(tmpName, target)
+	if err != nil && !errors.Is(err, os.ErrExist) {
+		// No hard links here: the only other acceptable primitive is an
+		// atomic rename that refuses an existing target.
+		err = renameNoReplace(tmpName, target)
+		if err != nil && !errors.Is(err, os.ErrExist) {
+			return &storeError{op: "file no-replace"}
 		}
 	}
-	return syncDir(parent)
-}
-
-// renameNoReplace is the fallback for filesystems without hard links: a
-// check-then-rename serialized within this process.
-func (b *fileBackend) renameNoReplace(tmpName, target string, data []byte) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if done, err := existing(target, data); done || err != nil {
+	if err != nil { // the target exists: replay or conflict
+		done, err := existing(target, data)
+		if err == nil && !done {
+			return &storeError{op: "file link"} // vanished: retry
+		}
 		return err
 	}
-	if err := os.Rename(tmpName, target); err != nil {
-		return &storeError{op: "file rename"}
-	}
-	return nil
+	return syncDir(parent)
 }
 
 // privateDirs walks from the content root down to dir, top-down so that no

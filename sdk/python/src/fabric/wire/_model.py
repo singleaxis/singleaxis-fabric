@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from opentelemetry.context import Context
 
 WireApi = Literal[
@@ -51,9 +53,11 @@ class EndpointMatcher:
 
 @dataclass(frozen=True, slots=True)
 class CapturedBody:
-    """Retained bytes of one side; ``observed_byte_length`` counts every forwarded byte."""
+    """Retained bytes of one side; ``observed_byte_length`` counts every forwarded byte.
+    ``chunks`` may hold the tee's coalescing ``bytearray`` buffers, handed over unfrozen
+    (owned by the job from finalization on); only the worker joins them."""
 
-    chunks: tuple[bytes, ...]
+    chunks: Sequence[bytes | bytearray]
     observed_byte_length: int
     truncated: bool
     media_type: str = "application/octet-stream"

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -25,6 +26,7 @@ from fabric._model_names import (
     DEFAULT_MODEL_ALLOWLIST,
     HASHED_MODEL_RE,
     MODEL_PATTERN,
+    SUFFIX_WORDS,
     expose_model,
     hashed_model,
     model_allowed,
@@ -33,7 +35,12 @@ from fabric._model_names import (
 from fabric.wire import WireConfig
 from fabric.wire._config import config_from_env
 
-from .test_wire_helpers import OPENAI_CHAT, attrs, chat_response
+from .test_wire_helpers import CAPTURE, OPENAI_CHAT, attrs, chat_response
+
+# Shared with fabricguard's Go tests (H4): one set of vectors for both implementations.
+VECTORS = json.loads(
+    (CAPTURE / "fixtures" / "model-names" / "model-exposure-v1.json").read_text("utf-8")
+)
 
 
 def test_hashed_form_is_sha256_prefixed_and_matches_the_pattern() -> None:
@@ -49,9 +56,13 @@ def test_hashed_form_is_sha256_prefixed_and_matches_the_pattern() -> None:
     [
         ("gpt-4o", True), ("o1-preview", True), ("o3", True), ("chatgpt-4o-latest", True),
         ("claude-3-5-sonnet", True), ("gemini-1.5-pro", True), ("text-embedding-3-large", True),
-        ("llama3", True), ("meta-llama/Llama-3-70b", True), ("mistral-large", True),
-        ("deepseek-chat", True), ("qwen2", True), ("grok-2", True), ("anthropic/claude", True),
+        ("llama3", True), ("mistral-large", True), ("deepseek-chat", True), ("qwen2", True),
+        ("grok-2", True), ("gpt-4o-mini-2024-07-18", True), ("llama3.1:8b", True),
         ("GPT-4o", False),  # case-sensitive
+        # H4: a prefix entry admits only version tokens after its prefix, never free text
+        ("gpt-patient-Jane-Doe-12345", False), ("gpt-patient-jane-doe", False),
+        ("claude-acme-internal", False), ("meta-llama/Llama-3-70b", False),
+        ("anthropic/claude", False), ("gpt-4o-Mini", False),
         ("gpt", False), ("my-gpt-4o", False), ("o2", False), ("ft:gpt-4o:acme::x", False),
         ("gpt-4o://x", False), ("gpt 4o", False), ("", False),
     ],
@@ -61,10 +72,29 @@ def test_default_allowlist(value: str, allowed: bool) -> None:
     assert expose_model(value) == (value if allowed else hashed_model(value) if value else None)
 
 
+@pytest.mark.parametrize("case", VECTORS["cases"], ids=[c["name"] for c in VECTORS["cases"]])
+def test_shared_model_exposure_vectors(case: dict[str, object]) -> None:
+    """The fixture fabricguard's Go tests also read: same rule, same exposed values."""
+    entries = case["allowlist"]
+    assert isinstance(entries, list)
+    allowlist = tuple(str(entry) for entry in entries)
+    value = case["value"]
+    assert isinstance(value, str)
+    assert model_allowed(value, allowlist) is case["allowed"]
+    assert expose_model(value, allowlist) == case["exposed"]
+
+
+def test_shared_vectors_pin_the_rule_constants() -> None:
+    assert tuple(VECTORS["default_allowlist"]) == DEFAULT_MODEL_ALLOWLIST
+    assert set(VECTORS["suffix_words"]) == SUFFIX_WORDS
+    assert {c["allowed"] for c in VECTORS["cases"]} == {True, False}
+
+
 def test_custom_allowlist_extends_the_defaults() -> None:
     allowlist = parse_model_allowlist(" ft:gpt-4o:acme::*, acme-chat-v1 ,,")
     assert allowlist == ("ft:gpt-4o:acme::*", "acme-chat-v1")
-    assert model_allowed("ft:gpt-4o:acme::abc", allowlist)
+    assert model_allowed("ft:gpt-4o:acme::2024-11-20", allowlist)  # version-token suffix
+    assert not model_allowed("ft:gpt-4o:acme::abc", allowlist)  # free text: exact entry only
     assert model_allowed("acme-chat-v1", allowlist) and not model_allowed("acme-chat-v2", allowlist)
     assert model_allowed("gpt-4o", allowlist)  # defaults stay
     assert expose_model("acme-chat-v2", allowlist) == hashed_model("acme-chat-v2")

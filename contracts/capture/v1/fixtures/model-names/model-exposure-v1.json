@@ -1,0 +1,412 @@
+{
+  "schema_version": "fabric.model-exposure-vectors/v1",
+  "rule": "Exact allowlist entries match exactly. A 'prefix*' entry (built-in or FABRIC_WIRE_MODEL_ALLOWLIST) matches when the value starts with prefix and the rest, split on [-._:/@] with empty tokens ignored, consists only of tokens matching ^(v?\\d+[a-z]{0,2}|\\d+[a-z]\\d*|[a-z]\\d+)$ or words of 'suffix_words' (case-sensitive). Values must also match ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$ and contain no '://'. Anything else is exposed as 'm-' + the first 16 hex of sha256(utf-8 value).",
+  "default_allowlist": [
+    "gpt-*",
+    "o1*",
+    "o3*",
+    "o4*",
+    "chatgpt-*",
+    "claude-*",
+    "gemini-*",
+    "text-embedding-*",
+    "llama*",
+    "meta-llama/*",
+    "mistral*",
+    "mixtral*",
+    "codestral*",
+    "command*",
+    "deepseek*",
+    "qwen*",
+    "grok*",
+    "anthropic/*",
+    "openai/*",
+    "google/*"
+  ],
+  "suffix_words": [
+    "audio",
+    "awq",
+    "base",
+    "bf16",
+    "chat",
+    "code",
+    "coder",
+    "codex",
+    "embed",
+    "embedding",
+    "exp",
+    "fast",
+    "flash",
+    "fp16",
+    "fp8",
+    "gguf",
+    "gptq",
+    "haiku",
+    "hd",
+    "hf",
+    "high",
+    "instruct",
+    "it",
+    "large",
+    "latest",
+    "lite",
+    "low",
+    "medium",
+    "micro",
+    "mini",
+    "nano",
+    "omni",
+    "opus",
+    "preview",
+    "pro",
+    "q4",
+    "q8",
+    "realtime",
+    "reasoning",
+    "search",
+    "small",
+    "sonnet",
+    "thinking",
+    "turbo",
+    "ultra",
+    "vision"
+  ],
+  "cases": [
+    {
+      "name": "default prefix, short version token",
+      "value": "gpt-4o",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4o"
+    },
+    {
+      "name": "default prefix, dated snapshot",
+      "value": "gpt-4o-2024-08-06",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4o-2024-08-06"
+    },
+    {
+      "name": "default prefix, words and date",
+      "value": "gpt-4o-mini-2024-07-18",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4o-mini-2024-07-18"
+    },
+    {
+      "name": "default prefix, dotted version",
+      "value": "gpt-4.1-nano",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4.1-nano"
+    },
+    {
+      "name": "azure deployment style",
+      "value": "gpt-35-turbo",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-35-turbo"
+    },
+    {
+      "name": "turbo preview",
+      "value": "gpt-4-turbo-preview",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4-turbo-preview"
+    },
+    {
+      "name": "no separator after prefix",
+      "value": "o1",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "o1"
+    },
+    {
+      "name": "o-series word suffix",
+      "value": "o1-preview",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "o1-preview"
+    },
+    {
+      "name": "o-series mini",
+      "value": "o3-mini",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "o3-mini"
+    },
+    {
+      "name": "chatgpt latest",
+      "value": "chatgpt-4o-latest",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "chatgpt-4o-latest"
+    },
+    {
+      "name": "claude dated",
+      "value": "claude-3-5-sonnet-20240620",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "claude-3-5-sonnet-20240620"
+    },
+    {
+      "name": "claude new naming",
+      "value": "claude-sonnet-4-5",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "claude-sonnet-4-5"
+    },
+    {
+      "name": "claude opus dotted",
+      "value": "claude-opus-4.1",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "claude-opus-4.1"
+    },
+    {
+      "name": "gemini pro numbered",
+      "value": "gemini-1.5-pro-002",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gemini-1.5-pro-002"
+    },
+    {
+      "name": "gemini flash exp",
+      "value": "gemini-2.0-flash-exp",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gemini-2.0-flash-exp"
+    },
+    {
+      "name": "embedding",
+      "value": "text-embedding-3-large",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "text-embedding-3-large"
+    },
+    {
+      "name": "ollama tag",
+      "value": "llama3.1:8b",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "llama3.1:8b"
+    },
+    {
+      "name": "ollama coder tag",
+      "value": "qwen2.5-coder:32b",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "qwen2.5-coder:32b"
+    },
+    {
+      "name": "letter-digit token",
+      "value": "deepseek-r1",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "deepseek-r1"
+    },
+    {
+      "name": "deepseek chat",
+      "value": "deepseek-chat",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "deepseek-chat"
+    },
+    {
+      "name": "mistral latest",
+      "value": "mistral-large-latest",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "mistral-large-latest"
+    },
+    {
+      "name": "grok numbered",
+      "value": "grok-2-1212",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "grok-2-1212"
+    },
+    {
+      "name": "quantized gguf",
+      "value": "llama3-8b-instruct-q4",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "llama3-8b-instruct-q4"
+    },
+    {
+      "name": "v-prefixed version",
+      "value": "mistral-v2",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "mistral-v2"
+    },
+    {
+      "name": "identifying words after a default prefix",
+      "value": "gpt-patient-Jane-Doe-12345",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-1f1cb55a1556d0bd"
+    },
+    {
+      "name": "lowercase identifying words",
+      "value": "gpt-patient-jane-doe",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-fb48407838e7c058"
+    },
+    {
+      "name": "unknown word",
+      "value": "claude-acme-internal",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-a866c3c98b1bc6f5"
+    },
+    {
+      "name": "case-sensitive vocabulary",
+      "value": "gpt-4o-Mini",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-4652655cd59d8790"
+    },
+    {
+      "name": "case-sensitive prefix",
+      "value": "GPT-4o",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-9b816f4a6295f2b5"
+    },
+    {
+      "name": "namespaced model under a default namespace",
+      "value": "meta-llama/Llama-3-70b",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-54a6d4ff28d63a22"
+    },
+    {
+      "name": "vendor path with a model name",
+      "value": "openai/gpt-4o",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-abb375db7ecf4174"
+    },
+    {
+      "name": "single letter token",
+      "value": "command-r-plus",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-8c2f0bf09668064b"
+    },
+    {
+      "name": "token mixing letters and digits twice",
+      "value": "gpt-a1b2",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-340ddf3c0a0c5a9c"
+    },
+    {
+      "name": "no default prefix",
+      "value": "my-gpt-4o",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-7d0faac9c3d33202"
+    },
+    {
+      "name": "o2 is not a default prefix",
+      "value": "o2",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-9250b9912ee91d6b"
+    },
+    {
+      "name": "bare prefix stem",
+      "value": "gpt",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-053ea4804ef1bb33"
+    },
+    {
+      "name": "fine-tune id",
+      "value": "ft:gpt-4o:acme::x",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-d0dbd5cfe8fe3525"
+    },
+    {
+      "name": "scheme separator",
+      "value": "gpt-4o://x",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-917f56c815e267c2"
+    },
+    {
+      "name": "space",
+      "value": "gpt 4o",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-86d98c859e2ad13e"
+    },
+    {
+      "name": "exact custom entry",
+      "value": "acme-chat-v1",
+      "allowlist": [
+        "acme-chat-v1"
+      ],
+      "allowed": true,
+      "exposed": "acme-chat-v1"
+    },
+    {
+      "name": "exact custom entry, other value",
+      "value": "acme-chat-v2",
+      "allowlist": [
+        "acme-chat-v1"
+      ],
+      "allowed": false,
+      "exposed": "m-5ece270bca6dbd9e"
+    },
+    {
+      "name": "custom prefix with version suffix",
+      "value": "acme-7b-instruct",
+      "allowlist": [
+        "acme-*"
+      ],
+      "allowed": true,
+      "exposed": "acme-7b-instruct"
+    },
+    {
+      "name": "custom prefix with free text suffix",
+      "value": "acme-customer-42",
+      "allowlist": [
+        "acme-*"
+      ],
+      "allowed": false,
+      "exposed": "m-647f2fbef88e0b7b"
+    },
+    {
+      "name": "custom prefix, fine-tune suffix",
+      "value": "ft:gpt-4o:acme::abc",
+      "allowlist": [
+        "ft:gpt-4o:acme::*"
+      ],
+      "allowed": false,
+      "exposed": "m-08a25308250edff3"
+    },
+    {
+      "name": "custom exact fine-tune",
+      "value": "ft:gpt-4o:acme::abc",
+      "allowlist": [
+        "ft:gpt-4o:acme::abc"
+      ],
+      "allowed": true,
+      "exposed": "ft:gpt-4o:acme::abc"
+    },
+    {
+      "name": "custom list keeps defaults",
+      "value": "gpt-4o",
+      "allowlist": [
+        "acme-chat-v1"
+      ],
+      "allowed": true,
+      "exposed": "gpt-4o"
+    }
+  ]
+}

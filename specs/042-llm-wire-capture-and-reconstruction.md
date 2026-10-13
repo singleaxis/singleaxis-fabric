@@ -2,7 +2,7 @@
 title: LLM wire capture and run reconstruction
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 6
+revision: 7
 last_updated: 2026-10-13
 owner: recorder-engineering
 depends_on: 027, 029, 032
@@ -40,6 +40,30 @@ resend logic and the private `BatchSpanProcessor` on the capture path);
 pairs markers by scope; model names outside an allowlist are emitted as
 `m-<16 hex>`; the boot gate separates content and telemetry pipelines.
 Sections below are marked *(→ 043)* where 043 wins.
+
+**2026-10-13 — revision 7 (Sol review of `faac3d2`; decisions in 043
+rev 3).** The verifier claimed a reused run id complete although a whole
+scope of it had died in the agent's memory, verified a `complete` exchange
+with no response evidence, let a conflicting duplicate escape the run it
+claimed, echoed argument values and exception text on stderr, and wrote
+reports `0644`. Revision 7 decides:
+
+- **G1 per-scope claims (043 H5).** Completeness is claimed per
+  `fabric.wire.run()` scope and per unscoped run; a scoped run is at best
+  `complete_for_observed_scopes` (§9 steps 3 and 7). Exit `0` iff every
+  reported scope and every unscoped run is complete.
+- **G2 response evidence.** A `complete` or `closed_early` exchange without
+  a response digest is a `missing_object` gap (`response_not_recorded`,
+  partial) (§9 step 5).
+- **G3 conflicting claims.** Every distinct observation of an exchange id
+  is kept; each claim of a sequence, run and scope counts; every run and
+  window it implicates is `partial`; identical retries still deduplicate
+  (§9 step 1).
+- **G4 diagnostics.** CLI errors are fixed text: no argument values, paths,
+  keys or exception messages (§9).
+- **G5 report file.** `--out` is written atomically with mode `0600`,
+  replacing (never writing through) an existing file or link (§9).
+- Run ids (043 H3) and model names (043 H4) follow 043 §6 and §7.
 
 **2026-10-13 — revision 6 (Codex review of the 043 cut).** A streamed
 request body (not already `bytes`) was marked truncated and never captured;
@@ -401,16 +425,22 @@ ref and `truncated` is true.
   alone; a loss record, when one arrives, only explains it. A run is
   complete only when its end is proven by a `run_end` marker or a `final`
   heartbeat (§9), so a lost exchange in a run's scope can never produce a
-  false `complete_for_declared_scope`.
+  false complete verdict for that scope or run. *(→ 043 §2, §6: a
+  `fabric.wire.run()` scope whose every record was lost in memory leaves
+  no trace; a scoped run is therefore claimed only as
+  `complete_for_observed_scopes`.)*
 - **Run id.** In order: the innermost `fabric.wire.run(run_id)` scope;
   the ambient valid OTel trace id as `trace:<32hex>`;
   `source:<source_id>:<epoch>`. `fabric.wire.run()` validates its
-  argument. There are no per-run counters and no run index.
-- **Customer-chosen identifiers.** Run ids, `FABRIC_SOURCE_ID` and
-  `OTEL_SERVICE_NAME` are checked for shape only and travel on spans; the
-  tenant id names store paths and descriptors. None of them may contain
-  personal data or secrets (use opaque or pseudonymous values): the Node
-  cannot tell a patient number from a job id.
+  argument. *(→ 043 §6, H3: the scope's run id is emitted only as its `r-`
+  pseudonym, keyed by `FABRIC_WIRE_ID_KEY` when set.)* There are no per-run
+  counters and no run index.
+- **Customer-chosen identifiers.** A caller-supplied run id never leaves
+  the agent in clear (043 H3). `FABRIC_SOURCE_ID` and `OTEL_SERVICE_NAME`
+  are checked for shape only and travel on spans; the tenant id names store
+  paths and descriptors. These are operator-chosen labels and must be
+  opaque: none of them may contain personal data or secrets, because the
+  Node cannot tell a patient number from a job id.
 - *(→ 043 §2: with the spool, loss ranges and run/final markers are
   spooled records; `LossExporter`, requeue and resend are removed.)*
   **Loss records** (`fabric.capture_loss`): `{reason, count,
@@ -562,9 +592,25 @@ Offline and read-only; the only component that parses messages. Output:
 **Inputs.** `--spans PATH` (repeatable; sink JSONL or OTLP/JSON, whole-file
 or one export per line), `--store-root DIR` or `--store-uri
 s3://bucket/prefix` with `--tenant ID`, `--run ID` (repeatable; default
-all), `--out FILE`. Exit `0` when every reported run is
-`complete_for_declared_scope`, `1` when any is not or none was found, `2`
-for input/usage errors. Objects are resolved by object id through
+all; the clear id given to `fabric.wire.run()` is matched through its
+pseudonym, 043 §10), `--id-key-env NAME`, `--out FILE`. Exit `0` when every
+reported scope and every reported unscoped run is complete (runs
+`complete_for_declared_scope` or `complete_for_observed_scopes`, every
+`scopes[]` entry `complete_for_declared_scope`), `1` when anything is not
+or no run was found, `2` for input, usage or internal errors.
+
+**Diagnostics.** Messages on stderr are fixed text naming at most an
+option, an input position (`span file 2 line 7`) and an exception class:
+never an argument value, a path, a URL, a key or an exception's message
+(any of which can carry a user name, bucket or credential). Argument
+parsing errors print only the usage line. With `--out`, stderr also lists
+each run's id and verdict.
+
+**Report file.** `--out` writes a private temporary file in the target's
+directory (`0600` whatever the umask), fsyncs it and renames it over the
+target, so a reader never sees a partial report, an existing file's
+permissions never carry over, and an existing symlink or hard link at the
+target is replaced, never written through. Objects are resolved by object id through
 `store.evidence_ref_for`, never by a recorded path: a revision-4 span
 carries the bare id; a span from older capture carries a full ref, whose
 last path segment is used as the id.
@@ -580,14 +626,23 @@ checks carry the object id, digest, length and verification result, never
 the location the store resolved (no path, no `s3://` URI). Input files
 are named by digest, format and record count only: neither the span file
 paths nor the store root given on the command line appear (a path can name
-a user's home directory). The report is still customer data: it names runs,
-scopes, sources, exchanges and the tenant, which are operator-chosen labels
-that must not contain personal data (§6).
+a user's home directory). Run ids appear as recorded: capture writes a
+caller-supplied run id only as its `r-` pseudonym (043 H3). The report is
+still customer data: it names scopes, sources, exchanges and the tenant,
+operator-chosen labels that must not contain personal data (§6).
 
 **Algorithm.**
 
-1. *Normalize.* Exchange spans → exchanges (dedupe by `exchange_id`;
-   conflicting duplicates → `digest_mismatch`); loss spans → records (dedupe
+1. *Normalize.* Exchange spans → exchanges. Identical observations of an
+   `exchange_id` (an at-least-once retry) are one; differing ones are all
+   kept, and every claim each makes counts: its sequence is claimed, it is
+   a member of the run and scope it names, and each such exchange gets a
+   `digest_mismatch` (`conflicting_duplicate`, partial) in every run it
+   appears in. A sequence claimed by conflicting observations, or by more
+   than one exchange id (`sequence_conflict` on each exchange), is
+   *conflicted*: any window holding it (or, for a window without a scope,
+   adjacent to it) gets a `digest_mismatch` gap (`conflicting_claim`,
+   partial), whichever run the claims name. Loss spans → records (dedupe
    by content). Heartbeats are deduplicated by their logical identity
    `(source_id, epoch, kind, run_id, last_sequence)`, never by span id: a
    retried export is one record. A heartbeat without a valid kind, or a
@@ -645,7 +700,11 @@ that must not contain personal data (§6).
    `digest_mismatch` (partial). A captured body without a ref under
    `store_status` `failed`/`partial` → `missing_object` (partial);
    `disabled` → `checks.bytes = skipped`. `truncated` → `truncated`
-   (partial).
+   (partial). An exchange whose `response_state` is `complete` or
+   `closed_early` received a response, so a span without
+   `fabric.wire.response_sha256` → `missing_object` (`object_role:
+   response`, `response_not_recorded`, partial), with or without a store:
+   the record proves only the request.
 6. *Stitching* (needs verified bytes; otherwise `checks.stitching =
    skipped`). Decode `content_encoding` (identity, gzip, deflate; br/zstd
    when the optional module is importable) and parse JSON or SSE by media
@@ -668,8 +727,15 @@ that must not contain personal data (§6).
 7. *Verdict.* Any `partial` gap → `partial`; else any `unverified` gap or
    `skipped` check → `unverified`; else `complete_for_declared_scope`. Checks
    `sequence`, `loss`, `tail`, `bytes`, `stitching` are each `passed`,
-   `failed`, `skipped` or `not_applicable`. This is an integrity verdict for
-   the declared scope, not an evaluation of the agent.
+   `failed`, `skipped` or `not_applicable`. *(Revision 7, 043 §6 H5.)* The
+   rule is applied to each `fabric.wire.run()` scope over its own gaps
+   (window gaps, and byte and stitching gaps of the exchanges it tags),
+   reported in the top-level `scopes[]`, and to each run over all its gaps.
+   A run without scopes reports the result as is. A run with scopes reports
+   `complete_for_observed_scopes` instead of `complete_for_declared_scope`:
+   it is never better than its worst scope, and it makes no claim about a
+   scope that left no record. This is an integrity verdict for the observed
+   record, not an evaluation of the agent.
 
 ### 9.1 `fabric.stitch/v1` message projection (verifier only)
 
@@ -717,7 +783,8 @@ moves to `fabric/reconstruct/_stitch.py`; capture imports no parser.
    call is lost after a `periodic` heartbeat, with no `final` heartbeat, is
    `unverified`; a `run_start` exported twice (retry) without a `run_end`
    is `unverified`; closed `run_start`/`run_end` markers make a run
-   complete without a `final` heartbeat.
+   complete (`complete_for_observed_scopes`, rev 7) without a `final`
+   heartbeat.
 3. Queue full, buffer cap, store outage, exporter failure, a sampled-out
    span and shutdown with an open stream each produce the specified span
    flag or loss reason and never raise into the host. An abandoned stream
@@ -728,7 +795,17 @@ moves to `fabric/reconstruct/_stitch.py`; capture imports no parser.
    values, `sha256:`-prefixed hashes, revision-2 keys, raw-content keys and,
    on capture spans, every key outside the strict profile; the boot gate
    rejects a pipeline without fabricguard.
-6. Wheel qualification: `fabric/_autoload/sitecustomize.py` present; no
+6. Revision 7: a reused run id whose second scope left no record
+   reconstructs as `complete_for_observed_scopes` with one complete scope
+   and exit `0`; a scope with an inner gap is `partial` while its sibling
+   stays complete; a `complete` or `closed_early` exchange without response
+   evidence is `partial`; a conflicting duplicate claiming another run's
+   scope and sequence makes both runs and the claimed scope `partial`;
+   identical retries still deduplicate; CLI errors never echo a path,
+   argument value or exception message; `--out` is `0600` and replaces
+   existing files and links without writing through them
+   (`tests/test_reconstruct_claims.py`).
+7. Wheel qualification: `fabric/_autoload/sitecustomize.py` present; no
    `*.pth`, no other `sitecustomize.py`/`usercustomize.py`; importing
    `fabric` and `fabric.wire` (with `FABRIC_WIRE_AUTOLOAD=1` set) patches
    nothing, starts no thread and does not import httpx.

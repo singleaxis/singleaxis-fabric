@@ -96,8 +96,10 @@ EGRESS_AUTH = f"Bearer {MARK}_egress_token"
 # Set by the agent as its ambient W3C trace state (spec 042 §8, decision E7).
 TRACE_STATE = f"{MARK}_tracestate"
 CONTENT_MARKERS = [f"{MARK}_prompt", CITY, TOOL_RESULT, COMPLETION]
+# The run-id pseudonym key (spec 043 §6, H3): a secret the agent never emits.
+ID_KEY = f"{MARK}_idkey"
 SECRET_MARKERS = [
-    API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token", TRACE_STATE
+    API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token", TRACE_STATE, ID_KEY
 ]  # fmt: skip
 
 # Spec 042 §8: the fifteen capture keys, plus spec 043's run scope id, plus
@@ -356,6 +358,7 @@ class Stack:
             ),
             "FABRIC_WIRE_SPOOL_DIR": str(spool),
             "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
+            "FABRIC_WIRE_ID_KEY": ID_KEY,
             "OTEL_SERVICE_NAME": service,
             "OTEL_EXPORTER_OTLP_ENDPOINT": f"https://127.0.0.1:{self.ports['otlp_http']}",
             "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=" + quote(f"Bearer {token}"),
@@ -391,6 +394,7 @@ class Stack:
         )
         assert "capture not installed" not in result.stderr
         assert "autoload failed" not in result.stderr, result.stderr
+        assert ID_KEY not in result.stdout + result.stderr, "the id key was echoed"
         assert run.info["answer"].startswith(COMPLETION), run.info
         assert run.model_requests == 3 and self.model.unauthorized == 0
         # Spec 043 F1: the agent holds no store credentials and loads no cloud SDK.

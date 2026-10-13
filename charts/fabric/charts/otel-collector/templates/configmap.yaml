@@ -108,6 +108,10 @@ data:
         extra_allowed_trace_fields:
           {{- toYaml . | nindent 10 }}
         {{- end }}
+        {{- with .Values.fabric.guard.captureModelAllowlist }}
+        capture_model_allowlist:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
       {{- if .Values.batch.enabled }}
       batch:
         timeout: {{ .Values.batch.timeoutSeconds }}s

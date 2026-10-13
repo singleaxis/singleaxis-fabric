@@ -35,7 +35,7 @@ from fabric import wire
 from fabric._loss import LossEmitter
 from fabric._model_names import hashed_model
 from fabric.content_store import LocalFilesystemContentStore
-from fabric.reconstruct import reconstruct
+from fabric.reconstruct import reconstruct, run_id_pseudonym
 from fabric.reconstruct._inputs import pseudonym
 
 from .test_wire_helpers import capture_schemas, load_validator
@@ -44,6 +44,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE = REPO_ROOT / "examples" / "wire-capture" / "react_agent.py"
 TENANT = "tenant-int"
 RUN_ID = "run-int-1"
+#: What capture emits for RUN_ID (H3): only the pseudonym leaves the process.
+EMITTED_RUN_ID = run_id_pseudonym(RUN_ID)
 MODEL_URL = "http://model.local/v1/chat/completions"
 VALIDATOR = load_validator()
 SCHEMAS = capture_schemas()
@@ -211,7 +213,7 @@ def _verify(spans: Path, store: Any, **kwargs: Any) -> dict[str, Any]:
     return document
 
 
-def _only_run(document: Mapping[str, Any], run_id: str = RUN_ID) -> dict[str, Any]:
+def _only_run(document: Mapping[str, Any], run_id: str = EMITTED_RUN_ID) -> dict[str, Any]:
     runs: list[dict[str, Any]] = [r for r in document["runs"] if r["run_id"] == run_id]
     assert len(runs) == 1, document["runs"]
     return runs[0]
@@ -235,9 +237,14 @@ def _write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
 def test_wire_react_run_reconstructs_complete(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
 
-    run = _only_run(_verify(spans, store))
+    document = _verify(spans, store)
+    run = _only_run(document)
 
-    assert run["verdict"] == "complete_for_declared_scope"
+    # H5: a scoped run claims only its observed scopes; each scope is complete.
+    assert run["verdict"] == "complete_for_observed_scopes"
+    assert [(s["run_id"], s["verdict"]) for s in document["scopes"]] == [
+        (EMITTED_RUN_ID, "complete_for_declared_scope")
+    ]
     assert run["gaps"] == []
     assert set(run["checks"].values()) == {"passed"}
     assert len(run["exchanges"]) == 3
@@ -272,9 +279,10 @@ def test_spans_and_report_carry_no_content(tmp_path: Path) -> None:
     spans, store = _capture_wire_run(tmp_path)
     report = json.dumps(_verify(spans, store))
     span_text = spans.read_text("utf-8")
-    for marker in RAW_MARKERS:
+    for marker in (*RAW_MARKERS, RUN_ID):
         assert marker not in span_text
         assert marker not in report
+    assert EMITTED_RUN_ID in span_text and EMITTED_RUN_ID in report
     # The bytes did reach the customer store (headers never do).
     stored = b"".join(p.read_bytes() for p in (tmp_path / "store").rglob("*") if p.is_file())
     assert b"Lisbon" in stored
@@ -365,5 +373,6 @@ def test_wire_capture_example_runs_to_a_complete_verdict(tmp_path: Path) -> None
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads((tmp_path / "out" / "report.json").read_text("utf-8"))
     VALIDATOR.validate_document(report, SCHEMAS)
-    assert [run["verdict"] for run in report["runs"]] == ["complete_for_declared_scope"]
+    assert [run["verdict"] for run in report["runs"]] == ["complete_for_observed_scopes"]
+    assert {scope["verdict"] for scope in report["scopes"]} == {"complete_for_declared_scope"}
     assert [run["gaps"] for run in report["runs"]] == [[]]

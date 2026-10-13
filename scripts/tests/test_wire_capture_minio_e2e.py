@@ -21,9 +21,10 @@ Proves, in order (the tests share one stack):
 1. the agent process sees no ``AWS_*`` variable, imports no boto3/botocore
    and its spool drains; MinIO holds every body and descriptor under
    ``<prefix><tenant>/evidence/<id>`` and ``.../meta/<id>.json`` with SSE,
-   and nothing readable on MinIO's disk; reconstruct is
-   ``complete_for_declared_scope`` with zero gaps over an outer and a
-   nested run scope;
+   and nothing readable on MinIO's disk; reconstruct (``--run`` with the
+   clear run id) reports every scope ``complete_for_declared_scope`` and
+   the run ``complete_for_observed_scopes`` with zero gaps over an outer
+   and a nested run scope;
 2. MinIO down: the Node's content queue holds the bodies; MinIO back: they
    are written and the run is still complete;
 3. Node down: the agent's spool holds every record, the agent exits
@@ -34,7 +35,9 @@ Proves, in order (the tests share one stack):
 5. an unscoped run whose process is SIGKILLed mid-run is NOT complete;
 6. leak scan: prompts, completions, tool data, API key and tokens appear in
    no sink output, delivered OTLP byte, Node log or telemetry queue — only
-   in MinIO objects and the agent spool.
+   in MinIO objects and the agent spool; the clear run ids and the run-id
+   pseudonym key (``FABRIC_WIRE_ID_KEY``, H3) appear nowhere, not even in
+   the spool, the MinIO objects or the reconstruction reports.
 
 Gates: Docker Compose (else skip) and boto3 for the reconstruct/MinIO
 reader side, which is never installed into the agent: either importable
@@ -46,6 +49,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import importlib.util
 import json
 import os
@@ -108,11 +112,28 @@ NODE_ACCESS_KEY = "fabric-node-writer"
 NODE_SECRET = f"{MARK}_nodesecret"
 READER_ACCESS_KEY = "fabric-reader"
 READER_SECRET = f"{MARK}_readersecret"
+# The run-id pseudonym key (spec 043 §6, H3), shared by the agents and the
+# reconstruct reader; never emitted.
+ID_KEY = f"{MARK}_idkey"
 CONTENT_MARKERS = [f"{MARK}_prompt", CITY, TOOL_RESULT, COMPLETION]
 SECRET_MARKERS = [
     API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token", TRACE_STATE,
-    ROOT_PASSWORD, NODE_SECRET, READER_SECRET,
+    ROOT_PASSWORD, NODE_SECRET, READER_SECRET, ID_KEY,
 ]  # fmt: skip
+# Caller-supplied run ids, given to fabric.wire.run() in the clear: only their
+# pseudonyms may leave the agent (H3).
+RUN_REACT = f"{MARK}-run-react"
+RUN_OUTAGE = f"{MARK}-run-outage"
+RUN_BEFORE = f"{MARK}-run-before"
+RUN_AFTER = f"{MARK}-run-after"
+RUN_BARRIER = f"{MARK}-run-barrier"
+RUN_MARKERS = [RUN_REACT, RUN_OUTAGE, RUN_BEFORE, RUN_AFTER, RUN_BARRIER]
+
+
+def emitted(run_id: str) -> str:
+    """The run id the record carries (H3), computed independently of Fabric."""
+    digest = hmac.new(ID_KEY.encode(), run_id.encode(), hashlib.sha256).hexdigest()
+    return "r-" + digest[:32]
 
 
 def _boto3_path() -> str | None:
@@ -176,6 +197,8 @@ class Stack:
         }  # fmt: skip
         self.image = os.environ.get("FABRIC_NODE_IMAGE") or DEFAULT_NODE_IMAGE
         self.model = FakeModel(api_key=API_KEY, city=CITY, completion=COMPLETION)
+        # Every reconstruct report and its stdout/stderr, for the leak scan.
+        self.reports: list[str] = []
         token_file = root / "secrets" / "ingress.token"
         token_file.parent.mkdir()
         token_file.write_text(INGRESS_TOKEN, "utf-8")  # no trailing newline
@@ -307,6 +330,8 @@ class Stack:
             AWS_CONFIG_FILE=os.devnull,
             AWS_SHARED_CREDENTIALS_FILE=os.devnull,
         )
+        if not operator:  # --run <clear id> needs the agents' pseudonym key
+            env["FABRIC_WIRE_ID_KEY"] = ID_KEY
         if BOTO3_PATH:
             env["PYTHONPATH"] = BOTO3_PATH
         return env
@@ -385,6 +410,7 @@ class Stack:
             ),
             "FABRIC_WIRE_SPOOL_DIR": str(spool),
             "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
+            "FABRIC_WIRE_ID_KEY": ID_KEY,
             "OTEL_SERVICE_NAME": service,
             "OTEL_EXPORTER_OTLP_ENDPOINT": f"https://127.0.0.1:{self.ports['otlp_http']}",
             "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=" + quote(f"Bearer {token}"),
@@ -424,6 +450,8 @@ class Stack:
             f"capture did not install:\n{result.stderr}"
         )
         assert "autoload failed" not in result.stderr, result.stderr
+        for marker in (ID_KEY, *RUN_MARKERS):
+            assert marker not in result.stdout + result.stderr, marker
         assert agent.info["answer"].startswith(COMPLETION), agent.info
         assert self.model.requests - before == 3 and self.model.unauthorized == 0
         # (1) No cloud credentials and no cloud SDK in the agent process.
@@ -448,7 +476,9 @@ class Stack:
             check=False,
         )  # fmt: skip
         assert result.returncode in (0, 1), f"reconstruct usage error:\n{result.stderr}"
-        return result.returncode, json.loads(out.read_text("utf-8"))
+        text = out.read_text("utf-8")
+        self.reports.append(text + result.stdout + result.stderr)
+        return result.returncode, json.loads(text)
 
 
 def _keys(object_id: str) -> tuple[str, str]:
@@ -517,16 +547,22 @@ def _assert_minio_holds(
 
 
 def _assert_complete(report: dict[str, Any], runs: set[str]) -> dict[str, Any]:
+    """Each clear run id's pseudonymised run: every observed scope complete (H5)."""
     by_run = {run["run_id"]: run for run in report["runs"]}
-    assert runs <= set(by_run), (runs, set(by_run))
-    for run_id in runs:
+    expected = {emitted(run_id) for run_id in runs}
+    assert expected <= set(by_run), (expected, set(by_run))
+    for run_id in expected:
         run = by_run[run_id]
-        assert run["verdict"] == "complete_for_declared_scope", (run_id, run["gaps"])
+        assert run["verdict"] == "complete_for_observed_scopes", (run_id, run["gaps"])
         assert run["gaps"] == [], (run_id, run["gaps"])
         assert set(run["checks"].values()) <= {"passed", "not_applicable"}, run[
             "checks"
         ]
-    return by_run
+        scopes = [s for s in report["scopes"] if s["run_id"] == run_id]
+        assert scopes and {s["verdict"] for s in scopes} == {
+            "complete_for_declared_scope"
+        }, scopes
+    return {run_id: by_run[emitted(run_id)] for run_id in runs}
 
 
 @pytest.fixture(scope="module")
@@ -563,14 +599,15 @@ def test_scoped_openai_run_lands_in_minio_and_reconstructs(stack: Stack) -> None
     ).stdout.strip()  # fmt: skip
     assert entrypoint == '["/fabric-gate"]'
 
-    outer = "minio-e2e-react"
+    outer = RUN_REACT
     agent = stack.run_agent("minio-e2e-scoped", scopes=outer)
     spans = stack.wait_spans(agent.service, exchanges=3)
     exchanges = _exchanges(spans)
     assert [s["attributes"]["fabric.source.sequence"] for s in exchanges] == [0, 1, 2]
-    # Spec 043 F6: the streamed call ran in a nested scope of the same run.
+    # Spec 043 F6: the streamed call ran in a nested scope of the same run;
+    # H3: only the pseudonym of the caller's run id leaves the agent.
     run_ids = [s["attributes"]["fabric.run.id"] for s in exchanges]
-    assert run_ids == [outer] * 3, run_ids
+    assert run_ids == [emitted(outer)] * 3, run_ids
     scope_ids = [s["attributes"]["fabric.run.scope_id"] for s in exchanges]
     assert scope_ids[0] == scope_ids[2] != scope_ids[1], scope_ids
     markers = [
@@ -590,6 +627,7 @@ def test_scoped_openai_run_lands_in_minio_and_reconstructs(stack: Stack) -> None
     _assert_minio_holds(objects, exchanges)
     assert spool_records(agent.spool) == [], "the spool did not drain"
 
+    # --run takes the clear id; the reader computes its pseudonym (H3).
     code, report = stack.reconstruct(outer)
     run = _assert_complete(report, {outer})[outer]
     assert code == 0
@@ -607,7 +645,7 @@ def test_minio_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> Non
     minio = stack.container("minio")
     stack.docker("stop", minio)
     try:
-        agent = stack.run_agent("minio-e2e-store-outage", scopes="minio-e2e-outage")
+        agent = stack.run_agent("minio-e2e-store-outage", scopes=RUN_OUTAGE)
         spans = stack.wait_spans(agent.service, exchanges=3)
         # The Node accepted every body (the agent's spool drained) and holds
         # the writes in its persistent content queue while the store is down.
@@ -631,8 +669,8 @@ def test_minio_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> Non
         lambda: stack.queue_size("fabriccontent/s3") == 0, 60,
         lambda: "the content queue did not drain",
     )  # fmt: skip
-    code, report = stack.reconstruct("minio-e2e-outage")
-    _assert_complete(report, {"minio-e2e-outage"})
+    code, report = stack.reconstruct(RUN_OUTAGE)
+    _assert_complete(report, {RUN_OUTAGE})
     assert code == 0
 
 
@@ -643,7 +681,7 @@ def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -
     stack.docker("stop", "-t", "60", node)
     try:
         started = time.monotonic()
-        first = stack.run_agent(service, scopes="minio-e2e-before", spool=spool)
+        first = stack.run_agent(service, scopes=RUN_BEFORE, spool=spool)
         # The host is unaffected: it finished its work and exited normally,
         # within the bounded exit handler, while nothing could be delivered.
         assert time.monotonic() - started < 60
@@ -659,7 +697,7 @@ def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -
     stack.wait_health()
     # The agent process is restarted on the same spool: it replays the
     # earlier epoch's records first, then delivers its own.
-    second = stack.run_agent(service, scopes="minio-e2e-after", spool=spool)
+    second = stack.run_agent(service, scopes=RUN_AFTER, spool=spool)
     assert second.spool == first.spool
     spans = stack.wait_spans(service, exchanges=6, finals=2, timeout_s=180)
     assert spool_records(spool) == [], [p.name for p in spool_records(spool)]
@@ -667,8 +705,8 @@ def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -
     assert len({s["attributes"]["fabric.source.epoch"] for s in exchanges}) == 2
     objects = stack.wait_objects(_refs(exchanges))
     _assert_minio_holds(objects, exchanges)
-    code, report = stack.reconstruct("minio-e2e-before", "minio-e2e-after")
-    by_run = _assert_complete(report, {"minio-e2e-before", "minio-e2e-after"})
+    code, report = stack.reconstruct(RUN_BEFORE, RUN_AFTER)
+    by_run = _assert_complete(report, {RUN_BEFORE, RUN_AFTER})
     assert code == 0
     for run in by_run.values():
         assert len(run["scopes"]) == 2 and run["counts"]["exchanges"] == 3
@@ -701,7 +739,7 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
     }  # fmt: skip
     assert len(rejected_ids) == 3, [h["record_kind"] for h in headers]
     # Barrier: a correctly authenticated run sent afterwards arrives first.
-    barrier = stack.run_agent("minio-e2e-barrier", scopes="minio-e2e-barrier")
+    barrier = stack.run_agent("minio-e2e-barrier", scopes=RUN_BARRIER)
     stack.wait_objects(
         _refs(_exchanges(stack.wait_spans(barrier.service, exchanges=3)))
     )
@@ -752,12 +790,18 @@ def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
     sink_text = stack.sink.records.read_text("utf-8")
     raw = stack.sink.raw_bytes()
     logs = stack.node_logs()
+    reports = "\n".join(stack.reports)
     assert sink_text and raw and "fabric-node" in logs, "a leak scan would be vacuous"
     assert b"fabric.wire.exchange_id" in raw
-    for marker in CONTENT_MARKERS + SECRET_MARKERS:
+    assert reports and all(emitted(r) in sink_text for r in RUN_MARKERS), (
+        "a run-id leak scan would be vacuous"
+    )
+    for marker in CONTENT_MARKERS + SECRET_MARKERS + RUN_MARKERS:
         assert marker not in sink_text, f"{marker} reached the decoded sink output"
         assert marker.encode() not in raw, f"{marker} reached the delivered OTLP bytes"
         assert marker not in logs, f"{marker} appeared in the Node logs"
+    for marker in SECRET_MARKERS + RUN_MARKERS:
+        assert marker not in reports, f"{marker} appeared in a reconstruction report"
     assert volume_grep(f"{stack.project}_fabric-queue", MARK) == "", (
         "a marker persisted in the Node's telemetry queue volume"
     )
@@ -773,7 +817,7 @@ def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
     stored = b"".join(_decode(objects, key) for key in objects)
     for marker in CONTENT_MARKERS:
         assert marker.encode() in stored, f"{marker} is not in the MinIO objects"
-    for secret in SECRET_MARKERS:
+    for secret in SECRET_MARKERS + RUN_MARKERS:
         assert secret.encode() not in stored, f"{secret} was written to MinIO"
     # The wrong-token agent's undelivered records still hold its content.
     spooled = b"".join(
@@ -784,3 +828,12 @@ def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
         assert marker.encode() in spooled, f"{marker} is not in the undelivered spool"
     for secret in SECRET_MARKERS:
         assert secret.encode() not in spooled, f"{secret} was written to the spool"
+    # No spool this session wrote (records, quarantine, leftovers) names a
+    # clear run id or the key.
+    every_spool = b"".join(
+        path.read_bytes()
+        for path in (stack.root / "spool").rglob("*")
+        if path.is_file()
+    )
+    for marker in [ID_KEY, *RUN_MARKERS]:
+        assert marker.encode() not in every_spool, f"{marker} was written to a spool"

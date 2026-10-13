@@ -19,10 +19,13 @@ from typing import Any
 import pytest
 
 import fabric
+from fabric._sequence import run_pseudonym
 from fabric.wire.__main__ import autoload_path
 from fabric.wire._spool import unframe
 
 from .test_wire_spool import FakeNode, records, wait_for
+
+REPLAY = run_pseudonym("run-replay")  # spans carry the run id's pseudonym only
 
 SRC = Path(fabric.__file__).resolve().parents[1]
 AGENT = textwrap.dedent(
@@ -137,12 +140,12 @@ def test_sigkill_mid_send_then_restart_replays_exactly_the_undelivered(
     assert "CLOSED True" in out, err
     replayed = [
         a["fabric.wire.exchange_id"] for name, a, _ in node.spans[spans_before:]
-        if name == "fabric.model_call" and a["fabric.run.id"] == "run-replay"
+        if name == "fabric.model_call" and a["fabric.run.id"] == REPLAY
     ]  # fmt: skip
     assert sorted(replayed) == sorted(undelivered)  # exactly the undelivered, once each
     assert delivered_before | set(replayed) == {
         a["fabric.wire.exchange_id"] for a in node.named("fabric.model_call")
-        if a["fabric.run.id"] == "run-replay"
+        if a["fabric.run.id"] == REPLAY
     } and len(delivered_before | set(replayed)) == 6  # fmt: skip
     stored = {attrs["object_id"] for attrs, _ in node.content}
     for span in node.named("fabric.model_call"):
@@ -150,7 +153,7 @@ def test_sigkill_mid_send_then_restart_replays_exactly_the_undelivered(
     epochs = {a["fabric.source.epoch"] for a in node.named("fabric.model_call")}
     assert len(epochs) == 2  # the replay kept the first agent's epoch and sequences
     markers = [b for b in node.named("fabric.capture_heartbeat")
-               if b.get("fabric.run.id") == "run-replay"]  # fmt: skip
+               if b.get("fabric.run.id") == REPLAY]  # fmt: skip
     assert {b["fabric.heartbeat.kind"] for b in markers} == {"run_start", "run_end"}
     assert records(spool) == []
 
@@ -167,7 +170,7 @@ def test_two_agents_share_one_spool(node: FakeNode, tmp_path: Path) -> None:
     runs: dict[str, int] = {}
     for span in node.named("fabric.model_call"):
         runs[span["fabric.run.id"]] = runs.get(span["fabric.run.id"], 0) + 1
-    assert runs == {"run-0": 5, "run-1": 5}  # no record delivered zero times
+    assert runs == {run_pseudonym("run-0"): 5, run_pseudonym("run-1"): 5}  # none delivered 0x
     finals = [b for b in node.named("fabric.capture_heartbeat")
               if b["fabric.heartbeat.kind"] == "final"]  # fmt: skip
     assert len({b["fabric.source.epoch"] for b in finals}) == 2

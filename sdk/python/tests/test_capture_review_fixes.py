@@ -22,6 +22,7 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
 
 from fabric import wire
 from fabric.content_store import LocalFilesystemContentStore
+from fabric.reconstruct import run_id_pseudonym
 from fabric.reconstruct._inputs import pseudonym
 from fabric.tracing import build_private_provider
 
@@ -91,8 +92,11 @@ def test_reused_run_id_keeps_numbering_and_reconstructs_complete(tmp_path: Path)
         if row["name"] == "fabric.model_call"
     )
     assert sequences == list(range(6))
-    run = _only_run(_verify(spans, store), "job-42")
-    assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
+    document = _verify(spans, store)
+    run = _only_run(document, run_id_pseudonym("job-42"))
+    # H5: two scopes of one run id, each complete; the run claims only those.
+    assert run["verdict"] == "complete_for_observed_scopes", run["gaps"]
+    assert [s["verdict"] for s in document["scopes"]] == ["complete_for_declared_scope"] * 2
     assert len(run["exchanges"]) == 6
 
 

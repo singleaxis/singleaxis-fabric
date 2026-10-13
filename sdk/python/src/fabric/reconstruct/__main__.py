@@ -2,24 +2,36 @@
 # SPDX-License-Identifier: Apache-2.0
 """CLI: ``python -m fabric.reconstruct``.
 
-Exit codes: ``0`` every reported run is ``complete_for_declared_scope``;
-``1`` any run is ``partial`` or ``unverified``, or no run was reconstructed;
-``2`` input or usage error.
+Exit codes (spec 042 §9, decision H5): ``0`` every reported scope and every
+unscoped run is complete (runs are ``complete_for_declared_scope`` or
+``complete_for_observed_scopes``); ``1`` anything is ``partial`` or
+``unverified``, or no run was reconstructed; ``2`` input, usage or internal
+error.
+
+Diagnostics are fixed text (spec 042 §9 "Diagnostics"): stderr never carries
+an argument value, a path, a key or an underlying exception's message, only
+option names, input positions and exception class names. The report file is
+written atomically and is readable by its owner only (``0600``).
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import re
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
 from fabric._model_names import parse_model_allowlist
+from fabric.reconstruct._ids import ID_KEY_ENV, MIN_ID_KEY_BYTES, run_id_pseudonym
 from fabric.reconstruct._inputs import ReconstructInputError
+from fabric.reconstruct._report import COMPLETE, COMPLETE_VERDICTS
 from fabric.reconstruct._verify import reconstruct
 
 EXIT_COMPLETE = 0
@@ -27,14 +39,29 @@ EXIT_INCOMPLETE = 1
 EXIT_USAGE = 2
 _DEFAULT_S3_PREFIX = "fabric/content/"
 MODEL_ALLOWLIST_ENV = "FABRIC_WIRE_MODEL_ALLOWLIST"
+_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_PROG = "fabric.reconstruct"
+
+
+def _fail(message: str) -> None:
+    print(f"{_PROG}: {message}", file=sys.stderr)
+
+
+class _Parser(argparse.ArgumentParser):
+    """argparse whose errors never echo the offending argument values."""
+
+    def error(self, message: str) -> NoReturn:  # argparse's message names values: dropped
+        self.print_usage(sys.stderr)
+        _fail("invalid or missing arguments (see --help)")
+        raise SystemExit(EXIT_USAGE)
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="python -m fabric.reconstruct",
         description=(
             "Reconstruct runs from captured model exchanges and state an integrity "
-            "verdict for the declared scope. Offline and read-only."
+            "verdict per run scope and per run. Offline and read-only."
         ),
     )
     parser.add_argument(
@@ -78,9 +105,20 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         dest="runs",
         metavar="RUN_ID",
-        help="only report this run id (repeatable)",
+        help="only report this run (repeatable): the id given to fabric.wire.run() in the "
+        "clear, its r- pseudonym, or a trace:/source: fallback id",
     )
-    parser.add_argument("--out", metavar="FILE", help="write the report here instead of stdout")
+    parser.add_argument(
+        "--id-key-env",
+        metavar="NAME",
+        help=f"environment variable holding the run-id key (default: {ID_KEY_ENV}; when the "
+        "default is unset, run ids are pseudonymised without a key, as capture does)",
+    )
+    parser.add_argument(
+        "--out",
+        metavar="FILE",
+        help="write the report here (atomically, mode 0600) instead of stdout",
+    )
     return parser
 
 
@@ -128,7 +166,7 @@ def _store(args: argparse.Namespace) -> Any | None:
             from fabric.content_store.local import LocalFilesystemContentStore  # noqa: PLC0415
 
             if not Path(args.store_root).is_dir():
-                raise ReconstructInputError(f"--store-root {args.store_root} is not a directory")
+                raise ReconstructInputError("--store-root is not a directory")
             return LocalFilesystemContentStore(root=args.store_root, tenant_id=args.tenant)
         from fabric.content_store.s3 import S3ContentStore  # noqa: PLC0415
 
@@ -147,19 +185,27 @@ def _store(args: argparse.Namespace) -> Any | None:
             ),
             addressing_style="path" if args.s3_path_style else None,
         )
-    except ValueError as exc:
-        if isinstance(exc, ReconstructInputError):
-            raise
-        raise ReconstructInputError(str(exc)) from exc
+    except ReconstructInputError:
+        raise
+    except ImportError:
+        raise ReconstructInputError("--store-uri needs the fabric[s3] extra (boto3)") from None
+    except ValueError:
+        # Fixed text: a constructor message can echo a bucket, prefix or credential.
+        raise ReconstructInputError(
+            "the content store options are invalid (--store-root/--store-uri/--tenant)"
+        ) from None
 
 
-def _exit_code(document: dict[str, Any]) -> int:
+def _exit_code(document: Mapping[str, Any]) -> int:
+    """``0`` iff every reported scope and every unscoped run is complete (H5)."""
+
     runs = document["runs"]
     if not runs:
         return EXIT_INCOMPLETE
-    if all(run["verdict"] == "complete_for_declared_scope" for run in runs):
-        return EXIT_COMPLETE
-    return EXIT_INCOMPLETE
+    complete = all(run["verdict"] in COMPLETE_VERDICTS for run in runs) and all(
+        scope["verdict"] == COMPLETE for scope in document.get("scopes", [])
+    )
+    return EXIT_COMPLETE if complete else EXIT_INCOMPLETE
 
 
 def _model_allowlist(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, ...]:
@@ -174,6 +220,71 @@ def _model_allowlist(args: argparse.Namespace, environ: Mapping[str, str]) -> tu
         ) from None
 
 
+def _id_key(args: argparse.Namespace, environ: Mapping[str, str]) -> bytes | None:
+    """The run-id key (decision H3); never echoed. An explicitly named variable must be set."""
+
+    name = args.id_key_env if args.id_key_env is not None else ID_KEY_ENV
+    if not _ENV_NAME_RE.fullmatch(name):
+        raise ReconstructInputError("--id-key-env must name an environment variable")
+    value = environ.get(name)
+    if not value:
+        if args.id_key_env is not None:
+            raise ReconstructInputError("the variable named by --id-key-env is not set")
+        return None
+    key = value.encode("utf-8", "surrogatepass")
+    if len(key) < MIN_ID_KEY_BYTES:
+        raise ReconstructInputError(f"the run-id key must be at least {MIN_ID_KEY_BYTES} bytes")
+    return key
+
+
+def _wanted_runs(args: argparse.Namespace, environ: Mapping[str, str]) -> set[str] | None:
+    """``--run`` values as the record carries them: as given, and as their pseudonym.
+
+    Capture emits a caller-supplied run id only as its ``r-`` pseudonym
+    (decision H3); generated ``trace:``/``source:`` ids and an ``r-`` value
+    given directly match as given.
+    """
+
+    if args.runs is None:
+        return None
+    key = _id_key(args, environ)
+    wanted: set[str] = set()
+    for value in args.runs:
+        wanted.update((value, run_id_pseudonym(value, key)))
+    return wanted
+
+
+def _write_report(path: str, text: str) -> None:
+    """Write ``text`` to ``path`` atomically, readable by the owner only.
+
+    A private temporary file in the target directory is written, fsync'd and
+    renamed over the target, so a reader never sees a partial report and an
+    existing file, hard link or symlink at ``path`` is replaced (never written
+    through) with a ``0600`` file whatever the umask or its old mode.
+    """
+
+    target = Path(path)
+    directory = target.parent
+    fd, temporary = tempfile.mkstemp(prefix=".fabric-reconstruct-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(text.encode("utf-8"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+    with contextlib.suppress(OSError):
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -182,18 +293,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.spans,
             store=_store(args),
             tenant_id=args.tenant,
-            run_ids=args.runs,
+            run_ids=_wanted_runs(args, os.environ),
             model_allowlist=allowlist,
         )
     except ReconstructInputError as exc:
-        print(f"fabric.reconstruct: {exc}", file=sys.stderr)
+        _fail(str(exc))
+        return EXIT_USAGE
+    except Exception as exc:  # fixed text: a message can carry paths or secrets
+        _fail(f"internal error ({type(exc).__name__})")
         return EXIT_USAGE
     text = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
     if args.out:
         try:
-            Path(args.out).write_text(text, encoding="utf-8")
-        except OSError as exc:
-            print(f"fabric.reconstruct: cannot write {args.out}: {exc}", file=sys.stderr)
+            _write_report(args.out, text)
+        except OSError:
+            _fail("cannot write the --out report file")
             return EXIT_USAGE
         for run in document["runs"]:
             print(
@@ -204,7 +318,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         sys.stdout.write(text)
     if not document["runs"]:
-        print("fabric.reconstruct: no runs reconstructed", file=sys.stderr)
+        _fail("no runs reconstructed")
     return _exit_code(document)
 
 

@@ -16,6 +16,11 @@
 //     the collector merges them after every --config source, so they could
 //     undo a validated pipeline; overrides must go in an additional --config
 //     file, which the gate merges and validates;
+//   - content (spec 043 §5) stays on logs/content pipelines, and the
+//     fabriccontent exporters sharing a receiver or pipeline together allow
+//     one tenant unless every one of them sets allow_multiple_tenants: true;
+//   - no OTLP exporter endpoint and no fabriccontent S3 endpoint carries user
+//     info, a query or a fragment;
 //   - every bearertokenauth extension that reads tokens from a file must point
 //     at a file the pinned extension (v0.150.0) cannot misread: it splits on
 //     newlines and retains empty entries, so a blank line or trailing newline

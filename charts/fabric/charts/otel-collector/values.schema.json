@@ -117,6 +117,11 @@
               "type": "array",
               "items": {"type": "string", "minLength": 1},
               "uniqueItems": true
+            },
+            "captureModelAllowlist": {
+              "type": "array",
+              "items": {"type": "string", "minLength": 1, "maxLength": 256},
+              "uniqueItems": true
             }
           }
         }
@@ -127,7 +132,7 @@
       "additionalProperties": false,
       "required": ["endpoint", "insecure", "insecureSkipVerify", "requireTLS", "tls", "auth", "requireAuth", "requireEndpoint", "sendingQueue", "retry", "timeout", "requireDurableQueue"],
       "properties": {
-        "endpoint": {"type": "string", "pattern": "^$|^https?://"},
+        "endpoint": {"type": "string", "maxLength": 2048, "description": "Absolute http(s) URL; host, port, user info, query and fragment are validated at render time with diagnostics that never echo the value."},
         "insecure": {"type": "boolean"},
         "insecureSkipVerify": {"type": "boolean"},
         "requireTLS": {"type": "boolean"},
@@ -236,7 +241,7 @@
             "bucket": {"type": "string", "pattern": "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"},
             "prefix": {"type": "string", "pattern": "^[^/].*/$"},
             "region": {"type": "string", "pattern": "^$|^[a-z0-9-]{1,64}$"},
-            "endpoint": {"type": "string", "pattern": "^$|^https?://[^/?#@\\s]+(/[^?#@\\s]*)?$"},
+            "endpoint": {"type": "string", "maxLength": 2048, "description": "Optional S3-compatible endpoint; validated at render time like exporter.endpoint (never echoed)."},
             "usePathStyle": {"type": "boolean"},
             "sse": {"enum": ["", "AES256", "aws:kms"]},
             "kmsKeyId": {"type": "string", "maxLength": 2048},

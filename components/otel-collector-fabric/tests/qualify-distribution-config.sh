@@ -160,6 +160,9 @@ processors:
     event_class_attribute: event_class
     drop_unknown_classes: true
     max_field_bytes: 8192
+    # H4: the Node counterpart of FABRIC_WIRE_MODEL_ALLOWLIST; starting the
+    # artifact proves the built processor recognizes the field.
+    capture_model_allowlist: [acme-chat-v1, "acme-*"]
 
 exporters:
   otlp_http/fabric:
@@ -333,6 +336,13 @@ content_violation_configs() {
     >"${dir}/bad-content-dest.yaml"
   printf 'service:\n  pipelines:\n    logs/content:\n      processors: [memory_limiter, fabricguard]\n' \
     >"${dir}/bad-content-guard.yaml"
+  # H2: a second fabriccontent exporter for another tenant behind the same
+  # content receiver (each exporter alone allows one tenant).
+  printf 'exporters:\n  fabriccontent/b:\n    allowed_tenants: [tenant-b]\n    backend: file\n    file:\n      directory: /tmp/fabric-content-b\nservice:\n  pipelines:\n    logs/content:\n      exporters: [fabriccontent, fabriccontent/b]\n' \
+    >"${dir}/bad-content-tenants.yaml"
+  # A credential-bearing destination URL (the secret must not be echoed).
+  printf 'exporters:\n  otlp_http/fabric:\n    endpoint: https://user:QUALIFY_SECRET@127.0.0.1:1\n' \
+    >"${dir}/bad-content-endpoint.yaml"
   chmod 0644 "$1" "${dir}"/bad-content-*.yaml
 }
 
@@ -369,6 +379,9 @@ if [[ "${mode}" == "image" ]]; then
       || fail "rejected ${why} produced no fabric-gate refusal message"
     grep -qF -- "${reason}" <<<"${logs}" \
       || fail "rejected ${why} for a different reason than expected: ${logs}"
+    if grep -qF QUALIFY_SECRET <<<"${logs}"; then
+      fail "refusal of ${why} echoed a credential"
+    fi
   }
 
   sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
@@ -404,7 +417,11 @@ if [[ "${mode}" == "image" ]]; then
     "may export only to fabriccontent" --config=/fabric-config-test/bad-content-dest.yaml
   gate_expect_refusal "${container_name}-content-guard" "fabricguard on the content pipeline" \
     "only memory_limiter may run" --config=/fabric-config-test/bad-content-guard.yaml
-  printf '%s PASS: image entrypoint refused unprotected pipelines, content misrouting, unsafe token material and --set overrides\n' "${prefix}"
+  gate_expect_refusal "${container_name}-content-tenants" "two tenants across content exporters on one receiver" \
+    "together allow more than one tenant" --config=/fabric-config-test/bad-content-tenants.yaml
+  gate_expect_refusal "${container_name}-endpoint-userinfo" "a credential-bearing destination endpoint" \
+    "must not contain user info, a query or a fragment" --config=/fabric-config-test/bad-content-endpoint.yaml
+  printf '%s PASS: image entrypoint refused unprotected pipelines, content misrouting, split tenants, credential URLs, unsafe token material and --set overrides\n' "${prefix}"
 elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
   # Binary mode: the same refusal invariants run through dist/fabric-gate,
   # which resolves the sibling collector and exits non-zero before exec.
@@ -418,6 +435,9 @@ elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
     fi
     grep -qF -- "${reason}" <<<"${out}" \
       || fail "fabric-gate rejected ${why} for a different reason than expected: ${out}"
+    if grep -qF QUALIFY_SECRET <<<"${out}"; then
+      fail "refusal of ${why} echoed a credential"
+    fi
   }
   sed 's|^    traces:|    metrics:\n      receivers: [otlp]\n      processors: [memory_limiter]\n      exporters: [otlp_http/fabric]\n    traces:|' \
     "${runtime}/config.yaml" >"${badcfg}"
@@ -441,7 +461,11 @@ elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
     --config="${runtime}/bad-content-dest.yaml"
   gate_expect_refusal_bin "fabricguard on the content pipeline" "only memory_limiter may run" \
     --config="${runtime}/bad-content-guard.yaml"
-  printf '%s PASS: fabric-gate binary refused unprotected pipelines, content misrouting, unsafe token material and --set overrides\n' "${prefix}"
+  gate_expect_refusal_bin "two tenants across content exporters on one receiver" "together allow more than one tenant" \
+    --config="${runtime}/bad-content-tenants.yaml"
+  gate_expect_refusal_bin "a credential-bearing destination endpoint" "must not contain user info, a query or a fragment" \
+    --config="${runtime}/bad-content-endpoint.yaml"
+  printf '%s PASS: fabric-gate binary refused unprotected pipelines, content misrouting, split tenants, credential URLs, unsafe token material and --set overrides\n' "${prefix}"
 fi
 
 printf '%s PASS: recorder artifact accepted mTLS ingress, protection, durable OTLP/HTTP export and the content path\n' "${prefix}"

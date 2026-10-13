@@ -135,7 +135,7 @@ attrs = {
     "stored_byte_length": len(body), "stored_sha256": digest,
     "source_byte_length": len(body), "source_sha256": digest,
     "source_id": "wire-3f9a1c2b7d4e5f60", "source_epoch": 1791331200000000000,
-    "source_sequence": 1, "run_id": "run-travel-42",
+    "source_sequence": 1, "run_id": "r-5f0c9a3e1b7d4c2a8e6f0b1d3c5a7e9f",
     "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
     "captured_at": "2026-10-07T00:00:01.120000+00:00",
 }
@@ -206,7 +206,7 @@ fi
 logs="$(docker logs "${container}" 2>&1)"
 grep -qF 'fabriccontent: dropped content record' <<<"${logs}" || fail "no drop log line for the tampered record"
 grep -qF 'digest_mismatch' <<<"${logs}" || fail "drop log line does not name digest_mismatch"
-for secret in tenant-a 0b8e1c52 gpt-4o run-travel-42; do
+for secret in tenant-a 0b8e1c52 gpt-4o r-5f0c9a3e1b7d4c2a8e6f0b1d3c5a7e9f; do
   if grep -qF -- "${secret}" <<<"${logs}"; then
     fail "collector logs contain ${secret}"
   fi

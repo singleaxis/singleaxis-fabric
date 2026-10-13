@@ -110,7 +110,7 @@ printf %s "$(openssl rand -hex 32)" > secrets/ingress.token
 sudo chown "$(id -u)":65532 secrets/ingress.token && chmod 0440 secrets/ingress.token
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
-make verify-prod    # proves health, 401 unauthenticated (spans and content), 200 authenticated (queue metrics warn-only)
+make verify-prod    # proves health, 401 unauthenticated (spans and content), 200 authenticated spans (queue metrics warn-only)
 make logs-prod
 ```
 
@@ -154,7 +154,13 @@ which preflight warns about). For S3 set `FABRIC_CONTENT_BACKEND=s3`,
 S3-compatible store, with keys from a credentials file you mount as a
 Compose secret and point `AWS_SHARED_CREDENTIALS_FILE` at in a further
 override. Never put keys in `.env`. Preflight checks the bucket name,
-prefix, region, an `https://` endpoint without credentials, and SSE. See
+prefix, region and SSE, and validates `FABRIC_CONTENT_S3_ENDPOINT` like
+`FABRIC_EXPORT_ENDPOINT`: an `https://` URL with a valid host and port and
+no user info, query or fragment (the value is never printed).
+`make verify-prod` checks that unauthenticated content is rejected, not that
+an authenticated upload reaches the store; after each deployment change run
+the content canary in
+[`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md#5-verify-a-run). See
 [`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md)
 for the minimal Node-writer and reader IAM.
 

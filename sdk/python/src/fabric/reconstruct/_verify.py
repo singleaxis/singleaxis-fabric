@@ -6,9 +6,11 @@ The verifier is read-only and the only component that parses messages. It
 normalizes exchange, loss and heartbeat spans, accounts for every allocated
 sequence per ``(source_id, source_epoch)``, verifies stored bytes against
 the span digests and descriptors, derives message digests and tool-call ids
-from those bytes, stitches exchanges into threads and states a verdict for
-a declared scope. The verdict is an integrity statement about the *record*;
-it never judges the agent.
+from those bytes, stitches exchanges into threads and states a verdict per
+``fabric.wire.run()`` scope and per run. Completeness is claimed only for
+what the record holds: a scoped run is at best ``complete_for_observed_scopes``
+(spec 043 §6, decision H5). The verdict is an integrity statement about the
+*record*; it never judges the agent.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from fabric.reconstruct._report import (
     format_datetime,
     format_ns,
     gap_counts,
+    run_verdict,
     sort_gaps,
     verdict_for,
 )
@@ -61,6 +64,8 @@ _STITCH_GAPS = frozenset(
     {"unparsed_exchange", "prefix_break", "unmatched_tool_call", "unresolved_previous_response"}
 )
 _HTTP_ERROR = 400
+# Response states that say a response was received: its digest must be recorded.
+_RESPONSE_EXPECTED = frozenset({"complete", "closed_early"})
 
 
 # --------------------------------------------------------------------------
@@ -78,6 +83,10 @@ class _Source:
     top: int = -1
     missing: list[tuple[int, int]] = field(default_factory=list)
     segments: dict[tuple[int, int], list[Segment]] = field(default_factory=dict)
+    # Sequences claimed by conflicting observations (one exchange id seen with
+    # different values, or one sequence claimed by several exchange ids). No
+    # window holding one can be complete, whichever run the claims name.
+    conflicted: set[int] = field(default_factory=set)
 
     def finalize(self) -> None:
         self.top = max(
@@ -246,8 +255,8 @@ def reconstruct(
     reader = StoreReader(store, tenant_id) if store is not None else None
     span_files: list[dict[str, Any]] = []
     verifier = _Verifier(reader, allowlist)
-    for path in paths:
-        fmt, records = read_span_file(path)
+    for index, path in enumerate(paths, start=1):
+        fmt, records = read_span_file(path, label=f"span file {index}")
         span_files.append(_span_file_entry(path, fmt, len(records)))
         for record in records:
             verifier.add(observe(record))
@@ -255,6 +264,7 @@ def reconstruct(
     inputs: dict[str, Any] = {"span_files": span_files}
     if reader is not None:
         inputs["store"] = {"kind": reader.kind, "tenant_id": reader.tenant_id}
+    runs, scopes = verifier.build_runs(set(run_ids) if run_ids is not None else None)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": format_datetime(generated_at or datetime.now(tz=UTC)),
@@ -264,7 +274,8 @@ def reconstruct(
             verifier.sources[key].to_json(verifier.exchange_count[key])
             for key in sorted(verifier.sources)
         ],
-        "runs": verifier.build_runs(set(run_ids) if run_ids is not None else None),
+        "runs": runs,
+        "scopes": scopes,
     }
 
 
@@ -310,10 +321,14 @@ class _Verifier:
     def __init__(self, reader: StoreReader | None, allowlist: Sequence[str] = ()) -> None:
         self.reader = reader
         self.allowlist = tuple(allowlist)
-        self.exchanges: dict[str, ExchangeObs] = {}
+        # Every distinct observation per exchange id, in input order. Identical
+        # retries are one observation; differing ones are all kept (each claim
+        # of a sequence, run and scope counts) and mark the id conflicting.
+        self.observations: dict[str, list[ExchangeObs]] = {}
         self.conflicts: set[str] = set()
         self.sources: dict[SourceKey, _Source] = {}
         self.exchange_count: dict[SourceKey, int] = defaultdict(int)
+        self._counted: set[tuple[str, SourceKey]] = set()
         self.claims: dict[tuple[SourceKey, int], set[str]] = defaultdict(set)
         self.scopes: dict[str, _Scope] = {}
         self.run_scopes: dict[str, set[str]] = defaultdict(set)
@@ -332,17 +347,19 @@ class _Verifier:
 
     def add(self, obs: ExchangeObs | LossObs | HeartbeatObs | None) -> None:
         if isinstance(obs, ExchangeObs):
-            known = self.exchanges.get(obs.exchange_id)
-            if known is None:
-                self.exchanges[obs.exchange_id] = obs
-                source = self._source(obs.source)
-                source.sequences.add(obs.source_sequence)
-                self.exchange_count[obs.source] += 1
-                self.claims[(obs.source, obs.source_sequence)].add(obs.exchange_id)
-                if obs.scope_id is not None:
-                    self._scope(obs.scope_id, obs.run_id).exchanges.append(obs)
-            elif known != obs:
+            seen = self.observations.setdefault(obs.exchange_id, [])
+            if obs in seen:
+                return  # an identical retry (at-least-once delivery)
+            seen.append(obs)
+            if len(seen) > 1:
                 self.conflicts.add(obs.exchange_id)
+            self._source(obs.source).sequences.add(obs.source_sequence)
+            if (obs.exchange_id, obs.source) not in self._counted:
+                self._counted.add((obs.exchange_id, obs.source))
+                self.exchange_count[obs.source] += 1
+            self.claims[(obs.source, obs.source_sequence)].add(obs.exchange_id)
+            if obs.scope_id is not None:
+                self._scope(obs.scope_id, obs.run_id).exchanges.append(obs)
         elif isinstance(obs, LossObs):
             self._source((obs.source_id, obs.source_epoch)).losses.add(obs)
         elif isinstance(obs, HeartbeatObs) and obs not in self._heartbeats:
@@ -364,22 +381,33 @@ class _Verifier:
     def finalize(self) -> None:
         for source in self.sources.values():
             source.finalize()
+        for (key, sequence), ids in self.claims.items():
+            if len(ids) > 1 or not ids.isdisjoint(self.conflicts):
+                self.sources[key].conflicted.add(sequence)
         for scope in self.scopes.values():
             scope.finalize()
 
-    def build_runs(self, wanted: set[str] | None) -> list[dict[str, Any]]:
-        members: dict[str, list[ExchangeObs]] = defaultdict(list)
-        for exchange in self.exchanges.values():
-            members[exchange.run_id].append(exchange)
+    def build_runs(
+        self, wanted: set[str] | None
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """The reported runs and, in run order, the per-scope verdicts of their scopes."""
+
+        observed: dict[str, list[ExchangeObs]] = defaultdict(list)
+        for observations in self.observations.values():
+            for exchange in observations:
+                observed[exchange.run_id].append(exchange)
         runs: list[dict[str, Any]] = []
-        for run_id in sorted(set(members) | set(self.run_scopes)):
+        scopes: list[dict[str, Any]] = []
+        for run_id in sorted(set(observed) | set(self.run_scopes)):
             if wanted is not None and run_id not in wanted:
                 continue
-            scopes = [self.scopes[scope_id] for scope_id in self.run_scopes.get(run_id, ())]
-            run = _Run(self, run_id, members.get(run_id, []), scopes)
+            members = [self.scopes[scope_id] for scope_id in self.run_scopes.get(run_id, ())]
+            run = _Run(self, run_id, observed.get(run_id, []), members)
             if run.windows:
-                runs.append(run.build())
-        return runs
+                report, scope_reports = run.build()
+                runs.append(report)
+                scopes.extend(scope_reports)
+        return runs, scopes
 
 
 # --------------------------------------------------------------------------
@@ -433,23 +461,42 @@ def _by_source(exchanges: Iterable[ExchangeObs]) -> dict[SourceKey, list[int]]:
 
 
 class _Run:
+    """One run id: its windows, gaps and, for a scoped run, one verdict per scope.
+
+    ``observed`` holds every distinct observation naming the run, including
+    every version of a conflicting exchange id (each claim counts). The
+    report lists one entry per exchange id; a gap about an exchange counts
+    against every scope any of its observations names.
+    """
+
     def __init__(
         self,
         verifier: _Verifier,
         run_id: str,
-        members: list[ExchangeObs],
+        observed: list[ExchangeObs],
         scopes: Sequence[_Scope],
     ) -> None:
         self.verifier = verifier
         self.run_id = run_id
+        self.observed = observed
+        representative: dict[str, ExchangeObs] = {}
+        self.scopes_of: dict[str, set[str]] = defaultdict(set)
+        for exchange in observed:
+            representative.setdefault(exchange.exchange_id, exchange)
+            if exchange.scope_id is not None:
+                self.scopes_of[exchange.exchange_id].add(exchange.scope_id)
         self.members = sorted(
-            members, key=lambda x: (x.start_ns, x.source_id, x.source_epoch, x.source_sequence)
+            representative.values(),
+            key=lambda x: (x.start_ns, x.source_id, x.source_epoch, x.source_sequence),
         )
         self.order = {exchange.exchange_id: i for i, exchange in enumerate(self.members)}
         self.scopes = sorted(
             scopes, key=lambda x: (x.key, -2 if x.start is None else x.start, x.scope_id)
         )
         self.gaps: list[Gap] = []
+        self.scope_gaps: dict[str, list[Gap]] = {scope.scope_id: [] for scope in self.scopes}
+        # The scopes a window gap found right now belongs to (spec 043 §6, H5).
+        self._attribute: tuple[str, ...] = ()
         self.windows: list[_Window] = []
         if self.scopes:
             self._scoped()
@@ -457,12 +504,20 @@ class _Run:
             self._unscoped()
         self.windows.sort(key=lambda w: (w.key, w.low, w.high, w.scope_id or ""))
 
+    def _add(self, gap: Gap, scopes: Iterable[str] | None = None) -> None:
+        """Record a gap for the run and for each scope it counts against."""
+
+        self.gaps.append(gap)
+        for scope_id in self._attribute if scopes is None else scopes:
+            if scope_id in self.scope_gaps:
+                self.scope_gaps[scope_id].append(gap)
+
     # -- completeness (spec 042 §9.5 rule b, spec 043 §6) ----------------------
 
     def _unscoped(self) -> None:
         """A run without scopes: only the epoch's final heartbeat proves its end."""
 
-        for key, own in sorted(_by_source(self.members).items()):
+        for key, own in sorted(_by_source(self.observed).items()):
             problem = self.verifier.sources[key].tail_problem()
             closed_by: Literal["final_heartbeat"] | None = (
                 "final_heartbeat" if problem is None else None
@@ -472,7 +527,7 @@ class _Run:
             self._tail(key, problem)
 
     def _scoped(self) -> None:
-        """A run with scopes is complete only if every scope is closed and clean.
+        """A run with scopes: each scope is judged on its own (decision H5).
 
         A closed scope's window ``[a + 1, b]`` is proven by its markers:
         ``a`` was allocated before entry and ``b + 1`` after exit, so only
@@ -480,11 +535,13 @@ class _Run:
         cannot be attributed to a particular concurrent scope, so it counts
         against every scope whose window holds it). An open or conflicting
         scope, or a scoped exchange outside its scope, is ``unverified``; so
-        is an exchange of the run that started outside every scope.
+        is an exchange of the run that started outside every scope (a
+        run-level gap that belongs to no scope).
         """
 
         for scope in self.scopes:
-            own = [x for x in self.members if x.scope_id == scope.scope_id]
+            self._attribute = (scope.scope_id,)
+            own = [x for x in self.observed if x.scope_id == scope.scope_id]
             if scope.problem is None and scope.start is not None and scope.end is not None:
                 if scope.start < scope.end:
                     self.windows.append(
@@ -495,7 +552,8 @@ class _Run:
                 self._inside_gaps(scope.key, scope.start + 1, scope.end)
                 continue
             self._open_scope(scope, own)
-        unscoped = [x for x in self.members if x.scope_id is None]
+        self._attribute = ()
+        unscoped = [x for x in self.observed if x.scope_id is None]
         for key, own_sequences in sorted(_by_source(unscoped).items()):
             low, high = min(own_sequences), max(own_sequences)
             self.windows.append(_Window(key, low, high))
@@ -542,6 +600,7 @@ class _Run:
                 clipped_low, clipped_high = max(seg_low, low), min(seg_high, top)
                 if clipped_low <= clipped_high:
                     self._sequence_gap(key, clipped_low, clipped_high, reason, effect)
+        self._conflicted(key, low, top)
 
     def _near_gaps(self, key: SourceKey, low: int, high: int) -> None:
         """Spec 042 §9.5 rule (b) for a window bounded only by its exchanges.
@@ -563,6 +622,24 @@ class _Run:
                 continue
             for seg_low, seg_high, reason in source.segments[(first, last)]:
                 self._sequence_gap(key, seg_low, seg_high, reason, effect)
+        self._conflicted(key, low - 1, high + 1)
+
+    def _conflicted(self, key: SourceKey, low: int, high: int) -> None:
+        """A sequence with conflicting claims inside a window invalidates it (partial)."""
+
+        for sequence in sorted(self.verifier.sources[key].conflicted):
+            if low <= sequence <= high:
+                self._add(
+                    Gap(
+                        "digest_mismatch",
+                        "partial",
+                        source_id=key[0],
+                        source_epoch=key[1],
+                        first_sequence=sequence,
+                        last_sequence=sequence,
+                        reason="conflicting_claim",
+                    )
+                )
 
     def _sequence_gap(
         self,
@@ -573,7 +650,7 @@ class _Run:
         effect: Literal["partial", "unverified"],
     ) -> None:
         unexplained = "unattributed" if effect == "unverified" else None
-        self.gaps.append(
+        self._add(
             Gap(
                 "loss" if reason is not None else "sequence_gap",
                 effect,
@@ -587,7 +664,7 @@ class _Run:
 
     def _tail(self, key: SourceKey, problem: str | None) -> None:
         if problem is not None:
-            self.gaps.append(
+            self._add(
                 Gap(
                     "tail_unverified",
                     "unverified",
@@ -597,7 +674,9 @@ class _Run:
                 )
             )
 
-    def build(self) -> dict[str, Any]:
+    def build(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The run's report entry and one verdict entry per scope (decision H5)."""
+
         bodies = {exchange.exchange_id: self._bodies(exchange) for exchange in self.members}
         exchanges, views = [], []
         for exchange in self.members:
@@ -605,17 +684,18 @@ class _Run:
             exchanges.append(entry)
             views.append(view)
         stitched = stitch_run(views)
-        self.gaps.extend(stitched.gaps)
+        for gap in stitched.gaps:
+            self._add(gap, self._scopes_of(gap.exchange_id))
         for entry in exchanges:
             entry["thread_id"] = stitched.thread_of[entry["exchange_id"]]
             continued = stitched.continues.get(entry["exchange_id"])
             if continued is not None:
                 entry["continues_exchange_id"] = continued
         gaps = sort_gaps(self.gaps, self.order)
-        checks = self._checks(gaps, bodies, views)
+        checks = self._checks(gaps, list(bodies.values()), views, bool(self.members))
         out: dict[str, Any] = {
             "run_id": self.run_id,
-            "verdict": verdict_for(gaps, checks),
+            "verdict": run_verdict(verdict_for(gaps, checks), scoped=bool(self.scopes)),
             "declared_scope": {
                 "windows": [
                     window.to_json(self.verifier.sources[window.key].heartbeat)
@@ -623,12 +703,26 @@ class _Run:
                 ],
             },
         }
+        scope_reports: list[dict[str, Any]] = []
         if self.scopes:
-            counts: dict[str, int] = defaultdict(int)
-            for exchange in self.members:
-                if exchange.scope_id is not None:
-                    counts[exchange.scope_id] += 1
-            out["scopes"] = [scope.to_json(counts[scope.scope_id]) for scope in self.scopes]
+            listed = [scope.to_json(len(self._scope_members(scope))) for scope in self.scopes]
+            out["scopes"] = listed
+            by_id = {view.exchange_id: view for view in views}
+            for scope, entry in zip(self.scopes, listed, strict=True):
+                ids = self._scope_members(scope)
+                scope_gaps = sort_gaps(self.scope_gaps[scope.scope_id], self.order)
+                scope_checks = self._checks(
+                    scope_gaps, [bodies[i] for i in ids], [by_id[i] for i in ids], bool(ids)
+                )
+                scope_reports.append(
+                    {
+                        **entry,
+                        "run_id": self.run_id,
+                        "verdict": verdict_for(scope_gaps, scope_checks),
+                        "gaps": [gap.to_json() for gap in scope_gaps],
+                        "checks": scope_checks,
+                    }
+                )
         out.update(
             {
                 "exchanges": exchanges,
@@ -641,7 +735,21 @@ class _Run:
                 "checks": checks,
             }
         )
-        return out
+        return out, scope_reports
+
+    def _scopes_of(self, exchange_id: str | None) -> tuple[str, ...]:
+        if exchange_id is None:
+            return ()
+        return tuple(sorted(self.scopes_of.get(exchange_id, ())))
+
+    def _scope_members(self, scope: _Scope) -> list[str]:
+        """Exchange ids of this run that any observation tags with ``scope``."""
+
+        return [
+            exchange.exchange_id
+            for exchange in self.members
+            if scope.scope_id in self.scopes_of.get(exchange.exchange_id, ())
+        ]
 
     # -- bytes ---------------------------------------------------------------
 
@@ -659,6 +767,10 @@ class _Run:
                 exchange, "response", exchange.response_sha256, exchange.response_ref
             )
             skipped = skipped or response_skipped
+        elif exchange.response_state in _RESPONSE_EXPECTED:
+            # A complete or closed_early exchange received a response; a record
+            # without its digest proves only the request (sol1 #4).
+            self._gap(exchange, "missing_object", side="response", reason="response_not_recorded")
         if exchange.truncated:
             sides: list[Side | None] = []
             if request.truncated:
@@ -702,14 +814,15 @@ class _Run:
         side: Side | None = None,
         reason: str | None = None,
     ) -> None:
-        self.gaps.append(
+        self._add(
             Gap(
                 gap_type,
                 "partial",
                 exchange_id=exchange.exchange_id,
                 object_role=side,
                 reason=reason,
-            )
+            ),
+            self._scopes_of(exchange.exchange_id),
         )
 
     # -- stitching -----------------------------------------------------------
@@ -786,13 +899,14 @@ class _Run:
         entry["parse_status"] = status
         if status != "ok":
             if status != "truncated":
-                self.gaps.append(
+                self._add(
                     Gap(
                         "unparsed_exchange",
                         "unverified",
                         exchange_id=exchange.exchange_id,
                         reason=status,
-                    )
+                    ),
+                    self._scopes_of(exchange.exchange_id),
                 )
             return unparsed
         entry["model"] = keys.response_model or keys.model
@@ -820,26 +934,29 @@ class _Run:
 
     # -- checks --------------------------------------------------------------
 
+    @staticmethod
     def _checks(
-        self, gaps: Iterable[Gap], bodies: dict[str, _Bodies], views: Sequence[StitchView]
+        gaps: Iterable[Gap],
+        bodies: Sequence[_Bodies],
+        views: Sequence[StitchView],
+        has_members: bool,
     ) -> dict[str, Check]:
         failing = {gap.gap_type for gap in gaps if gap.effect != "info"}
 
         def check(failed: bool, skipped: bool = False, applicable: bool = True) -> Check:
-            if not applicable:
-                return "not_applicable"
             if failed:
                 return "failed"
+            if not applicable:
+                return "not_applicable"
             return "skipped" if skipped else "passed"
 
-        has_members = bool(self.members)
         return {
             "sequence": check("sequence_gap" in failing),
             "loss": check("loss" in failing),
             "tail": check("tail_unverified" in failing),
             "bytes": check(
                 bool(failing & _BYTE_GAPS),
-                any(body.skipped for body in bodies.values()),
+                any(body.skipped for body in bodies),
                 has_members,
             ),
             "stitching": check(

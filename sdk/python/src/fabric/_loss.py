@@ -116,10 +116,18 @@ class LossEmitter:
         self._flushing: threading.Event | None = None  # the flush still running, if any
         self._undelivered = False  # a record was sampled away or failed to emit
         self.spans_unsampled = self.internal_errors = self.markers_dropped = 0
+        self.recorded = 0  # exchanges lost before reaching the record (admission failures)
 
     def record(self, source_id: str, source_epoch: int, reason: LossReason, sequence: int) -> None:
-        """Count one lost exchange sequence."""
+        """Count one exchange sequence lost before it reached the record."""
+        with contextlib.suppress(Exception), self._lock:
+            self.recorded += 1
         self.retain(((source_id, source_epoch, reason), (sequence, sequence, 1)))
+
+    def has_pending_losses(self) -> bool:
+        """Whether loss ranges wait in memory (not yet spooled or emitted)."""
+        with self._lock:
+            return bool(self._pending)
 
     def retain(self, loss: _Range) -> None:
         """Merge a range into the table (also: a range the spool could not take yet)."""

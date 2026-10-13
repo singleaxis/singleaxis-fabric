@@ -46,8 +46,12 @@ Fails closed at render time unless the recorder has:
   tags are rejected);
 - a non-root pod that cannot escalate privileges or mount an API token;
 - namespace deny-default and explicit Collector ingress/egress policy,
-  where every peer must be non-empty and non-world (`{}` and
-  `0.0.0.0/0`/`::/0` are rejected);
+  where every peer must restrict its sources/destinations (`{}`, an empty or
+  exclusion-only `namespaceSelector` without a narrowing `podSelector`, an
+  empty `podSelector` alone and any prefix-length-0 `ipBlock` such as
+  `0.0.0.0/0`/`::/0` are rejected, in every profile);
+- an `https://` export endpoint with a valid host and port and no user
+  info, query or fragment (credentials go in the export-auth Secret);
 - when wire-capture content is enabled (`otel-collector.content.enabled`):
   allowed tenants, an s3 backend with server-side encryption (the file
   backend is refused), an `https://` store endpoint when one is set, the

@@ -87,8 +87,9 @@ class StoreReader:
         self.tenant_id: str = str(tenant)
         try:
             probe = str(store.evidence_ref_for("probe"))
-        except Exception as exc:
-            raise ReconstructInputError(f"store cannot resolve evidence refs: {exc}") from exc
+        except Exception:
+            # Fixed text: a store error can echo a bucket, path or credential.
+            raise ReconstructInputError("the content store cannot resolve object refs") from None
         self.kind: StoreKind = "s3" if probe.startswith("s3://") else "local"
 
     def fetch(

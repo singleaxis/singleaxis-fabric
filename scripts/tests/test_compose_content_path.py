@@ -296,13 +296,33 @@ def test_s3_backend_defaults_to_kms(tmp_path: Path) -> None:
         ({"FABRIC_CONTENT_S3_ENDPOINT": "http://minio:9000"}, "plaintext http"),
         (
             {"FABRIC_CONTENT_S3_ENDPOINT": f"https://key:{SECRET_MARKER}@minio:9000"},
-            "without user info, query or fragment",
+            "FABRIC_CONTENT_S3_ENDPOINT must not contain user info",
         ),
         (
             {
                 "FABRIC_CONTENT_S3_ENDPOINT": f"https://minio:9000/?X-Amz-Signature={SECRET_MARKER}"
             },
-            "without user info, query or fragment",
+            "FABRIC_CONTENT_S3_ENDPOINT must not contain a query or fragment",
+        ),
+        (
+            {"FABRIC_CONTENT_S3_ENDPOINT": f"https://minio#{SECRET_MARKER}"},
+            "FABRIC_CONTENT_S3_ENDPOINT must not contain a query or fragment",
+        ),
+        (
+            {"FABRIC_CONTENT_S3_ENDPOINT": f"http://key:{SECRET_MARKER}@minio:9000"},
+            "FABRIC_CONTENT_S3_ENDPOINT must not contain user info",
+        ),
+        (
+            {"FABRIC_CONTENT_S3_ENDPOINT": "https://minio:99999"},
+            "FABRIC_CONTENT_S3_ENDPOINT port must be",
+        ),
+        (
+            {"FABRIC_CONTENT_S3_ENDPOINT": f"https://-{SECRET_MARKER}:9000"},
+            "FABRIC_CONTENT_S3_ENDPOINT host must be",
+        ),
+        (
+            {"FABRIC_CONTENT_S3_ENDPOINT": f"s3://{SECRET_MARKER}"},
+            "FABRIC_CONTENT_S3_ENDPOINT is not an absolute http(s):// URL",
         ),
         ({"FABRIC_CONTENT_S3_PATH_STYLE": "yes"}, "must be true or false"),
         (
@@ -613,3 +633,15 @@ def test_every_shipped_content_exporter_has_one_tenant_and_encrypted_s3() -> Non
             sse = str(exporter["s3"].get("sse") or "")
             default = re.fullmatch(r"\$\{env:[A-Z0-9_]+:-([^}]*)\}", sse)
             assert (default.group(1) if default else sse) in {"AES256", "aws:kms"}, where
+
+
+def test_verify_prod_does_not_claim_content_delivery() -> None:
+    """Codex sol3: verify-prod checks only that unauthenticated content is
+    rejected, so it must point at the content canary instead of implying that
+    an authenticated upload reaches the store."""
+    text = (COMPOSE_DIR / "verify-prod.sh").read_text(encoding="utf-8")
+    assert "content delivery to the store is not verified here" in text
+    assert "content-to-store delivery needs the content canary" in text
+    assert "## 5. Verify a run" in (REPO_ROOT / "docs" / "wire-capture-deployment.md").read_text(
+        encoding="utf-8"
+    )

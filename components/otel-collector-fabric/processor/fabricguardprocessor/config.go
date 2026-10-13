@@ -26,6 +26,13 @@ type Config struct {
 	ExtraAllowedFields      map[string][]string `mapstructure:"extra_allowed_fields"`
 	ExtraAllowedTraceFields []string            `mapstructure:"extra_allowed_trace_fields"`
 
+	// CaptureModelAllowlist extends the built-in model allowlist for
+	// gen_ai.response.model on capture spans, exactly like the SDK's
+	// FABRIC_WIRE_MODEL_ALLOWLIST: exact names or prefix* (a prefix entry
+	// admits only version-token suffixes). Other model values are exposed as
+	// m- + 16 hex of their SHA-256.
+	CaptureModelAllowlist []string `mapstructure:"capture_model_allowlist"`
+
 	// Retained only to fail old unsafe configurations with an actionable error.
 	// Prefix allowlisting is intentionally unsupported.
 	TraceAttributePrefixes []string `mapstructure:"trace_attribute_prefixes"`
@@ -67,6 +74,9 @@ func (c *Config) Validate() error {
 		if sensitiveAttributeKey(field) {
 			return fmt.Errorf("fabricguard: extra_allowed_trace_fields contains prohibited sensitive field %q", field)
 		}
+	}
+	if err := validateModelAllowlist(c.CaptureModelAllowlist); err != nil {
+		return err
 	}
 	if len(c.TraceAttributePrefixes) != 0 {
 		return errors.New("fabricguard: trace_attribute_prefixes is unsafe and no longer supported; use extra_allowed_trace_fields with exact metadata keys")

@@ -144,7 +144,7 @@ func wireHeartbeatAttrs() map[string]any {
 		"fabric.source.epoch":            int64(1759800000000000000),
 		"fabric.heartbeat.last_sequence": int64(-1),
 		"fabric.heartbeat.kind":          "run_start",
-		"fabric.run.id":                  "run-1",
+		"fabric.run.id":                  "r-0123456789abcdef0123456789abcdef", // H3 pseudonym
 	}
 }
 

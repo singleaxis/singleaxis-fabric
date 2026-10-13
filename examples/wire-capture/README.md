@@ -24,10 +24,16 @@ sdk/python/.venv/bin/python examples/wire-capture/react_agent.py
 Expected tail of the output:
 
 ```text
-run react-demo-1: verdict=complete_for_declared_scope
+run r-73312ae07246b3a81a3c4f7073ae3a4f: verdict=complete_for_observed_scopes
+  scope …: verdict=complete_for_declared_scope
   thread-0: exchanges=['…', '…', '…']
 reconstruct exit code: 0
 ```
+
+The run id `react-demo-1` never appears in the record: capture writes only
+its pseudonym `r-…` (keyed by `FABRIC_WIRE_ID_KEY` when that is set, which
+production should do), and `--run react-demo-1` asks the verifier to
+compute the same pseudonym.
 
 ## What happens
 
@@ -48,7 +54,8 @@ reconstruct exit code: 0
    capture time. Each entry into `fabric.wire.run(...)` is a run scope with
    its own `fabric.run.scope_id`: entering and leaving it emits heartbeat
    run markers (`fabric.capture_heartbeat`) carrying that id, and every call
-   inside it carries the id too. Closing the handle emits a final heartbeat
+   inside it carries the id too. The run id itself leaves the process only
+   as its `r-…` pseudonym. Closing the handle emits a final heartbeat
    that proves the tail. The model name `demo-model` is not on the public
    model allowlist, so spans carry it only as an `m-…` digest
    (`FABRIC_WIRE_MODEL_ALLOWLIST` extends the list).
@@ -63,7 +70,8 @@ You can re-run the verifier yourself:
 ```bash
 sdk/python/.venv/bin/python -m fabric.reconstruct \
   --spans examples/wire-capture/output/spans.jsonl \
-  --store-root examples/wire-capture/output/store --tenant demo-tenant
+  --store-root examples/wire-capture/output/store --tenant demo-tenant \
+  --run react-demo-1
 ```
 
 Try breaking the record and running it again. Delete a line from
@@ -73,10 +81,14 @@ lines and you get `unverified` (`tail_unverified`).
 
 ## What the verdict means
 
-`complete_for_declared_scope` is an **integrity** statement about the
-record. Every model call made through the instrumented httpx transport in
-this process was captured, stored, unaltered and stitched without gaps,
-through the last heartbeat. It does not judge the agent. It also does
+Completeness is claimed per `fabric.wire.run()` entry (a *scope*) and per
+unscoped process epoch. Each scope's `complete_for_declared_scope` is an
+**integrity** statement about the record: every model call started inside
+that block through the instrumented httpx transport was captured, stored,
+unaltered and stitched without gaps. A run made of scopes is at best
+`complete_for_observed_scopes`: it vouches for every scope that left a
+record, and makes no claim about a block whose every record was lost
+before reaching disk (for example when the process is killed). It does not judge the agent. It also does
 not cover calls made through other clients (`requests`, `aiohttp`, gRPC),
 other processes or unlisted endpoints.
 

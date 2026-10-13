@@ -15,7 +15,7 @@ import time
 from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
-from .._sequence import RunScope, SourceAllocator, get_allocator, run_scope
+from .._sequence import RunScope, SourceAllocator, get_allocator, id_key_from_env, run_scope
 from ._config import DEFAULT_ENDPOINTS, WireConfig
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
 
@@ -163,6 +163,8 @@ def install(
             _LOG.warning("fabric.wire: already installed; returning the active handle")
             return _HANDLE
         config = dataclasses.replace(config, **overrides) if config else WireConfig(**overrides)
+        if config.id_key is None and (key := id_key_from_env(os.environ)) is not None:
+            config = dataclasses.replace(config, id_key=key)
         loss = get_loss_emitter()
         sender = build_sender(config, loss, span_exporter, content_client)
         if config.tracer_provider is not None:
@@ -218,7 +220,8 @@ def flush(timeout_s: float = 5.0) -> bool:
 @contextlib.contextmanager
 def run(run_id: str) -> Iterator[None]:
     """Scope an explicit run. Each entry is a new scope (``fabric.run.scope_id``) whose
-    ``run_start``/``run_end`` markers bound the calls started inside it (spec 043 §6)."""
+    ``run_start``/``run_end`` markers bound the calls started inside it (spec 043 §6).
+    ``run_id`` is emitted only as its ``r-`` pseudonym (keyed by ``FABRIC_WIRE_ID_KEY``)."""
     handle = _HANDLE
 
     def mark(scope: RunScope, kind: Literal["run_start", "run_end"]) -> None:
@@ -226,7 +229,7 @@ def run(run_id: str) -> Iterator[None]:
             with contextlib.suppress(Exception):  # capture fails open
                 handle._tee.loss.heartbeat(handle.allocator, kind=kind, scope=scope)
 
-    with run_scope(run_id) as scope:
+    with run_scope(run_id, handle.config.id_key if handle is not None else None) as scope:
         mark(scope, "run_start")
         try:
             yield

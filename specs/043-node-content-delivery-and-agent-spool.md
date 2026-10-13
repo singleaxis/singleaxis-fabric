@@ -2,7 +2,7 @@
 title: Node content delivery, agent durable spool and run scopes
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 2
+revision: 3
 last_updated: 2026-10-13
 owner: recorder-engineering
 depends_on: 029, 032, 042
@@ -72,7 +72,39 @@ Decisions F1–F10:
   requested server-side encryption (§4).
 - **F13 The window before the spool write is stated, not moved** (§2
   "Window"): the durable write stays off the host's thread; a kill inside
-  the window can never yield `complete_for_declared_scope`.
+  the window can never yield a complete verdict for an observed scope or an
+  unscoped run. (Revision 3, H5: a scope lost whole inside the window
+  leaves no record and cannot be detected; the verifier therefore claims
+  only observed scopes.)
+
+**2026-10-13 — revision 3 (Sol review of `faac3d2`).** Decisions H1–H5:
+
+- **H1 No redirects.** Every HTTP client Fabric constructs for delivery (the
+  content client and the private OTLP trace exporter's session) never
+  follows a redirect; any 3xx is a delivery failure, retried later, never a
+  success. A body or header is never re-sent to another location (§3).
+- **H2 One tenant per Node, across exporters.** All `fabriccontent`
+  exporters that share a receiver or pipeline in the effective
+  configuration together allow one tenant unless every one of them sets
+  `allow_multiple_tenants: true`; `fabric-gate` enforces it on the
+  effective configuration, the Helm chart renders a single `fabriccontent`
+  exporter (so its one-tenant check is the per-Node check), and the
+  exporter-local check stays (§4, §5 rule 7).
+- **H3 Run-id pseudonyms.** A caller-supplied run id never leaves the agent
+  in clear: spans, markers, spool records, content descriptors and reports
+  carry `r-` + the first 32 hex of `HMAC-SHA256(key, run_id)` when
+  `FABRIC_WIRE_ID_KEY` is set (recommended for production; a secret of at
+  least 16 bytes, never logged), else of `SHA-256(run_id)`. Generated
+  fallback ids (`trace:…`, `source:…`) are unchanged. `fabric.reconstruct
+  --run` takes the clear id and computes the pseudonym (§6, §10). Source
+  id, tenant id and `service.name` remain operator-chosen labels that must
+  be opaque; they are validated by pattern only.
+- **H4 Bounded model prefixes.** A `prefix*` allowlist entry matches only
+  version-like suffixes; exact entries match exactly (§7).
+- **H5 Per-scope claims.** Completeness is claimed per `fabric.wire.run()`
+  scope and per unscoped source epoch; a scoped run is at best
+  `complete_for_observed_scopes`, because a scope that left no record cannot
+  be claimed (§2 "Window", §6).
 
 **Why.**
 
@@ -198,12 +230,25 @@ stalls on the call path would violate passivity (042 §4 rules 3 and 10).
 A process killed inside the window (SIGKILL, OOM kill, power loss) loses
 those exchanges with no loss record. Their sequences were allocated when
 the calls started, so they remain unexplained gaps, and the verifier can
-never report the affected run `complete_for_declared_scope`: `partial` when
-a later sequence or the scope's `run_end` marker was recorded (a gap inside
-the window), `unverified` when the run's end is unproven (no `run_end`, or
-no `final` heartbeat for an unscoped run, which a killed process never
-writes). `tests/test_wire_spool_window.py` kills an agent with its worker
-parked inside the window and checks exactly this.
+never report an affected *observed* scope or unscoped run complete:
+`partial` when a later sequence or the scope's `run_end` marker was
+recorded (a gap inside the window), `unverified` when the end is unproven
+(no `run_end`, or no `final` heartbeat for an unscoped run, which a killed
+process never writes). `tests/test_wire_spool_window.py` kills an agent
+with its worker parked inside the window and checks exactly this.
+
+**A scope lost whole is undetectable (H5).** When *every* record of a
+`fabric.wire.run()` entry — its `run_start`, its calls and its `run_end` —
+is still in memory at the kill (e.g. a reused run id's second block, entered
+and left while the sender or worker was behind), the record holds nothing
+that says the scope existed: its allocated sequences show at most as
+missing sequences of the source, outside every observed window. The
+verifier therefore never claims a run beyond the scopes it observed: a
+scoped run is at best `complete_for_observed_scopes`, and each observed
+scope has its own verdict. Detecting a scope lost whole needs *durable
+admission* — writing the `run_start` (or a scope inventory) to disk on the
+host's thread before the block runs — which this spec rejects for the
+reason above (§12 Q4).
 
 **Bound.** `spool_bytes` = own writes + a directory rescan every 5 s on the
 sender thread. An exchange record is admitted only while `spool_bytes +
@@ -213,7 +258,11 @@ the bound; past it, loss ranges stay in the in-memory table (merged per key,
 as 042) and are spooled when space frees, and a marker is dropped and
 counted (its scope then stays open: `unverified`, never false complete).
 With several writer processes the bound is approximate by one rescan
-interval.
+interval. Quarantined `*.corrupt` records count against the same bound
+(own quarantines immediately, others' at the next rescan) until an operator
+removes them: quarantine never deletes evidence and never escapes the
+bound, so a spool filled with quarantined records shows as `queue_full`
+losses rather than unbounded disk use.
 
 **Sender.** One daemon thread per process. As drainer it takes records in
 file-name order. For an exchange: each body is posted to the content
@@ -240,7 +289,8 @@ may batch up to 64 consecutive ready records per export call.
 process, any pid) are drained first; they carry their own source, epoch,
 sequences and span ids. A record whose framing or trailer digest fails, or
 whose header fails the schema, is renamed `*.corrupt` (kept for the
-operator, never retried). When its header parsed, an `internal_error` loss
+operator, never retried) and a fixed-text warning is logged (no name, path
+or byte). When its header parsed, an `internal_error` loss
 is recorded for its sequence; otherwise the sequence stays an unexplained
 gap the verifier still detects. Leftover `.tmp-*` files older than one hour
 are removed by the drainer.
@@ -250,7 +300,15 @@ wrote before the call is deleted (by whichever process drains), then sends a
 periodic heartbeat; `False` on timeout. `close()` drains, seals the epoch,
 writes the `final` marker, and waits for delivery within the 042 budget;
 whatever is undelivered stays on disk for replay and `close()` returns
-`False`. The exit handler is bounded exactly as 042 E9.
+`False`. Neither acknowledges a record that never reached the spool:
+`flush()` also returns `False` when, since the previous flush, an exchange
+was lost before the spool (any recorded loss: `queue_full`, `shutdown`,
+`internal_error`, spool full or a failed spool write), a marker was dropped
+(queue overflow or a failed write), one of this process's own records was
+quarantined, or a loss range is still only in memory after the pump;
+`close()` returns `False` when any of these happened during the sender's
+lifetime. Both still wait for delivery first. The exit handler is bounded
+exactly as 042 E9.
 
 **Delivery semantics.** At-least-once. Duplicates are expected after a
 crash between "sent" and "deleted": the Node treats an identical object as
@@ -264,8 +322,11 @@ content and heartbeats by logical identity (§6).
 ## 3. Content transport (F3)
 
 One `ExportLogsServiceRequest` per stored body, protobuf over HTTP POST,
-`Content-Type: application/x-protobuf`, to `FABRIC_WIRE_CONTENT_ENDPOINT`.
-Resource: `service.name` only (same rule as 042 D3). Scope: `fabric.wire`.
+`Content-Type: application/x-protobuf`, to `FABRIC_WIRE_CONTENT_ENDPOINT`,
+never following a redirect: a 3xx response is a failed attempt (retried
+like a 5xx), and neither the body nor any header is sent to its `Location`
+(H1; the private OTLP trace exporter's HTTP session is configured the same
+way). Resource: `service.name` only (same rule as 042 D3). Scope: `fabric.wire`.
 One `LogRecord`:
 
 - `time_unix_nano` = `captured_at`; `body` = `AnyValue.bytes_value` with the
@@ -332,7 +393,9 @@ attribute set itself.
    exporter configuration must list **exactly one** tenant unless
    `allow_multiple_tenants: true` is set (F11); the flag trusts every
    authenticated agent to name its tenant. Use one Node per tenant
-   otherwise. Duplicate entries are refused.
+   otherwise. Duplicate entries are refused. The rule holds per Node, not
+   per exporter (H2): exporters that share a receiver or pipeline together
+   allow one tenant unless every one of them sets the flag (§5 rule 7).
 4. Write body to `<prefix><tenant>/evidence/<object_id>`, **then** the
    descriptor to `<prefix><tenant>/evidence/meta/<object_id>.json`.
    Descriptor = the attributes minus `event_class`, plus `"encoding":
@@ -344,8 +407,12 @@ attribute set itself.
 5. Never overwrite: an existing object or descriptor with identical bytes
    is success (replay); different bytes → reject (`conflict`).
 
-Backends: `file` (`directory`; files `0600`, directories `0700`, temp +
-fsync + rename + dir fsync) and `s3` (aws-sdk-go-v2 default credential chain
+Backends: `file` (`directory`; files `0600`, directories `0700`; a fully
+fsync'd temp file is published with `link(2)`, falling back to an atomic
+no-replace rename — `renameat2(RENAME_NOREPLACE)` on Linux,
+`renamex_np(RENAME_EXCL)` on macOS — then a directory fsync; when the
+filesystem offers neither, the write fails retryably, never a
+check-then-rename that two processes could race) and `s3` (aws-sdk-go-v2 default credential chain
 incl. IRSA; optional `endpoint` and `use_path_style` for MinIO and other
 S3-compatible stores; `region`; `sse: AES256 | aws:kms`, **required** —
 an empty or missing `sse` fails configuration validation (F12);
@@ -386,12 +453,26 @@ where:
    telemetry pipeline);
 7. a `fabriccontent` exporter lists more than one `allowed_tenants` entry
    without `allow_multiple_tenants: true` (F11; the exporter refuses it
-   too).
+   too), or the `fabriccontent` exporters sharing any receiver or pipeline
+   in the effective configuration (transitively) together allow more than
+   one tenant while any of them lacks `allow_multiple_tenants: true` (H2;
+   the Helm chart renders exactly one `fabriccontent` exporter, whose tenant
+   list it checks the same way). The diagnostic names exporter ids,
+   never tenant ids.
 
 ## 6. Run scopes (F6; supersedes 042 §6 run markers and §9 step 3 (a))
 
-**Capture.** `fabric.wire.run(run_id)` creates `RunScope(run_id,
-scope_id=uuid4, parent)` per entry. Entry: read `a` = last allocated
+**Capture.** `fabric.wire.run(run_id)` validates `run_id` and creates
+`RunScope(r, scope_id=uuid4, parent)` per entry, where `r` is the run id's
+pseudonym (H3): `r-` + the first 32 hex of `HMAC-SHA256(key, run_id)` with
+`key` = `FABRIC_WIRE_ID_KEY` (UTF-8, at least 16 bytes; set it in
+production so the pseudonym cannot be confirmed by guessing), else of
+`SHA-256(run_id)`. Only `r` is written anywhere (spans, markers, spool,
+descriptors, reports); the vectors in
+`contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json` pin it.
+fabricguard admits `fabric.run.id` only in the `r-` form or a generated
+fallback form (`trace:<32 hex>`, `source:<source_id>:<epoch>`, `h-<40
+hex>`). Entry: read `a` = last allocated
 sequence under the allocator lock, then set the scope in the context;
 spool `run_start{run_id, scope_id, last_sequence=a}`. Exit: under the
 allocator lock mark the scope closed and read `b`; reset the context; spool
@@ -424,20 +505,44 @@ is an unclassified heartbeat (counts toward `H` only). Per scope id:
   outside the window are outside the scope: `a` was allocated before entry
   and `b+1` after exit.
 
+- a sequence inside the window that is claimed by conflicting observations
+  (one exchange id seen with different values, or several exchange ids on
+  one sequence) → `partial` (`digest_mismatch`, `conflicting_claim`):
+  whichever run the claims name, the window cannot be proven.
+
 Nested scopes are independent windows (an inner scope's exchanges lie inside
 the outer window and count as present there). Serial and concurrent scopes,
-and reuse of a run id, are distinct scopes. A run id with any scope (marker
-or scoped exchange) is complete only when every scope is closed and clean
-and every exchange of the run carries one of its scope ids; an unscoped
-exchange of such a run → `tail_unverified` (`exchange_outside_run_markers`).
-A run with no scopes keeps 042 rule (b) (`final` heartbeat, E2).
+and reuse of a run id, are distinct scopes.
+
+**Claims (H5).** Completeness is claimed per scope and per unscoped source
+epoch, never for a run as a whole:
+
+- *Scope verdict.* Each scope is `complete_for_declared_scope` only when it
+  is closed, has no gap inside its window (above) and every exchange it
+  tags verified (bytes, response evidence, stitching); otherwise `partial`
+  or `unverified` by the 042 §9 step 7 rule over the scope's own gaps.
+- *Run verdict.* A run without scopes keeps 042 rule (b) (`final`
+  heartbeat, E2) and its `complete_for_declared_scope` verdict. A run id
+  with any scope (marker or scoped exchange) is never better than its worst
+  observed scope; its best value is `complete_for_observed_scopes`: it makes
+  no claim about a scope that left no record (§2 "Window"). An unscoped
+  exchange of such a run is a run-level `tail_unverified`
+  (`exchange_outside_run_markers`) that belongs to no scope.
+- *Exit code.* `0` iff every reported scope and every unscoped run is
+  complete; otherwise `1` (042 §9).
 
 Report: each closed scope with at least one exchange is a window with
 `scope_id` and `closed_by: run_markers`; `runs[].scopes[]` lists every scope
 (`state` `closed`/`open`/`conflict`, marker sequences, exchange count);
-report exchanges carry `scope_id`. The contract validator enforces that a
-complete run has only closed scopes and no missing sequence inside a scope
-window (adjacency is checked only for windows without a scope).
+report exchanges carry `scope_id`; the top-level `scopes[]` repeats each
+listed scope with its `run_id`, `verdict`, own `gaps` (each also a gap of
+its run) and `checks`. The contract validator enforces that a complete run
+has only closed scopes and no missing sequence inside a scope window
+(adjacency is checked only for windows without a scope), that a scoped
+run's best verdict is `complete_for_observed_scopes`, that each scope
+verdict follows from its gaps and checks, that a complete scope is closed
+with no missing sequence inside its window, and that a run is never better
+than its worst scope.
 
 ## 7. Model exposure (F7; supersedes 042 E5 for emission)
 
@@ -450,11 +555,31 @@ window (adjacency is checked only for windows without a scope).
   `meta-llama/*`, `mistral*`, `mixtral*`, `codestral*`, `command*`,
   `deepseek*`, `qwen*`, `grok*`, `anthropic/*`, `openai/*`, `google/*`
   (case-sensitive);
+- matching (H4): an exact entry matches exactly. A `prefix*` entry matches
+  only when the value starts with the prefix and the rest, split on
+  `[-._:/@]` (empty tokens ignored), consists solely of digits and dates
+  (`4`, `3.5`, `20240620`, `2024-08-06`), short version tokens matching
+  `^(v?\d+[a-z]{0,2}|\d+[a-z]\d*|[a-z]\d+)$` (`4o`, `o1`, `v2`, `70b`) or
+  words of a fixed vocabulary (`mini`, `turbo`, `preview`, `latest`,
+  `instruct`, `sonnet`, `flash`, … — the list is pinned by the vectors).
+  Matching is case-sensitive. So `gpt-4o-mini-2024-07-18` is kept and
+  `gpt-patient-Jane-Doe-12345` is hashed; so are names whose suffix is not
+  version-like, such as `openai/gpt-4o` or `meta-llama/Llama-3-70b`, which
+  need an exact allowlist entry;
 - a non-empty string that matches the pattern, has no `://` and is
   allowlisted is emitted as is; any other string as `m-` + the first 16 hex
   of `sha256(utf-8)`; a non-string is omitted.
+- Capture (Python), fabricguard (Go) and `fabric.reconstruct` test against
+  the same vectors,
+  `contracts/capture/v1/fixtures/model-names/model-exposure-v1.json`.
 
-fabricguard keeps the pattern rule (the `m-` form satisfies it).
+fabricguard applies the same rule to `gen_ai.response.model` (the `m-`
+form passes unchanged; a value that fails the 042 model pattern or contains
+`://` is dropped, which a conforming agent never sends). Its
+`capture_model_allowlist` option (exact names or `prefix*`, validated like
+the environment variable) is the Node counterpart of
+`FABRIC_WIRE_MODEL_ALLOWLIST`: deployments that extend the agents' list
+pass the same list to fabricguard, or the Node hashes the extra names.
 `fabric.reconstruct` applies the same rule to models parsed from bodies and
 to span values, keeping span values already of the form `^m-[0-9a-f]{16}$`;
 `--model-allowlist` (default `FABRIC_WIRE_MODEL_ALLOWLIST`) extends its list.
@@ -481,6 +606,28 @@ protocol with non-empty `cert_file` and `key_file`. A commented-out stanza,
 `tls:` with no children, `tls: {}`, `tls: null`/`~`, or a stanza missing
 either file counts as disabled. Fixture tests cover each case.
 
+**Destination URLs (both Compose preflight and the Helm render).**
+`FABRIC_EXPORT_ENDPOINT` / `exporter.endpoint` and
+`FABRIC_CONTENT_S3_ENDPOINT` / `content.s3.endpoint` must be absolute
+`http(s)` URLs with a DNS name, dotted IPv4 or bracketed IPv6 host and a
+port of 1–65535; user information (any `@`), a query, a fragment,
+whitespace, control characters and backslashes are refused (production
+also requires `https`). Credentials belong in Secret-backed headers, never
+in a URL. Diagnostics name the variable or value path, never the value;
+the Compose reachability probe receives only the parsed host and port.
+fabric-gate applies the user-info/query/fragment rule at boot to every
+`otlp`/`otlp_grpc`/`otlphttp`/`otlp_http` exporter endpoint and to
+`fabriccontent` `s3.endpoint` (env-expanded first).
+
+**NetworkPolicy peers (Helm).** Every peer in `ingressFrom`,
+`exporterEgress.to`, `contentEgress.to`, `egressTo` and
+`monitoringNamespaceSelector` must restrict its sources or destinations:
+a `namespaceSelector` restricts only with `matchLabels` or an `In`/`Exists`
+expression (an empty, null or only-`NotIn`/`DoesNotExist` selector needs a
+restricting `podSelector`); an empty `podSelector` alone, an `ipBlock` with
+prefix length 0, an `ipBlock` combined with a selector and unknown peer
+keys are refused in every profile.
+
 ## 10. Reconstruct (F10)
 
 `python -m fabric.reconstruct` reads Node-written content through the
@@ -491,11 +638,21 @@ region_name=…, addressing_style="path")`). Credentials come from the default
 boto3 chain. The e2e qualifies the path agent → Node → MinIO (SSE via
 `MINIO_KMS_SECRET_KEY`) → reconstruct.
 
+`--run RUN_ID` takes the id given to `fabric.wire.run()` in the clear (or
+its `r-` pseudonym, or a fallback id) and selects the run whose recorded id
+is the value or its pseudonym (H3). The key is read from the environment
+variable named by `--id-key-env` (default `FABRIC_WIRE_ID_KEY`; when that
+default is unset the unkeyed form is used, as capture does; a named
+variable that is unset, or a key under 16 bytes, is a usage error). The
+key and the clear id are never written to stdout, stderr or the report.
+
 ## 11. Acceptance
 
 1. Node mode: an agent with no AWS variables captures a three-step ReAct run;
    the Node writes bodies + descriptors to MinIO; reconstruct from the span
-   sink and MinIO is `complete_for_declared_scope`.
+   sink and MinIO is complete (`complete_for_declared_scope` for an unscoped
+   run, `complete_for_observed_scopes` with every scope complete for a run
+   in `fabric.wire.run()` blocks).
 2. Kill -9 the agent after the worker spooled N exchanges but before
    delivery; restart; every record is delivered once or more and the run
    verifies with no unexplained gap.
@@ -518,7 +675,21 @@ boto3 chain. The e2e qualifies the path agent → Node → MinIO (SSE via
 10. Revision 2: two tenants without `allow_multiple_tenants` are refused by
     the exporter, the gate and the Helm render; S3 without `sse` is refused
     by the exporter and the Helm render; a SIGKILL inside the spool window
-    (scoped or unscoped run) never verifies as complete.
+    (scoped or unscoped run) never verifies an observed scope or an
+    unscoped run as complete.
+11. Revision 3: a 3xx from the content endpoint or the OTLP trace endpoint
+    is retried and its `Location` never receives a body or header (H1); two
+    `fabriccontent` exporters sharing ingress with different tenants are
+    refused by the gate, and the Helm chart renders only one (H2); `fabric.run.id`, markers,
+    spool records and descriptors carry only the `r-` pseudonym of a
+    caller-supplied run id and `--run <clear id>` selects it (H3); the
+    shared model vectors pass in Python and Go (H4); a reused run id whose
+    second scope is lost whole while the process is killed reconstructs as
+    `complete_for_observed_scopes` with its observed scope complete (exit
+    `0`), a scope with a gap makes its own verdict and its run `partial`,
+    a `complete`/`closed_early` exchange without response evidence is
+    `partial`, and a conflicting duplicate invalidates every run and scope
+    it names (H5).
 
 ## 12. Open questions
 
@@ -526,3 +697,8 @@ boto3 chain. The e2e qualifies the path agent → Node → MinIO (SSE via
    on `otlp/content`, or stay closed to the two wire roles.
 2. Spool encryption at rest (today: `0600`/`0700` and host disk encryption).
 3. Whether the Helm chart enables the content path by default.
+4. Durable scope admission: writing `run_start` (or a scope inventory) to
+   disk before a `fabric.wire.run()` block runs would let the verifier
+   detect a scope lost whole (§2 "Window"), at the cost of disk latency on
+   the host's thread. Not adopted; reconsider only with a design that keeps
+   042 §4 rules 3 and 10.
