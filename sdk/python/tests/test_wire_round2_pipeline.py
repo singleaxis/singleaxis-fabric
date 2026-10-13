@@ -34,10 +34,11 @@ import fabric._loss
 import fabric._sequence
 import fabric.tracing
 from fabric import wire
-from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter, LossExporter
-from fabric._sequence import SourceAllocator
+from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter
+from fabric._model_names import expose_model, hashed_model
+from fabric._sequence import RunScope, SourceAllocator
 from fabric.content_store import LocalFilesystemContentStore
-from fabric.wire._pipeline import safe_model
+from fabric.tracing import guarded_exporter
 
 from .test_wire_helpers import OPENAI_CHAT, attrs, chat_response
 
@@ -285,59 +286,17 @@ def test_run_markers_and_final_heartbeat_carry_their_kind() -> None:
     assert all(kind in ("periodic", "run_start", "run_end", "final") for kind, _, _ in beats)
     assert all((run is None) is (kind in ("periodic", "final")) for kind, run, _ in beats)
     # Nothing is ever allocated after the final heartbeat in the sealed epoch.
-    epoch, sequence = allocator.next_sequence()
+    epoch, sequence, _ = allocator.next_sequence()
     assert (epoch, sequence) != (sealed_epoch, 2) and epoch > sealed_epoch and sequence == 0
 
 
-def test_a_retried_heartbeat_is_the_same_logical_record() -> None:
-    emitter = LossEmitter()
-
-    class LostAck(InMemorySpanExporter):
-        failed = False
-
-        def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
-            super().export(spans)  # the collector stored it ...
-            if not self.failed and any(s.name == SPAN_HEARTBEAT for s in spans):
-                self.failed = True
-                return SpanExportResult.FAILURE  # ... but the acknowledgement was lost
-            return SpanExportResult.SUCCESS
-
-    inner = LostAck()
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(LossExporter(inner, loss=emitter)))
-    emitter.set_tracer_provider(provider)
-    allocator = SourceAllocator("wire-retry", "wire")
-    allocator.next_sequence()
-    emitter.heartbeat(allocator, kind="run_start", run_id="run-r")
-    with emitter._emit_lock:
-        emitter._drain(periodic=False)  # only the queued marker
-    assert inner.failed
-    with emitter._emit_lock:
-        emitter._drain(periodic=False)  # the retry
-    markers = [
-        (dict(s.attributes or {}), s.context.span_id)
-        for s in inner.get_finished_spans() if s.name == SPAN_HEARTBEAT
-    ]  # fmt: skip
-    assert len(markers) == 2
-    identity = (
-        "fabric.source_id", "fabric.source.epoch", LossAttr.HEARTBEAT_KIND, "fabric.run.id",
-        LossAttr.HEARTBEAT_LAST_SEQUENCE,
-    )  # fmt: skip
-    keys = {tuple(a.get(k) for k in identity) for a, _ in markers}
-    assert keys == {("wire-retry", allocator.epoch, "run_start", "run-r", 0)}
-    emitter.close(0.5)
-
-
-def test_heartbeat_kind_and_run_id_must_agree() -> None:
+def test_heartbeat_kind_and_scope_must_agree() -> None:
     emitter, allocator = LossEmitter(), SourceAllocator("wire-agree", "wire")
-    mismatched = (("run_start", None), ("run_end", None), ("periodic", "r"), ("final", None))
-    for kind, run_id in mismatched:
+    scope = RunScope("run-r", "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60", None)
+    mismatched = (("run_start", None), ("run_end", None), ("periodic", scope), ("final", None))
+    for kind, scoped in mismatched:
         with pytest.raises(ValueError):
-            emitter.heartbeat(allocator, kind=kind, run_id=run_id)  # type: ignore[arg-type]
-    emitter.requeue(SPAN_HEARTBEAT, {
-        "fabric.source_id": "wire-agree", "fabric.source.epoch": 1,
-        LossAttr.HEARTBEAT_LAST_SEQUENCE: 3, LossAttr.HEARTBEAT_KIND: "bogus",
-    })  # fmt: skip
+            emitter.heartbeat(allocator, kind=kind, scope=scoped)  # type: ignore[arg-type]
     assert emitter._beats == []
     emitter.close(0.2)
 
@@ -346,41 +305,46 @@ def test_heartbeat_kind_and_run_id_must_agree() -> None:
 
 
 @pytest.mark.parametrize(
-    "model",
-    ["gpt-4o-2024-08-06", "claude-sonnet-4-5", "ft:gpt-4o:org::abc123", "models/gemini-1.5-pro"],
+    "model", ["gpt-4o-2024-08-06", "claude-sonnet-4-5", "text-embedding-3-small", "o3-mini"]
 )
-def test_ordinary_model_names_are_kept(model: str) -> None:
-    assert safe_model(model) == model
+def test_allowlisted_model_names_are_kept(model: str) -> None:
+    assert expose_model(model) == model
 
 
 @pytest.mark.parametrize(
     "model",
     [
+        "ft:gpt-4o:org::abc123",  # valid shape, not allowlisted: hashed (spec 043 §7)
+        "models/gemini-1.5-pro",
         "https://user:sk-live-secret@example.com/private",
         "user@example.com",
         "a://b",
         "m" * 129,
         "gpt 4o",
-        "",
         "-gpt",
         "gpt+4o",
-        None,
-        42,
     ],
 )
-def test_unsafe_model_values_are_omitted(model: Any) -> None:
-    assert safe_model(model) is None
+def test_other_model_values_are_hashed(model: str) -> None:
+    assert expose_model(model) == hashed_model(model)
+    assert expose_model(model, ("ft:*", "models/gemini-1.5-pro")) in (model, hashed_model(model))
+
+
+@pytest.mark.parametrize("model", ["", None, 42, ["gpt-4o"]])
+def test_non_string_model_values_are_omitted(model: Any) -> None:
+    assert expose_model(model) is None
 
 
 def test_credential_bearing_model_never_reaches_the_span() -> None:
     provider, exporter = _memory_provider()
     handle = wire.install(tracer_provider=provider, patch_httpx=False)
-    body = {**chat_response(MESSAGE), "model": "https://user:sk-live-secret@example.com/x"}
+    url_model = "https://user:sk-live-secret@example.com/x"
+    body = {**chat_response(MESSAGE), "model": url_model}
     with _client(handle, body) as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert handle.flush(2.0)
     (span,) = _named(exporter, "fabric.model_call")
-    assert "gen_ai.response.model" not in span
+    assert span["gen_ai.response.model"] == hashed_model(url_model)
     assert "sk-live-secret" not in repr(exporter.get_finished_spans()[0].to_json())
 
 
@@ -463,7 +427,7 @@ def test_fabric_exports_log_codes_and_classes_only(caplog: pytest.LogCaptureFixt
     provider.get_tracer("t").start_span("s").end()
     spans = memory.get_finished_spans()
     with caplog.at_level(logging.WARNING):
-        result = LossExporter(exporter(), loss=LossEmitter()).export(spans)
+        result = guarded_exporter(exporter()).export(spans)
     assert result is SpanExportResult.FAILURE
     assert "sk-log-secret" not in caplog.text
     assert "InvalidURL" in caplog.text  # still diagnosable

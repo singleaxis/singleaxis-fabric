@@ -13,14 +13,16 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-// Spec 042 rev 3 §8 Node admission: exactly the fifteen capture keys are
+// Spec 042 rev 3 §8 Node admission (plus spec 043's fabric.run.scope_id):
+// exactly the sixteen capture keys are
 // exact-allowlisted and value-closed; every revision-2 key is dropped; raw
 // content never passes.
 
 func hex64(c string) string { return strings.Repeat(c, 64) }
 
 // captureKeys are the fifteen new spec 042 rev 3 OTLP keys (the fourteen of
-// rev 3 plus fabric.heartbeat.kind, decision E1).
+// rev 3 plus fabric.heartbeat.kind, decision E1) and spec 043's
+// fabric.run.scope_id.
 var captureKeys = []string{
 	"fabric.source.epoch", "fabric.run.id",
 	"fabric.wire.exchange_id", "fabric.wire.api",
@@ -29,6 +31,7 @@ var captureKeys = []string{
 	"fabric.loss.reason", "fabric.loss.count",
 	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
 	"fabric.heartbeat.last_sequence", "fabric.heartbeat.kind",
+	"fabric.run.scope_id",
 }
 
 // removedCaptureKeys are the revision-2 keys (and the removed revision-3
@@ -441,9 +444,9 @@ func TestWireCapture_RawContentKeysStayRejected(t *testing.T) {
 	}
 }
 
-func TestWireCapture_ExactlyFifteenKeysAreAllowlistedAndNotSensitive(t *testing.T) {
-	if len(captureKeys) != 15 {
-		t.Fatalf("captureKeys has %d entries, want 15", len(captureKeys))
+func TestWireCapture_ExactlyTheCaptureKeysAreAllowlistedAndNotSensitive(t *testing.T) {
+	if len(captureKeys) != 16 {
+		t.Fatalf("captureKeys has %d entries, want 16", len(captureKeys))
 	}
 	for _, key := range captureKeys {
 		if _, ok := TraceAllowedFields[key]; !ok {
@@ -453,7 +456,7 @@ func TestWireCapture_ExactlyFifteenKeysAreAllowlistedAndNotSensitive(t *testing.
 			t.Errorf("%q is denied by sensitiveAttributeKey", key)
 		}
 	}
-	// Every allowlisted key in the capture namespaces is one of the fifteen.
+	// Every allowlisted key in the capture namespaces is one of the sixteen.
 	listed := map[string]struct{}{}
 	for _, key := range captureKeys {
 		listed[key] = struct{}{}

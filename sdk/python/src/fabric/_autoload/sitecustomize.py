@@ -1,12 +1,9 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Env-gated wire-capture bootstrap (spec 042 §3); runs only from ``PYTHONPATH``.
-
-Does nothing unless ``FABRIC_WIRE_AUTOLOAD`` is ``1``/``true``; calls
-``fabric.wire.install_from_env()`` swallowing every failure except
-``KeyboardInterrupt``/``SystemExit``; then executes the next ``sitecustomize``
-on ``sys.path`` (excluding this directory) so an existing one keeps working.
-"""
+"""Env-gated wire-capture bootstrap (spec 042 §3), only from ``PYTHONPATH``: with
+``FABRIC_WIRE_AUTOLOAD=1``/``true`` it calls ``fabric.wire.install_from_env()``, swallowing
+every failure but ``KeyboardInterrupt``/``SystemExit`` (one warning naming the class), then
+runs the next ``sitecustomize`` on ``sys.path`` so an existing one keeps working."""
 
 from __future__ import annotations
 

@@ -28,6 +28,11 @@ spec:
           port: {{ .Values.service.ports.otlpGrpc }}
         - protocol: TCP
           port: {{ .Values.service.ports.otlpHttp }}
+        {{- if .Values.content.enabled }}
+        # Content ingress (spec 043) admits exactly the same peers.
+        - protocol: TCP
+          port: {{ .Values.service.ports.otlpContent }}
+        {{- end }}
     # The health extension is not opened by default: kubelet probes are node
     # traffic and are not governed by NetworkPolicy on most CNIs. Operators
     # whose monitoring stack scrapes the health port can opt in by naming the
@@ -58,6 +63,17 @@ spec:
         {{- toYaml . | nindent 8 }}
       ports:
         {{- toYaml $.Values.networkPolicy.exporterEgress.ports | nindent 8 }}
+    {{- end }}
+    # Content store egress (spec 043, content.backend=s3): the S3 endpoint
+    # and, for IRSA, STS. Kubernetes cannot express hostnames, so the
+    # operator names the peers and ports.
+    {{- if .Values.content.enabled }}
+    {{- with .Values.networkPolicy.contentEgress.to }}
+    - to:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        {{- toYaml $.Values.networkPolicy.contentEgress.ports | nindent 8 }}
+    {{- end }}
     {{- end }}
     # Additional destinations declared by the operator. This compatibility
     # surface is not accepted as proof of the regulated exporter route.

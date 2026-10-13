@@ -114,10 +114,21 @@ FORBIDDEN_ROOT_SYMBOLS = {
 # usercustomize module reachable from site-packages) is forbidden.
 AUTOLOAD_MEMBER = "fabric/_autoload/sitecustomize.py"
 STARTUP_HOOK_NAMES = {"sitecustomize.py", "usercustomize.py"}
+# Spec 043 F1: only the Fabric Node writes content to cloud stores, so the
+# capture path (tee, spool, sender, content client, sequencing, loss) never
+# imports a cloud SDK. fabric.reconstruct and S3ContentStore keep boto3 lazy.
+CAPTURE_MEMBER_PREFIXES = ("fabric/wire/", "fabric/_autoload/")
+CAPTURE_MEMBERS = {"fabric/_loss.py", "fabric/_sequence.py", "fabric/_model_names.py"}
+CLOUD_SDK_IMPORT = re.compile(
+    r"^\s*(?:import|from)\s+(?:boto3|botocore|aiobotocore)\b"
+    r"|import_module\(\s*[\"'](?:boto3|botocore|aiobotocore)\b",
+    re.MULTILINE,
+)
 
 # Run in a fresh interpreter against the extracted artifact: importing
 # fabric and fabric.wire must patch nothing, start no thread, import
-# neither httpx/httpx2 nor the tee transport, and never trigger the autoload
+# neither httpx/httpx2, the tee transport, the spool/sender/content client,
+# requests, the OTLP protos nor a cloud SDK, and never trigger the autoload
 # — even with FABRIC_WIRE_AUTOLOAD=1 set.
 _IMPORT_PROBE = """
 import json, os, sys, threading
@@ -130,7 +141,9 @@ problems = []
 if not os.path.realpath(fabric.__file__).startswith(root + os.sep):
     problems.append("fabric was not imported from the artifact")
 for name in ("httpx", "httpx2", "fabric._autoload", "fabric._autoload.sitecustomize",
-             "fabric.wire._transport", "fabric.reconstruct"):
+             "fabric.wire._transport", "fabric.reconstruct", "fabric.wire._spool",
+             "fabric.wire._sender", "fabric.wire._content", "requests",
+             "opentelemetry.proto", "boto3", "botocore"):
     if name in sys.modules:
         problems.append("import fabric/fabric.wire loaded " + name)
 if threading.active_count() != threads:
@@ -240,6 +253,19 @@ def _probe_imports(path: Path, kind: str) -> None:
             raise ValueError(f"{kind} import has side effects: {problems}")
 
 
+def _check_capture_imports(payloads: dict[str, bytes], kind: str) -> None:
+    """Spec 043 F1: no wire-capture module imports a cloud SDK."""
+    cloud_imports = sorted(
+        name
+        for name, data in payloads.items()
+        if name.endswith(".py")
+        and (name.startswith(CAPTURE_MEMBER_PREFIXES) or name in CAPTURE_MEMBERS)
+        and CLOUD_SDK_IMPORT.search(data.decode("utf-8", "replace"))
+    )
+    if cloud_imports:
+        raise ValueError(f"{kind} wire capture imports a cloud SDK: {cloud_imports}")
+
+
 def qualify(path: Path, *, import_probe: bool = True) -> dict[str, object]:
     artifact_bytes = path.read_bytes()
     members, payloads, kind = _read_artifact(path)
@@ -270,6 +296,13 @@ def qualify(path: Path, *, import_probe: bool = True) -> dict[str, object]:
         "fabric/wire/__init__.py",
         "fabric/_autoload/__init__.py",
         AUTOLOAD_MEMBER,
+        # Spec 043: node-mode spool, sender, content client, model exposure.
+        "fabric/wire/_spool.py",
+        "fabric/wire/_sender.py",
+        "fabric/wire/_content.py",
+        "fabric/_loss.py",
+        "fabric/_sequence.py",
+        "fabric/_model_names.py",
     }
     missing = required.difference(canonical_members)
     if missing:
@@ -292,6 +325,7 @@ def qualify(path: Path, *, import_probe: bool = True) -> dict[str, object]:
     )
     if startup_hooks:
         raise ValueError(f"{kind} contains interpreter startup hooks: {startup_hooks}")
+    _check_capture_imports(canonical_payloads, kind)
     if any(name.endswith(".dist-info/entry_points.txt") for name in members):
         raise ValueError("recorder SDK artifact must not publish a console entry point")
 

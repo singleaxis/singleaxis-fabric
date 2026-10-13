@@ -44,7 +44,7 @@ that specification, 027 controls the recorder release.
   behavior, contract-only surfaces, required CI, and known boundaries.
 - [Deploying LLM wire capture](wire-capture-deployment.md) — agent
   activation, Node authentication, what is streamed and who can read it,
-  minimal IAM and known limits for spec 042 capture (draft).
+  minimal IAM and known limits for spec 042/043 capture (draft).
 - [Governed content](governed-content.md) — opt-in capture of actual
   content to customer-controlled storage: postures, stores, durability,
   resolution/export, coverage limits, and migration from `capture_content`.

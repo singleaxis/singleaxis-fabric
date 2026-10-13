@@ -223,6 +223,7 @@ def exchange_document(span: ReadableSpan) -> dict[str, Any]:
             "source_sequence": a["fabric.source.sequence"],
         },
         "run_id": a["fabric.run.id"],
+        **({"scope_id": a["fabric.run.scope_id"]} if "fabric.run.scope_id" in a else {}),
         "started_at": _iso(span.start_time),
         "ended_at": _iso(span.end_time),
         "request": {"sha256": "sha256:" + a["fabric.wire.request_sha256"]},
@@ -271,6 +272,8 @@ def loss_document(span: ReadableSpan) -> dict[str, Any]:
         )
         if "fabric.run.id" in a:
             document["run_id"] = a["fabric.run.id"]
+        if "fabric.run.scope_id" in a:
+            document["scope_id"] = a["fabric.run.scope_id"]
     else:
         document.update(
             kind="loss",

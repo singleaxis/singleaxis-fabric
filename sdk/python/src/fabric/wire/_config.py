@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Wire-capture configuration and environment parsing (spec 042 §2-§3)."""
+"""Wire-capture configuration and environment parsing (spec 042 §2-§3, 043 §1)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
+from .._model_names import parse_model_allowlist
 from .._sequence import OPAQUE_ID_RE
+from ..content_store.s3 import S3ContentStore  # boto3 stays lazy
+from ..tracing import check_endpoint_url
 from ._model import EndpointMatcher
 
 if TYPE_CHECKING:
@@ -23,7 +26,9 @@ _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9.:\[\]_-]{1,253}$")
 _MATCHER_KEYS = frozenset(EndpointMatcher.__dataclass_fields__)
 _SET_KEYS = ("hosts", "host_suffixes", "schemes", "ports")
-MAX_BODY_BYTES_CAP = 64 * 1024 * 1024
+_TENANT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
+MAX_BODY_BYTES_CAP, NODE_MAX_BODY_BYTES = 64 * 1024 * 1024, 63 * 1024 * 1024
+SPOOL_RESERVE_BYTES = 1024 * 1024
 
 DEFAULT_ENDPOINTS: tuple[EndpointMatcher, ...] = (
     EndpointMatcher("openai", "openai", hosts=frozenset({"api.openai.com"})),
@@ -74,9 +79,15 @@ class WireConfig:
     queue_max_items: int = 256
     patch_httpx: bool = True
     shutdown_timeout_s: float = 2.0
+    tenant_id: str | None = None
+    content_endpoint: str | None = None  # node mode: bodies go to the Fabric Node (spec 043)
+    spool_dir: str | None = None
+    spool_max_bytes: int = 1 << 30
+    model_allowlist: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _int("max_body_bytes", self.max_body_bytes, 1, MAX_BODY_BYTES_CAP)
+        self._check_delivery()
         _int("max_inflight_bytes", self.max_inflight_bytes, 1)
         _int("queue_max_items", self.queue_max_items, 1, 65536)
         timeout = self.shutdown_timeout_s
@@ -88,6 +99,28 @@ class WireConfig:
             validate_endpoint(matcher)
         if len({m.endpoint_id for m in self.all_endpoints}) != len(self.all_endpoints):
             raise ValueError("endpoint_id values must be unique")
+
+    def _check_delivery(self) -> None:
+        """Spec 043 §1: node mode, spool and model-allowlist rules; never echoes a value."""
+        if isinstance(self.store, S3ContentStore):
+            raise ValueError("s3 content is written by the Fabric Node (spec 043)")
+        if self.tenant_id is not None and not _TENANT_RE.fullmatch(str(self.tenant_id)):
+            raise ValueError("tenant_id must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
+        if parse_model_allowlist(",".join(self.model_allowlist)) != tuple(self.model_allowlist):
+            raise ValueError("model_allowlist entries must be stripped names or prefix*")
+        if self.spool_dir is not None:
+            if not isinstance(self.spool_dir, str) or not self.spool_dir.startswith("/"):
+                raise ValueError("spool_dir must be an absolute directory")
+            if self.tracer_provider is not None:
+                raise ValueError("spool delivery uses Fabric's exporter, not a tracer provider")
+            low = 2 * self.max_body_bytes + SPOOL_RESERVE_BYTES
+            _int("spool_max_bytes", self.spool_max_bytes, low)
+        if self.content_endpoint is None:
+            return
+        check_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", str(self.content_endpoint))
+        if self.store is not None or not self.tenant_id or self.spool_dir is None:
+            raise ValueError("node mode needs FABRIC_TENANT_ID, FABRIC_WIRE_SPOOL_DIR, no store")
+        _int("max_body_bytes", self.max_body_bytes, 1, NODE_MAX_BODY_BYTES)
 
     @property
     def all_endpoints(self) -> tuple[EndpointMatcher, ...]:
@@ -121,64 +154,51 @@ def parse_endpoints(text: str) -> tuple[EndpointMatcher, ...]:
     return tuple(matchers)
 
 
-def build_store(
-    uri: str, tenant_id: str | None, *, sse: str | None = None, kms_key_id: str | None = None
-) -> ByteEvidenceStore:
-    """Build the byte store named by ``file:///abs/dir`` or ``s3://bucket/prefix``.
+def build_store(uri: str, tenant_id: str | None) -> ByteEvidenceStore:
+    """The direct local store named by ``file:///abs/dir`` (spec 043 F1: no ``s3://``)."""
+    if uri.startswith("s3:"):
+        raise ValueError("s3 content is written by the Fabric Node (spec 043)")
+    parsed, path = urlsplit(uri), unquote(urlsplit(uri).path)
+    if parsed.scheme != "file" or parsed.netloc not in ("", "localhost") or parsed.query or (
+            parsed.fragment or not path.startswith("/") or not tenant_id):  # fmt: skip
+        raise ValueError("FABRIC_WIRE_STORE must be 'node' or file:///absolute/dir (+ tenant)")
+    from ..content_store.local import LocalFilesystemContentStore  # noqa: PLC0415
 
-    ``sse`` (``AES256``/``aws:kms``) and ``kms_key_id`` (``aws:kms`` only) apply to S3.
-    """
-    if sse not in (None, "AES256", "aws:kms") or (kms_key_id and sse != "aws:kms"):
-        raise ValueError("FABRIC_WIRE_STORE_SSE must be AES256 or aws:kms (KMS key: aws:kms)")
-    if (sse or kms_key_id) and not uri.startswith("s3://"):
-        raise ValueError("FABRIC_WIRE_STORE_SSE applies to s3:// stores only")
-    if not tenant_id:
-        raise ValueError("FABRIC_WIRE_STORE requires FABRIC_TENANT_ID")
-    parsed = urlsplit(uri)
-    if parsed.query or parsed.fragment:
-        raise ValueError("FABRIC_WIRE_STORE must not carry a query or fragment")
-    if parsed.scheme == "file":
-        path = unquote(parsed.path)
-        if parsed.netloc not in ("", "localhost") or not path.startswith("/"):
-            raise ValueError("FABRIC_WIRE_STORE file URI must be file:///absolute/dir")
-        from ..content_store.local import LocalFilesystemContentStore  # noqa: PLC0415
-
-        return LocalFilesystemContentStore(root=path, tenant_id=tenant_id)
-    if parsed.scheme == "s3":
-        if not parsed.netloc or "@" in parsed.netloc:
-            raise ValueError("FABRIC_WIRE_STORE s3 URI must be s3://bucket/prefix")
-        from ..content_store.s3 import S3ContentStore  # noqa: PLC0415
-
-        prefix = parsed.path.strip("/")
-        extra = {"prefix": prefix + "/"} if prefix else {}
-        return S3ContentStore(
-            bucket=parsed.netloc, tenant_id=tenant_id, sse_algorithm=sse,
-            sse_kms_key_id=kms_key_id, **extra,
-        )  # fmt: skip
-    raise ValueError("FABRIC_WIRE_STORE must be a file:// or s3:// URI")
+    return LocalFilesystemContentStore(root=path, tenant_id=tenant_id)
 
 
 def config_from_env(
     environ: Mapping[str, str],
 ) -> tuple[WireConfig, Literal["private", "global"]]:
     """Build a config (without tracer provider) and the tracer mode; ``ValueError`` if invalid."""
-    store_uri = environ.get("FABRIC_WIRE_STORE")
     tracer_mode = (environ.get("FABRIC_WIRE_TRACER") or "private").strip().lower()
     if tracer_mode not in ("private", "global"):
         raise ValueError("FABRIC_WIRE_TRACER must be 'private' or 'global'")
-    sse = environ.get("FABRIC_WIRE_STORE_SSE") or None
-    kms = environ.get("FABRIC_WIRE_STORE_KMS_KEY_ID") or None
-    if (sse or kms) and not store_uri:
-        raise ValueError("FABRIC_WIRE_STORE_SSE needs an s3:// FABRIC_WIRE_STORE")
-    tenant = environ.get("FABRIC_TENANT_ID")
-    store = build_store(store_uri, tenant, sse=sse, kms_key_id=kms) if store_uri else None
-    kwargs: dict[str, Any] = {"store": store, "source_id": environ.get("FABRIC_SOURCE_ID") or None}
+    if environ.get("FABRIC_WIRE_STORE_SSE") or environ.get("FABRIC_WIRE_STORE_KMS_KEY_ID"):
+        raise ValueError("encryption is configured on the Fabric Node")
+    store_uri = (environ.get("FABRIC_WIRE_STORE") or "").strip()
+    endpoint = (environ.get("FABRIC_WIRE_CONTENT_ENDPOINT") or "").strip() or None
+    tenant = environ.get("FABRIC_TENANT_ID") or None
+    node = store_uri == "node" or (not store_uri and endpoint is not None)
+    if node and endpoint is None:
+        raise ValueError("node mode needs FABRIC_WIRE_CONTENT_ENDPOINT")
+    if (node or environ.get("FABRIC_WIRE_SPOOL_DIR")) and tracer_mode != "private":
+        raise ValueError("node mode and the spool need FABRIC_WIRE_TRACER=private")
+    if store_uri and not node and endpoint is not None:
+        raise ValueError("FABRIC_WIRE_CONTENT_ENDPOINT is for node mode only")
+    kwargs: dict[str, Any] = {
+        "store": build_store(store_uri, tenant) if store_uri and not node else None,
+        "source_id": environ.get("FABRIC_SOURCE_ID") or None, "tenant_id": tenant,
+        "content_endpoint": endpoint if node else None,
+        "spool_dir": environ.get("FABRIC_WIRE_SPOOL_DIR") or None,
+        "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
+    }  # fmt: skip
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
-    for name, field in (
-        ("MAX_BODY_BYTES", "max_body_bytes"),
-        ("QUEUE_MAX_ITEMS", "queue_max_items"),
-    ):
+    for name in ("MAX_BODY_BYTES", "QUEUE_MAX_ITEMS", "SPOOL_MAX_BYTES"):
         if value := environ.get(f"FABRIC_WIRE_{name}"):
-            kwargs[field] = int(value)  # ValueError when not an integer
+            try:
+                kwargs[name.lower()] = int(value)
+            except ValueError:
+                raise ValueError(f"FABRIC_WIRE_{name} must be an integer") from None
     return WireConfig(**kwargs), cast(Literal["private", "global"], tracer_mode)

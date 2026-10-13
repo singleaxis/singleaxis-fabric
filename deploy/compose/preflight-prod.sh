@@ -54,6 +54,15 @@ FABRIC_BIND_ADDR="$(envget FABRIC_BIND_ADDR)"
 FABRIC_EXPORT_CA_FILE="$(envget FABRIC_EXPORT_CA_FILE)"
 FABRIC_INGRESS_TLS_CERT_FILE="$(envget FABRIC_INGRESS_TLS_CERT_FILE)"
 FABRIC_INGRESS_TLS_KEY_FILE="$(envget FABRIC_INGRESS_TLS_KEY_FILE)"
+FABRIC_TENANT_ID="$(envget FABRIC_TENANT_ID)"
+FABRIC_CONTENT_BACKEND="$(envget FABRIC_CONTENT_BACKEND)"
+FABRIC_CONTENT_S3_BUCKET="$(envget FABRIC_CONTENT_S3_BUCKET)"
+FABRIC_CONTENT_S3_PREFIX="$(envget FABRIC_CONTENT_S3_PREFIX)"
+FABRIC_CONTENT_S3_REGION="$(envget FABRIC_CONTENT_S3_REGION)"
+FABRIC_CONTENT_S3_ENDPOINT="$(envget FABRIC_CONTENT_S3_ENDPOINT)"
+FABRIC_CONTENT_S3_PATH_STYLE="$(envget FABRIC_CONTENT_S3_PATH_STYLE)"
+FABRIC_CONTENT_S3_SSE="$(envget FABRIC_CONTENT_S3_SSE)"
+FABRIC_CONTENT_S3_KMS_KEY_ID="$(envget FABRIC_CONTENT_S3_KMS_KEY_ID)"
 # The image runs as distroless nonroot (uid/gid 65532). Bind-mounted files
 # keep their host owner and mode, so that user must be able to read them.
 # Override only for an image built with a different nonroot user.
@@ -180,29 +189,59 @@ if [ ! -f "${COLLECTOR_CONFIG}" ]; then
   bad "collector config missing: ${COLLECTOR_CONFIG} (run from deploy/compose)"
 fi
 
+# yaml_flatten FILE: one "<key|key|...>\t<value>" line per mapping key, for
+# the block-style YAML subset collector configs use. Comment-only and blank
+# lines are skipped, trailing comments and key quotes are stripped, sequence
+# items are ignored. Commented-out stanzas therefore never count.
+yaml_flatten() {
+  [ -f "$1" ] || return 0
+  awk -v q="'" '
+    /^[[:space:]]*(#.*)?$/ { next }
+    {
+      line = $0
+      sub(/[[:space:]]+#.*$/, "", line)
+      match(line, /^ */)
+      ind = RLENGTH
+      body = substr(line, ind + 1)
+      if (substr(body, 1, 1) == "-") next
+      c = index(body, ":")
+      if (c == 0) next
+      key = substr(body, 1, c - 1)
+      val = substr(body, c + 1)
+      sub(/^[[:space:]]+/, "", val)
+      sub(/[[:space:]]+$/, "", val)
+      gsub(/"/, "", key)
+      gsub(q, "", key)
+      while (d > 0 && si[d] >= ind) d--
+      d++
+      si[d] = ind
+      sk[d] = key
+      path = sk[1]
+      for (i = 2; i <= d; i++) path = path "|" sk[i]
+      printf "%s\t%s\n", path, val
+    }' "$1"
+}
+FLAT_CONFIG="$(yaml_flatten "${COLLECTOR_CONFIG}")"
+
 # --- persistent queue disk headroom (warn-only) -----------------------------
+# Worst case = queue_size items x max request size, per queue. Telemetry uses
+# the larger otlp receiver bound (max_request_body_size bytes or
+# max_recv_msg_size_mib; the collector's 20 MiB HTTP default when unset).
+# The content queue (fabriccontent, spec 043) holds up to 64 MiB per item.
 if [ -f "${COLLECTOR_CONFIG}" ]; then
-  # Worst case = queue_size items x max request size. Read the configured
-  # receiver bound (max_request_body_size bytes / max_recv_msg_size_mib);
-  # fall back to the collector's 20 MiB HTTP default when unset.
-  read -r queue_size max_item_mb <<EOF
-$(awk '
-    /^[[:space:]]*sending_queue:[[:space:]]*$/ { in_queue = 1; next }
-    in_queue && /^[[:space:]]*queue_size:[[:space:]]*/ {
-      sub(/^[[:space:]]*queue_size:[[:space:]]*/, "")
-      sub(/[[:space:]]*(#.*)?$/, "")
-      queue_size = $0
-      in_queue = 0
+  read -r queue_size max_item_mb content_queue content_item_mb <<EOF
+$(printf '%s\n' "${FLAT_CONFIG}" | awk -F '\t' '
+    { n = split($1, k, "|") }
+    k[1] == "receivers" && k[n] == "max_request_body_size" {
+      if (k[2] ~ /^otlp\/content/) { if ($2 + 0 > content_body) content_body = $2 + 0 }
+      else if ($2 + 0 > max_body) max_body = $2 + 0
     }
-    /^[[:space:]]*max_request_body_size:[[:space:]]*/ {
-      sub(/^[[:space:]]*max_request_body_size:[[:space:]]*/, "")
-      sub(/[[:space:]]*(#.*)?$/, "")
-      max_body = $0 + 0
+    k[1] == "receivers" && k[n] == "max_recv_msg_size_mib" && k[2] !~ /^otlp\/content/ {
+      if ($2 + 0 > max_recv) max_recv = $2 + 0
     }
-    /^[[:space:]]*max_recv_msg_size_mib:[[:space:]]*/ {
-      sub(/^[[:space:]]*max_recv_msg_size_mib:[[:space:]]*/, "")
-      sub(/[[:space:]]*(#.*)?$/, "")
-      max_recv = $0 + 0
+    k[1] == "exporters" && n == 4 && k[3] == "sending_queue" && k[4] == "queue_size" {
+      if (k[2] ~ /^fabriccontent(\/|$)/) { if ($2 + 0 > content_q) content_q = $2 + 0 }
+      else if (queue_size == "" || $2 + 0 > queue_size + 0) queue_size = $2
     }
     END {
       # Round bytes up: flooring a non-MiB-aligned HTTP limit would
@@ -211,9 +250,10 @@ $(awk '
       if (http_mb < 1) http_mb = 1
       grpc_mb = (max_recv > 0) ? max_recv : 4
       item_mb = (http_mb > grpc_mb) ? http_mb : grpc_mb
-      print queue_size, item_mb
-    }
-  ' "${COLLECTOR_CONFIG}")
+      content_mb = (content_body > 0) ? int((content_body + 1048575) / 1048576) : 20
+      if (queue_size == "") queue_size = "-"
+      print queue_size, item_mb, content_q + 0, content_mb
+    }')
 EOF
   case "${queue_size}" in
     ''|*[!0-9]*)
@@ -232,53 +272,81 @@ EOF
           else
             ok "queue disk headroom is ${available_mb} MiB (worst-case estimate ${queue_estimate_mb} MiB at ${max_item_mb} MiB/request)"
           fi
+          if [ "${content_queue:-0}" -gt 0 ]; then
+            content_estimate_mb=$((content_queue * content_item_mb))
+            total_mb=$((queue_estimate_mb + content_estimate_mb))
+            if [ "${available_mb}" -lt "${total_mb}" ]; then
+              warn "content queue worst-case estimate is ${content_estimate_mb} MiB (${content_queue} items at up to ${content_item_mb} MiB/record); with telemetry ${total_mb} MiB exceeds ${available_mb} MiB free"
+            else
+              ok "content queue worst-case estimate ${content_estimate_mb} MiB (${content_queue} items at up to ${content_item_mb} MiB/record); ${total_mb} MiB with telemetry fits"
+            fi
+          fi
           ;;
       esac
       ;;
   esac
 fi
 
-# receiver_proto PROTO MODE: MODE "present" succeeds when the OTLP receiver
-# configures PROTO (grpc or http); MODE "tls" when PROTO also has an
-# uncommented tls: stanza of its own. Only the receivers: block is read, so
-# exporter TLS settings never count as ingress TLS.
-receiver_proto() {
-  [ -f "${COLLECTOR_CONFIG}" ] || return 1
-  sed -n '/^receivers:/,/^processors:/p' "${COLLECTOR_CONFIG}" | awk -v want="$1" -v mode="$2" '
-    /^[[:space:]]*(#.*)?$/ { next }
+# receiver_table: one "<id> <protocol> <port> <tls|plain> <auth|noauth>" line
+# per protocol of every otlp receiver instance (otlp, otlp/content, ...).
+# TLS counts as enabled only for an uncommented tls: mapping with non-empty
+# cert_file AND key_file. A commented stanza, a childless "tls:", "tls: {}",
+# "tls: null"/"~", or a stanza missing either file is disabled (spec 043 F9).
+# An endpoint without a port gets the protocol default (4317 gRPC, 4318 HTTP).
+receiver_table() {
+  printf '%s\n' "${FLAT_CONFIG}" | awk -F '\t' -v q="'" '
+    { n = split($1, k, "|") }
+    k[1] != "receivers" || n < 4 || k[3] != "protocols" || k[2] !~ /^otlp(\/|$)/ { next }
     {
-      match($0, /^[[:space:]]*/)
-      indent = RLENGTH
-      if (proto != "" && indent <= proto_indent) proto = ""
+      id = k[2] " " k[4]
+      if (!(id in seen)) { seen[id] = 1; order[++m] = id }
     }
-    /^[[:space:]]*(grpc|http):[[:space:]]*(#.*)?$/ {
-      name = $0
-      sub(/^[[:space:]]*/, "", name)
-      sub(/:.*/, "", name)
-      proto = name
-      proto_indent = indent
-      if (proto == want) present = 1
-      next
+    n == 5 && k[5] == "endpoint" {
+      p = $2
+      sub(/.*:/, "", p)
+      gsub(/[^0-9]/, "", p)
+      port[id] = p
     }
-    proto == want && /^[[:space:]]*tls:/ { tls = 1 }
+    n == 5 && k[5] == "tls" { tls[id] = 1; tlsval[id] = $2 }
+    n == 6 && k[5] == "tls" && (k[6] == "cert_file" || k[6] == "key_file") {
+      v = $2
+      gsub(/"/, "", v)
+      gsub(q, "", v)
+      if (v != "" && v != "null" && v != "~") file[id, k[6]] = 1
+    }
+    n == 5 && k[5] == "auth" && $2 ~ /authenticator:[[:space:]]*[^[:space:],}]/ { auth[id] = 1 }
+    n == 6 && k[5] == "auth" && k[6] == "authenticator" && $2 != "" { auth[id] = 1 }
     END {
-      if (mode == "tls") exit((present && tls) ? 0 : 1)
-      exit(present ? 0 : 1)
+      for (i = 1; i <= m; i++) {
+        id = order[i]
+        split(id, parts, " ")
+        p = port[id]
+        if (p == "") p = (parts[2] == "grpc") ? 4317 : 4318
+        on = 0
+        if (tls[id]) {
+          v = tlsval[id]
+          if (v == "") on = (file[id, "cert_file"] && file[id, "key_file"])
+          else on = (v ~ /cert_file:[[:space:]]*[^[:space:],}"\047]/ && v ~ /key_file:[[:space:]]*[^[:space:],}"\047]/)
+        }
+        print parts[1], parts[2], p, (on ? "tls" : "plain"), (auth[id] ? "auth" : "noauth")
+      }
     }'
 }
+RECEIVERS="$(receiver_table)"
 
-# Compose publishes both OTLP ports on FABRIC_BIND_ADDR, so every configured
-# protocol is published wherever that address is.
 receiver_tls_enabled() {
-  receiver_proto grpc tls || receiver_proto http tls
+  printf '%s\n' "${RECEIVERS}" | awk '$4 == "tls" { found = 1 } END { exit(found ? 0 : 1) }'
 }
-plaintext_receivers() {
-  for proto in grpc http; do
-    if receiver_proto "${proto}" present && ! receiver_proto "${proto}" tls; then
-      printf '%s ' "${proto}"
-    fi
-  done
-}
+
+# Every OTLP ingress, the content receiver included, must authenticate.
+if [ -n "${RECEIVERS}" ]; then
+  unauthenticated=$(printf '%s\n' "${RECEIVERS}" | awk '$5 == "noauth" { printf "%s.%s:%s ", $1, $2, $3 }')
+  if [ -n "${unauthenticated}" ]; then
+    bad "OTLP receivers without an authenticator: ${unauthenticated% }; every ingress (including otlp/content) needs auth: authenticator: bearertokenauth"
+  else
+    ok "every OTLP receiver requires the bearer token"
+  fi
+fi
 
 tlsdir="${FABRIC_INGRESS_TLS_DIR:-./tls}"
 if receiver_tls_enabled; then
@@ -321,9 +389,11 @@ elif [ -n "${FABRIC_EXPORT_CA_FILE:-}" ]; then
 fi
 
 # --- bind address sanity ------------------------------------------------------
-# Both OTLP ports are published on FABRIC_BIND_ADDR: beyond loopback, EVERY
-# configured receiver protocol needs its own TLS, or bearer tokens and
-# telemetry cross the network in plaintext on that port.
+# Compose publishes 4317, 4318 and 4319 on FABRIC_BIND_ADDR: beyond loopback,
+# EVERY receiver protocol serving one of those ports needs TLS genuinely
+# enabled, or bearer tokens, telemetry and content cross the network in
+# plaintext on that port.
+PUBLISHED_OTLP_PORTS="4317 4318 4319"
 bind="${FABRIC_BIND_ADDR:-127.0.0.1}"
 case "${bind}" in
   127.*|localhost|::1|\[::1\]) loopback=1 ;;
@@ -332,14 +402,98 @@ esac
 if [ "${loopback}" -eq 1 ]; then
   ok "OTLP ports bind loopback only"
 else
-  plaintext=$(plaintext_receivers)
+  exposure=$(printf '%s\n' "${RECEIVERS}" | awk -v ports=" ${PUBLISHED_OTLP_PORTS} " '
+    index(ports, " " $3 " ") == 0 { next }
+    { served = 1 }
+    $4 != "tls" { plain = plain sprintf("%s.%s:%s ", $1, $2, $3) }
+    END { printf "%d %s", served, plain }')
+  served="${exposure%% *}"
+  plaintext="${exposure#* }"
   if [ -n "${plaintext}" ]; then
-    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but these receivers have no tls: stanza: ${plaintext% }; enable TLS on every receiver or keep FABRIC_BIND_ADDR=127.0.0.1"
-  elif receiver_tls_enabled; then
-    ok "non-loopback bind (${bind}) with TLS on every OTLP receiver"
+    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but TLS is not enabled on: ${plaintext% }; each needs an uncommented tls: mapping with non-empty cert_file and key_file (a commented, empty, {} or null tls: is disabled) -- or keep FABRIC_BIND_ADDR=127.0.0.1"
+  elif [ "${served}" = "1" ]; then
+    ok "non-loopback bind (${bind}) with TLS on every published OTLP receiver"
   else
-    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but no OTLP receiver is configured in ${COLLECTOR_CONFIG}"
+    bad "FABRIC_BIND_ADDR=${bind} publishes OTLP beyond loopback but no OTLP receiver serves ${PUBLISHED_OTLP_PORTS} in ${COLLECTOR_CONFIG}"
   fi
+fi
+
+# --- content path (spec 043) ---------------------------------------------------
+# The Node is the only content writer. Values are checked for shape; URLs and
+# secrets are never echoed.
+content_configured() {
+  printf '%s\n' "${FLAT_CONFIG}" | awk -F '\t' '
+    { n = split($1, k, "|") }
+    n == 2 && k[1] == "exporters" && k[2] ~ /^fabriccontent(\/|$)/ { found = 1 }
+    END { exit(found ? 0 : 1) }'
+}
+matches() { printf '%s' "$2" | grep -Eq -- "$1"; }
+
+if content_configured; then
+  if [ -z "${FABRIC_TENANT_ID:-}" ]; then
+    bad "FABRIC_TENANT_ID unset; the content exporter would accept no tenant"
+  elif ! matches '^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$' "${FABRIC_TENANT_ID}"; then
+    bad "FABRIC_TENANT_ID is not a safe tenant id (^[A-Za-z0-9][A-Za-z0-9._-]{0,255}\$)"
+  else
+    ok "content tenant set"
+  fi
+  content_rows=$(printf '%s\n' "${RECEIVERS}" | awk '$1 ~ /^otlp\/content/')
+  if [ -z "${content_rows}" ]; then
+    bad "fabriccontent is configured but no otlp/content receiver feeds it"
+  elif printf '%s\n' "${content_rows}" | awk '$2 == "grpc" { found = 1 } END { exit(found ? 0 : 1) }'; then
+    bad "the otlp/content receiver configures grpc; content ingress is HTTP only (fabric-gate refuses this)"
+  else
+    ok "content receiver is HTTP only"
+  fi
+  case "${FABRIC_CONTENT_BACKEND:-file}" in
+    file)
+      warn "content store is the local fabric-content volume; its encryption at rest is the host disk's (FABRIC_CONTENT_BACKEND=s3 adds server-side encryption)"
+      ;;
+    s3)
+      [ -f collector-config/collector-content-s3.yaml ] && [ -f docker-compose.content-s3.yml ] \
+        || bad "FABRIC_CONTENT_BACKEND=s3 needs collector-config/collector-content-s3.yaml and docker-compose.content-s3.yml"
+      if matches '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$' "${FABRIC_CONTENT_S3_BUCKET:-}"; then
+        ok "content bucket name is valid"
+      else
+        bad "FABRIC_CONTENT_S3_BUCKET is unset or not a bucket name (no scheme, no path)"
+      fi
+      prefix="${FABRIC_CONTENT_S3_PREFIX:-fabric/content/}"
+      if matches '/$' "${prefix}" && ! matches '^/|//|(^|/)\.\.?(/|$)' "${prefix}"; then
+        ok "content prefix shape"
+      else
+        bad "FABRIC_CONTENT_S3_PREFIX must end with /, must not start with / and must not contain empty, . or .. segments"
+      fi
+      if [ -z "${FABRIC_CONTENT_S3_REGION:-}" ]; then
+        bad "FABRIC_CONTENT_S3_REGION unset; set the bucket region"
+      fi
+      endpoint="${FABRIC_CONTENT_S3_ENDPOINT:-}"
+      if [ -z "${endpoint}" ]; then
+        ok "content store is AWS S3 (default endpoint)"
+      elif matches '^https?://[^/?#@[:space:]]+(/[^?#@[:space:]]*)?$' "${endpoint}"; then
+        case "${endpoint}" in
+          https://*) ok "content store endpoint uses https" ;;
+          *) bad "FABRIC_CONTENT_S3_ENDPOINT is plaintext http; content would leave the Node unencrypted in transit -- use https" ;;
+        esac
+      else
+        bad "FABRIC_CONTENT_S3_ENDPOINT must be an http(s) URL without user info, query or fragment"
+      fi
+      case "${FABRIC_CONTENT_S3_PATH_STYLE:-false}" in
+        true|false) ;;
+        *) bad "FABRIC_CONTENT_S3_PATH_STYLE must be true or false" ;;
+      esac
+      sse="${FABRIC_CONTENT_S3_SSE:-aws:kms}"
+      case "${sse}" in
+        aws:kms|AES256) ok "content server-side encryption: ${sse}" ;;
+        *) bad "FABRIC_CONTENT_S3_SSE must be aws:kms or AES256; production content is always encrypted at rest" ;;
+      esac
+      if [ -n "${FABRIC_CONTENT_S3_KMS_KEY_ID:-}" ] && [ "${sse}" != "aws:kms" ]; then
+        bad "FABRIC_CONTENT_S3_KMS_KEY_ID is only valid with FABRIC_CONTENT_S3_SSE=aws:kms"
+      fi
+      ;;
+    *)
+      bad "FABRIC_CONTENT_BACKEND must be file or s3"
+      ;;
+  esac
 fi
 
 # --- optional reachability probe (warn-only: destination may not exist yet) ---

@@ -29,6 +29,16 @@ def test_host_sensors_are_in_source_and_dependency_scans() -> None:
         assert path in osv_args
 
 
+def test_node_content_exporter_is_in_source_and_dependency_scans() -> None:
+    """Spec 043: the Node's content writer ships in the image with the AWS SDK."""
+    path = "components/otel-collector-fabric/exporter/fabriccontentexporter"
+    jobs = yaml.safe_load(SECURITY_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    trivy_paths = {item["path"] for item in jobs["trivy"]["strategy"]["matrix"]["include"]}
+    assert path in trivy_paths
+    assert path in jobs["semgrep"]["steps"][1]["run"]
+    assert path in jobs["osv"]["steps"][1]["with"]["scan-args"]
+
+
 def test_shipped_host_emitter_image_is_scanned() -> None:
     workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     steps = workflow["jobs"]["host-emitter"]["steps"]

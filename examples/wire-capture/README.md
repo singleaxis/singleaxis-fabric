@@ -6,7 +6,15 @@
 A ReAct agent's model traffic is its decision log: request N+1 is request N
 plus response N plus the tool results, linked by tool-call ids. This example
 captures that traffic at the wire, with no framework adapter, and then
-rebuilds the run offline ([spec 042](../../specs/042-llm-wire-capture-and-reconstruction.md)).
+rebuilds the run offline ([spec 042](../../specs/042-llm-wire-capture-and-reconstruction.md),
+[spec 043](../../specs/043-node-content-delivery-and-agent-spool.md)).
+
+This example uses the direct local store (`file://` mode): one process,
+fully offline. In a deployment the agent runs in **node mode** instead: it
+spools capture events to disk and delivers the bodies to the Fabric Node,
+which is the only writer of the content store (a directory or S3) and holds
+the only store credentials. See
+[Deploying LLM wire capture](../../docs/wire-capture-deployment.md).
 
 ```bash
 # from the repository root
@@ -37,11 +45,15 @@ reconstruct exit code: 0
    (`model.exchange.request`, `model.exchange.response`). The
    `fabric.model_call` span written to `output/spans.jsonl` carries only ids,
    digests, the source sequence number and refs. No message is parsed at
-   capture time. Entering and leaving `fabric.wire.run(...)` emits heartbeat
-   run markers (`fabric.capture_heartbeat`), and closing the handle emits a
-   final heartbeat that proves the tail.
+   capture time. Each entry into `fabric.wire.run(...)` is a run scope with
+   its own `fabric.run.scope_id`: entering and leaving it emits heartbeat
+   run markers (`fabric.capture_heartbeat`) carrying that id, and every call
+   inside it carries the id too. Closing the handle emits a final heartbeat
+   that proves the tail. The model name `demo-model` is not on the public
+   model allowlist, so spans carry it only as an `m-…` digest
+   (`FABRIC_WIRE_MODEL_ALLOWLIST` extends the list).
 4. `python -m fabric.reconstruct --spans … --store-root … --tenant …` reads
-   both. It checks sequences, loss records and the heartbeat tail, verifies
+   both. It checks sequences, loss records and the run scope's markers, verifies
    every stored body against its digest, then parses the bytes to stitch the
    run (tool-call ids, message prefixes). It writes `output/report.json`
    (`fabric.run-reconstruction/v1`).

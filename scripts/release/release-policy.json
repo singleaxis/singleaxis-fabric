@@ -16,6 +16,9 @@
       "fabric/_content.py",
       "fabric/_content_sink.py",
       "fabric/_content_writer.py",
+      "fabric/_loss.py",
+      "fabric/_model_names.py",
+      "fabric/_sequence.py",
       "fabric/_version.py",
       "fabric/content_store/__init__.py",
       "fabric/content_store/base.py",
@@ -24,7 +27,10 @@
       "fabric/py.typed",
       "fabric/reconstruct/__init__.py",
       "fabric/resolver.py",
-      "fabric/wire/__init__.py"
+      "fabric/wire/__init__.py",
+      "fabric/wire/_content.py",
+      "fabric/wire/_sender.py",
+      "fabric/wire/_spool.py"
     ],
     "allowed_wheel_package_roots": [
       "fabric"
@@ -64,6 +70,9 @@
       "src/fabric/_content.py",
       "src/fabric/_content_sink.py",
       "src/fabric/_content_writer.py",
+      "src/fabric/_loss.py",
+      "src/fabric/_model_names.py",
+      "src/fabric/_sequence.py",
       "src/fabric/_version.py",
       "src/fabric/content_store/__init__.py",
       "src/fabric/content_store/base.py",
@@ -72,7 +81,10 @@
       "src/fabric/py.typed",
       "src/fabric/reconstruct/__init__.py",
       "src/fabric/resolver.py",
-      "src/fabric/wire/__init__.py"
+      "src/fabric/wire/__init__.py",
+      "src/fabric/wire/_content.py",
+      "src/fabric/wire/_sender.py",
+      "src/fabric/wire/_spool.py"
     ],
     "allowed_sdist_top_level": [
       "src",

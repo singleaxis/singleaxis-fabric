@@ -33,6 +33,7 @@ import fabric._loss
 import fabric._sequence
 from fabric import wire
 from fabric._loss import LossEmitter
+from fabric._model_names import hashed_model
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.reconstruct import reconstruct
 from fabric.reconstruct._inputs import pseudonym
@@ -263,7 +264,8 @@ def test_exchange_spans_carry_no_message_level_keys(tmp_path: Path) -> None:
         assert not {k for k in keys if "hash" in k or "tool_call" in k or "message" in k}
         assert "fabric.run.sequence" not in keys
         assert row["attributes"]["fabric.wire.store_status"] == "stored"
-        assert row["attributes"]["gen_ai.response.model"] == "demo-model"
+        # Spec 043 F7: a model name outside the allowlist leaves only as a digest.
+        assert row["attributes"]["gen_ai.response.model"] == hashed_model("demo-model")
 
 
 def test_spans_and_report_carry_no_content(tmp_path: Path) -> None:

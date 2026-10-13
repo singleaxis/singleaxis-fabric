@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/loss-record-v1.schema.json",
-  "title": "Fabric capture loss record / heartbeat v1 (draft, spec 042 rev 5)",
-  "description": "JSON form of a fabric.capture_loss or fabric.capture_heartbeat span. A loss names a range of a source's exchange sequences that will never produce an exchange span; a heartbeat declares the last exchange sequence the source has allocated, which is how tail loss becomes detectable. heartbeat_kind says why it was written: periodic, run_start / run_end (a fabric.wire.run() block, with run_id) or final (a clean close; nothing is allocated in the epoch after it). A retried export re-sends the same logical record; readers deduplicate heartbeats by (source, kind, run_id, last_sequence). Records do not consume sequences and carry no content. Loss records only explain gaps: a sequence that is neither an exchange nor inside a loss range is still a detected gap.",
+  "title": "Fabric capture loss record / heartbeat v1 (draft, spec 042 rev 5, spec 043)",
+  "description": "JSON form of a fabric.capture_loss or fabric.capture_heartbeat span. A loss names a range of a source's exchange sequences that will never produce an exchange span; a heartbeat declares the last exchange sequence the source has allocated, which is how tail loss becomes detectable. heartbeat_kind says why it was written: periodic, run_start / run_end (a fabric.wire.run() block, with run_id) or final (a clean close; nothing is allocated in the epoch after it). A retried export re-sends the same logical record; readers deduplicate heartbeats by (source, kind, run_id, scope_id, last_sequence). Run markers carry the scope_id of the fabric.wire.run() block entry they bound (spec 043 §6); readers pair markers by scope_id. Records do not consume sequences and carry no content. Loss records only explain gaps: a sequence that is neither an exchange nor inside a loss range is still a detected gap.",
   "type": "object",
   "required": ["schema_version", "kind", "source", "emitted_at"],
   "properties": {
@@ -47,6 +47,11 @@
         "run_id": {
           "description": "The run a run_start / run_end marker bounds. Capture writes it on markers only; readers treat a marker without run_id as an unclassified heartbeat and ignore run_id on periodic and final heartbeats.",
           "$ref": "#/$defs/opaqueId"
+        },
+        "scope_id": {
+          "description": "fabric.run.scope_id of the fabric.wire.run() block entry this run_start / run_end marker bounds (spec 043 §6). Only on run markers; a marker without a valid scope_id is an unclassified heartbeat.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         }
       }
     }

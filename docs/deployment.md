@@ -87,6 +87,45 @@ Operational notes:
 - **`helm test` is dev-only.** The bundled test pod matches no ingress
   peer under `shadow-production`; run it under `shadow-dev` only.
 
+## Content delivery for LLM wire capture (optional)
+
+Wire capture (spec 043) sends stored request/response bodies to a separate
+content receiver on the Node (`otlp/content`, port 4319, OTLP/HTTP only,
+64 MiB per request). The `fabriccontent` exporter verifies each record's
+descriptor, digest, length and tenant and writes it to the customer store.
+The Node is the only content writer; agents hold no cloud credentials.
+Content never enters the telemetry pipelines and never reaches
+`exporter.endpoint`. It is off by default. To enable it in
+`shadow-production`, create the Node writer role (see
+[wire-capture-deployment.md](wire-capture-deployment.md#4-minimal-iam)) and
+add:
+
+```bash
+  --set otel-collector.content.enabled=true \
+  --set 'otel-collector.content.allowedTenants[0]=TENANT_ID_USED_BY_AGENTS' \
+  --set otel-collector.content.backend=s3 \
+  --set otel-collector.content.s3.bucket=customer-evidence \
+  --set otel-collector.content.s3.region=eu-west-1 \
+  --set otel-collector.content.s3.sse=aws:kms \
+  --set otel-collector.content.s3.kmsKeyId=arn:aws:kms:eu-west-1:111122223333:key/KEY_ID \
+  --set 'otel-collector.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::111122223333:role/fabric-node-writer' \
+  --set 'otel-collector.networkPolicy.contentEgress.to[0].ipBlock.cidr=198.51.100.0/24' \
+  --set 'otel-collector.networkPolicy.contentEgress.ports[0].protocol=TCP' \
+  --set 'otel-collector.networkPolicy.contentEgress.ports[0].port=443'
+```
+
+The content receiver uses the same server certificate, client CA and
+NetworkPolicy ingress peers as 4317/4318. The content queue shares the
+queue PVC (`<persistence.directory>/content-queue`, fsync); size the PVC for
+`content.queue.queueSize` × 64 MiB in addition to the telemetry queue, and
+raise `resources.limits.memory` above `content.memoryLimiterMiB`. The chart
+refuses to render content without allowed tenants, a backend and a valid
+bucket; in `shadow-production` it also requires SSE, an `https://` store
+endpoint (when one is set, for S3-compatible stores), store egress peers,
+and refuses the file backend. For an S3-compatible store without workload
+identity, reference an operator-created Secret with
+`otel-collector.content.s3.credentialsSecret.name`; keys never go in values.
+
 ## Production invariants
 
 `shadow-production` must render only when all of these are true:
@@ -106,6 +145,9 @@ Operational notes:
 - the Collector image is pinned by digest or explicit non-latest tag;
 - the pod runs as non-root and cannot escalate privileges;
 - every declared network peer is non-empty and non-world;
+- when content delivery is enabled: allowed tenants, an s3 backend with
+  server-side encryption, the same mTLS on port 4319, a persistent content
+  queue and explicit store egress;
 - default-deny network policy and explicit workload ingress and destination
   egress are enabled.
 
@@ -115,7 +157,10 @@ readiness proves that referenced Secrets and storage are actually available.
 Independently of the chart, the Node's `fabric-gate` entrypoint refuses to
 boot any configuration (Helm, Compose or hand-written, overlays included)
 in which a `traces` or `logs` pipeline does not run `fabricguard`, or runs a
-processor other than `batch` or `memory_limiter` after it. For LLM wire
+processor other than `batch` or `memory_limiter` after it, or in which
+content could leave its own path (a content receiver or the `fabriccontent`
+exporter outside `logs/content`, any other processor or exporter on that
+pipeline, gRPC on the content receiver, or connectors). For LLM wire
 capture see [wire-capture-deployment.md](wire-capture-deployment.md).
 
 ## Delivery semantics

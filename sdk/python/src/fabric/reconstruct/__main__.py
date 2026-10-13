@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+from fabric._model_names import parse_model_allowlist
 from fabric.reconstruct._inputs import ReconstructInputError
 from fabric.reconstruct._verify import reconstruct
 
@@ -23,6 +26,7 @@ EXIT_COMPLETE = 0
 EXIT_INCOMPLETE = 1
 EXIT_USAGE = 2
 _DEFAULT_S3_PREFIX = "fabric/content/"
+MODEL_ALLOWLIST_ENV = "FABRIC_WIRE_MODEL_ALLOWLIST"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -52,6 +56,24 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tenant", metavar="ID", help="tenant id of the content store")
     parser.add_argument(
+        "--s3-endpoint-url",
+        metavar="URL",
+        help="S3-compatible endpoint (e.g. MinIO) for --store-uri; credentials come from "
+        "the default AWS credential chain",
+    )
+    parser.add_argument("--s3-region", metavar="REGION", help="S3 region for --store-uri")
+    parser.add_argument(
+        "--s3-path-style",
+        action="store_true",
+        help="use path-style S3 addressing for --store-uri (MinIO and similar stores)",
+    )
+    parser.add_argument(
+        "--model-allowlist",
+        metavar="TEXT",
+        help="comma-separated model names or prefix* entries reported as is "
+        f"(default: ${MODEL_ALLOWLIST_ENV}); other model values are reported as m- digests",
+    )
+    parser.add_argument(
         "--run",
         action="append",
         dest="runs",
@@ -62,7 +84,39 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _endpoint_url(value: str) -> str:
+    """An http(s) endpoint without user info, query or fragment; never echoed (042 E8)."""
+
+    try:
+        parts = urlsplit(value)
+        valid = (
+            parts.scheme in ("http", "https")
+            and bool(parts.hostname)
+            and parts.username is None
+            and parts.password is None
+            and not parts.query
+            and not parts.fragment
+            and "@" not in parts.netloc
+        )
+        if valid:
+            _ = parts.port  # raises ValueError on a malformed port
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ReconstructInputError(
+            "--s3-endpoint-url must be an http(s) URL without user info, query or fragment"
+        )
+    return value
+
+
 def _store(args: argparse.Namespace) -> Any | None:
+    s3_options = (
+        args.s3_endpoint_url is not None or args.s3_region is not None or args.s3_path_style
+    )
+    if s3_options and args.store_uri is None:
+        raise ReconstructInputError(
+            "--s3-endpoint-url, --s3-region and --s3-path-style need --store-uri"
+        )
     if args.store_root is None and args.store_uri is None:
         if args.tenant is not None:
             raise ReconstructInputError("--tenant needs --store-root or --store-uri")
@@ -87,6 +141,11 @@ def _store(args: argparse.Namespace) -> Any | None:
             bucket=bucket,
             prefix=f"{prefix}/" if prefix else _DEFAULT_S3_PREFIX,
             tenant_id=args.tenant,
+            region_name=args.s3_region or None,
+            endpoint_url=(
+                _endpoint_url(args.s3_endpoint_url) if args.s3_endpoint_url is not None else None
+            ),
+            addressing_style="path" if args.s3_path_style else None,
         )
     except ValueError as exc:
         if isinstance(exc, ReconstructInputError):
@@ -103,14 +162,28 @@ def _exit_code(document: dict[str, Any]) -> int:
     return EXIT_INCOMPLETE
 
 
+def _model_allowlist(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, ...]:
+    text = args.model_allowlist
+    if text is None:
+        text = environ.get(MODEL_ALLOWLIST_ENV)
+    try:
+        return parse_model_allowlist(text)
+    except ValueError:
+        raise ReconstructInputError(
+            "model allowlist entries must be model names or name prefixes ending in '*'"
+        ) from None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        allowlist = _model_allowlist(args, os.environ)
         document = reconstruct(
             args.spans,
             store=_store(args),
             tenant_id=args.tenant,
             run_ids=args.runs,
+            model_allowlist=allowlist,
         )
     except ReconstructInputError as exc:
         print(f"fabric.reconstruct: {exc}", file=sys.stderr)

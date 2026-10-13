@@ -63,9 +63,12 @@ else
   [[ -x "${artifact}" ]] || fail "collector binary is not executable: ${artifact}"
 fi
 
-runtime="$(mktemp -d "${TMPDIR:-/tmp}/fabric-collector-config.XXXXXX")"
+tmp_root="${TMPDIR:-/tmp}"
+# fabriccontent requires a clean absolute directory: no "//" from a TMPDIR
+# with a trailing slash (macOS).
+runtime="$(mktemp -d "${tmp_root%/}/fabric-collector-config.XXXXXX")"
 chmod 0755 "${runtime}"
-mkdir -m 0755 "${runtime}/queue"
+mkdir -m 0755 "${runtime}/queue" "${runtime}/content-queue" "${runtime}/content"
 
 # Generate a throwaway CA and server identity. Nothing under this temporary
 # directory is committed or reused. The receiver config requires the CA as
@@ -104,6 +107,11 @@ extensions:
     directory: ${config_root}/queue
     create_directory: true
     fsync: true
+  # Spec 043 content path: the content exporter's own durable queue.
+  file_storage/fabric_content:
+    directory: ${config_root}/content-queue
+    create_directory: true
+    fsync: true
 
 receivers:
   otlp:
@@ -126,6 +134,19 @@ receivers:
         read_timeout: 30s
         idle_timeout: 120s
         max_request_body_size: 8388608
+        tls:
+          cert_file: ${config_root}/server.crt
+          key_file: ${config_root}/server.key
+          client_ca_file: ${config_root}/ca.crt
+  # Content ingress: OTLP/HTTP only, one 64 MiB body per request, same mTLS.
+  otlp/content:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4319
+        read_header_timeout: 5s
+        read_timeout: 120s
+        idle_timeout: 120s
+        max_request_body_size: 67108864
         tls:
           cert_file: ${config_root}/server.crt
           key_file: ${config_root}/server.key
@@ -157,9 +178,26 @@ exporters:
     retry_on_failure:
       enabled: true
       max_elapsed_time: 0s
+  # Content writer (file backend): verifies descriptors, digests and tenants
+  # and writes body + descriptor with the SDK store layout.
+  fabriccontent:
+    allowed_tenants: [tenant-a]
+    backend: file
+    file:
+      directory: ${config_root}/content
+    timeout: 60s
+    sending_queue:
+      enabled: true
+      queue_size: 16
+      num_consumers: 2
+      block_on_overflow: true
+      storage: file_storage/fabric_content
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 0s
 
 service:
-  extensions: [health_check, file_storage/fabric]
+  extensions: [health_check, file_storage/fabric, file_storage/fabric_content]
   telemetry:
     logs:
       level: error
@@ -172,18 +210,22 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, fabricguard]
       exporters: [otlp_http/fabric]
+    logs/content:
+      receivers: [otlp/content]
+      processors: [memory_limiter]
+      exporters: [fabriccontent]
 EOF
 chmod 0644 "${runtime}/config.yaml"
 
 # These assertions keep future edits from accidentally weakening what the
 # runtime-start check is meant to qualify. The process start below proves the
 # named component types and fields are recognized by the built artifact.
-[[ "$(grep -c 'cert_file:' "${runtime}/config.yaml")" -eq 2 ]] \
-  || fail "both OTLP receivers must declare cert_file"
-[[ "$(grep -c 'key_file:' "${runtime}/config.yaml")" -eq 2 ]] \
-  || fail "both OTLP receivers must declare key_file"
-[[ "$(grep -c 'client_ca_file:' "${runtime}/config.yaml")" -eq 2 ]] \
-  || fail "both OTLP receivers must require client certificates"
+[[ "$(grep -c 'cert_file:' "${runtime}/config.yaml")" -eq 3 ]] \
+  || fail "all three OTLP receivers must declare cert_file"
+[[ "$(grep -c 'key_file:' "${runtime}/config.yaml")" -eq 3 ]] \
+  || fail "all three OTLP receivers must declare key_file"
+[[ "$(grep -c 'client_ca_file:' "${runtime}/config.yaml")" -eq 3 ]] \
+  || fail "all three OTLP receivers must require client certificates"
 grep -q 'max_recv_msg_size_mib: 8' "${runtime}/config.yaml" \
   || fail "gRPC receiver must cap messages at 8 MiB"
 grep -q 'max_concurrent_streams: 64' "${runtime}/config.yaml" \
@@ -192,6 +234,10 @@ grep -q 'min_time: 10s' "${runtime}/config.yaml" \
   || fail "gRPC receiver must enforce keepalive spacing"
 grep -q 'max_request_body_size: 8388608' "${runtime}/config.yaml" \
   || fail "HTTP receiver must cap request bodies at 8 MiB"
+grep -q 'max_request_body_size: 67108864' "${runtime}/config.yaml" \
+  || fail "content receiver must cap request bodies at 64 MiB"
+grep -q 'storage: file_storage/fabric_content' "${runtime}/config.yaml" \
+  || fail "content exporter must use its own persistent queue"
 grep -q 'read_header_timeout: 5s' "${runtime}/config.yaml" \
   || fail "HTTP receiver must bound header reads"
 grep -q 'read_timeout: 30s' "${runtime}/config.yaml" \
@@ -203,8 +249,8 @@ grep -q '^  otlp_http/fabric:' "${runtime}/config.yaml" \
 grep -q '^  file_storage/fabric:' "${runtime}/config.yaml" \
   || fail "file-storage extension is missing"
 grep -q 'storage: file_storage/fabric' "${runtime}/config.yaml" || fail "persistent queue binding is missing"
-grep -q 'block_on_overflow: true' "${runtime}/config.yaml" \
-  || fail "exporter must apply backpressure via block_on_overflow (default false drops records)"
+[[ "$(grep -c 'block_on_overflow: true' "${runtime}/config.yaml")" -eq 2 ]] \
+  || fail "both exporters must apply backpressure via block_on_overflow (default false drops records)"
 if grep -n 'batch' "${runtime}/config.yaml" >/dev/null; then
   fail "qualified config must not contain a volatile pre-queue batch processor"
 fi
@@ -213,10 +259,10 @@ fi
 pipeline_names="$(awk '
     /^  pipelines:/ { inblock=1; next }
     inblock && /^  [^ ]/ { inblock=0 }
-    inblock && /^    [a-z_]+:/ { sub(":$", "", $1); print $1 }
+    inblock && /^    [a-z_\/]+:/ { sub(":$", "", $1); print $1 }
   ' "${runtime}/config.yaml" | sort)"
-[[ "${pipeline_names}" == "$(printf 'logs\ntraces')" ]] \
-  || fail "qualified config must define only logs and traces pipelines, got: ${pipeline_names}"
+[[ "${pipeline_names}" == "$(printf 'logs\nlogs/content\ntraces')" ]] \
+  || fail "qualified config must define only logs, logs/content and traces pipelines, got: ${pipeline_names}"
 # shellcheck disable=SC2043 # Kept as a loop-shaped inventory assertion.
 for processor in fabricguard; do
   count="$(grep -o "${processor}" "${runtime}/config.yaml" | wc -l | tr -d ' ')"
@@ -229,6 +275,8 @@ if [[ "${mode}" == "image" ]]; then
     --network none \
     --mount "type=bind,src=${runtime},dst=/fabric-config-test,readonly" \
     --tmpfs /fabric-config-test/queue:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=65532,gid=65532 \
+    --tmpfs /fabric-config-test/content-queue:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=65532,gid=65532 \
+    --tmpfs /fabric-config-test/content:rw,noexec,nosuid,nodev,size=16m,mode=0700,uid=65532,gid=65532 \
     "${artifact}" --config=/fabric-config-test/config.yaml >/dev/null \
     || fail "failed to start image: ${artifact}"
 
@@ -269,6 +317,24 @@ for prohibited in fabricredact fabricpolicy fabricsampler; do
     fail "recorder config unexpectedly contains ${prohibited}"
   fi
 done
+
+# content_violation_configs BASE writes three overlays next to BASE (each is
+# merged after a valid copy of the qualified config by an extra --config):
+# the content receiver feeding the telemetry logs pipeline, the content
+# pipeline exporting to the OTLP destination, and fabricguard on the content
+# pipeline (it would scrub bodies).
+content_violation_configs() {
+  local dir
+  dir="$(dirname "$1")"
+  cp "${runtime}/config.yaml" "$1"
+  printf 'service:\n  pipelines:\n    logs:\n      receivers: [otlp, otlp/content]\n' \
+    >"${dir}/bad-content-recv.yaml"
+  printf 'service:\n  pipelines:\n    logs/content:\n      exporters: [fabriccontent, otlp_http/fabric]\n' \
+    >"${dir}/bad-content-dest.yaml"
+  printf 'service:\n  pipelines:\n    logs/content:\n      processors: [memory_limiter, fabricguard]\n' \
+    >"${dir}/bad-content-guard.yaml"
+  chmod 0644 "$1" "${dir}"/bad-content-*.yaml
+}
 
 # The shipped image's fabric-gate entrypoint must refuse configurations the
 # recorder cannot protect: non-traces/logs pipelines bypass fabricguard, a
@@ -328,7 +394,17 @@ if [[ "${mode}" == "image" ]]; then
     "--set=service.pipelines.traces.processors=[memory_limiter]"
   gate_expect_refusal "${container_name}-set-sep" "a --set override" "--set overrides are not accepted" \
     --set "service.pipelines.traces.processors=[memory_limiter]"
-  printf '%s PASS: image entrypoint refused unprotected pipelines, unsafe token material and --set overrides\n' "${prefix}"
+
+  # Spec 043 §5: content never reaches a telemetry pipeline or the OTLP
+  # destination, and never passes fabricguard.
+  content_violation_configs "${badcfg}"
+  gate_expect_refusal "${container_name}-content-recv" "a content receiver in a telemetry pipeline" \
+    "content receivers may only feed" --config=/fabric-config-test/bad-content-recv.yaml
+  gate_expect_refusal "${container_name}-content-dest" "a content pipeline exporting to the OTLP destination" \
+    "may export only to fabriccontent" --config=/fabric-config-test/bad-content-dest.yaml
+  gate_expect_refusal "${container_name}-content-guard" "fabricguard on the content pipeline" \
+    "only memory_limiter may run" --config=/fabric-config-test/bad-content-guard.yaml
+  printf '%s PASS: image entrypoint refused unprotected pipelines, content misrouting, unsafe token material and --set overrides\n' "${prefix}"
 elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
   # Binary mode: the same refusal invariants run through dist/fabric-gate,
   # which resolves the sibling collector and exits non-zero before exec.
@@ -358,8 +434,15 @@ elif [[ -x "$(dirname "${artifact}")/fabric-gate" ]]; then
     "--set=service.pipelines.traces.processors=[memory_limiter]"
   gate_expect_refusal_bin "a --set override" "--set overrides are not accepted" \
     --set "service.pipelines.traces.processors=[memory_limiter]"
-  printf '%s PASS: fabric-gate binary refused unprotected pipelines, unsafe token material and --set overrides\n' "${prefix}"
+  content_violation_configs "${badcfg}"
+  gate_expect_refusal_bin "a content receiver in a telemetry pipeline" "content receivers may only feed" \
+    --config="${runtime}/bad-content-recv.yaml"
+  gate_expect_refusal_bin "a content pipeline exporting to the OTLP destination" "may export only to fabriccontent" \
+    --config="${runtime}/bad-content-dest.yaml"
+  gate_expect_refusal_bin "fabricguard on the content pipeline" "only memory_limiter may run" \
+    --config="${runtime}/bad-content-guard.yaml"
+  printf '%s PASS: fabric-gate binary refused unprotected pipelines, content misrouting, unsafe token material and --set overrides\n' "${prefix}"
 fi
 
-printf '%s PASS: recorder artifact accepted mTLS ingress, protection, and durable OTLP/HTTP export\n' "${prefix}"
+printf '%s PASS: recorder artifact accepted mTLS ingress, protection, durable OTLP/HTTP export and the content path\n' "${prefix}"
 printf '%s NOTE: configuration compatibility only; no telemetry delivery was attempted\n' "${prefix}"

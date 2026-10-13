@@ -47,7 +47,12 @@ Fails closed at render time unless the recorder has:
 - a non-root pod that cannot escalate privileges or mount an API token;
 - namespace deny-default and explicit Collector ingress/egress policy,
   where every peer must be non-empty and non-world (`{}` and
-  `0.0.0.0/0`/`::/0` are rejected).
+  `0.0.0.0/0`/`::/0` are rejected);
+- when wire-capture content is enabled (`otel-collector.content.enabled`):
+  allowed tenants, an s3 backend with server-side encryption (the file
+  backend is refused), an `https://` store endpoint when one is set, the
+  same mTLS on port 4319 and explicit `networkPolicy.contentEgress` peers.
+  See [docs/deployment.md](../../docs/deployment.md#content-delivery-for-llm-wire-capture-optional).
 
 The customer must create the referenced Secrets and identify the exact egress
 peer/port. Example render/install arguments:
@@ -131,6 +136,7 @@ governs them.
 ```bash
 charts/fabric/tests/test-values-schema.sh
 charts/fabric/tests/schema-validation.sh
+charts/fabric/charts/otel-collector/tests/test-content-delivery.sh
 helm lint charts/fabric
 helm template fabric-node charts/fabric \
   --values charts/fabric/profiles/shadow-dev.yaml

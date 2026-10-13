@@ -28,6 +28,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Wire-capture node mode (spec 043) needs no extra entry: this exporter
+# already depends on `requests` and `opentelemetry-proto`, which the content
+# client uses. boto3 is never a wire-capture dependency (the Node writes S3).
 otlp = [
   "opentelemetry-exporter-otlp-proto-http>=1.41",
 ]

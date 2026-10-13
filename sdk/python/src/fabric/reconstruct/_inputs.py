@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Span-file readers and normalization into verifier observations (spec 042 §9).
+"""Span-file readers and normalization into verifier observations (specs 042 §9, 043 §6).
 
 Two input shapes are accepted: the demo sink's JSONL rows (``{"kind":
 "span", ...}``; ``log`` rows are ignored) and OTLP/JSON, either as one
@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from fabric._model_names import MODEL_PATTERN
+
 SpanFormat = Literal["sink_jsonl", "otlp_json"]
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -30,10 +32,12 @@ _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 _TRACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]*$")
+_INT_RE = re.compile(r"^-?[0-9]{1,20}$")
+# fabric.run.scope_id (spec 043 §6): a lowercase uuid4, else treated as absent.
+SCOPE_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 # The model pattern shared by capture, fabricguard and the verifier (spec 042
-# §8, rev 5). A value must also not contain "://": no "@", no URL, so no
-# credential-bearing endpoint can pass as a model name.
-MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+# §8 rev 5, spec 043 §7), defined once in fabric._model_names.
+MODEL_RE = MODEL_PATTERN
 
 APIS = frozenset(
     {
@@ -57,6 +61,7 @@ A_SOURCE_ID = "fabric.source_id"
 A_SOURCE_EPOCH = "fabric.source.epoch"
 A_SOURCE_SEQUENCE = "fabric.source.sequence"
 A_RUN_ID = "fabric.run.id"
+A_SCOPE_ID = "fabric.run.scope_id"
 A_EXCHANGE_ID = "fabric.wire.exchange_id"
 A_API = "fabric.wire.api"
 A_REQUEST_REF = "fabric.content.request_ref"
@@ -157,15 +162,15 @@ def _require_mapping(value: Any, where: str, what: str) -> Mapping[str, Any]:
     return value
 
 
-def _require_int(value: Any, where: str, what: str) -> int:
+def _require_int(value: Any, where: str, what: str, *, signed: bool = False) -> int:
     if value is None:
         return 0
     if isinstance(value, bool):
         raise ReconstructInputError(f"{where}: {what} must be an integer")
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
+    if isinstance(value, str) and (value.isdigit() or (signed and _INT_RE.fullmatch(value))):
+        return int(value)  # OTLP/JSON encodes an int64 AnyValue as a decimal string
     raise ReconstructInputError(f"{where}: {what} must be an integer")
 
 
@@ -206,7 +211,8 @@ def _any_value(value: Any, where: str) -> Any:  # noqa: PLR0911 - one return per
     if "boolValue" in value:
         return bool(value["boolValue"])
     if "intValue" in value:
-        return _require_int(value["intValue"], where, "intValue")
+        # Signed: a run_start entered before any call has last_sequence -1.
+        return _require_int(value["intValue"], where, "intValue", signed=True)
     if "doubleValue" in value:
         return value["doubleValue"]
     if "arrayValue" in value:
@@ -305,12 +311,10 @@ def digest_value(value: Any) -> str | None:
     return f"sha256:{value}" if isinstance(value, str) and _HEX64_RE.fullmatch(value) else None
 
 
-def model_value(value: Any) -> str | None:
-    """A model name that matches the shared pattern, else ``None`` (never free text)."""
+def scope_id_value(value: Any) -> str | None:
+    """A ``fabric.run.scope_id`` (lowercase uuid4), else ``None``."""
 
-    if not isinstance(value, str) or "://" in value or not MODEL_RE.fullmatch(value):
-        return None
-    return value
+    return value if isinstance(value, str) and SCOPE_ID_RE.fullmatch(value) else None
 
 
 def pseudonym(value: str) -> str:
@@ -368,6 +372,7 @@ class ExchangeObs:
     model: str | None = None
     response_id: str | None = None
     http_status: int | None = None
+    scope_id: str | None = None
 
     @property
     def source(self) -> tuple[str, int]:
@@ -388,13 +393,16 @@ class LossObs:
 
 @dataclass(frozen=True, slots=True)
 class HeartbeatObs:
-    """A ``fabric.capture_heartbeat``: its logical identity (spec 042 §6, rev 5).
+    """A ``fabric.capture_heartbeat``: its logical identity (spec 043 §6).
 
     Equal observations are one record however many times it was exported
-    (a retried export re-sends the same record under a new span id).
-    ``kind`` is ``None`` for a heartbeat without a valid kind; it still
+    (a retried export re-sends the same record under a new span id), so the
+    identity is ``(source, epoch, kind, run_id, scope_id, last_sequence)``.
+    ``kind`` is ``None`` for a heartbeat without a valid kind, and for a run
+    marker without a valid run id or scope id (042 capture); it still
     reveals allocated sequences but is never a run marker or a final
-    heartbeat. ``run_id`` is kept only for ``run_start`` / ``run_end``.
+    heartbeat. ``run_id`` and ``scope_id`` are kept only for ``run_start`` /
+    ``run_end``.
     """
 
     source_id: str
@@ -402,6 +410,7 @@ class HeartbeatObs:
     kind: HeartbeatKind | None
     run_id: str | None
     last_sequence: int
+    scope_id: str | None = None
 
 
 Observation = ExchangeObs | LossObs | HeartbeatObs
@@ -429,10 +438,14 @@ def _heartbeat(
     if source_id is None or epoch is None or last is None:
         return None
     kind = cast("HeartbeatKind | None", enum_value(attrs.get(H_KIND), HEARTBEAT_KINDS))
-    run_id = opaque_id(attrs.get(A_RUN_ID)) if kind in RUN_MARKER_KINDS else None
-    if kind in RUN_MARKER_KINDS and run_id is None:
-        kind = None  # a marker that names no run bounds nothing
-    return HeartbeatObs(source_id, epoch, kind, run_id, last)
+    if kind not in RUN_MARKER_KINDS:
+        return HeartbeatObs(source_id, epoch, kind, None, last)
+    run_id = opaque_id(attrs.get(A_RUN_ID))
+    scope_id = scope_id_value(attrs.get(A_SCOPE_ID))
+    if run_id is None or scope_id is None:
+        # A marker that names no run, or no scope (042 capture), bounds nothing.
+        return HeartbeatObs(source_id, epoch, None, None, last)
+    return HeartbeatObs(source_id, epoch, kind, run_id, last, scope_id)
 
 
 def _loss(attrs: Mapping[str, Any], source_id: str | None, epoch: int | None) -> LossObs | None:
@@ -490,9 +503,11 @@ def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> Exc
         end_ns=max(span.end_ns, span.start_ns),
         trace_id=_trace_id(span.trace_id),
         span_id=_span_id(span.span_id),
-        model=model_value(attrs.get(A_RESPONSE_MODEL)),
+        # Kept as recorded; the report applies the spec 043 §7 exposure rule.
+        model=_ref(attrs.get(A_RESPONSE_MODEL)),
         response_id=_response_id(attrs.get(A_RESPONSE_ID)),
         http_status=_http_status(attrs.get(A_HTTP_STATUS)),
+        scope_id=scope_id_value(attrs.get(A_SCOPE_ID)),
     )
 
 

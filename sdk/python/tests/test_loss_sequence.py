@@ -143,7 +143,7 @@ def test_fork_renews_epoch_and_restarts_sequence() -> None:
         pid = os.fork()
     if pid == 0:  # pragma: no cover - runs in the child
         try:
-            epoch, sequence = allocator.next_sequence()
+            epoch, sequence, _ = allocator.next_sequence()
             os.write(write_fd, json.dumps({"epoch": epoch, "sequence": sequence}).encode())
         finally:
             os._exit(0)
@@ -154,4 +154,4 @@ def test_fork_renews_epoch_and_restarts_sequence() -> None:
     assert child["epoch"] > parent_epoch
     assert child["sequence"] == 0
     assert allocator.epoch == parent_epoch
-    assert allocator.next_sequence() == (parent_epoch, 2)
+    assert allocator.next_sequence() == (parent_epoch, 2, None)

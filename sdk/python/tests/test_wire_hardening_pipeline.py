@@ -31,9 +31,10 @@ import fabric._loss
 import fabric._sequence
 import fabric.tracing
 from fabric import wire
-from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossEmitter, LossExporter
+from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossEmitter
 from fabric._sequence import SourceAllocator
 from fabric.content_store import LocalFilesystemContentStore
+from fabric.tracing import guarded_exporter
 from fabric.wire._config import config_from_env
 from fabric.wire._model import CapturedBody, CaptureJob
 from fabric.wire._pipeline import CapturePipeline, exchange_attributes, response_metadata
@@ -67,7 +68,7 @@ def _named(exporter: InMemorySpanExporter, name: str) -> list[dict[str, Any]]:
 
 
 def _job(allocator: SourceAllocator, response: Any = None) -> CaptureJob:
-    epoch, sequence = allocator.next_sequence()
+    epoch, sequence, _ = allocator.next_sequence()
     body = json.dumps(response or chat_response({"role": "assistant"})).encode()
     now = time.time_ns()
     return CaptureJob(
@@ -188,29 +189,11 @@ def test_global_mode_sends_losses_through_the_private_always_on_provider(
     assert [x["fabric.loss.reason"] for x in _named(exporter, SPAN_LOSS)] == ["span_dropped"]
 
 
-def test_failed_loss_and_heartbeat_exports_are_retained_and_resent() -> None:
-    emitter = LossEmitter()
-    gate = Gate(fail=1)
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(LossExporter(gate, loss=emitter)))
-    emitter.set_tracer_provider(provider)
-    allocator = SourceAllocator("hard-retry", "wire")
-    allocator.next_sequence()
-    emitter.record("hard-retry", allocator.epoch, "queue_full", 0)
-    emitter.heartbeat(allocator, kind="run_start", run_id="run-1")
-    assert not emitter.flush(2.0)  # the loss export failed: still awaiting delivery
-    assert emitter.flush(2.0)
-    (loss,) = _named(gate.inner, SPAN_LOSS)
-    assert (loss["fabric.loss.first_sequence"], loss["fabric.loss.count"]) == (0, 1)
-    assert any(b.get("fabric.run.id") == "run-1" for b in _named(gate.inner, SPAN_HEARTBEAT))
-    emitter.close(0.5)
-
-
 def test_batch_queue_eviction_stays_a_visible_sequence_gap() -> None:
     gate = Gate(block=True)
     provider = TracerProvider()
     provider.add_span_processor(
-        BatchSpanProcessor(LossExporter(gate), max_queue_size=2, max_export_batch_size=1)
+        BatchSpanProcessor(guarded_exporter(gate), max_queue_size=2, max_export_batch_size=1)
     )
     emitter = LossEmitter(tracer_provider=provider)
     allocator = SourceAllocator("hard-evict", "wire")
@@ -232,25 +215,21 @@ def test_batch_queue_eviction_stays_a_visible_sequence_gap() -> None:
     provider.shutdown()
 
 
-# ------------------------------------------------------------ D5 S3 encryption
+# ---------------------------------------- D5 encryption lives on the Node (spec 043 F1)
 
 
-def test_env_s3_encryption_settings() -> None:
-    base = {"FABRIC_TENANT_ID": "t", "FABRIC_WIRE_STORE": "s3://bucket-a/fabric"}
+def test_agent_side_store_encryption_and_s3_are_refused() -> None:
     kms = {"FABRIC_WIRE_STORE_SSE": "aws:kms", "FABRIC_WIRE_STORE_KMS_KEY_ID": "alias/fabric"}
-    store: Any = config_from_env({**base, **kms})[0].store
-    assert (store.sse_algorithm, store.sse_kms_key_id) == ("aws:kms", "alias/fabric")
-    store = config_from_env({**base, "FABRIC_WIRE_STORE_SSE": "AES256"})[0].store
-    assert (store.sse_algorithm, store.sse_kms_key_id) == ("AES256", None)
     for bad in (
-        {**base, "FABRIC_WIRE_STORE_SSE": "aes"},
-        {**base, "FABRIC_WIRE_STORE_SSE": "AES256", "FABRIC_WIRE_STORE_KMS_KEY_ID": "k"},
-        {**base, "FABRIC_WIRE_STORE_KMS_KEY_ID": "k"},
+        {"FABRIC_TENANT_ID": "t", "FABRIC_WIRE_STORE": "s3://bucket-a/fabric", **kms},
         {"FABRIC_TENANT_ID": "t", "FABRIC_WIRE_STORE": "file:///tmp/x", **kms},
-        kms,
+        {"FABRIC_WIRE_STORE_SSE": "AES256"},
+        {"FABRIC_WIRE_STORE_KMS_KEY_ID": "k"},
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="encryption is configured on the Fabric Node"):
             config_from_env(bad)
+    with pytest.raises(ValueError, match="written by the Fabric Node"):
+        config_from_env({"FABRIC_TENANT_ID": "t", "FABRIC_WIRE_STORE": "s3://bucket-a/fabric"})
 
 
 # ------------------------------------------------------- shutdown and fork
@@ -259,7 +238,7 @@ def test_env_s3_encryption_settings() -> None:
 def test_close_is_bounded_when_the_exporter_blocks_forever() -> None:
     gate = Gate(block=True)
     provider = TracerProvider()
-    provider.add_span_processor(BatchSpanProcessor(LossExporter(gate)))
+    provider.add_span_processor(BatchSpanProcessor(guarded_exporter(gate)))
     handle = wire.install(tracer_provider=provider, patch_httpx=False)
     provider.get_tracer("t").start_span("queued").end()
     result: list[bool] = []

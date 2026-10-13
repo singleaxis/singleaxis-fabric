@@ -13,6 +13,15 @@ destination. SingleAxis Platform is optional.
 ## Included components
 
 - `fabricguard` — exact metadata allowlisting and native OTLP text scrubbing;
+- `fabriccontent` — the Node's content writer for LLM wire capture (spec 043):
+  it accepts only content log records (the closed content-v2 descriptor
+  attribute set, the exact bytes as the body), recomputes their length and
+  SHA-256, admits only `allowed_tenants`, and writes body then descriptor to a
+  directory or an S3(-compatible) bucket with the SDK store layout
+  (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`). It
+  never overwrites (S3 `If-None-Match: *`, hard-link creation on disk):
+  identical bytes are a successful replay, different bytes a conflict. Refused
+  records are dropped, counted and logged by reason only;
 - upstream OTLP receiver, memory limiter and optional development batch
   processor;
 - OTLP/HTTP and local debug exporters;
@@ -41,7 +50,21 @@ it), and only `batch` or `memory_limiter` may follow it; a processor after the
 guard could re-add values it removed. On the wire-capture spans
 (`fabric.model_call`, `fabric.capture_loss`, `fabric.capture_heartbeat`)
 `fabricguard` applies a strict profile: only the spec 042 §8 keys, each with a
-value validator, everything else dropped.
+value validator, everything else dropped. `fabric.run.scope_id` (a lowercase
+uuid4, spec 043 §6) survives only on exchange spans and on `run_start` /
+`run_end` heartbeats.
+
+Content (spec 043) has its own path: an `otlp/content*` receiver (OTLP/HTTP
+only, port 4319) feeds a `logs/content*` pipeline that runs only
+`memory_limiter` and exports only to `fabriccontent`. `fabricguard` is not on
+that path — bodies must pass unchanged and the exporter enforces the closed
+descriptor itself. `fabric-gate` refuses a content receiver or
+`fabriccontent` in any other pipeline, any other receiver, processor or
+exporter in a content pipeline, gRPC on a content receiver, and any
+`connectors`, so content can never reach the OTLP destination exporter.
+Give `fabriccontent` its own `file_storage` queue (`block_on_overflow: true`)
+and `retry_on_failure.max_elapsed_time: 0`; S3 credentials come from the AWS
+default chain (IRSA on EKS), never from the agent.
 
 `fabric-gate` also rejects `bearertokenauth` extensions whose token material
 would mint an empty credential under the pinned extension (v0.150.0 keeps
@@ -73,7 +96,12 @@ For a CI-built image:
 
 ```bash
 make qualify-image COLLECTOR_IMAGE=fabric-otelcol:pr
+make qualify-content COLLECTOR_IMAGE=fabric-otelcol:pr
 ```
+
+`qualify-content` posts content log records to a throwaway container and
+checks the stored body and descriptor bytes, a refused digest mismatch and an
+accepted replay.
 
 ## Run
 

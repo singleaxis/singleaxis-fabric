@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/run-reconstruction-v1.schema.json",
-  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 5)",
+  "title": "Fabric run reconstruction v1 (draft, spec 042 rev 5, spec 043)",
   "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges for a declared scope, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store. It is not a quality evaluation and carries no content: provider-derived ids appear only as pseudonyms and store locations never appear.",
   "type": "object",
   "additionalProperties": false,
@@ -93,6 +93,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
     },
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "scopeId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "pseudonym": {
       "description": "A provider-derived id (response, previous-response or tool-call id) as the report carries it: 'p-' + the first 16 hex of sha256(value). Equal ids map to equal pseudonyms.",
       "type": "string", "pattern": "^p-[0-9a-f]{16}$"
@@ -146,6 +147,7 @@
         "source_epoch": {"type": "integer", "minimum": 0},
         "source_sequence": {"type": "integer", "minimum": 0},
         "api": {"$ref": "#/$defs/api"},
+        "scope_id": {"$ref": "#/$defs/scopeId"},
         "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
         "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
         "started_at": {"type": "string", "format": "date-time"},
@@ -208,6 +210,10 @@
         "first_sequence": {"type": "integer", "minimum": 0},
         "last_sequence": {"type": "integer", "minimum": 0},
         "heartbeat_sequence": {"type": "integer", "minimum": -1},
+        "scope_id": {
+          "description": "Present when the window is one fabric.wire.run() scope (spec 043 §6): first_sequence is its run_start last_sequence + 1 and last_sequence its run_end last_sequence.",
+          "$ref": "#/$defs/scopeId"
+        },
         "closed_by": {
           "description": "The evidence that proves this window's end: the run's own run_start/run_end markers, or (for a run without markers) the epoch's final heartbeat. Absent when the end is not proven.",
           "enum": ["run_markers", "final_heartbeat"]
@@ -229,6 +235,24 @@
           "required": ["windows"],
           "properties": {
             "windows": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/window"}}
+          }
+        },
+        "scopes": {
+          "description": "Every fabric.wire.run() scope seen for this run id (spec 043 §6). A complete run has only closed scopes.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scope_id", "source_id", "source_epoch", "state", "exchanges"],
+            "properties": {
+              "scope_id": {"$ref": "#/$defs/scopeId"},
+              "source_id": {"$ref": "#/$defs/opaqueId"},
+              "source_epoch": {"type": "integer", "minimum": 0},
+              "state": {"enum": ["closed", "open", "conflict"]},
+              "start_sequence": {"type": "integer", "minimum": -1},
+              "end_sequence": {"type": "integer", "minimum": -1},
+              "exchanges": {"type": "integer", "minimum": 0}
+            }
           }
         },
         "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange"}},

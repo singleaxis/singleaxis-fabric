@@ -1,0 +1,475 @@
+---
+title: Node content delivery, agent durable spool and run scopes
+status: draft
+qualification: NO_COVERAGE_CLAIM
+revision: 1
+last_updated: 2026-10-13
+owner: recorder-engineering
+depends_on: 029, 032, 038, 042
+supersedes_in_part: 042 (§3 store activation, §4.5/§4.8 delivery, §6 loss resend and run markers, §7 store writer, §8 model value and boot gate, §9 step 3 run windows)
+---
+
+# 043 — Node content delivery, agent durable spool and run scopes
+
+Spec [042](042-llm-wire-capture-and-reconstruction.md) defines what wire
+capture records. This spec changes **where content is written, how capture
+events survive the agent process, and how explicit runs are scoped**. Where
+the two disagree, this spec wins; 042 points here at each superseded part.
+
+Contracts: [`contracts/capture/v1`](../contracts/capture/v1/README.md)
+(new: spool record header, content log record, descriptor goldens;
+`scope_id` on exchanges, run markers and reconstruction windows).
+
+## Decision record
+
+**2026-10-13 — approved by the product owner.**
+
+Decisions F1–F10:
+
+- **F1 Only the Fabric Node writes content.** Wire capture no longer writes
+  to S3 and the agent needs no cloud credentials. `FABRIC_WIRE_STORE`
+  accepts `node` (the default when `FABRIC_WIRE_CONTENT_ENDPOINT` is set)
+  or `file:///abs/dir` (direct local store for dev, offline and single-host
+  use; unchanged). `s3://` is rejected at install. `S3ContentStore` stays
+  in the SDK for governed content and for `fabric.reconstruct`.
+- **F2 Agent durable spool.** Every capture event is one fsync'd file
+  record in `FABRIC_WIRE_SPOOL_DIR` (required in node mode), drained in
+  order by one sender thread (content first, then the span), deleted only
+  after every part succeeded, replayed after a restart (§2).
+- **F3 Content transport.** One OTLP/HTTP protobuf `LogRecord` per stored
+  body, posted to `FABRIC_WIRE_CONTENT_ENDPOINT` (§3).
+- **F4 Node content path.** Receiver `otlp/content` (port 4319, HTTP only)
+  → pipeline `logs/content` → `memory_limiter` → new exporter
+  `fabriccontent`, which verifies and writes body + descriptor with exactly
+  the SDK store layout to a directory or S3 (§4).
+- **F5 Gate.** `fabric-gate` keeps content and telemetry pipelines apart; no
+  configuration can route content to the OTLP destination exporter (§5).
+- **F6 Run scopes.** Each `fabric.wire.run()` entry has a unique
+  `fabric.run.scope_id`; the verifier pairs markers by scope, never by run
+  id or parity (§6).
+- **F7 Model exposure.** `gen_ai.response.model` is emitted as is only when
+  it matches the 042 pattern **and** an allowlist; otherwise as
+  `m-` + 16 hex of its SHA-256 (§7).
+- **F8 Credential logging.** No Fabric path logs env values, endpoint URLs,
+  header values, certificate contents or exporter exception messages (§8).
+- **F9 Compose preflight.** A receiver port published beyond loopback needs
+  that receiver's TLS genuinely enabled (§9).
+- **F10 Reconstruct** reads Node-written content from the same file/S3
+  layout, including S3-compatible stores (endpoint, path-style) (§10).
+
+**Why.**
+
+1. *Agents need no cloud credentials.* An agent host with write access to
+   the evidence bucket is a credential to steal and a write path to audit
+   per agent. With F1 the agent holds only an ingress credential for the
+   Node.
+2. *One reviewed write path and one encryption policy.* Bucket, prefix,
+   SSE/KMS and conditional-write behaviour are configured once, on the
+   Node, by the operator — not in every agent's environment.
+3. *Durable content queue.* The Node already owns an fsync'd
+   `file_storage` sending queue for telemetry; content gets its own, so a
+   store outage is absorbed by the Node instead of failing in the agent.
+4. *The spool closes span-publication loss.* In 042 an exchange span
+   evicted from the private `BatchSpanProcessor`, or in memory when the
+   process died, was an unexplained gap. With F2 an event is either on disk
+   (and eventually delivered) or explicitly counted as a loss.
+5. *Run scopes close Codex findings* "false run closure from scope
+   collisions", "serial run closure" and "nested-run false completeness":
+   042 paired markers by run id and parity, which a reused, serial or nested
+   run id could satisfy falsely.
+
+**Trade-offs accepted.** The Node is now sized for content bytes (CPU for
+digests, a content queue volume of `queue_size × 64 MiB` worst case, memory
+limiter headroom for 64 MiB requests). One more port (4319) needs the same
+TLS/auth as 4317/4318. Delivery is at-least-once; the Node and the verifier
+deduplicate by `object_id` and `exchange_id`. A spool directory is one more
+piece of agent-host state to provision.
+
+**Code size principle.** The spool replaces machinery; it does not sit on
+top of it. `LossExporter`, the loss/heartbeat requeue and resend logic, and
+the private `BatchSpanProcessor` on the capture path are deleted where the
+spool is in use. Capture outside the new spool, sender and content client
+(budget ~650 lines together) must get smaller or stay flat.
+
+## Scope check (AGENTS.md)
+
+| Element | Layer | Why it is OSS core |
+|---|---|---|
+| Agent spool + sender | DELIVER | Durable local buffering, retry and idempotent delivery. Fails open: never blocks, raises into or delays the host. |
+| Content log records to the Node | DELIVER | Authenticated ingestion to a customer-run Node. |
+| `fabriccontent` exporter | PROTECT / DELIVER | Verifies digests and tenant, writes to a customer-selected destination; no SingleAxis connection. |
+| Gate rules | Verify | Configuration checks that refuse unsafe routing. |
+| Run scopes, model exposure | PROTECT / Verify | Closed metadata; offline integrity verdict. No evaluation. |
+
+## 1. Activation (supersedes 042 §3 store and SSE bullets)
+
+| Variable | Values | Notes |
+|---|---|---|
+| `FABRIC_WIRE_STORE` | unset, `node`, `file:///abs/dir` | Unset = `node` when `FABRIC_WIRE_CONTENT_ENDPOINT` is set, else metadata-only. `s3://…` → `ValueError` ("written by the Fabric Node"). `file://` together with a content endpoint → `ValueError`. |
+| `FABRIC_WIRE_CONTENT_ENDPOINT` | full URL, e.g. `https://fabric-node:4319/v1/logs` | Used as given (no path appended). User info, query or fragment → `ValueError` whose message never echoes the URL (042 E8). |
+| `FABRIC_TENANT_ID` | safe identifier | Required in `node` and `file` modes. |
+| `FABRIC_WIRE_SPOOL_DIR` | absolute directory | Required in `node` mode; optional otherwise (enables spool delivery). |
+| `FABRIC_WIRE_SPOOL_MAX_BYTES` | int | Default 1 GiB; minimum `2 × max_body_bytes + 1 MiB`. |
+| `FABRIC_WIRE_MODEL_ALLOWLIST` | comma list | §7. |
+| `FABRIC_WIRE_STORE_SSE`, `FABRIC_WIRE_STORE_KMS_KEY_ID` | — | Removed. Set → `ValueError` ("encryption is configured on the Fabric Node"). |
+| `OTEL_EXPORTER_OTLP_LOGS_{HEADERS,CERTIFICATE,CLIENT_CERTIFICATE,CLIENT_KEY,TIMEOUT}` | | Content client; each falls back to the `OTEL_EXPORTER_OTLP_*` general variable (§3). |
+
+Node mode also requires: an OTLP traces endpoint (042 §3), the private
+tracer (`FABRIC_WIRE_TRACER=global` → `ValueError`), `max_body_bytes ≤ 63
+MiB` (one record must fit the Node's 64 MiB request bound), POSIX `fcntl`
+(no Windows), and the `[otlp]` extra (`requests`, `opentelemetry-proto`).
+Any violation installs nothing; autoload logs one warning naming only the
+error class; the host is unaffected. `install(tracer_provider=X)` and
+`FABRIC_WIRE_TRACER=global` keep the 042 direct-provider path (no spool,
+no requeue machinery) and are refused in node mode.
+
+Programmatic `WireConfig(store=…)` rejects an `S3ContentStore` instance.
+
+## 2. Agent durable spool (F2)
+
+**Directory.** Created `0700` if absent (parents too, like the local store);
+an existing directory must be owned by the process uid, not a symlink, and
+is tightened to `0700`, else `ValueError`. Lock file `.lock` (`0600`),
+`flock(LOCK_EX | LOCK_NB)`. The lock holder is the only **drainer**; any
+process can **write**. A process that does not get the lock (a second agent
+on the same directory, or a forked worker whose parent holds it) writes
+records and retries the lock every 5 s on its sender thread, taking over
+when the holder exits.
+
+**Record file.** Name `<source_epoch:020d>-<pid:010d>-<order:012d>.rec`
+(`order` = per-process monotonic counter); lexicographic order is drain
+order. Written as `.tmp-<name>` (`0600`), `fsync`, `rename`, `fsync(dir)`.
+Framing (big-endian):
+
+```text
+b"FWSPOOL1" | u32 header_len | header (canonical JSON, UTF-8) | blob | sha256(all preceding bytes) (32 bytes)
+```
+
+`header` is a `fabric.wire-spool-record/v1` document
+(`contracts/capture/v1/schema/spool-record-v1.schema.json`): `record_kind`
+`exchange` (span data + up to two content descriptors with `offset`/`length`
+into `blob`), `loss` (one coalesced range) or `marker` (`run_start`,
+`run_end`, `final`). Span data is fully resolved at write time — trace id,
+span id, parent span id and flags, timestamps, status and the closed 042 §8
+attribute map — so a replay re-sends the identical span. Nothing in a header
+is content; bodies exist only in `blob`.
+
+**What is spooled.** Every exchange, every loss range and every
+`run_start`/`run_end`/`final` marker. **Periodic** heartbeats are not
+spooled: the sender exports them best-effort, directly, every 30 s for
+active sources and on `flush()`.
+
+**Where it runs.** Never on the host's call path: the capture worker writes
+exchange records; loss records are written by the sender thread from the
+O(1) in-memory loss table; a marker's `last_sequence` is read on the host
+thread under the allocator lock (042 §6) and the record is queued in memory
+(bounded, 1,024) for the sender thread to write.
+
+**Bound.** `spool_bytes` = own writes + a directory rescan every 5 s on the
+sender thread. An exchange record is admitted only while `spool_bytes +
+size ≤ FABRIC_WIRE_SPOOL_MAX_BYTES`; otherwise it is dropped and recorded as
+a `queue_full` loss. Loss and marker records may use a 1 MiB reserve above
+the bound; past it, loss ranges stay in the in-memory table (merged per key,
+as 042) and are spooled when space frees, and a marker is dropped and
+counted (its scope then stays open: `unverified`, never false complete).
+With several writer processes the bound is approximate by one rescan
+interval.
+
+**Sender.** One daemon thread per process. As drainer it takes records in
+file-name order. For an exchange: each body is posted to the content
+endpoint (§3), then the span is exported with
+`SpanExporter.export([ReadableSpan])` — a synchronous export of a span
+rebuilt from the header (resource `service.name` from the header, scope
+`fabric.wire`), with no `BatchSpanProcessor` on the capture path. Loss and
+marker records are exported the same way as `fabric.capture_loss` /
+`fabric.capture_heartbeat` spans. A record is deleted (`unlink`, then
+`fsync(dir)`) only after every part succeeded. Failures retry the same
+record with capped exponential backoff (0.5 s doubling to 30 s). The sender
+may batch up to 64 consecutive ready records per export call.
+
+- *Content result:* 2xx with no `partial_success.rejected_log_records` →
+  done. 400, 413, 415, 422 or a rejected record → permanent: counted, logged
+  by status code only, the part is skipped and the span is still exported
+  unchanged (the verifier then reports `missing_object`). Everything else
+  (connection errors, timeouts, 401/403/404, 429, 5xx) → retry.
+- *Span result:* every `FAILURE` is retried. A closed-shape metadata span is
+  not rejectable by a correctly configured Node, and an authentication
+  failure must not discard spooled records.
+
+**Restart and replay.** Records from earlier epochs (a crashed or exited
+process, any pid) are drained first; they carry their own source, epoch,
+sequences and span ids. A record whose framing or trailer digest fails, or
+whose header fails the schema, is renamed `*.corrupt` (kept for the
+operator, never retried). When its header parsed, an `internal_error` loss
+is recorded for its sequence; otherwise the sequence stays an unexplained
+gap the verifier still detects. Leftover `.tmp-*` files older than one hour
+are removed by the drainer.
+
+**flush / close.** `flush(timeout)` waits until every record this process
+wrote before the call is deleted (by whichever process drains), then sends a
+periodic heartbeat; `False` on timeout. `close()` drains, seals the epoch,
+writes the `final` marker, and waits for delivery within the 042 budget;
+whatever is undelivered stays on disk for replay and `close()` returns
+`False`. The exit handler is bounded exactly as 042 E9.
+
+**Delivery semantics.** At-least-once. Duplicates are expected after a
+crash between "sent" and "deleted": the Node treats an identical object as
+success (§4); the verifier deduplicates exchanges by `exchange_id`, losses by
+content and heartbeats by logical identity (§6).
+
+**Stats** (`WireStats`, counters only): adds `spooled`, `spool_bytes`,
+`spool_full_drops`, `delivered`, `send_retries`, `content_rejected`,
+`quarantined`, `markers_dropped`.
+
+## 3. Content transport (F3)
+
+One `ExportLogsServiceRequest` per stored body, protobuf over HTTP POST,
+`Content-Type: application/x-protobuf`, to `FABRIC_WIRE_CONTENT_ENDPOINT`.
+Resource: `service.name` only (same rule as 042 D3). Scope: `fabric.wire`.
+One `LogRecord`:
+
+- `time_unix_nano` = `captured_at`; `body` = `AnyValue.bytes_value` with the
+  exact stored bytes; no trace context, no severity text;
+- attributes = the content log-record attribute set
+  (`contracts/capture/v1/schema/content-log-record-v1.schema.json`), bare
+  descriptor field names, every value typed and closed:
+
+| Key | Type | Value |
+|---|---|---|
+| `event_class` | string | `content` |
+| `schema_version` | string | `fabric.content-object/v2` |
+| `object_id` | string | lowercase uuid4 |
+| `tenant_id` | string | `^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$`, not `.`/`..` |
+| `role` | string | `model.exchange.request` \| `model.exchange.response` |
+| `media_type` | string | 042 §7 media rule |
+| `content_encoding` | string | 042 §7 token-list rule, or `identity`/`unknown` |
+| `representation` | string | `exact` \| `partial` (response only) \| `truncated` |
+| `transformations` | array of string | `[]` or `["truncate"]` |
+| `provenance` | string | `protocol` |
+| `boundary` | string | `provider_bound` |
+| `status` | string | `stored` \| `truncated` |
+| `stored_byte_length` | int | = body length |
+| `stored_sha256` | string | `sha256:` + hex of body |
+| `source_byte_length` | int | observed length (≥ stored) |
+| `source_sha256` | string | present iff not truncated; = `stored_sha256` |
+| `source_id`, `run_id`, `operation_id` | string | opaque ids (`operation_id` = exchange id) |
+| `source_epoch`, `source_sequence` | int | ≥ 0 |
+| `captured_at` | string | RFC 3339 with offset (Python `isoformat()`) |
+
+`truncated` ⇔ `status: truncated` ⇔ `transformations: ["truncate"]` ⇔ no
+`source_sha256` ⇔ `source_byte_length > stored_byte_length`. These are the
+SDK's content-v2 descriptor fields minus `encoding` and `ref`, which the
+writer adds (§4).
+
+TLS, client certificate/key, CA, headers and timeout are resolved like the
+trace exporter: `OTEL_EXPORTER_OTLP_LOGS_*` first, then
+`OTEL_EXPORTER_OTLP_*`; headers use the OTLP `k=v,k2=v2` percent-decoded
+form; an unreadable TLS file fails installation. The client is a
+`requests.Session` owned by the sender (the tee patches only httpx/httpx2,
+so it cannot capture itself). No URL, header, body or exception message is
+ever logged.
+
+## 4. Node content path (F4)
+
+**Receiver.** Instance `otlp/content`, `protocols.http` only (no `grpc`),
+`endpoint: 0.0.0.0:4319`, `max_request_body_size: 67108864`, the same
+authenticator and TLS as the telemetry receivers, read timeouts sized for
+64 MiB.
+
+**Pipeline.** `logs/content: {receivers: [otlp/content], processors:
+[memory_limiter], exporters: [fabriccontent]}`. `fabricguard` is not used
+here: bodies must pass unchanged, and the exporter enforces the closed
+attribute set itself.
+
+**Exporter** `fabriccontent`
+(`components/otel-collector-fabric/exporter/fabriccontentexporter`):
+
+1. Accept only records whose attributes are exactly the §3 set (no unknown
+   key), every value valid, `event_class = content`, body of type bytes.
+2. Recompute SHA-256 and length of the body; mismatch → reject.
+3. `tenant_id` must be in `allowed_tenants` → else reject.
+4. Write body to `<prefix><tenant>/evidence/<object_id>`, **then** the
+   descriptor to `<prefix><tenant>/evidence/meta/<object_id>.json`.
+   Descriptor = the attributes minus `event_class`, plus `"encoding":
+   "binary"` and `"ref"` (`file://<abs dir>/<tenant>/evidence/<id>` or
+   `s3://<bucket>/<prefix><tenant>/evidence/<id>`), serialized exactly as
+   Python `json.dumps(d, ensure_ascii=False, sort_keys=True) + "\n"`
+   (keys sorted, `", "` and `": "` separators, integers as integers). The
+   goldens in `contracts/capture/v1/fixtures/golden/` pin these bytes.
+5. Never overwrite: an existing object or descriptor with identical bytes
+   is success (replay); different bytes → reject (`conflict`).
+
+Backends: `file` (`directory`; files `0600`, directories `0700`, temp +
+fsync + rename + dir fsync) and `s3` (aws-sdk-go-v2 default credential chain
+incl. IRSA; optional `endpoint` and `use_path_style` for MinIO and other
+S3-compatible stores; `region`; `sse: AES256 | aws:kms`; `kms_key_id` only
+with `aws:kms`; `PutObject` with `If-None-Match: *`, on 412 `GetObject` and
+byte-compare). A store without conditional-write support is a retryable
+error, never an unconditional write.
+
+Durability: exporterhelper `sending_queue` on its own `file_storage`
+(fsync, `block_on_overflow: true`) and `retry_on_failure` with
+`max_elapsed_time: 0`. Backend I/O errors are retryable (writes are
+idempotent). Steps 1–3 and conflicts are permanent per record: the record is
+dropped, counted, and logged as `fabriccontent: dropped content record
+(reason=<bad_descriptor|digest_mismatch|tenant_not_allowed|conflict>)` —
+no tenant, id, path, URL or byte.
+
+Build: add the module to `ocb-config.yaml` (local `path` + `replaces`), the
+Dockerfile `COPY`, `EXPOSE 4319`, `tests/test-recorder-manifest.sh`'s pinned
+set and the Makefile test dirs. `scripts/license_scan.sh` scans the built
+distribution, so the AWS SDK modules are covered without a hand-kept list.
+
+## 5. Gate (F5; extends 042 §8 "Boot gate")
+
+A *content pipeline* is a `logs` pipeline whose name part starts with
+`content` (`logs/content`, `logs/content-eu`). A *content receiver* is an
+`otlp` receiver whose name starts with `content`. In addition to the 042
+rules (`traces`/`logs` only, no `--set`), the gate refuses a configuration
+where:
+
+1. a content receiver appears in any non-content pipeline;
+2. a `fabriccontent` exporter appears in any non-content pipeline;
+3. a content pipeline has a receiver that is not a content receiver, an
+   exporter that is not `fabriccontent`, or a processor that is not
+   `memory_limiter` (so not `fabricguard`, which would scrub bodies);
+4. a non-content (telemetry) pipeline lacks `fabricguard` (042 rule,
+   unchanged, including "only `batch`/`memory_limiter` after the guard");
+5. a content receiver configures `grpc`;
+6. `connectors` is non-empty (a connector could bridge content into a
+   telemetry pipeline).
+
+## 6. Run scopes (F6; supersedes 042 §6 run markers and §9 step 3 (a))
+
+**Capture.** `fabric.wire.run(run_id)` creates `RunScope(run_id,
+scope_id=uuid4, parent)` per entry. Entry: read `a` = last allocated
+sequence under the allocator lock, then set the scope in the context;
+spool `run_start{run_id, scope_id, last_sequence=a}`. Exit: under the
+allocator lock mark the scope closed and read `b`; reset the context; spool
+`run_end{…, last_sequence=b}`. Allocation reads the context's innermost
+**open** scope under the same lock: the exchange carries that scope's
+`fabric.run.id` and `fabric.run.scope_id`. When no scope is open (e.g. a task
+that outlived its block), the 042 run-id fallback applies and no scope id is
+set: a run's declared scope is the calls *started* inside its blocks.
+
+New OTLP key: `fabric.run.scope_id` (lowercase uuid4) on `fabric.model_call`
+spans inside a scope and on `run_start`/`run_end` heartbeats; never on
+`periodic`/`final`. fabricguard admits it in the strict capture profile with
+the uuid4 validator.
+
+**Verifier.** Heartbeats deduplicate by `(source_id, epoch, kind, run_id,
+scope_id, last_sequence)`. A marker without a valid `scope_id` (042 capture)
+is an unclassified heartbeat (counts toward `H` only). Per scope id:
+
+- exactly one distinct `run_start` and one `run_end` `last_sequence` on one
+  `(source, epoch)`, the same run id on both, `a ≤ b` → *closed*, window
+  `[a+1, b]`; a missing marker → *open* (`tail_unverified`,
+  `run_not_closed`); anything else → *conflict* (`tail_unverified`,
+  `scope_conflict`);
+- every exchange tagged with the scope has its run id and lies in the
+  window, else `tail_unverified` (`exchange_outside_run_markers`);
+- any missing sequence **inside** the window → `partial` (`loss` when loss
+  records cover it, else `sequence_gap`). Missing sequences are never
+  attributable to a particular scope, so a concurrent scope's lost call on
+  the same source also makes this scope partial (conservative). Sequences
+  outside the window are outside the scope: `a` was allocated before entry
+  and `b+1` after exit.
+
+Nested scopes are independent windows (an inner scope's exchanges lie inside
+the outer window and count as present there). Serial and concurrent scopes,
+and reuse of a run id, are distinct scopes. A run id with any scope (marker
+or scoped exchange) is complete only when every scope is closed and clean
+and every exchange of the run carries one of its scope ids; an unscoped
+exchange of such a run → `tail_unverified` (`exchange_outside_run_markers`).
+A run with no scopes keeps 042 rule (b) (`final` heartbeat, E2).
+
+Report: each closed scope with at least one exchange is a window with
+`scope_id` and `closed_by: run_markers`; `runs[].scopes[]` lists every scope
+(`state` `closed`/`open`/`conflict`, marker sequences, exchange count);
+report exchanges carry `scope_id`. The contract validator enforces that a
+complete run has only closed scopes and no missing sequence inside a scope
+window (adjacency is checked only for windows without a scope).
+
+## 7. Model exposure (F7; supersedes 042 E5 for emission)
+
+`fabric/_model_names.py` (shared by capture and `fabric.reconstruct`):
+
+- allowlist = `FABRIC_WIRE_MODEL_ALLOWLIST` (comma-separated exact names or
+  `prefix*`; each must match the 042 model pattern without the `*`; a bare
+  `*` is refused) plus the built-in prefixes `gpt-*`, `o1*`, `o3*`, `o4*`,
+  `chatgpt-*`, `claude-*`, `gemini-*`, `text-embedding-*`, `llama*`,
+  `meta-llama/*`, `mistral*`, `mixtral*`, `codestral*`, `command*`,
+  `deepseek*`, `qwen*`, `grok*`, `anthropic/*`, `openai/*`, `google/*`
+  (case-sensitive);
+- a non-empty string that matches the pattern, has no `://` and is
+  allowlisted is emitted as is; any other string as `m-` + the first 16 hex
+  of `sha256(utf-8)`; a non-string is omitted.
+
+fabricguard keeps the pattern rule (the `m-` form satisfies it).
+`fabric.reconstruct` applies the same rule to models parsed from bodies and
+to span values, keeping span values already of the form `^m-[0-9a-f]{16}$`;
+`--model-allowlist` (default `FABRIC_WIRE_MODEL_ALLOWLIST`) extends its list.
+
+## 8. Credential logging (F8)
+
+No Fabric code path logs environment values, endpoint URLs, header values,
+TLS file paths or contents, or exception messages from exporter or client
+construction and export. Exporter/client construction and every export or
+POST are wrapped: only exception class names and HTTP status codes are
+logged; errors are re-raised `from None` with fixed text; OTLP exporter log
+records emitted during Fabric-owned exports stay reduced (042 §4.9). Test:
+set secret-marked values in every `OTEL_*` and `FABRIC_*` variable, force
+construction and export failures (traces and content), and assert no marker
+appears in captured records at `DEBUG` for the `fabric` and `opentelemetry`
+loggers.
+
+## 9. Compose preflight (F9)
+
+When any of 4317, 4318 or 4319 is published on a non-loopback
+`FABRIC_BIND_ADDR`, preflight fails unless the receiver instance serving
+that port has TLS enabled: an uncommented `tls:` mapping under that
+protocol with non-empty `cert_file` and `key_file`. A commented-out stanza,
+`tls:` with no children, `tls: {}`, `tls: null`/`~`, or a stanza missing
+either file counts as disabled. Fixture tests cover each case.
+
+## 10. Reconstruct (F10)
+
+`python -m fabric.reconstruct` reads Node-written content through the
+unchanged `--store-root` (file backend directory) or `--store-uri
+s3://bucket/prefix`, plus new `--s3-endpoint-url URL`, `--s3-region REGION`
+and `--s3-path-style` (passed to `S3ContentStore(endpoint_url=…,
+region_name=…, addressing_style="path")`). Credentials come from the default
+boto3 chain. The e2e qualifies the path agent → Node → MinIO (SSE via
+`MINIO_KMS_SECRET_KEY`) → reconstruct.
+
+## 11. Acceptance
+
+1. Node mode: an agent with no AWS variables captures a three-step ReAct run;
+   the Node writes bodies + descriptors to MinIO; reconstruct from the span
+   sink and MinIO is `complete_for_declared_scope`.
+2. Kill -9 the agent after the worker spooled N exchanges but before
+   delivery; restart; every record is delivered once or more and the run
+   verifies with no unexplained gap.
+3. Node down for the whole run: the spool holds everything (bounded);
+   after the Node returns, delivery completes. Spool full: `queue_full`
+   loss, host unaffected.
+4. Corrupt a record: it becomes `*.corrupt` and an `internal_error` loss.
+5. Two processes on one spool: one drainer, both writers, no record
+   delivered zero times.
+6. Gate refuses each §5 violation; a digest mismatch, unknown tenant or
+   unknown attribute is dropped by the exporter with a content-free log line;
+   an identical replay is accepted; a different body under an existing id
+   is refused and the stored object is unchanged.
+7. Scopes: same run id reused, serial, nested and concurrent scopes each
+   verify correctly; dropping an inner exchange makes only scopes whose
+   window holds it partial; a missing `run_end` is `unverified`.
+8. F7, F8 and F9 tests as stated.
+9. 042 §4.10 latency budgets still hold; capture line count outside spool,
+   sender and content client does not grow.
+
+## 12. Open questions
+
+1. Whether the Node should also accept governed-content roles (spec 028)
+   on `otlp/content`, or stay closed to the two wire roles.
+2. Spool encryption at rest (today: `0600`/`0700` and host disk encryption).
+3. Whether the Helm chart enables the content path by default.

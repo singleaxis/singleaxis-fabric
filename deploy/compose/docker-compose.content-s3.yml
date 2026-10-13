@@ -1,0 +1,32 @@
+# Production add-on: write content to S3 (or an S3-compatible store) instead
+# of the local fabric-content volume (spec 043).
+#
+#   FABRIC_CONTENT_BACKEND=s3 in .env   # make up-prod then adds this file
+#
+# The Node is the only writer: grant ITS identity (instance role, or keys for
+# an S3-compatible store) s3:PutObject + s3:GetObject on
+# <bucket>/<prefix><tenant>/evidence/* and kms:GenerateDataKey + kms:Decrypt
+# on the key. Agents get nothing. See docs/wire-capture-deployment.md.
+#
+# On EC2, containers reach the instance role through IMDSv2 only when the
+# instance's metadata hop limit is 2 (aws ec2 modify-instance-metadata-options
+# --http-put-response-hop-limit 2). For static keys of an S3-compatible
+# store, mount a credentials file as a Compose secret and point
+# AWS_SHARED_CREDENTIALS_FILE at it in a further override; never put keys in
+# .env.
+
+services:
+  fabric-node:
+    command:
+      - --config=/etc/fabric-node/collector-production.yaml
+      - --config=/etc/fabric-node/collector-content-s3.yaml
+    environment:
+      FABRIC_CONTENT_S3_BUCKET: ${FABRIC_CONTENT_S3_BUCKET:?set FABRIC_CONTENT_S3_BUCKET in .env}
+      FABRIC_CONTENT_S3_PREFIX: ${FABRIC_CONTENT_S3_PREFIX:-fabric/content/}
+      FABRIC_CONTENT_S3_REGION: ${FABRIC_CONTENT_S3_REGION:?set FABRIC_CONTENT_S3_REGION in .env to the bucket region}
+      FABRIC_CONTENT_S3_ENDPOINT: ${FABRIC_CONTENT_S3_ENDPOINT:-}
+      FABRIC_CONTENT_S3_PATH_STYLE: ${FABRIC_CONTENT_S3_PATH_STYLE:-false}
+      FABRIC_CONTENT_S3_SSE: ${FABRIC_CONTENT_S3_SSE:-aws:kms}
+      FABRIC_CONTENT_S3_KMS_KEY_ID: ${FABRIC_CONTENT_S3_KMS_KEY_ID:-}
+    volumes:
+      - ./collector-config/collector-content-s3.yaml:/etc/fabric-node/collector-content-s3.yaml:ro

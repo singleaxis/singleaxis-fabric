@@ -21,13 +21,14 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from fabric import _loss
 from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter, get_loss_emitter
-from fabric._sequence import SourceAllocator, encode_opaque_id
+from fabric._sequence import RunScope, SourceAllocator
 
 from .test_wire_helpers import capture_schemas, load_validator, loss_document
 
 VALIDATOR, SCHEMAS = load_validator(), capture_schemas()
 SPAN_KEYS = {
-    "fabric.source_id", "fabric.source.epoch", "fabric.run.id", LossAttr.REASON, LossAttr.COUNT,
+    "fabric.source_id", "fabric.source.epoch", "fabric.run.id", "fabric.run.scope_id",
+    LossAttr.REASON, LossAttr.COUNT,
     LossAttr.FIRST_SEQUENCE, LossAttr.LAST_SEQUENCE, LossAttr.HEARTBEAT_LAST_SEQUENCE,
     LossAttr.HEARTBEAT_KIND,
 }  # fmt: skip
@@ -102,23 +103,31 @@ def test_heartbeat_reports_the_sequence_at_request_time(
     emitter: LossEmitter, exporter: InMemorySpanExporter
 ) -> None:
     allocator = SourceAllocator("wire-hb", "wire")
+    scope = RunScope("run-travel-42", "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60", None)
     emitter.heartbeat(allocator)  # -1: nothing allocated yet
     allocator.next_sequence()
-    emitter.heartbeat(allocator, kind="run_start", run_id="run-travel-42")
+    emitter.heartbeat(allocator, kind="run_start", scope=scope)
+    assert not scope.closed
     allocator.next_sequence()
-    emitter.heartbeat(allocator, kind="run_end", run_id="bad id")
+    emitter.heartbeat(allocator, kind="run_end", scope=scope)
+    assert scope.closed  # closed under the allocator lock: later calls are outside it
+    assert allocator.next_sequence()[2] is None
     assert emitter.flush(2.0)
     beats = [
-        (a[LossAttr.HEARTBEAT_LAST_SEQUENCE], a[LossAttr.HEARTBEAT_KIND], a.get("fabric.run.id"))
+        (a[LossAttr.HEARTBEAT_LAST_SEQUENCE], a[LossAttr.HEARTBEAT_KIND], a.get("fabric.run.id"),
+         a.get("fabric.run.scope_id"))
         for a in _named(exporter, SPAN_HEARTBEAT)
-    ]
+    ]  # fmt: skip
     # Queued beats in order, then the flush heartbeat for the source.
     assert beats == [
-        (-1, "periodic", None), (0, "run_start", "run-travel-42"),
-        (1, "run_end", encode_opaque_id("bad id")), (1, "periodic", None),
+        (-1, "periodic", None, None), (0, "run_start", "run-travel-42", scope.scope_id),
+        (1, "run_end", "run-travel-42", scope.scope_id), (2, "periodic", None, None),
     ]  # fmt: skip
     assert {a["fabric.source.epoch"] for a in _named(exporter, SPAN_HEARTBEAT)} == {allocator.epoch}
     _validate_all(exporter)
+    for kind, scoped in (("run_start", None), ("periodic", scope)):
+        with pytest.raises(ValueError, match="scope"):
+            emitter.heartbeat(allocator, kind=kind, scope=scoped)
 
 
 def test_flush_heartbeats_every_known_source_once(
@@ -158,7 +167,9 @@ def test_heartbeat_queue_overflow_drops_only_the_marker(
     monkeypatch.setattr(_loss, "_MAX_QUEUED_HEARTBEATS", 2)
     allocator = SourceAllocator("wire-full", "wire")
     for index in range(5):
-        emitter.heartbeat(allocator, kind="run_start", run_id=f"run-{index}")
+        scope = RunScope(f"run-{index}", f"3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f6{index}", None)
+        emitter.heartbeat(allocator, kind="run_start", scope=scope)
+    assert emitter.markers_dropped == 3
     assert emitter.flush(2.0)
     beats = _named(exporter, SPAN_HEARTBEAT)
     assert [b.get("fabric.run.id") for b in beats] == ["run-0", "run-1", None]

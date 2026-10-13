@@ -79,10 +79,10 @@ def _run(
     ("grpc_tls", "http_tls", "bind", "code", "expected"),
     [
         # Codex probe: gRPC TLS, HTTP plaintext, published on 0.0.0.0 -> was accepted.
-        (True, False, "0.0.0.0", 1, "have no tls: stanza: http"),
-        (False, True, "0.0.0.0", 1, "have no tls: stanza: grpc"),
-        (False, False, "10.0.0.5", 1, "have no tls: stanza: grpc http"),
-        (True, True, "0.0.0.0", 0, "with TLS on every OTLP receiver"),
+        (True, False, "0.0.0.0", 1, "TLS is not enabled on: otlp.http:4318;"),
+        (False, True, "0.0.0.0", 1, "TLS is not enabled on: otlp.grpc:4317;"),
+        (False, False, "10.0.0.5", 1, "TLS is not enabled on: otlp.grpc:4317 otlp.http:4318;"),
+        (True, True, "0.0.0.0", 0, "with TLS on every published OTLP receiver"),
         (True, False, "127.0.0.1", 0, "OTLP ports bind loopback only"),
         (False, False, "127.0.0.1", 0, "OTLP ports bind loopback only"),
     ],

@@ -4,8 +4,9 @@
 #   ocb --config ocb-config.yaml
 #
 # This produces a custom collector binary at ./dist/otelcol-fabric that
-# includes only the recorder's metadata protection processor alongside the
-# standard contrib receiver, durable storage, and exporter components.
+# includes only the recorder's metadata protection processor and content
+# writer (spec 043) alongside the standard contrib receiver, durable storage,
+# and exporter components.
 
 dist:
   name: otelcol-fabric
@@ -44,13 +45,20 @@ processors:
 exporters:
   - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.150.0
   - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.150.0
+  # Spec 043 content writer: verifies content log records (closed descriptor,
+  # body SHA-256, allowed tenants) and writes body + descriptor to a
+  # directory or S3 with the SDK store layout. Only fabric-gate-approved
+  # logs/content pipelines may use it.
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter v0.1.0
+    path: ./exporter/fabriccontentexporter
 
 providers:
   - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.56.0
   - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.56.0
   - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.56.0
 
-# Resolve the recorder processor to its on-disk source for reproducible builds.
+# Resolve the recorder components to their on-disk sources for reproducible builds.
 replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver => ./receiver/auditreceiver
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter => ./exporter/fabriccontentexporter

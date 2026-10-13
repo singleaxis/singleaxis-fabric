@@ -1,10 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""httpx/httpx2 transport tee: class patching and explicit wrapper transports.
-
-``httpx`` and ``httpx2`` (used by openai>=3 and anthropic>=1) have independent
-transport classes; :func:`patch_httpx` patches whichever of the two is installed.
-"""
+"""httpx/httpx2 transport tee: class patching and explicit wrapper transports. The two
+libraries (httpx2: openai>=3, anthropic>=1) have independent transport classes."""
 
 from __future__ import annotations
 
@@ -35,6 +32,7 @@ if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_w
     from httpx import BaseTransport as _SyncBase
 
     from ._config import WireConfig
+    from ._sender import Sender
 else:
     _SyncBase = _AsyncBase = object
 
@@ -56,27 +54,24 @@ class WireTee:
 
     def __init__(
         self, config: WireConfig, *, allocator: SourceAllocator, loss: LossEmitter,
-        pipeline: CapturePipeline | None = None,
+        pipeline: CapturePipeline | None = None, sender: Sender | None = None,
     ) -> None:  # fmt: skip
-        self.config, self.allocator, self.loss = config, allocator, loss
+        self.config, self.allocator, self.loss, self.sender = config, allocator, loss, sender
         self.max_body_bytes, self.budget = config.max_body_bytes, Budget(config.max_inflight_bytes)
         self.index = EndpointIndex(config.all_endpoints)
         self.closed, self.matched, self.internal_errors = False, 0, 0
         self._active: set[Exchange] = set()
         self.pipeline = pipeline or CapturePipeline(
             store=config.store, tracer_provider=config.tracer_provider, loss=loss,
-            queue_max_items=config.queue_max_items, on_job_done=self._release,
+            queue_max_items=config.queue_max_items, on_job_done=self._release, sender=sender,
+            node_tenant_id=config.content_endpoint and config.tenant_id,
+            model_allowlist=config.model_allowlist,
         )  # fmt: skip
         _TEES.add(self)
 
     def begin(self, request: Any) -> tuple[bool, Exchange | None]:
-        """Match ``request`` and open an exchange. Never raises.
-
-        ``(owned, exchange)``: ``owned`` once a sequence was allocated for the call,
-        so the caller suppresses nested tees while delegating even when ``exchange``
-        is ``None`` because setup failed (that failure is an ``internal_error`` loss
-        for the sequence, never a silent miss, and never a second capture).
-        """
+        """Match ``request``, open an exchange; never raises. ``owned`` once a sequence is
+        allocated (nested tees stay off; a failed setup is an ``internal_error`` loss)."""
         if self.closed or _IN_TEE.get():
             return False, None
         try:
@@ -84,7 +79,7 @@ class WireTee:
             found = self.index.match(request.method, url.scheme, url.host, url.port, url.path)
             if found is None:
                 return False, None
-            epoch, sequence = self.allocator.next_sequence()
+            epoch, sequence, scope = self.allocator.next_sequence()
         except Exception:  # nothing allocated: nothing to account for
             self.internal_errors += 1
             return False, None
@@ -93,7 +88,7 @@ class WireTee:
             self.matched += 1
             with contextlib.suppress(Exception):  # heartbeats cover the source from now on
                 self.loss.note_activity(self.allocator)
-            exchange = Exchange(self, found[0], found[1], epoch, sequence)
+            exchange = Exchange(self, found[0], found[1], epoch, sequence, scope)
             exchange.start(request)
             self._active.add(exchange)
             return True, exchange
@@ -172,7 +167,8 @@ class WireTee:
     def stats(self) -> Mapping[str, int]:
         pipeline = self.pipeline.stats()
         internal = self.internal_errors + pipeline["internal_errors"]
-        return {**pipeline, "matched": self.matched, "internal_errors": internal,
+        sender = self.sender.stats() if self.sender is not None else {}
+        return {**pipeline, **sender, "matched": self.matched, "internal_errors": internal,
                 "inflight_bytes": self.budget.used}  # fmt: skip
 
 
@@ -216,11 +212,8 @@ def _patch_module(module: Any) -> None:
 
 
 def patch_httpx() -> None:
-    """Patch the default transports of httpx and httpx2, whichever are installed.
-
-    Idempotent and inert without an active tee. A library that is missing or
-    fails to import is skipped with one warning; nothing raises into the host.
-    """
+    """Patch the default transports of whichever of httpx/httpx2 is installed; idempotent,
+    inert without an active tee; a library failing to import is skipped with a warning."""
     with _PATCH_LOCK:
         if _PATCHED:
             return
@@ -255,11 +248,8 @@ _FLAVORED: dict[tuple[type[Any], type[Any]], type[Any]] = {}
 
 
 def _new_wrapper(cls: type[_W], inner: Any, base: str) -> _W:
-    """An instance of ``cls`` that also subclasses ``base`` of ``inner``'s library only.
-
-    anthropic's ``DefaultHttpxClient`` rejects any ``httpx`` class in the MRO of an
-    httpx2 transport, so a wrapper must not carry the other library's base class.
-    """
+    """An instance of ``cls`` also subclassing ``base`` of ``inner``'s library only
+    (anthropic rejects any ``httpx`` class in the MRO of an httpx2 transport)."""
     flavor_base = getattr(_flavor_of(inner), base, None)
     if isinstance(flavor_base, type) and not issubclass(cls, flavor_base):
         key = (cls, flavor_base)
@@ -271,10 +261,8 @@ def _new_wrapper(cls: type[_W], inner: Any, base: str) -> _W:
 
 
 class WireTransport(_SyncBase):
-    """Explicit sync wrapper (httpx or httpx2); without ``handle`` it uses the installed one.
-
-    An instance is a ``BaseTransport`` of its inner transport's library only.
-    """
+    """Explicit sync wrapper (a ``BaseTransport`` of the inner transport's library only);
+    without ``handle`` it uses the installed one."""
 
     def __new__(cls, inner: Any, *, handle: Any | None = None) -> WireTransport:
         return _new_wrapper(cls, inner, "BaseTransport")
@@ -298,10 +286,8 @@ class WireTransport(_SyncBase):
 
 
 class AsyncWireTransport(_AsyncBase):
-    """Explicit async wrapper (httpx or httpx2); without ``handle`` it uses the installed one.
-
-    An instance is an ``AsyncBaseTransport`` of its inner transport's library only.
-    """
+    """Explicit async wrapper (an ``AsyncBaseTransport`` of the inner transport's library
+    only); without ``handle`` it uses the installed one."""
 
     def __new__(cls, inner: Any, *, handle: Any | None = None) -> AsyncWireTransport:
         return _new_wrapper(cls, inner, "AsyncBaseTransport")

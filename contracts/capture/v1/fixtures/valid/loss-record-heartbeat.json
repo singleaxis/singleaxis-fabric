@@ -8,5 +8,6 @@
   "emitted_at": "2026-10-08T09:00:06.000Z",
   "heartbeat_kind": "run_end",
   "last_sequence": 4,
-  "run_id": "run-travel-42"
+  "run_id": "run-travel-42",
+  "scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60"
 }

@@ -86,6 +86,7 @@ for case in \
   'pre-queue batching:otel-collector.batch.enabled:true' \
   'removed sampler surface:otel-collector.fabric.sampler.enabled:true' \
   'debug off:otel-collector.debugExporter.enabled:true' \
+  'content encryption:otel-collector.content.requireServerSideEncryption:false' \
   'explicit ingress:otel-collector.networkPolicy.requireExplicitIngress:false' \
   'cluster-internal service:otel-collector.service.type:NodePort' \
   'non-root pod:otel-collector.podSecurityContext.runAsNonRoot:false' \

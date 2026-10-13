@@ -41,6 +41,7 @@ if [ -f "${COLLECTOR_CONFIG}" ] \
 fi
 
 node_addr="$(${compose} port fabric-node 4318 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
+content_addr="$(${compose} port fabric-node 4319 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 grpc_addr="$(${compose} port fabric-node 4317 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 health_addr="$(${compose} port fabric-node 13133 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 metrics_addr="$(${compose} port fabric-node 8888 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
@@ -114,6 +115,22 @@ if [ "${code}" = "200" ]; then
   ok "authenticated OTLP accepted (200)"
 else
   bad "authenticated OTLP returned ${code}, expected 200"
+fi
+
+# --- content ingress auth (spec 043: otlp/content, same authenticator) --------
+# Only the rejection is probed: an accepted probe would have to be a real,
+# digest-valid content record for an allowed tenant.
+if [ -n "${content_addr}" ]; then
+  # shellcheck disable=SC2086
+  code=$(curl ${curl_tls} -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${content_addr}/v1/logs" \
+    -H 'Content-Type: application/x-protobuf' --data-binary '')
+  if [ "${code}" = "401" ] || [ "${code}" = "403" ]; then
+    ok "unauthenticated content upload rejected (${code})"
+  else
+    bad "unauthenticated content upload on ${content_addr} returned ${code}, expected 401/403"
+  fi
+else
+  note "SKIP" "content port 4319 not published"
 fi
 
 # --- gRPC ingress auth (same authenticator, second receiver) ------------------

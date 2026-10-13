@@ -201,10 +201,8 @@ def test_env_config_parsing(tmp_path: Path) -> None:
     assert config.max_body_bytes == 1024 and config.queue_max_items == 8
     assert config.source_id == "wire-node-1"
     assert config.extra_endpoints[0].ports == frozenset({11434})
-    s3_config, _ = config_from_env(
-        {"FABRIC_TENANT_ID": "t", "FABRIC_WIRE_STORE": "s3://my-bucket/fabric"}
-    )
-    assert s3_config.store.prefix == "fabric/"  # type: ignore[union-attr]
+    with pytest.raises(ValueError, match="written by the Fabric Node"):  # spec 043 F1
+        config_from_env({"FABRIC_TENANT_ID": "t", "FABRIC_WIRE_STORE": "s3://my-bucket/fabric"})
     for bad in (
         {"FABRIC_WIRE_STORE": f"file://{tmp_path}"},  # no tenant
         {"FABRIC_WIRE_STORE": "ftp://x", "FABRIC_TENANT_ID": "t"},

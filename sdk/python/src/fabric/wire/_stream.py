@@ -1,14 +1,8 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Hot-path exchange state and response tees (spec 042 §4).
-
-Chunks pass through as the same objects, in order, with no read-ahead. Inner
-exceptions re-raise unchanged; a tee failure becomes a pass-through plus an
-``internal_error`` loss. Each exchange is finalized once, with one submit, and
-hands its retained chunks to that job (or drops them), so a response the host
-keeps holds no captured bytes. Works for ``httpx`` and ``httpx2`` responses;
-neither is imported here.
-"""
+"""Hot-path exchange state and httpx/httpx2 response tees (042 §4): chunks pass through
+unchanged and in order; tee failures are pass-throughs plus ``internal_error`` losses; each
+exchange is finalized once and hands its retained chunks to its one job (or drops them)."""
 
 from __future__ import annotations
 
@@ -29,7 +23,7 @@ from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.context import Context
 
-from .._sequence import resolve_run_id
+from .._sequence import RunScope, resolve_run_id
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ResponseState, WireApi
 from ._pipeline import capture_parent
 
@@ -37,16 +31,14 @@ if TYPE_CHECKING:
     from ._transport import WireTee
 
 _FINISH_LOCK = threading.Lock()
-# GC may finalize a stream (weakref.finalize, or GeneratorExit in a generator
-# nobody closed) on any thread, including one that holds a capture lock. Those
-# paths only SimpleQueue.put; the reaper thread finishes the exchange.
+# GC may finalize a stream on any thread, even one holding a capture lock: those paths
+# only SimpleQueue.put; the reaper thread finishes the exchange.
 _ABANDONED: queue.SimpleQueue[Callable[[], object]] = queue.SimpleQueue()
 _REAPER_LOCK = threading.Lock()
 _REAPER_PID: int | None = None
 FLAVORS = ("httpx", "httpx2")  # API-identical clients with independent classes
-# Retained chunks smaller than this are copied into one shared buffer, so chunk
-# references stay under 2 * max_body_bytes / _COALESCE_BYTES + 1 per side however
-# small the chunks get; larger chunks are kept by reference, uncopied.
+# Smaller retained chunks are copied into one shared buffer (bounded reference counts);
+# larger chunks are kept by reference, uncopied.
 _COALESCE_BYTES = 4096
 
 
@@ -160,14 +152,15 @@ class Exchange:
 
     __slots__ = (
         "__weakref__", "api", "done", "epoch", "exchange_id", "finalizer", "matcher",
-        "parent_context", "request", "response", "run_id", "sequence", "started_ns",
+        "parent_context", "request", "response", "run_id", "scope", "sequence", "started_ns",
         "status_code", "tee",
     )  # fmt: skip
 
     def __init__(
-        self, tee: WireTee, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int
-    ) -> None:
-        self.tee, self.matcher, self.api = tee, matcher, api
+        self, tee: WireTee, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int,
+        scope: RunScope | None = None,
+    ) -> None:  # fmt: skip
+        self.tee, self.matcher, self.api, self.scope = tee, matcher, api, scope
         self.epoch, self.sequence, self.done = epoch, sequence, False
         self.finalizer: weakref.finalize[Any, Any] | None = None
         self.status_code: int | None = None
@@ -178,7 +171,9 @@ class Exchange:
         """Capture context and the request body; on failure the caller detaches (lost)."""
         self.started_ns = time.time_ns()
         self.parent_context, trace_id = _capture_parent()
-        self.run_id = resolve_run_id(self.tee.allocator, trace_id=trace_id)
+        scope = self.scope  # the innermost open run scope at allocation (spec 043 §6)
+        allocator = self.tee.allocator
+        self.run_id = scope.run_id if scope else resolve_run_id(allocator, trace_id=trace_id)
         self.exchange_id = str(uuid.uuid4())
         self.request = side = _Side(request.headers)
         content = getattr(request, "_content", None)
@@ -264,16 +259,15 @@ class Exchange:
                 ended_ns=time.time_ns(), request=self.request.body(), response=response,
                 response_state=state, http_status_code=self.status_code,
                 error_type=error_type if state == "error" else None,
+                scope_id=self.scope.scope_id if self.scope else None,
             ))  # fmt: skip
         except Exception:
             self.done = False
             self.detach(lost=True)
 
     def detach(self, *, lost: bool = False) -> bool:
-        """Drop unsubmitted (shutdown; an ``internal_error`` loss when ``lost``); never raises.
-
-        ``True`` when this call claimed the exchange.
-        """
+        """Drop unsubmitted (an ``internal_error`` loss when ``lost``); never raises.
+        ``True`` when this call claimed the exchange."""
         if not self._claim():
             return False
         if lost:

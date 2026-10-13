@@ -6,10 +6,12 @@ The package contains passive activity capture, correlation, content references
 and integrity metadata. Runtime control, evaluation, assurance and management
 implementations are deliberately outside this distribution.
 
-LLM wire capture (spec 042) is opt-in and lives in subpackages that this
-module does not import: ``fabric.wire`` (in-process httpx tee; nothing is
-patched until ``fabric.wire.install()``) and ``fabric.reconstruct`` (offline
-run verifier, also ``python -m fabric.reconstruct``). Importing ``fabric`` never patches a
+LLM wire capture (specs 042 and 043) is opt-in and lives in subpackages that
+this module does not import: ``fabric.wire`` (in-process httpx tee; nothing is
+patched until ``fabric.wire.install()``; in node mode the agent spools capture
+events to disk and delivers content to the Fabric Node, never to a cloud
+store) and ``fabric.reconstruct`` (offline run verifier, also
+``python -m fabric.reconstruct``). Importing ``fabric`` never patches a
 transport, starts a thread or enables capture.
 """
 

@@ -9,21 +9,17 @@ from collections.abc import Sequence
 from ._model import EndpointMatcher, WireApi
 
 OPERATION_NAMES: dict[str, str] = {
-    "openai.chat_completions": "chat",
-    "openai.responses": "chat",
-    "openai.completions": "text_completion",
-    "openai.embeddings": "embeddings",
+    "openai.chat_completions": "chat", "openai.responses": "chat",
+    "openai.completions": "text_completion", "openai.embeddings": "embeddings",
     "anthropic.messages": "chat",
-}
+}  # fmt: skip
 _SUFFIXES: dict[str, tuple[tuple[str, WireApi], ...]] = {
     "openai": (
-        ("/chat/completions", "openai.chat_completions"),
-        ("/responses", "openai.responses"),
-        ("/completions", "openai.completions"),
-        ("/embeddings", "openai.embeddings"),
+        ("/chat/completions", "openai.chat_completions"), ("/responses", "openai.responses"),
+        ("/completions", "openai.completions"), ("/embeddings", "openai.embeddings"),
     ),
     "anthropic": (("/messages", "anthropic.messages"),),
-}
+}  # fmt: skip
 _DEFAULT_PORTS = {"https": 443, "http": 80}
 
 

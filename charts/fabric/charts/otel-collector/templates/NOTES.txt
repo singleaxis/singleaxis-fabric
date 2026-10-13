@@ -3,6 +3,13 @@ Fabric Node Collector is running in {{ .Release.Namespace }}.
 CAPTURE: OTLP/gRPC {{ .Values.service.ports.otlpGrpc }}, OTLP/HTTP {{ .Values.service.ports.otlpHttp }}
 PROTECT: default-deny fabricguard allowlist on logs and traces
 DELIVER: {{ .Values.exporter.endpoint | default "debug stdout (development only)" }}
+{{- if .Values.content.enabled }}
+CONTENT: OTLP/HTTP {{ .Values.service.ports.otlpContent }} -> fabriccontent ({{ .Values.content.backend }}{{ if eq .Values.content.backend "s3" }}, sse={{ .Values.content.s3.sse | default "bucket default" }}{{ end }}); tenants: {{ join ", " .Values.content.allowedTenants }}
+The Node is the only content writer; agents need no store credentials.
+{{- if not .Values.exporter.sendingQueue.persistence.enabled }}
+WARNING: the content queue{{ if eq .Values.content.backend "file" }} and the file store are{{ else }} is{{ end }} memory/emptyDir only (development).
+{{- end }}
+{{- end }}
 
 {{- if .Values.exporter.sendingQueue.persistence.enabled }}
 Queue: persistent, fsync={{ .Values.exporter.sendingQueue.persistence.fsync }}

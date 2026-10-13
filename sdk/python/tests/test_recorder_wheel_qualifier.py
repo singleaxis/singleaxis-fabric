@@ -35,6 +35,13 @@ _GOVERNED_MEMBERS = (
     # Spec 042 wire capture and its env-gated autoload.
     "fabric/_autoload/__init__.py",
     "fabric/_autoload/sitecustomize.py",
+    # Spec 043 node mode.
+    "fabric/wire/_spool.py",
+    "fabric/wire/_sender.py",
+    "fabric/wire/_content.py",
+    "fabric/_loss.py",
+    "fabric/_sequence.py",
+    "fabric/_model_names.py",
 )
 _WIRE_INIT = "def current_handle():\n    return None\n"
 
@@ -131,6 +138,40 @@ def test_rejects_artifact_without_autoload(tmp_path: Path) -> None:
     wheel = _wheel(tmp_path / "no-autoload.whl", omit="fabric/_autoload/sitecustomize.py")
     with pytest.raises(ValueError, match="missing recorder modules"):
         _qualifier().qualify(wheel, import_probe=False)
+
+
+@pytest.mark.parametrize("member", ["fabric/wire/_spool.py", "fabric/_model_names.py"])
+def test_rejects_artifact_without_node_mode_modules(tmp_path: Path, member: str) -> None:
+    wheel = _wheel(tmp_path / "no-spool.whl", omit=member)
+    with pytest.raises(ValueError, match="missing recorder modules"):
+        _qualifier().qualify(wheel, import_probe=False)
+
+
+@pytest.mark.parametrize(
+    ("member", "source"),
+    [
+        ("fabric/wire/_sender.py", "import boto3\n"),
+        ("fabric/wire/_content.py", "    from botocore.config import Config\n"),
+        ("fabric/_loss.py", 'x = importlib.import_module("boto3")\n'),
+        ("fabric/_autoload/sitecustomize.py", "import aiobotocore.session\n"),
+    ],
+)
+def test_rejects_wire_capture_importing_a_cloud_sdk(
+    tmp_path: Path, member: str, source: str
+) -> None:
+    """Spec 043 F1: only the Node writes cloud stores; capture never loads boto3."""
+    wheel = _wheel(tmp_path / "boto.whl", omit=member)
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr(member, source)
+    with pytest.raises(ValueError, match="imports a cloud SDK"):
+        _qualifier().qualify(wheel, import_probe=False)
+
+
+def test_s3_store_may_keep_boto3_lazy(tmp_path: Path) -> None:
+    wheel = _wheel(tmp_path / "s3.whl", omit="fabric/content_store/s3.py")
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr("fabric/content_store/s3.py", "    import boto3\n")
+    assert _qualifier().qualify(wheel, import_probe=False)["qualified"] is True
 
 
 @pytest.mark.parametrize(

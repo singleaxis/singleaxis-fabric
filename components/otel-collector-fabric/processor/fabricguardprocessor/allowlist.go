@@ -135,6 +135,9 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"fabric.loss.reason", "fabric.loss.count",
 	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
 	"fabric.heartbeat.last_sequence", "fabric.heartbeat.kind",
+	// Spec 043 run scopes: one uuid4 per fabric.wire.run() entry, on
+	// exchange spans inside the scope and on its run_start/run_end markers.
+	"fabric.run.scope_id",
 ))
 
 // BuiltInAllowedFields retains released v1 log classes. The shared envelope

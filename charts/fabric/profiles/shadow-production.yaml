@@ -10,6 +10,15 @@
 #   exporterEgress.to and exporterEgress.ports matching that destination
 #   a suitable encrypted StorageClass (or an existing customer-owned PVC)
 #
+# Content delivery (spec 043) is off until the operator enables it with:
+#   otel-collector.content.enabled=true
+#   otel-collector.content.allowedTenants[0]=<FABRIC_TENANT_ID of the agents>
+#   otel-collector.content.backend=s3, content.s3.bucket, content.s3.sse
+#     (aws:kms + kmsKeyId, or AES256) -- the file backend is refused here
+#   the Node writer role via otel-collector.serviceAccount.annotations (IRSA)
+#   networkPolicy.contentEgress.to/ports for the store (and STS for IRSA)
+# Agents then reach 4319 with the same client certificate as 4317/4318.
+#
 # Delivery is at least once. A successful OTLP acknowledgement proves remote
 # acceptance, not durable persistence by an arbitrary destination.
 profile:
@@ -78,6 +87,9 @@ otel-collector:
       initialInterval: 5s
       maxInterval: 30s
       maxElapsedTime: 0s
+  content:
+    enabled: false
+    requireServerSideEncryption: true
   debugExporter:
     enabled: false
   batch:

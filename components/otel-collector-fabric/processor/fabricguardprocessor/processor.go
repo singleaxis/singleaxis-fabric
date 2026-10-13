@@ -701,11 +701,13 @@ var captureProfile = map[string]func(pcommon.Value) bool{
 	"fabric.loss.last_sequence":      intAtLeast(0),
 	"fabric.heartbeat.last_sequence": intAtLeast(-1),
 	"fabric.heartbeat.kind":          oneOf(captureHeartbeatKinds),
+	"fabric.run.scope_id":            matches(captureObjectIDPattern), // spec 043 §6: lowercase uuid4
 }
 
-// captureNewKeys are the fifteen keys spec 042 introduced. On spans outside
-// the capture profile they stay value-closed by the same validators, so a
-// non-capture span cannot use them as a free-text channel either.
+// captureNewKeys are the fifteen keys spec 042 introduced plus spec 043's
+// fabric.run.scope_id. On spans outside the capture profile they stay
+// value-closed by the same validators, so a non-capture span cannot use them
+// as a free-text channel either.
 var captureNewKeys = toSet(
 	"fabric.source.epoch", "fabric.run.id",
 	"fabric.wire.exchange_id", "fabric.wire.api",
@@ -714,7 +716,11 @@ var captureNewKeys = toSet(
 	"fabric.loss.reason", "fabric.loss.count",
 	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
 	"fabric.heartbeat.last_sequence", "fabric.heartbeat.kind",
+	"fabric.run.scope_id",
 )
+
+// runMarkerKinds are the heartbeat kinds that carry fabric.run.scope_id.
+var runMarkerKinds = toSet("run_start", "run_end")
 
 var (
 	captureSpanNames = toSet("fabric.model_call", "fabric.capture_loss", "fabric.capture_heartbeat")
@@ -774,10 +780,34 @@ func (g *guard) applyCaptureProfile(span ptrace.Span) {
 		return true
 	})
 	g.filterAttributes(span.Attributes(), TraceAllowedFields, "capture-span")
+	g.scopeIDOnlyWhereDefined(span.Attributes())
 	if removed := span.Events().Len() + span.Links().Len(); removed > 0 {
 		span.Events().RemoveIf(func(ptrace.SpanEvent) bool { return true })
 		span.Links().RemoveIf(func(ptrace.SpanLink) bool { return true })
 		g.stats.notAllowedRemoved.Add(uint64(removed))
+	}
+}
+
+// scopeIDOnlyWhereDefined keeps fabric.run.scope_id only where spec 043 §6
+// defines it: on an exchange (fabric.model_call) and on a run_start/run_end
+// heartbeat. It is dropped from periodic/final heartbeats, loss records and
+// heartbeats whose kind did not survive validation.
+func (g *guard) scopeIDOnlyWhereDefined(attrs pcommon.Map) {
+	if _, ok := attrs.Get("fabric.run.scope_id"); !ok {
+		return
+	}
+	keep := false
+	switch activityCategory("", attrs) {
+	case "fabric.model_call":
+		keep = true
+	case "fabric.capture_heartbeat":
+		if kind, ok := attrs.Get("fabric.heartbeat.kind"); ok {
+			_, keep = runMarkerKinds[kind.Str()]
+		}
+	}
+	if !keep {
+		attrs.Remove("fabric.run.scope_id")
+		g.stats.notAllowedRemoved.Add(1)
 	}
 }
 

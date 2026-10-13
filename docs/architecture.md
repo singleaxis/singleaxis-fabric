@@ -104,6 +104,16 @@ flowchart TD
     SQ -.-> METRICS
 ```
 
+Wire capture in node mode ([spec 043](../specs/043-node-content-delivery-and-agent-spool.md))
+adds a separate, HTTP-only content receiver `otlp/content` on **:4319** (same
+authentication and TLS) feeding its own pipeline: `memory_limiter` →
+`fabriccontent`, which verifies each body's digest, length and tenant and
+writes body + descriptor to the customer's content store (a directory or
+S3) behind its own persistent queue. Content never passes `fabricguard` and
+can never reach the OTLP destination exporter: `fabric-gate` refuses any
+configuration that mixes the two paths. The Node is the only writer of the
+content store; agents hold no store credentials.
+
 Design notes:
 
 - **No batch processor before the queue.** A volatile in-memory batch window

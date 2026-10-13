@@ -1,0 +1,51 @@
+# Content store overlay: S3 or an S3-compatible store (MinIO, Ceph RGW).
+# Merged after collector.yaml / collector-production.yaml with an extra
+# --config (docker-compose.content-s3.yml, docker-compose.minio.yml);
+# fabric-gate validates the merged result.
+#
+# The Node is the only writer (spec 043). Credentials come from the AWS
+# default chain of the Node container: an instance or workload role on AWS
+# (with IMDSv2 reachable from containers: hop limit 2), or static keys for an
+# S3-compatible store. Agents never receive them.
+#
+# Objects: s3://<bucket>/<prefix><tenant>/evidence/<object_id> plus
+# .../evidence/meta/<object_id>.json, written with If-None-Match: * (never
+# overwritten) and the configured server-side encryption.
+
+exporters:
+  fabriccontent/s3:
+    allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
+    backend: s3
+    s3:
+      bucket: ${env:FABRIC_CONTENT_S3_BUCKET}
+      prefix: ${env:FABRIC_CONTENT_S3_PREFIX:-fabric/content/}
+      # The bucket region (required by the SDK; any value for MinIO).
+      region: ${env:FABRIC_CONTENT_S3_REGION:-}
+      # Empty for AWS; http(s)://host:port for an S3-compatible store.
+      endpoint: ${env:FABRIC_CONTENT_S3_ENDPOINT:-}
+      use_path_style: ${env:FABRIC_CONTENT_S3_PATH_STYLE:-false}
+      # aws:kms (with FABRIC_CONTENT_S3_KMS_KEY_ID, or the AWS-managed key)
+      # or AES256 (SSE-S3; MinIO with MINIO_KMS_SECRET_KEY).
+      sse: ${env:FABRIC_CONTENT_S3_SSE:-aws:kms}
+      kms_key_id: ${env:FABRIC_CONTENT_S3_KMS_KEY_ID:-}
+    timeout: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 64
+      block_on_overflow: true
+      storage: file_storage/fabric_content
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 0s
+
+service:
+  pipelines:
+    logs/content:
+      receivers: [otlp/content]
+      processors: [memory_limiter]
+      # Replaces the file-backed fabriccontent from the base config (lists are
+      # replaced on merge); the base exporter stays defined but unused.
+      exporters: [fabriccontent/s3]

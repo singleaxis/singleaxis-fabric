@@ -8,9 +8,9 @@
 
 OCB ?= $(shell command -v ocb || command -v builder)
 DIST_DIR := dist
-RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor receiver/auditreceiver gate
+RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor receiver/auditreceiver exporter/fabriccontentexporter gate
 
-.PHONY: all build test lint qualify-config qualify-image clean tidy
+.PHONY: all build test lint qualify-config qualify-image qualify-content clean tidy
 
 COLLECTOR_BINARY ?= $(DIST_DIR)/otelcol-fabric
 COLLECTOR_IMAGE ?= fabric-otelcol:pr
@@ -47,6 +47,10 @@ qualify-config:
 
 qualify-image:
 	./tests/qualify-distribution-config.sh --image "$(COLLECTOR_IMAGE)"
+
+# Live spec 043 content path in a throwaway container (loopback, plain HTTP).
+qualify-content:
+	./tests/content-roundtrip.sh --image "$(COLLECTOR_IMAGE)"
 
 clean:
 	rm -rf $(DIST_DIR)

@@ -1,0 +1,168 @@
+// Copyright 2026 AI5Labs Research OPC Private Limited
+// SPDX-License-Identifier: Apache-2.0
+
+package fabriccontentexporter
+
+import (
+	"errors"
+	"fmt"
+	"net/url"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/config/configoptional"
+	"go.opentelemetry.io/collector/config/configretry"
+	"go.opentelemetry.io/collector/exporter/exporterhelper"
+)
+
+const (
+	backendFile = "file"
+	backendS3   = "s3"
+
+	defaultS3Prefix = "fabric/content/"
+)
+
+var (
+	tenantPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$`)
+	bucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+)
+
+// FileConfig selects the directory backend.
+type FileConfig struct {
+	// Directory is the absolute content root; objects are written below
+	// <directory>/<tenant>/evidence/.
+	Directory string `mapstructure:"directory"`
+}
+
+// S3Config selects the S3 (or S3-compatible) backend. Credentials come from
+// the AWS default chain (environment, shared config, IRSA web identity,
+// container and instance roles); none are configured here.
+type S3Config struct {
+	Bucket       string `mapstructure:"bucket"`
+	Prefix       string `mapstructure:"prefix"`
+	Region       string `mapstructure:"region"`
+	Endpoint     string `mapstructure:"endpoint"`
+	UsePathStyle bool   `mapstructure:"use_path_style"`
+	SSE          string `mapstructure:"sse"`
+	KMSKeyID     string `mapstructure:"kms_key_id"`
+}
+
+// Config is the fabriccontent exporter configuration (spec 043 §4).
+type Config struct {
+	AllowedTenants []string   `mapstructure:"allowed_tenants"`
+	Backend        string     `mapstructure:"backend"`
+	File           FileConfig `mapstructure:"file"`
+	S3             S3Config   `mapstructure:"s3"`
+
+	TimeoutConfig exporterhelper.TimeoutConfig                             `mapstructure:",squash"`
+	QueueConfig   configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
+	RetryConfig   configretry.BackOffConfig                                `mapstructure:"retry_on_failure"`
+}
+
+var _ component.Config = (*Config)(nil)
+
+func createDefaultConfig() component.Config {
+	queue := exporterhelper.NewDefaultQueueConfig()
+	// One request carries at most one 64 MiB body: bound the queue by
+	// requests, apply backpressure instead of dropping when it is full.
+	queue.QueueSize = 64
+	queue.NumConsumers = 4
+	queue.BlockOnOverflow = true
+	retry := configretry.NewDefaultBackOffConfig()
+	// Content is evidence: retry until the store accepts it.
+	retry.MaxElapsedTime = 0
+	return &Config{
+		S3:            S3Config{Prefix: defaultS3Prefix},
+		TimeoutConfig: exporterhelper.TimeoutConfig{Timeout: 60 * time.Second},
+		QueueConfig:   configoptional.Some(queue),
+		RetryConfig:   retry,
+	}
+}
+
+// Validate refuses incomplete or unsafe configurations. Messages name the
+// offending field, never an endpoint or credential value.
+func (c *Config) Validate() error {
+	if len(c.AllowedTenants) == 0 {
+		return errors.New("allowed_tenants must list at least one tenant id")
+	}
+	for i, tenant := range c.AllowedTenants {
+		if !tenantPattern.MatchString(tenant) {
+			return fmt.Errorf("allowed_tenants[%d] is not a valid tenant id", i)
+		}
+	}
+	switch c.Backend {
+	case backendFile:
+		return c.File.validate()
+	case backendS3:
+		return c.S3.validate()
+	case "":
+		return errors.New("backend is required (file or s3)")
+	default:
+		return errors.New("backend must be file or s3")
+	}
+}
+
+func (f FileConfig) validate() error {
+	dir := f.Directory
+	if dir == "" {
+		return errors.New("file.directory is required for the file backend")
+	}
+	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || dir == string(filepath.Separator) {
+		return errors.New("file.directory must be an absolute, clean path other than / with no trailing slash")
+	}
+	return nil
+}
+
+func (s S3Config) validate() error {
+	if !bucketPattern.MatchString(s.Bucket) {
+		return errors.New("s3.bucket is required and must be a valid bucket name")
+	}
+	if err := validPrefix(s.Prefix); err != nil {
+		return err
+	}
+	if s.Endpoint != "" {
+		if err := validEndpoint(s.Endpoint); err != nil {
+			return err
+		}
+	}
+	switch s.SSE {
+	case "", "AES256":
+		if s.KMSKeyID != "" {
+			return errors.New("s3.kms_key_id requires s3.sse: aws:kms")
+		}
+	case "aws:kms":
+	default:
+		return errors.New("s3.sse must be empty, AES256 or aws:kms")
+	}
+	return nil
+}
+
+func validPrefix(prefix string) error {
+	if prefix == "" || !strings.HasSuffix(prefix, "/") || strings.HasPrefix(prefix, "/") {
+		return errors.New("s3.prefix must be non-empty, end with / and not start with /")
+	}
+	for _, segment := range strings.Split(strings.TrimSuffix(prefix, "/"), "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return errors.New("s3.prefix must not contain empty, . or .. segments")
+		}
+	}
+	return nil
+}
+
+func validEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	// The URL is never echoed: it may be operator-sensitive topology.
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return errors.New("s3.endpoint must be an http(s) URL with a host")
+	}
+	if u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(endpoint, "#") {
+		return errors.New("s3.endpoint must not contain user info, a query or a fragment")
+	}
+	if u.Path != "" && u.Path != "/" {
+		return errors.New("s3.endpoint must not contain a path")
+	}
+	return nil
+}

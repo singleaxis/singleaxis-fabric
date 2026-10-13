@@ -34,7 +34,7 @@ class WireAttr:
     REQUEST_REF, RESPONSE_REF = "fabric.content.request_ref", "fabric.content.result_ref"
     REQUEST_SHA256, RESPONSE_SHA256 = "fabric.wire.request_sha256", "fabric.wire.response_sha256"
     RESPONSE_STATE, TRUNCATED = "fabric.wire.response_state", "fabric.wire.truncated"
-    STORE_STATUS = "fabric.wire.store_status"
+    STORE_STATUS, SCOPE_ID = "fabric.wire.store_status", "fabric.run.scope_id"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +81,7 @@ class CaptureJob:
     response_state: ResponseState
     http_status_code: int | None = None
     error_type: str | None = None
+    scope_id: str | None = None  # the innermost open fabric.wire.run() scope (spec 043 §6)
 
 
 class ExchangeSink(Protocol):

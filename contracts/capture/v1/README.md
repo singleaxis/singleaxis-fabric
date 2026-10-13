@@ -2,14 +2,19 @@
 
 Specified by [spec 042](../../../specs/042-llm-wire-capture-and-reconstruction.md)
 (revision 5: store-only stitching, object-id refs, closed metadata values,
-heartbeat kinds, proven-end verdicts, pseudonymised report ids). Not emitted by recorder v1 and not part
-of the published contracts archive until spec 042 is accepted.
+heartbeat kinds, proven-end verdicts, pseudonymised report ids) and
+[spec 043](../../../specs/043-node-content-delivery-and-agent-spool.md)
+(Node content delivery, agent durable spool, run scopes, model exposure).
+Not emitted by recorder v1 and not part of the published contracts archive
+until those specs are accepted.
 
 | Schema | Document | Produced by |
 |---|---|---|
 | `schema/llm-exchange-v1.schema.json` | `fabric.llm-exchange/v1` — the JSON form of one `fabric.model_call` span: exchange id, source position, run, body digests and store object ids, closed-shape response metadata | wire tee (as an OTLP span); normalized by the verifier |
 | `schema/loss-record-v1.schema.json` | `fabric.loss-record/v1` — `loss` (a range of exchange sequences that will never produce a span) or `heartbeat` (the source's last allocated sequence, with `heartbeat_kind` `periodic`, `run_start`, `run_end` or `final`) | the capture loss emitter (as `fabric.capture_loss` / `fabric.capture_heartbeat` spans) |
 | `schema/run-reconstruction-v1.schema.json` | `fabric.run-reconstruction/v1` — per-run exchanges, threads, gaps and integrity verdict | `python -m fabric.reconstruct` |
+| `schema/spool-record-v1.schema.json` | `fabric.wire-spool-record/v1` — the header of one agent spool record (spec 043 §2): an `exchange` (fully resolved `fabric.model_call` span + up to two content descriptors addressing the record's byte blob), a `loss` range, or a `run_start`/`run_end`/`final` marker | the agent's capture worker and sender (on disk, never on the wire) |
+| `schema/content-log-record-v1.schema.json` | `fabric.content-log-record/v1` — the JSON form of one OTLP `LogRecord` on the content path: body length and digest, and the exact closed attribute set (`event_class: content` + content-v2 descriptor fields) | agent sender → Fabric Node `otlp/content` → `fabriccontent` exporter |
 
 Every document is metadata only. Request and response bytes live in
 customer-controlled content-v2 objects (`model.exchange.request`,
@@ -61,6 +66,28 @@ The reconstruction report carries provider-derived ids (response,
 previous-response and tool-call ids) only as `p-` + the first 16 hex of
 their sha256, consistently within the report, and never names the location
 a store resolved for an object.
+
+**Spec 043 additions.** `scope_id` (`fabric.run.scope_id`, a lowercase
+uuid4, unique per `fabric.wire.run()` block entry) appears on exchanges
+started inside an open block, on `run_start`/`run_end` markers (never on
+`periodic` or `final` heartbeats), on reconstruction windows that are one
+scope and on reconstruction exchanges; `runs[].scopes[]` lists every scope
+with its state. A complete run has only closed scopes; a scope window is
+`[run_start.last_sequence + 1, run_end.last_sequence]` and only sequences
+inside it decide completeness. A model name is kept as is only when it also
+matches the model allowlist; otherwise it appears as `m-` + 16 hex of its
+SHA-256.
+
+The content descriptor definition is identical in the spool and content
+log-record schemas: the content-v2 descriptor fields without `encoding`
+and `ref`, which every writer adds itself. `fixtures/golden/` pins the
+exact bytes a writer must produce for the descriptor sidecar
+(`json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n"`, so
+`", "` and `": "` separators) and the object and descriptor keys of the
+shared layout (`<prefix><tenant>/evidence/<object_id>` and
+`<prefix><tenant>/evidence/meta/<object_id>.json`), for a file directory and
+an S3 prefix. The Fabric Node's `fabriccontent` exporter and the SDK local
+store must both match them byte for byte.
 
 ```bash
 python scripts/contracts/validate_capture_contracts.py

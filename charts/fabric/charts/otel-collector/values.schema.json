@@ -55,10 +55,11 @@
         "ports": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["otlpGrpc", "otlpHttp", "health"],
+          "required": ["otlpGrpc", "otlpHttp", "otlpContent", "health"],
           "properties": {
             "otlpGrpc": {"$ref": "#/definitions/port"},
             "otlpHttp": {"$ref": "#/definitions/port"},
+            "otlpContent": {"$ref": "#/definitions/port"},
             "health": {"$ref": "#/definitions/port"}
           }
         }
@@ -205,6 +206,73 @@
         "requireDurableQueue": {"type": "boolean"}
       }
     },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Spec 043 content delivery path: otlp/content receiver -> logs/content -> fabriccontent exporter.",
+      "required": ["enabled", "maxRequestBodyBytes", "allowedTenants", "backend", "requireServerSideEncryption", "file", "s3", "queue", "retry", "timeout", "memoryLimiterMiB"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "maxRequestBodyBytes": {"type": "integer", "minimum": 1048576, "maximum": 67108864},
+        "allowedTenants": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"}
+        },
+        "backend": {"enum": ["", "file", "s3"]},
+        "requireServerSideEncryption": {"type": "boolean"},
+        "file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["directory"],
+          "properties": {"directory": {"type": "string", "pattern": "^$|^/.+"}}
+        },
+        "s3": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bucket", "prefix", "region", "endpoint", "usePathStyle", "sse", "kmsKeyId", "credentialsSecret"],
+          "properties": {
+            "bucket": {"type": "string", "pattern": "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"},
+            "prefix": {"type": "string", "pattern": "^[^/].*/$"},
+            "region": {"type": "string", "pattern": "^$|^[a-z0-9-]{1,64}$"},
+            "endpoint": {"type": "string", "pattern": "^$|^https?://[^/?#@\\s]+(/[^?#@\\s]*)?$"},
+            "usePathStyle": {"type": "boolean"},
+            "sse": {"enum": ["", "AES256", "aws:kms"]},
+            "kmsKeyId": {"type": "string", "maxLength": 2048},
+            "credentialsSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "accessKeyIdKey", "secretAccessKeyKey"],
+              "properties": {
+                "name": {"type": "string", "maxLength": 253},
+                "accessKeyIdKey": {"type": "string", "minLength": 1},
+                "secretAccessKeyKey": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        },
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["queueSize", "numConsumers"],
+          "properties": {
+            "queueSize": {"type": "integer", "minimum": 1, "maximum": 100000},
+            "numConsumers": {"type": "integer", "minimum": 1, "maximum": 64}
+          }
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["initialInterval", "maxInterval"],
+          "properties": {
+            "initialInterval": {"$ref": "#/definitions/duration"},
+            "maxInterval": {"$ref": "#/definitions/duration"}
+          }
+        },
+        "timeout": {"$ref": "#/definitions/duration"},
+        "memoryLimiterMiB": {"type": "integer", "minimum": 1}
+      }
+    },
     "debugExporter": {
       "type": "object",
       "additionalProperties": false,
@@ -250,7 +318,7 @@
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo", "monitoringNamespaceSelector"],
+      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo", "contentEgress", "monitoringNamespaceSelector"],
       "properties": {
         "enabled": {"type": "boolean"},
         "requireExplicitIngress": {"type": "boolean"},
@@ -266,6 +334,15 @@
           }
         },
         "egressTo": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}},
+        "contentEgress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["to", "ports"],
+          "properties": {
+            "to": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}},
+            "ports": {"type": "array", "items": {"$ref": "#/definitions/networkPolicyPort"}}
+          }
+        },
         "monitoringNamespaceSelector": {
           "$ref": "#/definitions/kubernetesObject",
           "description": "Optional LabelSelector for the monitoring namespace allowed to reach the health port. Empty means no health ingress rule (default deny)."
@@ -277,7 +354,7 @@
     "replicaCount", "image", "imagePullSecrets", "nameOverride", "fullnameOverride",
     "serviceAccount", "podAnnotations", "podLabels", "enableServiceLinks", "terminationGracePeriodSeconds", "podSecurityContext", "securityContext",
     "service", "receiver", "resources", "livenessProbe", "readinessProbe", "startupProbe", "nodeSelector",
-    "tolerations", "affinity", "topologySpreadConstraints", "fabric", "exporter", "debugExporter",
+    "tolerations", "affinity", "topologySpreadConstraints", "fabric", "exporter", "content", "debugExporter",
     "memoryLimiter", "batch", "podDisruptionBudget", "networkPolicy"
   ],
   "definitions": {

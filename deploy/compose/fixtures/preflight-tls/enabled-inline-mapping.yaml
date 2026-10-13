@@ -1,0 +1,37 @@
+# Spec 043 F9 preflight fixture: flow-style tls mapping with both files -> pass
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth
+        tls:
+          cert_file: /run/fabric-node/tls/server.crt
+          key_file: /run/fabric-node/tls/server.key
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth
+        tls:
+          cert_file: /run/fabric-node/tls/server.crt
+          key_file: /run/fabric-node/tls/server.key
+  otlp/content:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4319
+        auth:
+          authenticator: bearertokenauth
+        max_request_body_size: 67108864
+        tls: {cert_file: /run/fabric-node/tls/server.crt, key_file: /run/fabric-node/tls/server.key}
+processors:
+  memory_limiter: {}
+exporters:
+  otlp_http/fabric:
+    sending_queue:
+      queue_size: 2
+  fabriccontent:
+    allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
+    backend: file
+    sending_queue:
+      queue_size: 2

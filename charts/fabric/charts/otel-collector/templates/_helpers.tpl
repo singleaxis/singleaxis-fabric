@@ -126,6 +126,19 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- fail "networkPolicy.requireExplicitIngress=true requires an operator-supplied networkPolicy.ingressFrom peer" -}}
 {{- end -}}
 {{- end -}}
+{{- $ce := $np.contentEgress -}}
+{{- $hasContentPeers := gt (len $ce.to) 0 -}}
+{{- $hasContentPorts := gt (len $ce.ports) 0 -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $ce.to "field" "networkPolicy.contentEgress.to") -}}
+{{- if and (or $hasContentPeers $hasContentPorts) (not $np.enabled) -}}
+{{- fail "networkPolicy.contentEgress is configured but networkPolicy.enabled=false; enable the policy or remove the misleading rule" -}}
+{{- end -}}
+{{- if ne $hasContentPeers $hasContentPorts -}}
+{{- fail "networkPolicy.contentEgress requires both non-empty to and ports lists" -}}
+{{- end -}}
+{{- if and $np.enabled $ee.requireExplicit .Values.content.enabled (eq .Values.content.backend "s3") (not $hasContentPeers) -}}
+{{- fail "content.backend=s3 with networkPolicy.exporterEgress.requireExplicit=true requires operator-supplied networkPolicy.contentEgress.to and ports for the content store (and STS when using IRSA)" -}}
+{{- end -}}
 {{- if and (or $hasPeers $hasPorts) (not $np.enabled) -}}
 {{- fail "networkPolicy.exporterEgress is configured but networkPolicy.enabled=false; enable the policy or remove the misleading rule" -}}
 {{- end -}}
@@ -233,4 +246,115 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- fail "otel-collector: no exporters resolved" -}}
 {{- end -}}
 {{- join ", " $names -}}
+{{- end -}}
+
+{{/*
+Content delivery path (spec 043 F4). Every check here runs at render time so
+an install cannot start a Node whose content exporter would refuse its own
+configuration, accept every tenant, or silently write unencrypted objects in
+a profile that requires encryption.
+*/}}
+{{- define "otel-collector.validateContent" -}}
+{{- $c := .Values.content -}}
+{{- if $c.enabled -}}
+{{- $tenantRe := "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$" -}}
+{{- if eq (len $c.allowedTenants) 0 -}}
+{{- fail "content.enabled=true requires content.allowedTenants: name every FABRIC_TENANT_ID the Node may write; an empty list would accept no content and is refused" -}}
+{{- end -}}
+{{- range $i, $tenant := $c.allowedTenants -}}
+{{- if not (regexMatch $tenantRe (toString $tenant)) -}}
+{{- fail (printf "content.allowedTenants[%d] must match %s" $i $tenantRe) -}}
+{{- end -}}
+{{- end -}}
+{{- if not (has $c.backend (list "file" "s3")) -}}
+{{- fail "content.enabled=true requires content.backend: s3 or file" -}}
+{{- end -}}
+{{- if $c.requireServerSideEncryption -}}
+{{- if eq $c.backend "file" -}}
+{{- fail "content.requireServerSideEncryption=true refuses content.backend=file (no server-side encryption); use backend=s3 with content.s3.sse" -}}
+{{- end -}}
+{{- if not $c.s3.sse -}}
+{{- fail "content.requireServerSideEncryption=true requires content.s3.sse (aws:kms with content.s3.kmsKeyId, or AES256)" -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $c.backend "file" -}}
+{{- $dir := include "otel-collector.contentFileDirectory" . -}}
+{{- $root := .Values.exporter.sendingQueue.persistence.directory | toString -}}
+{{- if or (not (hasPrefix "/" $dir)) (eq $dir "/") (hasSuffix "/" $dir) (ne (clean $dir) $dir) -}}
+{{- fail "content.file.directory must be an absolute, clean container path without a trailing slash" -}}
+{{- end -}}
+{{- if or (not (hasPrefix (printf "%s/" $root) $dir)) (eq $dir (printf "%s/content-queue" $root)) (hasPrefix (printf "%s/content-queue/" $root) $dir) -}}
+{{- fail "content.file.directory must lie inside exporter.sendingQueue.persistence.directory (and outside its content-queue): the exporter must create the content root itself" -}}
+{{- end -}}
+{{- if ne (int .Values.replicaCount) 1 -}}
+{{- fail "content.backend=file requires replicaCount=1; each replica has its own volume, so content would be split across them. Use backend=s3 for more than one replica" -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $c.backend "s3" -}}
+{{- $s3 := $c.s3 -}}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$" ($s3.bucket | toString)) -}}
+{{- fail "content.backend=s3 requires content.s3.bucket (a valid bucket name, no scheme or path)" -}}
+{{- end -}}
+{{- $prefix := $s3.prefix | toString -}}
+{{- if or (not (hasSuffix "/" $prefix)) (hasPrefix "/" $prefix) (regexMatch "(^|/)\\.\\.?(/|$)" $prefix) (contains "//" $prefix) -}}
+{{- fail "content.s3.prefix must end with \"/\", must not start with \"/\" and must not contain empty, \".\" or \"..\" segments" -}}
+{{- end -}}
+{{- if $s3.endpoint -}}
+{{- if not (regexMatch "^https?://[^/?#@\\s]+(/[^?#@\\s]*)?$" ($s3.endpoint | toString)) -}}
+{{- fail "content.s3.endpoint must be an http:// or https:// URL without user info, query or fragment" -}}
+{{- end -}}
+{{- if and .Values.exporter.requireTLS (not (hasPrefix "https://" ($s3.endpoint | toString))) -}}
+{{- fail "exporter.requireTLS=true requires an https:// content.s3.endpoint" -}}
+{{- end -}}
+{{- end -}}
+{{- if not (has $s3.sse (list "" "AES256" "aws:kms")) -}}
+{{- fail "content.s3.sse must be \"aws:kms\", \"AES256\" or empty" -}}
+{{- end -}}
+{{- if and $s3.kmsKeyId (ne $s3.sse "aws:kms") -}}
+{{- fail "content.s3.kmsKeyId is only valid with content.s3.sse=aws:kms" -}}
+{{- end -}}
+{{- if $s3.credentialsSecret.name -}}
+{{- if not (and $s3.credentialsSecret.accessKeyIdKey $s3.credentialsSecret.secretAccessKeyKey) -}}
+{{- fail "content.s3.credentialsSecret.name requires accessKeyIdKey and secretAccessKeyKey" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.exporter.requireDurableQueue (not .Values.exporter.sendingQueue.persistence.enabled) -}}
+{{- fail "content.enabled=true with exporter.requireDurableQueue=true requires exporter.sendingQueue.persistence.enabled=true for the content queue" -}}
+{{- end -}}
+{{- $limitMiB := 0 -}}
+{{- $memory := dig "limits" "memory" "" (.Values.resources | default dict) | toString -}}
+{{- if regexMatch "^[0-9]+Gi$" $memory -}}
+{{- $limitMiB = mul (trimSuffix "Gi" $memory | int) 1024 -}}
+{{- else if regexMatch "^[0-9]+Mi$" $memory -}}
+{{- $limitMiB = trimSuffix "Mi" $memory | int -}}
+{{- end -}}
+{{- if and (gt (int $limitMiB) 0) (ge (int (include "otel-collector.memoryLimitMiB" .)) (int $limitMiB)) -}}
+{{- fail (printf "content.enabled=true sets memory_limiter to %s MiB, which is not below resources.limits.memory (%s); raise the container limit or lower content.memoryLimiterMiB" (include "otel-collector.memoryLimitMiB" .) $memory) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "otel-collector.memoryLimitMiB" -}}
+{{- if .Values.content.enabled -}}
+{{- max (int .Values.memoryLimiter.limitMib) (int .Values.content.memoryLimiterMiB) -}}
+{{- else -}}
+{{- int .Values.memoryLimiter.limitMib -}}
+{{- end -}}
+{{- end -}}
+
+{{/* The file backend's content root: explicit, or <queue dir>/content. */}}
+{{- define "otel-collector.contentFileDirectory" -}}
+{{- .Values.content.file.directory | default (printf "%s/content" .Values.exporter.sendingQueue.persistence.directory) -}}
+{{- end -}}
+
+{{/*
+"emptyDir" when the file backend runs without the queue PVC: an emptyDir
+then stands in at the queue directory (development only, lost with the pod).
+*/}}
+{{- define "otel-collector.contentFileVolume" -}}
+{{- $c := .Values.content -}}
+{{- if and $c.enabled (eq $c.backend "file") (not .Values.exporter.sendingQueue.persistence.enabled) -}}
+emptyDir
+{{- end -}}
 {{- end -}}

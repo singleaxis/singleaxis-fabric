@@ -1,0 +1,32 @@
+{
+  "schema_version": "fabric.content-log-record/v1",
+  "body": {
+    "byte_length": 40,
+    "sha256": "sha256:76ed6870ae4a384ea104366e8fa713fc268fa3b58d7940a2d259ac80a5b2ad70"
+  },
+  "attributes": {
+    "event_class": "content",
+    "schema_version": "fabric.content-object/v2",
+    "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+    "tenant_id": "tenant-a",
+    "role": "model.exchange.response",
+    "media_type": "application/json",
+    "content_encoding": "identity",
+    "representation": "truncated",
+    "transformations": [
+      "truncate"
+    ],
+    "provenance": "protocol",
+    "boundary": "provider_bound",
+    "status": "truncated",
+    "stored_byte_length": 40,
+    "stored_sha256": "sha256:76ed6870ae4a384ea104366e8fa713fc268fa3b58d7940a2d259ac80a5b2ad70",
+    "source_byte_length": 9000000,
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000,
+    "source_sequence": 1,
+    "run_id": "run-travel-42",
+    "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+    "captured_at": "2026-10-07T00:00:02.050000+00:00"
+  }
+}

@@ -263,6 +263,11 @@ def test_invalid_loss_and_heartbeat_spans_are_ignored(
     assert "sequence_gap" in {gap["gap_type"] for gap in only_run(document)["gaps"]}
 
 
+SCOPE_KEY = "fabric.run.scope_id"
+SCOPE = "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60"
+OTHER_SCOPE = "8c1f0e2d-4a5b-4c6d-9e7f-2a3b4c5d6e7f"
+
+
 def _heartbeat_span(span_id: str, attributes: dict[str, Any]) -> SpanRecord:
     return SpanRecord(
         trace_id="a" * 32,
@@ -286,13 +291,50 @@ def _heartbeat_span(span_id: str, attributes: dict[str, Any]) -> SpanRecord:
     [
         ({"fabric.heartbeat.kind": "periodic"}, "periodic", None),
         ({"fabric.heartbeat.kind": "final"}, "final", None),
-        ({"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1"}, "run_start", "r-1"),
-        ({"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1"}, "run_end", "r-1"),
-        # A marker that names no valid run bounds nothing.
-        ({"fabric.heartbeat.kind": "run_end"}, None, None),
-        ({"fabric.heartbeat.kind": "run_end", "fabric.run.id": "bad id"}, None, None),
-        # A run id on a non-marker kind is ignored.
-        ({"fabric.heartbeat.kind": "final", "fabric.run.id": "r-1"}, "final", None),
+        (
+            {"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE},
+            "run_start",
+            "r-1",
+        ),
+        (
+            {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE},
+            "run_end",
+            "r-1",
+        ),
+        # A marker that names no valid run, or no valid scope (042 capture), bounds nothing.
+        ({"fabric.heartbeat.kind": "run_end", SCOPE_KEY: SCOPE}, None, None),
+        (
+            {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "bad id", SCOPE_KEY: SCOPE},
+            None,
+            None,
+        ),
+        ({"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1"}, None, None),
+        (
+            {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE.upper()},
+            None,
+            None,
+        ),
+        (
+            {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "r-1", SCOPE_KEY: "not-a-uuid"},
+            None,
+            None,
+        ),
+        (
+            {
+                "fabric.heartbeat.kind": "run_start",
+                "fabric.run.id": "r-1",
+                SCOPE_KEY: "3d7e1f2a-9b4c-1e5d-8a6f-1b2c3d4e5f60",  # uuid1, not uuid4
+            },
+            None,
+            None,
+        ),
+        # A run id or scope id on a non-marker kind is ignored.
+        (
+            {"fabric.heartbeat.kind": "final", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE},
+            "final",
+            None,
+        ),
+        ({"fabric.heartbeat.kind": "periodic", SCOPE_KEY: SCOPE}, "periodic", None),
         # Outside the closed vocabulary, or absent (pre-rev-5 capture).
         ({"fabric.heartbeat.kind": "shutdown"}, None, None),
         ({"fabric.run.id": "r-1"}, None, None),
@@ -302,13 +344,78 @@ def test_heartbeat_kind_is_a_closed_vocabulary(
     attributes: dict[str, Any], kind: str | None, run_id: str | None
 ) -> None:
     observed = observe(_heartbeat_span("b" * 16, attributes))
-    assert observed == HeartbeatObs("wire-1", 7, kind, run_id, 3)  # type: ignore[arg-type]
+    scope = SCOPE if run_id is not None else None
+    assert observed == HeartbeatObs("wire-1", 7, kind, run_id, 3, scope)  # type: ignore[arg-type]
 
 
 def test_heartbeat_identity_ignores_the_span_id() -> None:
     """A retried export re-sends the same record under a new span id (spec 042 E1)."""
-    attributes = {"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1"}
+    attributes = {"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1", SCOPE_KEY: SCOPE}
     first = observe(_heartbeat_span("b" * 16, attributes))
     retry = observe(_heartbeat_span("c" * 16, attributes))
     assert first == retry
     assert len({first, retry}) == 1
+
+
+def test_heartbeat_identity_includes_the_scope_id() -> None:
+    """Two blocks of one run entered at the same sequence are two markers (spec 043 §6)."""
+    base = {"fabric.heartbeat.kind": "run_start", "fabric.run.id": "r-1"}
+    first = observe(_heartbeat_span("b" * 16, {**base, SCOPE_KEY: SCOPE}))
+    other = observe(_heartbeat_span("c" * 16, {**base, SCOPE_KEY: OTHER_SCOPE}))
+    assert first != other
+    assert len({first, other}) == 2
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(SCOPE, SCOPE), (SCOPE.upper(), None), ("", None), (7, None), ("x" * 36, None)],
+)
+def test_exchange_scope_id_must_be_a_lowercase_uuid4(
+    tmp_path: Path, value: Any, expected: str | None
+) -> None:
+    capture = Capture(tmp_path)
+    exchange = capture.exchange(*react_turns()[0], scope_id=value)
+    record = SpanRecord(
+        trace_id=exchange.span["trace_id"],
+        span_id=exchange.span["span_id"],
+        parent_span_id=None,
+        name="fabric.model_call",
+        start_ns=exchange.span["start_ns"],
+        end_ns=exchange.span["end_ns"],
+        attributes=exchange.span["attributes"],
+        resource={},
+    )
+    observed = observe(record)
+    assert observed is not None
+    assert getattr(observed, "scope_id") == expected  # noqa: B009
+
+
+def test_otlp_json_negative_int_values_are_read(tmp_path: Path) -> None:
+    """OTLP/JSON writes int64 as a string; a run_start before any call carries "-1"."""
+    span = {
+        "traceId": "a" * 32,
+        "spanId": "b" * 16,
+        "name": "fabric.capture_heartbeat",
+        "startTimeUnixNano": "1",
+        "endTimeUnixNano": "1",
+        "attributes": [
+            {"key": "fabric.source_id", "value": {"stringValue": "wire-1"}},
+            {"key": "fabric.source.epoch", "value": {"intValue": "7"}},
+            {"key": "fabric.heartbeat.last_sequence", "value": {"intValue": "-1"}},
+            {"key": "fabric.heartbeat.kind", "value": {"stringValue": "run_start"}},
+            {"key": "fabric.run.id", "value": {"stringValue": "r-1"}},
+            {"key": SCOPE_KEY, "value": {"stringValue": SCOPE}},
+        ],
+    }
+    path = tmp_path / "spans.json"
+    path.write_text(
+        json.dumps({"resourceSpans": [{"scopeSpans": [{"spans": [span]}]}]}), encoding="utf-8"
+    )
+    _, (record,) = read_span_file(path)
+    assert observe(record) == HeartbeatObs("wire-1", 7, "run_start", "r-1", -1, SCOPE)
+    span["startTimeUnixNano"] = "-1"  # timestamps stay unsigned
+    path.write_text(
+        json.dumps({"resourceSpans": [{"scopeSpans": [{"spans": [span]}]}]}), encoding="utf-8"
+    )
+    with pytest.raises(ReconstructInputError):
+        read_span_file(path)

@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -127,27 +128,158 @@ func deepMerge(base, overlay map[string]any) {
 	}
 }
 
-// checkPipelines requires every pipeline signal to be traces or logs, and
-// every pipeline to run fabricguard itself. The processor only protects the
-// pipelines it is wired into: a metrics or profiles pipeline, a pipeline with
-// no fabricguard (processors: [] or an overlay that replaced the list), or a
-// pipeline relying on fabricguard in a sibling pipeline would all export
-// unfiltered records.
+// checkPipelines enforces the recorder's pipeline invariants on the merged
+// configuration:
+//
+//   - every pipeline signal is traces or logs (spec 042);
+//   - every telemetry pipeline runs fabricguard itself, followed only by inert
+//     processors (spec 042). The processor only protects the pipelines it is
+//     wired into: a metrics or profiles pipeline, a pipeline with no
+//     fabricguard, or one relying on a sibling's guard would export
+//     unfiltered records;
+//   - content (spec 043 §5) stays on its own path: a content receiver
+//     (otlp/content*) and the fabriccontent exporter appear only in content
+//     pipelines (logs/content*), which carry only content receivers, only
+//     memory_limiter and only fabriccontent; no content receiver speaks gRPC
+//     and no connector can bridge content into a telemetry pipeline.
 func checkPipelines(cfg map[string]any) error {
 	service, _ := cfg["service"].(map[string]any)
 	pipelines, _ := service["pipelines"].(map[string]any)
 	if len(pipelines) == 0 {
 		return fmt.Errorf("service.pipelines defines no pipelines")
 	}
-	for name, node := range pipelines {
+	if connectors, ok := cfg["connectors"]; ok && !isEmpty(connectors) {
+		return fmt.Errorf("connectors are not accepted by the recorder; a connector could bridge content records into a telemetry pipeline")
+	}
+	if err := checkContentReceivers(cfg); err != nil {
+		return err
+	}
+	names := make([]string, 0, len(pipelines))
+	for name := range pipelines {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		signal, _, _ := strings.Cut(name, "/")
 		if signal != "traces" && signal != "logs" {
 			return fmt.Errorf("pipeline %q uses signal %q; the recorder allows only traces and logs (fabricguard cannot protect other signals)", name, signal)
 		}
-		pipeline, _ := node.(map[string]any)
+		pipeline, _ := pipelines[name].(map[string]any)
 		processors, _ := pipeline["processors"].([]any)
+		if isContentPipeline(name) {
+			if err := checkContentPipeline(name, pipeline); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, id := range idList(pipeline["receivers"]) {
+			if isContentReceiver(id) {
+				return fmt.Errorf("pipeline %q uses content receiver %q; content receivers may only feed logs/content pipelines", name, id)
+			}
+		}
+		for _, id := range idList(pipeline["exporters"]) {
+			if componentType(id) == "fabriccontent" {
+				return fmt.Errorf("pipeline %q uses exporter %q; fabriccontent may only run in logs/content pipelines", name, id)
+			}
+		}
 		if err := checkGuarded(name, processors); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// isContentPipeline: a logs pipeline whose name part starts with "content".
+func isContentPipeline(id string) bool {
+	signal, name, _ := strings.Cut(id, "/")
+	return signal == "logs" && strings.HasPrefix(name, "content")
+}
+
+// isContentReceiver: an otlp receiver whose name part starts with "content".
+func isContentReceiver(id string) bool {
+	typ, name, _ := strings.Cut(id, "/")
+	return typ == "otlp" && strings.HasPrefix(name, "content")
+}
+
+func componentType(id string) string {
+	typ, _, _ := strings.Cut(id, "/")
+	return typ
+}
+
+// idList returns the component ids of a pipeline list; a value that is not a
+// list of strings yields entries that match no rule ("" ids), so a content
+// pipeline with such a list is refused.
+func idList(v any) []string {
+	items, ok := v.([]any)
+	if !ok {
+		if v == nil {
+			return nil
+		}
+		return []string{""}
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		id, _ := item.(string)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func isEmpty(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return true
+	case map[string]any:
+		return len(t) == 0
+	case []any:
+		return len(t) == 0
+	default:
+		return false
+	}
+}
+
+// checkContentPipeline: only content receivers, only memory_limiter (never
+// fabricguard, which would scrub the bodies), and only fabriccontent, so a
+// content body can never reach the OTLP destination exporter.
+func checkContentPipeline(name string, pipeline map[string]any) error {
+	receivers := idList(pipeline["receivers"])
+	if len(receivers) == 0 {
+		return fmt.Errorf("content pipeline %q has no receivers", name)
+	}
+	for _, id := range receivers {
+		if !isContentReceiver(id) {
+			return fmt.Errorf("content pipeline %q uses receiver %q; only otlp/content receivers may feed a content pipeline", name, id)
+		}
+	}
+	for _, id := range idList(pipeline["processors"]) {
+		if componentType(id) != "memory_limiter" {
+			return fmt.Errorf("content pipeline %q runs processor %q; only memory_limiter may run on the content path", name, id)
+		}
+	}
+	exporters := idList(pipeline["exporters"])
+	if len(exporters) == 0 {
+		return fmt.Errorf("content pipeline %q has no exporters; it must export only to fabriccontent", name)
+	}
+	for _, id := range exporters {
+		if componentType(id) != "fabriccontent" {
+			return fmt.Errorf("content pipeline %q exports to %q; a content pipeline may export only to fabriccontent", name, id)
+		}
+	}
+	return nil
+}
+
+// checkContentReceivers refuses gRPC on a content receiver: the content path
+// is OTLP/HTTP only (spec 043 §4).
+func checkContentReceivers(cfg map[string]any) error {
+	receivers, _ := cfg["receivers"].(map[string]any)
+	for id, node := range receivers {
+		if !isContentReceiver(id) {
+			continue
+		}
+		receiver, _ := node.(map[string]any)
+		protocols, _ := receiver["protocols"].(map[string]any)
+		if _, grpc := protocols["grpc"]; grpc {
+			return fmt.Errorf("content receiver %q configures grpc; the content path is OTLP/HTTP only", id)
 		}
 	}
 	return nil

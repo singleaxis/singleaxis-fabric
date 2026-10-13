@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/llm-exchange-v1.schema.json",
-  "title": "Fabric LLM exchange record v1 (draft, spec 042 rev 5)",
+  "title": "Fabric LLM exchange record v1 (draft, spec 042 rev 5, spec 043)",
   "description": "JSON form of one fabric.model_call span: identity, source position, run, body digests and store object ids, and closed-shape response metadata. It carries no message hashes, tool-call ids, response ids, store paths or content; stitching is derived offline from the stored bytes.",
   "type": "object",
   "additionalProperties": false,
@@ -26,6 +26,10 @@
       }
     },
     "run_id": {"$ref": "#/$defs/opaqueId"},
+    "scope_id": {
+      "description": "fabric.run.scope_id (spec 043 §6): the innermost open fabric.wire.run() block the call started in, unique per block entry. Absent when the call started outside every open block.",
+      "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
     "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
     "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
     "started_at": {"type": "string", "format": "date-time"},
@@ -36,7 +40,7 @@
     "http_status_code": {"type": "integer", "minimum": 100, "maximum": 599},
     "error_type": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"},
     "model": {
-      "description": "Kept only when it matches the shared model pattern and contains no '://' (no '@', no URL, no credentials); otherwise omitted.",
+      "description": "Spec 043 §7: the provider value as is only when it matches the shared model pattern, contains no '://' and is on the model allowlist; otherwise m- + the first 16 hex of its sha256 (which also matches the pattern). Omitted when not extracted.",
       "type": "string", "minLength": 1, "maxLength": 128,
       "pattern": "^(?!.*://)[A-Za-z0-9][A-Za-z0-9._:/-]*$"
     },

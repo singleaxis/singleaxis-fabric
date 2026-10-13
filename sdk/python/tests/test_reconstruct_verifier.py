@@ -105,6 +105,15 @@ class Exchange:
     response_id: str | None
 
 
+_INNERMOST: Any = object()  # exchange(): tag with the innermost open scope of its run
+
+
+def scope_uuid(number: int) -> str:
+    """A deterministic lowercase uuid4 for ``fabric.run.scope_id``."""
+
+    return f"{number:08x}-0000-4000-8000-{number:012x}"
+
+
 class Capture:
     """Plays the capture worker: store byte objects + exchange/loss/heartbeat spans."""
 
@@ -129,6 +138,9 @@ class Capture:
         self.rows: list[dict[str, Any]] = []
         self.sequence = 0
         self.exchanges: list[Exchange] = []
+        # Open fabric.wire.run() scopes as (run id, scope id), innermost last.
+        self.open_scopes: list[tuple[str, str]] = []
+        self.scope_count = 0
 
     def _ns(self, sequence: int) -> int:
         return BASE_NS + sequence * 1_000_000_000
@@ -198,9 +210,15 @@ class Capture:
         truncated: str | None = None,
         store_status: str | None = None,
         http_status: int | None = 200,
+        scope_id: Any = _INNERMOST,
     ) -> Exchange:
-        """Capture one exchange. Dict bodies are JSON-encoded; bytes are stored as-is."""
+        """Capture one exchange. Dict bodies are JSON-encoded; bytes are stored as-is.
 
+        By default the exchange carries the innermost open scope of its run
+        (``scope_id=None`` forces an unscoped exchange).
+        """
+
+        scope_id = self._innermost(run_id) if scope_id is _INNERMOST else scope_id
         sequence = self.skip()
         exchange_id = f"{self.id_prefix}ex-{sequence}"
         request_bytes = request if isinstance(request, bytes) else json.dumps(request).encode()
@@ -242,6 +260,7 @@ class Capture:
         }
         if http_status is not None:
             attrs["http.response.status_code"] = http_status
+        attrs.update({} if scope_id is None else {"fabric.run.scope_id": scope_id})
         if response_bytes is not None:
             attrs["fabric.wire.response_sha256"] = sha_hex(response_bytes)
         request_id = response_id = None
@@ -320,7 +339,12 @@ class Capture:
         )
 
     def heartbeat(
-        self, last: int | None = None, *, run_id: str | None = None, kind: str | None = "final"
+        self,
+        last: int | None = None,
+        *,
+        run_id: str | None = None,
+        kind: str | None = "final",
+        scope_id: str | None = None,
     ) -> None:
         """A heartbeat; the default is the ``final`` one a clean close writes.
 
@@ -334,16 +358,46 @@ class Capture:
             attributes["fabric.heartbeat.kind"] = kind
         if run_id is not None:
             attributes["fabric.run.id"] = run_id
+        if scope_id is not None:
+            attributes["fabric.run.scope_id"] = scope_id
         self._record("fabric.capture_heartbeat", attributes)
 
     def periodic(self, last: int | None = None) -> None:
         self.heartbeat(last, kind="periodic")
 
-    def run_start(self, run_id: str) -> None:
-        self.heartbeat(run_id=run_id, kind="run_start")
+    def _innermost(self, run_id: str) -> str | None:
+        return next((scope for run, scope in reversed(self.open_scopes) if run == run_id), None)
 
-    def run_end(self, run_id: str) -> None:
-        self.heartbeat(run_id=run_id, kind="run_end")
+    def new_scope(self) -> str:
+        self.scope_count += 1
+        return scope_uuid(self.scope_count + 0x100 * len(self.id_prefix))
+
+    def run_start(self, run_id: str, scope_id: str | None = None) -> str:
+        """Enter a ``fabric.wire.run()`` block: a new scope and its run_start marker."""
+
+        scope_id = scope_id or self.new_scope()
+        self.open_scopes.append((run_id, scope_id))
+        self.heartbeat(run_id=run_id, kind="run_start", scope_id=scope_id)
+        return scope_id
+
+    def run_end(self, run_id: str, scope_id: str | None = None) -> str:
+        """Leave a block: by default the innermost open scope of ``run_id``.
+
+        Without an open scope (its run_start was lost) a fresh scope id is used.
+        """
+
+        scope_id = scope_id or self._innermost(run_id) or self.new_scope()
+        if (run_id, scope_id) in self.open_scopes:
+            self.open_scopes.remove((run_id, scope_id))
+        self.heartbeat(run_id=run_id, kind="run_end", scope_id=scope_id)
+        return scope_id
+
+    def repeat(self) -> None:
+        """Re-export the last record under a new span id (a retried export)."""
+
+        row = dict(self.rows[-1])
+        row["span_id"] = f"{len(self.rows) + 1:016x}"
+        self.rows.append(row)
 
     def object_path(self, object_id: str) -> Path:
         return self.root / "store" / TENANT / "evidence" / object_id
@@ -802,7 +856,7 @@ def test_retried_run_start_never_closes_a_run(capture: Capture) -> None:
     """
     scoped = "open-run"
     capture.run_start(scoped)  # -1
-    capture.run_start(scoped)  # the retry: same record, new span id
+    capture.repeat()  # the retry: same record, new span id
     capture.exchange(*react_turns()[0], run_id=scoped)  # 0
     capture.periodic()  # 0
     capture.skip()  # 1: the run's second call, lost with the process
@@ -816,7 +870,7 @@ def test_retried_run_start_never_closes_a_run(capture: Capture) -> None:
 def test_retried_run_start_with_a_final_heartbeat_is_still_unverified(capture: Capture) -> None:
     scoped = "open-run"
     capture.run_start(scoped)
-    capture.run_start(scoped)  # retry duplicate
+    capture.repeat()  # retry duplicate
     capture.exchange(*react_turns()[0], run_id=scoped)
     capture.heartbeat()  # final: the run had markers, so only markers can close it
     run = only_run(capture.reconstruct())
@@ -834,11 +888,11 @@ def test_clean_final_heartbeat_completes_an_unmarked_run(capture: Capture) -> No
 def test_closed_run_markers_complete_a_run_without_a_final_heartbeat(capture: Capture) -> None:
     scoped = "agent-run-c"
     capture.run_start(scoped)
-    capture.run_start(scoped)  # a retried duplicate is harmless
+    capture.repeat()  # a retried duplicate is harmless
     for request, response in react_turns():
         capture.exchange(request, response, run_id=scoped)
     capture.run_end(scoped)
-    capture.run_end(scoped)  # so is a retried run_end
+    capture.repeat()  # so is a retried run_end
     capture.exchange(*react_turns()[0], run_id="trace:" + "5" * 32)  # later, other work
     capture.skip()  # a later loss belongs to other work: the run's end is proven
     run = run_by_id(capture.reconstruct(), scoped)
@@ -849,6 +903,7 @@ def test_closed_run_markers_complete_a_run_without_a_final_heartbeat(capture: Ca
         2,
         "run_markers",
     )
+    assert window["scope_id"] == run["scopes"][0]["scope_id"]
 
 
 def test_second_run_block_without_its_run_end_is_not_closed(capture: Capture) -> None:
@@ -906,18 +961,22 @@ def test_activity_after_the_final_heartbeat_reopens_the_epoch(capture: Capture) 
         assert real_gaps(run) == [("tail_unverified", "activity_after_final_heartbeat")]
 
 
-def test_markers_on_one_source_require_markers_on_every_source(tmp_path: Path) -> None:
+def test_an_unscoped_exchange_on_another_source_keeps_a_scoped_run_open(tmp_path: Path) -> None:
     first = Capture(tmp_path, id_prefix="a")
     first.run_start("agent-run-m")
     first.exchange(*react_turns()[0], run_id="agent-run-m")
     first.run_end("agent-run-m")
     second = Capture(tmp_path, source_id="wire-0000000000000002", id_prefix="b")
     second.exchange(*react_turns()[0], run_id="agent-run-m")
-    second.heartbeat()  # final, but this source has no markers for a marked run
+    second.heartbeat()  # final, but the run is scoped and this call is in no scope
     first.rows.extend(second.rows)
     run = only_run(first.reconstruct())
     assert run["verdict"] == "unverified"
-    assert ("tail_unverified", "no_run_markers_on_source") in real_gaps(run)
+    assert ("tail_unverified", "exchange_outside_run_markers") in real_gaps(run)
+    unscoped = [w for w in run["declared_scope"]["windows"] if "scope_id" not in w]
+    assert [(w["source_id"], "closed_by" in w) for w in unscoped] == [
+        ("wire-0000000000000002", False)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -925,6 +984,12 @@ def test_markers_on_one_source_require_markers_on_every_source(tmp_path: Path) -
     [
         {"fabric.heartbeat.kind": "shutdown"},  # outside the closed vocabulary
         {"fabric.heartbeat.kind": "run_end"},  # a marker that names no run
+        {"fabric.heartbeat.kind": "run_end", "fabric.run.id": "agent-run-x"},  # 042: no scope
+        {
+            "fabric.heartbeat.kind": "run_end",
+            "fabric.run.id": "agent-run-x",
+            "fabric.run.scope_id": "00000001-0000-4000-8000-00000000000Z",  # not a uuid4
+        },
         {"fabric.heartbeat.kind": "final", "fabric.run.id": "agent-run-x"},
     ],
 )
@@ -1555,10 +1620,16 @@ def test_store_read_failures_never_raise(
 FREE_TEXT_MODEL = "Prompt: patient Alice has HIV. API key sk-live-secret"
 
 
-def test_model_pattern_is_the_capture_pattern() -> None:
+def m_digest(value: str) -> str:
+    return "m-" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def test_model_pattern_is_the_shared_capture_pattern() -> None:
+    """One definition (fabric._model_names) for capture, fabricguard parity and the verifier."""
     inputs = importlib.import_module("fabric.reconstruct._inputs")
-    capture_side = importlib.import_module("fabric.wire._pipeline")
-    assert inputs.MODEL_RE.pattern == capture_side._MODEL_RE.pattern
+    shared = importlib.import_module("fabric._model_names")
+    assert inputs.MODEL_RE is shared.MODEL_PATTERN
+    assert inputs.MODEL_RE.pattern == r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
 
 
 @pytest.mark.parametrize("store", [True, False])
@@ -1572,19 +1643,20 @@ def test_free_text_model_never_reaches_the_report(tmp_path: Path, store: bool) -
     capture.heartbeat()
     document = capture.reconstruct()
     entry = only_run(document)["exchanges"][0]
-    assert "model" not in entry
+    assert entry["model"] == m_digest(FREE_TEXT_MODEL)  # spec 043 §7: digest, never text
     text = json.dumps(document)
     for needle in ("Alice", "sk-live-secret", "Prompt"):
         assert needle not in text
 
 
-def test_valid_span_model_backs_up_a_free_text_body_model(capture: Capture) -> None:
+def test_body_model_wins_over_the_span_value(capture: Capture) -> None:
+    """The body is what capture derived the span value from; it is exposed by the same rule."""
     request, response = react_turns()[0]
     exchange = capture.exchange(request, {**response, "model": FREE_TEXT_MODEL})
     exchange.span["attributes"]["gen_ai.response.model"] = MODEL
     capture.heartbeat()
     entry = only_run(capture.reconstruct())["exchanges"][0]
-    assert entry["model"] == MODEL
+    assert entry["model"] == m_digest(FREE_TEXT_MODEL)
 
 
 @pytest.mark.parametrize(
@@ -1599,31 +1671,146 @@ def test_valid_span_model_backs_up_a_free_text_body_model(capture: Capture) -> N
         "a://b",
         "gpt-4o@vendor",
         "gpt+4o",
+        "gpt-4o://x",  # allowlisted prefix, but a URL
     ],
 )
-def test_model_must_fully_match_the_capture_pattern(capture: Capture, bad: str) -> None:
+def test_model_outside_the_capture_pattern_is_reported_as_a_digest(
+    capture: Capture, bad: str
+) -> None:
     request, response = react_turns()[0]
     exchange = capture.exchange(request, {**response, "model": bad})
     exchange.span["attributes"]["gen_ai.response.model"] = bad
     capture.heartbeat()
-    entry = only_run(capture.reconstruct())["exchanges"][0]
-    assert "model" not in entry
+    document = capture.reconstruct()
+    assert only_run(document)["exchanges"][0]["model"] == m_digest(bad)
+    assert "sk-live-secret" not in json.dumps(document)
 
 
 @pytest.mark.parametrize(
-    "good", ["gpt-4o:latest", "accounts/fireworks/models/llama-v3p1", "m" * 128, "a:/b"]
+    "good",
+    [
+        "gpt-4o:latest",
+        "claude-sonnet-4-5",
+        "meta-llama/Llama-3.1-8B",
+        "o3-mini",
+        "text-embedding-3-small",
+        "anthropic/claude-3-haiku",
+    ],
 )
-def test_model_names_matching_the_shared_pattern_are_kept(capture: Capture, good: str) -> None:
+def test_allowlisted_model_names_are_kept(capture: Capture, good: str) -> None:
     request, response = react_turns()[0]
     capture.exchange(request, {**response, "model": good})
     capture.heartbeat()
     assert only_run(capture.reconstruct())["exchanges"][0]["model"] == good
 
 
-def test_model_rule_is_the_rev5_rule() -> None:
-    inputs = importlib.import_module("fabric.reconstruct._inputs")
-    assert inputs.MODEL_RE.pattern == r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
-    assert inputs.model_value("x://y") is None
+@pytest.mark.parametrize(
+    "unlisted", ["accounts/fireworks/models/llama-v3p1", "m" * 128, "a:/b", "my-private-ft-model"]
+)
+def test_pattern_valid_but_unlisted_models_are_digests(capture: Capture, unlisted: str) -> None:
+    """Codex 'raw model exposure': a valid-looking name is not necessarily a public one."""
+    request, response = react_turns()[0]
+    exchange = capture.exchange(request, {**response, "model": unlisted})
+    exchange.span["attributes"]["gen_ai.response.model"] = unlisted
+    capture.heartbeat()
+    document = capture.reconstruct()
+    assert only_run(document)["exchanges"][0]["model"] == m_digest(unlisted)
+    allowed = capture.reconstruct(model_allowlist=[unlisted])
+    assert only_run(allowed)["exchanges"][0]["model"] == unlisted
+
+
+def test_model_allowlist_prefix_entries(capture: Capture) -> None:
+    request, response = react_turns()[0]
+    capture.exchange(request, {**response, "model": "acme-ft-2026-01"})
+    capture.heartbeat()
+    document = capture.reconstruct(model_allowlist=["acme-ft-*"])
+    assert only_run(document)["exchanges"][0]["model"] == "acme-ft-2026-01"
+    other = capture.reconstruct(model_allowlist=["acme-ft-2026-02"])
+    assert only_run(other)["exchanges"][0]["model"] == m_digest("acme-ft-2026-01")
+
+
+def _modelless_request() -> dict[str, Any]:
+    """A request body without a model, so the report falls back to the span value."""
+    return {k: v for k, v in react_turns()[0][0].items() if k != "model"}
+
+
+@pytest.mark.parametrize(
+    "span_value",
+    [
+        "m-0123456789abcdef",  # capture already exposed it as a digest
+        MODEL,  # allowlisted
+    ],
+)
+def test_span_model_values_already_exposed_are_kept(capture: Capture, span_value: str) -> None:
+    exchange = capture.exchange(_modelless_request(), None, state="error", http_status=None)
+    exchange.span["attributes"]["gen_ai.response.model"] = span_value
+    capture.heartbeat()
+    assert only_run(capture.reconstruct())["exchanges"][0]["model"] == span_value
+
+
+def test_unlisted_span_model_is_digested(capture: Capture) -> None:
+    """A span from older capture (042) may carry an unlisted raw value."""
+    exchange = capture.exchange(_modelless_request(), None, state="error", http_status=None)
+    exchange.span["attributes"]["gen_ai.response.model"] = "acme-secret-ft"
+    capture.heartbeat()
+    document = capture.reconstruct()
+    assert only_run(document)["exchanges"][0]["model"] == m_digest("acme-secret-ft")
+    assert "acme-secret-ft" not in json.dumps(document)
+
+
+@pytest.mark.parametrize("entries", [["*"], ["gpt 4o"], ["a://b*"], [""], [" gpt-x"]])
+def test_reconstruct_rejects_bad_model_allowlist_entries(
+    capture: Capture, entries: list[str]
+) -> None:
+    react_run(capture)
+    with pytest.raises(ReconstructInputError) as raised:
+        capture.reconstruct(model_allowlist=entries)
+    for entry in entries:
+        if len(entry.strip()) > 1:
+            assert entry.strip() not in str(raised.value)
+
+
+def _cli_model(capture: Capture, argv: list[str], tmp_path: Path) -> str:
+    out = tmp_path / "model-report.json"
+    store = ["--store-root", str(tmp_path / "store"), "--tenant", TENANT]
+    assert main(["--spans", str(capture.write()), *store, *argv, "--out", str(out)]) == 0
+    document = json.loads(out.read_text())
+    validate(document)
+    return str(only_run(document)["exchanges"][0]["model"])
+
+
+def test_cli_model_allowlist_flag_and_environment(
+    capture: Capture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, response = react_turns()[0]
+    capture.exchange(request, {**response, "model": "acme-ft-1"})
+    capture.heartbeat()
+    monkeypatch.delenv("FABRIC_WIRE_MODEL_ALLOWLIST", raising=False)
+    assert _cli_model(capture, [], tmp_path) == m_digest("acme-ft-1")
+    assert _cli_model(capture, ["--model-allowlist", "acme-ft-*"], tmp_path) == "acme-ft-1"
+    monkeypatch.setenv("FABRIC_WIRE_MODEL_ALLOWLIST", "other, acme-ft-1")
+    assert _cli_model(capture, [], tmp_path) == "acme-ft-1"
+    # The flag replaces the environment default.
+    assert _cli_model(capture, ["--model-allowlist", "other"], tmp_path) == m_digest("acme-ft-1")
+
+
+@pytest.mark.parametrize("source", ["flag", "env"])
+def test_cli_bad_model_allowlist_exits_two_without_echo(
+    capture: Capture,
+    source: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    react_run(capture)
+    marker = "sk-live-SECRET one"
+    argv = ["--spans", str(capture.write())]
+    if source == "flag":
+        argv += ["--model-allowlist", marker]
+    else:
+        monkeypatch.setenv("FABRIC_WIRE_MODEL_ALLOWLIST", marker)
+    assert main(argv) == 2
+    captured = capsys.readouterr()
+    assert "SECRET" not in captured.err + captured.out
 
 
 def test_provider_ids_with_a_trailing_newline_are_pseudonymised(capture: Capture) -> None:

@@ -17,6 +17,12 @@ spec:
       port: {{ .Values.service.ports.otlpHttp }}
       targetPort: otlp-http
       protocol: TCP
+    {{- if .Values.content.enabled }}
+    - name: otlp-content
+      port: {{ .Values.service.ports.otlpContent }}
+      targetPort: otlp-content
+      protocol: TCP
+    {{- end }}
     - name: health
       port: {{ .Values.service.ports.health }}
       targetPort: health

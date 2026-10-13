@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Source identity, one monotonic sequence per ``(source_id, epoch)``, run ids (spec 042 §6)."""
+"""Source identity, one monotonic sequence per ``(source_id, epoch)``, run scopes (043 §6)."""
 
 from __future__ import annotations
 
@@ -11,9 +11,11 @@ import re
 import socket
 import threading
 import time
+import uuid
 import weakref
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Literal
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -22,7 +24,26 @@ _LIVE: weakref.WeakSet[SourceAllocator] = weakref.WeakSet()
 _REGISTRY: dict[str, SourceAllocator] = {}
 _LOCK = threading.Lock()  # guards _LIVE, _REGISTRY and _LAST_EPOCH
 _LAST_EPOCH = 0
-_RUN_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("fabric_run_id", default=None)
+
+
+@dataclass(eq=False, slots=True)
+class RunScope:
+    """One ``fabric.wire.run()`` block entry; ``closed`` is set under the allocator lock."""
+
+    run_id: str
+    scope_id: str
+    parent: RunScope | None
+    closed: bool = False
+
+
+_SCOPE: contextvars.ContextVar[RunScope | None] = contextvars.ContextVar("fabric_run", default=None)
+
+
+def _open_scope() -> RunScope | None:  # the context's innermost scope not yet closed
+    scope = _SCOPE.get()
+    while scope is not None and scope.closed:
+        scope = scope.parent
+    return scope
 
 
 def encode_opaque_id(value: str) -> str:
@@ -33,9 +54,10 @@ def encode_opaque_id(value: str) -> str:
 
 
 def _new_epoch() -> int:
-    """``time.time_ns()``, nudged to be unique and increasing. Caller holds ``_LOCK``."""
+    """``time.time_ns()`` with the pid in its sub-microsecond digits (two processes may share
+    a source id and a microsecond), nudged to be unique and increasing. Holds ``_LOCK``."""
     global _LAST_EPOCH  # noqa: PLW0603
-    _LAST_EPOCH = max(time.time_ns(), _LAST_EPOCH + 1)
+    _LAST_EPOCH = max(time.time_ns() // 1000 * 1000 + os.getpid() % 1000, _LAST_EPOCH + 1)
     return _LAST_EPOCH
 
 
@@ -53,23 +75,27 @@ class SourceAllocator:
             self.epoch = _new_epoch()
             _LIVE.add(self)
 
-    def next_sequence(self) -> tuple[int, int]:
-        """Allocate one sequence: ``(epoch, sequence)``."""
+    def next_sequence(self) -> tuple[int, int, RunScope | None]:
+        """Allocate one sequence: ``(epoch, sequence, innermost open run scope)``."""
         with self._lock:
             self._next += 1
+            return self.epoch, self._next - 1, _open_scope()
+
+    def open_scope(self, scope: RunScope) -> tuple[int, int]:  # its run_start position
+        return self.last_sequence()
+
+    def close_scope(self, scope: RunScope) -> tuple[int, int]:  # run_end; later calls: outside
+        with self._lock:
+            scope.closed = True
             return self.epoch, self._next - 1
 
-    def last_sequence(self) -> tuple[int, int]:
-        """``(epoch, last allocated sequence)``, ``-1`` before the first."""
+    def last_sequence(self) -> tuple[int, int]:  # (epoch, last allocated), -1 before the first
         with self._lock:
             return self.epoch, self._next - 1
 
     def seal(self) -> tuple[int, int]:
-        """End the current epoch: its ``(epoch, last sequence)``; later allocations use a new one.
-
-        This is what makes a ``final`` heartbeat true: nothing is ever allocated after
-        ``last`` in the sealed epoch.
-        """
+        """End the epoch: its ``(epoch, last sequence)``; nothing is allocated in it after
+        ``last`` (what makes a ``final`` heartbeat true): later allocations use a new one."""
         with self._lock:
             sealed = self.epoch, self._next - 1
             with _LOCK:
@@ -97,25 +123,27 @@ def get_allocator(component: Component, *, source_id: str | None = None) -> Sour
 
 
 @contextmanager
-def run_scope(run_id: str) -> Iterator[None]:
-    """Scope an explicit run id for exchanges started inside the block."""
+def run_scope(run_id: str) -> Iterator[RunScope]:
+    """A new uniquely identified scope for ``run_id``, current for the block (closed after)."""
     if not isinstance(run_id, str) or not OPAQUE_ID_RE.fullmatch(run_id):
         raise ValueError("run_id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-    token = _RUN_ID.set(run_id)
+    scope = RunScope(run_id, str(uuid.uuid4()), _SCOPE.get())
+    token = _SCOPE.set(scope)
     try:
-        yield
+        yield scope
     finally:
-        _RUN_ID.reset(token)
+        scope.closed = True  # normally already closed under the allocator lock
+        _SCOPE.reset(token)
 
 
 def current_run_id() -> str | None:
-    return _RUN_ID.get()
+    return scope.run_id if (scope := _open_scope()) is not None else None
 
 
 def resolve_run_id(allocator: SourceAllocator, *, trace_id: int | None = None) -> str:
-    """Innermost run scope, ``trace:<32hex>``, else ``source:<id>:<epoch>``."""
-    if isinstance(scoped := _RUN_ID.get(), str) and scoped:
-        return encode_opaque_id(scoped)
+    """Innermost open run scope, ``trace:<32hex>``, else ``source:<id>:<epoch>``."""
+    if (scope := _open_scope()) is not None:
+        return scope.run_id
     if isinstance(trace_id, int) and 0 < trace_id < 1 << 128:
         return f"trace:{trace_id:032x}"
     return encode_opaque_id(f"source:{allocator.source_id}:{allocator.epoch}")

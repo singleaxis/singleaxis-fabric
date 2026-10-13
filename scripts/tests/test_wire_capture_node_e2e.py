@@ -1,33 +1,42 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""LLM wire capture through a real, production-shaped Fabric Node (spec 042).
+"""LLM wire capture through a real, production-shaped Fabric Node (specs 042, 043).
 
-This drives the whole recorder path with real processes and real sockets:
+This drives the whole recorder path in node mode with real processes and
+real sockets:
 
     ReAct agent over plain httpx and over the real OpenAI SDK (httpx2)
-        (zero-code autoload, no Fabric import)
+        (zero-code autoload, no Fabric import, no cloud credentials)
         -> fake OpenAI-compatible model (http.server, real TCP)
-        -> wire tee: exact bytes -> local file:// store (customer boundary)
-        -> private TracerProvider -> OTLP/HTTP over TLS + bearer token
+        -> wire tee -> durable agent spool (FABRIC_WIRE_SPOOL_DIR)
+        -> sender: bodies as OTLP/HTTP log records to the Node's content
+           port (4319), then the span over OTLP/HTTP (4318); TLS + bearer
     Fabric Node (the custom Collector image, fabric-gate entrypoint,
-    collector-production.yaml with its documented TLS stanzas enabled,
-    memory_limiter + fabricguard, persistent file_storage queue)
-        -> OTLP/HTTP over TLS (private CA) + egress Authorization
-    fsync sink -> decoded JSONL -> ``python -m fabric.reconstruct``
+    collector-production.yaml with its documented TLS stanzas enabled):
+        traces/logs: memory_limiter + fabricguard -> persistent queue
+            -> OTLP/HTTP over TLS (private CA) + egress Authorization
+            -> fsync sink -> decoded JSONL
+        logs/content: memory_limiter -> fabriccontent (file backend)
+            -> the Node's content volume (SDK store layout)
+    ``python -m fabric.reconstruct --spans <sink> --store-root <content>``
 
 and proves, against the running stack:
 
 - every model call (non-streamed, streamed SSE, tool-call round trip)
-  arrives as a ``fabric.model_call`` span, with heartbeats;
-- capture spans carry only the spec 042 §8 keys, and their digests/refs
-  agree with the store;
+  arrives as a ``fabric.model_call`` span, with heartbeats, and the agent's
+  spool is empty afterwards (every record delivered and deleted);
+- the Node, not the agent, wrote every body and descriptor; capture spans
+  carry only the spec 042 §8 keys and their digests/refs agree with the
+  Node-written store;
 - no prompt, completion, tool argument/result, model API key or bearer
   token appears in the sink output, the raw delivered bytes, the Node logs
-  or the Node's queue volume (while the store does hold the content);
+  or the Node's telemetry queue volume (while the content store does hold
+  the content);
 - the run reconstructs ``complete_for_declared_scope`` with zero gaps;
 - spans accepted while the destination is down survive a Node restart in
   the persistent queue and arrive afterwards, still reconstructing cleanly;
-- a wrong ingress token is rejected and the agent is unaffected.
+- a wrong ingress token is rejected on the telemetry and content ports, the
+  agent is unaffected and keeps its undelivered records on disk.
 
 Opt-in by environment: the module skips when Docker Compose is unavailable.
 ``FABRIC_NODE_IMAGE`` reuses a prebuilt Node image instead of building one.
@@ -35,37 +44,43 @@ Opt-in by environment: the module skips when Docker Compose is unavailable.
 
 from __future__ import annotations
 
-import datetime
-import ipaddress
 import json
 import os
 import re
-import shutil
-import socket
 import ssl
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import pytest
+from _wire_capture_common import (
+    AGENT,
+    COMPOSE_DIR,
+    DEFAULT_NODE_IMAGE,
+    FakeModel,
+    Sink,
+    autoload_path,
+    build_image,
+    compose_available,
+    free_port,
+    production_config_with_tls,
+    spool_header,
+    spool_records,
+    volume_grep,
+    wait_until,
+    write_tls,
+)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-COMPOSE_DIR = REPO_ROOT / "deploy" / "compose"
-PRODUCTION_CONFIG = COMPOSE_DIR / "collector-config" / "collector-production.yaml"
-NODE_CONTEXT = REPO_ROOT / "components" / "otel-collector-fabric"
-AGENT = Path(__file__).with_name("_wire_capture_agent.py")
-SINK = Path(__file__).with_name("_wire_capture_sink.py")
 TENANT = "wire-e2e-tenant"
+NODE_CONTENT_DIR = "/var/lib/fabric-node/content"
 
 # Unique per session: content and credentials that must never leave the
 # agent process except as bytes in the customer's own store.
@@ -85,8 +100,9 @@ SECRET_MARKERS = [
     API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token", TRACE_STATE
 ]  # fmt: skip
 
-# Spec 042 §8: the fifteen new capture keys plus the reused, already
-# allowlisted keys a capture span may carry. Anything else is a leak channel.
+# Spec 042 §8: the fifteen capture keys, plus spec 043's run scope id, plus
+# the reused, already allowlisted keys a capture span may carry. Anything
+# else is a leak channel.
 CAPTURE_KEYS = frozenset(
     {
         "fabric.source.epoch", "fabric.run.id", "fabric.wire.exchange_id", "fabric.wire.api",
@@ -94,7 +110,7 @@ CAPTURE_KEYS = frozenset(
         "fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
         "fabric.loss.reason", "fabric.loss.count", "fabric.loss.first_sequence",
         "fabric.loss.last_sequence", "fabric.heartbeat.last_sequence",
-        "fabric.heartbeat.kind",
+        "fabric.heartbeat.kind", "fabric.run.scope_id",
     }
 )  # fmt: skip
 REUSED_KEYS = frozenset(
@@ -106,12 +122,14 @@ REUSED_KEYS = frozenset(
         "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens",
     }
 )  # fmt: skip
-assert len(CAPTURE_KEYS) == 15
+assert len(CAPTURE_KEYS) == 16
 HEARTBEAT_KINDS = frozenset({"periodic", "run_start", "run_end", "final"})
 # Content refs on spans are bare uuid4 object ids (spec 042 §8, decision D2).
 OBJECT_ID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
+# Spec 043 F7: "e2e-model-2026" is not on the model allowlist.
+HASHED_MODEL = re.compile(r"m-[0-9a-f]{16}")
 EXCHANGE_REQUIRED = frozenset(
     {
         "fabric.wire.exchange_id", "fabric.run.id", "fabric.source_id",
@@ -138,252 +156,9 @@ CAPTURE_SPAN_NAMES = {
 SPAN_KIND_CLIENT = 3
 
 
-def _compose_available() -> bool:
-    if shutil.which("docker") is None:
-        return False
-    try:
-        for args in (
-            ["docker", "compose", "version"],
-            ["docker", "info", "--format", "x"],
-        ):
-            subprocess.run(args, check=True, capture_output=True, timeout=30)
-    except (subprocess.SubprocessError, OSError):
-        return False
-    return True
-
-
 pytestmark = pytest.mark.skipif(
-    not _compose_available(), reason="docker compose unavailable — env-dependent gate"
+    not compose_available(), reason="docker compose unavailable — env-dependent gate"
 )
-
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
-
-
-# --------------------------------------------------------------------------
-# Throwaway TLS material: one private CA, one leaf for the Node and the sink
-# --------------------------------------------------------------------------
-
-
-def _write_tls(directory: Path) -> None:
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
-
-    now = datetime.datetime.now(datetime.UTC)
-    ca_key = ec.generate_private_key(ec.SECP256R1())
-    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "fabric-wire-e2e-ca")])
-    usage = dict.fromkeys(
-        ("content_commitment", "key_encipherment", "data_encipherment", "key_agreement",
-         "encipher_only", "decipher_only"), False,
-    )  # fmt: skip
-    ca = (
-        x509.CertificateBuilder()
-        .subject_name(ca_name)
-        .issuer_name(ca_name)
-        .public_key(ca_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=5))
-        .not_valid_after(now + datetime.timedelta(days=1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=True, key_cert_sign=True, crl_sign=True, **usage
-            ),
-            critical=True,
-        )
-        .add_extension(
-            x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()), False
-        )
-        .sign(ca_key, hashes.SHA256())
-    )
-    leaf_key = ec.generate_private_key(ec.SECP256R1())
-    names = [
-        x509.DNSName("localhost"),
-        x509.DNSName("host.docker.internal"),
-        x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
-    ]
-    leaf = (
-        x509.CertificateBuilder()
-        .subject_name(
-            x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "fabric-wire-e2e")])
-        )
-        .issuer_name(ca_name)
-        .public_key(leaf_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=5))
-        .not_valid_after(now + datetime.timedelta(days=1))
-        .add_extension(x509.SubjectAlternativeName(names), critical=False)
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=True, key_cert_sign=False, crl_sign=False, **usage
-            ),
-            critical=True,
-        )
-        .add_extension(
-            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
-        )
-        .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
-            False,
-        )
-        .add_extension(
-            x509.SubjectKeyIdentifier.from_public_key(leaf_key.public_key()), False
-        )
-        .sign(ca_key, hashes.SHA256())
-    )
-    directory.mkdir(parents=True)
-    pem = serialization.Encoding.PEM
-    (directory / "ca.crt").write_bytes(ca.public_bytes(pem))
-    (directory / "server.crt").write_bytes(leaf.public_bytes(pem))
-    (directory / "server.key").write_bytes(
-        leaf_key.private_bytes(
-            pem, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
-        )
-    )
-    # Throwaway material read by the image's nonroot user through a bind
-    # mount; a real deployment provisions the key with matching ownership.
-    for path in directory.iterdir():
-        path.chmod(0o644)
-
-
-def _production_config_with_tls(target: Path) -> None:
-    """collector-production.yaml with exactly its documented TLS edits applied.
-
-    The file says: uncomment the receiver ``tls:`` stanzas before publishing
-    beyond loopback, and the exporter ``ca_file`` line for a private-CA
-    destination. Nothing else changes, so drift in the shipped file shows up
-    here instead of being masked by a hand-written test config.
-    """
-    text = PRODUCTION_CONFIG.read_text("utf-8")
-    text, stanzas = re.subn(r"(?m)^(\s*)# tls:$", r"\1tls:", text)
-    text, fields = re.subn(
-        r"(?m)^(\s*)#   (cert_file|key_file|min_version):", r"\1  \2:", text
-    )
-    text, ca = re.subn(r"(?m)^(\s*)# (ca_file:)", r"\1\2", text)
-    assert (stanzas, fields, ca) == (2, 6, 1), (
-        "collector-production.yaml TLS stanzas moved"
-    )
-    target.write_text(text, "utf-8")
-
-
-# --------------------------------------------------------------------------
-# Fake OpenAI-compatible model on a real socket
-# --------------------------------------------------------------------------
-
-
-class _Model:
-    def __init__(self) -> None:
-        self.requests = 0
-        self.unauthorized = 0
-        self._lock = threading.Lock()
-        model = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, format: str, *args: object) -> None:  # noqa: A002
-                return
-
-            def do_POST(self) -> None:  # noqa: N802
-                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
-                with model._lock:
-                    model.requests += 1
-                    call = model.requests
-                if self.path != "/v1/chat/completions":
-                    self.send_error(404)
-                    return
-                if self.headers.get("Authorization") != f"Bearer {API_KEY}":
-                    model.unauthorized += 1  # the tee must forward headers untouched
-                    self.send_error(401)
-                    return
-                payload = json.loads(body)
-                tool_results = [
-                    m for m in payload["messages"] if m.get("role") == "tool"
-                ]
-                if len(tool_results) == 1:
-                    assert payload.get("stream") is True
-                    celsius = json.loads(tool_results[0]["content"])["celsius"]
-                    self._stream(call, celsius)
-                    return
-                if not tool_results:
-                    message: dict[str, Any] = {
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [{
-                            "id": f"call_weather_{call}", "type": "function",
-                            "function": {"name": "get_weather",
-                                         "arguments": json.dumps({"city": CITY})},
-                        }],
-                    }  # fmt: skip
-                    finish = "tool_calls"
-                else:
-                    fahrenheit = json.loads(tool_results[-1]["content"])["fahrenheit"]
-                    message = {
-                        "role": "assistant",
-                        "content": f"{COMPLETION} {fahrenheit:.1f}F",
-                    }
-                    finish = "stop"
-                self._json({
-                    "id": f"chatcmpl-e2e-{call}", "object": "chat.completion",
-                    "model": "e2e-model-2026",
-                    "choices": [{"index": 0, "message": message, "finish_reason": finish}],
-                    "usage": {"prompt_tokens": 30 + call, "completion_tokens": 7},
-                })  # fmt: skip
-
-            def _json(self, document: dict[str, Any]) -> None:
-                data = json.dumps(document).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-            def _stream(self, call: int, celsius: float) -> None:
-                arguments = json.dumps({"celsius": celsius})
-                half = len(arguments) // 2
-                deltas = [
-                    {"role": "assistant", "content": None},
-                    {"tool_calls": [{"index": 0, "id": f"call_convert_{call}", "type": "function",
-                                     "function": {"name": "c_to_f", "arguments": ""}}]},
-                    {"tool_calls": [{"index": 0, "function": {"arguments": arguments[:half]}}]},
-                    {"tool_calls": [{"index": 0, "function": {"arguments": arguments[half:]}}]},
-                ]  # fmt: skip
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.end_headers()  # HTTP/1.0: the body ends when the connection closes
-                base = {"id": f"chatcmpl-e2e-{call}", "object": "chat.completion.chunk",
-                        "model": "e2e-model-2026"}  # fmt: skip
-                for delta in deltas:
-                    chunk = {**base, "choices": [{"index": 0, "delta": delta}]}
-                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
-                    self.wfile.flush()
-                    time.sleep(0.01)
-                last = {
-                    **base,
-                    "choices": [
-                        {"index": 0, "delta": {}, "finish_reason": "tool_calls"}
-                    ],
-                }
-                self.wfile.write(
-                    f"data: {json.dumps(last)}\n\ndata: [DONE]\n\n".encode()
-                )
-                self.wfile.flush()
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.server.daemon_threads = True
-        self.port = int(self.server.server_address[1])
-        self.url = f"http://127.0.0.1:{self.port}/v1/chat/completions"
-        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self._thread.start()
-
-    def close(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
 
 
 # --------------------------------------------------------------------------
@@ -394,10 +169,12 @@ class _Model:
 @dataclass
 class AgentRun:
     service: str
-    store: Path
+    spool: Path
     result: subprocess.CompletedProcess[str]
     model_requests: int
     info: dict[str, Any] = field(default_factory=dict)
+    # The Node-written content store snapshot holding this run's objects.
+    store: Path = Path()
 
 
 class Stack:
@@ -405,32 +182,22 @@ class Stack:
         self.root = root
         self.project = f"fabric-wire-e2e-{uuid.uuid4().hex[:12]}"
         self.tls = root / "tls"
-        self.sink_dir = root / "sink"
-        self.store = root / "store"
         self.ports = {
-            name: _free_port()
-            for name in ("otlp_http", "otlp_grpc", "health", "metrics", "sink")
+            name: free_port()
+            for name in ("otlp_http", "otlp_grpc", "otlp_content", "health", "metrics")
         }
-        self.image = (
-            os.environ.get("FABRIC_NODE_IMAGE") or "fabric/node:wire-capture-e2e"
-        )
-        # A host-process sink: the Node reaches it through host.docker.internal.
-        # Docker Desktop forwards that to host loopback; on Linux host-gateway
-        # is the bridge address, so the sink must listen beyond loopback there.
-        self.sink_bind = "127.0.0.1" if sys.platform == "darwin" else "0.0.0.0"  # noqa: S104
-        self.sink_process: subprocess.Popen[bytes] | None = None
-        self.model = _Model()
+        self.image = os.environ.get("FABRIC_NODE_IMAGE") or DEFAULT_NODE_IMAGE
+        self.model = FakeModel(api_key=API_KEY, city=CITY, completion=COMPLETION)
         token_file = root / "secrets" / "ingress.token"
         token_file.parent.mkdir()
-        token_file.write_text(
-            INGRESS_TOKEN, "utf-8"
-        )  # no trailing newline (fabric-gate rule)
-        token_file.chmod(
-            0o644
-        )  # nonroot in the container reads it through a bind mount
-        _write_tls(self.tls)
+        # No trailing newline (fabric-gate rule); nonroot in the container
+        # reads it through a bind mount.
+        token_file.write_text(INGRESS_TOKEN, "utf-8")
+        token_file.chmod(0o644)
+        write_tls(self.tls)
+        self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH)
         self.config = root / "collector-production.yaml"
-        _production_config_with_tls(self.config)
+        production_config_with_tls(self.config)
         self.override = root / "compose.override.yml"
         self.override.write_text(
             "services:\n"
@@ -449,13 +216,17 @@ class Stack:
             "FABRIC_BIND_ADDR": "127.0.0.1",
             "FABRIC_OTLP_HTTP_PORT": str(self.ports["otlp_http"]),
             "FABRIC_OTLP_GRPC_PORT": str(self.ports["otlp_grpc"]),
+            "FABRIC_OTLP_CONTENT_PORT": str(self.ports["otlp_content"]),
             "FABRIC_HEALTH_PORT": str(self.ports["health"]),
             "FABRIC_METRICS_PORT": str(self.ports["metrics"]),
             "FABRIC_INGRESS_TOKEN_FILE": str(token_file),
             "FABRIC_INGRESS_TLS_DIR": str(self.tls),
-            "FABRIC_EXPORT_ENDPOINT": f"https://host.docker.internal:{self.ports['sink']}",
+            "FABRIC_EXPORT_ENDPOINT": self.sink.endpoint,
             "FABRIC_EXPORT_AUTH_HEADER": EGRESS_AUTH,
+            # The only tenant the Node's fabriccontent exporter writes.
+            "FABRIC_TENANT_ID": TENANT,
         }
+        self._autoload = autoload_path()
 
     # -- compose -------------------------------------------------------------
 
@@ -479,21 +250,20 @@ class Stack:
         return result.stdout + result.stderr
 
     def wait_health(self, timeout_s: float = 60.0) -> None:
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
+        def healthy() -> bool:
             try:
                 url = f"http://127.0.0.1:{self.ports['health']}/"
                 with urllib.request.urlopen(url, timeout=2) as response:
-                    if response.status == 200:
-                        return
+                    return bool(response.status == 200)
             except (OSError, ValueError):
-                pass
-            time.sleep(0.5)
-        raise AssertionError(
-            f"Fabric Node never became healthy:\n{self.node_logs()[-4000:]}"
-        )
+                return False
 
-    def queue_size(self) -> float:
+        wait_until(
+            healthy, timeout_s,
+            lambda: f"Fabric Node never became healthy:\n{self.node_logs()[-4000:]}",
+        )  # fmt: skip
+
+    def queue_size(self, exporter: str = "otlp_http/fabric") -> float:
         url = f"http://127.0.0.1:{self.ports['metrics']}/metrics"
         with urllib.request.urlopen(url, timeout=5) as response:
             text = response.read().decode()
@@ -501,102 +271,91 @@ class Stack:
             float(line.rsplit(" ", 1)[1])
             for line in text.splitlines()
             if line.startswith("otelcol_exporter_queue_size{")
-            and "otlp_http/fabric" in line
+            and f'exporter="{exporter}"' in line
         ]
         return max(sizes, default=0.0)
 
     # -- sink ----------------------------------------------------------------
 
-    def start_sink(self) -> None:
-        self.sink_process = subprocess.Popen(  # noqa: S603
-            [sys.executable, str(SINK), str(self.sink_dir), str(self.ports["sink"]),
-             self.sink_bind, str(self.tls / "server.crt"), str(self.tls / "server.key"),
-             EGRESS_AUTH],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        )  # fmt: skip
-        context = ssl.create_default_context(cafile=str(self.tls / "ca.crt"))
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            try:
-                url = f"https://localhost:{self.ports['sink']}/health"
-                with urllib.request.urlopen(
-                    url, timeout=2, context=context
-                ) as response:
-                    if response.status == 200:
-                        return
-            except (OSError, ValueError):
-                time.sleep(0.2)
-        raise AssertionError("sink never became ready")
-
-    def stop_sink(self) -> None:
-        if self.sink_process is not None and self.sink_process.poll() is None:
-            self.sink_process.terminate()
-            self.sink_process.wait(timeout=30)
-        self.sink_process = None
-
     @property
     def records(self) -> Path:
-        return self.sink_dir / "records.jsonl"
-
-    def rows(self) -> list[dict[str, Any]]:
-        if not self.records.exists():
-            return []
-        lines = self.records.read_text("utf-8").splitlines()
-        return [json.loads(line) for line in lines if line.strip()]
+        return self.sink.records
 
     def spans_of(self, service: str) -> list[dict[str, Any]]:
-        return [
-            row for row in self.rows()
-            if row.get("kind") == "span" and row["resource"].get("service.name") == service
-        ]  # fmt: skip
+        return self.sink.spans_of(service)
 
     def wait_for_run(
         self, service: str, calls: int, timeout_s: float = 90.0
     ) -> list[dict[str, Any]]:
         """Until every exchange span and the clean-exit final heartbeat of ``service`` arrived."""
-        deadline = time.monotonic() + timeout_s
-        spans: list[dict[str, Any]] = []
-        while time.monotonic() < deadline:
-            spans = self.spans_of(service)
+        found: list[dict[str, Any]] = []
+
+        def arrived() -> bool:
+            found[:] = self.spans_of(service)
             exchanges = {
                 s["attributes"].get("fabric.wire.exchange_id")
-                for s in spans if s["name"] == "fabric.model_call"
+                for s in found if s["name"] == "fabric.model_call"
             }  # fmt: skip
             tail = [
-                s for s in spans
+                s for s in found
                 if s["attributes"].get("fabric.heartbeat.kind") == "final"
             ]  # fmt: skip
-            if len(exchanges) >= calls and tail:
-                return spans
-            time.sleep(1)
-        raise AssertionError(
-            f"{service}: {len(spans)} spans after {timeout_s}s, expected {calls} exchanges "
-            f"and a final heartbeat\n{self.node_logs()[-4000:]}"
-        )
+            return len(exchanges) >= calls and bool(tail)
+
+        wait_until(
+            arrived, timeout_s,
+            lambda: f"{service}: {len(found)} spans after {timeout_s}s, expected {calls} "
+            f"exchanges and a final heartbeat\n{self.node_logs()[-4000:]}",
+        )  # fmt: skip
+        return found
+
+    # -- Node-written content --------------------------------------------------
+
+    def content_snapshot(self) -> Path:
+        """A host copy of the Node's content volume (file backend)."""
+        target = self.root / f"content-{uuid.uuid4().hex[:8]}"
+        self.compose("cp", f"fabric-node:{NODE_CONTENT_DIR}", str(target))
+        return target
+
+    def wait_content(self, object_ids: set[str], timeout_s: float = 60.0) -> Path:
+        """Snapshot once every object and descriptor in ``object_ids`` is on the Node."""
+        snapshot: list[Path] = []
+
+        def written() -> bool:
+            store = self.content_snapshot()
+            snapshot[:] = [store]
+            evidence = store / TENANT / "evidence"
+            return all(
+                (evidence / oid).is_file()
+                and (evidence / "meta" / f"{oid}.json").is_file()
+                for oid in object_ids
+            )
+
+        wait_until(
+            written, timeout_s,
+            lambda: f"the Node did not write {len(object_ids)} objects\n"
+            f"{self.node_logs()[-4000:]}",
+        )  # fmt: skip
+        return snapshot[0]
 
     # -- agent ---------------------------------------------------------------
 
-    def agent_env(self, service: str, store: Path, token: str) -> dict[str, str]:
-        autoload = subprocess.run(
-            [sys.executable, "-m", "fabric.wire", "--print-autoload-path"],
-            check=True, capture_output=True, text=True, timeout=60,
-        ).stdout.strip()  # fmt: skip
-        endpoints = [{
-            "endpoint_id": "e2e-model", "dialect": "openai", "hosts": ["127.0.0.1"],
-            "ports": [self.model.port], "path_prefix": "/v1", "schemes": ["http"],
-            "provider_name": "openai",
-        }]  # fmt: skip
+    def agent_env(self, service: str, spool: Path, token: str) -> dict[str, str]:
         base = {
             k: v for k, v in os.environ.items()
-            if not k.startswith(("FABRIC_", "OTEL_")) and k != "PYTHONPATH"
+            if not k.startswith(("FABRIC_", "OTEL_", "AWS_")) and k != "PYTHONPATH"
         }  # fmt: skip
         return {
             **base,
-            "PYTHONPATH": autoload,
+            "PYTHONPATH": self._autoload,
             "FABRIC_WIRE_AUTOLOAD": "1",
             "FABRIC_TENANT_ID": TENANT,
-            "FABRIC_WIRE_STORE": store.as_uri(),
-            "FABRIC_WIRE_ENDPOINTS": json.dumps(endpoints),
+            # Node mode (spec 043): no FABRIC_WIRE_STORE, no store credentials.
+            "FABRIC_WIRE_CONTENT_ENDPOINT": (
+                f"https://127.0.0.1:{self.ports['otlp_content']}/v1/logs"
+            ),
+            "FABRIC_WIRE_SPOOL_DIR": str(spool),
+            "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
             "OTEL_SERVICE_NAME": service,
             "OTEL_EXPORTER_OTLP_ENDPOINT": f"https://127.0.0.1:{self.ports['otlp_http']}",
             "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=" + quote(f"Bearer {token}"),
@@ -611,18 +370,18 @@ class Stack:
         service: str,
         *,
         token: str = INGRESS_TOKEN,
-        store: Path | None = None,
+        spool: Path | None = None,
         client: str = "httpx",
     ) -> AgentRun:
-        store = store or self.store
+        spool = spool or self.root / "spool" / service
         before = self.model.requests
         result = subprocess.run(  # noqa: S603
             [sys.executable, str(AGENT), "--model-url", self.model.url, "--question", PROMPT,
              "--client", client],
-            env=self.agent_env(service, store, token), cwd=self.root, capture_output=True,
+            env=self.agent_env(service, spool, token), cwd=self.root, capture_output=True,
             text=True, timeout=180, check=False,
         )  # fmt: skip
-        run = AgentRun(service, store, result, self.model.requests - before)
+        run = AgentRun(service, spool, result, self.model.requests - before)
         assert result.returncode == 0, (
             f"agent failed:\n{result.stdout}\n{result.stderr}"
         )
@@ -631,41 +390,26 @@ class Stack:
             f"zero-code capture did not install:\n{result.stderr}"
         )
         assert "capture not installed" not in result.stderr
+        assert "autoload failed" not in result.stderr, result.stderr
         assert run.info["answer"].startswith(COMPLETION), run.info
         assert run.model_requests == 3 and self.model.unauthorized == 0
+        # Spec 043 F1: the agent holds no store credentials and loads no cloud SDK.
+        assert run.info["aws_env"] == [] and run.info["cloud_sdk_imported"] == [], (
+            run.info
+        )
         return run
 
     # -- verification --------------------------------------------------------
 
-    def reconstruct(self, store: Path | None = None) -> tuple[int, dict[str, Any]]:
+    def reconstruct(self, store: Path) -> tuple[int, dict[str, Any]]:
         out = self.root / f"report-{uuid.uuid4().hex[:8]}.json"
         result = subprocess.run(
             [sys.executable, "-m", "fabric.reconstruct", "--spans", str(self.records),
-             "--store-root", str(store or self.store), "--tenant", TENANT, "--out", str(out)],
+             "--store-root", str(store), "--tenant", TENANT, "--out", str(out)],
             capture_output=True, text=True, timeout=300, check=False,
         )  # fmt: skip
         assert result.returncode in (0, 1), f"reconstruct usage error:\n{result.stderr}"
         return result.returncode, json.loads(out.read_text("utf-8"))
-
-    def queue_volume_hits(self, needle: str) -> str:
-        volume = f"{self.project}_fabric-queue"
-        subprocess.run(
-            ["docker", "volume", "inspect", volume], check=True, capture_output=True
-        )
-        probe = subprocess.run(
-            ["docker", "run", "--rm", "--network", "none", "-v", f"{volume}:/q:ro",
-             "alpine:latest", "grep", "-rl", needle, "/q"],
-            capture_output=True, text=True, timeout=120, check=False,
-        )  # fmt: skip
-        assert probe.returncode in (0, 1), probe.stderr  # 1 = no match
-        return probe.stdout.strip()
-
-
-def _build_image(image: str) -> None:
-    subprocess.run(
-        ["docker", "build", "-t", image, str(NODE_CONTEXT)],
-        check=True, capture_output=True, text=True, timeout=1800,
-    )  # fmt: skip
 
 
 @pytest.fixture(scope="module")
@@ -673,14 +417,14 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
     stack = Stack(tmp_path_factory.mktemp("wire-node"))
     try:
         if not os.environ.get("FABRIC_NODE_IMAGE"):
-            _build_image(stack.image)
-        stack.start_sink()
-        stack.compose("up", "-d", "--no-build", "--wait", "--wait-timeout", "60")
+            build_image(stack.image)
+        stack.sink.start()
+        stack.compose("up", "-d", "--no-build", "--wait", "--wait-timeout", "90")
         stack.wait_health()
         yield stack
     finally:
         stack.compose("down", "-v", "--remove-orphans", check=False)
-        stack.stop_sink()
+        stack.sink.stop()
         stack.model.close()
 
 
@@ -699,9 +443,7 @@ def _store_descriptors(store: Path) -> dict[str, dict[str, Any]]:
 
 def _assert_no_leak(stack: Stack) -> None:
     sink_text = stack.records.read_text("utf-8")
-    raw = b"".join(
-        path.read_bytes() for path in sorted((stack.sink_dir / "raw").glob("*.bin"))
-    )
+    raw = stack.sink.raw_bytes()
     logs = stack.node_logs()
     assert sink_text and raw and "fabric-node" in logs, "a leak scan would be vacuous"
     assert b"fabric.wire.exchange_id" in raw  # the raw bytes are the delivered spans
@@ -709,9 +451,31 @@ def _assert_no_leak(stack: Stack) -> None:
         assert marker not in sink_text, f"{marker} reached the decoded sink output"
         assert marker.encode() not in raw, f"{marker} reached the delivered OTLP bytes"
         assert marker not in logs, f"{marker} appeared in the Node logs"
-    assert stack.queue_volume_hits(MARK) == "", (
-        "a marker persisted in the Node queue volume"
+    assert volume_grep(f"{stack.project}_fabric-queue", MARK) == "", (
+        "a marker persisted in the Node's telemetry queue volume"
     )
+    # The content queue carries bodies by design, never a credential.
+    for secret in SECRET_MARKERS:
+        assert volume_grep(f"{stack.project}_fabric-content-queue", secret) == "", (
+            f"{secret} persisted in the Node's content queue volume"
+        )
+
+
+def _delivered(
+    stack: Stack, run: AgentRun, calls: int = 3, timeout_s: float = 90.0
+) -> list[dict[str, Any]]:
+    """Wait for the run's spans and its Node-written objects; the spool is drained."""
+    spans = stack.wait_for_run(run.service, calls=calls, timeout_s=timeout_s)
+    refs = {
+        s["attributes"][key]
+        for s in spans if s["name"] == "fabric.model_call"
+        for key in ("fabric.content.request_ref", "fabric.content.result_ref")
+    }  # fmt: skip
+    run.store = stack.wait_content(refs)
+    # Every record was delivered (content, then span) before it was deleted.
+    assert spool_records(run.spool) == [], [p.name for p in spool_records(run.spool)]
+    assert not list(run.spool.glob("*.corrupt"))
+    return spans
 
 
 def _assert_capture_spans(
@@ -767,6 +531,8 @@ def _assert_capture_spans(
         assert attrs["gen_ai.operation.name"] == "chat"
         present = EXCHANGE_METADATA & set(attrs)
         assert present == (set() if streamed else EXCHANGE_METADATA), (index, present)
+        if not streamed:
+            assert HASHED_MODEL.fullmatch(attrs["gen_ai.response.model"]), attrs
         for ref_key, digest_key, role in (
             (
                 "fabric.content.request_ref",
@@ -843,6 +609,28 @@ def _assert_complete(report: dict[str, Any], code: int, runs: set[str]) -> None:
 # --------------------------------------------------------------------------
 
 
+def _assert_store_holds_content(run: AgentRun, exchanges: list[dict[str, Any]]) -> None:
+    """This run's Node-written objects hold the content; headers were never stored."""
+    stored = b"".join(
+        (run.store / TENANT / "evidence" / s["attributes"][key]).read_bytes()
+        for s in exchanges
+        for key in ("fabric.content.request_ref", "fabric.content.result_ref")
+    )
+    for marker in CONTENT_MARKERS:
+        assert marker.encode() in stored, f"{marker} was not captured into the store"
+    for secret in SECRET_MARKERS:
+        assert secret.encode() not in stored, f"{secret} was written to the store"
+    descriptors = _store_descriptors(run.store)
+    for span in exchanges:
+        descriptor = descriptors[span["attributes"]["fabric.content.request_ref"]]
+        # Written by the Node's file backend, in the SDK layout and format.
+        assert descriptor["encoding"] == "binary"
+        assert descriptor["ref"].startswith(
+            f"file://{NODE_CONTENT_DIR}/{TENANT}/evidence/"
+        )
+        assert descriptor["tenant_id"] == TENANT
+
+
 def test_wire_capture_streams_through_production_node_and_reconstructs(
     stack: Stack,
 ) -> None:
@@ -855,19 +643,12 @@ def test_wire_capture_streams_through_production_node_and_reconstructs(
     assert entrypoint == '["/fabric-gate"]'
 
     run = stack.run_agent("wire-e2e-agent")
-    spans = stack.wait_for_run(run.service, calls=3)
+    spans = _delivered(stack, run)
     exchanges = _assert_capture_spans(spans, run)
-
-    # The content exists, but only inside the customer's store; headers
-    # (the model API key) are never stored at all.
-    stored = b"".join(p.read_bytes() for p in run.store.rglob("*") if p.is_file())
-    for marker in CONTENT_MARKERS:
-        assert marker.encode() in stored, f"{marker} was not captured into the store"
-    for secret in SECRET_MARKERS:
-        assert secret.encode() not in stored, f"{secret} was written to the store"
+    _assert_store_holds_content(run, exchanges)
     _assert_no_leak(stack)
 
-    code, report = stack.reconstruct()
+    code, report = stack.reconstruct(run.store)
     _assert_complete(report, code, {exchanges[0]["attributes"]["fabric.run.id"]})
 
 
@@ -876,44 +657,35 @@ def test_real_openai_sdk_through_production_node_reconstructs(stack: Stack) -> N
     application, sync and streamed, captured with zero code and delivered
     through the production Node."""
     run = stack.run_agent("wire-e2e-openai", client="openai")
-    spans = stack.wait_for_run(run.service, calls=3)
+    spans = _delivered(stack, run)
     exchanges = _assert_capture_spans(
         spans, run, streamed_states=frozenset({"complete", "closed_early"})
     )
     states = [s["attributes"]["fabric.wire.response_state"] for s in exchanges]
     print(f"openai SDK exchange states: {states}")
-    # This run's own objects hold the content; the SDK's API key is never stored.
-    stored = b"".join(
-        (run.store / TENANT / "evidence" / s["attributes"][key]).read_bytes()
-        for s in exchanges
-        for key in ("fabric.content.request_ref", "fabric.content.result_ref")
-    )
-    for marker in CONTENT_MARKERS:
-        assert marker.encode() in stored, f"{marker} was not captured into the store"
-    for secret in SECRET_MARKERS:
-        assert secret.encode() not in stored, f"{secret} was written to the store"
+    _assert_store_holds_content(run, exchanges)
     _assert_no_leak(stack)
 
-    code, report = stack.reconstruct()
+    code, report = stack.reconstruct(run.store)
     _assert_complete(report, code, {exchanges[0]["attributes"]["fabric.run.id"]})
 
 
 def test_queued_spans_survive_sink_outage_and_node_restart(stack: Stack) -> None:
-    stack.stop_sink()
+    stack.sink.stop()
     try:
         run = stack.run_agent("wire-e2e-outage")
-        # The Node accepted the export (no loss in the agent) and holds it in
-        # its persistent queue because the destination is down.
-        deadline = time.monotonic() + 60
-        while stack.queue_size() < 1 and time.monotonic() < deadline:
-            time.sleep(1)
-        assert stack.queue_size() >= 1, "nothing queued while the destination was down"
+        # The Node accepted every record (the agent's spool drained) and holds
+        # the spans in its persistent queue because the destination is down.
+        wait_until(
+            lambda: stack.queue_size() >= 1 and not spool_records(run.spool), 60,
+            lambda: f"queued={stack.queue_size()} spool={spool_records(run.spool)}",
+        )  # fmt: skip
         assert not stack.spans_of(run.service)
         stack.compose("restart", "fabric-node")
         stack.wait_health()
     finally:
-        stack.start_sink()
-    spans = stack.wait_for_run(run.service, calls=3, timeout_s=180)
+        stack.sink.start()
+    spans = _delivered(stack, run, timeout_s=180)
     exchanges = _assert_capture_spans(spans, run)
     duplicates = len([s for s in spans if s["name"] == "fabric.model_call"]) - len(
         exchanges
@@ -922,47 +694,57 @@ def test_queued_spans_survive_sink_outage_and_node_restart(stack: Stack) -> None
     _assert_no_leak(stack)
 
     # The whole sink file, duplicates included, still reconstructs cleanly.
-    code, report = stack.reconstruct()
+    code, report = stack.reconstruct(run.store)
     _assert_complete(report, code, {exchanges[0]["attributes"]["fabric.run.id"]})
 
 
 def test_wrong_ingress_token_is_rejected_and_agent_is_unaffected(stack: Stack) -> None:
-    node = f"127.0.0.1:{stack.ports['otlp_http']}"
     context = ssl.create_default_context(cafile=str(stack.tls / "ca.crt"))
-    request = urllib.request.Request(
-        f"https://{node}/v1/traces", data=b"{}", method="POST",
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {WRONG_TOKEN}"},
-    )  # fmt: skip
-    with pytest.raises(urllib.error.HTTPError) as rejected:
-        urllib.request.urlopen(request, timeout=10, context=context)
-    assert rejected.value.code in (401, 403)
-    # Receiver TLS is enforced: a plaintext request is not served.
-    with pytest.raises(
-        (urllib.error.HTTPError, urllib.error.URLError, OSError)
-    ) as plain:
-        urllib.request.urlopen(f"http://{node}/v1/traces", data=b"{}", timeout=10)
-    if isinstance(plain.value, urllib.error.HTTPError):
-        assert plain.value.code == 400
+    for port, path, ctype in (
+        (stack.ports["otlp_http"], "/v1/traces", "application/json"),
+        (stack.ports["otlp_content"], "/v1/logs", "application/x-protobuf"),
+    ):
+        node = f"127.0.0.1:{port}"
+        request = urllib.request.Request(
+            f"https://{node}{path}", data=b"{}", method="POST",
+            headers={"Content-Type": ctype, "Authorization": f"Bearer {WRONG_TOKEN}"},
+        )  # fmt: skip
+        with pytest.raises(urllib.error.HTTPError) as rejected:
+            urllib.request.urlopen(request, timeout=10, context=context)
+        assert rejected.value.code in (401, 403), (path, rejected.value.code)
+        # Receiver TLS is enforced: a plaintext request is not served.
+        with pytest.raises(
+            (urllib.error.HTTPError, urllib.error.URLError, OSError)
+        ) as plain:
+            urllib.request.urlopen(f"http://{node}{path}", data=b"{}", timeout=10)
+        if isinstance(plain.value, urllib.error.HTTPError):
+            assert plain.value.code == 400
 
-    rejected_store = stack.root / "store-rejected"
-    bad = stack.run_agent(
-        "wire-e2e-wrong-token", token=WRONG_TOKEN, store=rejected_store
-    )
+    started = time.monotonic()
+    bad = stack.run_agent("wire-e2e-wrong-token", token=WRONG_TOKEN)
+    # The host is unaffected: the exit handler is bounded (042 E9) even
+    # though nothing could be delivered.
+    assert time.monotonic() - started < 60
+    # Capture itself still worked: every record waits on disk for replay.
+    headers = [spool_header(path) for path in spool_records(bad.spool)]
     rejected_ids = {
-        d["operation_id"] for d in _store_descriptors(rejected_store).values()
-    }
-    assert len(rejected_ids) == 3, "capture itself must still work locally"
+        h["span"]["attributes"]["fabric.wire.exchange_id"]
+        for h in headers if h["record_kind"] == "exchange"
+    }  # fmt: skip
+    assert len(rejected_ids) == 3, [h["record_kind"] for h in headers]
 
     # Barrier: a correctly authenticated run sent afterwards arrives, so
     # anything the rejected agent sent would have arrived by now.
     barrier = stack.run_agent("wire-e2e-barrier")
-    stack.wait_for_run(barrier.service, calls=3)
+    _delivered(stack, barrier)
     assert stack.spans_of(bad.service) == [], (
         "spans with a wrong token reached the sink"
     )
     sink_text = stack.records.read_text("utf-8")
     assert not [i for i in rejected_ids if i in sink_text]
+    stored_ops = {d["operation_id"] for d in _store_descriptors(barrier.store).values()}
+    assert not rejected_ids & stored_ops, "content sent with a wrong token was stored"
     _assert_no_leak(stack)
 
-    code, report = stack.reconstruct()
+    code, report = stack.reconstruct(barrier.store)
     _assert_complete(report, code, set())

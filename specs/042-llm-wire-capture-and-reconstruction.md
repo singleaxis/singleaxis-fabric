@@ -3,10 +3,11 @@ title: LLM wire capture and run reconstruction
 status: draft
 qualification: NO_COVERAGE_CLAIM
 revision: 5
-last_updated: 2026-10-08
+last_updated: 2026-10-13
 owner: recorder-engineering
 depends_on: 027, 029, 032, 035, 038
 related: 040, 041
+superseded_in_part_by: 043
 ---
 
 # 042 — LLM wire capture and run reconstruction (Phase 1)
@@ -30,6 +31,16 @@ the `model.exchange.request` / `model.exchange.response` roles in
 [`contracts/content/v2`](../contracts/content/v2/README.md).
 
 ## Decision record
+
+**2026-10-13 — partly superseded by [spec 043](043-node-content-delivery-and-agent-spool.md).**
+Only the Fabric Node writes content (no `s3://` wire store, no
+`FABRIC_WIRE_STORE_SSE`); every capture event goes through an fsync'd agent
+spool drained by one sender (replacing `LossExporter`, the loss/heartbeat
+resend logic and the private `BatchSpanProcessor` on the capture path);
+`fabric.wire.run()` scopes carry `fabric.run.scope_id` and the verifier
+pairs markers by scope; model names outside an allowlist are emitted as
+`m-<16 hex>`; the boot gate separates content and telemetry pipelines.
+Sections below are marked *(→ 043)* where 043 wins.
 
 **2026-10-08 — revision 5 (re-review hardening).** A second review round
 found that a heartbeat covering the last *observed* exchange could make a
@@ -228,7 +239,9 @@ realtime/WebSocket and gRPC.
 - Installation patches httpx and, when `importlib.util.find_spec("httpx2")`
   finds it, imports and patches httpx2 too. A failed import is swallowed;
   it never raises into the host.
-- `install_from_env()` reads `FABRIC_TENANT_ID`, `FABRIC_WIRE_STORE`
+- *(→ 043 §1: `FABRIC_WIRE_STORE` is `node` or `file://`; `s3://`, SSE and
+  KMS variables are rejected; node mode adds `FABRIC_WIRE_CONTENT_ENDPOINT`
+  and `FABRIC_WIRE_SPOOL_DIR`.)* `install_from_env()` reads `FABRIC_TENANT_ID`, `FABRIC_WIRE_STORE`
   (`file:///abs/dir` or `s3://bucket/prefix`; unset = metadata-only),
   `FABRIC_WIRE_STORE_SSE` (`AES256` or `aws:kms`; S3 only) and
   `FABRIC_WIRE_STORE_KMS_KEY_ID` (requires `aws:kms`), `FABRIC_SOURCE_ID`,
@@ -288,7 +301,9 @@ protection fails **closed**: the Node drops unknown keys and invalid values.
    64 MiB) and `max_inflight_bytes` across exchanges (default 256 MiB).
    Bytes beyond either bound are forwarded but not retained and the
    exchange is marked `truncated`.
-5. **Never blocks.** `queue_max_items` (default 256, cap 65,536). A full
+5. *(→ 043 §2 for delivery: in spool mode exports run on the sender
+   thread from fsync'd records; undelivered records survive exit.)*
+   **Never blocks.** `queue_max_items` (default 256, cap 65,536). A full
    queue drops the exchange with a `queue_full` loss. Store retries (3
    attempts, backoff 0.1/0.4/1.6 s) run on the worker. `flush()`/`close()`
    block only when called, each for at most its timeout; exchanges still in
@@ -377,7 +392,9 @@ ref and `truncated` is true.
   tenant id names store paths and descriptors. None of them may contain
   personal data or secrets (use opaque or pseudonymous values): the Node
   cannot tell a patient number from a job id.
-- **Loss records** (`fabric.capture_loss`): `{reason, count,
+- *(→ 043 §2: with the spool, loss ranges and run/final markers are
+  spooled records; `LossExporter`, requeue and resend are removed.)*
+  **Loss records** (`fabric.capture_loss`): `{reason, count,
   first_sequence, last_sequence}` per `(source, epoch)`. Reasons:
   `queue_full`, `internal_error`, `shutdown`, `span_dropped` (sampled out,
   or the private exporter reported failure). `record()` is O(1) and never
@@ -401,7 +418,8 @@ ref and `truncated` is true.
   before the first) at the moment the heartbeat is requested. Kinds:
   - `periodic`: every 30 s for sources with new activity, and on `flush()`.
     It reveals missing sequences; it never proves an end.
-  - `run_start` / `run_end`: on entry to and exit from
+  - `run_start` / `run_end` *(→ 043 §6: each also carries
+    `fabric.run.scope_id`, unique per block entry)*: on entry to and exit from
     `fabric.wire.run(run_id)`; they also carry `fabric.run.id` (*run
     markers*, §9).
   - `final`: on an orderly `close()` (explicit, or Fabric's exit handler).
@@ -415,8 +433,10 @@ ref and `truncated` is true.
 
 ## 7. Stored bytes (content-v2)
 
-Each exchange writes up to two objects through
-`ByteEvidenceStore.put_bytes_object` (layout `<tenant>/evidence/<id>` plus
+*(→ 043 §3–§4: in node mode the agent sends each body as an OTLP log record
+and the Node's `fabriccontent` exporter writes the same layout and
+descriptor bytes; `file://` mode is unchanged.)* Each exchange writes up to
+two objects through `ByteEvidenceStore.put_bytes_object` (layout `<tenant>/evidence/<id>` plus
 `evidence/meta/<id>.json`). There is no stored per-exchange record object.
 
 | Role | Bytes | Descriptor specifics |
@@ -456,7 +476,7 @@ loss/heartbeat spans):
 | `fabric.wire.truncated` | bool | new |
 | `fabric.wire.store_status` | `stored`\|`partial`\|`failed`\|`disabled` | new |
 | `gen_ai.operation.name`, `gen_ai.provider.name`, `http.request.method`, `http.response.status_code`, `error.type` (exception class, on `error` only) | | existing |
-| `gen_ai.response.model` | `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` and not containing `://` | existing; only when extracted (§5); any other value is omitted |
+| `gen_ai.response.model` | `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` and not containing `://` | existing; only when extracted (§5); *(→ 043 §7: as is only when also allowlisted, else `m-` + 16 hex of its SHA-256)* |
 | `gen_ai.response.finish_reasons` | each one of `stop`, `length`, `tool_calls`, `content_filter`, `function_call`, `end_turn`, `max_tokens`, `stop_sequence`, `tool_use`, `pause_turn`, `refusal`, `completed`, `incomplete`, `failed`, `other` | existing; only when extracted; any other provider value becomes `other` |
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | int ≥ 0 | existing; only when extracted |
 
@@ -505,7 +525,8 @@ and its scopes keep no attributes, so application spans batched with
 capture spans (for example under `FABRIC_WIRE_TRACER=global`) cannot widen
 the shared metadata. Other spans keep the general policy.
 
-**Boot gate.** `fabric-gate` refuses to start the collector when any
+**Boot gate.** *(→ 043 §5: `logs/content*` pipelines carry content without
+`fabricguard` and are fenced off from telemetry pipelines.)* `fabric-gate` refuses to start the collector when any
 traces or logs pipeline does not list `fabricguard` among its processors,
 so no exporter can receive records that bypassed protection. It also
 refuses every `--set` argument, in both spellings (`--set k=v`,
@@ -560,7 +581,9 @@ span file paths given on the command line.
    ranges; a missing sub-range covered by loss records is a `loss` gap
    (with its reason), the rest is a `sequence_gap`. The epoch's end is
    proven only when `F` exists and `top ≤ F`.
-3. *Run windows.* For run R in `(source, epoch)`, let `S` and `E` be the
+3. *Run windows.* *(→ 043 §6: rule (a) pairs markers by
+   `fabric.run.scope_id`, one window per scope; rule (b) is unchanged.)*
+   For run R in `(source, epoch)`, let `S` and `E` be the
    distinct `last_sequence` values of R's `run_start` and `run_end`
    markers there. `lo` = min(R's first sequence, `s + 1` for `s` in `S`);
    `hi` = max(R's last sequence, `E`). R's end on that source is proven
@@ -699,5 +722,6 @@ over captured exchanges. Those belong to systems that consume this record.
 
 1. Persisting `source_epoch` and the last sequence across restarts (spec
    038) versus the Phase-1 process-lifetime epoch.
-2. Whether `spooled` durability (spec 032) should back the worker queue.
+2. ~~Whether `spooled` durability (spec 032) should back the worker queue.~~
+   Decided by spec 043 §2 (agent durable spool).
 3. Rebuilding runs from store descriptors alone when spans are lost.

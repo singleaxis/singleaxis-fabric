@@ -1,6 +1,10 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""LossExporter and the private provider: failed exports become span_dropped losses."""
+"""The guarded capture exporter and the private provider (specs 042 D3, 043 §8).
+
+Spec 043 removed ``LossExporter``: on the spool path a failed export keeps the record on
+disk for a retry; on the direct path it stays a sequence gap the verifier reports.
+"""
 
 from __future__ import annotations
 
@@ -22,8 +26,7 @@ from opentelemetry.util._once import Once
 
 import fabric.tracing as ft
 from fabric import _loss
-from fabric._loss import SPAN_LOSS, LossEmitter, LossExporter
-from fabric.tracing import build_private_provider, install_default_provider
+from fabric.tracing import build_private_provider, guarded_exporter, install_default_provider
 
 
 class FailingExporter(SpanExporter):
@@ -41,20 +44,6 @@ class FailingExporter(SpanExporter):
         raise RuntimeError("shutdown bug must not escape")
 
 
-@pytest.fixture
-def loss_exporter() -> InMemorySpanExporter:
-    return InMemorySpanExporter()
-
-
-@pytest.fixture
-def loss(loss_exporter: InMemorySpanExporter) -> Iterator[LossEmitter]:
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(loss_exporter))
-    emitter = LossEmitter(tracer_provider=provider)
-    yield emitter
-    emitter.close(0.5)
-
-
 def _emit(provider: TracerProvider, name: str, attributes: dict[str, Any]) -> None:
     provider.get_tracer("t").start_span(name, attributes=attributes).end()
 
@@ -68,50 +57,32 @@ EXCHANGE = {
 
 
 @pytest.mark.parametrize("raise_error", [False, True])
-def test_failed_export_of_exchange_spans_is_a_span_dropped_loss(
-    loss: LossEmitter, loss_exporter: InMemorySpanExporter, raise_error: bool
+def test_guarded_export_failure_is_a_failure_never_an_exception(
+    raise_error: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
     inner = FailingExporter(raise_error=raise_error)
+    guarded = guarded_exporter(inner)
+    assert guarded_exporter(guarded) is guarded  # idempotent
     provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(LossExporter(inner, loss=loss)))
-    _emit(provider, "fabric.model_call", EXCHANGE)
-    _emit(provider, "fabric.model_call", {**EXCHANGE, "fabric.source.sequence": 6})
-    _emit(
-        provider, "fabric.capture_loss", {"fabric.source_id": "wire-a", "fabric.source.epoch": 11}
-    )
-    _emit(provider, "unrelated", {"fabric.source.sequence": 9})
-    assert inner.calls == 4  # every export failed, none raised into the span's caller
-    assert loss.flush(2.0)
-    (record,) = [
-        dict(s.attributes or {}) for s in loss_exporter.get_finished_spans() if s.name == SPAN_LOSS
-    ]
-    assert record["fabric.loss.reason"] == "span_dropped"
-    assert (record["fabric.loss.first_sequence"], record["fabric.loss.last_sequence"]) == (4, 6)
-    assert record["fabric.loss.count"] == 2
+    provider.add_span_processor(SimpleSpanProcessor(guarded))
+    with caplog.at_level("DEBUG"):
+        _emit(provider, "fabric.model_call", EXCHANGE)
+    assert inner.calls == 1
+    assert guarded.export([]) is SpanExportResult.FAILURE
+    if raise_error:
+        assert "ConnectionError" in caplog.text and "collector down" not in caplog.text
     provider.shutdown()  # the inner shutdown error is suppressed
+    assert not hasattr(_loss, "LossExporter")
 
 
-def test_successful_export_records_nothing(loss: LossEmitter) -> None:
+def test_guarded_success_passes_through() -> None:
     inner = InMemorySpanExporter()
-    wrapped = LossExporter(inner, loss=loss)
+    wrapped = guarded_exporter(inner)
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(wrapped))
     _emit(provider, "fabric.model_call", EXCHANGE)
     assert len(inner.get_finished_spans()) == 1
-    assert not loss._pending
     assert wrapped.force_flush(100)
-
-
-def test_default_loss_is_the_process_emitter(
-    monkeypatch: pytest.MonkeyPatch, loss: LossEmitter
-) -> None:
-    monkeypatch.setattr(_loss, "_EMITTER", loss)
-    provider = TracerProvider()
-    provider.add_span_processor(
-        SimpleSpanProcessor(LossExporter(FailingExporter(raise_error=False)))
-    )
-    _emit(provider, "fabric.model_call", EXCHANGE)
-    assert ("wire-a", 11, "span_dropped") in loss._pending
 
 
 @pytest.fixture
@@ -142,7 +113,7 @@ def test_install_default_provider_uses_a_plain_batch_processor(reset_global_prov
     provider.shutdown()
 
 
-def test_build_private_provider_is_always_on_wrapped_and_never_global(
+def test_build_private_provider_is_always_on_guarded_and_never_global(
     reset_global_provider: None,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -157,7 +128,7 @@ def test_build_private_provider_is_always_on_wrapped_and_never_global(
     assert dict(private.resource.attributes) == {"service.name": "wire-svc"}
     (processor,) = _processors(private)
     assert isinstance(processor, BatchSpanProcessor)
-    assert isinstance(processor.span_exporter, LossExporter)
+    assert processor.span_exporter._inner is exporter  # guarded, no loss requeue
     span = private.get_tracer("t").start_span("sampled")
     assert span.is_recording()  # OTEL_TRACES_SAMPLER is ignored
     span.end()

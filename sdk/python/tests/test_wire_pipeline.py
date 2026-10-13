@@ -23,6 +23,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric._loss import LossEmitter
+from fabric._model_names import hashed_model
 from fabric._sequence import SourceAllocator
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.wire._model import CapturedBody, CaptureJob
@@ -55,7 +56,7 @@ def _job(
     request = _canonical({"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]})
     reply = response if response is not None else chat_response({"role": "assistant"})
     reply_bytes = reply if isinstance(reply, bytes) else _canonical(reply)
-    epoch, sequence = allocator.next_sequence()
+    epoch, sequence, _ = allocator.next_sequence()
     now = time.time_ns()
     return CaptureJob(
         exchange_id=str(uuid.uuid4()),
@@ -203,7 +204,8 @@ def test_pipeline_rejects_bad_settings(tmp_path: Path) -> None:
             {"id": "ignored", "model": "text-embedding-3", "usage": {"prompt_tokens": 8}},
             {"model": "text-embedding-3", "input_tokens": 8},
         ),
-        ("openai.chat_completions", {"model": "bad model!", "choices": "no"}, {}),
+        ("openai.chat_completions", {"model": "bad model!", "choices": "no"},
+         {"model": hashed_model("bad model!")}),  # spec 043 §7: hashed, never raw
         ("openai.chat_completions", [1, 2], {}),
     ],
 )  # fmt: skip
