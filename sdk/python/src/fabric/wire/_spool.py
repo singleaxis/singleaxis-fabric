@@ -25,9 +25,10 @@ MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
 RESERVE_BYTES = 1024 * 1024  # loss and marker records may exceed the bound by this much
 QUARANTINE_SUFFIX = ".corrupt"  # quarantined records count against the bound until removed
 ACK_SUFFIX = ".ack"  # a drainer's delivery receipt for another process's record (empty file)
-# Receipts count against the bound at their size plus this fixed overhead (an inode and a
-# directory entry), which is below any record's size: retiring a record never grows the
-# accounted total. Their number is bounded too (oldest first), as is their age.
+# A receipt counts against the bound at its size, but at least this much (an inode and a
+# directory entry), which is below any record's size: renaming a record to its receipt
+# and truncating it never grow the accounted total, even when the truncation fails. Their
+# number is bounded too (oldest first), as is their age.
 RECEIPT_OVERHEAD, DEFAULT_MAX_RECEIPTS, RECEIPT_TTL_S = 128, 4096, 3600.0
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
@@ -147,10 +148,20 @@ def _secure_dir(path: str) -> None:
     os.chmod(target, 0o700)
 
 
+def _accounted(name: str, size: int) -> int | None:
+    """The bytes a spool entry counts against the bound; ``None``: not a spool entry."""
+    if name.endswith(ACK_SUFFIX):
+        return max(size, RECEIPT_OVERHEAD)
+    return size if name.startswith(".tmp-") or name.endswith((".rec", QUARANTINE_SUFFIX)) else None
+
+
 class Spool:
-    """Bounded record directory; ``bytes`` = own writes, corrected by :meth:`rescan` (pending
-    and quarantined records and receipts all count against ``max_bytes``). ``mine`` holds
-    this process's records until their outcome is known; ``failed`` counts those that will
+    """Bounded record directory. ``bytes`` is the sum of a per-file ledger: every file this
+    process knows (pending, temp and quarantined records, receipts) at its accounted size,
+    plus own writes in flight. :meth:`rescan` rebuilds the ledger from disk (all writers);
+    every other transition sets a file's entry from what is on disk after its physical
+    step, so a failed or retried step never counts anything twice. ``mine`` holds this
+    process's records until their outcome is known; ``failed`` counts those that will
     never be delivered: quarantined (by any drainer) or gone without a drainer's receipt.
     At most ``max_receipts`` receipts are kept (never more than an eighth of the bound)."""
 
@@ -168,8 +179,14 @@ class Spool:
         self.rescan()
 
     def _init_state(self) -> None:
-        self._lock, self._order, self.holder, self.bytes = threading.Lock(), 0, False, 0
-        self.receipts = 0  # receipts on disk at the last rescan, plus this drainer's since
+        self._lock, self._order, self.holder = threading.Lock(), 0, False
+        # The ledger (guarded by ``_lock``): file name -> accounted bytes; its total; how
+        # many entries are receipts; own writes in flight; names set during a rescan.
+        self._files: dict[str, int] = {}
+        self.bytes = self.receipts = 0
+        self._writing: set[str] = set()
+        self._touched: set[str] | None = None
+        self._scan_lock = threading.Lock()  # one rescan at a time
         self._settle_lock = threading.Lock()  # one receipt consumer at a time (never the host)
         self.mine: set[str] = set()  # names this process wrote, until their outcome is known
         self._own_retiring: set[str] = set()  # own records delivered, not yet unlinked
@@ -178,6 +195,29 @@ class Spool:
 
     def _path(self, name: str) -> str:
         return os.path.join(self.dir, name)
+
+    def _account(self, name: str, size: int | None) -> None:
+        """Set ``name``'s ledger entry (``None``: gone); the caller holds ``_lock``."""
+        old = self._files.pop(name, None)
+        if size is not None:
+            self._files[name] = size
+        self.bytes += (size or 0) - (old or 0)
+        if name.endswith(ACK_SUFFIX):
+            self.receipts += (size is not None) - (old is not None)
+        if self._touched is not None:  # newer than the rescan in progress
+            self._touched.add(name)
+
+    def _observe(self, *names: str) -> None:
+        """Set each entry from disk: what a rescan would count for it now."""
+        for name in names:
+            try:
+                size = _accounted(name, os.lstat(self._path(name)).st_size)
+            except FileNotFoundError:
+                size = None
+            except OSError:
+                continue  # unknown: keep the entry (a rescan corrects it)
+            with self._lock:
+                self._account(name, size)
 
     def release(self) -> None:  # closing the lock description releases the flock
         with contextlib.suppress(OSError):
@@ -211,11 +251,12 @@ class Spool:
                "written_at_unix_nano": time.time_ns()}  # fmt: skip
         pieces = frame(doc, bodies)
         size = sum(map(len, pieces))
-        with self._lock:
+        name = f"{doc['source']['source_epoch']:020d}-{os.getpid():010d}-{order:012d}.rec"
+        with self._lock:  # admitted: counted at its full size until the outcome is known
             if self.bytes + size > self.max_bytes + (RESERVE_BYTES if reserve else 0):
                 return None
-            self.bytes += size
-        name = f"{doc['source']['source_epoch']:020d}-{os.getpid():010d}-{order:012d}.rec"
+            self._writing.add(name)
+            self._account(name, size)
         tmp = self._path(".tmp-" + name)
         try:
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
@@ -230,12 +271,15 @@ class Spool:
             os.rename(tmp, self._path(name))
             self._sync_dir()
         except BaseException:
-            with self._lock:
-                self.bytes -= size
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
+            with self._lock:
+                self._writing.discard(name)
+            self._observe(name, ".tmp-" + name)  # renamed before the failure: still counted
             raise
         with self._lock:
+            self._writing.discard(name)
+            self._account(name, size)
             self.mine.add(name)
         return name
 
@@ -249,72 +293,70 @@ class Spool:
     def exists(self, name: str) -> bool:
         return os.path.lexists(self._path(name))
 
-    def retire(self, name: str, size: int) -> None:
+    def retire(self, name: str) -> None:
         """Retire a delivered record without allocating anything. An own record is unlinked.
         Another process's becomes its receipt in place: renamed to ``<name>.ack``, then
         truncated to zero (file and directory fsync'd), so its writer never takes a
         disappearance for a delivery. An ``OSError`` (``ENOSPC``, ``EIO`` ...) leaves the
-        record pending; a retry is idempotent and finishes a partial retirement."""
+        record pending; a retry redoes only the outstanding step. Either way the ledger
+        holds what is on disk, so no outcome is counted twice. Expiring receipts over the
+        count is best effort, retried on the next retirement and rescan."""
         with self._lock:  # an own record is settled (delivered) before it disappears
             if name in self.mine:
                 self.mine.discard(name)
                 self._own_retiring.add(name)  # a retry must still unlink, not rename
             own = name in self._own_retiring
-        path, receipt, kept = self._path(name), self._path(name + ACK_SUFFIX), False
-        if own:
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(path)
-        else:
-            with contextlib.suppress(FileNotFoundError):  # renamed by an earlier attempt
-                os.rename(path, receipt)
-            kept = self._truncate(receipt)  # False: already consumed by its writer
-        self._sync_dir()
+        path, receipt = self._path(name), self._path(name + ACK_SUFFIX)
+        try:
+            if own:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(path)
+            else:
+                with contextlib.suppress(FileNotFoundError):  # renamed by an earlier attempt
+                    os.rename(path, receipt)
+                self._truncate(receipt)  # a missing receipt was consumed by its writer
+            self._sync_dir()
+        finally:
+            self._observe(name, name + ACK_SUFFIX)
         with self._lock:
             self._own_retiring.discard(name)
-            self.bytes = max(0, self.bytes - size + (RECEIPT_OVERHEAD if kept else 0))
-            self.receipts += kept
-            over = self.receipts > self.max_receipts
-        if over:
-            self._trim(self._receipt_entries())
+        self._trim()
 
     @staticmethod
-    def _truncate(path: str) -> bool:
-        """Truncate a receipt to zero and fsync it; ``False`` when it does not exist."""
+    def _truncate(path: str) -> None:
+        """Truncate a receipt to zero and fsync it; nothing when it does not exist."""
         try:
             fd = os.open(path, os.O_WRONLY | _NOFOLLOW)
         except FileNotFoundError:
-            return False
+            return
         try:
             os.ftruncate(fd, 0)
             os.fsync(fd)
         finally:
             os.close(fd)
-        return True
 
-    def _receipt_entries(self) -> list[tuple[int, str, int]]:
-        """``(mtime_ns, name, size)`` of every receipt on disk."""
+    def _trim(self) -> None:
+        """Drainer: expire the oldest receipts beyond ``max_receipts`` (their writers, if
+        still running, count those records as failures: delivery is no longer provable).
+        Best effort: a receipt that cannot be removed stays counted."""
+        with self._lock:
+            if not self.holder or self.receipts <= self.max_receipts:
+                return
         entries = []
         for name in os.listdir(self.dir):
             if name.endswith(ACK_SUFFIX) and name[0] != ".":
                 with contextlib.suppress(OSError):
-                    info = os.lstat(self._path(name))
-                    entries.append((info.st_mtime_ns, name, info.st_size))
-        return entries
-
-    def _trim(self, entries: list[tuple[int, str, int]]) -> list[tuple[int, str, int]]:
-        """Drainer: expire the oldest receipts beyond ``max_receipts`` (their writers, if
-        still running, count those records as failures: delivery is no longer provable).
-        Returns the receipts kept; corrects ``bytes`` and ``receipts``."""
+                    entries.append((os.lstat(self._path(name)).st_mtime_ns, name))
         entries.sort()
-        excess, freed = entries[: max(0, len(entries) - self.max_receipts)], 0
-        for _, name, size in excess:
-            with contextlib.suppress(FileNotFoundError):
+        for _, name in entries[: max(0, len(entries) - self.max_receipts)]:
+            try:
                 os.unlink(self._path(name))
-            freed += size + RECEIPT_OVERHEAD
-        kept = entries[len(excess) :]
-        with self._lock:
-            self.bytes, self.receipts = max(0, self.bytes - freed), len(kept)
-        return kept
+            except FileNotFoundError:
+                pass
+            except OSError:
+                continue
+            with self._lock:
+                self._account(name, None)
 
     def quarantine(self, name: str) -> None:
         """Kept for the operator, never retried; its bytes stay counted against the bound
@@ -324,8 +366,11 @@ class Spool:
             if name in self.mine:
                 self.mine.discard(name)
                 self.failed += 1
-        os.rename(self._path(name), self._path(name + QUARANTINE_SUFFIX))
-        self._sync_dir()
+        try:
+            os.rename(self._path(name), self._path(name + QUARANTINE_SUFFIX))
+            self._sync_dir()
+        finally:
+            self._observe(name, name + QUARANTINE_SUFFIX)
 
     def settle(self, names: Collection[str] | None = None) -> int:
         """Resolve own records another process drained: gone with a receipt = delivered
@@ -343,6 +388,7 @@ class Spool:
                 except FileNotFoundError:
                     receipt = False
                 with self._lock:
+                    self._account(name + ACK_SUFFIX, None)
                     if name in self.mine:  # else settled in this process meanwhile
                         self.mine.discard(name)
                         self.failed += not receipt
@@ -354,27 +400,44 @@ class Spool:
             return set(self.mine)
 
     def rescan(self) -> None:
-        """Recount pending, quarantined and receipt bytes on disk (all writers). The drainer
-        removes temp files and receipts older than an hour (a writer that exited), finishes
-        an interrupted receipt truncation and expires the oldest receipts over the count."""
-        total, receipts, stale = 0, [], time.time() - RECEIPT_TTL_S
+        """Rebuild the ledger from disk (pending, temp and quarantined records and receipts
+        of all writers). The drainer removes temp files and receipts older than an hour (a
+        writer that exited), finishes an interrupted receipt truncation and expires the
+        oldest receipts over the count. Own writes in flight, and entries set while the
+        directory was read, keep their newer ledger values."""
+        with self._scan_lock:
+            self._rescan()
+        self._trim()
+
+    def _rescan(self) -> None:
+        with self._lock:
+            self._touched = set()
+        scanned: dict[str, int] = {}
+        stale = time.time() - RECEIPT_TTL_S
         for name in os.listdir(self.dir):
-            with contextlib.suppress(OSError):
-                path, tmp, ack = self._path(name), name.startswith(".tmp-"), name.endswith(
-                    ACK_SUFFIX)  # fmt: skip
+            path, tmp, ack = self._path(name), name.startswith(".tmp-"), name.endswith(ACK_SUFFIX)
+            try:
                 info = os.lstat(path)
                 if ack and self.holder and info.st_size:  # crashed between rename and truncate
                     with contextlib.suppress(OSError):  # else counted at its size
                         self._truncate(path)  # the truncation also dates the receipt
-                        info = os.lstat(path)
+                    info = os.lstat(path)
                 if (tmp or ack) and self.holder and info.st_mtime < stale:
-                    os.unlink(path)
-                elif ack:
-                    receipts.append((info.st_mtime_ns, name, info.st_size))
-                elif tmp or name.endswith((".rec", QUARANTINE_SUFFIX)):
-                    total += info.st_size
-        total += sum(size + RECEIPT_OVERHEAD for _, _, size in receipts)
+                    with contextlib.suppress(OSError):  # else still counted
+                        os.unlink(path)
+                        continue
+            except OSError:
+                continue
+            if (size := _accounted(name, info.st_size)) is not None:
+                scanned[name] = size
         with self._lock:
-            self.bytes, self.receipts = total, len(receipts)
-        if self.holder and len(receipts) > self.max_receipts:
-            self._trim(receipts)
+            touched, self._touched = self._touched or set(), None
+            for name in touched | self._writing:
+                scanned.pop(".tmp-" + name, None)  # an own write: counted at its full size
+                if name in self._files:
+                    scanned[name] = self._files[name]
+                else:
+                    scanned.pop(name, None)
+            self._files = scanned
+            self.bytes = sum(scanned.values())
+            self.receipts = sum(name.endswith(ACK_SUFFIX) for name in scanned)

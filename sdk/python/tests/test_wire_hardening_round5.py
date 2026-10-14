@@ -88,7 +88,7 @@ def _physical(root: Path) -> tuple[int, int]:
     for path in root.iterdir():
         if path.name.endswith(".ack"):
             receipts += 1
-            total += path.stat().st_size + RECEIPT_OVERHEAD
+            total += max(path.stat().st_size, RECEIPT_OVERHEAD)
         elif path.name.endswith((".rec", ".corrupt")) or path.name.startswith(".tmp-"):
             total += path.stat().st_size
     return total, receipts
@@ -239,7 +239,7 @@ def test_rescan_finishes_a_receipt_left_untruncated(tmp_path: Path) -> None:
     size = (root / name).stat().st_size
     (root / name).rename(root / (name + ".ack"))
     reader = Spool(str(root), SPOOL_MIN)
-    assert reader.bytes == size + RECEIPT_OVERHEAD and reader.receipts == 1
+    assert reader.bytes == size and reader.receipts == 1  # at its size until truncated
     drainer = Spool(str(root), SPOOL_MIN)
     assert drainer.try_lock()
     drainer.rescan()
@@ -261,7 +261,7 @@ def test_receipts_expire_oldest_first_and_their_writer_counts_a_failure(
     assert drainer.max_receipts == 2
     for name in names:  # one at a time: distinct retirement times
         assert name is not None
-        sender._retiring[name] = (root / name).stat().st_size
+        sender._retiring[name] = None
         assert sender._retire_delivered()
     assert sorted(p.name for p in root.glob("*.ack")) == [f"{n}.ack" for n in names[1:]]
     assert drainer.receipts == 2

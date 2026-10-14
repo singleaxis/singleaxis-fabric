@@ -316,8 +316,14 @@ admission* — writing the `run_start` (or a scope inventory) to disk on the
 host's thread before the block runs — which this spec rejects for the
 reason above (§12 Q4).
 
-**Bound.** `spool_bytes` = own writes + a directory rescan every 5 s on the
-sender thread. An exchange record is admitted only while `spool_bytes +
+**Bound.** `spool_bytes` is the total of a per-file ledger: every spool
+file the process knows, at its accounted size, plus its own writes in
+flight (counted at full size from admission). A directory rescan every 5 s
+on the sender thread rebuilds the ledger from disk; every other transition
+(write, retirement step, quarantine, receipt consumption or expiry) sets
+that file's entry from what is on disk after the step, never by
+subtracting a remembered size, so a failed and retried step, or a rescan in
+between, never counts anything twice. An exchange record is admitted only while `spool_bytes +
 size ≤ FABRIC_WIRE_SPOOL_MAX_BYTES`; otherwise it is dropped and recorded as
 a `queue_full` loss. Loss and marker records may use a 1 MiB reserve above
 the bound; past it, loss ranges stay in the in-memory table (merged per key,
@@ -325,8 +331,9 @@ as 042) and are spooled when space frees, and a marker is dropped and
 counted (its scope then stays open: `unverified`, never false complete).
 With several writer processes the bound is approximate by one rescan
 interval. Delivery receipts (`*.ack`, below) count against the same bound
-at their size plus a fixed 128-byte overhead each, less than any record,
-so retiring a record never grows the accounted total. Quarantined `*.corrupt` records count against the same bound
+at their size but at least 128 bytes each (an inode and directory entry),
+less than any record, so neither the rename nor the truncation of a
+retirement grows the accounted total, even when the truncation fails. Quarantined `*.corrupt` records count against the same bound
 (own quarantines immediately, others' at the next rescan) until an operator
 removes them: quarantine never deletes evidence and never escapes the
 bound, so a spool filled with quarantined records shows as `queue_full`
@@ -342,7 +349,8 @@ marker records are exported the same way as `fabric.capture_loss` /
 `fabric.capture_heartbeat` spans. A record is retired only after every
 part succeeded: an own record is unlinked; another process's becomes its
 receipt (below). Retirement allocates nothing. If it fails (`ENOSPC`,
-`EIO`, …) the record stays pending and the drainer marks it
+`EIO`, …) the ledger keeps what is on disk, a retry redoes only the
+outstanding step, and the drainer marks the record
 *delivered-awaiting-retirement*: it is not exported again, and nothing new
 is exported until it is retired (retried with the backoff below). A
 drainer that stops meanwhile leaves it on disk for the next drainer to
@@ -379,7 +387,8 @@ fsync'd). The writer consumes (deletes) its receipts and counts those
 records delivered. A rescan by the drainer finishes a truncation a crash
 interrupted. Receipts are bounded by `FABRIC_WIRE_SPOOL_MAX_RECEIPTS`
 (default 4096, never more than `max_bytes / 1024`): past it the drainer
-expires the oldest first, and it removes receipts older than one hour (a
+expires the oldest first (best effort, retried at the next retirement and
+rescan; a receipt that cannot be removed stays counted), and it removes receipts older than one hour (a
 writer that exited). A record of this process that was quarantined (by any
 drainer) or that disappeared without a receipt (an operator, an older
 drainer, or a receipt expired before the writer consumed it) is a failure,
@@ -847,6 +856,16 @@ projected. `--run` values go through the same projection.
     J2b vectors (Sol's `gpt-4o-v919876543210`,
     `gpt-4o-a12345678901234567890`, `gpt-4o-919876543210b`) are hashed in
     actual capture telemetry and the report, in Python and Go.
+15. Revision 6 (`tests/test_wire_spool_accounting.py`): a failed receipt
+    truncation, directory fsync or receipt trim, then a rescan, then the
+    retirement retry, then admission until full keeps `spool_bytes` equal
+    to the bytes on disk and within the bound (before: 1,172 bytes admitted
+    under a 1,100-byte bound); a rescan concurrent with an own write keeps
+    it counted once; random interleavings of own and other writers'
+    admissions, drains, receipt consumption, corrupt records and rescans,
+    with `ENOSPC` injected into truncate, fsync, rename, unlink and
+    directory fsync, keep the ledger equal to the disk and within the bound
+    after every step.
 
 ## 12. Open questions
 

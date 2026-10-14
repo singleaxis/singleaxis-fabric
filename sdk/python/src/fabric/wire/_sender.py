@@ -58,7 +58,7 @@ class Sender:
         self._progress: dict[str, int] = {}  # bodies the Node already accepted, per record
         # Delivered records whose retirement failed (ENOSPC, EIO ...): still on disk, never
         # exported again by this drainer; retried before anything new is exported.
-        self._retiring: dict[str, int] = {}
+        self._retiring: dict[str, None] = {}  # names, in delivery order
         # Admission failures (lost exchanges, dropped markers) at start and at the last flush.
         self._failed_at_start = self._failed_at_flush = self._failures()
 
@@ -152,7 +152,7 @@ class Sender:
         names, batch, state = self.spool.names()[:_BATCH], [], "idle"
         for name in names:
             try:
-                doc, blob = unframe(data := self.spool.read(name))
+                doc, blob = unframe(self.spool.read(name))
             except FileNotFoundError:
                 continue
             except CorruptRecordError as corrupt:
@@ -161,12 +161,12 @@ class Sender:
             if doc["record_kind"] == "exchange" and not self._send_bodies(name, doc, blob):
                 state = "retry"
                 break
-            batch.append((name, len(data), self._span(doc)))
+            batch.append((name, self._span(doc)))
         if batch:
-            if self.exporter.export([span for _, _, span in batch]) is not SpanExportResult.SUCCESS:
+            if self.exporter.export([span for _, span in batch]) is not SpanExportResult.SUCCESS:
                 return "retry"
-            for name, size, _ in batch:
-                self._retiring[name] = size
+            for name, _ in batch:
+                self._retiring[name] = None
                 self._progress.pop(name, None)
                 self._stats["delivered"] += 1
             if not self._retire_delivered():
@@ -177,9 +177,9 @@ class Sender:
         """Retire delivered records in order (another writer's becomes its receipt in place:
         no allocation); ``False`` while one cannot be. It then stays on disk and in
         ``_retiring``, so it is never exported again; nothing new is exported meanwhile."""
-        for name, size in list(self._retiring.items()):
+        for name in list(self._retiring):
             try:
-                self.spool.retire(name, size)
+                self.spool.retire(name)
             except OSError as exc:
                 _LOG.warning("fabric.wire: delivered record not retired (%s)", type(exc).__name__)
                 return False
