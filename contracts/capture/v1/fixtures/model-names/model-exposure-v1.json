@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.model-exposure-vectors/v1",
-  "rule": "Exact allowlist entries match exactly. A 'prefix*' entry (built-in or FABRIC_WIRE_MODEL_ALLOWLIST) matches when the value starts with prefix and the rest, split on [-._:/@] with empty tokens ignored, consists only of: purely numeric tokens of at most 4 digits ('numbers'); a decimal version N.N (two numeric tokens of 1-2 digits each joined by exactly '.') counted as one number; a date, either one 8-digit token matching ^20\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])$ or three numeric tokens of 4, 2 and 2 digits joined by exactly '-' whose concatenation matches that pattern, which is not a number; tokens matching ^(v?\\d+[a-z]{0,2}|\\d+[a-z]\\d*|[a-z]\\d+)$ that are not purely numeric; or words of 'suffix_words' (case-sensitive). At most two numbers and at most one date (decision J2); tokens are read left to right, a date or decimal taking its tokens first. Values must also match ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$ and contain no '://'. Anything else is exposed as 'm-' + the first 16 hex of sha256(utf-8 value).",
+  "rule": "Exact allowlist entries match exactly. A 'prefix*' entry (built-in or FABRIC_WIRE_MODEL_ALLOWLIST) matches when the value starts with prefix and the rest, split on [-._:/@] with empty tokens ignored, consists only of: purely numeric tokens of at most 4 digits ('numbers'); a decimal version N.N (two numeric tokens of 1-2 digits each joined by exactly '.') counted as one number; a date, either one 8-digit token matching ^20\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])$ or three numeric tokens of 4, 2 and 2 digits joined by exactly '-' whose concatenation matches that pattern, which is not a number; tokens matching ^(v?\\d+[a-z]{0,2}|\\d+[a-z]\\d*|[a-z]\\d+)$ that are not purely numeric; or words of 'suffix_words' (case-sensitive). At most two numbers and at most one date (decision J2); tokens are read left to right, a date or decimal taking its tokens first. Digits are bounded in every token class (decision J2b): no token may contain a run of more than 4 digits, except a token that is exactly an 8-digit date, and the whole suffix may contain at most 6 ASCII digits not counting the 8 digits of its (at most one) date. Values must also match ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$ and contain no '://'. Anything else is exposed as 'm-' + the first 16 hex of sha256(utf-8 value).",
   "default_allowlist": [
     "gpt-*",
     "o1*",
@@ -451,11 +451,11 @@
       "exposed": "m-e1eba83bc93cb73b"
     },
     {
-      "name": "two four-digit numbers",
+      "name": "two four-digit numbers exceed the six-digit budget (J2b)",
       "value": "gpt-4o-1234-5678",
       "allowlist": [],
-      "allowed": true,
-      "exposed": "gpt-4o-1234-5678"
+      "allowed": false,
+      "exposed": "m-03ad13a40e3a48c0"
     },
     {
       "name": "snapshot number",
@@ -537,6 +537,115 @@
       ],
       "allowed": true,
       "exposed": "acme-7b-1-2"
+    },
+    {
+      "name": "digit run in a v-prefixed version token (Sol counterexample)",
+      "value": "gpt-4o-v919876543210",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-0a173ba23d382a38"
+    },
+    {
+      "name": "digit run in a letter-led version token (Sol counterexample)",
+      "value": "gpt-4o-a12345678901234567890",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-d34610cd85afa5d2"
+    },
+    {
+      "name": "digit run in a letter-suffixed version token (Sol counterexample)",
+      "value": "gpt-4o-919876543210b",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-ac1e16adf1d95b53"
+    },
+    {
+      "name": "five-digit run in a version token",
+      "value": "gpt-4o-12345b",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-98a3a818e4563d6d"
+    },
+    {
+      "name": "four-digit run in a version token",
+      "value": "gpt-4o-1234b",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4o-1234b"
+    },
+    {
+      "name": "8-digit date inside a version token is a digit run",
+      "value": "gpt-4o-v20240620",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-01cbdc5606058a70"
+    },
+    {
+      "name": "seven digits outside a date",
+      "value": "gpt-4o-12-3456",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-91fb6f97e02e011b"
+    },
+    {
+      "name": "six digits outside a date",
+      "value": "gpt-3.5-turbo-0125",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-3.5-turbo-0125"
+    },
+    {
+      "name": "date does not count toward the digit budget",
+      "value": "gpt-3.5-turbo-0125-2024-01-25",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-3.5-turbo-0125-2024-01-25"
+    },
+    {
+      "name": "real name over the digit budget needs an exact entry",
+      "value": "gpt-3.5-turbo-16k-0613",
+      "allowlist": [],
+      "allowed": false,
+      "exposed": "m-6571f9027629ecd9"
+    },
+    {
+      "name": "real name over the digit budget, exact entry",
+      "value": "gpt-3.5-turbo-16k-0613",
+      "allowlist": [
+        "gpt-3.5-turbo-16k-0613"
+      ],
+      "allowed": true,
+      "exposed": "gpt-3.5-turbo-16k-0613"
+    },
+    {
+      "name": "llama decimal and size",
+      "value": "llama-3.1-70b-instruct",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "llama-3.1-70b-instruct"
+    },
+    {
+      "name": "qwen decimal and size",
+      "value": "qwen2.5-72b-instruct",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "qwen2.5-72b-instruct"
+    },
+    {
+      "name": "dotted mini",
+      "value": "gpt-4.1-mini",
+      "allowlist": [],
+      "allowed": true,
+      "exposed": "gpt-4.1-mini"
+    },
+    {
+      "name": "custom prefix, digit run in a version token",
+      "value": "acme-v5551234567",
+      "allowlist": [
+        "acme-*"
+      ],
+      "allowed": false,
+      "exposed": "m-b7c2bb7cb9ef98ae"
     }
   ]
 }

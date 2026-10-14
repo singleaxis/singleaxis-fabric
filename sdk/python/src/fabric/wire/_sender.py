@@ -3,7 +3,7 @@
 """The spool sender (spec 043 §2), one daemon thread per process: spools loss and marker
 records, exports periodic heartbeats and, holding the spool lock, drains records in name
 order (an exchange's bodies to the Node, then its span via ``SpanExporter.export``),
-deleting each only after every part succeeded; failures retry with capped backoff."""
+retiring each only after every part succeeded; failures retry with capped backoff."""
 
 from __future__ import annotations
 
@@ -56,6 +56,9 @@ class Sender:
         self._pump_lock, self._start_lock = threading.Lock(), threading.Lock()
         self._stats: dict[str, int] = dict.fromkeys(_STATS, 0)
         self._progress: dict[str, int] = {}  # bodies the Node already accepted, per record
+        # Delivered records whose retirement failed (ENOSPC, EIO ...): still on disk, never
+        # exported again by this drainer; retried before anything new is exported.
+        self._retiring: dict[str, int] = {}
         # Admission failures (lost exchanges, dropped markers) at start and at the last flush.
         self._failed_at_start = self._failed_at_flush = self._failures()
 
@@ -144,6 +147,8 @@ class Sender:
 
     def _drain(self) -> str:
         """Deliver up to 64 ready records: ``more``, ``idle`` or ``retry``."""
+        if not self._retire_delivered():
+            return "retry"
         names, batch, state = self.spool.names()[:_BATCH], [], "idle"
         for name in names:
             try:
@@ -161,10 +166,25 @@ class Sender:
             if self.exporter.export([span for _, _, span in batch]) is not SpanExportResult.SUCCESS:
                 return "retry"
             for name, size, _ in batch:
-                self.spool.delete(name, size)
+                self._retiring[name] = size
                 self._progress.pop(name, None)
                 self._stats["delivered"] += 1
+            if not self._retire_delivered():
+                return "retry"
         return state if state == "retry" or not names else "more"
+
+    def _retire_delivered(self) -> bool:
+        """Retire delivered records in order (another writer's becomes its receipt in place:
+        no allocation); ``False`` while one cannot be. It then stays on disk and in
+        ``_retiring``, so it is never exported again; nothing new is exported meanwhile."""
+        for name, size in list(self._retiring.items()):
+            try:
+                self.spool.retire(name, size)
+            except OSError as exc:
+                _LOG.warning("fabric.wire: delivered record not retired (%s)", type(exc).__name__)
+                return False
+            del self._retiring[name]
+        return True
 
     def _quarantine(self, name: str, doc: Mapping[str, Any] | None) -> None:
         self.spool.quarantine(name)  # an own record is a failure; another writer's settles
@@ -287,7 +307,7 @@ def build_sender(
     if config.content_endpoint is not None and content is None:
         content = content_client_from_env(
             os.environ, endpoint=config.content_endpoint, service_name=service)  # fmt: skip
-    spool = Spool(config.spool_dir, config.spool_max_bytes)
+    spool = Spool(config.spool_dir, config.spool_max_bytes, config.spool_max_receipts)
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
     return Sender(spool, exporter, loss, content=content, service_name=service)
 

@@ -9,9 +9,12 @@ the value, split on ``[-._:/@]``, consists solely of version tokens: numbers, sh
 tokens (``4o``, ``o1``, ``v2``, ``70b``) or words of a fixed vocabulary (``mini``, ``turbo``,
 ``sonnet`` ...), with at most two numbers (J2): a number has at most 4 digits; a decimal
 version ``N.N`` (1-2 digits each) is one number; a date (``20YYMMDD``, or ``20YY-MM-DD`` as
-three tokens) is not a number and may appear once. So ``gpt-4o-mini-2024-07-18`` is kept
-and ``gpt-patient-jane-doe``, ``gpt-4o-123-45-6789`` and ``gpt-4o-919876543210`` are
-hashed. fabricguard (Go) applies the same rule; both are pinned
+three tokens) is not a number and may appear once. Digits are bounded in every token class
+(J2b): no token may hold a run of more than 4 digits (``v919876543210``,
+``919876543210b``), except one 8-digit date token, and the whole suffix may hold at most 6
+digits outside that one date. So ``gpt-4o-mini-2024-07-18`` is kept and
+``gpt-patient-jane-doe``, ``gpt-4o-123-45-6789``, ``gpt-4o-919876543210`` and
+``gpt-4o-v919876543210`` are hashed. fabricguard (Go) applies the same rule; both are pinned
 by ``contracts/capture/v1/fixtures/model-names/model-exposure-v1.json``.
 Imports neither ``fabric.wire`` nor ``fabric.reconstruct``.
 """
@@ -35,7 +38,8 @@ _SUFFIX_TOKEN = re.compile(r"[^-._:/@]+")
 VERSION_TOKEN = re.compile(r"^(?:v?[0-9]+[a-z]{0,2}|[0-9]+[a-z][0-9]*|[a-z][0-9]+)$")
 _NUMBER = re.compile(r"^[0-9]+$")
 _DATE = re.compile(r"^20[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$")
-MAX_SUFFIX_NUMBERS, MAX_NUMBER_DIGITS, MAX_SUFFIX_DATES = 2, 4, 1
+_LONG_DIGIT_RUN = re.compile(r"[0-9]{5}")  # J2b: a run longer than MAX_NUMBER_DIGITS
+MAX_SUFFIX_NUMBERS, MAX_NUMBER_DIGITS, MAX_SUFFIX_DATES, MAX_SUFFIX_DIGITS = 2, 4, 1, 6
 SUFFIX_WORDS = frozenset({
     "mini", "nano", "micro", "turbo", "preview", "latest", "instruct", "chat", "vision",
     "audio", "realtime", "search", "codex", "embedding", "embed", "large", "small", "medium",
@@ -65,7 +69,8 @@ def _digits(token: str, most: int = MAX_NUMBER_DIGITS) -> bool:
 
 def version_suffix(suffix: str) -> bool:
     """Whether ``suffix`` (what follows a ``prefix*`` entry's prefix) is only version tokens,
-    with at most two numbers and one date (J2; pinned by the shared vectors)."""
+    with at most two numbers and one date (J2) and bounded digits in every token (J2b: no
+    run over 4 digits but the date, at most 6 digits outside it); pinned by the vectors."""
     matches = list(_SUFFIX_TOKEN.finditer(suffix))
     tokens = [match.group() for match in matches]
     seps = [suffix[a.end() : b.start()] for a, b in itertools.pairwise(matches)]
@@ -85,11 +90,15 @@ def version_suffix(suffix: str) -> bool:
             else:
                 return False
             index += 1
-        elif VERSION_TOKEN.fullmatch(token) or token in SUFFIX_WORDS:
+        elif (VERSION_TOKEN.fullmatch(token) or token in SUFFIX_WORDS) and not (
+                _LONG_DIGIT_RUN.search(token)):  # fmt: skip
             index += 1
         else:
             return False
-    return numbers <= MAX_SUFFIX_NUMBERS and dates <= MAX_SUFFIX_DATES
+    if numbers > MAX_SUFFIX_NUMBERS or dates > MAX_SUFFIX_DATES:
+        return False
+    # J2b: every digit counts, whatever its token class, except the (single) date's 8.
+    return sum(c in "0123456789" for c in suffix) - 8 * dates <= MAX_SUFFIX_DIGITS
 
 
 def model_allowed(value: str, allowlist: Sequence[str] = ()) -> bool:

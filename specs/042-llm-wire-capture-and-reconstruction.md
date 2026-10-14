@@ -551,7 +551,7 @@ loss/heartbeat spans):
 | `fabric.wire.truncated` | bool | new |
 | `fabric.wire.store_status` | `stored`\|`partial`\|`failed`\|`disabled` | new |
 | `gen_ai.operation.name`, `gen_ai.provider.name`, `http.request.method`, `http.response.status_code`, `error.type` (exception class, on `error` only) | | existing |
-| `gen_ai.response.model` | `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` and not containing `://` | existing; only when extracted (§5); *(→ 043 §7: as is only when also allowlisted, else `m-` + 16 hex of its SHA-256)* |
+| `gen_ai.response.model` | `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` and not containing `://` | existing; only when extracted (§5); *(→ 043 §7: as is only when also allowlisted — a `prefix*` match takes only version-like suffixes with bounded digits, J2/J2b — else `m-` + 16 hex of its SHA-256)* |
 | `gen_ai.response.finish_reasons` | each one of `stop`, `length`, `tool_calls`, `content_filter`, `function_call`, `end_turn`, `max_tokens`, `stop_sequence`, `tool_use`, `pause_turn`, `refusal`, `completed`, `incomplete`, `failed`, `other` | existing; only when extracted; any other provider value becomes `other` |
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | int ≥ 0 | existing; only when extracted |
 

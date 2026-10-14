@@ -83,6 +83,8 @@ class WireConfig:
     content_endpoint: str | None = None  # node mode: bodies go to the Fabric Node (spec 043)
     spool_dir: str | None = None
     spool_max_bytes: int = 1 << 30
+    # Delivery receipts kept for other writer processes (spec 043 §2), oldest expire first.
+    spool_max_receipts: int = 4096
     model_allowlist: tuple[str, ...] = ()
     # Run-id pseudonym key (H3; FABRIC_WIRE_ID_KEY): a secret, so never in repr or logs.
     id_key: bytes | None = field(default=None, repr=False)
@@ -123,6 +125,7 @@ class WireConfig:
                 raise ValueError("spool delivery uses Fabric's exporter, not a tracer provider")
             low = 2 * self.max_body_bytes + SPOOL_RESERVE_BYTES
             _int("spool_max_bytes", self.spool_max_bytes, low)
+            _int("spool_max_receipts", self.spool_max_receipts, 1, 1 << 20)
         if self.content_endpoint is None:
             return
         check_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", str(self.content_endpoint))
@@ -204,7 +207,7 @@ def config_from_env(
     }  # fmt: skip
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
-    for name in ("MAX_BODY_BYTES", "QUEUE_MAX_ITEMS", "SPOOL_MAX_BYTES"):
+    for name in ("MAX_BODY_BYTES", "QUEUE_MAX_ITEMS", "SPOOL_MAX_BYTES", "SPOOL_MAX_RECEIPTS"):
         if value := environ.get(f"FABRIC_WIRE_{name}"):
             try:
                 kwargs[name.lower()] = int(value)

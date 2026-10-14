@@ -100,8 +100,11 @@ func (g *guard) applyCaptureLabels(attrs pcommon.Map) {
 // ignored), consists only of version tokens or words of a closed vocabulary,
 // with at most two numbers: a number has at most 4 digits, a decimal
 // version N.N (1-2 digits each) is one number, and a date (20YYMMDD, or
-// 20YY-MM-DD as three tokens) is not a number and may appear once. So
-// gpt-4o-123-45-6789 and gpt-4o-919876543210 are hashed. Anything else is
+// 20YY-MM-DD as three tokens) is not a number and may appear once. J2b bounds
+// digits in every token class: no token holds a run of more than 4 digits
+// (v919876543210, 919876543210b) except one 8-digit date token, and the whole
+// suffix holds at most 6 digits outside that date. So gpt-4o-123-45-6789,
+// gpt-4o-919876543210 and gpt-4o-v919876543210 are hashed. Anything else is
 // exposed as m- + the first 16 hex of its SHA-256. The vectors in
 // contracts/capture/v1/fixtures/model-names/model-exposure-v1.json pin the
 // rule for this, the SDK and fabric.reconstruct.
@@ -120,6 +123,8 @@ var (
 	modelVersionToken = regexp.MustCompile(`^(?:v?[0-9]+[a-z]{0,2}|[0-9]+[a-z][0-9]*|[a-z][0-9]+)$`)
 	modelNumber       = regexp.MustCompile(`^[0-9]+$`)
 	modelDate         = regexp.MustCompile(`^20[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])$`)
+	// modelLongDigitRun is a digit run longer than maxNumberDigits (J2b).
+	modelLongDigitRun = regexp.MustCompile(`[0-9]{5}`)
 	modelSuffixWords  = toSet(
 		"mini", "nano", "micro", "turbo", "preview", "latest", "instruct", "chat", "vision",
 		"audio", "realtime", "search", "codex", "embedding", "embed", "large", "small", "medium",
@@ -136,11 +141,13 @@ func validModelName(value string) bool {
 	return captureModelPattern.MatchString(value) && !strings.Contains(value, "://")
 }
 
-// J2 bounds on the numbers in a prefix* suffix.
+// J2 bounds on the numbers in a prefix* suffix; J2b on its digits.
 const (
 	maxSuffixNumbers = 2
 	maxNumberDigits  = 4
 	maxSuffixDates   = 1
+	maxSuffixDigits  = 6 // outside the one date
+	dateDigits       = 8
 )
 
 func digitsAtMost(token string, most int) bool {
@@ -150,7 +157,8 @@ func digitsAtMost(token string, most int) bool {
 // modelVersionSuffix reports whether suffix (what follows a prefix* entry's
 // prefix) is only version tokens and vocabulary words, with at most two
 // numbers (each at most 4 digits; N.N counts as one) and one date
-// (20YYMMDD, or 20YY-MM-DD as three tokens).
+// (20YYMMDD, or 20YY-MM-DD as three tokens); no version token holds a digit
+// run over 4, and the suffix holds at most 6 digits outside the date (J2b).
 func modelVersionSuffix(suffix string) bool {
 	locs := modelSuffixToken.FindAllStringIndex(suffix, -1)
 	tokens := make([]string, len(locs))
@@ -188,10 +196,22 @@ func modelVersionSuffix(suffix string) bool {
 			if _, ok := modelSuffixWords[token]; !ok && !modelVersionToken.MatchString(token) {
 				return false
 			}
+			if modelLongDigitRun.MatchString(token) {
+				return false
+			}
 			i++
 		}
 	}
-	return numbers <= maxSuffixNumbers && dates <= maxSuffixDates
+	if numbers > maxSuffixNumbers || dates > maxSuffixDates {
+		return false
+	}
+	digits := 0 // J2b: every digit counts, whatever its token class, except the date's 8
+	for _, r := range suffix {
+		if r >= '0' && r <= '9' {
+			digits++
+		}
+	}
+	return digits-dateDigits*dates <= maxSuffixDigits
 }
 
 // modelAllowed applies the allowlist rule to a value, with the built-in

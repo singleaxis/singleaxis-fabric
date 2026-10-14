@@ -73,8 +73,9 @@ unless `FABRIC_WIRE_LABELS=clear`, and the report shows the tenant as `t-` +
 32 hex and source and run ids only in pseudonymous form;
 `fixtures/run-ids/run-id-pseudonym-v1.json` pins the function (the same hex
 under every prefix). A model name after a built-in or configured `prefix*`
-carries at most two numbers of at most 4 digits and one date (spec 043 §7,
-J2; `fixtures/model-names/model-exposure-v1.json`).
+carries at most two numbers of at most 4 digits and one date, no token
+with a digit run over 4 (but an 8-digit date) and at most 6 digits outside
+the date (spec 043 §7, J2/J2b; `fixtures/model-names/model-exposure-v1.json`).
 
 **Spec 043 additions.** `scope_id` (`fabric.run.scope_id`, a lowercase
 uuid4, unique per `fabric.wire.run()` block entry) appears on exchanges

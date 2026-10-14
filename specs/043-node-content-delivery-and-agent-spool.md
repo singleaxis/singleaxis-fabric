@@ -131,6 +131,15 @@ and the capture/verifier fixes:
   three tokens) is not a number and may appear once; a decimal `N.N` (1–2
   digits each) is one number (§7). `gpt-4o-123-45-6789` and
   `gpt-4o-919876543210` are hashed.
+- **J2b Digits in every token** (Sol re-check of fd84163). Within a
+  `prefix*` match no token of any class (number, version token, word) may
+  contain a run of more than 4 digits, except a token that is exactly an
+  8-digit date; and the whole suffix holds at most 6 digits not counting
+  its (single) date. `gpt-4o-v919876543210`, `gpt-4o-919876543210b` and
+  `gpt-4o-1234-5678` are hashed; real names such as `gpt-4o-2024-08-06`,
+  `claude-3-5-sonnet-20240620`, `llama-3.1-70b-instruct` and
+  `gemini-1.5-pro-002` stay clear. Rare real names over the budget
+  (`gpt-3.5-turbo-16k-0613`) need an exact allowlist entry.
 - **J3 One tenant per Node, whatever the wiring.** `fabric-gate` enforces one
   tenant across **all** `fabriccontent` exporters of the effective
   configuration, regardless of receivers or authenticators, unless every one
@@ -142,10 +151,12 @@ and the capture/verifier fixes:
   failure (the body is closed; nothing is re-sent); `fabric-gate` requires
   every `otlphttp` exporter to list it, and the Helm and Compose configs wire
   it (H1 extended to the Node).
-- **Settled outcomes across processes (§2).** A drainer leaves a receipt
-  (`<record>.ack`, empty) before deleting another process's record; a writer
-  counts its record delivered only on that receipt, and as a failure when it
-  was quarantined (`*.corrupt`) or disappeared without one. `flush()`/
+- **Settled outcomes across processes (§2).** A drainer retires another
+  process's delivered record by renaming it in place to its receipt
+  (`<record>.ack`) and truncating it to zero, so retirement never needs new
+  disk space; receipts count against the bound and are bounded by count. A
+  writer counts its record delivered only on that receipt, and as a failure
+  when it was quarantined (`*.corrupt`) or disappeared without one. `flush()`/
   `close()` run their whole settle, the admission check included, on a
   bounded helper thread, so they return by their deadline even while another
   pump holds the lock during stalled disk I/O.
@@ -211,6 +222,7 @@ spool is in use. Capture outside the new spool, sender and content client
 | `FABRIC_TENANT_ID` | safe identifier | Required in `node` and `file` modes. |
 | `FABRIC_WIRE_SPOOL_DIR` | absolute directory | Required in `node` mode; optional otherwise (enables spool delivery). |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | int | Default 1 GiB; minimum `2 × max_body_bytes + 1 MiB`. |
+| `FABRIC_WIRE_SPOOL_MAX_RECEIPTS` | int | Delivery receipts kept for other writer processes (§2). Default 4096, 1 – 2^20; never more than `max_bytes / 1024`. |
 | `FABRIC_WIRE_MODEL_ALLOWLIST` | comma list | §7. |
 | `FABRIC_WIRE_ID_KEY` | secret, ≥ 16 bytes | Keys every label pseudonym (`r-` run ids; `s-`/`svc-` by default). Recommended in production. |
 | `FABRIC_WIRE_LABELS` | unset, `pseudonymous`, `clear` | J1. Default pseudonymous `fabric.source_id` and `service.name`; `clear` exports them unchanged (you guarantee they contain no personal data); anything else → `ValueError`. |
@@ -312,7 +324,9 @@ the bound; past it, loss ranges stay in the in-memory table (merged per key,
 as 042) and are spooled when space frees, and a marker is dropped and
 counted (its scope then stays open: `unverified`, never false complete).
 With several writer processes the bound is approximate by one rescan
-interval. Quarantined `*.corrupt` records count against the same bound
+interval. Delivery receipts (`*.ack`, below) count against the same bound
+at their size plus a fixed 128-byte overhead each, less than any record,
+so retiring a record never grows the accounted total. Quarantined `*.corrupt` records count against the same bound
 (own quarantines immediately, others' at the next rescan) until an operator
 removes them: quarantine never deletes evidence and never escapes the
 bound, so a spool filled with quarantined records shows as `queue_full`
@@ -325,8 +339,14 @@ endpoint (§3), then the span is exported with
 rebuilt from the header (resource `service.name` from the header, scope
 `fabric.wire`), with no `BatchSpanProcessor` on the capture path. Loss and
 marker records are exported the same way as `fabric.capture_loss` /
-`fabric.capture_heartbeat` spans. A record is deleted (`unlink`, then
-`fsync(dir)`) only after every part succeeded. Failures retry the same
+`fabric.capture_heartbeat` spans. A record is retired only after every
+part succeeded: an own record is unlinked; another process's becomes its
+receipt (below). Retirement allocates nothing. If it fails (`ENOSPC`,
+`EIO`, …) the record stays pending and the drainer marks it
+*delivered-awaiting-retirement*: it is not exported again, and nothing new
+is exported until it is retired (retried with the backoff below). A
+drainer that stops meanwhile leaves it on disk for the next drainer to
+export again: at-least-once, with replay-identical span ids. Failures retry the same
 record with capped exponential backoff (0.5 s doubling to 30 s). The sender
 may batch up to 64 consecutive ready records per export call.
 
@@ -352,12 +372,21 @@ are removed by the drainer.
 **flush / close.** `flush(timeout)` waits until every record this process
 wrote before the call is *settled* — deleted with a delivery outcome known,
 by whichever process drains — then sends a periodic heartbeat; `False` on
-timeout. A drainer deleting another process's record first creates an empty
-receipt `<record>.ack` (fsync'd with the deletion); the writer consumes it
-and counts the record delivered. A record of this process that was
-quarantined (by any drainer) or that disappeared without a receipt (an
-operator, an older drainer) is a failure, never a delivery. The drainer
-removes receipts older than one hour (a writer that exited). The whole
+timeout. A drainer retires another process's delivered record by renaming
+it in place to its receipt `<record>.ack` (atomic; never a moment with
+neither name), then truncating it to zero length (file and directory
+fsync'd). The writer consumes (deletes) its receipts and counts those
+records delivered. A rescan by the drainer finishes a truncation a crash
+interrupted. Receipts are bounded by `FABRIC_WIRE_SPOOL_MAX_RECEIPTS`
+(default 4096, never more than `max_bytes / 1024`): past it the drainer
+expires the oldest first, and it removes receipts older than one hour (a
+writer that exited). A record of this process that was quarantined (by any
+drainer) or that disappeared without a receipt (an operator, an older
+drainer, or a receipt expired before the writer consumed it) is a failure,
+never a delivery: the receipt is the only proof, so a delivery that can no
+longer be proven reports `False` (conservative; a running writer consumes
+its receipts every 5 s and at every flush, so this needs more than the
+receipt bound of other processes' deliveries in that window). The whole
 settle — pump, admission check and wait — runs on a helper thread: the
 caller waits only until its deadline, even while another pump holds the
 lock during stalled disk I/O (042 E9). `close()` drains, seals the epoch,
@@ -641,7 +670,11 @@ than its worst scope.
   all-digit tokens of 4, 2 and 2 digits joined by exactly `-` that form one;
   tokens are read left to right, a date or decimal taking its tokens first.
   At most two numbers and one date; any longer all-digit token fails.
-  Matching is case-sensitive. So `gpt-4o-mini-2024-07-18` and
+  J2b: no token of any class may contain a run of more than 4 digits
+  (`v919876543210`, `919876543210b` fail), except a token that is exactly
+  an 8-digit date, and the suffix holds at most 6 digits not counting its
+  date (`gpt-4o-1234-5678` fails; `gpt-3.5-turbo-16k-0613` needs an exact
+  entry). Matching is case-sensitive. So `gpt-4o-mini-2024-07-18` and
   `claude-3-5-sonnet-20240620` are kept and `gpt-patient-Jane-Doe-12345`,
   `gpt-4o-123-45-6789` and `gpt-4o-919876543210` are hashed; so are names
   whose suffix is not version-like, such as `openai/gpt-4o`,
@@ -804,6 +837,16 @@ projected. `--run` values go through the same projection.
     is refused by the gate, and the S3 client never follows a redirect, on
     the replay read included (J4); fabricguard drops a clear
     `fabric.source_id`/`service.name` unless `capture_labels: clear` (J1).
+14. Revision 5 (`tests/test_wire_hardening_round5.py`): 128 exited writer
+    processes under a 512-byte bound leave receipts that stay counted and
+    within the bound and the count; retiring a record succeeds when no new
+    file can be created; when the rename, truncation or fsync fails with
+    `ENOSPC` the record stays pending and is exported once, then retired
+    without a second export; an untruncated receipt is truncated by rescan;
+    an expired receipt makes its writer's `flush()`/`close()` `False`; the
+    J2b vectors (Sol's `gpt-4o-v919876543210`,
+    `gpt-4o-a12345678901234567890`, `gpt-4o-919876543210b`) are hashed in
+    actual capture telemetry and the report, in Python and Go.
 
 ## 12. Open questions
 

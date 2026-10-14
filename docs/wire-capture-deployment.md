@@ -69,6 +69,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix chosen by you, not an access boundary; never personal data (see below). |
 | `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). Optional in file mode, where it enables the same delivery path. |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | no | Spool bound, default 1 GiB, minimum `2 × FABRIC_WIRE_MAX_BODY_BYTES + 1 MiB`. When full, new exchanges are dropped and recorded as `queue_full` losses; the host is unaffected. |
+| `FABRIC_WIRE_SPOOL_MAX_RECEIPTS` | no | Delivery receipts kept for other processes sharing the spool, default 4096 (at most `max_bytes / 1024`); the oldest expire first. Raise it for large forked worker pools. |
 | `FABRIC_WIRE_MODEL_ALLOWLIST` | no | Comma-separated model names emitted as is, in addition to the built-in public families. An exact entry matches only that name; a `prefix*` entry matches only a version-like suffix (§3). Any other model name is emitted as `m-` + a hash. |
 | `FABRIC_WIRE_ID_KEY` | recommended in production | Secret key for identifier pseudonyms: a run id passed to `fabric.wire.run(run_id)` is emitted as `r-` + 32 hex of `HMAC-SHA256(key, run_id)`, and (by default, see `FABRIC_WIRE_LABELS`) the source id as `s-` + 32 hex and `service.name` as `svc-` + 32 hex of the same function. Unset, an unkeyed SHA-256 that anyone who can guess the value can recompute. Never logged. See "The id key" below. |
 | `FABRIC_WIRE_LABELS` | no | Unset or `pseudonymous` (default): source id and `service.name` leave the agent only as `s-`/`svc-` pseudonyms. `clear`: they are emitted unchanged; **operator-chosen labels are exported unchanged; you guarantee they contain no personal data**. Any other value is a configuration error. Run ids are pseudonymised in both modes. |
@@ -119,17 +120,24 @@ and holds message content (`0600` files, `0700` directory; host disk
 encryption is the at-rest protection). Several processes may share one
 spool directory: one drains, all write.
 
-*Delivery receipts in a shared spool.* Before the draining process deletes
-a record another process wrote, it leaves an empty receipt file
-`<record>.ack` next to it; the writer consumes the receipt and only then
-counts that record delivered. A record of a process that was quarantined
+*Delivery receipts in a shared spool.* When the draining process has
+delivered a record another process wrote, it renames that record in place
+to its receipt `<record>.ack` and truncates it to zero, so retiring a
+record never needs free disk space; the writer consumes the receipt and
+only then counts that record delivered. If the rename or truncation fails
+(a full disk), the record stays pending and is not sent again until it is
+retired. Receipts count against `FABRIC_WIRE_SPOOL_MAX_BYTES` (their size
+plus 128 bytes each) and are capped by `FABRIC_WIRE_SPOOL_MAX_RECEIPTS`
+(default 4096), oldest first. A record of a process that was quarantined
 (`*.corrupt`) by any drainer, or that disappeared without a receipt, is a
 failure for that process's `flush()`/`close()` (`False`), never a delivery.
 So removing a pending `*.rec` by hand makes its writer report `False`, and
 a drainer from an older Fabric version (which leaves no receipts) makes a
 newer writer sharing the spool report `False` too: conservative, not lost
 data. Upgrade every process sharing a spool together. The drainer removes
-receipts older than one hour (left by writers that exited). `flush()` and
+receipts older than one hour (left by writers that exited); a receipt
+expired before its writer consumed it makes that writer report `False`,
+because the delivery can no longer be proven. `flush()` and
 `close()` return by their deadline even while another process's drain is
 stalled in disk I/O.
 
@@ -538,7 +546,13 @@ words (`mini`, `nano`, `turbo`, `preview`, `latest`, `instruct`, `chat`,
 `vision`, `audio`, `realtime`, `pro`, `flash`, `lite`, `sonnet`, `opus`,
 `haiku`, `thinking`, `coder`, quantisation tags such as `fp8` or `gguf`,
 and similar; the full list and test vectors are in
-`contracts/capture/v1/fixtures/model-names/model-exposure-v1.json`). So
+`contracts/capture/v1/fixtures/model-names/model-exposure-v1.json`).
+Digits are bounded so a number cannot hide in a version: no part may
+contain more than 4 digits in a row (except one 8-digit date such as
+`20240620`), and the whole version may contain at most 6 digits besides
+that date. `gpt-4o-v919876543210` and `gpt-4o-1234-5678` are therefore
+hashed; a real name over the budget, such as `gpt-3.5-turbo-16k-0613`,
+needs an exact entry. So
 `gpt-4o-mini-2024-07-18` and `claude-3-5-sonnet-20240620` are emitted as
 is, while `gpt-4o-acme-claims-triage` or `llama-3-70b-patient-notes` are
 not: a fine-tuned or internal deployment name hiding behind a public prefix
