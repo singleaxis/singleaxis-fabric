@@ -323,7 +323,15 @@ on the sender thread rebuilds the ledger from disk; every other transition
 (write, retirement step, quarantine, receipt consumption or expiry) sets
 that file's entry from what is on disk after the step, never by
 subtracting a remembered size, so a failed and retried step, or a rescan in
-between, never counts anything twice. An exchange record is admitted only while `spool_bytes +
+between, never counts anything twice. A rename (record to receipt, record
+to `*.corrupt`, a failed write's charge to the temp file it left) moves the
+charge to the new name in one step under the admission lock, so no
+admission, and no rescan, ever sees the file uncharged; only then is the new
+name set from disk. Observation is conservative: when `lstat` fails (any
+error but the absence of a name that is not a rename's destination) the
+charge stays as it was, and a rescan that cannot observe every spool file
+releases nothing (a later complete rescan settles it). The drainer never
+takes an own write still in flight. An exchange record is admitted only while `spool_bytes +
 size ≤ FABRIC_WIRE_SPOOL_MAX_BYTES`; otherwise it is dropped and recorded as
 a `queue_full` loss. Loss and marker records may use a 1 MiB reserve above
 the bound; past it, loss ranges stay in the in-memory table (merged per key,
@@ -865,7 +873,13 @@ projected. `--run` values go through the same projection.
     admissions, drains, receipt consumption, corrupt records and rescans,
     with `ENOSPC` injected into truncate, fsync, rename, unlink and
     directory fsync, keep the ledger equal to the disk and within the bound
-    after every step.
+    after every step; a capture worker admitting concurrently while a
+    retirement (with `ENOSPC` on the truncation) or a quarantine is paused
+    right after its rename is refused at the bound (before: one record
+    past it), `EIO` on `lstat` of the rename's destination keeps it charged
+    (before: released until the next rescan), and the random interleavings
+    with a concurrent writer and `lstat` failures keep the disk within the
+    bound and the ledger at every sampled moment, and equal after a rescan.
 
 ## 12. Open questions
 

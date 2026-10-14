@@ -13,6 +13,8 @@ import contextlib
 import errno
 import os
 import random
+import threading
+import time
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -202,5 +204,230 @@ def test_interleaved_admissions_retirements_failures_and_rescans(tmp_path: Path,
         while sender._drain() == "more":
             _assert_exact(drainer, root)
     _assert_exact(drainer, root)
+    drainer.release()
+    writer.release()
+
+
+# ------------------------------------------------- rename transitions and concurrent admission
+# Sol re-check of f47efe3: a retirement or quarantine renames a record, and the ledger
+# dropped the old name before it charged the new one (separately locked), or never charged
+# it when ``lstat`` of the new name failed. An admission in that window, or after such an
+# error, went past the bound. Each test here fails on that code.
+
+
+class _Sampler:
+    """Records every sampled moment where the disk is over the ledger or over the bound.
+    The admission lock is held while sampling, so no admission is half done."""
+
+    def __init__(self, spool: Spool, root: Path) -> None:
+        self.spool, self.root, self.violations = spool, root, list[tuple[int, int]]()
+
+    def __call__(self) -> None:
+        with self.spool._lock:
+            disk, accounted = _settled_disk(self.root), self.spool.bytes
+        if disk > min(accounted, self.spool.max_bytes):
+            self.violations.append((disk, accounted))
+
+
+def _settled_disk(root: Path) -> int:
+    """:func:`_on_disk` for a directory that changes while it is read."""
+    total = 0
+    for path in root.iterdir():
+        with contextlib.suppress(FileNotFoundError):
+            size = path.stat().st_size
+            if path.name.endswith(".ack"):
+                total += max(size, RECEIPT_OVERHEAD)
+            elif path.name.endswith((".rec", ".corrupt")) or path.name.startswith(".tmp-"):
+                total += size
+    return total
+
+
+class _Hammer:
+    """A thread writing own records through the drainer's spool as fast as it is admitted
+    (the capture worker), sampling after each attempt. ``gate`` keeps it out while another
+    process writes and the drainer rescans (the documented cross-process interval)."""
+
+    def __init__(self, spool: Spool, sample: _Sampler) -> None:
+        self.spool, self.sample = spool, sample
+        self.gate, self.stop = threading.Lock(), threading.Event()
+        self.armed, self.refused = threading.Event(), threading.Event()
+        self.full, self.pauses = threading.Event(), 0
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self) -> None:
+        index = 0
+        while not self.stop.is_set():
+            armed = self.armed.is_set()
+            with self.gate:
+                index += 1
+                written: str | None = ""
+                with contextlib.suppress(OSError):
+                    written = self.spool.write(_final("own", index))
+                self.sample()
+            if written is None:  # full: let the drainer run
+                self.full.set()
+                if armed:
+                    self.refused.set()
+                time.sleep(0.0005)
+
+    def join(self) -> None:
+        self.stop.set()
+        self.thread.join(10)
+        assert not self.thread.is_alive()
+
+
+@contextlib.contextmanager
+def _paused_at(destination: Path, hammer: _Hammer) -> Iterator[None]:
+    """The drainer's first ``lstat`` of ``destination`` waits until the hammer, started
+    after the pause, has been refused admission (the spool is full by the ledger)."""
+    lstat, main = os.lstat, threading.main_thread()
+
+    def paused(path: Any, *args: Any, **kwargs: Any) -> Any:
+        mine = threading.current_thread() is main and os.fspath(path) == str(destination)
+        if mine and not hammer.armed.is_set():
+            hammer.refused.clear()
+            hammer.pauses += 1
+            hammer.armed.set()
+            assert hammer.refused.wait(10)
+        return lstat(path, *args, **kwargs)
+
+    with patch("os.lstat", paused):
+        yield
+    hammer.armed.clear()
+
+
+@pytest.mark.parametrize("operation", ["retire", "quarantine"])
+def test_admission_during_a_rename_transition_stays_within_the_bound(
+    tmp_path: Path, operation: str
+) -> None:
+    """The capture worker writes while the drainer retires another writer's record with
+    ``ENOSPC`` on the receipt's truncation (or quarantines it), paused right after the
+    rename: the record's bytes stay charged, so the full spool admits nothing. Before,
+    the worker was admitted one record past the bound in that window."""
+    root = tmp_path / "spool"
+    writer = Spool(str(root), 4000)
+    drainer = Spool(str(root), 4000)
+    assert drainer.try_lock()
+    sender = Sender(drainer, _Ok(), LossEmitter(), content=None, service_name="svc")
+    sample = _Sampler(drainer, root)
+    hammer = _Hammer(drainer, sample)
+    suffix = ".ack" if operation == "retire" else ".corrupt"
+    for counter in range(1, 7):
+        with hammer.gate:  # space frees; another process writes; the drainer rescans
+            while sender._drain() == "more":
+                pass
+            writer.settle()
+            writer.rescan()
+            foreign = writer.write(_final("writer", counter))
+            assert foreign is not None
+            if operation == "quarantine":
+                data = bytearray((root / foreign).read_bytes())
+                data[-1] ^= 1
+                (root / foreign).write_bytes(bytes(data))
+            drainer.rescan()
+            hammer.full.clear()
+        assert hammer.full.wait(10)  # full by the ledger before the drain starts
+        with _paused_at(root / (foreign + suffix), hammer), patch("os.ftruncate", _enospc):
+            sender._drain()
+        sample()
+    hammer.join()
+    assert hammer.pauses == 6  # every transition was paused with the worker admitting
+    drainer.rescan()
+    while sender._drain() == "more":
+        pass
+    drainer.rescan()
+    _assert_exact(drainer, root)
+    assert sample.violations == []
+    drainer.release()
+    writer.release()
+
+
+@pytest.mark.parametrize("operation", ["quarantine", "retire"])
+def test_a_rename_destination_that_cannot_be_observed_stays_charged(
+    tmp_path: Path, operation: str
+) -> None:
+    """``EIO`` on ``lstat`` of a quarantined record (or of a receipt left untruncated by
+    ``ENOSPC``) keeps its bytes charged: a full spool admits nothing more. Before, the
+    record's charge was released and the destination never charged until a rescan."""
+    root = tmp_path / "spool"
+    writer = Spool(str(root), LIMIT)
+    name = str(writer.write(_final("writer", 0)))
+    if operation == "quarantine":
+        data = bytearray((root / name).read_bytes())
+        data[-1] ^= 1
+        (root / name).write_bytes(bytes(data))
+    drainer = Spool(str(root), LIMIT)
+    assert drainer.try_lock()
+    while drainer.write(_final("drainer", drainer.bytes)) is not None:
+        pass
+    _assert_exact(drainer, root)
+    sender = Sender(drainer, _Ok(), LossEmitter(), content=None, service_name="svc")
+    destination = str(root / (name + (".corrupt" if operation == "quarantine" else ".ack")))
+    lstat = os.lstat
+
+    def eio(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if os.fspath(path) == destination:
+            raise OSError(errno.EIO, "injected")
+        return lstat(path, *args, **kwargs)
+
+    with patch.object(drainer, "names", lambda: [name]), patch("os.lstat", eio):
+        with patch("os.ftruncate", _enospc):
+            sender._drain()
+        assert os.path.exists(destination)
+        assert drainer.write(_final("drainer", 99)) is None
+        total, _ = _on_disk(root)
+        assert total <= drainer.bytes <= drainer.max_bytes
+    drainer.rescan()  # faults cleared: exact again
+    _assert_exact(drainer, root)
+    drainer.release()
+    writer.release()
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_concurrent_admissions_with_unobservable_files_stay_within_the_bound(
+    tmp_path: Path, seed: int
+) -> None:
+    """The interleaving property above with the capture worker writing concurrently and
+    ``lstat`` failing too: at every sampled moment the disk is within the bound and the
+    ledger; after a final rescan without faults the ledger equals the disk."""
+    rng, root = random.Random(seed), tmp_path / "spool"  # noqa: S311 - a reproducible schedule
+    writer = Spool(str(root), 4000)
+    drainer = Spool(str(root), 4000)
+    assert drainer.try_lock()
+    sender = Sender(drainer, _Ok(), LossEmitter(), content=None, service_name="svc")
+    sample = _Sampler(drainer, root)
+    hammer = _Hammer(drainer, sample)
+    targets = (*_TARGETS, "os.lstat", "os.lstat")
+    for counter in range(1, 121):
+        op = rng.choice(("foreign", "drain", "drain", "drain", "rescan", "settle", "corrupt"))
+        flaky = rng.sample(targets, rng.randint(1, 3))
+        if op == "drain":
+            with _flaky(rng, drainer, flaky), contextlib.suppress(OSError):
+                sender._drain()
+        elif op == "rescan":
+            with _flaky(rng, drainer, flaky):
+                drainer.rescan()
+        elif op == "settle":
+            writer.settle()
+        else:  # another process writes; the drainer learns it at a rescan
+            with hammer.gate:
+                if op == "foreign":
+                    writer.rescan()
+                    writer.write(_final("writer", counter))
+                elif rng.random() < 0.25:  # a corrupt record now and then
+                    path = root / f"{0:020d}-{0:010d}-{counter:012d}.rec"
+                    if drainer.bytes + 64 <= drainer.max_bytes:
+                        path.write_bytes(b"x" * 64)
+                drainer.rescan()
+        sample()
+    hammer.join()
+    drainer.rescan()
+    with contextlib.suppress(OSError):
+        while sender._drain() == "more":
+            pass
+    drainer.rescan()
+    _assert_exact(drainer, root)
+    assert sample.violations == []
     drainer.release()
     writer.release()

@@ -160,7 +160,10 @@ class Spool:
     process knows (pending, temp and quarantined records, receipts) at its accounted size,
     plus own writes in flight. :meth:`rescan` rebuilds the ledger from disk (all writers);
     every other transition sets a file's entry from what is on disk after its physical
-    step, so a failed or retried step never counts anything twice. ``mine`` holds this
+    step, so a failed or retried step never counts anything twice. A rename moves the
+    charge to the new name in one step under the admission lock, so no admission ever
+    sees the file uncharged. An observation error never lowers a charge: the entry keeps
+    its value until a rescan observes the file. ``mine`` holds this
     process's records until their outcome is known; ``failed`` counts those that will
     never be delivered: quarantined (by any drainer) or gone without a drainer's receipt.
     At most ``max_receipts`` receipts are kept (never more than an eighth of the bound)."""
@@ -207,17 +210,33 @@ class Spool:
         if self._touched is not None:  # newer than the rescan in progress
             self._touched.add(name)
 
-    def _observe(self, *names: str) -> None:
-        """Set each entry from disk: what a rescan would count for it now."""
-        for name in names:
-            try:
-                size = _accounted(name, os.lstat(self._path(name)).st_size)
-            except FileNotFoundError:
-                size = None
-            except OSError:
-                continue  # unknown: keep the entry (a rescan corrects it)
-            with self._lock:
-                self._account(name, size)
+    def _observe(self, name: str) -> None:
+        """Set ``name``'s entry from disk: what a rescan would count for it now."""
+        try:
+            size = _accounted(name, os.lstat(self._path(name)).st_size)
+        except FileNotFoundError:
+            size = None
+        except OSError:
+            return  # unknown: keep the entry (a rescan corrects it)
+        with self._lock:
+            self._account(name, size)
+
+    def _move(self, src: str, dst: str) -> None:
+        """The ledger side of a rename ``src`` -> ``dst`` that happened (now or in an earlier
+        attempt). In one step under ``_lock`` ``dst`` takes over ``src``'s charge (keeping
+        the higher, if it has one), so neither admission nor a rescan ever sees the file
+        uncharged. Then ``dst`` is set from disk only when it can be observed: on an error,
+        or when it is missing (it was just made), it keeps the charge until a rescan."""
+        with self._lock:
+            if (charge := self._files.get(src)) is not None:
+                self._account(src, None)
+                self._account(dst, max(charge, self._files.get(dst, 0)))
+        try:
+            size = _accounted(dst, os.lstat(self._path(dst)).st_size)
+        except OSError:
+            return
+        with self._lock:
+            self._account(dst, size)
 
     def release(self) -> None:  # closing the lock description releases the flock
         with contextlib.suppress(OSError):
@@ -273,9 +292,9 @@ class Spool:
         except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
+            self._failed_write(name)
             with self._lock:
                 self._writing.discard(name)
-            self._observe(name, ".tmp-" + name)  # renamed before the failure: still counted
             raise
         with self._lock:
             self._writing.discard(name)
@@ -283,8 +302,23 @@ class Spool:
             self.mine.add(name)
         return name
 
+    def _failed_write(self, name: str) -> None:
+        """Charge a failed write where its bytes are: still in the temp file (its unlink
+        failed), renamed before the failure, or gone. Unknown (an error): kept as is."""
+        try:
+            os.lstat(self._path(".tmp-" + name))
+        except FileNotFoundError:
+            self._observe(name)  # renamed before the failure (still counted), or gone
+        except OSError:
+            return
+        else:
+            self._move(name, ".tmp-" + name)
+
     def names(self) -> list[str]:
-        return sorted(n for n in os.listdir(self.dir) if n.endswith(".rec") and n[0] != ".")
+        """Pending records in drain order; never an own write still in flight."""
+        names = [n for n in os.listdir(self.dir) if n.endswith(".rec") and n[0] != "."]
+        with self._lock:
+            return sorted(n for n in names if n not in self._writing)
 
     def read(self, name: str) -> bytes:
         with os.fdopen(os.open(self._path(name), os.O_RDONLY | _NOFOLLOW), "rb") as handle:
@@ -306,7 +340,7 @@ class Spool:
                 self.mine.discard(name)
                 self._own_retiring.add(name)  # a retry must still unlink, not rename
             own = name in self._own_retiring
-        path, receipt = self._path(name), self._path(name + ACK_SUFFIX)
+        path, receipt, renamed = self._path(name), self._path(name + ACK_SUFFIX), False
         try:
             if own:
                 with contextlib.suppress(FileNotFoundError):
@@ -314,10 +348,14 @@ class Spool:
             else:
                 with contextlib.suppress(FileNotFoundError):  # renamed by an earlier attempt
                     os.rename(path, receipt)
+                renamed = True
                 self._truncate(receipt)  # a missing receipt was consumed by its writer
             self._sync_dir()
         finally:
-            self._observe(name, name + ACK_SUFFIX)
+            if own:
+                self._observe(name)
+            elif renamed:  # else the rename failed: still pending, still charged
+                self._move(name, name + ACK_SUFFIX)
         with self._lock:
             self._own_retiring.discard(name)
         self._trim()
@@ -366,11 +404,11 @@ class Spool:
             if name in self.mine:
                 self.mine.discard(name)
                 self.failed += 1
+        os.rename(self._path(name), self._path(name + QUARANTINE_SUFFIX))  # else still charged
         try:
-            os.rename(self._path(name), self._path(name + QUARANTINE_SUFFIX))
             self._sync_dir()
         finally:
-            self._observe(name, name + QUARANTINE_SUFFIX)
+            self._move(name, name + QUARANTINE_SUFFIX)
 
     def settle(self, names: Collection[str] | None = None) -> int:
         """Resolve own records another process drained: gone with a receipt = delivered
@@ -404,7 +442,9 @@ class Spool:
         of all writers). The drainer removes temp files and receipts older than an hour (a
         writer that exited), finishes an interrupted receipt truncation and expires the
         oldest receipts over the count. Own writes in flight, and entries set while the
-        directory was read, keep their newer ledger values."""
+        directory was read, keep their newer ledger values. When a file cannot be observed
+        (an error other than its absence) no entry is released: the scan only adds and
+        updates, and a later complete scan settles the rest."""
         with self._scan_lock:
             self._rescan()
         self._trim()
@@ -413,6 +453,7 @@ class Spool:
         with self._lock:
             self._touched = set()
         scanned: dict[str, int] = {}
+        unknown = False
         stale = time.time() - RECEIPT_TTL_S
         for name in os.listdir(self.dir):
             path, tmp, ack = self._path(name), name.startswith(".tmp-"), name.endswith(ACK_SUFFIX)
@@ -426,15 +467,23 @@ class Spool:
                     with contextlib.suppress(OSError):  # else still counted
                         os.unlink(path)
                         continue
+            except FileNotFoundError:
+                continue
             except OSError:
+                unknown = unknown or _accounted(name, 0) is not None  # a spool entry
                 continue
             if (size := _accounted(name, info.st_size)) is not None:
                 scanned[name] = size
         with self._lock:
             touched, self._touched = self._touched or set(), None
-            for name in touched | self._writing:
-                scanned.pop(".tmp-" + name, None)  # an own write: counted at its full size
-                if name in self._files:
+            if unknown:  # an incomplete scan releases no charge (a complete one will)
+                for name, size in self._files.items():
+                    scanned.setdefault(name, size)
+            newer = touched | self._writing
+            for name in newer:  # an own write: counted at its full size, not its temp file
+                scanned.pop(".tmp-" + name, None)
+            for name in newer:  # then the newer entries (a failed write's charge may have
+                if name in self._files:  # moved to its temp file meanwhile)
                     scanned[name] = self._files[name]
                 else:
                     scanned.pop(name, None)
