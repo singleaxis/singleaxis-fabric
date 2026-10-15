@@ -30,6 +30,23 @@ type Config struct {
 	ExtraAllowedFields      map[string][]string `mapstructure:"extra_allowed_fields"`
 	ExtraAllowedTraceFields []string            `mapstructure:"extra_allowed_trace_fields"`
 
+	// CaptureModelAllowlist extends the built-in model allowlist for
+	// gen_ai.response.model on capture spans, exactly like the SDK's
+	// FABRIC_WIRE_MODEL_ALLOWLIST: exact names or prefix* (a prefix entry
+	// admits only version-token suffixes). Other model values are exposed as
+	// m- + 16 hex of their SHA-256.
+	CaptureModelAllowlist []string `mapstructure:"capture_model_allowlist"`
+
+	// CaptureLabels is the Node counterpart of the SDK's FABRIC_WIRE_LABELS
+	// (J1). "pseudonymous" (default): capture spans may carry
+	// fabric.source_id only as s-<32 hex>, a source fallback run id only as
+	// source:s-<32 hex>:<epoch>, and their resource service.name only as
+	// svc-<32 hex>; a clear label from an old or non-conforming agent is
+	// dropped. "clear": operator-chosen labels are exported unchanged (the
+	// operator guarantees they contain no personal data) and are checked by
+	// pattern only.
+	CaptureLabels string `mapstructure:"capture_labels"`
+
 	// Retained only to fail old unsafe configurations with an actionable error.
 	// Prefix allowlisting is intentionally unsupported.
 	TraceAttributePrefixes []string `mapstructure:"trace_attribute_prefixes"`
@@ -80,6 +97,12 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("fabricguard: extra_allowed_trace_fields contains prohibited sensitive field %q", field)
 		}
 	}
+	if err := validateModelAllowlist(c.CaptureModelAllowlist); err != nil {
+		return err
+	}
+	if c.CaptureLabels != captureLabelsPseudonymous && c.CaptureLabels != captureLabelsClear {
+		return errors.New("fabricguard: capture_labels must be pseudonymous or clear")
+	}
 	if len(c.TraceAttributePrefixes) != 0 {
 		return errors.New("fabricguard: trace_attribute_prefixes is unsafe and no longer supported; use extra_allowed_trace_fields with exact metadata keys")
 	}
@@ -95,5 +118,6 @@ func createDefaultConfig() *Config {
 		MaxEventsPerSpan:    128,
 		MaxLinksPerSpan:     64,
 		MaxSliceElements:    64,
+		CaptureLabels:       captureLabelsPseudonymous,
 	}
 }

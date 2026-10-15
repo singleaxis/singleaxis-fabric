@@ -17,6 +17,15 @@
 # default ./tls) before publishing OTLP ports beyond loopback. Bearer tokens
 # over plaintext are only acceptable on a loopback interface.
 #
+# Content (spec 048): agents in node mode POST stored request/response bodies
+# to the separate otlp/content receiver (4319, HTTP only, same bearer token
+# and TLS as 4317/4318). The logs/content pipeline runs only memory_limiter
+# and the fabriccontent exporter, which verifies digest, length and tenant and
+# writes body + descriptor to the content store. The Node is the only writer;
+# agents hold no store credentials. collector-content-s3.yaml (merged by
+# docker-compose.content-s3.yml) switches the store from the local volume to
+# S3. fabric-gate refuses any routing of content into a telemetry pipeline.
+#
 # For plaintext development without tokens or TLS, use the evaluation profile
 # (collector.yaml + docker-compose.yml) on a trusted host instead -- do not
 # weaken this file for production use.
@@ -24,6 +33,12 @@
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  # Spec 048 H1: HTTP client middleware that refuses redirects. Every
+  # otlp_http exporter lists it (fabric-gate refuses one that does not): a
+  # 3xx from the destination is a retryable failure, so the batch and its
+  # Authorization header are never re-sent to another location and a
+  # redirect to a login page is never a successful export.
+  noredirect: {}
   file_storage/fabric:
     directory: /var/lib/fabric-node/queue
     timeout: 1s
@@ -34,6 +49,16 @@ extensions:
       # `directory` defaults to /var/lib/otelcol/file_storage, which does not
       # exist in this image -- keep compaction work inside the queue volume.
       directory: /var/lib/fabric-node/queue
+      on_start: true
+      on_rebound: true
+  file_storage/fabric_content:
+    # Separate durable queue for content records (up to 64 MiB each).
+    directory: /var/lib/fabric-node/content-queue
+    timeout: 1s
+    create_directory: true
+    fsync: true
+    compaction:
+      directory: /var/lib/fabric-node/content-queue
       on_start: true
       on_rebound: true
   bearertokenauth:
@@ -61,9 +86,10 @@ receivers:
             # Reject ping floods from idle clients (slow-loris-style).
             min_time: 10s
             permit_without_stream: false
-        # Uncomment to terminate TLS on gRPC ingress (required before binding
-        # beyond 127.0.0.1). Paths resolve inside the container; the Compose
-        # overlay mounts FABRIC_INGRESS_TLS_DIR at /run/fabric-node/tls.
+        # Uncomment to terminate TLS on gRPC ingress. Before binding beyond
+        # 127.0.0.1 BOTH receivers (this one and http below) need TLS;
+        # preflight fails otherwise. Paths resolve inside the container; the
+        # Compose overlay mounts FABRIC_INGRESS_TLS_DIR at /run/fabric-node/tls.
         # tls:
         #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
         #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
@@ -82,15 +108,39 @@ receivers:
         #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
         #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
         #   min_version: "1.3"
+  otlp/content:
+    protocols:
+      # HTTP only: fabric-gate refuses a content receiver with grpc.
+      http:
+        endpoint: 0.0.0.0:4319
+        auth:
+          authenticator: bearertokenauth
+        read_header_timeout: 5s
+        # Sized for one 64 MiB body over a slow link.
+        read_timeout: 120s
+        idle_timeout: 120s
+        max_request_body_size: 67108864 # 64 MiB -- one stored body per request
+        # Same TLS as the telemetry receivers; required before 4319 leaves
+        # loopback (preflight checks every published receiver).
+        # tls:
+        #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
+        #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
+        #   min_version: "1.3"
 
 processors:
   memory_limiter:
     check_interval: 1s
-    limit_mib: 512
+    # Headroom for 64 MiB content requests next to telemetry; the overlay's
+    # mem_limit sits above this so the limiter refuses before the kernel kills.
+    limit_mib: 1536
   fabricguard:
     event_class_attribute: event_class
     drop_unknown_classes: true
     max_field_bytes: 8192
+    # Spec 048 J1: capture spans keep fabric.source_id and service.name only
+    # as s-/svc- pseudonyms. Set `clear` only for agents that run with
+    # FABRIC_WIRE_LABELS=clear (you guarantee the labels hold no personal data).
+    capture_labels: pseudonymous
 
 exporters:
   otlp_http/fabric:
@@ -102,6 +152,9 @@ exporters:
       # header if the destination expects a different credential header.
       Authorization: ${env:FABRIC_EXPORT_AUTH_HEADER}
     timeout: 10s
+    # Never follow a redirect (see the noredirect extension above).
+    middlewares:
+      - id: noredirect
     tls:
       insecure: false
       # Certificate verification stays enabled. Set insecure_skip_verify only
@@ -129,9 +182,33 @@ exporters:
       # Never give up: records outlive destination outages and are delivered
       # at-least-once when the destination returns.
       max_elapsed_time: 0s
+  # Content store. Default: the local fabric-content volume, in the SDK store
+  # layout (<dir>/<tenant>/evidence/<object_id> + evidence/meta/<id>.json) that
+  # `fabric.reconstruct --store-root` reads. Only tenants listed here are
+  # written; anything else is dropped with a content-free log line.
+  fabriccontent:
+    allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
+    backend: file
+    file:
+      directory: /var/lib/fabric-node/content
+    timeout: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      # Items, not bytes: worst case queue_size x 64 MiB on the content-queue
+      # volume. preflight-prod.sh estimates this next to the telemetry queue.
+      queue_size: 64
+      block_on_overflow: true
+      storage: file_storage/fabric_content
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      # Never give up: the agent spool already handed these bytes over.
+      max_elapsed_time: 0s
 
 service:
-  extensions: [health_check, file_storage/fabric, bearertokenauth]
+  extensions: [health_check, noredirect, file_storage/fabric, file_storage/fabric_content, bearertokenauth]
   pipelines:
     traces:
       receivers: [otlp]
@@ -141,6 +218,12 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, fabricguard]
       exporters: [otlp_http/fabric]
+    # Bodies pass unchanged (no fabricguard); fabriccontent enforces the
+    # closed descriptor itself. Never routed to otlp_http/fabric.
+    logs/content:
+      receivers: [otlp/content]
+      processors: [memory_limiter]
+      exporters: [fabriccontent]
   telemetry:
     logs:
       level: info

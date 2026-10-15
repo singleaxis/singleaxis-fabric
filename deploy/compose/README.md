@@ -4,7 +4,8 @@ This is a small, explicitly non-production setup for trying the Fabric OSS
 recorder:
 
 ```text
-OTLP -> Fabric Node -> default-deny allowlist -> durable queue -> test sink
+OTLP spans   (4317/4318) -> Fabric Node -> default-deny allowlist -> durable queue -> test sink
+wire content (4319)      -> Fabric Node -> fabriccontent (digest, tenant) -> durable queue -> content store
 ```
 
 It contains only two services:
@@ -15,6 +16,41 @@ It contains only two services:
 
 There are no guardrails, prompt-time PII sidecars, judges, red-team runners,
 management services, or observability UI.
+
+## LLM wire capture content (spec 048)
+
+Agents in wire-capture node mode POST each stored request/response body to
+the separate `otlp/content` receiver on port 4319 (OTLP/HTTP only). The
+`logs/content` pipeline runs only `memory_limiter` and the `fabriccontent`
+exporter, which checks the closed descriptor, recomputes digest and length,
+accepts only `FABRIC_TENANT_ID` (default `evaluation` here) and writes the body
+and its descriptor in the SDK store layout. The Node is the only content writer;
+agents need no store credentials. `fabric-gate` refuses any config that
+routes content into a telemetry pipeline or to the OTLP destination.
+
+| Where content goes | How |
+|---|---|
+| `fabric-content` volume (`/var/lib/fabric-node/content`) | default (`make up`, `make up-prod`); read it with `fabric.reconstruct --store-root` |
+| local MinIO, SSE-S3, path-style | `make up-minio` (evaluation only, `docker-compose.minio.yml`) |
+| S3 / S3-compatible store | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content-s3.yml` + `collector-config/collector-content-s3.yaml`) |
+
+`make up-minio` starts MinIO (`MINIO_KMS_SECRET_KEY` for SSE-S3, published
+on `127.0.0.1:9000` only), a one-shot `minio-init` job that creates the
+bucket with default encryption, a writer policy and user for the Node
+(`s3:PutObject` + `s3:GetObject` on `fabric-content/fabric/content/*`) and a
+read-only user for reconstruction, and points the Node at
+`http://minio:9000` with `use_path_style` and `sse: AES256`. Only the
+`fabric-node` service receives the writer keys. Read back with the reader
+user:
+
+```bash
+AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret \
+python -m fabric.reconstruct --spans spans.json --tenant evaluation \
+  --store-uri s3://fabric-content/fabric/content/ \
+  --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1
+```
+
+All MinIO credentials have evaluation-only defaults (see `.env.example`).
 
 ## Start and inspect
 
@@ -73,12 +109,28 @@ cp .env.example .env && chmod 0600 .env
 #   FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>
 #   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
 #   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
-printf %s "$(openssl rand -hex 32)" > secrets/ingress.token && chmod 0600 secrets/ingress.token
+#   FABRIC_TENANT_ID          = <tenant id your agents send>
+printf %s "$(openssl rand -hex 32)" > secrets/ingress.token
+sudo chown "$(id -u)":65532 secrets/ingress.token && chmod 0440 secrets/ingress.token
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
-make verify-prod    # proves health, 401 unauthenticated, 200 authenticated (queue metrics warn-only)
+make verify-prod    # proves health, 401 unauthenticated (spans and content), 200 authenticated spans (queue metrics warn-only)
 make logs-prod
 ```
+
+> **File ownership matters.** The image runs as distroless `nonroot`
+> (uid/gid 65532) and Compose bind-mounts the token secret and the TLS
+> directory with their host owner and mode. A token file owned by your
+> login user with mode `0600` is unreadable inside the container and
+> `fabric-gate` refuses to start. Make each secret (token, `server.key`)
+> owned by the operator who runs `make preflight-prod`, with group 65532
+> and mode `0440`: the operator can read it so preflight can check its
+> format, the container reads it through the group, and nobody else can.
+> Certificates and CA bundles only need to be readable (`0444`).
+> `make preflight-prod` checks each mounted file it uses, and reports a
+> file it cannot read as a read failure rather than guessing at its
+> content. With a layout the operator cannot read (for example owner
+> 65532 and `0400`), run the preflight as a user that can.
 
 Use `make up-prod` for startup: it always runs the preflight first. Invoking
 the expanded `docker compose ... up` command directly skips the TLS,
@@ -87,9 +139,34 @@ entrypoint still refuses an unsafe token file or a non-traces/logs pipeline
 at container start.
 
 Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
-`127.0.0.1:4318` (HTTP) with `Authorization: Bearer <contents of
-secrets/ingress.token>`. Requests without a valid token are rejected; there is
-no unauthenticated fallback.
+`127.0.0.1:4318` (HTTP), and wire-capture content to
+`http://127.0.0.1:4319/v1/logs`, with `Authorization: Bearer <contents of
+secrets/ingress.token>`. Requests without a valid token are rejected on all
+three ports; there is no unauthenticated fallback. Set `FABRIC_TENANT_ID`
+in `.env` to the tenant id your agents send (required; the content exporter
+writes no other tenant, and the shipped configs allow exactly one: run one
+Node per tenant).
+
+**Content store.** By default content lands on the `fabric-content` volume
+(back it up with `fabric-queue`; its encryption at rest is the host disk's,
+which preflight warns about). For S3 set `FABRIC_CONTENT_BACKEND=s3`,
+`FABRIC_CONTENT_S3_BUCKET`, `FABRIC_CONTENT_S3_REGION` and optionally
+`FABRIC_CONTENT_S3_PREFIX`, `FABRIC_CONTENT_S3_SSE` (`aws:kms` by default, or
+`AES256`) and `FABRIC_CONTENT_S3_KMS_KEY_ID`; `make up-prod` then adds
+`docker-compose.content-s3.yml`. The Node writes with the EC2 instance role
+(containers reach IMDSv2 only with a metadata hop limit of 2), or, for an
+S3-compatible store, with keys from a credentials file you mount as a
+Compose secret and point `AWS_SHARED_CREDENTIALS_FILE` at in a further
+override. Never put keys in `.env`. Preflight checks the bucket name,
+prefix, region and SSE, and validates `FABRIC_CONTENT_S3_ENDPOINT` like
+`FABRIC_EXPORT_ENDPOINT`: an `https://` URL with a valid host and port and
+no user info, query or fragment (the value is never printed).
+`make verify-prod` checks that unauthenticated content is rejected, not that
+an authenticated upload reaches the store; after each deployment change run
+the content canary in
+[`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md#5-verify-a-run). See
+[`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md)
+for the minimal Node-writer and reader IAM.
 
 > **Token file format matters.** Write one token with `printf %s` and no
 > trailing newline. The shipped patched bearer authenticator rejects malformed
@@ -109,8 +186,16 @@ OTLP, health (`13133`), and metrics (`8888`) publish on `127.0.0.1` only.
 Setting `FABRIC_BIND_ADDR` to a LAN address is an explicit operator choice:
 first uncomment the `tls:` stanzas in
 `collector-config/collector-production.yaml`, drop `server.crt`/`server.key`
-into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`), and open only ports
-4317/4318 in the host firewall. Bearer tokens over plaintext must stay on
+into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`; `server.key` operator-owned,
+group 65532, mode `0440`), and open only ports
+4317/4318/4319 in the host firewall. All three ports publish on
+`FABRIC_BIND_ADDR`, so `make preflight-prod` fails unless **every**
+receiver protocol serving one of them (gRPC, HTTP and the content receiver)
+has TLS genuinely enabled: an uncommented `tls:` mapping with non-empty
+`cert_file` and `key_file`. A commented stanza, a bare `tls:`, `tls: {}`,
+`tls: null`/`~`, or a stanza missing either file counts as disabled
+(fixtures: `fixtures/preflight-tls/`). Preflight also requires every
+receiver to authenticate. Bearer tokens over plaintext must stay on
 loopback.
 
 ### Secure defaults and honest limitations
@@ -123,9 +208,23 @@ operator's responsibility. The local build is useful for evaluation, not a
 verified release identity. Static Compose checks are not Docker execution.
 
 - Ingress requires a bearer token (file-backed Compose secret); receiver TLS
-  is optional-but-supported and required before binding beyond loopback.
+  is optional-but-supported and required on every receiver before binding
+  beyond loopback.
 - Egress requires HTTPS with certificate verification and an Authorization
   header; `insecure_skip_verify` exists only for throwaway dev destinations.
+  For a destination with a private CA, put the bundle in `./tls`, uncomment
+  `ca_file` in `collector-config/collector-production.yaml` and set
+  `FABRIC_EXPORT_CA_FILE=/run/fabric-node/tls/<bundle>`; preflight checks
+  that the file exists and is readable by the container user.
+- Egress never follows an HTTP redirect: every shipped config attaches the
+  distribution's `noredirect` middleware to its OTLP/HTTP exporter, so a
+  `3xx` from the destination (or a proxy in front of it) is a retried
+  failure; the batch and its Authorization header are never re-sent to the
+  redirect target, and a redirect to a login page is never a successful
+  export. `fabric-gate` refuses an OTLP/HTTP exporter without it. Configure
+  the destination's final `https://` URL; a redirecting URL stalls delivery
+  (watch `otelcol_exporter_send_failed_*`). See
+  [wire-capture-deployment.md §2](../../docs/wire-capture-deployment.md).
 - The collector runs as nonroot with a read-only root filesystem, all
   capabilities dropped, and `no-new-privileges`.
 - This deployment configures a durable queue and retry to a client-selected

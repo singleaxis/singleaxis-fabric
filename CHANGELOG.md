@@ -22,6 +22,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   acceptance runner that records executed checks and unsupported scenarios.
 - Added a controlled HTTP semantics fixture with physical retries, error
   responses, independent effect readback and fresh authorized derivative reads.
+- Added opt-in LLM wire capture (spec 047, draft): an in-process httpx/httpx2
+  tee records the exact request/response bytes of each model call to a
+  customer store, emits one digest-only span per call with sequenced loss
+  records and heartbeats, and `python -m fabric.reconstruct` verifies a run
+  offline. No coverage claim beyond instrumented httpx/httpx2 calls.
+- Added Fabric Node content delivery and the agent durable spool (spec 048,
+  draft): agents spool capture events to disk and deliver bodies to the
+  Node's `fabriccontent` exporter, so only the Node writes to S3, MinIO or a
+  directory store; run scopes bracket exchanges with run markers.
+- Added spec 049 (draft): the four-layer capture coverage plan (context,
+  structure, content, decisions and effects) with phases P0–P5, building on
+  both the explicit evidence line (035–046) and wire capture (047/048).
+  Record-only; no evaluation or enforcement.
+- Added coexistence rules for the two capture lines: inside an explicit model
+  call (`CallRecorder` or `ByteBoundaryAdapter` with `kind="model"`) the wire
+  tee defers (`fabric/_capture_scope.py`, "explicit wins"); a
+  Fabric-protected global tracer provider never carries wire spans; the wire
+  spool refuses a directory another spool owns; `fabric-gate` and the Helm
+  chart refuse the content path on a dedicated evidence ingress and require
+  content receivers to share the telemetry receivers' authenticator.
+
+### Security
+
+- Bumped `github.com/cilium/ebpf` to v0.22.0 in the host emitter
+  (integer overflow in `LoadCollectionSpecFromReader`).
 
 ### Fixed
 

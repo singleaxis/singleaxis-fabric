@@ -1,0 +1,48 @@
+{
+  "schema_version": "fabric.run-id-pseudonym-vectors/v1",
+  "rule": "A caller-supplied run id (fabric.wire.run(run_id)) is emitted as 'r-' + the first 32 lowercase hex of HMAC-SHA256(key, run_id) when FABRIC_WIRE_ID_KEY is set and non-empty (key = its UTF-8 bytes, at least 16; capture refuses a shorter key), else of SHA-256(run_id); run_id is UTF-8 encoded. key null = unset. Generated fallback ids (trace:<32hex>, source:<source_id>:<epoch>) are emitted unchanged; a caller value that merely looks like one is still pseudonymised. fabric.reconstruct --run applies the same function to the clear id. Decision J1: the same 32 hex (same key, same input) names the other operator labels, only the prefix differs: capture emits fabric.source_id as 's-' + hex of the source id and the private provider's service.name as 'svc-' + hex of its name unless FABRIC_WIRE_LABELS=clear; the reconstruction report shows tenant ids as 't-' + hex and projects any clear (legacy) source id to its 's-' form. So for every case, 's-'/'svc-'/'t-' + pseudonym[2:] is the source, service and tenant pseudonym of run_id.",
+  "cases": [
+    {
+      "name": "unkeyed",
+      "run_id": "run-travel-42",
+      "key": null,
+      "pseudonym": "r-c5aedfd8a3ee415e277e335bf1517ff4"
+    },
+    {
+      "name": "unkeyed, identifying-looking value",
+      "run_id": "patient-Jane-Doe-12345",
+      "key": null,
+      "pseudonym": "r-65597474e780cfee23239e1a025447eb"
+    },
+    {
+      "name": "keyed",
+      "run_id": "run-travel-42",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "r-93347307304ecb0a9bb1b51ae90ac326"
+    },
+    {
+      "name": "keyed, another key",
+      "run_id": "run-travel-42",
+      "key": "another-test-key",
+      "pseudonym": "r-38a7deeab2868fd43f73a8b6c6087a1e"
+    },
+    {
+      "name": "unkeyed, looks like a trace fallback",
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+      "key": null,
+      "pseudonym": "r-468a6871d3aa53d69c25f2175d6eda6c"
+    },
+    {
+      "name": "keyed, non-ASCII key",
+      "run_id": "run-travel-42",
+      "key": "clé-de-test-fabric",
+      "pseudonym": "r-d8a715ae1deaa6876dc46950d1172cd6"
+    },
+    {
+      "name": "keyed, identifying-looking label",
+      "run_id": "patient-Jane-Doe-12345",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "r-99deef462f218621dea8efae2e7a463e"
+    }
+  ]
+}

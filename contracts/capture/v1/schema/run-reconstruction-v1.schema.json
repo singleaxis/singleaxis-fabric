@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/run-reconstruction-v1.schema.json",
+  "title": "Fabric run reconstruction v1 (draft, spec 047 rev 7, spec 048 rev 3)",
+  "description": "Output of python -m fabric.reconstruct. An integrity verdict over captured model exchanges, derived from exchange/loss/heartbeat spans and the exact bytes in the customer store: one verdict per fabric.wire.run() scope (scopes[]) and one per run (runs[]). An unscoped run is judged over its declared scope (final heartbeat rule); a scoped run aggregates the scopes the record holds and is at best complete_for_observed_scopes, because a scope that left no record cannot be claimed. It is not a quality evaluation and carries no content: provider-derived ids appear only as pseudonyms, and neither store locations nor input file paths appear (span files are named by digest).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "verifier", "inputs", "sources", "runs", "scopes"],
+  "properties": {
+    "schema_version": {"const": "fabric.run-reconstruction/v1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "fabric.reconstruct"},
+        "version": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["span_files"],
+      "properties": {
+        "span_files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sha256", "format", "records"],
+            "properties": {
+              "sha256": {"$ref": "#/$defs/digest"},
+              "format": {"enum": ["sink_jsonl", "otlp_json"]},
+              "records": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "tenant_id"],
+          "properties": {
+            "kind": {"enum": ["local", "s3"]},
+            "tenant_id": {"$ref": "#/$defs/opaqueId"}
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id", "source_epoch", "exchanges", "heartbeat_sequence",
+          "missing_sequences", "loss_ranges"
+        ],
+        "properties": {
+          "source_id": {"$ref": "#/$defs/opaqueId"},
+          "source_epoch": {"type": "integer", "minimum": 0},
+          "exchanges": {"type": "integer", "minimum": 0},
+          "heartbeat_sequence": {"type": "integer", "minimum": -1},
+          "final_heartbeat_sequence": {
+            "description": "Highest last_sequence of a final heartbeat for this epoch, when one was seen.",
+            "type": "integer", "minimum": -1
+          },
+          "missing_sequences": {"type": "array", "items": {"$ref": "#/$defs/range"}},
+          "loss_ranges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reason", "first_sequence", "last_sequence", "count"],
+              "properties": {
+                "reason": {"$ref": "#/$defs/lossReason"},
+                "first_sequence": {"type": "integer", "minimum": 0},
+                "last_sequence": {"type": "integer", "minimum": 0},
+                "count": {"type": "integer", "minimum": 1}
+              }
+            }
+          }
+        }
+      }
+    },
+    "runs": {"type": "array", "items": {"$ref": "#/$defs/run"}},
+    "scopes": {
+      "description": "One verdict per fabric.wire.run() scope of every reported run (spec 048 §6, decision H5), in run order. Completeness is claimed per scope: a scope is complete_for_declared_scope only when it is closed by its own markers, holds no missing or conflicting sequence inside its window and every exchange it tags verified. A scope that left no record (its markers and calls all lost before the agent's spool write) cannot appear here.",
+      "type": "array",
+      "items": {"$ref": "#/$defs/scopeVerdict"}
+    }
+  },
+  "$defs": {
+    "opaqueId": {
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "scopeId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "pseudonym": {
+      "description": "A provider-derived id (response, previous-response or tool-call id) as the report carries it: 'p-' + the first 16 hex of sha256(value). Equal ids map to equal pseudonyms.",
+      "type": "string", "pattern": "^p-[0-9a-f]{16}$"
+    },
+    "range": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "integer", "minimum": 0},
+        {"type": "integer", "minimum": 0}
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "lossReason": {"enum": ["queue_full", "internal_error", "shutdown", "span_dropped"]},
+    "api": {
+      "enum": [
+        "openai.chat_completions", "openai.responses", "openai.completions",
+        "openai.embeddings", "anthropic.messages"
+      ]
+    },
+    "gapType": {
+      "enum": [
+        "sequence_gap", "loss", "tail_unverified", "missing_object", "digest_mismatch",
+        "truncated", "unparsed_exchange", "prefix_break", "unmatched_tool_call",
+        "unresolved_previous_response"
+      ]
+    },
+    "check": {"enum": ["passed", "failed", "skipped", "not_applicable"]},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "loss", "tail", "bytes", "stitching"],
+      "properties": {
+        "sequence": {"$ref": "#/$defs/check"},
+        "loss": {"$ref": "#/$defs/check"},
+        "tail": {"$ref": "#/$defs/check"},
+        "bytes": {"$ref": "#/$defs/check"},
+        "stitching": {"$ref": "#/$defs/check"}
+      }
+    },
+    "scopeListing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope_id", "source_id", "source_epoch", "state", "exchanges"],
+      "properties": {
+        "scope_id": {"$ref": "#/$defs/scopeId"},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "state": {"enum": ["closed", "open", "conflict"]},
+        "start_sequence": {"type": "integer", "minimum": -1},
+        "end_sequence": {"type": "integer", "minimum": -1},
+        "exchanges": {"type": "integer", "minimum": 0}
+      }
+    },
+    "scopeVerdict": {
+      "description": "A scope's own verdict: its gaps (sequence, loss, tail and conflict gaps inside its window, and byte/stitching gaps of the exchanges it tags) and its checks. Every gap listed here is also listed by its run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope_id", "run_id", "source_id", "source_epoch", "state", "exchanges",
+        "verdict", "gaps", "checks"
+      ],
+      "properties": {
+        "scope_id": {"$ref": "#/$defs/scopeId"},
+        "run_id": {"$ref": "#/$defs/opaqueId"},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "state": {"enum": ["closed", "open", "conflict"]},
+        "start_sequence": {"type": "integer", "minimum": -1},
+        "end_sequence": {"type": "integer", "minimum": -1},
+        "exchanges": {"type": "integer", "minimum": 0},
+        "verdict": {"enum": ["complete_for_declared_scope", "partial", "unverified"]},
+        "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+        "checks": {"$ref": "#/$defs/checks"}
+      }
+    },
+    "objectCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification"],
+      "properties": {
+        "object_id": {"$ref": "#/$defs/opaqueId"},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "byte_length": {"type": "integer", "minimum": 0},
+        "verification": {"enum": ["verified", "missing", "digest_mismatch", "not_stored", "not_checked"]}
+      }
+    },
+    "exchange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exchange_id", "source_id", "source_epoch", "source_sequence", "api",
+        "started_at", "ended_at", "response_state", "parse_status", "thread_id",
+        "tool_call_ids_consumed", "tool_call_ids_emitted", "objects"
+      ],
+      "properties": {
+        "exchange_id": {"$ref": "#/$defs/opaqueId"},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "source_sequence": {"type": "integer", "minimum": 0},
+        "api": {"$ref": "#/$defs/api"},
+        "scope_id": {"$ref": "#/$defs/scopeId"},
+        "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": "string", "format": "date-time"},
+        "model": {
+          "type": "string", "minLength": 1, "maxLength": 128,
+          "pattern": "^(?!.*://)[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+        },
+        "response_id": {"$ref": "#/$defs/pseudonym"},
+        "previous_response_id": {"$ref": "#/$defs/pseudonym"},
+        "response_state": {"enum": ["complete", "closed_early", "error", "abandoned"]},
+        "parse_status": {
+          "enum": ["ok", "not_json", "undecodable_encoding", "unrecognized_shape", "truncated", "not_checked"]
+        },
+        "thread_id": {"$ref": "#/$defs/opaqueId"},
+        "continues_exchange_id": {"$ref": "#/$defs/opaqueId"},
+        "input_message_count": {"type": "integer", "minimum": 0},
+        "output_message_count": {"type": "integer", "minimum": 0},
+        "tool_call_ids_consumed": {"type": "array", "items": {"$ref": "#/$defs/pseudonym"}},
+        "tool_call_ids_emitted": {"type": "array", "items": {"$ref": "#/$defs/pseudonym"}},
+        "objects": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "request": {"$ref": "#/$defs/objectCheck"},
+            "response": {"$ref": "#/$defs/objectCheck"}
+          }
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gap_type", "effect"],
+      "properties": {
+        "gap_type": {"$ref": "#/$defs/gapType"},
+        "effect": {"enum": ["info", "partial", "unverified"]},
+        "exchange_id": {"$ref": "#/$defs/opaqueId"},
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "first_sequence": {"type": "integer", "minimum": 0},
+        "last_sequence": {"type": "integer", "minimum": 0},
+        "tool_call_id": {"$ref": "#/$defs/pseudonym"},
+        "previous_response_id": {"$ref": "#/$defs/pseudonym"},
+        "object_role": {"enum": ["request", "response"]},
+        "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
+      },
+      "dependentRequired": {
+        "first_sequence": ["source_id", "source_epoch", "last_sequence"],
+        "last_sequence": ["first_sequence"]
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_epoch", "first_sequence", "last_sequence", "heartbeat_sequence"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "first_sequence": {"type": "integer", "minimum": 0},
+        "last_sequence": {"type": "integer", "minimum": 0},
+        "heartbeat_sequence": {"type": "integer", "minimum": -1},
+        "scope_id": {
+          "description": "Present when the window is one fabric.wire.run() scope (spec 048 §6): first_sequence is its run_start last_sequence + 1 and last_sequence its run_end last_sequence.",
+          "$ref": "#/$defs/scopeId"
+        },
+        "closed_by": {
+          "description": "The evidence that proves this window's end: the run's own run_start/run_end markers, or (for a run without markers) the epoch's final heartbeat. Absent when the end is not proven.",
+          "enum": ["run_markers", "final_heartbeat"]
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id", "verdict", "declared_scope", "exchanges", "threads", "gaps", "counts", "checks"
+      ],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/opaqueId"},
+        "verdict": {
+          "description": "complete_for_declared_scope only for a run without scopes (final heartbeat rule); a run with scopes is at best complete_for_observed_scopes and never better than its worst scope.",
+          "enum": ["complete_for_declared_scope", "complete_for_observed_scopes", "partial", "unverified"]
+        },
+        "declared_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["windows"],
+          "properties": {
+            "windows": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/window"}}
+          }
+        },
+        "scopes": {
+          "description": "Every fabric.wire.run() scope seen for this run id (spec 048 §6); each one's verdict is in the top-level scopes[]. A complete run has only closed scopes.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/scopeListing"}
+        },
+        "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange"}},
+        "threads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["thread_id", "exchange_ids"],
+            "properties": {
+              "thread_id": {"$ref": "#/$defs/opaqueId"},
+              "exchange_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/opaqueId"}}
+            }
+          }
+        },
+        "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exchanges", "gaps_by_type"],
+          "properties": {
+            "exchanges": {"type": "integer", "minimum": 0},
+            "gaps_by_type": {
+              "type": "object",
+              "propertyNames": {"$ref": "#/$defs/gapType"},
+              "additionalProperties": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "checks": {"$ref": "#/$defs/checks"}
+      }
+    }
+  }
+}

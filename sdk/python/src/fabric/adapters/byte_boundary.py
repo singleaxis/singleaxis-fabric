@@ -10,10 +10,11 @@ the adapter. See spec 042 before using it for a coverage claim.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from inspect import isawaitable
 from typing import TypeVar
 
+from fabric._capture_scope import explicit_model_call
 from fabric.adapters.synthetic_evidence import SyntheticCaptureSession
 
 _T = TypeVar("_T")
@@ -44,6 +45,7 @@ class ByteBoundaryAdapter:
             raise ValueError("source_id must be a simple non-empty ASCII identifier")
         self.session = session
         self.source_id = source_id
+        self.kind = kind
         self.boundary, self.input_role, self.output_role = _ROLES[kind]
 
     def _capture_or_gap(
@@ -132,8 +134,12 @@ class ByteBoundaryAdapter:
             operation_id=operation_id,
             attempt_id=attempt_id,
         )
+        # Explicit wins: an installed wire tee defers to this record for the
+        # delegate's model request (fabric._capture_scope); nothing else changes.
+        scope = explicit_model_call() if self.kind == "model" else nullcontext()
         try:
-            result = delegate(payload)
+            with scope:
+                result = delegate(payload)
         except BaseException as exc:
             with suppress(Exception):
                 self.session.gap(

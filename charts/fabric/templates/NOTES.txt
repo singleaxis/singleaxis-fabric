@@ -14,6 +14,11 @@ Client certs:  {{ ternary "required" "not required" (dig "receiver" "requireClie
 Workload auth: {{ ternary "required (dedicated bearer credential)" "not enabled" (dig "receiver" "workloadAuthentication" "enabled" false $otel) }}
 Sampling:      unavailable in recorder v1 (accepted audit activity is not sampled)
 Debug export:  {{ ternary "ON (development only)" "OFF" (dig "debugExporter" "enabled" false $otel) }}
+{{- if dig "content" "enabled" false $otel }}
+Content:       port {{ dig "service" "ports" "otlpContent" 4319 $otel }} -> fabriccontent ({{ dig "content" "backend" "" $otel }}); the Node is the only content writer
+{{- else }}
+Content:       disabled (wire capture bodies are not accepted)
+{{- end }}
 
 {{- $endpoint := dig "exporter" "endpoint" "" $otel }}
 {{- if not $endpoint }}

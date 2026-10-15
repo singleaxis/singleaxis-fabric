@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from opentelemetry import trace
 
+from ._capture_scope import explicit_model_call
 from .byte_evidence import ByteEvidenceRecorder
 from .content_join import CONTENT_JOIN_FIELDS, capture_content_binding
 from .source_spool import _MAX_SEAL_TIMEOUT_S, SyntheticSourceSpool
@@ -277,17 +278,20 @@ class CallRecorder:
     def _activate(self, call: _Call) -> Iterator[None]:
         token = self._current.set(call)
         # Disable exception recording: exception messages can contain data.
+        # The explicit-model-call flag (fabric._capture_scope) only tells an
+        # installed wire tee to defer to this record; it changes nothing here.
         try:
-            if call.span is None:
-                yield
-            else:
-                with trace.use_span(
-                    call.span,
-                    end_on_exit=False,
-                    record_exception=False,
-                    set_status_on_exception=False,
-                ):
+            with explicit_model_call(call.fields["kind"] == "model"):
+                if call.span is None:
                     yield
+                else:
+                    with trace.use_span(
+                        call.span,
+                        end_on_exit=False,
+                        record_exception=False,
+                        set_status_on_exception=False,
+                    ):
+                        yield
         finally:
             self._current.reset(token)
 

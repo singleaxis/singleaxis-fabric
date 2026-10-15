@@ -113,7 +113,11 @@ def test_local_license_scan_requires_complete_toolchain_before_scanning(
     _utilities(bin_dir)
     available = "npm" if missing == "go" else "go"
     # Presence is sufficient for preflight; no fake inventory may be executed.
-    (bin_dir / available).symlink_to("/bin/false")
+    # Resolve `false` from the host: macOS ships it only as /usr/bin/false, and
+    # a dangling /bin/false link would make the available tool look missing.
+    false_bin = shutil.which("false")
+    assert false_bin is not None
+    (bin_dir / available).symlink_to(false_bin)
     result = subprocess.run(
         ["/bin/bash", str(root / "scripts/license_scan.sh")],
         env={**os.environ, "PATH": str(bin_dir)},

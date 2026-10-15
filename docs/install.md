@@ -107,7 +107,7 @@ helm upgrade --install fabric ./fabric-VERSION.tgz \
   --set otel-collector.exporter.sendingQueue.persistence.storageClass=customer-encrypted \
   --set otel-collector.exporter.sendingQueue.persistence.encryptionAttestationRef=storage-review-001 \
   --set otel-collector.exporter.endpoint=https://approved-otlp.example.com \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443' \

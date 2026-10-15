@@ -124,6 +124,20 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"fabric.crewai.content_sha256", "fabric.crewai.content_chars",
 	"fabric.crewai.task_description_sha256", "fabric.crewai.task_description_chars",
 	"fabric.crewai.output_chars",
+	// Spec 047 rev 3 wire capture: LLM exchange spans, capture-loss records
+	// and heartbeats. Ids, enums, digests and sequence numbers only; exact
+	// bytes stay in the customer store and all stitching is done offline from
+	// those bytes. Values are further closed by validCaptureValue.
+	"fabric.source.epoch", "fabric.run.id",
+	"fabric.wire.exchange_id", "fabric.wire.api",
+	"fabric.wire.request_sha256", "fabric.wire.response_sha256",
+	"fabric.wire.response_state", "fabric.wire.truncated", "fabric.wire.store_status",
+	"fabric.loss.reason", "fabric.loss.count",
+	"fabric.loss.first_sequence", "fabric.loss.last_sequence",
+	"fabric.heartbeat.last_sequence", "fabric.heartbeat.kind",
+	// Spec 048 run scopes: one uuid4 per fabric.wire.run() entry, on
+	// exchange spans inside the scope and on its run_start/run_end markers.
+	"fabric.run.scope_id",
 ))
 
 // BuiltInAllowedFields retains released v1 log classes. The shared envelope

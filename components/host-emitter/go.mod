@@ -3,7 +3,7 @@ module github.com/singleaxis/singleaxis-fabric/components/host-emitter
 go 1.25.0
 
 require (
-	github.com/cilium/ebpf v0.19.0
+	github.com/cilium/ebpf v0.22.0
 	go.opentelemetry.io/collector/pdata v1.56.0
 	golang.org/x/sys v0.47.0
 	google.golang.org/grpc v1.83.2

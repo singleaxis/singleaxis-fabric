@@ -1,0 +1,16 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "loss",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "order": 8,
+  "written_at_unix_nano": 1791331202950000000,
+  "loss": {
+    "reason": "queue_full",
+    "count": 2,
+    "first_sequence": 3,
+    "last_sequence": 4
+  }
+}

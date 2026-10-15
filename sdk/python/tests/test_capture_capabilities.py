@@ -32,6 +32,13 @@ def test_capability_matrix_explicitly_exposes_missing_typescript_parity() -> Non
     assert python["final_boundary_control_exchange"] == "contract_only"
 
 
+def test_wire_capture_line_is_declared_python_only() -> None:
+    python, typescript = features("python"), features("typescript")
+    for name in ("llm_wire_capture", "node_content_delivery", "offline_run_reconstruction"):
+        assert python[name] == "implemented"
+        assert typescript[name] == "not_implemented"
+
+
 @pytest.mark.parametrize("language", ["python", "typescript"])
 def test_support_declarations_are_never_hook_attestation_or_enforcement(language: str) -> None:
     result = sdk_capabilities(language)

@@ -81,6 +81,8 @@ esac
         "#!/bin/sh\nprintf 'Filesystem 1048576-blocks Used Available Capacity Mounted on\\nmock 1000 900 100 90%% /\\n'\n",
     )
     _write_executable(bin_dir / "nc", "#!/bin/sh\nexit 1\n")
+    if token_path.exists():
+        token_path.chmod(0o600)
     env = os.environ.copy()
     env.update(
         {
@@ -89,6 +91,10 @@ esac
             "FABRIC_EXPORT_AUTH_HEADER": "Bearer test-egress",
             "FABRIC_INGRESS_TOKEN_FILE": str(token_path),
             "FABRIC_BIND_ADDR": "127.0.0.1",
+            # Test files are owned by the test user, standing in for the
+            # image's nonroot 65532 (tests below exercise the real default).
+            "FABRIC_NODE_UID": str(os.getuid()),
+            "FABRIC_NODE_GID": str(os.getgid()),
         }
     )
     return env
@@ -111,14 +117,20 @@ def _write_collector_config(
         "    protocols:\n"
         "      grpc:\n"
         "        endpoint: 127.0.0.1:4317\n"
+        "        auth:\n"
+        "          authenticator: bearertokenauth\n"
         f"{grpc_limit}"
         "      http:\n"
         "        endpoint: 127.0.0.1:4318\n"
+        "        auth:\n"
+        "          authenticator: bearertokenauth\n"
         f"{http_limit}"
         "processors:\n"
         "  batch: {}\n"
         "exporters:\n"
         "  otlp_http:\n"
+        "    middlewares:\n"
+        "      - id: noredirect\n"
         "    sending_queue:\n"
         "      queue_size: 2\n",
         encoding="utf-8",
@@ -197,3 +209,156 @@ def test_preflight_disk_estimate_uses_larger_receiver_bound_and_defaults(
     )
     assert result.returncode == 0, result.stdout
     assert expected in result.stdout
+
+
+# --------------------------------------------------------------------------
+# Container-user file access (nonroot 65532) and the egress CA override
+# --------------------------------------------------------------------------
+
+
+def _preflight(
+    tmp_path: Path, token_path: Path, mode: int = 0o600, **overrides: str
+) -> subprocess.CompletedProcess[str]:
+    if not (tmp_path / "collector-config" / "collector-production.yaml").exists():
+        _write_collector_config(tmp_path)
+    env = _preflight_environment(tmp_path, token_path)
+    token_path.chmod(mode)
+    for key, value in overrides.items():
+        if value == "":
+            env.pop(key, None)
+        else:
+            env[key] = value
+    return subprocess.run(
+        ["sh", str(PREFLIGHT)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+        timeout=10,
+    )
+
+
+def _token(tmp_path: Path, mode: int) -> Path:
+    token_path = tmp_path / "ingress.token"
+    token_path.write_text("token", encoding="utf-8")
+    token_path.chmod(mode)
+    return token_path
+
+
+def test_preflight_rejects_host_owned_0600_token_for_the_nonroot_image(
+    tmp_path: Path,
+) -> None:
+    token_path = _token(tmp_path, 0o600)
+    if os.getuid() == 65532:  # pragma: no cover - only on a host running as 65532
+        pytest.skip("test user is the image user")
+    result = _preflight(tmp_path, token_path, FABRIC_NODE_UID="", FABRIC_NODE_GID="")
+    assert result.returncode == 1, result.stdout
+    assert "not readable by the container user 65532:65532" in result.stdout
+
+
+def test_preflight_accepts_group_readable_token_for_the_node_group(
+    tmp_path: Path,
+) -> None:
+    token_path = _token(tmp_path, 0o600)
+    result = _preflight(tmp_path, token_path, 0o440, FABRIC_NODE_UID="65532")
+    assert result.returncode == 0, result.stdout
+    assert "ingress token file readable by container user" in result.stdout
+
+
+def test_preflight_rejects_world_readable_token(tmp_path: Path) -> None:
+    token_path = _token(tmp_path, 0o600)
+    result = _preflight(tmp_path, token_path, 0o644)
+    assert result.returncode == 1, result.stdout
+    assert "accessible to every host user" in result.stdout
+
+
+def _write_ca_config(tmp_path: Path) -> None:
+    config_dir = tmp_path / "collector-config"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "collector-production.yaml").write_text(
+        "receivers:\n"
+        "  otlp: {}\n"
+        "processors:\n"
+        "  batch: {}\n"
+        "exporters:\n"
+        "  otlp_http:\n"
+        "    middlewares:\n"
+        "      - id: noredirect\n"
+        "    tls:\n"
+        "      ca_file: ${env:FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}\n"
+        "    sending_queue:\n"
+        "      queue_size: 2\n"
+        "service: {}\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("ca_file", "present", "expected", "code"),
+    [
+        ("/run/fabric-node/tls/corporate.pem", True, "egress CA bundle present", 0),
+        ("/run/fabric-node/tls/corporate.pem", False, "is missing or empty", 1),
+        ("", True, "egress CA bundle present", 0),  # default ca.crt
+        ("/etc/ssl/corporate.pem", True, "must be under /run/fabric-node/tls", 1),
+        (
+            "/run/fabric-node/tls/../secrets/x",
+            True,
+            "must be under /run/fabric-node/tls",
+            1,
+        ),
+    ],
+)
+def test_preflight_checks_the_selected_egress_ca_file(
+    tmp_path: Path, ca_file: str, present: bool, expected: str, code: int
+) -> None:
+    token_path = _token(tmp_path, 0o600)
+    tls_dir = tmp_path / "tls"
+    tls_dir.mkdir()
+    if present:
+        name = ca_file.rsplit("/", 1)[-1] if ca_file else "ca.crt"
+        (tls_dir / name).write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
+    _write_ca_config(tmp_path)
+    result = _preflight(tmp_path, token_path, FABRIC_EXPORT_CA_FILE=ca_file)
+    assert result.returncode == code, result.stdout
+    assert expected in result.stdout
+
+
+def test_preflight_warns_when_ca_override_is_unused(tmp_path: Path) -> None:
+    token_path = _token(tmp_path, 0o600)
+    result = _preflight(
+        tmp_path, token_path, FABRIC_EXPORT_CA_FILE="/run/fabric-node/tls/corporate.pem"
+    )
+    assert result.returncode == 0, result.stdout
+    assert "ca_file is commented out" in result.stdout
+
+
+class _TaggedLoader(yaml.SafeLoader):
+    """Reads Compose files that use !reset / !override merge tags."""
+
+
+def _tagged(loader: yaml.SafeLoader, _suffix: str, node: yaml.Node) -> object:
+    if isinstance(node, yaml.MappingNode):
+        return loader.construct_mapping(node)
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node)
+    return loader.construct_scalar(node)  # type: ignore[arg-type]
+
+
+_TaggedLoader.add_multi_constructor("!", _tagged)
+
+
+def test_production_overlay_forwards_the_egress_ca_override() -> None:
+    overlay = yaml.load(  # noqa: S506 - SafeLoader subclass
+        (COMPOSE_DIR / "docker-compose.production.yml").read_text(encoding="utf-8"),
+        Loader=_TaggedLoader,
+    )
+    environment = overlay["services"]["fabric-node"]["environment"]
+    assert environment["FABRIC_EXPORT_CA_FILE"] == (
+        "${FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}"
+    )
+    config = (COMPOSE_DIR / "collector-config/collector-production.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "${env:FABRIC_EXPORT_CA_FILE:-/run/fabric-node/tls/ca.crt}" in config

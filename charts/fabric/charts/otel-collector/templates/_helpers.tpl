@@ -51,6 +51,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "otel-collector.validateReceiver" -}}
+{{- if and .Values.content.enabled .Values.receiver.evidenceSourceBinding.enabled -}}
+{{- fail "content path cannot share the dedicated evidence ingress; deploy a separate Node" -}}
+{{- end -}}
 {{- range $key, $_ := .Values.podAnnotations -}}
 {{- if or (eq $key "checksum/config") (has $key (list "fabric.singleaxis.ai/tenant-id" "fabric.singleaxis.ai/workload-id" "fabric.singleaxis.ai/identity-attestation-ref" "fabric.singleaxis.ai/capture-policy-version" "fabric.singleaxis.ai/capture-policy-digest" "fabric.singleaxis.ai/storage-encryption-attestation-ref")) -}}
 {{- fail (printf "podAnnotations cannot override reserved deployment annotation %s" $key) -}}
@@ -145,30 +148,105 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-Every NetworkPolicyPeer an operator supplies must name an explicit
-restriction. An empty peer ({}) selects all sources/destinations, and an
-ipBlock of 0.0.0.0/0 or ::/0 is equivalent to no policy; both silently
-bypass the explicit-peers model, so they are rejected at render time.
+"true" when a LabelSelector narrows the set it selects: at least one
+matchLabels entry, or at least one matchExpressions entry with operator In or
+Exists. An empty, null or non-map selector selects everything, and a selector
+made only of NotIn/DoesNotExist expressions selects everything except a few
+labels; neither restricts anything.
+*/}}
+{{- define "otel-collector.selectorRestricts" -}}
+{{- if kindIs "map" . -}}
+{{- $labels := index . "matchLabels" -}}
+{{- $restricts := and (kindIs "map" $labels) (gt (len $labels) 0) -}}
+{{- $expressions := index . "matchExpressions" -}}
+{{- if kindIs "slice" $expressions -}}
+{{- range $e := $expressions -}}
+{{- if and (kindIs "map" $e) (has (index $e "operator" | default "" | toString) (list "In" "Exists")) -}}
+{{- $restricts = true -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $restricts -}}true{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Kubernetes types LabelSelector.matchLabels as map<string,string> and
+matchExpressions[].values as []string. `--set ...matchLabels.k=true` (or an
+unquoted `true`/`1` in a values file) yields a YAML boolean or number, which
+renders unquoted and fails the API server's type check, so the install would
+fail only at apply time. Refuse it at render time and name the --set-string
+fix. A value must also be a valid label value (at most 63 characters,
+alphanumeric at both ends, [-_.A-Za-z0-9] inside). Diagnostics name the field
+only, never a configured value.
+Arguments: (dict "selector" SELECTOR "field" NAME).
+*/}}
+{{- define "otel-collector.validateSelectorTypes" -}}
+{{- $s := .selector -}}
+{{- $f := .field -}}
+{{- $labelValue := "^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$" -}}
+{{- if kindIs "map" $s -}}
+{{- $labels := index $s "matchLabels" -}}
+{{- if and (hasKey $s "matchLabels") (not (kindIs "invalid" $labels)) (not (kindIs "map" $labels)) -}}
+{{- fail (printf "%s.matchLabels must be a map of label names to string values" $f) -}}
+{{- end -}}
+{{- if kindIs "map" $labels -}}
+{{- range $k := keys $labels | sortAlpha -}}
+{{- $v := index $labels $k -}}
+{{- if not (kindIs "string" $v) -}}
+{{- fail (printf "%s.matchLabels values must be strings (Kubernetes types matchLabels as map<string,string>); a boolean or number renders an invalid NetworkPolicy. Pass the value with --set-string, or quote it (\"true\") in a values file" $f) -}}
+{{- end -}}
+{{- if or (gt (len $v) 63) (not (regexMatch $labelValue $v)) -}}
+{{- fail (printf "%s.matchLabels values must be valid Kubernetes label values (at most 63 characters, alphanumeric at both ends, '-', '_' or '.' inside)" $f) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $expressions := index $s "matchExpressions" -}}
+{{- if kindIs "slice" $expressions -}}
+{{- range $j, $e := $expressions -}}
+{{- if kindIs "map" $e -}}
+{{- $values := index $e "values" -}}
+{{- if and (hasKey $e "values") (not (kindIs "invalid" $values)) (not (kindIs "slice" $values)) -}}
+{{- fail (printf "%s.matchExpressions[%d].values must be a list of strings" $f $j) -}}
+{{- end -}}
+{{- if kindIs "slice" $values -}}
+{{- range $v := $values -}}
+{{- if not (kindIs "string" $v) -}}
+{{- fail (printf "%s.matchExpressions[%d].values must be strings (Kubernetes types them as []string); pass them with --set-string, or quote them in a values file" $f $j) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Every NetworkPolicyPeer an operator supplies must name an effective
+restriction; anything that selects every source/destination silently bypasses
+the explicit-peers model and is rejected at render time, in every profile:
+
+  * an empty peer ({});
+  * a namespaceSelector that does not restrict (empty, null, exclusion-only)
+    without a podSelector that does: it admits every pod in every namespace;
+  * a podSelector that does not restrict, alone: every pod in the namespace;
+  * an ipBlock whose prefix length is 0 (0.0.0.0/0, ::/0, 10.0.0.0/0, ...),
+    which is equivalent to no policy;
+  * an ipBlock combined with a selector, or keys Kubernetes does not define
+    for a peer (the API server would reject or prune them).
+
+Diagnostics name the field and index only, never a configured value.
 */}}
 {{- define "otel-collector.validatePeers" -}}
 {{- range $i, $peer := .peers -}}
 {{- if or (not (kindIs "map" $peer)) (eq (len $peer) 0) -}}
 {{- fail (printf "%s[%d] is an empty peer, which selects all sources/destinations; name an explicit podSelector, namespaceSelector, or ipBlock" $.field $i) -}}
 {{- end -}}
-{{- $selectorRestricted := false -}}
-{{- range $name := list "namespaceSelector" "podSelector" -}}
-{{- if hasKey $peer $name -}}
-{{- $selector := index $peer $name -}}
-{{- if not (kindIs "map" $selector) -}}
-{{- fail (printf "%s[%d].%s must be a LabelSelector" $.field $i $name) -}}
+{{- range $key, $_ := $peer -}}
+{{- if not (has $key (list "ipBlock" "namespaceSelector" "podSelector")) -}}
+{{- fail (printf "%s[%d] may only contain ipBlock, namespaceSelector and podSelector" $.field $i) -}}
 {{- end -}}
-{{- if or (not (empty (index $selector "matchLabels"))) (not (empty (index $selector "matchExpressions"))) -}}
-{{- $selectorRestricted = true -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- if and (not (hasKey $peer "ipBlock")) (not $selectorRestricted) -}}
-{{- fail (printf "%s[%d] has no restrictive selector; empty selectors do not identify an approved workload or destination" $.field $i) -}}
 {{- end -}}
 {{- if hasKey $peer "ipBlock" -}}
 {{- $block := index $peer "ipBlock" -}}
@@ -179,11 +257,29 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- if eq $cidr "" -}}
 {{- fail (printf "%s[%d].ipBlock.cidr is required" $.field $i) -}}
 {{- end -}}
+{{- if not (regexMatch "^[0-9A-Fa-f:.]+/[0-9]{1,3}$" $cidr) -}}
+{{- fail (printf "%s[%d].ipBlock.cidr must be an address/prefix-length CIDR" $.field $i) -}}
+{{- end -}}
 {{- if regexMatch "/0+$" $cidr -}}
-{{- fail (printf "%s[%d] uses world CIDR %s, which is equivalent to no policy; name a specific CIDR or selector" $.field $i $cidr) -}}
+{{- fail (printf "%s[%d] uses a world CIDR (prefix length 0), which is equivalent to no policy; name a specific CIDR or selector" $.field $i) -}}
 {{- end -}}
 {{- if or (hasKey $peer "namespaceSelector") (hasKey $peer "podSelector") -}}
-{{- fail (printf "%s[%d] must not combine ipBlock with label selectors" $.field $i) -}}
+{{- fail (printf "%s[%d].ipBlock cannot be combined with namespaceSelector or podSelector in one peer" $.field $i) -}}
+{{- end -}}
+{{- else -}}
+{{- range $sel := list "namespaceSelector" "podSelector" -}}
+{{- if hasKey $peer $sel -}}
+{{- $selector := index $peer $sel -}}
+{{- if and (not (kindIs "map" $selector)) (not (kindIs "invalid" $selector)) -}}
+{{- fail (printf "%s[%d].%s must be a LabelSelector" $.field $i $sel) -}}
+{{- end -}}
+{{- include "otel-collector.validateSelectorTypes" (dict "selector" (index $peer $sel) "field" (printf "%s[%d].%s" $.field $i $sel)) -}}
+{{- end -}}
+{{- end -}}
+{{- $nsRestricts := and (hasKey $peer "namespaceSelector") (include "otel-collector.selectorRestricts" (index $peer "namespaceSelector")) -}}
+{{- $podRestricts := and (hasKey $peer "podSelector") (include "otel-collector.selectorRestricts" (index $peer "podSelector")) -}}
+{{- if not (or $nsRestricts $podRestricts) -}}
+{{- fail (printf "%s[%d] does not restrict sources/destinations: an empty or exclusion-only namespaceSelector needs a podSelector that narrows it, and an empty podSelector alone selects every pod in the namespace; name matchLabels or an In/Exists matchExpression" $.field $i) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -199,8 +295,9 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- include "otel-collector.validatePeers" (dict "peers" $ee.to "field" "networkPolicy.exporterEgress.to") -}}
 {{- include "otel-collector.validatePeers" (dict "peers" $np.egressTo "field" "networkPolicy.egressTo") -}}
 {{- if and (kindIs "map" $np.monitoringNamespaceSelector) (gt (len $np.monitoringNamespaceSelector) 0) -}}
-{{- if and (empty (index $np.monitoringNamespaceSelector "matchLabels")) (empty (index $np.monitoringNamespaceSelector "matchExpressions")) -}}
-{{- fail "networkPolicy.monitoringNamespaceSelector must name matchLabels or matchExpressions; an empty selector would open the health port to every namespace" -}}
+{{- include "otel-collector.validateSelectorTypes" (dict "selector" $np.monitoringNamespaceSelector "field" "networkPolicy.monitoringNamespaceSelector") -}}
+{{- if not (include "otel-collector.selectorRestricts" $np.monitoringNamespaceSelector) -}}
+{{- fail "networkPolicy.monitoringNamespaceSelector must name matchLabels or an In/Exists matchExpression; an empty or exclusion-only selector would open the health port to every namespace" -}}
 {{- end -}}
 {{- end -}}
 {{- if $np.requireExplicitIngress -}}
@@ -210,6 +307,19 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- if not $hasIngressPeers -}}
 {{- fail "networkPolicy.requireExplicitIngress=true requires an operator-supplied networkPolicy.ingressFrom peer" -}}
 {{- end -}}
+{{- end -}}
+{{- $ce := $np.contentEgress -}}
+{{- $hasContentPeers := gt (len $ce.to) 0 -}}
+{{- $hasContentPorts := gt (len $ce.ports) 0 -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $ce.to "field" "networkPolicy.contentEgress.to") -}}
+{{- if and (or $hasContentPeers $hasContentPorts) (not $np.enabled) -}}
+{{- fail "networkPolicy.contentEgress is configured but networkPolicy.enabled=false; enable the policy or remove the misleading rule" -}}
+{{- end -}}
+{{- if ne $hasContentPeers $hasContentPorts -}}
+{{- fail "networkPolicy.contentEgress requires both non-empty to and ports lists" -}}
+{{- end -}}
+{{- if and $np.enabled $ee.requireExplicit .Values.content.enabled (eq .Values.content.backend "s3") (not $hasContentPeers) -}}
+{{- fail "content.backend=s3 with networkPolicy.exporterEgress.requireExplicit=true requires operator-supplied networkPolicy.contentEgress.to and ports for the content store (and STS when using IRSA)" -}}
 {{- end -}}
 {{- if and (or $hasPeers $hasPorts) (not $np.enabled) -}}
 {{- fail "networkPolicy.exporterEgress is configured but networkPolicy.enabled=false; enable the policy or remove the misleading rule" -}}
@@ -239,11 +349,79 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Destination URL rule shared by exporter.endpoint and content.s3.endpoint:
+an absolute http(s) URL whose authority is exactly host[:port] -- a DNS name,
+a dotted IPv4 address or a bracketed IPv6 address, and a port 1-65535 --
+followed by an optional path. User info, a query or a fragment would put a
+credential (or a signed token) into the rendered ConfigMap, so they are
+refused; credentials belong in Secret-backed settings. Whether https is
+required is decided by the caller (exporter.requireTLS). Every diagnostic is
+fixed text naming the field: the configured value is never echoed.
+Arguments: (dict "url" URL "field" NAME "credentials" HINT).
+*/}}
+{{- define "otel-collector.validateURL" -}}
+{{- $u := .url | toString -}}
+{{- $f := .field -}}
+{{- if not (regexMatch "^https?://" $u) -}}
+{{- fail (printf "%s must be an absolute http:// or https:// URL" $f) -}}
+{{- end -}}
+{{- if regexMatch "[[:space:][:cntrl:]\\\\]" $u -}}
+{{- fail (printf "%s must not contain whitespace, control characters or a backslash" $f) -}}
+{{- end -}}
+{{- if contains "@" $u -}}
+{{- fail (printf "%s must not contain user info (user:password@ or any '@'); %s" $f .credentials) -}}
+{{- end -}}
+{{- if or (contains "?" $u) (contains "#" $u) -}}
+{{- fail (printf "%s must not contain a query or fragment ('?' or '#'); %s" $f .credentials) -}}
+{{- end -}}
+{{- $authority := regexReplaceAll "^https?://" $u "" | regexFind "^[^/]*" -}}
+{{- $host := $authority -}}
+{{- $port := "" -}}
+{{- $hasPort := false -}}
+{{- if hasPrefix "[" $authority -}}
+{{- $host = regexFind "^\\[[^\\]]*\\]" $authority -}}
+{{- $after := trimPrefix $host $authority -}}
+{{- if and $host $after -}}
+{{- $hasPort = true -}}
+{{- $port = regexFind "^:.*$" $after | trimPrefix ":" -}}
+{{- if not (hasPrefix ":" $after) -}}
+{{- $host = "" -}}
+{{- end -}}
+{{- end -}}
+{{- else if contains ":" $authority -}}
+{{- $hasPort = true -}}
+{{- $host = regexReplaceAll ":[^:]*$" $authority "" -}}
+{{- $port = regexFind "[^:]*$" $authority -}}
+{{- end -}}
+{{- $hostOK := false -}}
+{{- if hasPrefix "[" $host -}}
+{{- $hostOK = regexMatch "^\\[[0-9A-Fa-f.]*:[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*\\]$" $host -}}
+{{- else if regexMatch "^[0-9.]+$" $host -}}
+{{- if regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}$" $host -}}
+{{- $hostOK = true -}}
+{{- range $octet := splitList "." $host -}}
+{{- if gt (atoi $octet) 255 -}}
+{{- $hostOK = false -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- else -}}
+{{- $hostOK = and (le (len $host) 253) (regexMatch "^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$" $host) -}}
+{{- end -}}
+{{- if not $hostOK -}}
+{{- fail (printf "%s host must be a DNS name, a dotted IPv4 address or a bracketed IPv6 address" $f) -}}
+{{- end -}}
+{{- if and $hasPort (not (and (regexMatch "^[1-9][0-9]{0,4}$" $port) (le (atoi $port) 65535))) -}}
+{{- fail (printf "%s port must be a number from 1 to 65535" $f) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "otel-collector.validateDelivery" -}}
 {{- $e := .Values.exporter -}}
 {{- $p := $e.sendingQueue.persistence -}}
-{{- if and $e.endpoint (not (regexMatch "^https?://" $e.endpoint)) -}}
-{{- fail "exporter.endpoint must be an absolute http:// or https:// URL" -}}
+{{- if $e.endpoint -}}
+{{- include "otel-collector.validateURL" (dict "url" $e.endpoint "field" "exporter.endpoint" "credentials" "send credentials through exporter.auth.secret") -}}
 {{- end -}}
 {{- if $e.requireTLS -}}
 {{- if not (hasPrefix "https://" $e.endpoint) -}}
@@ -318,4 +496,119 @@ bypass the explicit-peers model, so they are rejected at render time.
 {{- fail "otel-collector: no exporters resolved" -}}
 {{- end -}}
 {{- join ", " $names -}}
+{{- end -}}
+
+{{/*
+Content delivery path (spec 048 F4). Every check here runs at render time so
+an install cannot start a Node whose content exporter would refuse its own
+configuration, accept every tenant, or silently write unencrypted objects in
+a profile that requires encryption.
+*/}}
+{{- define "otel-collector.validateContent" -}}
+{{- $c := .Values.content -}}
+{{- if $c.enabled -}}
+{{- $tenantRe := "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$" -}}
+{{- if eq (len $c.allowedTenants) 0 -}}
+{{- fail "content.enabled=true requires content.allowedTenants: name every FABRIC_TENANT_ID the Node may write; an empty list would accept no content and is refused" -}}
+{{- end -}}
+{{- range $i, $tenant := $c.allowedTenants -}}
+{{- if not (regexMatch $tenantRe (toString $tenant)) -}}
+{{- fail (printf "content.allowedTenants[%d] must match %s" $i $tenantRe) -}}
+{{- end -}}
+{{- end -}}
+{{- if and (gt (len $c.allowedTenants) 1) (not $c.allowMultipleTenants) -}}
+{{- fail "content.allowedTenants lists more than one tenant: a content record names its own tenant, so any authenticated agent could write under another tenant. Run one Node per tenant, or set content.allowMultipleTenants=true to trust every authenticated agent to name its tenant" -}}
+{{- end -}}
+{{- if not (has $c.backend (list "file" "s3")) -}}
+{{- fail "content.enabled=true requires content.backend: s3 or file" -}}
+{{- end -}}
+{{- if $c.requireServerSideEncryption -}}
+{{- if eq $c.backend "file" -}}
+{{- fail "content.requireServerSideEncryption=true refuses content.backend=file (no server-side encryption); use backend=s3 with content.s3.sse" -}}
+{{- end -}}
+{{- if not $c.s3.sse -}}
+{{- fail "content.requireServerSideEncryption=true requires content.s3.sse (aws:kms with content.s3.kmsKeyId, or AES256)" -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $c.backend "file" -}}
+{{- $dir := include "otel-collector.contentFileDirectory" . -}}
+{{- $root := .Values.exporter.sendingQueue.persistence.directory | toString -}}
+{{- if or (not (hasPrefix "/" $dir)) (eq $dir "/") (hasSuffix "/" $dir) (ne (clean $dir) $dir) -}}
+{{- fail "content.file.directory must be an absolute, clean container path without a trailing slash" -}}
+{{- end -}}
+{{- if or (not (hasPrefix (printf "%s/" $root) $dir)) (eq $dir (printf "%s/content-queue" $root)) (hasPrefix (printf "%s/content-queue/" $root) $dir) -}}
+{{- fail "content.file.directory must lie inside exporter.sendingQueue.persistence.directory (and outside its content-queue): the exporter must create the content root itself" -}}
+{{- end -}}
+{{- if ne (int .Values.replicaCount) 1 -}}
+{{- fail "content.backend=file requires replicaCount=1; each replica has its own volume, so content would be split across them. Use backend=s3 for more than one replica" -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $c.backend "s3" -}}
+{{- $s3 := $c.s3 -}}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$" ($s3.bucket | toString)) -}}
+{{- fail "content.backend=s3 requires content.s3.bucket (a valid bucket name, no scheme or path)" -}}
+{{- end -}}
+{{- $prefix := $s3.prefix | toString -}}
+{{- if or (not (hasSuffix "/" $prefix)) (hasPrefix "/" $prefix) (regexMatch "(^|/)\\.\\.?(/|$)" $prefix) (contains "//" $prefix) -}}
+{{- fail "content.s3.prefix must end with \"/\", must not start with \"/\" and must not contain empty, \".\" or \"..\" segments" -}}
+{{- end -}}
+{{- if $s3.endpoint -}}
+{{- include "otel-collector.validateURL" (dict "url" $s3.endpoint "field" "content.s3.endpoint" "credentials" "use the default AWS credential chain (IRSA) or content.s3.credentialsSecret") -}}
+{{- if and .Values.exporter.requireTLS (not (hasPrefix "https://" ($s3.endpoint | toString))) -}}
+{{- fail "exporter.requireTLS=true requires an https:// content.s3.endpoint" -}}
+{{- end -}}
+{{- end -}}
+{{- if not $s3.sse -}}
+{{- fail "content.backend=s3 requires content.s3.sse (AES256, or aws:kms with an optional content.s3.kmsKeyId): content is never written without server-side encryption" -}}
+{{- end -}}
+{{- if not (has $s3.sse (list "AES256" "aws:kms")) -}}
+{{- fail "content.s3.sse must be \"aws:kms\" or \"AES256\"" -}}
+{{- end -}}
+{{- if and $s3.kmsKeyId (ne $s3.sse "aws:kms") -}}
+{{- fail "content.s3.kmsKeyId is only valid with content.s3.sse=aws:kms" -}}
+{{- end -}}
+{{- if $s3.credentialsSecret.name -}}
+{{- if not (and $s3.credentialsSecret.accessKeyIdKey $s3.credentialsSecret.secretAccessKeyKey) -}}
+{{- fail "content.s3.credentialsSecret.name requires accessKeyIdKey and secretAccessKeyKey" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.exporter.requireDurableQueue (not .Values.exporter.sendingQueue.persistence.enabled) -}}
+{{- fail "content.enabled=true with exporter.requireDurableQueue=true requires exporter.sendingQueue.persistence.enabled=true for the content queue" -}}
+{{- end -}}
+{{- $limitMiB := 0 -}}
+{{- $memory := dig "limits" "memory" "" (.Values.resources | default dict) | toString -}}
+{{- if regexMatch "^[0-9]+Gi$" $memory -}}
+{{- $limitMiB = mul (trimSuffix "Gi" $memory | int) 1024 -}}
+{{- else if regexMatch "^[0-9]+Mi$" $memory -}}
+{{- $limitMiB = trimSuffix "Mi" $memory | int -}}
+{{- end -}}
+{{- if and (gt (int $limitMiB) 0) (ge (int (include "otel-collector.memoryLimitMiB" .)) (int $limitMiB)) -}}
+{{- fail (printf "content.enabled=true sets memory_limiter to %s MiB, which is not below resources.limits.memory (%s); raise the container limit or lower content.memoryLimiterMiB" (include "otel-collector.memoryLimitMiB" .) $memory) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "otel-collector.memoryLimitMiB" -}}
+{{- if .Values.content.enabled -}}
+{{- max (int .Values.memoryLimiter.limitMib) (int .Values.content.memoryLimiterMiB) -}}
+{{- else -}}
+{{- int .Values.memoryLimiter.limitMib -}}
+{{- end -}}
+{{- end -}}
+
+{{/* The file backend's content root: explicit, or <queue dir>/content. */}}
+{{- define "otel-collector.contentFileDirectory" -}}
+{{- .Values.content.file.directory | default (printf "%s/content" .Values.exporter.sendingQueue.persistence.directory) -}}
+{{- end -}}
+
+{{/*
+"emptyDir" when the file backend runs without the queue PVC: an emptyDir
+then stands in at the queue directory (development only, lost with the pod).
+*/}}
+{{- define "otel-collector.contentFileVolume" -}}
+{{- $c := .Values.content -}}
+{{- if and $c.enabled (eq $c.backend "file") (not .Values.exporter.sendingQueue.persistence.enabled) -}}
+emptyDir
+{{- end -}}
 {{- end -}}

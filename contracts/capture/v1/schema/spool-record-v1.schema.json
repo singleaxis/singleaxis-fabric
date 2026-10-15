@@ -1,0 +1,544 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/spool-record-v1.schema.json",
+  "title": "Fabric wire spool record header v1 (draft, spec 048)",
+  "description": "Header of one agent spool record file (spec 048 §2): b'FWSPOOL1' | u32 header length | this header as canonical JSON | blob | sha256 trailer. An exchange record carries the fully resolved fabric.model_call span (ids, timing, status, closed 047 §8 attributes) and up to two content descriptors whose bytes are blob[offset:offset+length]; a loss record one coalesced range; a marker record a run_start, run_end or final heartbeat. Headers carry no content. Records are drained in file-name order and deleted only after every part was delivered; a replay re-sends identical spans.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_kind",
+    "source",
+    "order",
+    "written_at_unix_nano"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "fabric.wire-spool-record/v1"
+    },
+    "record_kind": {
+      "enum": [
+        "exchange",
+        "loss",
+        "marker"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "source_epoch"
+      ],
+      "properties": {
+        "source_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "source_epoch": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "order": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "written_at_unix_nano": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "required": [
+        "service_name",
+        "span",
+        "bodies"
+      ],
+      "properties": {
+        "schema_version": true,
+        "record_kind": {
+          "const": "exchange"
+        },
+        "source": true,
+        "order": true,
+        "written_at_unix_nano": true,
+        "service_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "kind",
+            "trace_id",
+            "span_id",
+            "trace_flags",
+            "start_time_unix_nano",
+            "end_time_unix_nano",
+            "status",
+            "attributes"
+          ],
+          "properties": {
+            "name": {
+              "const": "fabric.model_call"
+            },
+            "kind": {
+              "const": "client"
+            },
+            "trace_id": {
+              "type": "string",
+              "pattern": "^(?!0{32}$)[0-9a-f]{32}$"
+            },
+            "span_id": {
+              "type": "string",
+              "pattern": "^(?!0{16}$)[0-9a-f]{16}$"
+            },
+            "parent_span_id": {
+              "type": "string",
+              "pattern": "^(?!0{16}$)[0-9a-f]{16}$"
+            },
+            "parent_is_remote": {
+              "type": "boolean"
+            },
+            "trace_flags": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "start_time_unix_nano": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end_time_unix_nano": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "status": {
+              "enum": [
+                "unset",
+                "error"
+              ]
+            },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fabric.wire.exchange_id",
+                "fabric.run.id",
+                "fabric.source_id",
+                "fabric.source.epoch",
+                "fabric.source.sequence",
+                "fabric.wire.api",
+                "fabric.wire.request_sha256",
+                "fabric.wire.response_state",
+                "fabric.wire.truncated",
+                "fabric.wire.store_status",
+                "gen_ai.operation.name",
+                "gen_ai.provider.name",
+                "http.request.method"
+              ],
+              "properties": {
+                "fabric.wire.exchange_id": {
+                  "$ref": "#/$defs/opaqueId"
+                },
+                "fabric.run.id": {
+                  "$ref": "#/$defs/opaqueId"
+                },
+                "fabric.run.scope_id": {
+                  "$ref": "#/$defs/uuid4"
+                },
+                "fabric.source_id": {
+                  "$ref": "#/$defs/opaqueId"
+                },
+                "fabric.source.epoch": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fabric.source.sequence": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fabric.wire.api": {
+                  "enum": [
+                    "openai.chat_completions",
+                    "openai.responses",
+                    "openai.completions",
+                    "openai.embeddings",
+                    "anthropic.messages"
+                  ]
+                },
+                "fabric.content.request_ref": {
+                  "$ref": "#/$defs/uuid4"
+                },
+                "fabric.content.result_ref": {
+                  "$ref": "#/$defs/uuid4"
+                },
+                "fabric.wire.request_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "fabric.wire.response_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "fabric.wire.response_state": {
+                  "enum": [
+                    "complete",
+                    "closed_early",
+                    "error",
+                    "abandoned"
+                  ]
+                },
+                "fabric.wire.truncated": {
+                  "type": "boolean"
+                },
+                "fabric.wire.store_status": {
+                  "enum": [
+                    "stored",
+                    "partial",
+                    "failed",
+                    "disabled"
+                  ]
+                },
+                "gen_ai.operation.name": {
+                  "enum": [
+                    "chat",
+                    "text_completion",
+                    "embeddings"
+                  ]
+                },
+                "gen_ai.provider.name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+                },
+                "http.request.method": {
+                  "const": "POST"
+                },
+                "http.response.status_code": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 599
+                },
+                "error.type": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"
+                },
+                "gen_ai.response.model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^(?!.*://)[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+                },
+                "gen_ai.response.finish_reasons": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "enum": [
+                      "stop",
+                      "length",
+                      "tool_calls",
+                      "content_filter",
+                      "function_call",
+                      "end_turn",
+                      "max_tokens",
+                      "stop_sequence",
+                      "tool_use",
+                      "pause_turn",
+                      "refusal",
+                      "completed",
+                      "incomplete",
+                      "failed",
+                      "other"
+                    ]
+                  }
+                },
+                "gen_ai.usage.input_tokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "gen_ai.usage.output_tokens": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "dependentRequired": {
+            "parent_is_remote": [
+              "parent_span_id"
+            ]
+          }
+        },
+        "bodies": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "descriptor",
+              "offset",
+              "length"
+            ],
+            "properties": {
+              "descriptor": {
+                "$ref": "#/$defs/descriptor",
+                "unevaluatedProperties": false
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "length": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "required": [
+        "loss"
+      ],
+      "properties": {
+        "schema_version": true,
+        "record_kind": {
+          "const": "loss"
+        },
+        "source": true,
+        "order": true,
+        "written_at_unix_nano": true,
+        "loss": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason",
+            "count",
+            "first_sequence",
+            "last_sequence"
+          ],
+          "properties": {
+            "reason": {
+              "enum": [
+                "queue_full",
+                "internal_error",
+                "shutdown",
+                "span_dropped"
+              ]
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "first_sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "last_sequence": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "required": [
+        "marker"
+      ],
+      "properties": {
+        "schema_version": true,
+        "record_kind": {
+          "const": "marker"
+        },
+        "source": true,
+        "order": true,
+        "written_at_unix_nano": true,
+        "marker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "last_sequence"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "run_start",
+                "run_end",
+                "final"
+              ]
+            },
+            "last_sequence": {
+              "type": "integer",
+              "minimum": -1
+            },
+            "run_id": {
+              "$ref": "#/$defs/opaqueId"
+            },
+            "scope_id": {
+              "$ref": "#/$defs/uuid4"
+            }
+          },
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "final"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "run_id": false,
+              "scope_id": false
+            }
+          },
+          "else": {
+            "required": [
+              "run_id",
+              "scope_id"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "uuid4": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "descriptor": {
+      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref). Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "object_id",
+        "tenant_id",
+        "role",
+        "media_type",
+        "content_encoding",
+        "representation",
+        "transformations",
+        "provenance",
+        "boundary",
+        "status",
+        "stored_byte_length",
+        "stored_sha256",
+        "source_byte_length",
+        "source_id",
+        "source_epoch",
+        "source_sequence",
+        "run_id",
+        "operation_id",
+        "captured_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "fabric.content-object/v2"
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "tenant_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"
+        },
+        "role": {
+          "enum": [
+            "model.exchange.request",
+            "model.exchange.response"
+          ]
+        },
+        "media_type": {
+          "type": "string",
+          "pattern": "^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$"
+        },
+        "content_encoding": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$"
+        },
+        "representation": {
+          "enum": [
+            "exact",
+            "partial",
+            "truncated"
+          ]
+        },
+        "transformations": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "const": "truncate"
+          }
+        },
+        "provenance": {
+          "const": "protocol"
+        },
+        "boundary": {
+          "const": "provider_bound"
+        },
+        "status": {
+          "enum": [
+            "stored",
+            "truncated"
+          ]
+        },
+        "stored_byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stored_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "source_byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "source_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "source_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "run_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "captured_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+        }
+      }
+    }
+  }
+}

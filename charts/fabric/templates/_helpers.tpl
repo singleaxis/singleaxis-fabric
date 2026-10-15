@@ -41,6 +41,7 @@ regulatory certification and not proof that a destination persisted a batch.
       "otel-collector.exporter.sendingQueue.persistence.fsync" true
       "otel-collector.exporter.retry.enabled" true
       "otel-collector.exporter.retry.maxElapsedTime" "0s"
+      "otel-collector.content.requireServerSideEncryption" true
       "otel-collector.debugExporter.enabled" false
       "otel-collector.batch.enabled" false
       "otel-collector.networkPolicy.enabled" true
@@ -82,6 +83,12 @@ regulatory certification and not proof that a destination persisted a batch.
 {{- if $workload.enabled -}}
 {{- if ne $workload.tenantId $.Values.tenant.id -}}
 {{- fail "profile shadow-production requires receiver.workloadAuthentication.tenantId to match tenant.id" -}}
+{{- end -}}
+{{- if $collector.content.enabled -}}
+{{- $tenants := $collector.content.allowedTenants -}}
+{{- if or (ne (len $tenants) 1) (ne (toString (index $tenants 0)) (toString $.Values.tenant.id)) -}}
+{{- fail "profile shadow-production with workload authentication requires content.allowedTenants to be exactly [tenant.id]" -}}
+{{- end -}}
 {{- end -}}
 {{- else if $collector.receiver.evidenceSourceBinding.enabled -}}
 {{- if ne $collector.receiver.evidenceSourceBinding.tenantId $.Values.tenant.id -}}

@@ -115,6 +115,14 @@ exporter's privacy mode. Both controls must intentionally allow content for
 prompt/completion content to pass that route. Fabric's upstream content setting
 overrides stale upstream environment values on each registration call.
 
+`FABRIC_CAPTURE_LLM_CONTENT` never affects LLM wire capture
+([spec 047](../specs/047-llm-wire-capture-and-reconstruction.md)): wire stores
+exact bytes off telemetry in the customer store and its spans carry only
+digests and references, whatever this flag says. Installing wire while the
+flag is set logs one warning saying so. A global provider protected by
+`install_default_provider` never carries wire spans; see
+[Two capture lines](README.md#two-capture-lines).
+
 ## Verified dependency combination
 
 The Python `[openai]` extra pins `opentelemetry-instrumentation-openai-v2==2.4b0`

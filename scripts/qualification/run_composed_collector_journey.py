@@ -418,12 +418,15 @@ extensions:
   file_storage:
     directory: {root / "queue"}
     fsync: true
+  noredirect: {{}}
 processors:
   fabricguard:
     drop_unknown_classes: true
 exporters:
   otlp_http:
     endpoint: http://127.0.0.1:{sink.server_port}
+    middlewares:
+      - id: noredirect
     sending_queue:
       storage: file_storage
     retry_on_failure:
@@ -434,7 +437,7 @@ service:
   telemetry:
     metrics:
       level: none
-  extensions: [file_storage]
+  extensions: [file_storage, noredirect]
   pipelines:
     logs:
       receivers: [otlp]

@@ -12,9 +12,15 @@
     "name": "singleaxis-fabric",
     "required_wheel_paths": [
       "fabric/__init__.py",
+      "fabric/_autoload/__init__.py",
+      "fabric/_autoload/sitecustomize.py",
+      "fabric/_capture_scope.py",
       "fabric/_content.py",
       "fabric/_content_sink.py",
       "fabric/_content_writer.py",
+      "fabric/_loss.py",
+      "fabric/_model_names.py",
+      "fabric/_sequence.py",
       "fabric/_version.py",
       "fabric/byte_evidence.py",
       "fabric/byte_resolver.py",
@@ -41,7 +47,12 @@
       "fabric/governed_reconstruction.py",
       "fabric/governed_store.py",
       "fabric/metadata_delivery.py",
-      "fabric/source_spool.py"
+      "fabric/source_spool.py",
+      "fabric/reconstruct/__init__.py",
+      "fabric/wire/__init__.py",
+      "fabric/wire/_content.py",
+      "fabric/wire/_sender.py",
+      "fabric/wire/_spool.py"
     ],
     "allowed_wheel_package_roots": [
       "fabric"
@@ -76,9 +87,15 @@
       "README.md",
       "LICENSE",
       "src/fabric/__init__.py",
+      "src/fabric/_autoload/__init__.py",
+      "src/fabric/_autoload/sitecustomize.py",
+      "src/fabric/_capture_scope.py",
       "src/fabric/_content.py",
       "src/fabric/_content_sink.py",
       "src/fabric/_content_writer.py",
+      "src/fabric/_loss.py",
+      "src/fabric/_model_names.py",
+      "src/fabric/_sequence.py",
       "src/fabric/_version.py",
       "src/fabric/byte_evidence.py",
       "src/fabric/byte_resolver.py",
@@ -105,7 +122,12 @@
       "src/fabric/governed_reconstruction.py",
       "src/fabric/governed_store.py",
       "src/fabric/metadata_delivery.py",
-      "src/fabric/source_spool.py"
+      "src/fabric/source_spool.py",
+      "src/fabric/reconstruct/__init__.py",
+      "src/fabric/wire/__init__.py",
+      "src/fabric/wire/_content.py",
+      "src/fabric/wire/_sender.py",
+      "src/fabric/wire/_spool.py"
     ],
     "allowed_sdist_top_level": [
       "src",

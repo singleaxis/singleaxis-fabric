@@ -208,3 +208,29 @@ Paths and line numbers refer to the initial source commit.
 | [#370](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/370) | `py/unreachable-statement` / [sdk/python/tests/test_surface_logging.py:382](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/tests/test_surface_logging.py#L382) | Present | Review: pytest.raises/contextlib.suppress consumes the expected exception; following assertions execute in tests. |
 | [#232](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/232) | `py/import-and-import-from` / [sdk/python/tests/test_tracing.py:34](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/tests/test_tracing.py#L34) | Present | Review: module imports support monkeypatching or installed-module identity; named symbols support calls. |
 | [#226](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/226) | `py/unused-global-variable` / [sdk/python/src/fabric/tracing.py:105](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/src/fabric/tracing.py#L105) | Present | Inherited globals/context-variable state; parent-only code retained. |
+
+## LLM wire-capture port (specs 047–049)
+
+Status: **CodeQL not yet run on the combined tree; production remains NO_GO.**
+
+The zero-code wire line (specs 047/048, plan 049) was ported onto the
+evidence line without removing any parent source. CodeQL runs only in GitHub
+code scanning (no local CLI was available), so the combined head needs an
+exact-head CodeQL run before this section can list alert numbers. Nothing was
+dismissed or suppressed, and no query suite, threshold or `.semgrepignore`
+entry changed.
+
+A local `semgrep scan --config auto --error` (image pinned in
+`recorder-security.yml`, 551 rules) over the released paths reported, on the
+combined tree:
+
+| Finding | Source | Line | Disposition |
+| --- | --- | --- | --- |
+| `python.lang.security.audit.insecure-file-permissions` | `sdk/python/src/fabric/_content_writer.py` | parent | Also reported on unmodified `origin/main` with the same rules; parent behaviour retained. |
+| `python.lang.security.audit.insecure-file-permissions` | `sdk/python/src/fabric/content_store/local.py` | parent | Also reported on unmodified `origin/main`; `fchmod(..., 0o700)` on a pinned directory descriptor. |
+| `python.lang.security.audit.httpsconnection-detected` | `http_dispatch.py`, `metadata_delivery.py`, `synthetic_otlp.py` | parent | Also reported on unmodified `origin/main`; explicit HTTPS connections the parent line owns. |
+| `python.lang.security.audit.insecure-file-permissions` | `sdk/python/src/fabric/wire/_spool.py` (`_secure_dir`) | wire | **Review (not suppressed):** `os.chmod(target, 0o700)` sets an owner-only *directory* mode after refusing a symlink or a foreign owner; the execute bit is the directory search bit. Same class as the parent `local.py` finding. Security-owner acceptance is open. |
+| `python.lang.security.audit.non-literal-import` | `sdk/python/src/fabric/wire/_transport.py` (`patch_httpx`) | wire | **Fixed:** the transport flavors are now imported by literal name (`_import_flavor`), so no caller-influenced module name reaches an import. |
+
+The five parent findings fail `--error` on `origin/main` as well (registry
+rules drift); they are recorded here only so the wire delta is visible.
