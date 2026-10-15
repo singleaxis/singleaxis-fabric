@@ -11,7 +11,7 @@ the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 044.
+next unused public number is 045.
 
 Numbers 035-041 are **withdrawn drafts**: the Agent Execution Evidence
 Profile (AEEP) for OpenTelemetry (035), its evidence-capture build plan
@@ -77,3 +77,4 @@ Every spec declares a `Status` in its header:
 | 035–041 | Agent Execution Evidence Profile (AEEP) drafts | withdrawn; in git history only |
 | [042](042-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | draft; no coverage claim; partly superseded by 043 |
 | [043](043-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | draft; no coverage claim |
+| [044](044-four-layer-capture-coverage.md) | Four-layer capture coverage: context, structure, content, decisions and effects (plan, phases P0–P5) | draft; no coverage claim |

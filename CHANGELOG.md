@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   draft): agents spool capture events to disk and deliver bodies to the
   Node's `fabriccontent` exporter, so only the Node writes to S3, MinIO or a
   directory store; run scopes bracket exchanges with run markers.
+- Added spec 044 (draft): the four-layer capture coverage plan (context,
+  structure, content, decisions and effects) with phases P0–P5. Record-only;
+  no evaluation or enforcement.
+
+### Security
+
+- Bumped `github.com/cilium/ebpf` to v0.22.0 in the host emitter
+  (integer overflow in `LoadCollectionSpecFromReader`).
 
 ### Removed
 
