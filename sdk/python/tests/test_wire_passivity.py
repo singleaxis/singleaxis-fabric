@@ -12,8 +12,10 @@ call so machine drift cancels; the medians of many samples are compared.
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import statistics
+import sys
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -39,6 +41,30 @@ def rig(tmp_path: Path) -> Iterator[Rig]:
     built.close()
 
 
+@contextlib.contextmanager
+def _without_coverage_tracing() -> Iterator[None]:
+    """Pause an active coverage measurement (pytest --cov) for the timed samples.
+
+    Coverage installs a line tracer on every thread, which multiplies the cost of
+    each executed line. That tax lands mostly on the tee, which runs more Python
+    lines than the baseline, so under coverage the medians measure the tracer rather
+    than the recorder. Like the GC, the tracer is test harness, not part of the
+    host's request path, so the budgets are measured without it. The same code paths
+    run traced during the warm-up, so coverage of the tee is unchanged. Without an
+    active measurement this does nothing. A running measurement has imported
+    coverage already, so the module is looked up rather than imported."""
+    module = sys.modules.get("coverage")
+    active = module.Coverage.current() if module is not None else None
+    if active is None:
+        yield
+        return
+    active.stop()
+    try:
+        yield
+    finally:
+        active.start()
+
+
 def _median_overhead(
     baseline: Callable[[], object], teed: Callable[[], object], samples: int
 ) -> float:
@@ -50,14 +76,15 @@ def _median_overhead(
     gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        for _ in range(samples):
-            start = time.perf_counter_ns()
-            baseline()
-            middle = time.perf_counter_ns()
-            teed()
-            end = time.perf_counter_ns()
-            base.append(middle - start)
-            tee.append(end - middle)
+        with _without_coverage_tracing():
+            for _ in range(samples):
+                start = time.perf_counter_ns()
+                baseline()
+                middle = time.perf_counter_ns()
+                teed()
+                end = time.perf_counter_ns()
+                base.append(middle - start)
+                tee.append(end - middle)
     finally:
         if gc_was_enabled:
             gc.enable()
