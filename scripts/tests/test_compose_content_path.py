@@ -376,11 +376,15 @@ def test_s3_backend_defaults_to_kms(tmp_path: Path) -> None:
             "FABRIC_CONTENT_S3_ENDPOINT is not an absolute http(s):// URL",
         ),
         (  # Sol F3/2: the exporter refuses an endpoint path at startup
-            {"FABRIC_CONTENT_S3_ENDPOINT": f"https://store.example.com/{SECRET_MARKER}"},
+            {
+                "FABRIC_CONTENT_S3_ENDPOINT": f"https://store.example.com/{SECRET_MARKER}"
+            },
             "FABRIC_CONTENT_S3_ENDPOINT must not contain a path",
         ),
         (
-            {"FABRIC_CONTENT_S3_ENDPOINT": f"https://store.example.com:9000/{SECRET_MARKER}/"},
+            {
+                "FABRIC_CONTENT_S3_ENDPOINT": f"https://store.example.com:9000/{SECRET_MARKER}/"
+            },
             "FABRIC_CONTENT_S3_ENDPOINT must not contain a path",
         ),
         ({"FABRIC_CONTENT_S3_PATH_STYLE": "yes"}, "must be true or false"),
@@ -579,7 +583,11 @@ def test_s3_overlay_replaces_only_the_content_exporter() -> None:
         ("collector.yaml",),
         ("collector-production.yaml", "collector-content.yaml"),
         ("collector.yaml", "collector-content-s3.yaml"),
-        ("collector-production.yaml", "collector-content.yaml", "collector-content-s3.yaml"),
+        (
+            "collector-production.yaml",
+            "collector-content.yaml",
+            "collector-content-s3.yaml",
+        ),
     ],
 )
 def test_content_queue_is_private(names: tuple[str, ...]) -> None:
@@ -597,7 +605,8 @@ def test_content_queue_is_private(names: tuple[str, ...]) -> None:
     queued = [
         exporter
         for name, exporter in config["exporters"].items()
-        if name.startswith("fabriccontent") and "storage" in exporter.get("sending_queue", {})
+        if name.startswith("fabriccontent")
+        and "storage" in exporter.get("sending_queue", {})
     ]
     assert queued
     for exporter in queued:

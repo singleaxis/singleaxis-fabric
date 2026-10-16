@@ -274,9 +274,17 @@ class _Recorder(BaseAdapter):  # type: ignore[misc, unused-ignore]
         super().__init__()
         self.seen: list[dict[str, Any]] = []
 
-    def send(self, request: Any, **kwargs: Any) -> requests.Response:
-        self.seen.append({"proxy": select_proxy(request.url, kwargs.get("proxies") or {}),
-                          "verify": kwargs.get("verify"), "cert": kwargs.get("cert"),
+    def send(  # same parameters as requests' BaseAdapter.send
+        self,
+        request: Any,
+        stream: bool = False,
+        timeout: Any = None,
+        verify: Any = True,
+        cert: Any = None,
+        proxies: Any = None,
+    ) -> requests.Response:
+        self.seen.append({"proxy": select_proxy(request.url, proxies or {}),
+                          "verify": verify, "cert": cert,
                           "auth": request.headers.get("authorization")})  # fmt: skip
         response = requests.Response()
         response.status_code, response._content, response.request = 200, b"", request
