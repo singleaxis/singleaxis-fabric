@@ -19,9 +19,13 @@ the exchange that names it: ``source_id``, ``source_epoch``,
 ``source_sequence``, ``run_id`` and ``operation_id`` (the exchange id) equal
 the exchange span's values. Identifier normalization: integers compare as
 integers (an OTLP/JSON decimal-string int64 is decoded on input; a boolean or
-float never matches); identifiers compare as exact strings, with no case
-folding, trimming or pseudonym mapping, because capture writes the same
-emitted labels into both records. A violation, a missing required field or
+float never matches). ``source_id`` and ``run_id`` are first put in their
+report form by the same projection the verifier applies to every span
+(``report_source_id`` / ``report_run_id`` under ``--id-key-env``, decision J1:
+an emitted ``s-``/``r-`` pseudonym or generated run id is unchanged, a legacy
+clear label becomes its pseudonym); then they, and ``operation_id``, compare
+as exact strings, without case folding or trimming. A violation, a missing
+required field or
 an unknown key is a ``digest_mismatch`` integrity gap (reason
 ``sidecar_mismatch``, or ``binding_mismatch`` for the identity fields), so the
 exchange can never be complete.
@@ -35,6 +39,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from fabric.reconstruct._ids import report_run_id, report_source_id
 from fabric.reconstruct._inputs import ReconstructInputError, opaque_id
 
 Verification = Literal["verified", "missing", "digest_mismatch", "not_stored", "not_checked"]
@@ -126,6 +131,17 @@ def descriptor_contract_ok(descriptor: Mapping[str, Any]) -> bool:
     return all(shapes) and _consistent(descriptor)
 
 
+def _bound(descriptor: Mapping[str, Any], binding: Mapping[str, Any], key: bytes | None) -> bool:
+    """Whether the descriptor's identity is the exchange's (``binding``, report form)."""
+    try:
+        claimed = {name: descriptor[name] for name in BINDING_KEYS}
+        claimed["source_id"] = report_source_id(claimed["source_id"], key)
+        claimed["run_id"] = report_run_id(claimed["run_id"], key)
+    except Exception:
+        return False
+    return all(_same(claimed[name], binding.get(name)) for name in BINDING_KEYS)
+
+
 def _same(value: Any, expected: Any) -> bool:
     """Exact equality; an int never equals a bool (and the other way round)."""
     return type(value) is type(expected) and value == expected
@@ -201,9 +217,11 @@ class StoreReader:
         role: str,
         expected_sha256: str,
         binding: Mapping[str, Any],
+        id_key: bytes | None = None,
     ) -> ObjectResult:
         """Fetch ``object_id`` and verify it; never raises. ``binding`` holds the exchange's
-        ``BINDING_KEYS`` values its descriptor must carry."""
+        ``BINDING_KEYS`` values (ids in report form under ``id_key``) its descriptor must
+        carry."""
 
         try:
             uri = str(self._store.evidence_ref_for(object_id))
@@ -228,7 +246,7 @@ class StoreReader:
             descriptor, object_id, role, data
         ):
             reason = "sidecar_mismatch"
-        elif not all(_same(descriptor[key], binding.get(key)) for key in BINDING_KEYS):
+        elif not _bound(descriptor, binding, id_key):
             reason = "binding_mismatch"
         else:
             encoding = descriptor.get("content_encoding", "identity")

@@ -793,10 +793,11 @@ own function. The report is still customer data.
    `source_id`, `source_epoch`, `source_sequence`, `run_id` and
    `operation_id` must equal the exchange's identity (`operation_id` is the
    exchange id). Integers compare as integers (OTLP/JSON decimal-string
-   int64 values are decoded on input; a boolean never matches);
-   identifiers compare as exact strings, without case folding, trimming or
-   pseudonym mapping, since capture writes the same emitted labels into
-   both. A violation or a missing field → `digest_mismatch`
+   int64 values are decoded on input; a boolean never matches). The
+   descriptor's `source_id` and `run_id` first go through the same report
+   projection as every span (J1: pseudonyms and generated run ids
+   unchanged, a legacy clear label to its keyed pseudonym); then
+   identifiers compare as exact strings, without case folding or trimming. A violation or a missing field → `digest_mismatch`
    (`sidecar_mismatch`, or `binding_mismatch` for the identity fields,
    partial). A captured body without a ref under
    `store_status` `failed`/`partial` → `missing_object` (partial);

@@ -863,6 +863,7 @@ class _Run:
                 "run_id": exchange.run_id,
                 "operation_id": exchange.exchange_id,
             },
+            id_key=self.verifier.key,
         )
         if result.verification == "missing":
             self._gap(exchange, "missing_object", side=side, reason=result.reason)
