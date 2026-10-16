@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -66,6 +67,76 @@ var (
 
 func newFileBackend(dir string) *fileBackend { return &fileBackend{dir: dir} }
 
+// startFileBackend is newFileBackend plus a sweep of the temp files an
+// earlier process left behind (see sweepStaleTemps).
+func startFileBackend(dir string) *fileBackend {
+	b := newFileBackend(dir)
+	b.sweepStaleTemps()
+	return b
+}
+
+// isTempName reports whether name is one of put's temp files
+// ("." + object name + "." + random + ".tmp").
+func isTempName(name string) bool {
+	return strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp")
+}
+
+// sweepStaleTemps removes put's temp files below the content root, best
+// effort, and fsyncs each directory it changed. A crash between link(2) and
+// the temp's removal leaves the object with a second link (nlink 2), which
+// readers (LocalFilesystemContentStore) refuse; a crash before link(2) leaves
+// an orphan temp. Neither is ever an object, so removing them is always safe,
+// also while another exporter writes there (its link then fails and is
+// retried). Symlinks are never followed.
+func (b *fileBackend) sweepStaleTemps() {
+	if info, err := os.Lstat(b.dir); err != nil || !info.IsDir() {
+		return
+	}
+	changed := map[string]bool{}
+	_ = filepath.WalkDir(b.dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable: skipped, never fatal
+		}
+		if entry.Type().IsRegular() && isTempName(entry.Name()) {
+			if os.Remove(path) == nil {
+				changed[filepath.Dir(path)] = true
+			}
+		}
+		return nil
+	})
+	for dir := range changed {
+		_ = syncDir(dir)
+	}
+}
+
+// healStaleTemps removes the temp files of the object at target when it has
+// more than one link (a crash after link(2) in an earlier put), then fsyncs
+// the directory. Called when a replay finds the object already stored.
+func healStaleTemps(target string) error {
+	info, err := os.Lstat(target)
+	if err != nil {
+		return &storeError{op: "file read"}
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink <= 1 {
+		return nil
+	}
+	parent, prefix := filepath.Dir(target), "."+filepath.Base(target)+"."
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return &storeError{op: "dir read"}
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.Type().IsRegular() && strings.HasPrefix(name, prefix) && isTempName(name) {
+			if err := os.Remove(filepath.Join(parent, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return &storeError{op: "file temp remove"}
+			}
+		}
+	}
+	return syncDir(parent)
+}
+
 func (b *fileBackend) prefix() string { return b.dir + "/" }
 
 func (b *fileBackend) ref(key string) string { return "file://" + key }
@@ -80,6 +151,9 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 		return err
 	}
 	if done, err := existing(target, data); done || err != nil {
+		if err == nil { // a replay: heal a second link a crash after link(2) left
+			return healStaleTemps(target)
+		}
 		return err
 	}
 	tmp, err := os.CreateTemp(parent, "."+filepath.Base(target)+".*.tmp")
@@ -106,6 +180,12 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 			return &storeError{op: "file link"} // vanished: retry
 		}
 		return err
+	}
+	// Drop the temp's name before the directory fsync, so the object is
+	// durable with exactly one link (readers refuse nlink != 1). After a
+	// rename the temp is already gone.
+	if err := os.Remove(tmpName); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return &storeError{op: "file temp remove"}
 	}
 	return syncDir(parent)
 }

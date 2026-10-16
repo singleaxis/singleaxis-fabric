@@ -523,9 +523,15 @@ attribute set itself.
 Backends: `file` (`directory`; files `0600`, directories `0700`; a fully
 fsync'd temp file is published with `link(2)`, falling back to an atomic
 no-replace rename — `renameat2(RENAME_NOREPLACE)` on Linux,
-`renamex_np(RENAME_EXCL)` on macOS — then a directory fsync; when the
-filesystem offers neither, the write fails retryably, never a
-check-then-rename that two processes could race) and `s3` (aws-sdk-go-v2 default credential chain
+`renamex_np(RENAME_EXCL)` on macOS — then the temp's name is removed and
+the directory fsync'd, so the object is durable with exactly one link;
+when the filesystem offers neither, the write fails retryably, never a
+check-then-rename that two processes could race. A crash between
+`link(2)` and the temp's removal leaves a second link, which readers
+refuse (`nlink != 1`): a replay that finds the object stored removes that
+object's temps when it has more than one link, and every start sweeps
+the temps an earlier process left below the content root, never following
+a symlink) and `s3` (aws-sdk-go-v2 default credential chain
 incl. IRSA; optional `endpoint` and `use_path_style` for MinIO and other
 S3-compatible stores; `region`; `sse: AES256 | aws:kms`, **required** —
 an empty or missing `sse` fails configuration validation (F12);
