@@ -50,7 +50,8 @@ RUN ocb --config ocb-config.yaml \
     && test -x /src/dist/otelcol-fabric \
     && sh ./upstream/build-patched-bearertokenauth.sh \
     && cd gate && go build -o /src/dist/fabric-gate . && cd .. \
-    && mkdir -p /src/fabric-node/queue /src/fabric-node/content-queue /src/fabric-node/content
+    && mkdir -p /src/fabric-node/queue /src/fabric-node/content-queue /src/fabric-node/content \
+    && chmod 0700 /src/fabric-node/content-queue /src/fabric-node/content
 
 # ---------- runtime ---------------------------------------------------------
 

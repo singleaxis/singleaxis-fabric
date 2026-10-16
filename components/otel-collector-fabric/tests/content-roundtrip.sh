@@ -49,6 +49,7 @@ extensions:
   file_storage/fabric_content:
     directory: /var/lib/fabric-node/content-queue
     create_directory: true
+    directory_permissions: "0700"
     fsync: true
 receivers:
   otlp:
@@ -75,6 +76,7 @@ exporters:
     backend: file
     file:
       directory: /var/lib/fabric-node/content
+    queue_directory: /var/lib/fabric-node/content-queue
     sending_queue:
       enabled: true
       queue_size: 8

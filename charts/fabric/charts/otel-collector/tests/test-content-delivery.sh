@@ -129,6 +129,7 @@ expect_contains "IRSA role annotation on the Node service account" "${s3_render}
 expect_contains "no Kubernetes API token is mounted" "${s3_render}" "automountServiceAccountToken: false"
 expect_not_contains "no static cloud keys without a Secret" "${s3_render}" "AWS_ACCESS_KEY_ID"
 expect_not_contains "in-memory content queue has no storage" "${s3_config}" "file_storage/fabric_content"
+expect_not_contains "in-memory content queue names no queue directory" "${s3_config}" "queue_directory:"
 
 printf '\n=== S3-compatible store with static keys from a Secret ===\n'
 minio_render="$(helm template ci "${chart_dir}" \
@@ -166,6 +167,11 @@ durable_render="$(helm template ci "${chart_dir}" "${durable_args[@]}")"
 expect_contains "content queue on the same PVC" "${durable_render}" 'directory: "/var/lib/otelcol-fabric/storage/content-queue"'
 expect_contains "content queue binds its file storage" "${durable_render}" "storage: file_storage/fabric_content"
 expect_contains "content file storage is a started extension" "${durable_render}" "- file_storage/fabric_content"
+# Sol F3: queued content is raw model bytes. file_storage creates the queue
+# directory private, and fabriccontent tightens an existing one (and its
+# database) at start, before the queue opens it.
+expect_count "content queue directory is created private" "${durable_render}" 'directory_permissions: "0700"' 1
+expect_contains "content exporter tightens its queue directory" "${durable_render}" 'queue_directory: "/var/lib/otelcol-fabric/storage/content-queue"'
 expect_count "content queue fsync follows the telemetry queue" "${durable_render}" "fsync: true" 2
 expect_contains "file backend defaults inside the queue PVC" "${durable_render}" 'directory: "/var/lib/otelcol-fabric/storage/content"'
 expect_not_contains "file backend needs no extra mount (exporter owns its root)" "${durable_render}" "subPath:"
@@ -343,6 +349,8 @@ expect_fail "production content refuses a second tenant" "content.allowedTenants
   "${umbrella_dir}" "${production_content[@]}" --set otel-collector.content.allowMultipleTenants=true \
   --set 'otel-collector.content.allowedTenants[1]=other-tenant'
 expect_contains "production content queue is durable" "${production_render}" "storage: file_storage/fabric_content"
+expect_contains "production content queue is private" "${production_render}" 'directory_permissions: "0700"'
+expect_contains "production content queue is tightened at start" "${production_render}" 'queue_directory: "'
 expect_contains "production content store egress" "${production_render}" "cidr: 198.51.100.0/24"
 expect_fail "production content requires sse" "requires content.s3.sse" \
   "${umbrella_dir}" "${production_content[@]}" --set otel-collector.content.s3.sse= \

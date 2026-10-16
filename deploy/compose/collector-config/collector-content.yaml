@@ -32,6 +32,9 @@ extensions:
     directory: /var/lib/fabric-node/content-queue
     timeout: 1s
     create_directory: true
+    # Raw model bytes: created private; fabriccontent tightens an existing
+    # directory and database at start (its queue_directory).
+    directory_permissions: "0700"
     fsync: true
     compaction:
       directory: /var/lib/fabric-node/content-queue
@@ -77,6 +80,8 @@ exporters:
     file:
       directory: /var/lib/fabric-node/content
     timeout: 60s
+    # The content queue's file_storage directory, made private at start.
+    queue_directory: /var/lib/fabric-node/content-queue
     sending_queue:
       enabled: true
       num_consumers: 4

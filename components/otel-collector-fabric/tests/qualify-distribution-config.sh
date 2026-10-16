@@ -111,6 +111,7 @@ extensions:
   file_storage/fabric_content:
     directory: ${config_root}/content-queue
     create_directory: true
+    directory_permissions: "0700"
     fsync: true
   # Spec 048 H1: refuses every redirect on the OTLP/HTTP exporter.
   noredirect: {}
@@ -193,6 +194,7 @@ exporters:
     file:
       directory: ${config_root}/content
     timeout: 60s
+    queue_directory: ${config_root}/content-queue
     sending_queue:
       enabled: true
       queue_size: 16

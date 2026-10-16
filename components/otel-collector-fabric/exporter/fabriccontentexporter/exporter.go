@@ -69,6 +69,10 @@ func newContentExporter(cfg *Config, set component.TelemetrySettings) (*contentE
 }
 
 func (e *contentExporter) start(ctx context.Context, _ component.Host) error {
+	// Runs before exporterhelper starts the queue (which opens its database).
+	if err := privateQueueDir(e.cfg.QueueDirectory); err != nil {
+		return err
+	}
 	b, err := e.newBackend(ctx)
 	if err != nil {
 		return err

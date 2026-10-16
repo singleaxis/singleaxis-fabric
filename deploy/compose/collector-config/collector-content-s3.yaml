@@ -32,6 +32,8 @@ exporters:
       sse: ${env:FABRIC_CONTENT_S3_SSE:-aws:kms}
       kms_key_id: ${env:FABRIC_CONTENT_S3_KMS_KEY_ID:-}
     timeout: 60s
+    # The content queue's file_storage directory, made private at start.
+    queue_directory: /var/lib/fabric-node/content-queue
     sending_queue:
       enabled: true
       num_consumers: 4

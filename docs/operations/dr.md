@@ -65,7 +65,9 @@ waiting for the store, up to `queue_size` × 64 MiB) and `fabric-content`
 (`/var/lib/fabric-node/content`, the content store itself when the file
 backend is used; empty with the S3 backend). Back them up and restore them
 exactly like `fabric-queue` below, with the Node stopped. The content queue
-holds request/response bodies: protect its backups like the content store.
+holds request/response bodies: protect its backups like the content store. On start the Node
+tightens a restored content queue to directories `0700` and files `0600`
+and refuses one holding a symlink or special file.
 Agents keep their own durable spool (`FABRIC_WIRE_SPOOL_DIR`) for records
 the Node has not accepted yet; a restarted agent on the same spool replays
 them.

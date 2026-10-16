@@ -65,6 +65,14 @@ type Config struct {
 	Backend              string     `mapstructure:"backend"`
 	File                 FileConfig `mapstructure:"file"`
 	S3                   S3Config   `mapstructure:"s3"`
+	// QueueDirectory is the directory of the file_storage extension that
+	// backs this exporter's sending queue (required with a persistent queue).
+	// Queued records are raw model bytes: before the queue opens it, start
+	// refuses symlinks and special files in it and tightens it to
+	// directories 0700 and files 0600, because file_storage creates new
+	// directories with directory_permissions only and never tightens an
+	// existing directory or database (a restored or reused volume).
+	QueueDirectory string `mapstructure:"queue_directory"`
 
 	TimeoutConfig exporterhelper.TimeoutConfig                             `mapstructure:",squash"`
 	QueueConfig   configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
@@ -112,6 +120,12 @@ func (c *Config) Validate() error {
 		// model: with several tenants any authenticated agent could write
 		// under another tenant's prefix (Codex r2 #1).
 		return errors.New("allowed_tenants lists more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant")
+	}
+	if queue := c.QueueConfig.Get(); c.QueueConfig.HasValue() && queue.StorageID != nil && c.QueueDirectory == "" {
+		return errors.New("queue_directory is required with a persistent sending_queue (the storage extension's directory)")
+	}
+	if dir := c.QueueDirectory; dir != "" && (!filepath.IsAbs(dir) || filepath.Clean(dir) != dir || dir == string(filepath.Separator)) {
+		return errors.New("queue_directory must be an absolute, clean path other than / with no trailing slash")
 	}
 	switch c.Backend {
 	case backendFile:

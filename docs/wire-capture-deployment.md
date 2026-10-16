@@ -366,7 +366,15 @@ own STS-audience token). For an S3-compatible store without workload
 identity, name an operator-created Secret in `content.s3.credentialsSecret`
 (values never hold keys). The content queue lives on the queue PVC
 (`<persistence.directory>/content-queue`); size the PVC for
-`content.queue.queueSize × 64 MiB` on top of the telemetry queue.
+`content.queue.queueSize × 64 MiB` on top of the telemetry queue. It holds
+raw model bytes and is kept private: `file_storage` creates it `0700`
+(`directory_permissions`), and because `file_storage` never tightens an
+existing directory or database (a restored or reused volume), the content
+exporter's `queue_directory` names the same directory and the exporter
+tightens it (directories `0700`, files `0600`) and refuses symlinks or
+special files in it before the queue opens it. `fabric-gate` refuses a
+persistent content queue without both settings; Compose uses the same
+configuration.
 
 *Destination URLs and network peers.* `exporter.endpoint` and
 `content.s3.endpoint` must be absolute URLs of the form

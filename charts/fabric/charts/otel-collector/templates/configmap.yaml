@@ -127,6 +127,10 @@ data:
         directory: {{ printf "%s/content-queue" $persist.directory | quote }}
         timeout: 1s
         create_directory: true
+        # Queued records are raw model bytes: created private. An existing
+        # directory and its database are tightened by fabriccontent at start
+        # (queue_directory below); file_storage never tightens them.
+        directory_permissions: "0700"
         fsync: {{ $persist.fsync }}
       {{- end }}
       {{- end }}
@@ -232,6 +236,9 @@ data:
           {{- end }}
         {{- end }}
         timeout: {{ $content.timeout | quote }}
+        {{- if $persist.enabled }}
+        queue_directory: {{ printf "%s/content-queue" $persist.directory | quote }}
+        {{- end }}
         sending_queue:
           enabled: true
           num_consumers: {{ $content.queue.numConsumers }}

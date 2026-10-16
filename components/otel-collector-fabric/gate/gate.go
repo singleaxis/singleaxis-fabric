@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -425,6 +426,9 @@ func deepMerge(base, overlay map[string]any) {
 //   - all fabriccontent exporters of the Node together allow one tenant
 //     unless every one of them sets allow_multiple_tenants: true (the record
 //     names its tenant), and each is a literal map the gate can read;
+//   - a fabriccontent exporter's persistent queue is a private file_storage
+//     (directory_permissions "0700") whose directory the exporter tightens
+//     at start (queue_directory names the same directory);
 //   - every OTLP/HTTP exporter lists the noredirect client middleware, so a
 //     3xx is a retryable failure, never a re-send or a false success;
 //   - no OTLP destination or fabriccontent S3 endpoint carries user info, a
@@ -446,6 +450,9 @@ func checkPipelines(cfg map[string]any) error {
 		return err
 	}
 	if err := checkContentTenants(cfg); err != nil {
+		return err
+	}
+	if err := checkContentQueueStorage(cfg); err != nil {
 		return err
 	}
 	if err := checkRedirectMiddleware(cfg); err != nil {
@@ -895,6 +902,53 @@ func checkContentTenants(cfg map[string]any) error {
 	}
 	if len(tenants) > 1 && !allOptedIn {
 		return fmt.Errorf("fabriccontent exporters %s together allow more than one tenant on this Node; any authenticated agent could write under another tenant. Run one Node per tenant, or set allow_multiple_tenants: true on every one of them", strings.Join(ids, ", "))
+	}
+	return nil
+}
+
+// checkContentQueueStorage keeps queued content (raw model bytes) private
+// (Sol F3). file_storage applies directory_permissions only to a directory
+// it creates and never tightens an existing directory or database, so a
+// fabriccontent exporter with a persistent queue must (a) use a file_storage
+// extension that is a literal map with directory_permissions "0700" and a
+// compaction directory (if any) inside its directory, and (b) name that
+// same directory as its queue_directory, which it validates and tightens to
+// 0700/0600 before the queue opens it. Diagnostics name component ids only.
+func checkContentQueueStorage(cfg map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	extensions, _ := cfg["extensions"].(map[string]any)
+	for _, id := range sortedKeys(exporters) {
+		if componentType(id) != "fabriccontent" {
+			continue
+		}
+		exporter, _ := exporters[id].(map[string]any)
+		queue, _ := exporter["sending_queue"].(map[string]any)
+		storage, _ := queue["storage"].(string)
+		if storage == "" || (queue["enabled"] != nil && !configTrue(queue["enabled"])) {
+			continue // in memory: nothing on disk
+		}
+		if componentType(storage) != "file_storage" {
+			return fmt.Errorf("exporter %q queues content in %q; a content queue must use a file_storage extension", id, storage)
+		}
+		ext, ok := extensions[storage].(map[string]any)
+		if !ok || hasNonEnvReference(extensions[storage]) {
+			return fmt.Errorf("exporter %q queues content in %q, which is not a literal file_storage mapping fabric-gate can verify", id, storage)
+		}
+		directory, _ := ext["directory"].(string)
+		if directory == "" || !filepath.IsAbs(directory) || filepath.Clean(directory) != directory {
+			return fmt.Errorf("extension %q (exporter %q's content queue) must set an absolute, clean directory", storage, id)
+		}
+		if perms, _ := ext["directory_permissions"].(string); perms != "0700" && perms != "700" {
+			return fmt.Errorf("extension %q (exporter %q's content queue) must set directory_permissions: \"0700\"; queued content is raw model bytes", storage, id)
+		}
+		if compaction, _ := ext["compaction"].(map[string]any); compaction != nil {
+			if dir, _ := compaction["directory"].(string); dir != "" && dir != directory && !strings.HasPrefix(filepath.Clean(dir), directory+"/") {
+				return fmt.Errorf("extension %q (exporter %q's content queue) must keep its compaction directory inside its directory", storage, id)
+			}
+		}
+		if own, _ := exporter["queue_directory"].(string); own != directory {
+			return fmt.Errorf("exporter %q must set queue_directory to the directory of %q, so it makes an existing queue private before opening it", id, storage)
+		}
 	}
 	return nil
 }

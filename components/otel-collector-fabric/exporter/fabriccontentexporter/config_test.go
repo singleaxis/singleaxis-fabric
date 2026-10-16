@@ -47,6 +47,7 @@ func TestQueueDurabilityConfig(t *testing.T) {
 		"allowed_tenants": []any{"tenant-a"},
 		"backend":         "file",
 		"file":            map[string]any{"directory": "/var/lib/fabric-node/content"},
+		"queue_directory": "/var/lib/fabric-node/content-queue",
 		"timeout":         "120s",
 		"sending_queue": map[string]any{
 			"enabled":           true,

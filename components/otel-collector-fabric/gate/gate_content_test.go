@@ -311,6 +311,14 @@ func TestShippedHelmConfigsPass(t *testing.T) {
 			"--set", "content.s3.region=us-east-1", "--set", "content.s3.endpoint=http://minio:9000",
 			"--set", "content.s3.usePathStyle=true", "--set", "content.s3.sse=AES256"), true},
 		{"content file", append(append([]string{}, content...), "--set", "content.backend=file"), true},
+		{"content file durable queue", append(append([]string{}, content...), "--set", "content.backend=file",
+			"--set", "exporter.sendingQueue.persistence.enabled=true",
+			"--set", "exporter.endpoint=https://destination.example:4318"), true},
+		{"content s3 durable queue", append(append([]string{}, content...),
+			"--set", "content.backend=s3", "--set", "content.s3.bucket=customer-evidence",
+			"--set", "content.s3.region=us-east-1",
+			"--set", "exporter.sendingQueue.persistence.enabled=true",
+			"--set", "exporter.endpoint=https://destination.example:4318"), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			args := append([]string{"template", "ci", chart}, tc.args...)
@@ -358,4 +366,50 @@ func renderedCollectorConfig(t *testing.T, rendered []byte) map[string]any {
 	}
 	t.Fatal("no collector ConfigMap in the render")
 	return nil
+}
+
+// Sol F3 (privacy): the content queue holds raw model bytes; file_storage
+// never tightens an existing directory or database, so the gate requires a
+// private file_storage and the exporter's queue_directory (tightened at
+// start) to name the same directory.
+func TestContentQueueMustBePrivate(t *testing.T) {
+	config := func(extension, exporterExtra string) string {
+		return "extensions:\n" + extension + contentConfig +
+			"exporters:\n  fabriccontent:\n    allowed_tenants: [tenant-a]\n    backend: file\n" +
+			"    file:\n      directory: /var/lib/fabric-node/content\n" + exporterExtra +
+			"    sending_queue:\n      enabled: true\n      storage: file_storage/fabric_content\n"
+	}
+	const private = "  file_storage/fabric_content:\n    directory: /var/lib/fabric-node/content-queue\n" +
+		"    create_directory: true\n    directory_permissions: \"0700\"\n"
+	const queueDir = "    queue_directory: /var/lib/fabric-node/content-queue\n"
+	refused := map[string]struct{ cfg, reason string }{
+		"default permissions":  {config(strings.Replace(private, "    directory_permissions: \"0700\"\n", "", 1), queueDir), "directory_permissions"},
+		"broad permissions":    {config(strings.Replace(private, "\"0700\"", "\"0750\"", 1), queueDir), "directory_permissions"},
+		"no queue_directory":   {config(private, ""), "queue_directory"},
+		"other directory":      {config(private, "    queue_directory: /var/lib/fabric-node/elsewhere\n"), "queue_directory"},
+		"undefined storage":    {strings.Replace(config(private, queueDir), "  file_storage/fabric_content:\n", "  file_storage/other:\n", 1), "not a literal file_storage"},
+		"other storage type":   {strings.Replace(config(private, queueDir), "storage: file_storage/fabric_content", "storage: db_storage/content", 1), "must use a file_storage"},
+		"relative directory":   {config(strings.Replace(private, "directory: /var/lib/fabric-node/content-queue", "directory: content-queue", 1), queueDir), "absolute, clean directory"},
+		"compaction elsewhere": {config(private+"    compaction:\n      directory: /tmp\n      on_start: true\n", queueDir), "compaction directory"},
+	}
+	for name, tc := range refused {
+		t.Run("refused/"+name, func(t *testing.T) {
+			_, err := validateArgs([]string{"--config=" + writeConfig(t, tc.cfg)})
+			if err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("not refused for %q: %v", tc.reason, err)
+			}
+		})
+	}
+	accepted := map[string]string{
+		"private queue":     config(private, queueDir),
+		"compaction inside": config(private+"    compaction:\n      directory: /var/lib/fabric-node/content-queue\n      on_start: true\n", queueDir),
+		"in-memory queue":   strings.Replace(config(private, ""), "      storage: file_storage/fabric_content\n", "", 1),
+	}
+	for name, cfg := range accepted {
+		t.Run("accepted/"+name, func(t *testing.T) {
+			if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err != nil {
+				t.Fatalf("rejected: %v", err)
+			}
+		})
+	}
 }

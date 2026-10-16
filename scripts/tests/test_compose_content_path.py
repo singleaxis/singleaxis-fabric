@@ -565,6 +565,38 @@ def test_s3_overlay_replaces_only_the_content_exporter() -> None:
     assert s3["retry_on_failure"]["max_elapsed_time"] == "0s"
 
 
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("collector.yaml",),
+        ("collector-production.yaml", "collector-content.yaml"),
+        ("collector.yaml", "collector-content-s3.yaml"),
+        ("collector-production.yaml", "collector-content.yaml", "collector-content-s3.yaml"),
+    ],
+)
+def test_content_queue_is_private(names: tuple[str, ...]) -> None:
+    """Sol F3: queued content is raw model bytes. file_storage creates the queue
+    directory 0700, and every content exporter names it as its queue_directory, which
+    it tightens (directories 0700, files 0600) before the queue opens it."""
+    config: dict[str, Any] = {}
+    for name in names:
+        _deep_merge(config, _collector(name))
+    storage = config["extensions"]["file_storage/fabric_content"]
+    assert storage["directory_permissions"] == "0700"
+    assert storage["create_directory"] is True
+    compaction = storage.get("compaction", {}).get("directory", storage["directory"])
+    assert compaction == storage["directory"]
+    queued = [
+        exporter
+        for name, exporter in config["exporters"].items()
+        if name.startswith("fabriccontent") and "storage" in exporter.get("sending_queue", {})
+    ]
+    assert queued
+    for exporter in queued:
+        assert exporter["sending_queue"]["storage"] == "file_storage/fabric_content"
+        assert exporter["queue_directory"] == storage["directory"]
+
+
 def _ports(service: dict[str, Any]) -> list[str]:
     return [str(p) for p in service["ports"]]
 
