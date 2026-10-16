@@ -34,7 +34,7 @@ from opentelemetry.sdk.trace import Span, SpanProcessor
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
 
 from fabric import wire
-from fabric.wire import _stream, _transport
+from fabric.wire import _stream
 
 from . import test_wire_httpx2 as base
 from .test_wire_helpers import OPENAI_CHAT, ChunkStream, Rig, attrs, chat_response, make_rig
@@ -163,7 +163,6 @@ def test_setup_failure_under_explicit_wrapper_is_not_captured_twice(
     (loss,) = installed.losses()
     a = attrs(loss)
     assert (a["fabric.loss.reason"], a["fabric.loss.count"]) == ("internal_error", 1)
-    assert not _transport._DELEGATED
 
 
 # --- 9: empty and tiny chunks stay bounded -------------------------------------------
@@ -322,7 +321,6 @@ def test_task_spawned_inside_delegation_is_captured_after_it_returns(rig: Rig) -
 
         async with rig.async_client(handler) as client:
             await client.post(OPENAI_CHAT, json={"messages": [{"content": "first"}]})
-            assert not _transport._DELEGATED
             ready.set()
             await asyncio.gather(*tasks)
 
@@ -391,7 +389,6 @@ def test_nested_delegation_of_the_same_request_stays_suppressed(
     with module.Client(transport=transport) as client:
         assert client.post(url, json={"messages": []}).status_code == 200
     assert installed.handle.allocator.last_sequence()[1] == 0  # one sequence, not two
-    assert not _transport._DELEGATED
 
 
 # --- Sol G 1+3: suppression follows the delegated request object -----------------------
@@ -433,7 +430,6 @@ def test_distinct_request_from_a_streamed_request_body_is_captured(
     spans = installed.spans()
     assert [attrs(s)["fabric.source.sequence"] for s in spans] == [0, 1]
     assert installed.losses() == []
-    assert not _transport._DELEGATED
 
 
 @pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
@@ -466,7 +462,6 @@ def test_same_request_delegated_to_another_task_is_captured_once(
     assert [attrs(s)["fabric.source.sequence"] for s in installed.spans()] == [0]
     assert installed.handle.allocator.last_sequence()[1] == 0  # one sequence, not two
     assert installed.losses() == []
-    assert not _transport._DELEGATED
 
 
 @pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
@@ -500,7 +495,6 @@ def test_same_request_delegated_to_another_thread_is_captured_once(
     assert len(fake_llm.seen) == 1
     assert [attrs(s)["fabric.source.sequence"] for s in installed.spans()] == [0]
     assert installed.losses() == []
-    assert not _transport._DELEGATED
 
 
 @pytest.mark.parametrize("flavor", ["httpx", "httpx2"])

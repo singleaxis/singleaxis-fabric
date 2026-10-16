@@ -287,6 +287,31 @@ httpx2 clients. Both are covered without framework knowledge. A client
 constructed with a custom transport is covered only when that transport
 subclasses the patched classes or is wrapped in `WireTransport`. The OpenAI
 SDK's optional aiohttp client (`DefaultAioHttpClient`) is not covered.
+
+**Nested capture is structural.** Every invocation of a patched transport
+method is one exchange, and every call through an explicit wrapper is one
+exchange. No shared registry, task, thread or context state decides whether a
+request is captured, so two independent sends of one `Request` object
+(concurrent threads or tasks, or a resend in a forked child) are two
+exchanges, and a request made inside a delegated call (for example by a
+streamed request body) is its own exchange. The only nesting is a wrapper
+around a transport that ends in a patched method; the wrapper captures the
+call and its delegation is never captured again:
+
+- an inner transport whose method is Fabric's patch is called through the
+  saved original method;
+- any other inner transport (a middleware transport, a subclass that
+  overrides the method and calls `super()`, another wrapper) receives a
+  private shallow copy of the request carrying a delegation mark, and a
+  patched method or wrapper that receives a marked copy passes it through
+  uncaptured, on whichever task or thread it runs. The mark lives only on
+  that copy, never on the caller's request.
+
+An inner transport that rebuilds the request object (dropping the mark)
+before it reaches a patched transport is captured by the wrapper and again
+by the patch: an expected duplicate, never a silent omission. The
+explicit-wins deferral above is unchanged.
+
 Qualified versions: httpx 0.28.1, httpx2 2.13.1, `openai` 3.26.1 and
 `anthropic` 1.12.1 (sync, async and streaming, on a real socket), and
 `openai` 3.26.1 end to end through a production-shaped Fabric Node

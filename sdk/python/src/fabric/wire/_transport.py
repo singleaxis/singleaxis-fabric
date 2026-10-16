@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 import weakref
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -41,36 +41,68 @@ _W = TypeVar("_W")
 _LOG = logging.getLogger("fabric.wire")
 
 
-# Requests a tee is delegating to its inner transport right now, by identity: id(request)
-# -> (request, depth). The entry holds the request itself, so its id cannot be reused by
-# another object while it is live. Suppression follows the *request object*, never the
-# task, thread or context: a patched default transport under an explicit wrapper does not
-# capture the same request twice, even when the wrapper hands it to another task or
-# thread, while any other request (one made from a streamed request body, a task spawned
-# inside the delegated call, a copied-context thread) is captured normally.
-_DELEGATED: dict[int, tuple[Any, int]] = {}
-_DELEGATED_LOCK = threading.Lock()
+# Nested capture (spec 047 §1). Every invocation of a patched transport method is captured
+# once, and so is every call through an explicit wrapper. The only nesting is structural:
+# a WireTransport/AsyncWireTransport wrapping a transport that ends in a patched method.
+# The wrapper never consults shared state to avoid capturing twice: when its inner
+# transport's method *is* Fabric's patch it calls the saved original directly; otherwise
+# (a middleware transport, a subclass that overrides and calls ``super()``, another
+# wrapper) it hands the inner transport a private shallow copy of the request carrying a
+# delegation mark, and a patched method or wrapper receiving a marked copy passes it
+# through uncaptured. The mark lives only on that per-invocation copy, so it follows the
+# delegated call across tasks and threads, while independent sends of the same request
+# object (concurrently, or in a forked child) are each captured. Nothing is global.
+_MARK = "_fabric_wire_delegated"
 
 
-def _delegating(request: Any) -> bool:
-    """Whether ``request`` itself is inside a live delegation of a tee."""
-    entry = _DELEGATED.get(id(request))
-    return entry is not None and entry[0] is request
-
-
-@contextlib.contextmanager
-def _delegation(request: Any) -> Iterator[None]:
-    key = id(request)
-    with _DELEGATED_LOCK:
-        depth = _DELEGATED[key][1] if key in _DELEGATED else 0
-        _DELEGATED[key] = (request, depth + 1)
+def _delegated(request: Any) -> bool:
+    """Whether ``request`` is a wrapper's marked copy (its exchange is already captured)."""
     try:
-        yield
-    finally:
-        with _DELEGATED_LOCK:
-            entry = _DELEGATED.pop(key, None)
-            if entry is not None and entry[1] > 1:
-                _DELEGATED[key] = (entry[0], entry[1] - 1)
+        return vars(request).get(_MARK) is True
+    except TypeError:  # no instance dict: never marked
+        return False
+
+
+def _marked(request: Any) -> Any:
+    """A shallow copy of ``request`` carrying the delegation mark: same method, URL,
+    headers, extensions and (possibly teed) stream. A request that cannot be copied is
+    passed as is; a patched transport under it then captures it again (a duplicate, never
+    a silent omission)."""
+    try:
+        clone = object.__new__(type(request))
+        state = vars(clone)
+        state.update(vars(request))
+        state[_MARK] = True
+        return clone
+    except Exception:
+        return request
+
+
+def _original(inner: Any, attr: str) -> Any | None:
+    """The saved unpatched method when ``inner``'s class resolves ``attr`` to Fabric's
+    patch (also after an uninstall left it wrapped by someone else's later patch); ``None``
+    for any other method, including an instance attribute or a subclass override."""
+    try:
+        if attr in vars(inner):
+            return None
+    except TypeError:
+        pass
+    method = getattr(type(inner), attr, None)
+    if getattr(method, "__fabric_wire_patch__", False):
+        return getattr(method, "__fabric_wire_original__", None)
+    return None
+
+
+def _delegate_sync(inner: Any, request: Any) -> Any:
+    if (original := _original(inner, "handle_request")) is not None:
+        return original(inner, request)
+    return inner.handle_request(_marked(request))
+
+
+async def _delegate_async(inner: Any, request: Any) -> Any:
+    if (original := _original(inner, "handle_async_request")) is not None:
+        return await original(inner, request)
+    return await inner.handle_async_request(_marked(request))
 
 
 _ACTIVE: WireTee | None = None  # set by fabric.wire.install
@@ -112,7 +144,7 @@ class WireTee:
         when the response ends, the explicit record owns it and the tee allocates nothing
         (no gap); if the response outlives the call (a lazy stream the call returned), the
         tee captures it then (:meth:`adopt`)."""
-        if self.closed or _delegating(request):
+        if self.closed:
             return False, None
         try:
             url = request.url
@@ -169,13 +201,17 @@ class WireTee:
             self.loss.note_activity(self.allocator)
         return True
 
-    def handle_sync(self, call: Callable[..., Any], transport: Any, request: Any) -> Any:
+    def handle_sync(
+        self, call: Callable[..., Any], transport: Any, request: Any,
+        delegate: Callable[..., Any] | None = None,
+    ) -> Any:  # fmt: skip
+        """``call`` sends an unowned request; ``delegate`` (default ``call``) an owned one,
+        also after a setup failure, without any nested capture."""
         owned, exchange = self.begin(request)
         if not owned:
             return call(transport, request)
         try:
-            with _delegation(request):  # also after a setup failure: no nested capture
-                response = call(transport, request)
+            response = (delegate or call)(transport, request)
         except BaseException as exc:
             if exchange is not None:
                 exchange.end_request(request)
@@ -186,13 +222,15 @@ class WireTee:
             exchange.attach(response, is_async=False)
         return response
 
-    async def handle_async(self, call: Callable[..., Any], transport: Any, request: Any) -> Any:
+    async def handle_async(
+        self, call: Callable[..., Any], transport: Any, request: Any,
+        delegate: Callable[..., Any] | None = None,
+    ) -> Any:  # fmt: skip
         owned, exchange = self.begin(request)
         if not owned:
             return await call(transport, request)
         try:
-            with _delegation(request):  # also after a setup failure: no nested capture
-                response = await call(transport, request)
+            response = await (delegate or call)(transport, request)
         except BaseException as exc:
             if exchange is not None:
                 exchange.end_request(request)
@@ -253,9 +291,8 @@ class WireTee:
 
 
 def _after_fork_in_child() -> None:
-    global _PATCH_LOCK, _DELEGATED_LOCK  # noqa: PLW0603
+    global _PATCH_LOCK  # noqa: PLW0603
     _PATCH_LOCK = threading.Lock()  # a parent thread may have held it at fork
-    _DELEGATED_LOCK = threading.Lock()
     for tee in list(_TEES):  # in-flight exchanges belong to the parent's epoch
         for exchange in list(tee._active):
             exchange.done = True
@@ -272,13 +309,13 @@ def _patch_module(module: Any) -> None:
 
     @functools.wraps(sync_original)
     def handle_request(self: Any, request: Any) -> Any:
-        if (tee := _ACTIVE) is None:
+        if (tee := _ACTIVE) is None or _delegated(request):
             return sync_original(self, request)
         return tee.handle_sync(sync_original, self, request)
 
     @functools.wraps(async_original)
     async def handle_async_request(self: Any, request: Any) -> Any:
-        if (tee := _ACTIVE) is None:
+        if (tee := _ACTIVE) is None or _delegated(request):
             return await async_original(self, request)
         return await tee.handle_async(async_original, self, request)
 
@@ -288,6 +325,7 @@ def _patch_module(module: Any) -> None:
     )
     for cls, attr, wrapper in patches:
         wrapper.__fabric_wire_patch__ = True  # read by the recorder wheel qualifier
+        wrapper.__fabric_wire_original__ = getattr(cls, attr)  # read by explicit wrappers
         _PATCHED[module.__name__, attr] = (cls, getattr(cls, attr), wrapper)
         setattr(cls, attr, wrapper)
 
@@ -365,9 +403,11 @@ class WireTransport(_SyncBase):
         self._inner, self._handle = inner, handle
 
     def handle_request(self, request: Any) -> Any:
-        if (tee := _ACTIVE if self._handle is None else self._handle._tee) is None:
+        tee = _ACTIVE if self._handle is None else self._handle._tee
+        if tee is None or _delegated(request):  # an enclosing wrapper captures it
             return self._inner.handle_request(request)
-        return tee.handle_sync(lambda t, r: t.handle_request(r), self._inner, request)
+        call = lambda t, r: t.handle_request(r)  # noqa: E731
+        return tee.handle_sync(call, self._inner, request, _delegate_sync)
 
     def __enter__(self) -> WireTransport:
         return self
@@ -390,10 +430,11 @@ class AsyncWireTransport(_AsyncBase):
         self._inner, self._handle = inner, handle
 
     async def handle_async_request(self, request: Any) -> Any:
-        if (tee := _ACTIVE if self._handle is None else self._handle._tee) is None:
+        tee = _ACTIVE if self._handle is None else self._handle._tee
+        if tee is None or _delegated(request):  # an enclosing wrapper captures it
             return await self._inner.handle_async_request(request)
         call = lambda t, r: t.handle_async_request(r)  # noqa: E731
-        return await tee.handle_async(call, self._inner, request)
+        return await tee.handle_async(call, self._inner, request, _delegate_async)
 
     async def __aenter__(self) -> AsyncWireTransport:
         return self
