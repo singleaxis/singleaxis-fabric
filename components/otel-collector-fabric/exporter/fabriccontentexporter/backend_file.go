@@ -36,7 +36,10 @@ var errConflict = errors.New("fabriccontent: object exists with different bytes"
 type storeError struct {
 	op     string
 	status int
+	err    error // the cause, for errors.Is; never part of the message
 }
+
+func (e *storeError) Unwrap() error { return e.err }
 
 func (e *storeError) Error() string {
 	if e.status > 0 {
@@ -65,6 +68,26 @@ func (e *storeError) Error() string {
 // directory entry may still be lost on power failure (Sol G #2). A fresh
 // process re-establishes the barrier once per directory below the root,
 // covering directories an earlier process or another writer created.
+//
+// The content root and its ancestors get the same treatment (Sol H #3): a
+// fresh backend, at Start when the root already exists and in any case
+// before its first acknowledgement, fsyncs every ancestor of the root up to
+// the durable boundary, whether or not those directories already exist. An
+// earlier process may have created them and failed (or crashed before) the
+// parent fsync that made them durable, and that state is not on disk. The
+// boundary is the first of:
+//
+//   - the filesystem root ("/"), or the root of the filesystem holding the
+//     content root (a mount point's own entry lives on another filesystem
+//     and cannot be lost with this one);
+//   - an ancestor whose fsync this process is refused with EACCES, EPERM or
+//     EROFS (a directory it cannot open, or a read-only filesystem): the
+//     operator owns its durability. A directory this backend created inside
+//     such an ancestor is never accepted on that basis; the put fails
+//     retryably instead.
+//
+// Any other failure (EIO, ENOSPC, ...) fails Start, or the put, retryably;
+// the whole chain is retried until one walk completes.
 type fileBackend struct {
 	dir string
 
@@ -73,10 +96,14 @@ type fileBackend struct {
 	// fsync'd. Bounded by maxDurableDirs: forgetting entries only costs a
 	// repeated (harmless) parent fsync.
 	durable map[string]bool
-	// pendingRoot lists, top-down, the directories ensureRoot created (the
-	// content root and any missing ancestors) whose parent fsync has not yet
-	// succeeded. Every put completes them before it can acknowledge.
-	pendingRoot []string
+	// rootDurable is set once a walk of the root's ancestor chain (see
+	// rootBarrier) has completed in this process, and cleared whenever the
+	// root has to be created again.
+	rootDurable bool
+	// created holds the directories ensureRoot created (the content root
+	// and any missing ancestors) until a rootBarrier walk completes: their
+	// parents may not be treated as the durable boundary.
+	created map[string]bool
 }
 
 // maxDurableDirs bounds the durable set (three directories per tenant).
@@ -90,15 +117,23 @@ var (
 )
 
 func newFileBackend(dir string) *fileBackend {
-	return &fileBackend{dir: dir, durable: map[string]bool{}}
+	return &fileBackend{dir: dir, durable: map[string]bool{}, created: map[string]bool{}}
 }
 
 // startFileBackend is newFileBackend plus a sweep of the temp files an
-// earlier process left behind (see sweepStaleTemps).
-func startFileBackend(dir string) *fileBackend {
+// earlier process left behind (see sweepStaleTemps) and, when the content
+// root already exists, the root barrier (see rootBarrier): a failure other
+// than reaching the durable boundary fails Start with a retryable error.
+// A missing root is created, and its barrier completed, by the first put.
+func startFileBackend(dir string) (*fileBackend, error) {
 	b := newFileBackend(dir)
 	b.sweepStaleTemps()
-	return b
+	if info, err := os.Lstat(dir); err == nil && info.IsDir() {
+		if err := b.ensureRoot(); err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
 }
 
 // isTempName reports whether name is one of put's temp files
@@ -291,12 +326,13 @@ func (b *fileBackend) forget(dir string) {
 }
 
 // ensureRoot creates the content root (0700, with missing parents) or checks
-// that it is a real directory. The directories it creates stay pending until
-// their parents' fsyncs succeed; until then every put retries those
-// barriers, so a failed fsync is never skipped because the root now exists.
+// that it is a real directory, then completes the root barrier unless a walk
+// already completed in this process. Until one does, every put fails, so a
+// failed fsync is never skipped because the root now exists, and a fresh
+// process never trusts barriers an earlier one may not have completed.
 func (b *fileBackend) ensureRoot() error {
 	if _, err := os.Lstat(b.dir); errors.Is(err, os.ErrNotExist) {
-		var missing []string // bottom-up: the root, then its missing parents
+		var missing []string // the root, then its missing parents
 		for d := b.dir; ; {
 			if _, err := os.Lstat(d); !errors.Is(err, os.ErrNotExist) {
 				break
@@ -309,48 +345,101 @@ func (b *fileBackend) ensureRoot() error {
 			d = up
 		}
 		if err := os.MkdirAll(b.dir, 0o700); err != nil {
-			return &storeError{op: "file mkdir"}
+			return &storeError{op: "file mkdir", err: err}
 		}
 		b.mu.Lock()
-		for i := len(missing) - 1; i >= 0; i-- {
-			b.pendingRoot = append(b.pendingRoot, missing[i])
+		b.rootDurable = false
+		for _, d := range missing {
+			b.created[d] = true
 		}
 		b.mu.Unlock()
 	}
-	if err := b.syncPendingRoot(); err != nil {
+	if _, err := privateDir(b.dir); err != nil {
 		return err
 	}
-	_, err := privateDir(b.dir)
-	return err
+	b.mu.Lock()
+	done := b.rootDurable
+	b.mu.Unlock()
+	if done {
+		return nil
+	}
+	return b.rootBarrier()
 }
 
-// syncPendingRoot completes, top-down, the parent fsyncs of the directories
-// ensureRoot created; each leaves the pending list only once its fsync has
-// succeeded.
-func (b *fileBackend) syncPendingRoot() error {
-	for {
-		b.mu.Lock()
-		if len(b.pendingRoot) == 0 {
-			b.mu.Unlock()
-			return nil
-		}
-		next := b.pendingRoot[0]
-		b.mu.Unlock()
-		if err := syncDir(filepath.Dir(next)); err != nil {
-			return err
-		}
-		b.mu.Lock()
-		if len(b.pendingRoot) > 0 && b.pendingRoot[0] == next {
-			b.pendingRoot = b.pendingRoot[1:]
-		}
-		b.mu.Unlock()
+// rootBarrier fsyncs, top-down, every ancestor of the content root up to
+// the durable boundary (see fileBackend), making the root's entry and each
+// ancestor's entry durable. The root's own entries are made durable by the
+// barriers of the directories below it (makeDurable).
+func (b *fileBackend) rootBarrier() error {
+	chain := rootAncestors(b.dir) // bottom-up
+	b.mu.Lock()
+	created := make(map[string]bool, len(b.created))
+	for d := range b.created {
+		created[filepath.Dir(d)] = true // parents holding a created entry
 	}
+	b.mu.Unlock()
+	for i := len(chain) - 1; i >= 0; i-- {
+		parent := chain[i]
+		err := syncDir(parent)
+		if err == nil {
+			continue
+		}
+		if !beyondBoundary(err) || created[parent] {
+			var se *storeError
+			if errors.As(err, &se) {
+				return err
+			}
+			return &storeError{op: "dir fsync", err: err}
+		}
+		// The boundary: this ancestor, and everything above it, is the
+		// operator's. Directories below it must still succeed.
+	}
+	b.mu.Lock()
+	b.rootDurable = true
+	b.created = map[string]bool{}
+	b.mu.Unlock()
+	return nil
+}
+
+// beyondBoundary reports whether a directory fsync failed because this
+// process may not open or sync that directory: the durable boundary.
+func beyondBoundary(err error) bool {
+	return errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EROFS)
+}
+
+// rootAncestors lists, bottom-up, the parents whose fsync makes the content
+// root's entry and its ancestors' entries durable, stopping at "/" or at the
+// root of the content root's filesystem.
+func rootAncestors(root string) []string {
+	var chain []string
+	for d := root; ; {
+		parent := filepath.Dir(d)
+		if parent == d || !sameFilesystem(d, parent) {
+			return chain
+		}
+		chain = append(chain, parent)
+		d = parent
+	}
+}
+
+// sameFilesystem reports whether dir and its parent are on one filesystem
+// (dir is not a mount point). Unknown is "same": the fsync decides. Tests
+// replace it to simulate a mount point.
+var sameFilesystem = func(dir, parent string) bool {
+	a, errA := os.Stat(dir)
+	p, errP := os.Stat(parent)
+	if errA != nil || errP != nil {
+		return true
+	}
+	sa, okA := a.Sys().(*syscall.Stat_t)
+	sp, okP := p.Sys().(*syscall.Stat_t)
+	return !okA || !okP || sa.Dev == sp.Dev
 }
 
 // privateDir creates path 0700 when it is missing (created reports that),
 // or checks that it is a real directory and tightens it to 0700. It never
 // fsyncs: the caller makes the directory's entry durable (makeDurable,
-// syncPendingRoot).
+// rootBarrier).
 func privateDir(path string) (created bool, err error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -419,11 +508,11 @@ var syncDir = syncDirectory
 func syncDirectory(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
-		return &storeError{op: "dir open"}
+		return &storeError{op: "dir open", err: err}
 	}
 	defer func() { _ = d.Close() }()
 	if err := d.Sync(); err != nil {
-		return &storeError{op: "dir fsync"}
+		return &storeError{op: "dir fsync", err: err}
 	}
 	return nil
 }

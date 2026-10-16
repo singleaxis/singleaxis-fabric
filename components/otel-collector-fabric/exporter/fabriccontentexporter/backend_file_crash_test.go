@@ -5,8 +5,10 @@ package fabriccontentexporter
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -108,7 +110,9 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 	if err := os.Symlink(filepath.Dir(outside), filepath.Join(dir, "acme", "link")); err != nil {
 		t.Fatal(err)
 	}
-	startFileBackend(dir)
+	if _, err := startFileBackend(dir); err != nil {
+		t.Fatal(err)
+	}
 	if left := temps(t, dir); len(left) != 0 {
 		t.Errorf("temp files left after start: %v", left)
 	}
@@ -122,7 +126,9 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 
 func TestFileBackend_StartWithoutDirectoryIsANoop(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "absent")
-	startFileBackend(dir)
+	if _, err := startFileBackend(dir); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
 		t.Errorf("start created the content root")
 	}
@@ -243,6 +249,17 @@ func syncLog(t *testing.T, dir string, fail *bool) *[]string {
 	return &synced
 }
 
+// within keeps, in order, the entries of list at or below dir.
+func within(list []string, dir string) []string {
+	var kept []string
+	for _, s := range list {
+		if s == dir || strings.HasPrefix(s, dir+string(filepath.Separator)) {
+			kept = append(kept, s)
+		}
+	}
+	return kept
+}
+
 func countOf(list []string, item string) int {
 	n := 0
 	for _, s := range list {
@@ -314,7 +331,8 @@ func TestFileBackend_RetryCompletesTheBarriersOfCreatedRootAncestors(t *testing.
 		t.Fatalf("retry put: %v", err)
 	}
 	want := []string{base, filepath.Join(base, "a"), filepath.Join(base, "a", "b"), root}
-	got := (*synced)[:min(len(*synced), len(want))]
+	below := within(*synced, base) // the walk also fsyncs base's own ancestors first
+	got := below[:min(len(below), len(want))]
 	if len(got) != len(want) {
 		t.Fatalf("retry synced %v, want the chain %v first", *synced, want)
 	}
@@ -343,5 +361,143 @@ func TestFileBackend_FreshBackendSyncsAnExistingChainOnce(t *testing.T) {
 	}
 	if countOf(*synced, root) != 1 || countOf(*synced, filepath.Join(root, "acme")) != 1 {
 		t.Fatalf("existing chain not made durable once: %v", *synced)
+	}
+}
+
+// Sol H #3: an earlier process created <base>/a/b/content and failed the
+// fsync of <base> that makes "a" durable, then restarted. The fresh backend
+// knows nothing of that pending barrier and the chain already exists; it must
+// still fsync <base> (and every ancestor below the boundary) before its first
+// acknowledgement.
+func TestFileBackend_RestartCompletesTheRootChainBarrierBeforeAcknowledging(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "a", "b", "content")
+	key := filepath.ToSlash(filepath.Join(root, "tenant", "evidence", "0b1c2d3e-0000-4000-8000-000000000010"))
+	body := []byte("exact content")
+	fail := true
+	synced := syncLog(t, base, &fail)
+	if err := newFileBackend(root).put(context.Background(), key, body); err == nil {
+		t.Fatal("first put: want the injected fsync failure of <base>")
+	}
+	if _, err := os.Lstat(root); err != nil {
+		t.Fatal(err)
+	}
+	// Process restart: a new backend; the fsync now works (no power loss yet).
+	fail, *synced = false, nil
+	if err := newFileBackend(root).put(context.Background(), key, body); err != nil {
+		t.Fatalf("fresh backend put: %v", err)
+	}
+	chain := []string{base, filepath.Join(base, "a"), filepath.Join(base, "a", "b")}
+	got := within(*synced, base)
+	if len(got) < len(chain) {
+		t.Fatalf("fresh backend acknowledged before the root chain barrier; synced %v", *synced)
+	}
+	for i, want := range chain {
+		if got[i] != want {
+			t.Fatalf("fresh backend synced %v, want the chain %v first", got, chain)
+		}
+	}
+}
+
+// The same restart through Start: an existing root re-establishes the chain
+// at Start, a non-boundary failure fails Start retryably, and the next Start
+// completes the barrier before any put.
+func TestFileBackend_StartReestablishesTheRootChainBarrier(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "a", "content")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fail := true
+	synced := syncLog(t, base, &fail)
+	_, err := startFileBackend(root)
+	var se *storeError
+	if err == nil || !errors.As(err, &se) || strings.Contains(err.Error(), base) {
+		t.Fatalf("start with a failing ancestor fsync: want a retryable storeError without the path, got %v", err)
+	}
+	fail, *synced = false, nil
+	b, err := startFileBackend(root)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if countOf(*synced, base) != 1 || countOf(*synced, filepath.Join(base, "a")) != 1 {
+		t.Fatalf("start did not fsync the root's ancestors: %v", *synced)
+	}
+	*synced = nil
+	key := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000011"))
+	if err := b.put(context.Background(), key, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if countOf(*synced, base) != 0 {
+		t.Errorf("a completed root barrier was walked again: %v", *synced)
+	}
+}
+
+// An ancestor that refuses fsync with EACCES, EPERM or EROFS is the durable
+// boundary: the walk accepts it, provided this backend did not create a
+// directory inside it; anything else (EIO) fails.
+func TestFileBackend_RootBarrierBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		err     error
+		created bool
+		ok      bool
+	}{
+		{"eacces existing", syscall.EACCES, false, true},
+		{"eperm existing", syscall.EPERM, false, true},
+		{"erofs existing", &storeError{op: "dir open", err: &os.PathError{Op: "open", Err: syscall.EROFS}}, false, true},
+		{"eio existing", syscall.EIO, false, false},
+		{"eacces created", syscall.EACCES, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			root := filepath.Join(base, "content")
+			if !tc.created {
+				if err := os.Mkdir(root, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			original := syncDir
+			t.Cleanup(func() { syncDir = original })
+			var above []string
+			syncDir = func(d string) error {
+				if d == base {
+					return tc.err
+				}
+				if strings.HasPrefix(base, d+string(filepath.Separator)) || d == "/" {
+					above = append(above, d)
+				}
+				return original(d)
+			}
+			key := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000012"))
+			err := newFileBackend(root).put(context.Background(), key, []byte("x"))
+			if (err == nil) != tc.ok {
+				t.Fatalf("put = %v, want ok=%v", err, tc.ok)
+			}
+			if len(above) == 0 {
+				t.Errorf("ancestors above the boundary were not attempted")
+			}
+		})
+	}
+}
+
+// A mount point ends the chain: its own entry lives on another filesystem.
+func TestFileBackend_RootBarrierStopsAtTheFilesystemRoot(t *testing.T) {
+	base := t.TempDir()
+	mount := filepath.Join(base, "mnt")
+	root := filepath.Join(mount, "content")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	original := sameFilesystem
+	t.Cleanup(func() { sameFilesystem = original })
+	sameFilesystem = func(dir, parent string) bool { return dir != mount }
+	fail := false
+	synced := syncLog(t, "", &fail)
+	if _, err := startFileBackend(root); err != nil {
+		t.Fatal(err)
+	}
+	if countOf(*synced, mount) != 1 || countOf(*synced, base) != 0 {
+		t.Fatalf("want the chain to stop at the mount point; synced %v", *synced)
 	}
 }

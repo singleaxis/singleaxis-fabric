@@ -47,7 +47,13 @@ func newContentExporter(cfg *Config, set component.TelemetrySettings) (*contentE
 	}
 	switch cfg.Backend {
 	case backendFile:
-		e.newBackend = func(context.Context) (backend, error) { return startFileBackend(cfg.File.Directory), nil }
+		e.newBackend = func(context.Context) (backend, error) {
+			b, err := startFileBackend(cfg.File.Directory)
+			if err != nil {
+				return nil, err
+			}
+			return b, nil
+		}
 	case backendS3:
 		e.newBackend = func(ctx context.Context) (backend, error) { return newS3Backend(ctx, cfg.S3) }
 	default:

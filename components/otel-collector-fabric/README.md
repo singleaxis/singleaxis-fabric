@@ -27,7 +27,12 @@ destination. SingleAxis Platform is optional.
   `renameat2(RENAME_NOREPLACE)` on Linux — where the filesystem has no hard
   links; a filesystem offering neither fails the write retryably, never a
   check-then-rename): identical bytes are a successful replay, different
-  bytes a conflict. Refused
+  bytes a conflict. Before its first acknowledgement each process fsyncs
+  every directory on the object's path and every ancestor of the content
+  root up to the durable boundary (the content root's filesystem root, or
+  the first ancestor that refuses fsync with `EACCES`, `EPERM` or `EROFS`),
+  even when those directories already exist; any other fsync failure fails
+  Start or the write retryably. Refused
   records are dropped, counted and logged by reason only;
 - upstream OTLP receiver and optional Linux audit receiver (netlink or durable logfile);
 - memory limiter and optional development batch
