@@ -17,7 +17,7 @@ import types
 import uuid
 from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -404,25 +404,31 @@ def test_effective_endpoint_only_is_checked(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_fabric_exports_log_codes_and_classes_only(caplog: pytest.LogCaptureFixture) -> None:
-    import requests  # type: ignore[import-untyped]  # noqa: PLC0415
+    # requests ships inline types only from 2.34; older releases need the ignore.
+    import requests  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: PLC0415
         OTLPSpanExporter,
     )
 
     class BadSession:
+        """Stands in for ``requests.Session``: older exporters ``post``, newer transports
+        ``request``; both fail with a secret-bearing URL in the exception text."""
+
         def __init__(self) -> None:
             self.headers: dict[str, str] = {}
 
-        def post(self, **kwargs: Any) -> Any:
+        def request(self, *args: Any, **kwargs: Any) -> Any:
             raise requests.exceptions.InvalidURL("https://node/v1/traces?api_key=sk-log-secret")
+
+        post = request
 
         def close(self) -> None:
             pass
 
     def exporter() -> OTLPSpanExporter:
-        made = OTLPSpanExporter(endpoint="http://node/v1/traces", timeout=0.1)
-        made._session = BadSession()
-        return made
+        return OTLPSpanExporter(
+            endpoint="http://node/v1/traces", timeout=0.1, session=cast(Any, BadSession())
+        )
 
     provider, memory = _memory_provider()
     provider.get_tracer("t").start_span("s").end()

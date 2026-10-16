@@ -103,7 +103,8 @@ def content_client_from_env(
     """The Node content client: ``FABRIC_WIRE_CONTENT_ENDPOINT`` (or ``endpoint``) plus the
     ``OTEL_EXPORTER_OTLP_LOGS_*`` > ``OTEL_EXPORTER_OTLP_*`` TLS, header and timeout settings."""
     try:
-        import requests  # type: ignore[import-untyped]  # noqa: F401, PLC0415
+        # requests ships inline types only from 2.34; older releases need the ignore.
+        import requests  # type: ignore[import-untyped, unused-ignore]  # noqa: F401, PLC0415
         from opentelemetry.proto.collector.logs.v1 import logs_service_pb2  # noqa: F401, PLC0415
     except ImportError:
         raise ValueError("node mode needs the [otlp] extra (requests, protobuf)") from None

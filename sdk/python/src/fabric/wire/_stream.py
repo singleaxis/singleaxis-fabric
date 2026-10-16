@@ -267,7 +267,8 @@ class Exchange:
             _ensure_reaper()
             reap = functools.partial(self.finish, "abandoned")
             self.finalizer = weakref.finalize(wrapper, _ABANDONED.put, reap)
-            self.finalizer.atexit = False  # type: ignore[misc]
+            # Older typeshed declares ``finalize.atexit`` read-only; newer releases do not.
+            self.finalizer.atexit = False  # type: ignore[misc, unused-ignore]
             response.stream = wrapper
         except Exception:
             self.detach(lost=True)

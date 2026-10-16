@@ -15,11 +15,12 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+# The requests ignores below: it ships inline types only from 2.34; older releases need them.
 import httpx
 import pytest
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
-from requests import Response  # type: ignore[import-untyped]
-from requests.adapters import BaseAdapter  # type: ignore[import-untyped]
+from requests import Response  # type: ignore[import-untyped, unused-ignore]
+from requests.adapters import BaseAdapter  # type: ignore[import-untyped, unused-ignore]
 
 import fabric._loss
 import fabric._sequence
@@ -240,7 +241,8 @@ def test_quarantined_bytes_count_against_the_spool_bound(tmp_path: Path) -> None
 # ------------------------------------------------------------- H1: delivery never redirects
 
 
-class _Redirecting(BaseAdapter):  # type: ignore[misc]
+# Subclassing Any is an error only while requests is untyped (< 2.34).
+class _Redirecting(BaseAdapter):  # type: ignore[misc, unused-ignore]
     """Socket-free ``requests`` adapter: the first request gets ``status``; any follow-up
     (which must never happen) gets 200."""
 
@@ -249,7 +251,15 @@ class _Redirecting(BaseAdapter):  # type: ignore[misc]
         self.status, self.location = status, location
         self.seen: list[tuple[str, bytes | None]] = []
 
-    def send(self, request: Any, **kwargs: Any) -> Response:
+    def send(  # same parameters as requests' BaseAdapter.send
+        self,
+        request: Any,
+        stream: bool = False,
+        timeout: Any = None,
+        verify: Any = True,
+        cert: Any = None,
+        proxies: Any = None,
+    ) -> Response:
         self.seen.append((request.url, request.body))
         response = Response()
         response.request, response.url, response._content = request, request.url, b"<html>"
@@ -284,7 +294,7 @@ def test_capture_trace_exporter_never_follows_a_redirect(monkeypatch: pytest.Mon
         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://fabric-node.example/v1/traces"
     )
     exporter = tracing.build_capture_span_exporter()
-    session = exporter._inner._session  # type: ignore[attr-defined]
+    session = tracing.exporter_session(exporter._inner)  # type: ignore[attr-defined]
     adapter = _Redirecting(307)
     session.mount("https://", adapter)
     from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
@@ -305,6 +315,28 @@ def test_no_redirect_session_hardens_an_existing_session() -> None:
     assert session.hooks["response"].count(tracing._refuse_redirect) == 1
     with pytest.raises(ValueError):
         tracing.no_redirect_session(object())
+
+
+def test_exporter_session_is_found_in_either_exporter_layout() -> None:
+    """Older OTLP/HTTP exporters hold ``_session``; newer ones hold it on a transport. Both
+    are hardened, and an exporter exposing neither fails construction (never unhardened)."""
+    import types  # noqa: PLC0415
+
+    import requests  # noqa: PLC0415
+
+    legacy, transported = requests.Session(), requests.Session()
+    old = types.SimpleNamespace(_session=legacy)
+    new = types.SimpleNamespace(
+        _client=types.SimpleNamespace(_transport=types.SimpleNamespace(_session=transported))
+    )
+    assert tracing.exporter_session(old) is legacy
+    assert tracing.exporter_session(new) is transported
+    for exporter, session in ((old, legacy), (new, transported)):
+        tracing._harden_exporter_session(exporter)
+        assert session.max_redirects == 0
+        assert tracing._refuse_redirect in session.hooks["response"]
+    with pytest.raises(ValueError, match="cannot be hardened"):
+        tracing._harden_exporter_session(types.SimpleNamespace())
 
 
 # --------------------------------------------------------------------- H3: run-id pseudonyms

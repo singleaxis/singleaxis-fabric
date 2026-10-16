@@ -383,6 +383,9 @@ def sanitized_export_diagnostics() -> Iterator[None]:
         _EXPORT_SCOPE.active = previous
 
 
+_OTLP_COMPRESSIONS = frozenset({"gzip", "deflate", "none"})
+
+
 @dataclass(frozen=True, slots=True)
 class OtlpSettings:
     """One OTLP signal's resolved settings (signal-specific variable first, then general)."""
@@ -429,6 +432,11 @@ def otlp_signal_settings(
         timeout_s = float(timeout[1]) if timeout else 10.0
     except ValueError:
         raise ValueError(f"{timeout[0] if timeout else 'timeout'} must be a number") from None
+    # Validated here, not left to the exporter: some OTel releases reject a bad value while
+    # newer ones log it and fall back to no compression.
+    compression = pick("COMPRESSION")
+    if compression is not None and compression[1].lower() not in _OTLP_COMPRESSIONS:
+        raise ValueError(f"{compression[0]} must be gzip, deflate or none")
     path = {k: v[1] if v else None for k, v in files.items()}
     return OtlpSettings(
         endpoint[1] if endpoint else None, headers, path["CERTIFICATE"],
@@ -459,7 +467,8 @@ def _refuse_redirect(response: Any, *args: Any, **kwargs: Any) -> Any:
     """Response hook: any 3xx is a delivery failure, raised before requests could follow it
     (no body or header is ever re-sent elsewhere). Fixed text: no URL or location."""
     if 300 <= int(getattr(response, "status_code", 0)) < 400:  # noqa: PLR2004
-        import requests  # type: ignore[import-untyped]  # noqa: PLC0415
+        # requests ships inline types only from 2.34; older releases need the ignore.
+        import requests  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
 
         with contextlib.suppress(Exception):
             response.close()
@@ -483,10 +492,23 @@ def no_redirect_session(session: Any = None) -> Any:
     return session
 
 
+def exporter_session(exporter: object) -> Any:
+    """The ``requests`` session an OTLP/HTTP span exporter delivers through, or ``None``.
+
+    Older ``opentelemetry-exporter-otlp-proto-http`` releases keep it on the exporter
+    (``_session``); newer ones keep it on a pluggable transport
+    (``_client._transport._session``). The ``>=1.41`` floor admits both layouts."""
+    session = getattr(exporter, "_session", None)
+    if session is None:
+        transport = getattr(getattr(exporter, "_client", None), "_transport", None)
+        session = getattr(transport, "_session", None)
+    return session
+
+
 def _harden_exporter_session(exporter: object) -> None:
     """Make the OTLP/HTTP exporter's ``requests`` session refuse redirects (H1); a session
     that cannot be found fails construction rather than delivering with redirects on."""
-    session = getattr(exporter, "_session", None)
+    session = exporter_session(exporter)
     if session is None:
         raise ValueError("the OTLP exporter session cannot be hardened")
     no_redirect_session(session)
