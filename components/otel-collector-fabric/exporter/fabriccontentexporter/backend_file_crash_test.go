@@ -110,7 +110,7 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 	if err := os.Symlink(filepath.Dir(outside), filepath.Join(dir, "acme", "link")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := startFileBackend(dir); err != nil {
+	if _, err := startFileBackend(dir, ""); err != nil {
 		t.Fatal(err)
 	}
 	if left := temps(t, dir); len(left) != 0 {
@@ -126,7 +126,7 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 
 func TestFileBackend_StartWithoutDirectoryIsANoop(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "absent")
-	if _, err := startFileBackend(dir); err != nil {
+	if _, err := startFileBackend(dir, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
@@ -231,6 +231,14 @@ func TestFileBackend_ConcurrentExistingTargetSyncsTheDirectory(t *testing.T) {
 
 // syncLog replaces syncDir for the test: it records every successful
 // directory fsync and fails the fsyncs of dir with EIO while *fail is set.
+// markRoot records a completed root barrier walk, as an earlier process did.
+func markRoot(t *testing.T, root string) {
+	t.Helper()
+	if err := writeRootMarker(root); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func syncLog(t *testing.T, dir string, fail *bool) *[]string {
 	t.Helper()
 	var synced []string
@@ -276,6 +284,7 @@ func countOf(list []string, item string) int {
 // failing while that fsync fails.
 func TestFileBackend_RetryAfterFailedParentFsyncSyncsTheParent(t *testing.T) {
 	root := t.TempDir()
+	markRoot(t, root) // the root barrier is on record: only the tenant's fails
 	b := newFileBackend(root)
 	key := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000003"))
 	body := []byte("exact wire body")
@@ -352,6 +361,7 @@ func TestFileBackend_FreshBackendSyncsAnExistingChainOnce(t *testing.T) {
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	markRoot(t, root) // recorded by the earlier process
 	b := newFileBackend(root)
 	fail := false
 	synced := syncLog(t, "", &fail)
@@ -410,13 +420,13 @@ func TestFileBackend_StartReestablishesTheRootChainBarrier(t *testing.T) {
 	}
 	fail := true
 	synced := syncLog(t, base, &fail)
-	_, err := startFileBackend(root)
+	_, err := startFileBackend(root, "")
 	var se *storeError
 	if err == nil || !errors.As(err, &se) || strings.Contains(err.Error(), base) {
 		t.Fatalf("start with a failing ancestor fsync: want a retryable storeError without the path, got %v", err)
 	}
 	fail, *synced = false, nil
-	b, err := startFileBackend(root)
+	b, err := startFileBackend(root, "")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -434,20 +444,26 @@ func TestFileBackend_StartReestablishesTheRootChainBarrier(t *testing.T) {
 }
 
 // An ancestor that refuses fsync with EACCES, EPERM or EROFS is the durable
-// boundary: the walk accepts it, provided this backend did not create a
-// directory inside it; anything else (EIO) fails.
+// boundary only when a completed walk is on record (the root marker) and
+// this backend did not create a directory inside it; anything else (EIO, or
+// any refusal without the marker) fails (Sol K #2).
 func TestFileBackend_RootBarrierBoundary(t *testing.T) {
+	erofs := &storeError{op: "dir open", err: &os.PathError{Op: "open", Err: syscall.EROFS}}
 	for _, tc := range []struct {
 		name    string
 		err     error
 		created bool
+		marked  bool
 		ok      bool
 	}{
-		{"eacces existing", syscall.EACCES, false, true},
-		{"eperm existing", syscall.EPERM, false, true},
-		{"erofs existing", &storeError{op: "dir open", err: &os.PathError{Op: "open", Err: syscall.EROFS}}, false, true},
-		{"eio existing", syscall.EIO, false, false},
-		{"eacces created", syscall.EACCES, true, false},
+		{"eacces existing marked", syscall.EACCES, false, true, true},
+		{"eperm existing marked", syscall.EPERM, false, true, true},
+		{"erofs existing marked", erofs, false, true, true},
+		{"eio existing marked", syscall.EIO, false, true, false},
+		{"eacces existing unmarked", syscall.EACCES, false, false, false},
+		{"eperm existing unmarked", syscall.EPERM, false, false, false},
+		{"erofs existing unmarked", erofs, false, false, false},
+		{"eacces created", syscall.EACCES, true, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			base := t.TempDir()
@@ -456,6 +472,9 @@ func TestFileBackend_RootBarrierBoundary(t *testing.T) {
 				if err := os.Mkdir(root, 0o700); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if tc.marked {
+				markRoot(t, root)
 			}
 			original := syncDir
 			t.Cleanup(func() { syncDir = original })
@@ -494,7 +513,7 @@ func TestFileBackend_RootBarrierStopsAtTheFilesystemRoot(t *testing.T) {
 	sameFilesystem = func(dir, parent string) bool { return dir != mount }
 	fail := false
 	synced := syncLog(t, "", &fail)
-	if _, err := startFileBackend(root); err != nil {
+	if _, err := startFileBackend(root, ""); err != nil {
 		t.Fatal(err)
 	}
 	if countOf(*synced, mount) != 1 || countOf(*synced, base) != 0 {

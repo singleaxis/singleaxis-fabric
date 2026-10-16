@@ -48,7 +48,7 @@ func newContentExporter(cfg *Config, set component.TelemetrySettings) (*contentE
 	switch cfg.Backend {
 	case backendFile:
 		e.newBackend = func(context.Context) (backend, error) {
-			b, err := startFileBackend(cfg.File.Directory)
+			b, err := startFileBackend(cfg.File.Directory, cfg.File.DurableBoundary)
 			if err != nil {
 				return nil, err
 			}

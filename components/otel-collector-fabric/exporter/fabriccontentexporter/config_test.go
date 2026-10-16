@@ -102,6 +102,10 @@ func TestConfigValidation(t *testing.T) {
 		"two tenants opted in": with(with(file(), "allowed_tenants", []any{"tenant-a", "t.b_c-1"}),
 			"allow_multiple_tenants", true),
 		"one tenant with the flag": with(file(), "allow_multiple_tenants", true),
+		"boundary is the root": with(file(), "file", map[string]any{"directory": "/var/lib/fabric-node/content",
+			"durable_boundary": "/var/lib/fabric-node/content"}),
+		"boundary is an ancestor": with(file(), "file", map[string]any{"directory": "/var/lib/fabric-node/content",
+			"durable_boundary": "/var/lib"}),
 	}
 	for name, raw := range valid {
 		t.Run("valid/"+name, func(t *testing.T) {
@@ -111,15 +115,23 @@ func TestConfigValidation(t *testing.T) {
 		})
 	}
 	invalid := map[string]map[string]any{
-		"no tenants":          with(file(), "allowed_tenants", []any{}),
-		"bad tenant":          with(file(), "allowed_tenants", []any{"../etc"}),
-		"no backend":          with(file(), "backend", ""),
-		"unknown backend":     with(file(), "backend", "gcs"),
-		"relative dir":        with(file(), "file", map[string]any{"directory": "content"}),
-		"trailing slash":      with(file(), "file", map[string]any{"directory": "/var/lib/content/"}),
-		"unclean dir":         with(file(), "file", map[string]any{"directory": "/var/lib/../content"}),
-		"root dir":            with(file(), "file", map[string]any{"directory": "/"}),
-		"no dir":              with(file(), "file", map[string]any{}),
+		"no tenants":      with(file(), "allowed_tenants", []any{}),
+		"bad tenant":      with(file(), "allowed_tenants", []any{"../etc"}),
+		"no backend":      with(file(), "backend", ""),
+		"unknown backend": with(file(), "backend", "gcs"),
+		"relative dir":    with(file(), "file", map[string]any{"directory": "content"}),
+		"trailing slash":  with(file(), "file", map[string]any{"directory": "/var/lib/content/"}),
+		"unclean dir":     with(file(), "file", map[string]any{"directory": "/var/lib/../content"}),
+		"root dir":        with(file(), "file", map[string]any{"directory": "/"}),
+		"no dir":          with(file(), "file", map[string]any{}),
+		"boundary relative": with(file(), "file", map[string]any{"directory": "/var/lib/fabric-node/content",
+			"durable_boundary": "var/lib"}),
+		"boundary unclean": with(file(), "file", map[string]any{"directory": "/var/lib/fabric-node/content",
+			"durable_boundary": "/var/lib/"}),
+		"boundary not an ancestor": with(file(), "file", map[string]any{"directory": "/var/lib/fabric-node/content",
+			"durable_boundary": "/var/lib/fabric-node/cont"}),
+		"boundary below the root": with(file(), "file", map[string]any{"directory": "/var/lib/fabric-node/content",
+			"durable_boundary": "/var/lib/fabric-node/content/acme"}),
 		"no bucket":           s3(map[string]any{"bucket": ""}),
 		"bad bucket":          s3(map[string]any{"bucket": "Bad_Bucket"}),
 		"prefix no slash":     s3(map[string]any{"prefix": "fabric"}),

@@ -35,6 +35,15 @@ type FileConfig struct {
 	// Directory is the absolute content root; objects are written below
 	// <directory>/<tenant>/evidence/.
 	Directory string `mapstructure:"directory"`
+	// DurableBoundary optionally names the content root or one of its
+	// ancestors as a provisioned durable boundary: the operator vouches that
+	// its own directory entry and every entry above it are durable (as for
+	// a mount point). The exporter then fsyncs it and the directories below
+	// it, never above. Needed only when an ancestor of the root cannot be
+	// fsync'd by the Node (EACCES/EPERM/EROFS) and no earlier walk was
+	// recorded; a root that is (or sits directly in) a volume mount point
+	// needs none.
+	DurableBoundary string `mapstructure:"durable_boundary"`
 }
 
 // S3Config selects the S3 (or S3-compatible) backend. Credentials come from
@@ -146,6 +155,14 @@ func (f FileConfig) validate() error {
 	}
 	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || dir == string(filepath.Separator) {
 		return errors.New("file.directory must be an absolute, clean path other than / with no trailing slash")
+	}
+	if b := f.DurableBoundary; b != "" {
+		if !filepath.IsAbs(b) || filepath.Clean(b) != b {
+			return errors.New("file.durable_boundary must be an absolute, clean path with no trailing slash")
+		}
+		if b != dir && !strings.HasPrefix(dir, strings.TrimSuffix(b, string(filepath.Separator))+string(filepath.Separator)) {
+			return errors.New("file.durable_boundary must be file.directory or one of its ancestors")
+		}
 	}
 	return nil
 }

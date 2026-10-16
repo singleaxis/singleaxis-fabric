@@ -29,10 +29,15 @@ destination. SingleAxis Platform is optional.
   check-then-rename): identical bytes are a successful replay, different
   bytes a conflict. Before its first acknowledgement each process fsyncs
   every directory on the object's path and every ancestor of the content
-  root up to the durable boundary (the content root's filesystem root, or
-  the first ancestor that refuses fsync with `EACCES`, `EPERM` or `EROFS`),
-  even when those directories already exist; any other fsync failure fails
-  Start or the write retryably. Refused
+  root up to the durable boundary (the content root's filesystem root, a
+  mount point, or the optional `file.durable_boundary`, which is fsync'd
+  but never its parent), even when those directories already exist. A
+  completed walk is recorded in `<root>/.fabric-root-barrier`; only then
+  may a later process treat an ancestor that refuses fsync with `EACCES`,
+  `EPERM` or `EROFS` as the boundary. Without that record a refusal, like
+  any other fsync failure, fails Start or the write retryably (spec 048
+  §4, "Content root barrier"). Helm and Compose roots sit on a volume
+  mount and need no `durable_boundary`. Refused
   records are dropped, counted and logged by reason only;
 - upstream OTLP receiver and optional Linux audit receiver (netlink or durable logfile);
 - memory limiter and optional development batch

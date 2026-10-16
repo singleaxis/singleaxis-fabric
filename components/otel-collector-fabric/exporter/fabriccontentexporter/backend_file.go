@@ -74,22 +74,36 @@ func (e *storeError) Error() string {
 // before its first acknowledgement, fsyncs every ancestor of the root up to
 // the durable boundary, whether or not those directories already exist. An
 // earlier process may have created them and failed (or crashed before) the
-// parent fsync that made them durable, and that state is not on disk. The
-// boundary is the first of:
+// parent fsync that made them durable. The boundary is the first of:
 //
 //   - the filesystem root ("/"), or the root of the filesystem holding the
 //     content root (a mount point's own entry lives on another filesystem
 //     and cannot be lost with this one);
-//   - an ancestor whose fsync this process is refused with EACCES, EPERM or
-//     EROFS (a directory it cannot open, or a read-only filesystem): the
-//     operator owns its durability. A directory this backend created inside
-//     such an ancestor is never accepted on that basis; the put fails
-//     retryably instead.
+//   - the configured file.durable_boundary (the content root or one of its
+//     ancestors), treated exactly like a mount point: the operator vouches
+//     for its own entry and everything above it, and the walk fsyncs it and
+//     the directories below it.
+//
+// Once a walk has fsync'd every directory up to that boundary, the backend
+// records it on disk (Sol K #2): a private marker file, rootMarkerName, is
+// created inside the content root, fsync'd, and the root fsync'd. The
+// marker lives inside the root, so removing or recreating the root (or any
+// ancestor) removes it too. Only while that marker is present may a later
+// walk treat an ancestor whose fsync is refused with EACCES, EPERM or EROFS
+// (a directory it cannot open, or a read-only filesystem) as the boundary:
+// a previous process proved those entries durable. Without the marker, a
+// refused fsync fails Start, or the put, retryably — a restart never turns
+// an unfinished barrier into a boundary just because the knowledge of what
+// the earlier process created was lost with it. A directory this backend
+// created inside a refusing ancestor is never accepted on that basis either.
 //
 // Any other failure (EIO, ENOSPC, ...) fails Start, or the put, retryably;
 // the whole chain is retried until one walk completes.
 type fileBackend struct {
 	dir string
+	// boundary is the configured durable boundary ("" for none): the content
+	// root or one of its ancestors, treated like a mount point.
+	boundary string
 
 	mu sync.Mutex
 	// durable holds directories whose entry in their parent is known to be
@@ -116,6 +130,15 @@ var (
 	renameNoReplace = platformRenameNoReplace
 )
 
+// rootMarkerName is the file, inside the content root, whose presence
+// records that a root barrier walk once completed without relying on a
+// refused fsync (see fileBackend). It is never an object: the SDK layout
+// keys all live below <root>/<tenant>/.
+const rootMarkerName = ".fabric-root-barrier"
+
+// rootMarkerContent is the marker's fixed content; only its presence counts.
+var rootMarkerContent = []byte("fabric content root barrier v1\n")
+
 func newFileBackend(dir string) *fileBackend {
 	return &fileBackend{dir: dir, durable: map[string]bool{}, created: map[string]bool{}}
 }
@@ -125,8 +148,9 @@ func newFileBackend(dir string) *fileBackend {
 // root already exists, the root barrier (see rootBarrier): a failure other
 // than reaching the durable boundary fails Start with a retryable error.
 // A missing root is created, and its barrier completed, by the first put.
-func startFileBackend(dir string) (*fileBackend, error) {
+func startFileBackend(dir, boundary string) (*fileBackend, error) {
 	b := newFileBackend(dir)
+	b.boundary = boundary
 	b.sweepStaleTemps()
 	if info, err := os.Lstat(dir); err == nil && info.IsDir() {
 		if err := b.ensureRoot(); err != nil {
@@ -371,7 +395,11 @@ func (b *fileBackend) ensureRoot() error {
 // ancestor's entry durable. The root's own entries are made durable by the
 // barriers of the directories below it (makeDurable).
 func (b *fileBackend) rootBarrier() error {
-	chain := rootAncestors(b.dir) // bottom-up
+	chain := rootAncestors(b.dir, b.boundary) // bottom-up
+	marked, err := hasRootMarker(b.dir)
+	if err != nil {
+		return err
+	}
 	b.mu.Lock()
 	created := make(map[string]bool, len(b.created))
 	for d := range b.created {
@@ -384,21 +412,67 @@ func (b *fileBackend) rootBarrier() error {
 		if err == nil {
 			continue
 		}
-		if !beyondBoundary(err) || created[parent] {
+		if !marked || !beyondBoundary(err) || created[parent] {
 			var se *storeError
 			if errors.As(err, &se) {
 				return err
 			}
 			return &storeError{op: "dir fsync", err: err}
 		}
-		// The boundary: this ancestor, and everything above it, is the
-		// operator's. Directories below it must still succeed.
+		// A completed walk is on record (the marker): this ancestor, and
+		// everything above it, was made durable then. Directories below it
+		// must still succeed.
+	}
+	if !marked {
+		// Every directory up to the boundary was fsync'd: record it.
+		if err := writeRootMarker(b.dir); err != nil {
+			return err
+		}
 	}
 	b.mu.Lock()
 	b.rootDurable = true
 	b.created = map[string]bool{}
 	b.mu.Unlock()
 	return nil
+}
+
+// hasRootMarker reports whether the content root holds the barrier marker
+// as a regular file. Anything else at that name (a symlink, a directory) is
+// a layout error, never followed.
+func hasRootMarker(root string) (bool, error) {
+	info, err := os.Lstat(filepath.Join(root, rootMarkerName))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, &storeError{op: "file read"}
+	}
+	if !info.Mode().IsRegular() {
+		return false, &storeError{op: "file layout"}
+	}
+	return true, nil
+}
+
+// writeRootMarker creates the barrier marker (0600, O_EXCL and O_NOFOLLOW:
+// never through a planted link), fsyncs it, then fsyncs the content root so
+// its entry is durable before any later walk relies on it.
+func writeRootMarker(root string) error {
+	path := filepath.Join(root, rootMarkerName)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	switch {
+	case errors.Is(err, os.ErrExist): // another writer recorded it first
+		if ok, err := hasRootMarker(root); err != nil || !ok {
+			return &storeError{op: "file layout"}
+		}
+	case err != nil:
+		return &storeError{op: "file create", err: err}
+	default:
+		if err := writeSynced(f, rootMarkerContent); err != nil {
+			_ = os.Remove(path)
+			return err
+		}
+	}
+	return syncDir(root)
 }
 
 // beyondBoundary reports whether a directory fsync failed because this
@@ -408,11 +482,15 @@ func beyondBoundary(err error) bool {
 }
 
 // rootAncestors lists, bottom-up, the parents whose fsync makes the content
-// root's entry and its ancestors' entries durable, stopping at "/" or at the
-// root of the content root's filesystem.
-func rootAncestors(root string) []string {
+// root's entry and its ancestors' entries durable, stopping at "/", at the
+// root of the content root's filesystem, or at the configured boundary
+// (whose own entry, like a mount point's, the walk does not sync).
+func rootAncestors(root, boundary string) []string {
 	var chain []string
 	for d := root; ; {
+		if d == boundary {
+			return chain
+		}
 		parent := filepath.Dir(d)
 		if parent == d || !sameFilesystem(d, parent) {
 			return chain
