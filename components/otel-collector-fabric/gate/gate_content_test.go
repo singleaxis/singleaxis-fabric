@@ -475,7 +475,22 @@ service:
 		"compaction without directory":      {probe(literal, "    compaction:\n      on_start: true\n"), "compaction directory"},
 		"env compaction directory":          {probe(literal, "    compaction:\n      directory: ${env:PROBE_STORAGE}\n      on_start: true\n"), "compaction directory"},
 		"unclean compaction directory":      {probe(literal, "    compaction:\n      directory: "+root+"/real-queue/../elsewhere\n"), "compaction directory"},
+		// Sol H F3 residual: the textual prefix check passed, and SUBDIR
+		// resolved the compaction directory outside the private queue.
+		"env suffix compaction directory (SUBDIR=../outside)": {probe(literal, "    compaction:\n      directory: "+root+"/real-queue/${env:SUBDIR}\n      on_start: true\n"), "compaction directory"},
+		"escaped dollar compaction directory":                 {probe(literal, "    compaction:\n      directory: "+root+"/real-queue/$$x\n"), "compaction directory"},
+		"relative compaction directory":                       {probe(literal, "    compaction:\n      directory: real-queue\n"), "compaction directory"},
+		"env queue directory": {
+			strings.ReplaceAll(probe(literal, ""), root+"/real-queue", root+"/${env:SUBDIR}"),
+			"absolute, clean directory, written literally",
+		},
+		"env exporter queue_directory": {
+			strings.Replace(probe(literal, ""), "queue_directory: "+root+"/real-queue", "queue_directory: "+root+"/real-queue/${env:EMPTY}", 1),
+			"queue_directory",
+		},
 	}
+	t.Setenv("SUBDIR", "../outside")
+	t.Setenv("EMPTY", "")
 	for name, tc := range refused {
 		t.Run("refused/"+name, func(t *testing.T) {
 			_, err := validateArgs([]string{"--config=" + writeConfig(t, tc.cfg)})

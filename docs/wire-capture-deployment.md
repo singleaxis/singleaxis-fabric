@@ -378,6 +378,10 @@ exporter's `sending_queue`, its `storage` id or the queue's `compaction`
 block when it is not written literally (for example a whole
 `${env:...}` value), since the gate could not verify where queued bytes land;
 a `compaction` block must name a directory inside the queue directory.
+The queue directory, the compaction directory and `queue_directory` must
+also be absolute, clean and literal (no `${...}` reference or `$$`), because
+the gate checks containment on the text it reads and a reference such as
+`<queue>/${env:SUBDIR}` could resolve outside the private queue directory.
 Compose uses the same configuration.
 
 *Destination URLs and network peers.* `exporter.endpoint` must be an

@@ -921,6 +921,13 @@ func checkContentTenants(cfg map[string]any) error {
 // into storage fabric-gate never saw, so it is refused rather than skipped.
 // A compaction block must name its directory, because file_storage's
 // default compaction directory is outside the private queue directory.
+//
+// The paths themselves must be literal too (Sol H F3 residual): the queue
+// directory, the compaction directory and queue_directory may not contain a
+// "$" (a ${...} reference, or a $$ escape), and must be absolute and clean.
+// The gate checks containment on the text it reads; a reference such as
+// <queue>/${env:SUBDIR} with SUBDIR=../outside passes a textual prefix check
+// and then resolves outside the private queue directory.
 func checkContentQueueStorage(cfg map[string]any) error {
 	exporters, _ := cfg["exporters"].(map[string]any)
 	extensions, _ := cfg["extensions"].(map[string]any)
@@ -952,8 +959,8 @@ func checkContentQueueStorage(cfg map[string]any) error {
 			return fmt.Errorf("exporter %q queues content in %q, which is not a literal file_storage mapping fabric-gate can verify", id, storage)
 		}
 		directory, _ := ext["directory"].(string)
-		if directory == "" || !filepath.IsAbs(directory) || filepath.Clean(directory) != directory {
-			return fmt.Errorf("extension %q (exporter %q's content queue) must set an absolute, clean directory", storage, id)
+		if !literalCleanPath(directory) {
+			return fmt.Errorf("extension %q (exporter %q's content queue) must set an absolute, clean directory, written literally (no ${...} references)", storage, id)
 		}
 		if perms, _ := ext["directory_permissions"].(string); perms != "0700" && perms != "700" {
 			return fmt.Errorf("extension %q (exporter %q's content queue) must set directory_permissions: \"0700\"; queued content is raw model bytes", storage, id)
@@ -964,15 +971,22 @@ func checkContentQueueStorage(cfg map[string]any) error {
 				return fmt.Errorf("extension %q (exporter %q's content queue) sets compaction to something other than a literal mapping; write it as a map with its directory inside the queue directory", storage, id)
 			}
 			dir, _ := compaction["directory"].(string)
-			if dir == "" || filepath.Clean(dir) != dir || (dir != directory && !strings.HasPrefix(dir, directory+"/")) {
+			if !literalCleanPath(dir) || (dir != directory && !strings.HasPrefix(dir, directory+"/")) {
 				return fmt.Errorf("extension %q (exporter %q's content queue) must keep its compaction directory inside its directory, written literally (file_storage's default is elsewhere)", storage, id)
 			}
 		}
-		if own, _ := exporter["queue_directory"].(string); own != directory {
-			return fmt.Errorf("exporter %q must set queue_directory to the directory of %q, so it makes an existing queue private before opening it", id, storage)
+		if own, _ := exporter["queue_directory"].(string); own != directory || !literalCleanPath(own) {
+			return fmt.Errorf("exporter %q must set queue_directory to the directory of %q, written literally, so it makes an existing queue private before opening it", id, storage)
 		}
 	}
 	return nil
+}
+
+// literalCleanPath reports whether path is absolute, clean and free of any
+// "$": the collector resolves ${...} references (and $$ escapes) after the
+// gate has checked the text, so only a literal path is checked as it runs.
+func literalCleanPath(path string) bool {
+	return path != "" && !strings.Contains(path, "$") && filepath.IsAbs(path) && filepath.Clean(path) == path
 }
 
 // otlpHTTPExporterTypes are the OTLP/HTTP exporter type names (current and
