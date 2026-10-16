@@ -254,14 +254,14 @@ def test_explicit_line_exporter_logs_no_secret(
 def test_explicit_line_tls_failure_logs_no_secret(captured: Capture) -> None:
     """Sol F2 probe: a non-empty projected export whose session raises secret-bearing TLS
     error text (an exporter given to install_default_provider is wrapped the same way)."""
-    import requests  # noqa: PLC0415
+    import requests  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: PLC0415
         InMemorySpanExporter,
     )
 
     from fabric._span_protection import MetadataOnlySpanExporter  # noqa: PLC0415
 
-    class FailingSession(requests.Session):
+    class FailingSession(requests.Session):  # type: ignore[misc, unused-ignore]
         def post(self, *args: Any, **kwargs: Any) -> Any:
             raise requests.exceptions.SSLError(f"{MARK} in endpoint or TLS path")
 

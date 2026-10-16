@@ -26,11 +26,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import requests
+import requests  # type: ignore[import-untyped, unused-ignore]
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
-from requests.adapters import BaseAdapter
-from requests.utils import select_proxy
+from requests.adapters import BaseAdapter  # type: ignore[import-untyped, unused-ignore]
+from requests.utils import select_proxy  # type: ignore[import-untyped, unused-ignore]
 
 from fabric import tracing
 from fabric._loss import LossEmitter
@@ -267,7 +267,7 @@ def test_pump_waits_for_the_lock_only_until_its_deadline(tmp_path: Path) -> None
 # --- S5: delivery never takes a proxy from the environment ---------------------------
 
 
-class _Recorder(BaseAdapter):
+class _Recorder(BaseAdapter):  # type: ignore[misc, unused-ignore]
     """Records the proxy the transport would use; answers 200 without any network."""
 
     def __init__(self) -> None:
