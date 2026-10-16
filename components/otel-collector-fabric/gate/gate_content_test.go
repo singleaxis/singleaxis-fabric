@@ -90,7 +90,7 @@ func TestContentRoutingViolationsRejected(t *testing.T) {
 		{"debug exporter in content", replace("exporters: [fabriccontent]", "exporters: [debug]"), "may export only to fabriccontent"},
 		{"no exporters in content", replace("      exporters: [fabriccontent]\n", ""), "has no exporters"},
 		{"empty exporters in content", replace("exporters: [fabriccontent]", "exporters: []"), "has no exporters"},
-		{"exporters not a list", replace("exporters: [fabriccontent]", "exporters: fabriccontent"), "may export only to fabriccontent"},
+		{"exporters not a list", replace("exporters: [fabriccontent]", "exporters: fabriccontent"), "must be a literal list of component ids"},
 		{"fabricguard on content", replace("processors: [memory_limiter]\n      exporters: [fabriccontent]", "processors: [memory_limiter, fabricguard]\n      exporters: [fabriccontent]"), "only memory_limiter may run"},
 		{"batch on content", replace("processors: [memory_limiter]\n      exporters: [fabriccontent]", "processors: [memory_limiter, batch]\n      exporters: [fabriccontent]"), "only memory_limiter may run"},
 		{"transform on content", replace("processors: [memory_limiter]\n      exporters: [fabriccontent]", "processors: [transform]\n      exporters: [fabriccontent]"), "only memory_limiter may run"},

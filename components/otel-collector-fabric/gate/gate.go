@@ -49,6 +49,9 @@ func validateArgs(args []string) ([]tokenFile, error) {
 		}
 		deepMerge(merged, parsed)
 	}
+	if err := checkLiteralStructure(merged); err != nil {
+		return nil, err
+	}
 	if err := checkPipelines(merged); err != nil {
 		return nil, err
 	}
@@ -339,6 +342,12 @@ func configSources(args []string) ([]string, error) {
 		switch {
 		case arg == "--set" || strings.HasPrefix(arg, "--set="):
 			return nil, fmt.Errorf("--set overrides are not accepted by the recorder gate; put overrides in an additional --config file so they are validated")
+		case arg == "--feature-gates" || strings.HasPrefix(arg, "--feature-gates="):
+			// A feature gate can change how the collector merges or resolves
+			// the --config sources (confmap.enableMergeAppendOption appends
+			// lists instead of replacing them), so the configuration the gate
+			// validated would not be the one the collector runs.
+			return nil, fmt.Errorf("--feature-gates is not accepted by the recorder gate; a feature gate can change how the collector merges the validated --config sources")
 		case arg == "--config":
 			if i+1 >= len(args) {
 				return nil, fmt.Errorf("--config requires a value")
@@ -560,13 +569,17 @@ func checkContentPipeline(name string, pipeline map[string]any) error {
 }
 
 // checkContentReceivers refuses gRPC on a content receiver: the content path
-// is OTLP/HTTP only (spec 048 §4). When any telemetry (non-content) OTLP
-// receiver protocol authenticates, every content receiver protocol must use
-// the same authenticator, so the content port is never the weaker ingress.
+// is OTLP/HTTP only (spec 048 §4). The content port must never be the weaker
+// ingress: when any telemetry (non-content) OTLP receiver protocol
+// authenticates, every content receiver uses the same authenticator; when
+// any serves TLS, every content receiver serves TLS, with a minimum version
+// at least as high; when any requires client certificates (mTLS,
+// client_ca_file), every content receiver requires them too.
 func checkContentReceivers(cfg map[string]any) error {
 	receivers, _ := cfg["receivers"].(map[string]any)
 	ids := sortedKeys(receivers)
 	telemetryAuth := ""
+	telemetryTLS, telemetryMTLS, telemetryMinTLS := false, false, ""
 	for _, id := range ids {
 		if componentType(id) != "otlp" || isContentReceiver(id) {
 			continue
@@ -574,6 +587,16 @@ func checkContentReceivers(cfg map[string]any) error {
 		for _, name := range []string{"grpc", "http"} {
 			if authenticator := protocolAuthenticator(receivers[id], name); authenticator != "" && telemetryAuth == "" {
 				telemetryAuth = authenticator
+			}
+			tls := protocolTLS(receivers[id], name)
+			if serverTLS(tls) {
+				telemetryTLS = true
+				if v := tlsMinVersion(tls); tlsVersionRank(v) > tlsVersionRank(telemetryMinTLS) {
+					telemetryMinTLS = v
+				}
+			}
+			if tlsString(tls, "client_ca_file") != "" {
+				telemetryMTLS = true
 			}
 		}
 	}
@@ -589,19 +612,197 @@ func checkContentReceivers(cfg map[string]any) error {
 		if telemetryAuth != "" && protocolAuthenticator(receivers[id], "http") != telemetryAuth {
 			return fmt.Errorf("content receiver %q must use the same authenticator as the telemetry OTLP receivers", id)
 		}
+		if _, http := protocols["http"]; !http {
+			continue
+		}
+		tls := protocolTLS(receivers[id], "http")
+		if telemetryTLS && !serverTLS(tls) {
+			return fmt.Errorf("content receiver %q must serve TLS (cert_file and key_file) like the telemetry OTLP receivers", id)
+		}
+		if telemetryTLS && tlsVersionRank(tlsMinVersion(tls)) < tlsVersionRank(telemetryMinTLS) {
+			return fmt.Errorf("content receiver %q allows an older TLS version than the telemetry OTLP receivers", id)
+		}
+		if telemetryMTLS && tlsString(tls, "client_ca_file") == "" {
+			return fmt.Errorf("content receiver %q must require client certificates (client_ca_file) like the telemetry OTLP receivers", id)
+		}
 	}
 	return nil
 }
 
-// protocolAuthenticator returns receiver.protocols.<name>.auth.authenticator,
-// or "" when the protocol or its authenticator is absent.
+// protocolTLS returns receiver.protocols.<name>.tls, or nil.
+func protocolTLS(node any, name string) map[string]any {
+	receiver, _ := node.(map[string]any)
+	protocols, _ := receiver["protocols"].(map[string]any)
+	protocol, _ := protocols[name].(map[string]any)
+	tls, _ := protocol["tls"].(map[string]any)
+	return tls
+}
+
+// tlsString returns an env-expanded, trimmed string field of a TLS block.
+func tlsString(tls map[string]any, key string) string {
+	value, _ := tls[key].(string)
+	return strings.TrimSpace(expandEnvRefs(value))
+}
+
+// serverTLS: a receiver TLS block that serves TLS (certificate and key set).
+func serverTLS(tls map[string]any) bool {
+	return tlsString(tls, "cert_file") != "" && tlsString(tls, "key_file") != ""
+}
+
+// tlsMinVersion is the effective min_version of a server TLS block; the
+// collector's default is 1.2.
+func tlsMinVersion(tls map[string]any) string {
+	if v := tlsString(tls, "min_version"); v != "" {
+		return v
+	}
+	return "1.2"
+}
+
+// tlsVersionRank orders TLS versions; an unknown value ranks lowest, so it
+// can never be accepted as stricter than a known one.
+func tlsVersionRank(v string) int {
+	switch v {
+	case "1.0":
+		return 1
+	case "1.1":
+		return 2
+	case "1.2":
+		return 3
+	case "1.3":
+		return 4
+	default:
+		return 0
+	}
+}
+
+// protocolAuthenticator returns receiver.protocols.<name>.auth.authenticator
+// as the collector resolves it (env-expanded), or "" when the protocol or its
+// authenticator is absent.
 func protocolAuthenticator(node any, name string) string {
 	receiver, _ := node.(map[string]any)
 	protocols, _ := receiver["protocols"].(map[string]any)
 	protocol, _ := protocols[name].(map[string]any)
 	auth, _ := protocol["auth"].(map[string]any)
 	authenticator, _ := auth["authenticator"].(string)
-	return authenticator
+	return strings.TrimSpace(expandEnvRefs(authenticator))
+}
+
+// checkLiteralStructure refuses configuration the gate could not see the way
+// the collector will: the collector resolves a value that is a whole
+// ${env:...} (or other provider) reference into YAML, so a scalar standing
+// for a receiver, its protocols, a protocol's auth or tls block, an extension,
+// a processor, a pipeline or a pipeline's component list would hide exactly
+// what the checks below verify. Those must be literal YAML (leaf fields such
+// as endpoints and file paths may still use ${env:...}); pipeline component
+// lists and service.extensions must be literal ids without any reference;
+// and receivers and extensions may use no provider other than env.
+// Diagnostics name the component or pipeline id only.
+func checkLiteralStructure(cfg map[string]any) error {
+	for _, section := range []string{"receivers", "processors", "extensions"} {
+		raw, present := cfg[section]
+		if !present || raw == nil {
+			continue
+		}
+		components, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("the %s section is not a literal mapping; fabric-gate cannot verify it", section)
+		}
+		for _, id := range sortedKeys(components) {
+			if components[id] == nil {
+				continue
+			}
+			component, ok := components[id].(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s %q is not a literal mapping; write it as a map (individual fields may use ${env:...})", strings.TrimSuffix(section, "s"), id)
+			}
+			if section != "processors" && hasNonEnvReference(component) {
+				return fmt.Errorf("%s %q uses a config provider reference other than ${env:...}; fabric-gate cannot verify it", strings.TrimSuffix(section, "s"), id)
+			}
+			if section != "receivers" {
+				continue
+			}
+			if err := checkLiteralReceiver(id, component); err != nil {
+				return err
+			}
+		}
+	}
+	rawService, present := cfg["service"]
+	if !present || rawService == nil {
+		return nil
+	}
+	service, ok := rawService.(map[string]any)
+	if !ok {
+		return fmt.Errorf("the service section is not a literal mapping; fabric-gate cannot verify it")
+	}
+	if raw, present := service["extensions"]; present && raw != nil && !literalIDList(raw) {
+		return fmt.Errorf("service.extensions must be a literal list of extension ids")
+	}
+	rawPipelines, present := service["pipelines"]
+	if !present || rawPipelines == nil {
+		return nil
+	}
+	pipelines, ok := rawPipelines.(map[string]any)
+	if !ok {
+		return fmt.Errorf("service.pipelines is not a literal mapping; fabric-gate cannot verify it")
+	}
+	for _, name := range sortedKeys(pipelines) {
+		pipeline, ok := pipelines[name].(map[string]any)
+		if !ok {
+			return fmt.Errorf("pipeline %q is not a literal mapping; fabric-gate cannot verify it", name)
+		}
+		for _, field := range []string{"receivers", "processors", "exporters"} {
+			if raw, present := pipeline[field]; present && raw != nil && !literalIDList(raw) {
+				return fmt.Errorf("pipeline %q %s must be a literal list of component ids (no ${...} references)", name, field)
+			}
+		}
+	}
+	return nil
+}
+
+// checkLiteralReceiver requires a receiver's protocols, each protocol, and a
+// protocol's auth and tls blocks to be literal mappings when present.
+func checkLiteralReceiver(id string, receiver map[string]any) error {
+	raw, present := receiver["protocols"]
+	if !present || raw == nil {
+		return nil
+	}
+	protocols, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("receiver %q protocols is not a literal mapping; fabric-gate cannot verify it", id)
+	}
+	for _, name := range sortedKeys(protocols) {
+		if protocols[name] == nil {
+			continue
+		}
+		protocol, ok := protocols[name].(map[string]any)
+		if !ok {
+			return fmt.Errorf("receiver %q protocol %q is not a literal mapping; fabric-gate cannot verify it", id, name)
+		}
+		for _, block := range []string{"auth", "tls"} {
+			if value, present := protocol[block]; present && value != nil {
+				if _, ok := value.(map[string]any); !ok {
+					return fmt.Errorf("receiver %q protocol %q %s is not a literal mapping; fabric-gate cannot verify it", id, name, block)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// literalIDList: a YAML list of plain strings, none holding a "${" or "$"
+// reference the collector would expand.
+func literalIDList(raw any) bool {
+	items, ok := raw.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		id, ok := item.(string)
+		if !ok || strings.Contains(id, "$") {
+			return false
+		}
+	}
+	return true
 }
 
 // carriesContentPath reports whether the configuration defines any part of

@@ -583,6 +583,22 @@ where:
    fixed text. The diagnostic names exporter ids, never tenant ids.
 8. (J4) an `otlphttp` exporter does not list the `noredirect` client
    middleware.
+9. a content receiver is weaker than the telemetry OTLP receivers: when
+   any telemetry receiver protocol authenticates, every content receiver
+   uses the same authenticator; when any serves TLS (`cert_file` and
+   `key_file`), every content receiver serves TLS with a `min_version` at
+   least as high (default `1.2`); when any requires client certificates
+   (`client_ca_file`), every content receiver requires them too.
+10. the gate's view could differ from the collector's: `--feature-gates`
+    is given (a gate such as `confmap.enableMergeAppendOption` changes how
+    `--config` sources merge), or a receiver, its `protocols`, a protocol,
+    its `auth` or `tls` block, an extension, a processor, a pipeline, a
+    pipeline's component list or `service.extensions` is not literal YAML
+    (a whole-value `${env:...}` is resolved into structure by the
+    collector only). Pipeline lists and `service.extensions` hold literal
+    ids without references; receivers and extensions use no provider
+    other than `env` (leaf fields such as endpoints and file paths may use
+    `${env:...}`).
 
 ## 6. Run scopes (F6; supersedes 047 §6 run markers and §9 step 3 (a))
 

@@ -16,6 +16,16 @@
 //     the collector merges them after every --config source, so they could
 //     undo a validated pipeline; overrides must go in an additional --config
 //     file, which the gate merges and validates;
+//   - --feature-gates is refused in both spellings: a gate such as
+//     confmap.enableMergeAppendOption changes how --config sources merge, so
+//     the collector would run a configuration the gate never validated;
+//   - receivers, protocols, auth/tls blocks, extensions, processors,
+//     pipelines, pipeline component lists and service.extensions must be
+//     literal YAML: a whole-value ${env:...} would resolve into structure
+//     the gate never saw (leaf fields may still use ${env:...});
+//   - a content receiver is never weaker than the telemetry receivers: same
+//     authenticator, TLS when they serve TLS (no older min_version), and
+//     client certificates when they require them;
 //   - content (spec 048 §5) stays on logs/content pipelines, and all
 //     fabriccontent exporters of the Node together allow one tenant unless
 //     every one of them sets allow_multiple_tenants: true; a fabriccontent or
