@@ -22,6 +22,7 @@ Every case runs on a real loopback socket for httpx and httpx2, sync and async.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import os
 import threading
@@ -37,7 +38,7 @@ from fabric.wire import _transport
 
 from . import test_wire_httpx2 as base
 from .test_wire_helpers import attrs
-from .test_wire_httpx2 import FakeLLM, Installed
+from .test_wire_httpx2 import FakeLLM, Installed, read_ref
 
 fake_llm, installed = base.fake_llm, base.installed  # shared fixtures
 
@@ -145,6 +146,149 @@ def test_same_request_sent_concurrently_from_two_tasks_is_two_exchanges(
     assert asyncio.run(run()) == [200, 200]
     assert len(fake_llm.seen) == 2
     assert _sequences(installed) == [0, 1]
+    assert installed.losses() == []
+
+
+# --- Sol K 1: overlapping sends of one request with a reusable streamed body ----------
+
+BODIES = (
+    b'{"messages":[{"role":"user","content":"first send"}]}',
+    b'{"messages":[{"role":"user","content":"the second, longer send"}]}',
+)
+
+
+def _reusable_stream(module: Any, pause_on: int, paused: threading.Event,
+                     resume: threading.Event) -> Any:  # fmt: skip
+    """A reusable request stream: its ``n``-th iteration yields ``BODIES[n - 1]`` in two
+    chunks and, on iteration ``pause_on``, waits for ``resume`` between them."""
+    count = [0]
+
+    def begin() -> tuple[bytes, bool]:
+        count[0] += 1
+        return BODIES[count[0] - 1], count[0] == pause_on
+
+    class Reusable(module.SyncByteStream, module.AsyncByteStream):  # type: ignore[misc]
+        def __iter__(self) -> Iterator[bytes]:
+            body, pause = begin()
+            yield body[:10]
+            if pause:
+                paused.set()
+                assert resume.wait(15)
+            yield body[10:]
+
+        async def __aiter__(self) -> Any:
+            body, pause = begin()
+            yield body[:10]
+            if pause:
+                paused.set()
+                assert await asyncio.to_thread(resume.wait, 15)
+            yield body[10:]
+
+    return Reusable()
+
+
+def _drive_sync(client: Any, request: Any, first_in_flight: threading.Event,
+                plan: list[tuple[str, Any]],
+                release_all: tuple[threading.Event, ...]) -> None:  # fmt: skip
+    """Send ``request`` twice from two threads, the second once the first is in flight,
+    then follow ``plan``."""
+    pool = concurrent.futures.ThreadPoolExecutor(2)
+    try:
+        sends = [pool.submit(client.send, request)]
+        assert first_in_flight.wait(10)
+        sends.append(pool.submit(client.send, request))
+        for action, arg in plan:
+            if action == "wait":
+                assert arg.wait(10)
+            elif action == "set":
+                arg.set()
+            else:
+                assert sends[arg].result(10).status_code == 200
+    finally:
+        for event in release_all:
+            event.set()
+        pool.shutdown(wait=True)
+
+
+async def _drive_async(client: Any, request: Any, first_in_flight: threading.Event,
+                       plan: list[tuple[str, Any]],
+                       release_all: tuple[threading.Event, ...]) -> None:  # fmt: skip
+    """:func:`_drive_sync` with two tasks."""
+    sends = [asyncio.create_task(client.send(request))]
+    try:
+        assert await asyncio.to_thread(first_in_flight.wait, 10)
+        sends.append(asyncio.create_task(client.send(request)))
+        for action, arg in plan:
+            if action == "wait":
+                assert await asyncio.to_thread(arg.wait, 10)
+            elif action == "set":
+                arg.set()
+            else:
+                assert (await asyncio.wait_for(sends[arg], 10)).status_code == 200
+    finally:
+        for event in release_all:
+            event.set()
+        await asyncio.gather(*sends, return_exceptions=True)
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+@pytest.mark.parametrize("how", ["patched", "wrapped"])
+@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.parametrize("order", ["second_finishes_first", "first_finishes_first"])
+def test_overlapping_streamed_sends_each_store_exactly_their_own_body(
+    installed: Installed,
+    fake_llm: FakeLLM,
+    held: tuple[threading.Event, threading.Event],
+    flavor: str,
+    how: str,
+    mode: str,
+    order: str,
+) -> None:
+    """Sol K 1: one request with a reusable streamed body is sent twice, overlapping.
+
+    ``second_finishes_first``: the first send pauses mid-body; the second runs to its
+    end; the first resumes. ``first_finishes_first``: the server holds the first send
+    (its tee still installed) while the second pauses mid-body; the first completes,
+    then the second resumes. Each stored request is exactly the body its server request
+    received (the second send's tee never wraps the first's), and the request's own
+    stream is the original again once both have finished."""
+    module, (server_entered, server_release) = _module(flavor), held
+    paused, resume = threading.Event(), threading.Event()
+    second_first = order == "second_finishes_first"
+    if second_first:
+        server_release.set()  # the server holds nothing
+    stream = _reusable_stream(module, 1 if second_first else 2, paused, resume)
+    headers = {"host": f"127.0.0.1:{fake_llm.port}", "content-type": "application/json",
+               "transfer-encoding": "chunked"}  # fmt: skip
+    request = module.Request("POST", _url(fake_llm), stream=stream, headers=headers)
+    # The plan once the first send is in flight and the second has started: wait for
+    # an event, set one, or wait for send 0 / 1 to return 200.
+    plan: list[tuple[str, Any]] = (
+        [("done", 1), ("set", resume), ("done", 0)] if second_first else
+        [("wait", paused), ("set", server_release), ("done", 0), ("set", resume), ("done", 1)]
+    )  # fmt: skip
+    first_in_flight = paused if second_first else server_entered
+    release_all = (resume, server_release)
+    if mode == "sync":
+        transport = _client_transport(module, how, installed, is_async=False)
+        with module.Client(transport=transport, trust_env=False) as client:
+            _drive_sync(client, request, first_in_flight, plan, release_all)
+    else:
+
+        async def run() -> None:
+            transport = _client_transport(module, how, installed, is_async=True)
+            async with module.AsyncClient(transport=transport, trust_env=False) as client:
+                await _drive_async(client, request, first_in_flight, plan, release_all)
+
+        asyncio.run(run())
+
+    assert request.stream is stream  # restored, whichever invocation finished first
+    assert sorted(seen.request for seen in fake_llm.seen) == sorted(BODIES)
+    spans = installed.spans()
+    assert [attrs(span)["fabric.source.sequence"] for span in spans] == [0, 1]
+    stored = [read_ref(installed.store, attrs(span)["fabric.content.request_ref"])
+              for span in spans]  # fmt: skip
+    assert stored == list(BODIES)  # sequence 0 is the first send, which iterated first
     assert installed.losses() == []
 
 

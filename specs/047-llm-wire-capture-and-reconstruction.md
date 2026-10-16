@@ -307,6 +307,14 @@ call and its delegation is never captured again:
   uncaptured, on whichever task or thread it runs. The mark lives only on
   that copy, never on the caller's request.
 
+Each invocation tees a streamed request body on its own: while it is in
+flight the request's `stream` is that invocation's tee, and a concurrent
+send of the same `Request` with a reusable stream tees the *original*
+stream underneath, never another invocation's tee, so each exchange retains
+exactly the bytes its transport read. An invocation restores the original
+stream only while its own tee is still installed, so they may finish in any
+order.
+
 An inner transport that rebuilds the request object (dropping the mark)
 before it reaches a patched transport is captured by the wrapper and again
 by the patch: an expected duplicate, never a silent omission. The
@@ -488,9 +496,26 @@ protection fails **closed**: the Node drops unknown keys and invalid values.
    names: no URL, reason phrase or exception message. The host's own
    exporters (including under `global`) log as the host configured them.
 10. **Latency budget (gating, `tests/test_wire_passivity.py`).** On
-    `httpx.MockTransport`: median added latency per matched non-streaming
-    exchange ≤ 50 µs, per streamed chunk ≤ 2 µs, per non-matching request
-    ≤ 5 µs; byte identity and order of every chunk asserted.
+    `httpx.MockTransport`, on the reference hardware: median added latency
+    per matched non-streaming exchange ≤ 50 µs, per streamed chunk ≤ 2 µs,
+    per non-matching request ≤ 5 µs; byte identity and order of every chunk
+    asserted. The budgets are machine-relative:
+    - *Reference hardware* is defined by a fixed, deterministic pure-Python
+      calibration workload (a 20,000-iteration loop of dict updates and
+      int-to-str conversions) taking `REFERENCE_CALIBRATION_NS` = 1.03 ms
+      (minimum of 30 runs; Apple M-series, CPython 3.12).
+    - The gate's own isolated interpreter times that workload before and
+      after the scenarios (the smaller minimum counts) and multiplies every
+      budget by `scale = clamp(measured / reference, 1, 4)`. A faster machine
+      never gets a tighter budget than the spec's; a slower one gets
+      proportionally more time, at most 4×; beyond that the budget stops
+      growing and the gate may fail.
+    - The gate must still fail when the tee blocks: a sleep of twice the
+      *scaled* budget injected into the request and chunk paths fails every
+      scenario's scaled gate (`test_the_gate_fails_when_the_tee_blocks`).
+
+    Changing the workload or the reference constant requires re-measuring
+    both on the reference hardware in the same change.
 
 ## 5. Worker: store, then one span
 

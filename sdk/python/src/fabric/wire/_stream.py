@@ -212,7 +212,10 @@ class Exchange:
         content = getattr(request, "_content", None)
         if isinstance(content, bytes):
             self._retain(side, content)
-        elif (kind := _request_tee_type(stream := request.stream)) is not None:
+        elif (kind := _request_tee_type(stream := _untee(request.stream))) is not None:
+            # An overlapping send of the same request finds another invocation's tee in
+            # ``request.stream``: tee its original stream, never that tee (whose chunks
+            # would then be retained by both exchanges).
             self.request_tee, self.request_sent = kind(stream, self), False
             request.stream = self.request_tee  # yields the same chunks; restored by end_request
         else:  # not an httpx byte stream: the transport handles it, unretained
@@ -220,7 +223,11 @@ class Exchange:
 
     def end_request(self, request: Any) -> None:
         """After the transport call: restore a teed request stream; a body the transport did
-        not read to its end is ``truncated``. Never raises."""
+        not read to its end is ``truncated``. Never raises.
+
+        Overlapping sends of one request finish in any order: each restores the original
+        only while its own tee is installed; one installed later by another invocation
+        is left to that invocation, which restores the same original."""
         if (tee := self.request_tee) is None:
             return
         try:
@@ -358,6 +365,13 @@ class Exchange:
             self.tee.forget(self)
         self.release()
         return True
+
+
+def _untee(stream: Any) -> Any:
+    """The original request stream under any Fabric request tee(s) installed on it."""
+    while isinstance(stream, _RequestTee):
+        stream = stream._inner
+    return stream
 
 
 class _RequestTee:

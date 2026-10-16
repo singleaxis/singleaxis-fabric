@@ -2,9 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 """Passivity latency gate (spec 047 §4.10).
 
-On ``httpx.MockTransport``: median added latency per matched non-streaming
-exchange <= 50 us, per streamed chunk <= 2 us, per non-matching request
-<= 5 us. Byte identity and order of every chunk are asserted alongside.
+On ``httpx.MockTransport``, on the reference hardware: median added latency per
+matched non-streaming exchange <= 50 us, per streamed chunk <= 2 us, per
+non-matching request <= 5 us. Byte identity and order of every chunk are asserted
+alongside.
+
+The budgets are machine-relative. The reference hardware is the machine whose
+fixed calibration workload (:func:`_calibration_workload`, deterministic pure
+Python: dict updates, int-to-str, a 20,000-iteration loop) takes
+``REFERENCE_CALIBRATION_NS`` (an Apple M-series laptop, CPython 3.12-3.14). The
+measuring interpreter times that workload itself, before the scenarios and after
+them (the smaller of the two minima), and every budget is multiplied by
+``scale = clamp(measured / REFERENCE_CALIBRATION_NS, 1, MAX_SCALE)``: a slower
+runner gets proportionally more time, a faster one never a tighter budget than the
+spec's, and a runner more than ``MAX_SCALE`` times slower is judged as if it were
+``MAX_SCALE`` times slower (it may then fail; the budget never grows unbounded).
 
 How the overhead is measured, so that the budgets stay meaningful on a noisy CI
 runner (S10: 97 us against 50 us once, on 3.13, in the full covered suite):
@@ -20,7 +32,8 @@ runner (S10: 97 us against 50 us once, on 3.13, in the full covered suite):
   tee really adds is present in every round.
 
 ``test_the_gate_fails_when_the_tee_blocks`` proves that the gate still fails when
-the tee adds blocking work (a sleep injected into its request and chunk paths).
+the tee adds blocking work: a sleep of twice the *scaled* budget, injected into its
+request and chunk paths, fails every scenario's scaled gate.
 """
 
 from __future__ import annotations
@@ -49,6 +62,11 @@ CHUNK_BUDGET_NS = 2_000
 NON_MATCH_BUDGET_NS = 5_000
 BUDGETS = {"non_match": NON_MATCH_BUDGET_NS, "matched": NON_STREAM_BUDGET_NS,
            "chunk": CHUNK_BUDGET_NS}  # fmt: skip
+# The reference hardware's calibration time (minimum of CALIBRATION_RUNS runs), and
+# the largest slowdown the budgets are scaled for (spec 047 §4 item 10).
+REFERENCE_CALIBRATION_NS = 1_030_000
+MAX_SCALE = 4.0
+CALIBRATION_RUNS = 30
 BODY = b'{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}'
 REPLY = b'{"id":"c","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}'
 CHUNKS = [bytes([65 + i % 26]) * 32 for i in range(2000)]
@@ -59,6 +77,41 @@ WARMUP = 50
 
 
 # --- the measurement (runs in a fresh interpreter) ------------------------------------
+
+
+def _calibration_workload() -> int:
+    """Fixed, deterministic interpreter-bound work: the machine's speed reference."""
+    table: dict[int, int] = {}
+    total = 0
+    for i in range(20_000):
+        key = i & 255
+        table[key] = table.get(key, 0) + 1
+        total += len(str(i))
+    return total + len(table)
+
+
+def calibrate(runs: int = CALIBRATION_RUNS) -> int:
+    """Minimum time (ns) of the calibration workload on this machine, right now."""
+    for _ in range(3):
+        _calibration_workload()
+    best = None
+    gc.collect()
+    gc.disable()
+    try:
+        for _ in range(runs):
+            start = time.perf_counter_ns()
+            _calibration_workload()
+            elapsed = time.perf_counter_ns() - start
+            best = elapsed if best is None else min(best, elapsed)
+    finally:
+        gc.enable()
+    assert best is not None
+    return best
+
+
+def scale_for(calibration_ns: int) -> float:
+    """The factor every budget is multiplied by on a machine with this calibration."""
+    return min(MAX_SCALE, max(1.0, calibration_ns / REFERENCE_CALIBRATION_NS))
 
 
 def _round_overheads(
@@ -138,12 +191,17 @@ def _inject_blocking(request_sleep_s: float, chunk_sleep_s: float) -> None:
     _stream.Exchange.add = slow_add  # type: ignore[method-assign]
 
 
-def measure(request_sleep_s: float = 0.0, chunk_sleep_s: float = 0.0) -> dict[str, Any]:
-    """Every scenario's round overheads per unit (ns) and the rig's counters. With an
-    injected sleep, fewer samples (a blocked tee is slow, and every round shows it)."""
-    blocked = bool(request_sleep_s or chunk_sleep_s)
+def measure(request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0) -> dict[str, Any]:
+    """Every scenario's round overheads per unit (ns), the calibration and the rig's
+    counters. A sleep factor injects a sleep of that many *scaled* matched (request
+    path) or chunk (chunk path) budgets; with one, fewer samples (a blocked tee is
+    slow, and every round shows it)."""
+    before = calibrate()
+    blocked = bool(request_sleep_factor or chunk_sleep_factor)
     if blocked:
-        _inject_blocking(request_sleep_s, chunk_sleep_s)
+        scale = scale_for(before)
+        _inject_blocking(request_sleep_factor * NON_STREAM_BUDGET_NS * scale / 1e9,
+                         chunk_sleep_factor * CHUNK_BUDGET_NS * scale / 1e9)  # fmt: skip
     with tempfile.TemporaryDirectory() as tmp:
         rig = make_rig(Path(tmp), store=None, queue_max_items=65536)
         try:
@@ -154,12 +212,16 @@ def measure(request_sleep_s: float = 0.0, chunk_sleep_s: float = 0.0) -> dict[st
                                           warmup=2 if blocked else WARMUP)  # fmt: skip
                 out[name] = [overhead / units for overhead in rounds]
             out["stats"] = dict(rig.tee.stats())
+            # Before and after the scenarios: interference only ever adds time.
+            # A blocked run is judged with the scale its sleeps were sized from.
+            calibration = before if blocked else min(before, calibrate())
+            out["calibration"] = {"ns": calibration, "scale": scale_for(calibration)}
             return out
         finally:
             rig.close()
 
 
-def _measured(request_sleep_s: float = 0.0, chunk_sleep_s: float = 0.0) -> dict[str, Any]:
+def _measured(request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0) -> dict[str, Any]:
     """:func:`measure` in a fresh interpreter, with no coverage measurement."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_CORE_", "COVERAGE_"))}
     code = (
@@ -167,7 +229,7 @@ def _measured(request_sleep_s: float = 0.0, chunk_sleep_s: float = 0.0) -> dict[
         "print(json.dumps(measure(float(sys.argv[1]), float(sys.argv[2]))))"
     )
     done = subprocess.run(  # noqa: S603 - the test interpreter, a fixed script
-        [sys.executable, "-c", code, str(request_sleep_s), str(chunk_sleep_s)],
+        [sys.executable, "-c", code, str(request_sleep_factor), str(chunk_sleep_factor)],
         cwd=SDK_ROOT, env=env, capture_output=True, text=True, timeout=600, check=False,
     )  # fmt: skip
     assert done.returncode == 0, done.stderr[-4000:]
@@ -184,9 +246,36 @@ def measured() -> dict[str, Any]:
 
 @pytest.mark.parametrize("scenario", ["non_match", "matched", "chunk"])
 def test_tee_overhead_is_within_budget(measured: dict[str, Any], scenario: str) -> None:
-    rounds = measured[scenario]
+    rounds, calibration = measured[scenario], measured["calibration"]
     assert len(rounds) == ROUNDS
-    assert min(rounds) <= BUDGETS[scenario], f"{scenario} overhead per unit {rounds} ns"
+    budget = BUDGETS[scenario] * calibration["scale"]
+    assert min(rounds) <= budget, (
+        f"{scenario} overhead per unit {rounds} ns > {budget:.0f} ns "
+        f"(spec budget {BUDGETS[scenario]} ns x scale {calibration['scale']:.2f}; "
+        f"calibration {calibration['ns']} ns vs reference {REFERENCE_CALIBRATION_NS} ns)"
+    )
+
+
+def test_budget_scaling_is_bounded_and_never_tightens() -> None:
+    """A faster machine keeps the spec's budgets; a slower one scales linearly up to
+    ``MAX_SCALE``, never beyond."""
+    assert scale_for(REFERENCE_CALIBRATION_NS // 3) == 1.0
+    assert scale_for(REFERENCE_CALIBRATION_NS) == 1.0
+    assert scale_for(2 * REFERENCE_CALIBRATION_NS) == 2.0
+    assert scale_for(100 * REFERENCE_CALIBRATION_NS) == MAX_SCALE
+
+
+def test_calibration_tracks_interpreter_speed() -> None:
+    """The calibration measures this machine: the same workload under a tracer that
+    taxes every line (as a slow runner does) calibrates slower."""
+    fast = calibrate(runs=5)
+    previous = sys.gettrace()
+    sys.settrace(lambda *_: None)
+    try:
+        slow = calibrate(runs=5)
+    finally:
+        sys.settrace(previous)
+    assert slow > fast
 
 
 def test_the_measured_calls_were_captured(measured: dict[str, Any]) -> None:
@@ -197,12 +286,15 @@ def test_the_measured_calls_were_captured(measured: dict[str, Any]) -> None:
 
 
 def test_the_gate_fails_when_the_tee_blocks() -> None:
-    """A sleep injected into the tee's request path (twice the matched budget) and
-    chunk path (twice the chunk budget; the OS sleeps at least that long) fails every
-    scenario's gate: the measurement detects blocking work at the budgets' scale."""
-    blocked = _measured(2 * NON_STREAM_BUDGET_NS / 1e9, 2 * CHUNK_BUDGET_NS / 1e9)
+    """A sleep injected into the tee's request path (twice the scaled matched budget)
+    and chunk path (twice the scaled chunk budget; the OS sleeps at least that long)
+    fails every scenario's scaled gate: scaling never hides blocking work at the
+    budgets' scale."""
+    blocked = _measured(2.0, 2.0)
+    scale = blocked["calibration"]["scale"]
+    assert 1.0 <= scale <= MAX_SCALE
     for scenario, budget in BUDGETS.items():
-        assert min(blocked[scenario]) > budget, (scenario, blocked[scenario])
+        assert min(blocked[scenario]) > budget * scale, (scenario, scale, blocked[scenario])
 
 
 # --- in-process checks (byte identity; the tee paths run under coverage) ------------
