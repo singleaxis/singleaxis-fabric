@@ -98,9 +98,23 @@ npm ci --silent --prefix sdk/typescript
 npx --yes license-checker-rseidelsohn --production --json \
   --start sdk/typescript > "${FABRIC_RAW_DIR}/npm-typescript.json"
 FABRIC_GATE_ARGS+=(--npm "sdk/typescript=${FABRIC_RAW_DIR}/npm-typescript.json")
-npm install --prefix sdk/typescript --no-save --package-lock=false --ignore-scripts '@aws-sdk/client-s3@>=3.0.0'
-npx --yes license-checker-rseidelsohn --production --json \
-  --start sdk/typescript > "${FABRIC_RAW_DIR}/npm-typescript-s3.json"
+# The optional S3 peer, in its own throwaway project at the declared range
+# (see recorder-license.yml for why not in sdk/typescript).
+FABRIC_S3_PEER_DIR="${FABRIC_RAW_DIR}/s3-peer"
+mkdir -p "${FABRIC_S3_PEER_DIR}"
+FABRIC_S3_PEER_RANGE="$("${FABRIC_PYTHON_BIN}" -c \
+  'import json, sys; print(json.load(open(sys.argv[1]))["peerDependencies"]["@aws-sdk/client-s3"])' \
+  "${FABRIC_REPO_ROOT}/sdk/typescript/package.json")"
+printf '{"name":"fabric-s3-peer-license-scan","version":"0.0.0","private":true}\n' \
+  > "${FABRIC_S3_PEER_DIR}/package.json"
+npm install --silent --prefix "${FABRIC_S3_PEER_DIR}" --ignore-scripts --no-audit --no-fund \
+  "@aws-sdk/client-s3@${FABRIC_S3_PEER_RANGE}"
+npx --yes license-checker-rseidelsohn --production --json --excludePrivatePackages \
+  --start "${FABRIC_S3_PEER_DIR}" > "${FABRIC_RAW_DIR}/npm-typescript-s3.json"
+# Fail closed if the scan did not see the peer.
+"${FABRIC_PYTHON_BIN}" -c \
+  'import json, sys; sys.exit(not any(k.startswith("@aws-sdk/client-s3@") for k in json.load(open(sys.argv[1]))))' \
+  "${FABRIC_RAW_DIR}/npm-typescript-s3.json"
 FABRIC_GATE_ARGS+=(--npm "sdk/typescript=${FABRIC_RAW_DIR}/npm-typescript-s3.json")
 
 mkdir -p build/recorder-license-report

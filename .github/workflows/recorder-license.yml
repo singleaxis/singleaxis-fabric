@@ -62,10 +62,25 @@ jobs:
           npx --yes license-checker-rseidelsohn --production --json \
             --start sdk/typescript > raw/npm-typescript.json
           # The optional S3 peer is a supported install surface but is not in
-          # the base lockfile. Scan it separately without changing that lock.
-          npm install --prefix sdk/typescript --no-save --package-lock=false --ignore-scripts '@aws-sdk/client-s3@>=3.0.0'
-          npx --yes license-checker-rseidelsohn --production --json \
-            --start sdk/typescript > raw/npm-typescript-s3.json
+          # the base lockfile. Scan it in its own throwaway project, at the
+          # range package.json declares. Installing it into sdk/typescript
+          # with --package-lock=false re-resolved the SDK's whole dev tree
+          # from the registry (vitest's peer set), which npm 10 crashes on
+          # ("reading 'edgesOut'"); the SDK's own dependencies are covered by
+          # the lockfile scan above.
+          peer_dir="${RUNNER_TEMP}/fabric-s3-peer"
+          mkdir -p "${peer_dir}"
+          range="$(node -p 'require(process.argv[1]).peerDependencies["@aws-sdk/client-s3"]' \
+            "${GITHUB_WORKSPACE}/sdk/typescript/package.json")"
+          test -n "${range}" && test "${range}" != undefined
+          printf '{"name":"fabric-s3-peer-license-scan","version":"0.0.0","private":true}\n' \
+            > "${peer_dir}/package.json"
+          npm install --prefix "${peer_dir}" --ignore-scripts --no-audit --no-fund \
+            "@aws-sdk/client-s3@${range}"
+          npx --yes license-checker-rseidelsohn --production --json --excludePrivatePackages \
+            --start "${peer_dir}" > raw/npm-typescript-s3.json
+          # Fail closed if the scan did not see the peer.
+          grep -q '"@aws-sdk/client-s3@' raw/npm-typescript-s3.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: recorder-license-typescript
