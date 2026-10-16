@@ -350,8 +350,10 @@ content_violation_configs() {
   printf 'exporters:\n  otlp_http/fabric:\n    endpoint: https://user:QUALIFY_SECRET@127.0.0.1:1\n' \
     >"${dir}/bad-content-endpoint.yaml"
   # J3: a second tenant on a separate receiver and pipeline is still the
-  # same Node.
-  printf 'receivers:\n  otlp/content-b:\n    protocols:\n      http:\n        endpoint: 127.0.0.1:4320\nexporters:\n  fabriccontent/b:\n    allowed_tenants: [tenant-b]\n    backend: file\n    file:\n      directory: /tmp/fabric-content-b\nservice:\n  pipelines:\n    logs/content-b:\n      receivers: [otlp/content-b]\n      exporters: [fabriccontent/b]\n' \
+  # same Node. The second receiver serves the same mTLS as the qualified
+  # receivers, so the tenant split is the only defect the gate can report.
+  printf 'receivers:\n  otlp/content-b:\n    protocols:\n      http:\n        endpoint: 127.0.0.1:4320\n        tls:\n          cert_file: %s/server.crt\n          key_file: %s/server.key\n          client_ca_file: %s/ca.crt\nexporters:\n  fabriccontent/b:\n    allowed_tenants: [tenant-b]\n    backend: file\n    file:\n      directory: /tmp/fabric-content-b\nservice:\n  pipelines:\n    logs/content-b:\n      receivers: [otlp/content-b]\n      exporters: [fabriccontent/b]\n' \
+    "${config_root}" "${config_root}" "${config_root}" \
     >"${dir}/bad-content-node-tenants.yaml"
   # J3: a fabriccontent block the gate cannot read (whole-block reference).
   # shellcheck disable=SC2016 # the reference is literal config text
