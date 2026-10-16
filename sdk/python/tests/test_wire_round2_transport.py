@@ -446,7 +446,7 @@ def test_same_request_delegated_to_another_task_is_captured_once(
     module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
     url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
 
-    class Offload(module.AsyncBaseTransport):  # type: ignore[misc,name-defined]
+    class Offload(module.AsyncBaseTransport):  # type: ignore[misc]
         def __init__(self) -> None:
             self.inner = module.AsyncHTTPTransport(trust_env=False)
 
@@ -478,7 +478,7 @@ def test_same_request_delegated_to_another_thread_is_captured_once(
     module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
     url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
 
-    class Offload(module.BaseTransport):  # type: ignore[misc,name-defined]
+    class Offload(module.BaseTransport):  # type: ignore[misc]
         def __init__(self) -> None:
             self.inner = module.HTTPTransport(trust_env=False)
 
@@ -512,7 +512,7 @@ def test_distinct_request_from_the_delegating_task_is_captured(
     module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
     url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
 
-    class Prefetch(module.AsyncBaseTransport):  # type: ignore[misc,name-defined]
+    class Prefetch(module.AsyncBaseTransport):  # type: ignore[misc]
         def __init__(self) -> None:
             self.inner = module.AsyncHTTPTransport(trust_env=False)
 
