@@ -10,12 +10,12 @@
 # runtime stage ships that binary on a distroless base with ca-certs.
 
 ARG OCB_VERSION=v0.150.0
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 
 # ---------- builder ---------------------------------------------------------
 
 # Pinned by digest: a moved tag must not silently change the builder toolchain.
-FROM golang:${GO_VERSION}-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS builder
+FROM golang:${GO_VERSION}-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
 
 # A digest takes precedence over the tag, so changing GO_VERSION alone would
 # otherwise still select the pinned image while misreporting the toolchain.

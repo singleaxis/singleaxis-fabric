@@ -1,6 +1,6 @@
 # SingleAxis Fabric OTel Collector distribution — build helpers.
 #
-# Prereqs: Go >= 1.25, and the OpenTelemetry Collector Builder:
+# Prereqs: Go >= 1.26, and the OpenTelemetry Collector Builder:
 #   go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
 #
 # The `builder` binary is traditionally named `ocb` by operators; both
