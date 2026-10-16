@@ -17,7 +17,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import json
 import sys
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -291,3 +294,101 @@ def test_explicit_httpx2_wrapper_context_manager_closes_inner() -> None:
 
     asyncio.run(run())
     assert closed == ["sync", "async"]
+
+
+# --- S1: the nested-tee guard is bound to its delegation, not inherited ----------------
+
+
+def _sequences(rig: Rig) -> list[int]:
+    return sorted(attrs(s)["fabric.source.sequence"] for s in rig.spans())
+
+
+def test_task_spawned_inside_delegation_is_captured_after_it_returns(rig: Rig) -> None:
+    """Sol F1 probe: a task created inside a teed call inherits the context; its later
+    request was silently exempt (no sequence, no loss) and reconstruction said complete."""
+    tasks: list[asyncio.Task[Any]] = []
+
+    async def run() -> None:
+        ready = asyncio.Event()
+
+        async def later() -> None:
+            await ready.wait()
+            await client.post(OPENAI_CHAT, json={"messages": [{"content": "second"}]})
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if json.loads(request.content)["messages"][0]["content"] == "first":
+                tasks.append(asyncio.create_task(later()))
+            return _chat(request)
+
+        async with rig.async_client(handler) as client:
+            await client.post(OPENAI_CHAT, json={"messages": [{"content": "first"}]})
+            assert not _transport._delegating()
+            ready.set()
+            await asyncio.gather(*tasks)
+
+    asyncio.run(run())
+    rig.flush()
+    assert rig.handle.allocator.last_sequence()[1] == 1  # two sequences: 0 and 1
+    assert _sequences(rig) == [0, 1]
+    assert rig.loss_counts() == {}
+
+
+def test_task_running_concurrently_with_a_delegation_is_captured(rig: Rig) -> None:
+    """While a delegation is still live, only its own task is suppressed."""
+
+    async def run() -> None:
+        concurrent_done = asyncio.Event()
+
+        async def concurrent() -> None:
+            await client.post(OPENAI_CHAT, json={"messages": [{"content": "second"}]})
+            concurrent_done.set()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if json.loads(request.content)["messages"][0]["content"] == "first":
+                task = asyncio.create_task(concurrent())
+                await asyncio.wait_for(concurrent_done.wait(), 5)  # delegation still live
+                await task
+            return _chat(request)
+
+        async with rig.async_client(handler) as client:
+            await client.post(OPENAI_CHAT, json={"messages": [{"content": "first"}]})
+
+    asyncio.run(run())
+    rig.flush()
+    assert _sequences(rig) == [0, 1]
+
+
+def test_thread_with_copied_context_is_captured(rig: Rig) -> None:
+    """A thread started with the delegated call's context (``contextvars.copy_context``,
+    ``asyncio.to_thread``) is not the delegating thread: its requests are captured."""
+    threads: list[threading.Thread] = []
+    with rig.client(_chat) as other:
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if json.loads(request.content)["messages"][0]["content"] == "first":
+                post = lambda: other.post(OPENAI_CHAT, json={"messages": [{"content": "2"}]})  # noqa: E731
+                ctx = contextvars.copy_context()
+                thread = threading.Thread(target=ctx.run, args=(post,))
+                threads.append(thread)
+                thread.start()
+                thread.join(5)  # inside the live delegation
+            return _chat(request)
+
+        with rig.client(handler) as client:
+            client.post(OPENAI_CHAT, json={"messages": [{"content": "first"}]})
+    rig.flush()
+    assert _sequences(rig) == [0, 1]
+
+
+@pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
+def test_nested_delegation_of_the_same_request_stays_suppressed(
+    installed: Installed, fake_llm: FakeLLM, flavor: str
+) -> None:
+    """The guard still suppresses a patched transport under an explicit wrapper."""
+    module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
+    url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
+    transport = wire.WireTransport(module.HTTPTransport(), handle=installed.handle)
+    with module.Client(transport=transport) as client:
+        assert client.post(url, json={"messages": []}).status_code == 200
+    assert installed.handle.allocator.last_sequence()[1] == 0  # one sequence, not two
+    assert _transport._IN_TEE.get() is None
