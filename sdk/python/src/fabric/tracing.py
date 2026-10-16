@@ -38,11 +38,9 @@ import importlib
 import logging
 import os
 import re
-import threading
 import weakref
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import unquote, urlsplit
@@ -53,6 +51,7 @@ from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
+from ._export_diagnostics import sanitized_export_diagnostics
 from ._sequence import LABELS_ENV, id_key_from_env, label_pseudonym
 from ._span_protection import MetadataOnlySpanExporter
 from ._version import __version__
@@ -71,13 +70,6 @@ _MAX_ATTR_VALUE_LEN = 4096
 _NOOP_PROVIDER_WARNED = False
 _SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _PRIVATE_PROVIDERS: weakref.WeakSet[TracerProvider] = weakref.WeakSet()
-_EXPORT_SCOPE = threading.local()
-_EXPORTER_LOGGERS = (
-    "opentelemetry.exporter.otlp.proto.http.trace_exporter",
-    "opentelemetry.exporter.otlp.proto.grpc.exporter",
-    "opentelemetry.exporter.otlp.proto.grpc.trace_exporter",
-    "opentelemetry.util.re", "urllib3.connectionpool", "urllib3.util.retry",
-)  # fmt: skip
 # OTLP env header syntax (opentelemetry.util.re, liberal form): anything else is refused
 # here, so the OTel parser never logs a malformed (credential-bearing) header.
 _HEADER_RE = re.compile(
@@ -162,8 +154,24 @@ def _resolve_default_exporter(exporter: SpanExporter | None) -> SpanExporter | N
                 "opentelemetry-exporter-otlp-proto-http)."
             )
             return None
-        return OTLPSpanExporter()
+        # Prevalidate the header variables as wire delivery does: OpenTelemetry's own parser
+        # logs a malformed (credential-bearing) header verbatim. The exporter keeps main's
+        # behaviour (a malformed pair is skipped); only the diagnostics change.
+        for name in ("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS"):
+            if not _headers_well_formed(os.environ.get(name, "")):
+                _LOG.warning(
+                    "fabric.tracing: %s is not k=v pairs separated by commas; "
+                    "malformed entries are skipped (values are never logged)", name
+                )  # fmt: skip
+        with sanitized_export_diagnostics():
+            return OTLPSpanExporter()
     return None
+
+
+def _headers_well_formed(raw: str) -> bool:
+    """Whether ``raw`` is OTLP env header syntax (the form :func:`otlp_signal_settings` accepts)."""
+    items = filter(None, re.split(r"[ \t]*,[ \t]*", raw.strip()))
+    return all(_HEADER_RE.fullmatch(item) for item in items)
 
 
 def install_default_provider(
@@ -353,53 +361,6 @@ def otlp_endpoint_configured() -> bool:
     return any(os.environ.get(name) for name in names)
 
 
-def _safe_log_arg(value: object) -> object:
-    if isinstance(value, (bool, int, float)):
-        return value  # status codes, retry counts, backoff seconds
-    if isinstance(value, Enum):
-        return value.name  # e.g. a gRPC status code
-    if isinstance(value, BaseException):
-        return type(value).__name__
-    return "<redacted>"  # URLs, reason phrases, error details: never echoed
-
-
-class _SanitizedExportDiagnostics(logging.Filter):
-    """Inside Fabric's exports only, reduce exporter log records to codes and class names."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if getattr(_EXPORT_SCOPE, "active", False):
-            args = record.args if isinstance(record.args, tuple) else ()
-            if not isinstance(record.msg, str) or (record.args and not args):
-                record.msg, args = "OTLP exporter diagnostic (%s)", (type(record.msg).__name__,)
-            exc = record.exc_info[1] if record.exc_info else None
-            record.args = tuple(_safe_log_arg(arg) for arg in args)
-            if exc is not None:  # the traceback text may carry the exception message
-                record.msg = f"{record.msg} [{type(exc).__name__}]"
-            record.exc_info = record.exc_text = record.stack_info = None
-        return True
-
-
-_DIAGNOSTICS_FILTER = _SanitizedExportDiagnostics()
-
-
-@contextlib.contextmanager
-def sanitized_export_diagnostics() -> Iterator[None]:
-    """Sanitize exporter and HTTP-client log records emitted on this thread inside the block.
-
-    Fabric does not patch the OTel library: a filter on the exporter, OTLP header parser
-    and urllib3 loggers rewrites only records produced while a Fabric-owned export or
-    construction runs on this thread, so the host's own exporters log exactly as before.
-    """
-    for name in _EXPORTER_LOGGERS:
-        logging.getLogger(name).addFilter(_DIAGNOSTICS_FILTER)  # idempotent
-    previous = getattr(_EXPORT_SCOPE, "active", False)
-    _EXPORT_SCOPE.active = True
-    try:
-        yield
-    finally:
-        _EXPORT_SCOPE.active = previous
-
-
 _OTLP_COMPRESSIONS = frozenset({"gzip", "deflate", "none"})
 
 
@@ -434,9 +395,9 @@ def otlp_signal_settings(
         check_endpoint_url(*endpoint)
     headers: dict[str, str] = {}
     if (raw := pick("HEADERS")) is not None:
+        if not _headers_well_formed(raw[1]):
+            raise ValueError(f"{raw[0]} must be k=v pairs separated by commas")
         for item in filter(None, re.split(r"[ \t]*,[ \t]*", raw[1])):
-            if not _HEADER_RE.fullmatch(item):
-                raise ValueError(f"{raw[0]} must be k=v pairs separated by commas")
             key, _, value = item.partition("=")
             headers[unquote(key).strip().lower()] = unquote(value).strip()
     files = {suffix: pick(suffix) for suffix in ("CERTIFICATE", "CLIENT_CERTIFICATE", "CLIENT_KEY")}

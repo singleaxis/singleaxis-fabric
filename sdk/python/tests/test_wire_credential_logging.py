@@ -203,3 +203,80 @@ def test_guarded_export_sanitizes_exporter_logs(captured: Any) -> None:
     provider.get_tracer("t").start_span("s").end()
     assert any(r.name.startswith(("opentelemetry", "urllib3")) for r in captured.records)
     assert captured.leaks() == []
+
+
+# --- S6: the explicit line's managed exporter (install_default_provider) ---------------
+
+
+@pytest.fixture
+def fresh_global_provider() -> Iterator[None]:
+    """A fresh global TracerProvider slot (as tests/test_tracing.py does)."""
+    from opentelemetry import trace  # noqa: PLC0415
+    from opentelemetry.util._once import Once  # noqa: PLC0415
+
+    saved = trace._TRACER_PROVIDER, trace._TRACER_PROVIDER_SET_ONCE
+    trace._TRACER_PROVIDER, trace._TRACER_PROVIDER_SET_ONCE = None, Once()
+    yield
+    provider = trace._TRACER_PROVIDER
+    if provider is not None and hasattr(provider, "shutdown"):
+        provider.shutdown()
+    trace._TRACER_PROVIDER, trace._TRACER_PROVIDER_SET_ONCE = saved
+
+
+@pytest.mark.usefixtures("fresh_global_provider")
+def test_explicit_line_exporter_logs_no_secret(
+    captured: Capture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sol F2 (privacy): a malformed header variable was echoed by OpenTelemetry's parser
+    while install_default_provider() built its exporter, and export failures logged the
+    endpoint and exception text."""
+    from fabric import tracing  # noqa: PLC0415
+
+    url = f"http://127.0.0.1:{_closed_port()}/{MARK}/v1/traces"
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", url)
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", f"authorization {MARK}")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", f"x-k={MARK}-ok,{MARK}")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "1")
+    provider = tracing.install_default_provider(service_name="svc")
+    provider.get_tracer("t").start_span("s").end()
+    assert provider.force_flush(10_000) in (True, False)  # the export fails: nothing listens
+    provider.shutdown()
+    status = tracing.trace_export_protection_status(provider)
+    assert status["status"] == "PROTECTED_METADATA_ONLY"  # the projection is unchanged
+    assert status["counts"]["projected_spans"] == 1
+    warned = [r.getMessage() for r in captured.records if r.name == "fabric"]
+    assert any("OTEL_EXPORTER_OTLP_TRACES_HEADERS" in m for m in warned)
+    assert any("OTEL_EXPORTER_OTLP_HEADERS" in m for m in warned)
+    assert any(r.name.startswith(("opentelemetry", "urllib3")) for r in captured.records)
+    assert captured.leaks() == []
+
+
+def test_explicit_line_tls_failure_logs_no_secret(captured: Capture) -> None:
+    """Sol F2 probe: a non-empty projected export whose session raises secret-bearing TLS
+    error text (an exporter given to install_default_provider is wrapped the same way)."""
+    import requests  # noqa: PLC0415
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: PLC0415
+        InMemorySpanExporter,
+    )
+
+    from fabric._span_protection import MetadataOnlySpanExporter  # noqa: PLC0415
+
+    class FailingSession(requests.Session):
+        def post(self, *args: Any, **kwargs: Any) -> Any:
+            raise requests.exceptions.SSLError(f"{MARK} in endpoint or TLS path")
+
+        request = post
+
+    memory = InMemorySpanExporter()
+    source = TracerProvider()
+    source.add_span_processor(SimpleSpanProcessor(memory))
+    source.get_tracer("explicit").start_span("model.call").end()
+    inner = OTLPSpanExporter(endpoint=f"https://node.invalid/{MARK}/v1/traces", timeout=1,
+                             session=FailingSession())  # fmt: skip
+    managed = MetadataOnlySpanExporter(inner)
+    assert managed.export(memory.get_finished_spans()).name == "FAILURE"
+    assert managed.force_flush(1000) in (True, False)
+    managed.shutdown()
+    assert managed.snapshot()["projected_spans"] == 1
+    assert any(r.name.startswith("opentelemetry.exporter") for r in captured.records)
+    assert captured.leaks() == []

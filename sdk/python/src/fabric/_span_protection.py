@@ -23,6 +23,8 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 from opentelemetry.trace import Link, SpanContext, SpanKind, Status, StatusCode
 
+from ._export_diagnostics import sanitized_export_diagnostics
+
 _LOG = logging.getLogger("fabric.tracing")
 _MAX_STRING_CHARS = 4096
 _MAX_ARRAY_ITEMS = 32
@@ -446,9 +448,14 @@ class MetadataOnlySpanExporter(SpanExporter):
             self._counts[key] = self._counts.get(key, 0) + 1
         _LOG.warning("fabric.tracing: managed exporter %s failed", operation)
 
+    # The wrapped exporter runs under sanitized diagnostics (as Fabric's capture exporters
+    # do): its log records, and the OTLP header parser's and urllib3's, keep only codes and
+    # class names, never endpoint URLs, header values or TLS/connection error text.
+
     def _export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         try:
-            result = self.wrapped_exporter.export(spans)
+            with sanitized_export_diagnostics():
+                result = self.wrapped_exporter.export(spans)
         except Exception:
             self._failure("export")
             return SpanExportResult.FAILURE
@@ -459,13 +466,15 @@ class MetadataOnlySpanExporter(SpanExporter):
 
     def shutdown(self) -> None:
         try:
-            self.wrapped_exporter.shutdown()
+            with sanitized_export_diagnostics():
+                self.wrapped_exporter.shutdown()
         except Exception:
             self._failure("shutdown")
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         try:
-            return self.wrapped_exporter.force_flush(timeout_millis)
+            with sanitized_export_diagnostics():
+                return self.wrapped_exporter.force_flush(timeout_millis)
         except Exception:
             self._failure("flush")
             return False
