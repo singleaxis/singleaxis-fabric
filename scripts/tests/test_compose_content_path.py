@@ -139,18 +139,22 @@ def _uncomment_tls(text: str) -> str:
 
 
 def _stage_shipped(
-    tmp_path: Path, *, telemetry_tls: bool, content: bool = True, content_tls: bool = True
+    tmp_path: Path,
+    *,
+    telemetry_tls: bool,
+    content: bool = True,
+    content_tls: bool = True,
 ) -> None:
     """The shipped production config, and (``content``) the opt-in content overlay
     config, with the documented TLS edits applied where asked."""
-    production = (COMPOSE_DIR / "collector-config" / "collector-production.yaml").read_text(
-        encoding="utf-8"
-    )
+    production = (
+        COMPOSE_DIR / "collector-config" / "collector-production.yaml"
+    ).read_text(encoding="utf-8")
     _stage(tmp_path, _uncomment_tls(production) if telemetry_tls else production)
     if content:
-        overlay = (COMPOSE_DIR / "collector-config" / "collector-content.yaml").read_text(
-            encoding="utf-8"
-        )
+        overlay = (
+            COMPOSE_DIR / "collector-config" / "collector-content.yaml"
+        ).read_text(encoding="utf-8")
         (tmp_path / "collector-config" / "collector-content.yaml").write_text(
             _uncomment_tls(overlay) if content_tls else overlay, encoding="utf-8"
         )
@@ -478,7 +482,8 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
 
 
 @pytest.mark.parametrize(
-    "names", [("collector.yaml",), ("collector-production.yaml", "collector-content.yaml")]
+    "names",
+    [("collector.yaml",), ("collector-production.yaml", "collector-content.yaml")],
 )
 def test_collector_configs_keep_content_on_its_own_path(names: tuple[str, ...]) -> None:
     config: dict[str, Any] = {}
@@ -542,7 +547,10 @@ def test_production_content_receiver_uses_the_bearer_authenticator() -> None:
 
 def test_s3_overlay_replaces_only_the_content_exporter() -> None:
     merged = _deep_merge(
-        _deep_merge(_collector("collector-production.yaml"), _collector("collector-content.yaml")),
+        _deep_merge(
+            _collector("collector-production.yaml"),
+            _collector("collector-content.yaml"),
+        ),
         _collector("collector-content-s3.yaml"),
     )
     pipelines = merged["service"]["pipelines"]
@@ -737,7 +745,11 @@ def test_verify_prod_does_not_claim_content_delivery() -> None:
         ("collector.yaml",),
         ("collector-production.yaml", "collector-content.yaml"),
         ("collector.yaml", "collector-content-s3.yaml"),
-        ("collector-production.yaml", "collector-content.yaml", "collector-content-s3.yaml"),
+        (
+            "collector-production.yaml",
+            "collector-content.yaml",
+            "collector-content-s3.yaml",
+        ),
     ],
     ids=lambda names: "+".join(names),
 )
@@ -775,7 +787,9 @@ MAIN_ENV = {
 }
 
 
-def _render(tmp_path: Path, files: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _render(
+    tmp_path: Path, files: list[str], env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
     token = tmp_path / "ingress.token"
     token.write_text("0123456789abcdef0123456789abcdef", encoding="utf-8")
     (tmp_path / "empty.env").write_text("", encoding="utf-8")
@@ -830,3 +844,30 @@ def test_content_overlay_needs_the_tenant_and_publishes_content(tmp_path: Path) 
     assert {int(p["target"]) for p in node["ports"]} == {4317, 4318, 4319, 13133, 8888}
     assert {"/var/lib/fabric-node/queue", "/var/lib/fabric-node/content-queue",
             "/var/lib/fabric-node/content"} <= {v["target"] for v in node["volumes"]}  # fmt: skip
+
+
+# --------------------------------------------------------------------------
+# m5: trailing-dot FQDNs stay accepted (main accepted them)
+# --------------------------------------------------------------------------
+
+
+def test_trailing_dot_fqdns_are_accepted(tmp_path: Path) -> None:
+    _content_config(tmp_path)
+    _s3_overlay(tmp_path)
+    result = _run(
+        tmp_path,
+        **S3_OK,
+        FABRIC_EXPORT_ENDPOINT="https://otlp.example.com.:4318/v1",
+        FABRIC_CONTENT_S3_ENDPOINT="https://minio.internal.:9000",
+    )
+    assert result.returncode == 0, result.stdout
+    assert "content store endpoint uses https" in result.stdout
+
+
+@pytest.mark.parametrize("host", [".", "minio..internal", "-minio.internal."])
+def test_malformed_names_are_still_refused(tmp_path: Path, host: str) -> None:
+    _content_config(tmp_path)
+    _s3_overlay(tmp_path)
+    result = _run(tmp_path, **S3_OK, FABRIC_CONTENT_S3_ENDPOINT=f"https://{host}:9000")
+    assert result.returncode == 1, result.stdout
+    assert "FABRIC_CONTENT_S3_ENDPOINT host must be" in result.stdout

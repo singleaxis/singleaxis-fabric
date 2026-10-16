@@ -283,6 +283,31 @@ expect_fail "memory limiter must stay below the container limit" "not below reso
 expect_fail "request bound cannot exceed 64 MiB" "maxRequestBodyBytes" \
   "${chart_dir}" "${s3_args[@]}" --set content.maxRequestBodyBytes=134217728
 
+printf '\n=== Memory limit units and NetworkPolicy egress (m5) ===\n'
+# The memory guard reads every Kubernetes quantity form; a limit it could not
+# parse used to skip the comparison silently.
+for quantity in 800M 805306368 0.75Gi 768Mi; do
+  expect_fail "memory limit ${quantity} at or below the limiter is refused" "not below resources.limits.memory" \
+    "${chart_dir}" "${s3_args[@]}" --set-string "resources.limits.memory=${quantity}"
+done
+for quantity in 1G 2147483648 1.5Gi 2048Mi; do
+  if helm template ci "${chart_dir}" "${s3_args[@]}" --set-string "resources.limits.memory=${quantity}" >/dev/null 2>&1; then
+    pass "memory limit ${quantity} above the limiter renders"
+  else
+    fail "memory limit ${quantity} above the limiter refused"
+  fi
+done
+expect_fail "an unreadable memory limit fails closed" "must be a Kubernetes memory quantity" \
+  "${chart_dir}" "${s3_args[@]}" --set-string resources.limits.memory=lots
+numeric_values="$(mktemp)"
+printf 'resources:\n  limits:\n    memory: 805306368\n' >"${numeric_values}"
+expect_fail "a numeric byte limit is compared, not misread" "not below resources.limits.memory (768 MiB)" \
+  "${chart_dir}" "${s3_args[@]}" --values "${numeric_values}"
+rm -f "${numeric_values}"
+expect_fail "an enabled policy needs content egress for s3" "requires operator-supplied networkPolicy.contentEgress.to" \
+  "${chart_dir}" "${s3_args[@]}" --set networkPolicy.enabled=true \
+  --set-string 'networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true'
+
 printf '\n=== Shadow production ===\n'
 production_args=(
   --values "${profile}" --values "${umbrella_dir}/tests/fixtures/production-assertions.yaml"

@@ -189,8 +189,10 @@ url_check() {
       fi
       ;;
     *[!0-9.]*|'')
-      if [ "${#URL_HOST}" -le 253 ] \
-        && matches '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$' "${URL_HOST}"; then
+      # A fully qualified name may end with the root label's dot (example.com.).
+      url_name=${URL_HOST%.}
+      if [ "${#url_name}" -le 253 ] \
+        && matches '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$' "${url_name}"; then
         url_host_ok=1
       fi
       ;;

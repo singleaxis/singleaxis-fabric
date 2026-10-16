@@ -318,8 +318,8 @@ Diagnostics name the field and index only, never a configured value.
 {{- if ne $hasContentPeers $hasContentPorts -}}
 {{- fail "networkPolicy.contentEgress requires both non-empty to and ports lists" -}}
 {{- end -}}
-{{- if and $np.enabled $ee.requireExplicit .Values.content.enabled (eq .Values.content.backend "s3") (not $hasContentPeers) -}}
-{{- fail "content.backend=s3 with networkPolicy.exporterEgress.requireExplicit=true requires operator-supplied networkPolicy.contentEgress.to and ports for the content store (and STS when using IRSA)" -}}
+{{- if and $np.enabled .Values.content.enabled (eq .Values.content.backend "s3") (not $hasContentPeers) -}}
+{{- fail "content.backend=s3 with networkPolicy.enabled=true requires operator-supplied networkPolicy.contentEgress.to and ports for the content store (and STS when using IRSA): the policy otherwise blocks every content write" -}}
 {{- end -}}
 {{- if and (or $hasPeers $hasPorts) (not $np.enabled) -}}
 {{- fail "networkPolicy.exporterEgress is configured but networkPolicy.enabled=false; enable the policy or remove the misleading rule" -}}
@@ -407,7 +407,9 @@ Arguments: (dict "url" URL "field" NAME "credentials" HINT).
 {{- end -}}
 {{- end -}}
 {{- else -}}
-{{- $hostOK = and (le (len $host) 253) (regexMatch "^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$" $host) -}}
+{{- /* A fully qualified name may end with the root label's dot (example.com.). */ -}}
+{{- $name := trimSuffix "." $host -}}
+{{- $hostOK = and (le (len $name) 253) (regexMatch "^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$" $name) -}}
 {{- end -}}
 {{- if not $hostOK -}}
 {{- fail (printf "%s host must be a DNS name, a dotted IPv4 address or a bracketed IPv6 address" $f) -}}
@@ -576,16 +578,38 @@ a profile that requires encryption.
 {{- if and .Values.exporter.requireDurableQueue (not .Values.exporter.sendingQueue.persistence.enabled) -}}
 {{- fail "content.enabled=true with exporter.requireDurableQueue=true requires exporter.sendingQueue.persistence.enabled=true for the content queue" -}}
 {{- end -}}
-{{- $limitMiB := 0 -}}
-{{- $memory := dig "limits" "memory" "" (.Values.resources | default dict) | toString -}}
-{{- if regexMatch "^[0-9]+Gi$" $memory -}}
-{{- $limitMiB = mul (trimSuffix "Gi" $memory | int) 1024 -}}
-{{- else if regexMatch "^[0-9]+Mi$" $memory -}}
-{{- $limitMiB = trimSuffix "Mi" $memory | int -}}
+{{- $memory := dig "limits" "memory" "" (.Values.resources | default dict) -}}
+{{- $limitMiB := include "otel-collector.quantityMiB" (dict "quantity" $memory "field" "resources.limits.memory") | int -}}
+{{- if and (gt $limitMiB 0) (ge (int (include "otel-collector.memoryLimitMiB" .)) $limitMiB) -}}
+{{- fail (printf "content.enabled=true sets memory_limiter to %s MiB, which is not below resources.limits.memory (%s); raise the container limit or lower content.memoryLimiterMiB" (include "otel-collector.memoryLimitMiB" .) (printf "%d MiB" $limitMiB)) -}}
 {{- end -}}
-{{- if and (gt (int $limitMiB) 0) (ge (int (include "otel-collector.memoryLimitMiB" .)) (int $limitMiB)) -}}
-{{- fail (printf "content.enabled=true sets memory_limiter to %s MiB, which is not below resources.limits.memory (%s); raise the container limit or lower content.memoryLimiterMiB" (include "otel-collector.memoryLimitMiB" .) $memory) -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+A Kubernetes memory quantity in whole MiB (rounded down): plain bytes, a
+decimal SI suffix (k, M, G, T, P, E) or a binary one (Ki, Mi, Gi, Ti, Pi, Ei),
+with an optional decimal fraction (1.5Gi). Empty gives 0 (no limit). Any other
+form fails the render rather than skipping the comparison it guards.
+Arguments: (dict "quantity" VALUE "field" NAME).
+*/}}
+{{- define "otel-collector.quantityMiB" -}}
+{{- $q := .quantity | toString | trim -}}
+{{- if or (kindIs "float64" .quantity) (kindIs "int" .quantity) (kindIs "int64" .quantity) -}}
+{{- /* A YAML number (plain bytes) arrives as float64: never via its e+NN form. */ -}}
+{{- $q = printf "%d" (int64 .quantity) -}}
+{{- end -}}
+{{- if not $q -}}
+0
+{{- else -}}
+{{- $m := regexFindAll "^([0-9]+(\\.[0-9]+)?)(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$" $q 1 -}}
+{{- if not $m -}}
+{{- fail (printf "%s must be a Kubernetes memory quantity such as 2Gi, 2048Mi, 2G or 2147483648" .field) -}}
+{{- end -}}
+{{- $number := regexFind "^[0-9]+(\\.[0-9]+)?" $q -}}
+{{- $unit := trimPrefix $number $q -}}
+{{- $factors := dict "" 1.0 "k" 1e3 "M" 1e6 "G" 1e9 "T" 1e12 "P" 1e15 "E" 1e18 "Ki" 1024.0 "Mi" 1048576.0 "Gi" 1073741824.0 "Ti" 1099511627776.0 "Pi" 1125899906842624.0 "Ei" 1152921504606846976.0 -}}
+{{- floor (divf (mulf (float64 $number) (get $factors $unit)) 1048576.0) | int64 -}}
 {{- end -}}
 {{- end -}}
 

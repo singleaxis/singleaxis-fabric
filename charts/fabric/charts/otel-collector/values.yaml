@@ -423,7 +423,8 @@ networkPolicy:
   egressTo: []
   # Egress from the Node to the content store (content.backend=s3), e.g. the
   # S3 VPC endpoint CIDRs plus STS for IRSA, or the MinIO Service. Required
-  # (to + ports) when content uses s3 and exporterEgress.requireExplicit=true.
+  # (to + ports) whenever the policy is enabled and content uses s3: without
+  # it the policy blocks every content write.
   contentEgress:
     to: []
     ports: []

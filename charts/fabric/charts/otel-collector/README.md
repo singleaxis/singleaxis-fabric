@@ -41,8 +41,11 @@ operator-created static keys for stores without workload identity. Values
 never contain keys. The content queue lives at
 `<persistence.directory>/content-queue` on the queue PVC (memory-only
 without persistence). `networkPolicy.contentEgress` names the store (and
-STS) peers; NetworkPolicy ingress opens 4319 to the same `ingressFrom`
-peers. Render fails without `allowedTenants` or a backend, on more than one
+STS) peers, and is required whenever `networkPolicy.enabled=true` with an
+s3 backend (the policy would otherwise block every content write);
+NetworkPolicy ingress opens 4319 to the same `ingressFrom` peers. The
+memory guard reads `resources.limits.memory` in any Kubernetes quantity
+form (bytes, `M`/`G`, `Mi`/`Gi`, decimals). Render fails without `allowedTenants` or a backend, on more than one
 tenant without `allowMultipleTenants`, on an s3 backend without `sse`, on an
 invalid bucket, prefix or endpoint, on `kmsKeyId` without `aws:kms`, and with
 `requireServerSideEncryption=true` (pinned by `shadow-production`) on

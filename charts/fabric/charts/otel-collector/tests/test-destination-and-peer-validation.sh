@@ -82,6 +82,15 @@ expect_ok "production accepts an IPv4 address" \
   "${production_args[@]}" --set otel-collector.exporter.endpoint=https://203.0.113.10:443
 expect_ok "production accepts a bracketed IPv6 address" \
   "${production_args[@]}" --set 'otel-collector.exporter.endpoint=https://[2001:db8::10]:443'
+# Main accepted a fully qualified name with the root label's trailing dot.
+expect_ok "production accepts a trailing-dot FQDN" \
+  "${production_args[@]}" --set otel-collector.exporter.endpoint=https://otlp.example.com.
+expect_ok "production accepts a trailing-dot FQDN with port and path" \
+  "${production_args[@]}" --set otel-collector.exporter.endpoint=https://otlp.example.com.:4318/otlp
+expect_fail "a lone dot is not a host" "exporter.endpoint host" \
+  "${production_args[@]}" --set otel-collector.exporter.endpoint=https://./v1
+expect_fail "an empty label is still refused" "exporter.endpoint host" \
+  "${production_args[@]}" --set otel-collector.exporter.endpoint=https://otlp..example.com
 
 expect_fail "user info with a password is refused" "must not contain user info" \
   "${production_args[@]}" --set "otel-collector.exporter.endpoint=https://user:${marker}@otlp.example.com"

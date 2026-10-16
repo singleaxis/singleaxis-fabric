@@ -211,7 +211,9 @@ def production_config_with_tls(target: Path) -> None:
     config.
     """
     text, stanzas, fields, ca = _uncomment_tls(PRODUCTION_CONFIG.read_text("utf-8"))
-    assert (stanzas, fields, ca) == (2, 6, 1), "collector-production.yaml TLS stanzas moved"
+    assert (stanzas, fields, ca) == (2, 6, 1), (
+        "collector-production.yaml TLS stanzas moved"
+    )
     target.write_text(text, "utf-8")
 
 
