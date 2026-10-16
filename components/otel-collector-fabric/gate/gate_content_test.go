@@ -413,3 +413,90 @@ func TestContentQueueMustBePrivate(t *testing.T) {
 		})
 	}
 }
+
+// Sol G #4: the queue_env_probe configuration. sending_queue is one
+// ${env:...} that the collector expands into a persistent file_storage
+// queue, while queue_directory names an unrelated private directory; the
+// gate skipped the check and the collector queued raw bytes in a restored
+// 0644 database under a 0755 directory. Structure that decides where queued
+// content lands (sending_queue, its storage id, compaction) must be literal.
+func TestContentQueueStructureMustBeLiteral(t *testing.T) {
+	root := t.TempDir()
+	probe := func(queue, compaction string) string {
+		return `receivers:
+  otlp/content:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4319
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 128
+    spike_limit_mib: 32
+extensions:
+  file_storage/content:
+    directory: ` + root + `/real-queue
+    create_directory: true
+    directory_permissions: "0700"
+` + compaction + `exporters:
+  fabriccontent:
+    allowed_tenants: [tenant-a]
+    backend: file
+    file:
+      directory: ` + root + `/store
+    queue_directory: ` + root + `/real-queue
+    sending_queue: ` + queue + `
+service:
+  extensions: [file_storage/content]
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    logs/content:
+      receivers: [otlp/content]
+      processors: [memory_limiter]
+      exporters: [fabriccontent]
+`
+	}
+	t.Setenv("PROBE_CONTENT_QUEUE", "{enabled: true, storage: file_storage/content, queue_size: 64, num_consumers: 1}")
+	t.Setenv("PROBE_STORAGE", "file_storage/content")
+	t.Setenv("PROBE_COMPACTION", "{directory: /tmp, on_start: true}")
+	literal := "{enabled: true, storage: file_storage/content}"
+	refused := map[string]struct{ cfg, reason string }{
+		"env sending_queue (probe)": {
+			strings.Replace(probe("${env:PROBE_CONTENT_QUEUE}", ""), "queue_directory: "+root+"/real-queue", "queue_directory: "+root+"/decoy-private-queue", 1),
+			"sending_queue to something other than a literal mapping",
+		},
+		"env sending_queue, same directory": {probe("${env:PROBE_CONTENT_QUEUE}", ""), "literal mapping"},
+		"scalar sending_queue":              {probe("on", ""), "literal mapping"},
+		"env storage id":                    {probe("{enabled: true, storage: \"${env:PROBE_STORAGE}\"}", ""), "storage literally"},
+		"non-string storage":                {probe("{enabled: true, storage: [file_storage/content]}", ""), "storage literally"},
+		"env compaction":                    {probe(literal, "    compaction: ${env:PROBE_COMPACTION}\n"), "compaction to something other than a literal mapping"},
+		"compaction without directory":      {probe(literal, "    compaction:\n      on_start: true\n"), "compaction directory"},
+		"env compaction directory":          {probe(literal, "    compaction:\n      directory: ${env:PROBE_STORAGE}\n      on_start: true\n"), "compaction directory"},
+		"unclean compaction directory":      {probe(literal, "    compaction:\n      directory: "+root+"/real-queue/../elsewhere\n"), "compaction directory"},
+	}
+	for name, tc := range refused {
+		t.Run("refused/"+name, func(t *testing.T) {
+			_, err := validateArgs([]string{"--config=" + writeConfig(t, tc.cfg)})
+			if err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("not refused for %q: %v", tc.reason, err)
+			}
+		})
+	}
+	accepted := map[string]string{
+		"literal persistent queue": probe(literal, ""),
+		"literal compaction":       probe(literal, "    compaction:\n      directory: "+root+"/real-queue\n      on_start: true\n"),
+		"env enabled flag":         probe("{enabled: \"${env:PROBE_ENABLED}\", storage: file_storage/content}", ""),
+		"in-memory queue":          probe("{enabled: true, queue_size: 8}", ""),
+		"no sending_queue":         strings.Replace(probe(literal, ""), "    sending_queue: "+literal+"\n", "", 1),
+	}
+	t.Setenv("PROBE_ENABLED", "true")
+	for name, cfg := range accepted {
+		t.Run("accepted/"+name, func(t *testing.T) {
+			if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err != nil {
+				t.Fatalf("rejected: %v", err)
+			}
+		})
+	}
+}

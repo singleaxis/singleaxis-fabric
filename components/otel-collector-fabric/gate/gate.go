@@ -914,6 +914,13 @@ func checkContentTenants(cfg map[string]any) error {
 // compaction directory (if any) inside its directory, and (b) name that
 // same directory as its queue_directory, which it validates and tightens to
 // 0700/0600 before the queue opens it. Diagnostics name component ids only.
+//
+// The structure that decides where queued bytes land must be literal (Sol G
+// #4): a sending_queue, its storage id, or a compaction block given as one
+// ${env:...} (or any other non-mapping value) is expanded by the collector
+// into storage fabric-gate never saw, so it is refused rather than skipped.
+// A compaction block must name its directory, because file_storage's
+// default compaction directory is outside the private queue directory.
 func checkContentQueueStorage(cfg map[string]any) error {
 	exporters, _ := cfg["exporters"].(map[string]any)
 	extensions, _ := cfg["extensions"].(map[string]any)
@@ -922,8 +929,18 @@ func checkContentQueueStorage(cfg map[string]any) error {
 			continue
 		}
 		exporter, _ := exporters[id].(map[string]any)
-		queue, _ := exporter["sending_queue"].(map[string]any)
-		storage, _ := queue["storage"].(string)
+		var queue map[string]any
+		if raw := exporter["sending_queue"]; raw != nil {
+			literal, ok := raw.(map[string]any)
+			if !ok {
+				return fmt.Errorf("exporter %q sets sending_queue to something other than a literal mapping; write it as a map (individual fields may use ${env:...}) so fabric-gate can verify where queued content is stored", id)
+			}
+			queue = literal
+		}
+		storage, isString := queue["storage"].(string)
+		if (queue["storage"] != nil && !isString) || strings.Contains(storage, "$") {
+			return fmt.Errorf("exporter %q must name its sending_queue storage literally (a file_storage extension id), so fabric-gate can verify where queued content is stored", id)
+		}
 		if storage == "" || (queue["enabled"] != nil && !configTrue(queue["enabled"])) {
 			continue // in memory: nothing on disk
 		}
@@ -941,9 +958,14 @@ func checkContentQueueStorage(cfg map[string]any) error {
 		if perms, _ := ext["directory_permissions"].(string); perms != "0700" && perms != "700" {
 			return fmt.Errorf("extension %q (exporter %q's content queue) must set directory_permissions: \"0700\"; queued content is raw model bytes", storage, id)
 		}
-		if compaction, _ := ext["compaction"].(map[string]any); compaction != nil {
-			if dir, _ := compaction["directory"].(string); dir != "" && dir != directory && !strings.HasPrefix(filepath.Clean(dir), directory+"/") {
-				return fmt.Errorf("extension %q (exporter %q's content queue) must keep its compaction directory inside its directory", storage, id)
+		if raw := ext["compaction"]; raw != nil {
+			compaction, ok := raw.(map[string]any)
+			if !ok {
+				return fmt.Errorf("extension %q (exporter %q's content queue) sets compaction to something other than a literal mapping; write it as a map with its directory inside the queue directory", storage, id)
+			}
+			dir, _ := compaction["directory"].(string)
+			if dir == "" || filepath.Clean(dir) != dir || (dir != directory && !strings.HasPrefix(dir, directory+"/")) {
+				return fmt.Errorf("extension %q (exporter %q's content queue) must keep its compaction directory inside its directory, written literally (file_storage's default is elsewhere)", storage, id)
 			}
 		}
 		if own, _ := exporter["queue_directory"].(string); own != directory {
