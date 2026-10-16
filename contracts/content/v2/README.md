@@ -26,3 +26,30 @@ those checks with customer-controlled identity and storage policy.
 The JSON fixture under `fixtures/bytes/` uses base64 only to make the
 contract test portable. It is **not** a prescription to place encoded content
 in OTLP; the bytes belong in the customer-controlled content store.
+
+## Model-exchange roles (spec 047, draft)
+
+`model.exchange.request` and `model.exchange.response` hold the complete
+HTTP body of one model API call exactly as transmitted/received by the
+in-process wire tee (`provenance: protocol`, `representation: exact`,
+`partial` or `truncated`). Both roles use `boundary: provider_bound`,
+`operation_id` = the exchange id, and the exchange's `run_id` and
+`source_*` position, so the store is self-describing.
+
+`content_encoding` is the HTTP `Content-Encoding` of the stored bytes,
+lowercased with whitespace removed (`identity` when the header was absent,
+`unknown` when it was not a valid token list). Wire bytes are stored as
+received and never decompressed at capture; a reader decodes them. The
+narrower `model.request.*` / `model.output.messages` roles are unchanged
+and are not emitted by the wire tee.
+
+## Producer-specific source position
+
+`source_id`, `source_epoch` and `source_sequence` are schema-compatible
+across producers, but `source_epoch` semantics are producer-specific. The
+wire tee (spec 047/048) sets it to `time_ns` at allocator creation (about
+1.8e18), so a restart is a new epoch. The explicit evidence line
+(specs 043–046) uses a persisted small counter and caps epochs and cursors
+at 2^53-1. Wire records are not inputs to spec 045 feeds or spec 046
+qualified verification; admitting them there needs a separate 050-series
+spec.

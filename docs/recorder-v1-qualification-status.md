@@ -1151,3 +1151,35 @@ metadata delivery. It does not turn Codex JSONL into the final provider
 request/response or raw ordered terminal streams, establish a passive
 source-authenticated adapter, or qualify customer storage and reachable
 routes. The full-workflow and production decision remain **NO-GO**.
+
+## LLM wire capture (specs 047/048) — separate status
+
+Status: **supervised-pilot review; draft specs, NO_COVERAGE_CLAIM.** This
+section is a separate verdict family. It does not change, and is not changed
+by, any NO-GO above: the explicit evidence line (specs 035–046) keeps its own
+status, and nothing here upgrades it.
+
+- **Scope.** Opt-in zero-code capture of model calls made through
+  httpx/httpx2 to listed endpoints in an instrumented Python process
+  (spec 047), with the agent durable spool and Node content delivery
+  (`otlp/content` → `fabriccontent`, spec 048). Spec 049 is a plan only.
+- **Review evidence.** An independent review of the source branch
+  (`feat/llm-wire-capture` at `aa372eb`) judged it ready for a *supervised
+  customer pilot* on the capture, data-exposure and deployment lenses. That
+  review predates the port onto the evidence line; the combined tree has
+  passed the local SDK, Go, chart, contract and wheel tests listed in its
+  change description, and still needs CI (including CodeQL on the exact head)
+  before the review applies to it.
+- **Verdicts.** `python -m fabric.reconstruct` issues record-integrity
+  verdicts (`complete_for_declared_scope`, `complete_for_observed_scopes`,
+  `partial`, `unverified`) over the exchanges the tee owned. They are not
+  run qualification and never imply spec 046's
+  `verified_complete_for_declared_scope`.
+- **Coexistence.** Inside an explicit model call (`CallRecorder` or
+  `ByteBoundaryAdapter` with `kind="model"`) the tee defers; a
+  Fabric-protected global tracer provider never carries wire spans; each
+  spool owns its own directory. See
+  [Two capture lines](README.md#two-capture-lines).
+- **Not claimed.** Calls through `requests`, `aiohttp`, `boto3`, gRPC, other
+  processes or unlisted endpoints; TypeScript capture; production deployment
+  without the customer's own qualification.

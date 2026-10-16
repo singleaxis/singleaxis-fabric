@@ -91,7 +91,8 @@ Scope should identify the component (`otel-collector-fabric`,
 
 ### Go
 
-- Go 1.22+.
+- Go 1.26+ (the Fabric Node components and host emitter require it;
+  `tools/fabricctl` still builds with Go 1.22+).
 - Formatter: `gofmt` + `goimports`.
 - Linter: `golangci-lint` with the Fabric config.
 - Tests: standard library `testing`, `testify` for assertions.

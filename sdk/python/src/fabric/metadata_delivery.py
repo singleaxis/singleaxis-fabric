@@ -171,6 +171,10 @@ class HTTPMetadataTransport:
         assert parsed.hostname is not None  # noqa: S101 - constructor validates
         connection: http.client.HTTPConnection
         if self._tls is not None:
+            # Verified false positive: `context` is ssl.create_default_context(cafile=...)
+            # (CERT_REQUIRED + hostname check), pinned to TLS >= 1.2, on Python >= 3.11.
+            # The rule flags every HTTPSConnection regardless of the context passed.
+            # nosemgrep: httpsconnection-detected
             connection = http.client.HTTPSConnection(
                 parsed.hostname,
                 parsed.port or 443,

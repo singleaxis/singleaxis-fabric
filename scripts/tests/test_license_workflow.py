@@ -93,3 +93,26 @@ def test_optional_s3_inventory_reaches_license_gate() -> None:
     package = json.loads((ROOT / "sdk/typescript/package.json").read_text())
     assert package["peerDependenciesMeta"]["@aws-sdk/client-s3"]["optional"] is True
     assert "sdk/typescript=raw/npm-typescript-s3.json" in _gate_arguments()
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/recorder-license.yml").read_text()
+    )
+    (step,) = [
+        step["run"]
+        for step in workflow["jobs"]["typescript"]["steps"]
+        if step.get("name") == "Inventory production dependencies"
+    ]
+    local = (ROOT / "scripts/license_scan.sh").read_text()
+    for text in (step, local):
+        script = "\n".join(
+            line for line in text.splitlines() if not line.lstrip().startswith("#")
+        )
+        # The peer is scanned in its own project at the range package.json
+        # declares, not grafted onto the SDK's lockfile tree (re-resolving
+        # that tree from the registry broke npm), and the scan fails closed.
+        assert "peerDependencies" in script
+        assert "sdk/typescript/package.json" in script
+        assert "--package-lock=false" not in script
+        assert "--prefix sdk/typescript --no-save" not in script
+        assert "--excludePrivatePackages" in script
+        # Fails closed when the scan did not see the peer.
+        assert "@aws-sdk/client-s3@" in script.split("--excludePrivatePackages")[1]

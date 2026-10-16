@@ -14,6 +14,7 @@ from contextlib import suppress
 from inspect import isawaitable
 from typing import TypeVar
 
+from fabric._capture_scope import explicit_model_call
 from fabric.adapters.synthetic_evidence import SyntheticCaptureSession
 
 _T = TypeVar("_T")
@@ -44,6 +45,7 @@ class ByteBoundaryAdapter:
             raise ValueError("source_id must be a simple non-empty ASCII identifier")
         self.session = session
         self.source_id = source_id
+        self.kind = kind
         self.boundary, self.input_role, self.output_role = _ROLES[kind]
 
     def _capture_or_gap(
@@ -132,8 +134,13 @@ class ByteBoundaryAdapter:
             operation_id=operation_id,
             attempt_id=attempt_id,
         )
+        # Explicit wins: an installed wire tee defers to a model adapter's record for
+        # the delegate's model request, and a tool adapter clears an enclosing explicit
+        # model scope so a model request its tool makes is still wire-captured
+        # (fabric._capture_scope); nothing else changes.
         try:
-            result = delegate(payload)
+            with explicit_model_call(self.kind == "model"):
+                result = delegate(payload)
         except BaseException as exc:
             with suppress(Exception):
                 self.session.gap(

@@ -16,6 +16,7 @@ func dedicatedConfig(tokenPath string) string {
   bearertokenauth/evidence_source:
     filename: ` + tokenPath + `
     require_single_token: true
+  noredirect: {}
 receivers:
   otlp:
     protocols:
@@ -31,9 +32,10 @@ processors:
 exporters:
   otlp_http/fabric:
     endpoint: https://destination.example/v1
+    middlewares: [{id: noredirect}]
     tls: {insecure: false, insecure_skip_verify: false}
 service:
-  extensions: [bearertokenauth/evidence_source]
+  extensions: [bearertokenauth/evidence_source, noredirect]
   pipelines:
     logs:
       receivers: [otlp]
@@ -74,7 +76,7 @@ func TestDedicatedEvidenceIngressRejectsRouteAndAuthBypasses(t *testing.T) {
 		{"wrong processor order", "[memory_limiter, fabricguard, batch]", "[memory_limiter, batch, fabricguard]"},
 		{"guard omitted", "[memory_limiter, fabricguard, batch]", "[memory_limiter, batch]"},
 		{"missing receiver TLS", "tls: {cert_file: /cert/server.crt, key_file: /cert/server.key}", "tls: {}"},
-		{"inactive authenticator", "extensions: [bearertokenauth/evidence_source]", "extensions: []"},
+		{"inactive authenticator", "extensions: [bearertokenauth/evidence_source, noredirect]", "extensions: [noredirect]"},
 		{"unsafe export", "https://destination.example/v1", "http://destination.example/v1"},
 		{"unknown exporter", "exporters: [otlp_http/fabric]", "exporters: [debug]"},
 		{"invalid source", "source_id: source-a", "source_id: source/a"},

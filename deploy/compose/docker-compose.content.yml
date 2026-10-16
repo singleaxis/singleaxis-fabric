@@ -1,0 +1,51 @@
+# Production add-on: the spec 048 content path (opt-in).
+#
+#   FABRIC_CONTENT_BACKEND=s3 or file in .env   # make up-prod then adds this
+#                                               # file (and, for s3,
+#                                               # docker-compose.content-s3.yml)
+#
+# Without FABRIC_CONTENT_BACKEND the production overlay is telemetry only and
+# runs unchanged with an existing .env. This file merges
+# collector-content.yaml after collector-production.yaml (fabric-gate
+# validates the merged configuration), publishes the content port, adds the
+# durable content queue and the local content store volume, and requires
+# FABRIC_TENANT_ID, the only tenant the Node writes.
+#
+# Backends: s3 is the production default, with server-side encryption, as in
+# the Helm shadow-production profile. file keeps content on the
+# fabric-content volume, which has no server-side encryption: preflight
+# refuses it unless FABRIC_CONTENT_REQUIRE_SSE=false records that the host
+# disk's encryption is accepted instead (the Helm chart's
+# content.requireServerSideEncryption=false).
+#
+# The content receiver must be at least as strict as the telemetry receivers:
+# uncomment its tls: stanza in collector-content.yaml together with theirs in
+# collector-production.yaml before publishing beyond loopback.
+
+volumes:
+  # Back both up like fabric-queue (docs/operations/dr.md). With
+  # docker-compose.content-s3.yml the store is S3 and fabric-content stays
+  # empty.
+  fabric-content-queue:
+  fabric-content:
+
+services:
+  fabric-node:
+    command:
+      - --config=/etc/fabric-node/collector-production.yaml
+      - --config=/etc/fabric-node/collector-content.yaml
+    environment:
+      # The only tenant the content exporter writes (agents send the same
+      # FABRIC_TENANT_ID with every content record).
+      FABRIC_TENANT_ID: ${FABRIC_TENANT_ID:?set FABRIC_TENANT_ID in .env to the tenant id your agents send}
+    volumes:
+      - ./collector-config/collector-content.yaml:/etc/fabric-node/collector-content.yaml:ro
+      - fabric-content-queue:/var/lib/fabric-node/content-queue
+      - fabric-content:/var/lib/fabric-node/content
+    ports:
+      # Content ingress: same bearer token as 4317/4318, and the same TLS rule
+      # beyond loopback (preflight and fabric-gate check it).
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_CONTENT_PORT:-4319}:4319"
+    # memory_limiter is 1536 MiB with content (64 MiB requests); the ceiling
+    # sits above it.
+    mem_limit: 2g

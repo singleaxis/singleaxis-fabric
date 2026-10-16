@@ -1,0 +1,155 @@
+# EVALUATION overlay: the Fabric Node writes content to a local,
+# S3-compatible bucket with server-side encryption, the way it writes to S3
+# in production (spec 048). Not a production object-store deployment.
+#
+#   make up-s3-eval
+#   # = docker compose -f docker-compose.yml -f docker-compose.s3-eval.yml up -d --build --wait
+#
+# The store is SeaweedFS (Apache-2.0, chrislusf/seaweedfs): one `weed server`
+# container with its S3 gateway. It replaced MinIO here in October 2026:
+# MinIO stopped publishing community images and the pinned quay.io/minio
+# digest became unpullable. Nothing in Fabric depends on SeaweedFS; the Node
+# only speaks S3, and any S3-compatible store with If-None-Match writes and
+# SSE can stand in.
+#
+# What it proves: agent -> Node (4319) -> fabriccontent (s3 backend,
+# path-style endpoint, SSE AES256, If-None-Match writes) -> S3 gateway, and
+# `fabric.reconstruct --store-uri s3://fabric-content/fabric/content/
+#  --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style` reading it back.
+#
+# Credentials (all overridable, evaluation-only defaults):
+#   * Admin identity (FABRIC_S3_EVAL_ROOT_*): used only by the s3-eval-init
+#     job and by an operator listing the bucket.
+#   * Node writer (FABRIC_S3_EVAL_NODE_*): Read + Write on the content prefix
+#     (GetObject, PutObject). Only the fabric-node service receives these
+#     keys; the agent receives none.
+#   * Reader (FABRIC_S3_EVAL_READER_*): Read (GetObject) on the content
+#     prefix, for running fabric.reconstruct on the host.
+#   * A bucket policy denies s3:DeleteObject to every identity.
+# Only the S3 port is published, on 127.0.0.1 only, never on FABRIC_BIND_ADDR.
+# SeaweedFS's master, volume server and filer bind to the container's
+# loopback; only the S3 gateway (HTTP 8333 and its gRPC port) listens beyond
+# it, so other containers cannot read the filer or volumes directly.
+
+x-s3-eval-image: &s3-eval-image
+  # Pinned by digest (multi-arch index). Resolve a newer one with:
+  #   docker buildx imagetools inspect chrislusf/seaweedfs:<release>
+  image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+
+x-s3-eval-identities: &s3-eval-identities
+  BUCKET: ${FABRIC_S3_EVAL_BUCKET:-fabric-content}
+  PREFIX: fabric/content/
+  ROOT_KEY: ${FABRIC_S3_EVAL_ROOT_ACCESS_KEY:-fabric-eval-root}
+  ROOT_SECRET: ${FABRIC_S3_EVAL_ROOT_SECRET_KEY:-fabric-eval-root-secret}
+  NODE_KEY: ${FABRIC_S3_EVAL_NODE_ACCESS_KEY:-fabric-node-writer}
+  NODE_SECRET: ${FABRIC_S3_EVAL_NODE_SECRET_KEY:-fabric-node-writer-secret}
+  READER_KEY: ${FABRIC_S3_EVAL_READER_ACCESS_KEY:-fabric-reader}
+  READER_SECRET: ${FABRIC_S3_EVAL_READER_SECRET_KEY:-fabric-reader-secret}
+
+volumes:
+  s3-eval-data:
+
+services:
+  s3-eval:
+    <<: *s3-eval-image
+    entrypoint: ["/bin/sh", "-ec"]
+    environment:
+      <<: *s3-eval-identities
+      # SSE-S3 key-encryption key: hex of 32 bytes. Public, evaluation-only
+      # default; set your own (openssl rand -hex 32) to test key handling.
+      WEED_S3_SSE_KEK: ${FABRIC_S3_EVAL_SSE_KEK:-f3913c0c52e57719af4606f716422bffd958b7e46aa99c0b8e6a14801ab1442c}
+    command:
+      - |
+        umask 077
+        # Rewritten on every start (a restart keeps /tmp; sticky /tmp stops
+        # root from reopening the seaweed-owned file, so replace it).
+        rm -f /tmp/fabric-s3-identities.json
+        # Static identities scoped to the content prefix (values must not
+        # contain double quotes or backslashes).
+        printf '{"identities":[{"name":"fabric-eval-root","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","List","Write","Tagging"]},{"name":"fabric-node-writer","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read:%s/%s*","Write:%s/%s*"]},{"name":"fabric-reader","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read:%s/%s*"]}]}\n' \
+          "$$ROOT_KEY" "$$ROOT_SECRET" "$$NODE_KEY" "$$NODE_SECRET" "$$BUCKET" "$$PREFIX" "$$BUCKET" "$$PREFIX" \
+          "$$READER_KEY" "$$READER_SECRET" "$$BUCKET" "$$PREFIX" > /tmp/fabric-s3-identities.json
+        chown seaweed:seaweed /tmp/fabric-s3-identities.json
+        # Fixed small volumes: without them weed sizes its volume count from
+        # host free disk, and later buckets fail on a nearly full Docker disk.
+        exec /entrypoint.sh server -ip=127.0.0.1 -ip.bind=127.0.0.1 \
+          -s3 -s3.ip.bind=0.0.0.0 -s3.port=8333 -s3.iam=false \
+          -s3.port.iceberg=0 -s3.port.lance=0 \
+          -s3.config=/tmp/fabric-s3-identities.json -master.telemetry=false \
+          -master.volumeSizeLimitMB=64 -volume.max=64
+    volumes:
+      - s3-eval-data:/data
+    ports:
+      - "127.0.0.1:${FABRIC_S3_EVAL_PORT:-9000}:8333"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8333/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+    networks: [fabric-node]
+
+  # One-shot: bucket with default SSE-S3 and a no-delete bucket policy. The
+  # writer and reader scopes come from the static identities above.
+  s3-eval-init:
+    <<: *s3-eval-image
+    depends_on:
+      s3-eval:
+        condition: service_healthy
+    user: "1000:1000"
+    entrypoint: ["/bin/sh", "-ec"]
+    environment:
+      <<: *s3-eval-identities
+    command:
+      - |
+        # Admin keys go to curl through a config file, never on its command
+        # line (visible in the process list).
+        umask 077
+        printf 'user = "%s:%s"\n' "$$ROOT_KEY" "$$ROOT_SECRET" > /tmp/s3-eval-init.curlrc
+        s3() {
+          curl -sS -K /tmp/s3-eval-init.curlrc --aws-sigv4 "aws:amz:us-east-1:s3" \
+            -o /tmp/s3-eval-init.out -w '%{http_code}' "$$@"
+        }
+        fail() { echo "s3-eval-init: $$1 (HTTP $$code)"; cat /tmp/s3-eval-init.out; exit 1; }
+        url="http://s3-eval:8333/$$BUCKET"
+        # The gateway can report healthy before its filer accepts writes;
+        # an existing bucket (re-run) is fine.
+        tries=0
+        until code="$$(s3 -X PUT "$$url")" \
+          && { [ "$$code" = 200 ] || grep -q BucketAlreadyOwnedByYou /tmp/s3-eval-init.out; }; do
+          tries=$$((tries + 1))
+          [ "$$tries" -lt 30 ] || fail "bucket not created"
+          sleep 1
+        done
+        code="$$(s3 -X PUT "$$url?encryption" -H 'Content-Type: application/xml' --data-binary \
+          '<ServerSideEncryptionConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>')"
+        [ "$$code" = 200 ] || fail "default encryption not set"
+        code="$$(s3 "$$url?encryption")"
+        { [ "$$code" = 200 ] && grep -q AES256 /tmp/s3-eval-init.out; } || fail "default encryption not reported"
+        code="$$(s3 -X PUT "$$url?policy" -H 'Content-Type: application/json' --data-binary \
+          "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"FabricNoDelete\",\"Effect\":\"Deny\",\"Principal\":\"*\",\"Action\":[\"s3:DeleteObject\",\"s3:DeleteObjectVersion\"],\"Resource\":[\"arn:aws:s3:::$$BUCKET/*\"]}]}")"
+        case "$$code" in 200|204) ;; *) fail "bucket policy not set" ;; esac
+        echo "s3-eval-init: bucket $$BUCKET ready (default SSE-S3, no-delete policy)"
+    restart: "no"
+    networks: [fabric-node]
+
+  fabric-node:
+    command:
+      - --config=/etc/fabric-node/collector.yaml
+      - --config=/etc/fabric-node/collector-content-s3.yaml
+    environment:
+      FABRIC_CONTENT_S3_BUCKET: ${FABRIC_S3_EVAL_BUCKET:-fabric-content}
+      FABRIC_CONTENT_S3_PREFIX: fabric/content/
+      FABRIC_CONTENT_S3_REGION: us-east-1
+      FABRIC_CONTENT_S3_ENDPOINT: http://s3-eval:8333
+      FABRIC_CONTENT_S3_PATH_STYLE: "true"
+      FABRIC_CONTENT_S3_SSE: AES256
+      FABRIC_CONTENT_S3_KMS_KEY_ID: ""
+      # Static writer keys for the Node only (read by the AWS default chain).
+      AWS_ACCESS_KEY_ID: ${FABRIC_S3_EVAL_NODE_ACCESS_KEY:-fabric-node-writer}
+      AWS_SECRET_ACCESS_KEY: ${FABRIC_S3_EVAL_NODE_SECRET_KEY:-fabric-node-writer-secret}
+    volumes:
+      - ./collector-config/collector-content-s3.yaml:/etc/fabric-node/collector-content-s3.yaml:ro
+    depends_on:
+      s3-eval-init:
+        condition: service_completed_successfully

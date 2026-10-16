@@ -1,0 +1,16 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "marker",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "order": 9,
+  "written_at_unix_nano": 1791331203050000000,
+  "marker": {
+    "kind": "run_end",
+    "last_sequence": 4,
+    "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+    "scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60"
+  }
+}

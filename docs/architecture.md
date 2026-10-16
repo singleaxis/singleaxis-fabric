@@ -108,6 +108,16 @@ flowchart TD
     SQ -.-> METRICS
 ```
 
+Wire capture in node mode ([spec 048](../specs/048-node-content-delivery-and-agent-spool.md))
+adds a separate, HTTP-only content receiver `otlp/content` on **:4319** (same
+authentication and TLS) feeding its own pipeline: `memory_limiter` →
+`fabriccontent`, which verifies each body's digest, length and tenant and
+writes body + descriptor to the customer's content store (a directory or
+S3) behind its own persistent queue. Content never passes `fabricguard` and
+can never reach the OTLP destination exporter: `fabric-gate` refuses any
+configuration that mixes the two paths. The Node is the only writer of the
+content store; agents hold no store credentials.
+
 Design notes:
 
 - **No batch processor before the queue.** A volatile in-memory batch window
@@ -306,6 +316,29 @@ flowchart LR
     end
     NS -.-> PROF
 ```
+
+### Two capture lines
+
+Fabric records agent activity through two capture lines that share the Node
+but stay separate in activation, spools, delivery topology, verifiers,
+verdicts and fabricguard classes:
+
+- **Explicit evidence line** (specs 035–046): the caller wraps calls with
+  `CallRecorder`, `ByteBoundaryAdapter` or `FinalHTTPAdapter`; the SDK writes
+  protected bytes to the customer store and emits `agent.evidence.*` records
+  that fabricguard's exact-key `evidence` class admits, optionally through a
+  dedicated, evidence-bound Node (`evidence_source_binding`, logs only, no
+  content path).
+- **Zero-code wire line** (specs 047–049): an opt-in httpx/httpx2 tee records
+  exact model-call bytes, delivered through the agent spool to a
+  content-capable Node (`otlp/content` → `fabriccontent`); fabricguard's
+  exact-key capture span profile admits its `fabric.model_call` spans.
+
+Inside an explicit model call the wire tee defers ("explicit wins"), and a
+Fabric-protected global tracer provider never carries wire spans. Each spool
+owns its own directory. Wire `complete_for_*` verdicts are record-integrity
+statements; only spec 046 issues `verified_complete_for_declared_scope`.
+Details: [Two capture lines](README.md#two-capture-lines).
 
 Path: `helm install fabric charts/fabric -f charts/fabric/profiles/shadow-production.yaml`
 plus the required secrets. The production profile fails closed on unpinned

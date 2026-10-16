@@ -370,7 +370,13 @@ def test_recovered_seal_fails_closed_on_disk_mismatch(
                 return os.stat_result(fields)
             return observed
 
+        def unsafe_seal_lstat(path: Path) -> os.stat_result:
+            return unsafe_seal_stat(path, follow_symlinks=False)
+
         monkeypatch.setattr(Path, "stat", unsafe_seal_stat)
+        # Python 3.14 implements Path.lstat with os.lstat instead of
+        # Path.stat(follow_symlinks=False), so patch it explicitly too.
+        monkeypatch.setattr(Path, "lstat", unsafe_seal_lstat)
     with pytest.raises(ValueError):
         _open(root)
 

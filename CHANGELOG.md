@@ -22,6 +22,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   acceptance runner that records executed checks and unsupported scenarios.
 - Added a controlled HTTP semantics fixture with physical retries, error
   responses, independent effect readback and fresh authorized derivative reads.
+- Added opt-in LLM wire capture (spec 047, draft): an in-process httpx/httpx2
+  tee records the exact request/response bytes of each model call to a
+  customer store, emits one digest-only span per call with sequenced loss
+  records and heartbeats, and `python -m fabric.reconstruct` verifies a run
+  offline. No coverage claim beyond instrumented httpx/httpx2 calls.
+- Added Fabric Node content delivery and the agent durable spool (spec 048,
+  draft): agents spool capture events to disk and deliver bodies to the
+  Node's `fabriccontent` exporter, so only the Node writes to S3, an
+  S3-compatible store or a directory store; run scopes bracket exchanges with
+  run markers. The Compose S3 evaluation overlay is
+  `docker-compose.s3-eval.yml` (`make up-s3-eval`, SeaweedFS), replacing the
+  MinIO overlay whose pinned image is no longer published.
+- Added spec 049 (draft): the four-layer capture coverage plan (context,
+  structure, content, decisions and effects) with phases P0–P5, building on
+  both the explicit evidence line (035–046) and wire capture (047/048).
+  Record-only; no evaluation or enforcement.
+- Added coexistence rules for the two capture lines: inside an explicit model
+  call (`CallRecorder` or `ByteBoundaryAdapter` with `kind="model"`) the wire
+  tee defers (`fabric/_capture_scope.py`, "explicit wins"); a
+  Fabric-protected global tracer provider never carries wire spans; the wire
+  spool refuses a directory another spool owns; `fabric-gate` and the Helm
+  chart refuse the content path on a dedicated evidence ingress and require
+  content receivers to share the telemetry receivers' authenticator.
+
+### Security
+
+- Bumped `github.com/cilium/ebpf` to v0.22.0 in the host emitter
+  (integer overflow in `LoadCollectionSpecFromReader`).
 
 ### Fixed
 
@@ -61,6 +89,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Migration: `fabric-gate` tightenings.** Existing collector configurations
+  that the gate accepted before may now be refused at container start; the
+  shipped Compose, Helm and example configurations already comply:
+  - every `otlphttp`/`otlp_http` exporter must list the `noredirect` client
+    middleware (`middlewares: [{id: noredirect}]`), defined under
+    `extensions` and enabled in `service.extensions`, so a 3xx is never
+    followed (spec 048 J4);
+  - every `traces` and `logs` pipeline must run `fabricguard` itself,
+    followed only by `batch`/`memory_limiter`; a pipeline without
+    processors, or one relying on a sibling pipeline's guard, is refused;
+  - `--feature-gates` is refused (a gate such as
+    `confmap.enableMergeAppendOption` changes how `--config` sources merge);
+  - receivers, protocols, `auth`/`tls` blocks, extensions, processors,
+    pipelines, pipeline component lists and `service.extensions` must be
+    literal YAML (a whole-value `${env:...}` is refused; leaf fields may
+    still use `${env:...}`);
+  - a content receiver must be at least as strict as the telemetry
+    receivers: same authenticator, TLS (no older `min_version`) when they
+    serve TLS, client certificates when they require mTLS.
+  Main's gate tests were updated for the first two rules only (they now add
+  the middleware and a guard to fixtures that lacked them).
+- The Compose production overlay is telemetry only again and starts with an
+  existing `.env`; the content path is the opt-in
+  `docker-compose.content.yml` (`FABRIC_CONTENT_BACKEND=s3`, or `file` with
+  `FABRIC_CONTENT_REQUIRE_SSE=false`, mirroring Helm's
+  `content.requireServerSideEncryption`).
+- Wire capture resolves its tracer provider at emit time: records are never
+  sent through a Fabric-protected (metadata-only) route; without a private
+  provider they are counted `span_dropped` losses and `flush()` is `False`.
+- Explicit-wins deferral lasts exactly as long as the explicit call; a
+  response that outlives the call is wire-captured, and
+  `fabric.bind_capture_context()` keeps the call's scope on thread-pool
+  workers.
+- Node content upload requires verified HTTPS, or plain HTTP to a loopback
+  host only.
+- `fabricguard` recognises capture records by their marker keys only, so a
+  second guard pass leaves governed LLM spans unchanged.
+- `fabric.reconstruct` validates exchange claims before marker classes and
+  checks each content descriptor against the full content-v2 contract and
+  the exchange identity.
 - Documented Python reference support and the narrower TypeScript capture
   subset, including target-specific production qualification gates.
 - Pinned the optional OpenAI instrumentation dependency combination verified

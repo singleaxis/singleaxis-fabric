@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/content-log-record-v1.schema.json",
+  "title": "Fabric content log record v1 (draft, spec 048)",
+  "description": "JSON form of one OTLP LogRecord on the content path (agent -> Fabric Node otlp/content receiver -> fabriccontent exporter). The LogRecord body is AnyValue.bytes_value holding the exact stored bytes; this document describes them by length and digest only. attributes is the exact, closed attribute set: event_class plus the content-v2 descriptor fields. The Node rejects a record with any other attribute, an invalid value, a body whose length or sha256 differs, or a tenant outside its allowed_tenants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "body",
+    "attributes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "fabric.content-log-record/v1"
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "byte_length",
+        "sha256"
+      ],
+      "properties": {
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "attributes": {
+      "$ref": "#/$defs/descriptor",
+      "required": [
+        "event_class"
+      ],
+      "properties": {
+        "event_class": {
+          "const": "content"
+        }
+      },
+      "unevaluatedProperties": false
+    }
+  },
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "uuid4": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "descriptor": {
+      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref). Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
+      "type": "object",
+      "required": [
+        "schema_version",
+        "object_id",
+        "tenant_id",
+        "role",
+        "media_type",
+        "content_encoding",
+        "representation",
+        "transformations",
+        "provenance",
+        "boundary",
+        "status",
+        "stored_byte_length",
+        "stored_sha256",
+        "source_byte_length",
+        "source_id",
+        "source_epoch",
+        "source_sequence",
+        "run_id",
+        "operation_id",
+        "captured_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "fabric.content-object/v2"
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "tenant_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"
+        },
+        "role": {
+          "enum": [
+            "model.exchange.request",
+            "model.exchange.response"
+          ]
+        },
+        "media_type": {
+          "type": "string",
+          "pattern": "^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$"
+        },
+        "content_encoding": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$"
+        },
+        "representation": {
+          "enum": [
+            "exact",
+            "partial",
+            "truncated"
+          ]
+        },
+        "transformations": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "const": "truncate"
+          }
+        },
+        "provenance": {
+          "const": "protocol"
+        },
+        "boundary": {
+          "const": "provider_bound"
+        },
+        "status": {
+          "enum": [
+            "stored",
+            "truncated"
+          ]
+        },
+        "stored_byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stored_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "source_byte_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "source_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "source_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "run_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "captured_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+        }
+      }
+    }
+  }
+}

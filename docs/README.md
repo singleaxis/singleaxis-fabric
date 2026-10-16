@@ -58,6 +58,9 @@ that specification, 027 controls the recorder release.
   [verify a release](verify-release.md) — artifact integrity and promotion.
 - [Qualification status](recorder-v1-qualification-status.md) — implemented
   behavior, contract-only surfaces, required CI, and known boundaries.
+- [Deploying LLM wire capture](wire-capture-deployment.md) — agent
+  activation, Node authentication, what is streamed and who can read it,
+  minimal IAM and known limits for spec 047/048 capture (draft).
 - [Governed content](governed-content.md) — opt-in capture of actual
   content to customer-controlled storage: postures, stores, durability,
   resolution/export, coverage limits, and migration from `capture_content`.
@@ -65,6 +68,60 @@ that specification, 027 controls the recorder release.
   — the dated September 22 baseline for specs 028–034, not current capability
   status. Use the qualification status above for current test evidence.
 - [API stability](api-stability.md) — compatibility commitments.
+
+## Two capture lines
+
+Fabric records agent activity through two capture lines that coexist in one
+process. They stay separate in activation, spools, delivery topology,
+verifiers, verdicts, fabricguard classes and Node ingress profiles.
+
+| | Explicit evidence line | Zero-code wire line |
+|---|---|---|
+| Specs | 035–046 | 047–049 |
+| Activation | Caller wraps calls: `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`, `record_*` | `fabric.wire.install()` or the env-gated autoload; no code changes |
+| What it sees | Calls the caller routes through it (`caller_reported`) | httpx/httpx2 traffic to listed LLM endpoints (`protocol`) |
+| Content delivery | SDK writes `<tenant>/evidence/<uuid>` (local store, S3, protected byte spool) | Agent spool → Node `otlp/content` → `fabriccontent` (same layout) |
+| Node ingress | Dedicated evidence Node (`evidence_source_binding`, logs only) | Content-capable Node (`otlp/content` on 4319) |
+| Fabricguard | Exact-key `evidence` log class | Exact-key capture span profile (`fabric.model_call`) |
+| Verifier and verdicts | `call_reconcile` / spec 046 (`verified_complete_for_declared_scope`, `invalid`, `incomplete`) | `python -m fabric.reconstruct` (`complete_for_declared_scope`, `complete_for_observed_scopes`, `partial`, `unverified`) |
+
+**Explicit wins.** Inside a live explicit model call (`CallRecorder` with
+`kind="model"`, including every `RecordedStream` step, or
+`ByteBoundaryAdapter(kind="model")`) the wire tee defers: an exchange whose
+response ends while the call is live gets no sequence and writes nothing, so
+the call is recorded once and the wire record shows no gap. The scope ends
+with the call: a task or thread spawned inside it, or a streamed response
+the call returns unread, is wire-captured afterwards. Tool, database and
+agent calls (either API) do not suppress wire capture. The only expected
+duplicate is work handed to `ThreadPoolExecutor.submit` or
+`loop.run_in_executor`, which do not copy the context; wrap the function in
+`fabric.bind_capture_context(...)` to keep it in the explicit call.
+
+**A Fabric-protected global provider never carries wire spans.** With
+`FABRIC_WIRE_TRACER=global`, if the global provider is one that
+`install_default_provider` protects, wire switches to its private provider
+when an OTLP endpoint is configured and otherwise does not install (one
+class-only warning). `FABRIC_CAPTURE_LLM_CONTENT` never affects wire: wire
+stores content off telemetry regardless.
+
+**One directory per spool.** Never point two spools at one directory or
+share a `.lock`:
+
+| Spool | Owner | Configured by | Files it owns |
+|---|---|---|---|
+| Wire agent spool | `fabric.wire` (spec 048) | `FABRIC_WIRE_SPOOL_DIR` | `.lock`, `.barrier`, `*.rec`, `*.ack`, `.tmp-*`, `*.corrupt` |
+| Source spool | `SyntheticSourceSpool` (passed to `CallRecorder(source_spool=...)`) | `SyntheticSourceSpool(root, ...)` | `.lock`, `state.json`, `event-*.json`, `seal-*.json`, `intent-*.json` |
+| Protected byte spool | `byte_spool.DurableByteSpool` | `DurableByteSpool(root, ...)` | `.lock`, `health`, envelopes |
+| Metadata delivery ledger | `metadata_delivery.JournalMetadataSender` | `JournalMetadataSender(root, ...)` | `.lock`, `owner.json`, `cursor.json`, `batch-*/result-*.json` |
+
+The wire spool refuses (fail-open: no install, one class-only warning) a
+directory holding any name outside its own set; the other spools keep their
+own lock and foreign-name refusals.
+
+**Verdict vocabulary.** Wire `complete_for_*` verdicts are record-integrity
+statements about the exchanges the tee owned. Only spec 046 issues
+`verified_complete_for_declared_scope`, which needs spec 045 feeds, route
+closure and the four receipt stages.
 
 ## Public contracts
 
@@ -74,6 +131,9 @@ that specification, 027 controls the recorder release.
 - [Draft AEEP evidence contract](../contracts/evidence/v1/README.md) and
   [draft byte-content v2 contract](../contracts/content/v2/README.md) —
   schemas and conformance fixtures only; recorder v1 does not emit them.
+  The byte-content v2 contract also carries the exact-byte
+  `model.exchange.*` descriptors used by LLM wire capture (specs 047/048).
+- [Draft LLM wire-capture contracts](../contracts/capture/v1/README.md)
 - [Recorder configuration](../contracts/recorder/v1/README.md)
 - [Privacy assertion](../contracts/privacy/v1/README.md)
 - [Delivery batch and receipt](../contracts/delivery/v1/README.md)

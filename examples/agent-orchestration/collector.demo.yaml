@@ -5,6 +5,9 @@
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  # fabric-gate requires every otlphttp exporter to refuse redirects
+  # (spec 048 J4): a 3xx is a retried failure, never a re-send.
+  noredirect: {}
 
 receivers:
   otlp:
@@ -21,6 +24,7 @@ receivers:
     exec: true
     connect: true
     file_access: true
+    # Required whenever file_access is on: raw paths never leave the Node.
     hash_file_paths: true
     manage_rules: false
     max_events_per_sec: 500
@@ -36,9 +40,11 @@ processors:
 exporters:
   otlphttp:
     endpoint: http://host.docker.internal:${env:SINK_PORT}
+    middlewares:
+      - id: noredirect
 
 service:
-  extensions: [health_check]
+  extensions: [health_check, noredirect]
   pipelines:
     traces:
       receivers: [otlp]

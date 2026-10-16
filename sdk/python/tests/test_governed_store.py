@@ -430,7 +430,10 @@ def test_conflicts_concurrency_and_tamper(setup: Any) -> None:
         stores[0].put_bytes_object(value, b"private\x00bytes\xff")
     path = envelope_path(stores[0])
     envelope = json.loads(path.read_bytes())
-    envelope["payload"] = envelope["payload"][:-1] + "x"
+    # The encrypted payload's last base64url character is random: replace it with a
+    # different one, or 1 run in 64 would "tamper" x into x and read back cleanly.
+    payload = envelope["payload"]
+    envelope["payload"] = payload[:-1] + ("y" if payload.endswith("x") else "x")
     path.write_text(json.dumps(envelope))
     with pytest.raises(CorruptedObjectError):
         stores[0].read(refs[0])

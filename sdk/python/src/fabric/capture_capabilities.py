@@ -21,6 +21,10 @@ _FEATURES = (
     ("identity_bound_authority", "implemented", "not_implemented"),
     ("authenticated_configuration_readback", "implemented", "not_implemented"),
     ("external_control_observation", "implemented", "not_implemented"),
+    # Zero-code LLM wire capture line (specs 047/048); opt-in, never on by default.
+    ("llm_wire_capture", "implemented", "not_implemented"),
+    ("node_content_delivery", "implemented", "not_implemented"),
+    ("offline_run_reconstruction", "implemented", "not_implemented"),
     ("final_boundary_control_exchange", "contract_only", "not_implemented"),
     ("independent_local_receipt_reference", "reference_only", "not_implemented"),
     ("distributed_closure_reference", "reference_only", "not_implemented"),

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/loss-record-v1.schema.json",
+  "title": "Fabric capture loss record / heartbeat v1 (draft, spec 047 rev 5, spec 048)",
+  "description": "JSON form of a fabric.capture_loss or fabric.capture_heartbeat span. A loss names a range of a source's exchange sequences that will never produce an exchange span; a heartbeat declares the last exchange sequence the source has allocated, which is how tail loss becomes detectable. heartbeat_kind says why it was written: periodic, run_start / run_end (a fabric.wire.run() block, with run_id) or final (a clean close; nothing is allocated in the epoch after it). A retried export re-sends the same logical record; readers deduplicate heartbeats by (source, kind, run_id, scope_id, last_sequence). Run markers carry the scope_id of the fabric.wire.run() block entry they bound (spec 048 §6); readers pair markers by scope_id. Records do not consume sequences and carry no content. Loss records only explain gaps: a sequence that is neither an exchange nor inside a loss range is still a detected gap.",
+  "type": "object",
+  "required": ["schema_version", "kind", "source", "emitted_at"],
+  "properties": {
+    "schema_version": {"const": "fabric.loss-record/v1"},
+    "kind": {"enum": ["loss", "heartbeat"]},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_epoch"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0}
+      }
+    },
+    "emitted_at": {"type": "string", "format": "date-time"}
+  },
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "required": ["reason", "count", "first_sequence", "last_sequence"],
+      "properties": {
+        "schema_version": true,
+        "kind": {"const": "loss"},
+        "source": true,
+        "emitted_at": true,
+        "reason": {"enum": ["queue_full", "internal_error", "shutdown", "span_dropped"]},
+        "count": {"type": "integer", "minimum": 1},
+        "first_sequence": {"type": "integer", "minimum": 0},
+        "last_sequence": {"type": "integer", "minimum": 0}
+      }
+    },
+    {
+      "additionalProperties": false,
+      "required": ["heartbeat_kind", "last_sequence"],
+      "properties": {
+        "schema_version": true,
+        "kind": {"const": "heartbeat"},
+        "source": true,
+        "emitted_at": true,
+        "heartbeat_kind": {"enum": ["periodic", "run_start", "run_end", "final"]},
+        "last_sequence": {"type": "integer", "minimum": -1},
+        "run_id": {
+          "description": "The run a run_start / run_end marker bounds. Capture writes it on markers only; readers treat a marker without run_id as an unclassified heartbeat and ignore run_id on periodic and final heartbeats.",
+          "$ref": "#/$defs/opaqueId"
+        },
+        "scope_id": {
+          "description": "fabric.run.scope_id of the fabric.wire.run() block entry this run_start / run_end marker bounds (spec 048 §6). Only on run markers; a marker without a valid scope_id is an unclassified heartbeat.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "opaqueId": {
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    }
+  }
+}

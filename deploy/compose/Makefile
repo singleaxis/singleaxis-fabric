@@ -1,13 +1,26 @@
 COMPOSE ?= docker compose
 
 # Production overlay (client VM). `make up-prod` merges it over the base file.
+# The content path (spec 048) is opt-in: FABRIC_CONTENT_BACKEND=s3 or file
+# (environment or .env) adds docker-compose.content.yml, plus the S3 store
+# overlay for s3; preflight-prod.sh reads the same variable (and refuses
+# file unless FABRIC_CONTENT_REQUIRE_SSE=false). Unset: telemetry only.
+FABRIC_CONTENT_BACKEND ?= $(shell sed -n 's/^FABRIC_CONTENT_BACKEND=//p' .env 2>/dev/null | tail -n 1 | tr -d "\"'")
 PROD_FILES := -f docker-compose.yml -f docker-compose.production.yml
+ifeq ($(FABRIC_CONTENT_BACKEND),s3)
+PROD_FILES += -f docker-compose.content.yml -f docker-compose.content-s3.yml
+endif
+ifeq ($(FABRIC_CONTENT_BACKEND),file)
+PROD_FILES += -f docker-compose.content.yml
+endif
+# Evaluation with a local S3-compatible content store (SSE-S3), spec 048.
+S3_EVAL_FILES := -f docker-compose.yml -f docker-compose.s3-eval.yml
 
 # Resolve a service's published host:port, normalizing wildcard binds
 # (0.0.0.0 / [::]) to loopback. Usage: $(call port_for,<service>,<port>)
 port_for = $(shell $(COMPOSE) port $(1) $(2) 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')
 
-.PHONY: up down reset logs status build smoke qualify up-prod down-prod logs-prod preflight-prod verify-prod help
+.PHONY: up down reset logs status build smoke qualify up-s3-eval down-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod help
 
 up: ## Build and start Fabric Node plus the controlled sink.
 	$(COMPOSE) up -d --build --wait
@@ -38,6 +51,14 @@ smoke: ## Send one protected OTLP trace to Fabric Node.
 
 qualify: up ## Exercise protection plus destination outage/restart recovery.
 	./qualify.sh
+
+up-s3-eval: ## Evaluation with a local S3-compatible content store (SSE-S3, path-style).
+	$(COMPOSE) $(S3_EVAL_FILES) up -d --build --wait
+	@echo "Content ingress: http://localhost:$${FABRIC_OTLP_CONTENT_PORT:-4319}/v1/logs (tenant $${FABRIC_TENANT_ID:-evaluation})"
+	@echo "Reconstruct: AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret python -m fabric.reconstruct --store-uri s3://fabric-content/fabric/content/ --s3-endpoint-url http://127.0.0.1:$${FABRIC_S3_EVAL_PORT:-9000} --s3-path-style --s3-region us-east-1 ..."
+
+down-s3-eval: ## Stop the S3 evaluation setup while keeping volumes.
+	$(COMPOSE) $(S3_EVAL_FILES) down
 
 # --- Client-VM production overlay -------------------------------------------
 # Requires .env (see .env.example): FABRIC_EXPORT_ENDPOINT,

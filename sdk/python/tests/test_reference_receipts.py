@@ -1,7 +1,7 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """Actual HTTP ingress, independent persistence, exact receipts and negatives."""
-# ruff: noqa: S106, S603 -- generated/local-only credentials and fixed Python module.
+# ruff: noqa: S106 -- generated/local-only credentials.
 
 from __future__ import annotations
 

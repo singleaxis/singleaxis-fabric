@@ -30,6 +30,10 @@ ALLOW ISC
 ALLOW Python-2.0
 ALLOW PSF-2.0
 ALLOW 0BSD
+# MIT-0 (MIT No Attribution): OSI-approved and strictly more permissive than
+# MIT (no notice requirement). Reviewed 2026-10-16: cffi>=2.1 via the
+# cryptography dependency of the optional [signing] extra.
+ALLOW MIT-0
 ALLOW Unlicense
 ALLOW CC0-1.0
 ALLOW BSD-3-Clause-Clear

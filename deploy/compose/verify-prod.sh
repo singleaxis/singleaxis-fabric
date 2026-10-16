@@ -4,7 +4,6 @@
 # and queue metrics. Does not prove protection or destination delivery.
 set -eu
 
-compose="${COMPOSE:-docker compose} -f docker-compose.yml -f docker-compose.production.yml"
 fail=0
 note() { printf '  %s %s\n' "$1" "$2"; }
 ok()   { note "PASS" "$1"; }
@@ -18,6 +17,14 @@ envget() {
   fi
   printf '%s' "${val}"
 }
+
+# The same files `make up-prod` merges: the content overlays only when the
+# opt-in content path is enabled (FABRIC_CONTENT_BACKEND).
+compose="${COMPOSE:-docker compose} -f docker-compose.yml -f docker-compose.production.yml"
+case "$(envget FABRIC_CONTENT_BACKEND)" in
+  s3) compose="${compose} -f docker-compose.content.yml -f docker-compose.content-s3.yml" ;;
+  file) compose="${compose} -f docker-compose.content.yml" ;;
+esac
 
 printf 'Fabric Node production verification\n'
 
@@ -41,6 +48,7 @@ if [ -f "${COLLECTOR_CONFIG}" ] \
 fi
 
 node_addr="$(${compose} port fabric-node 4318 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
+content_addr="$(${compose} port fabric-node 4319 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 grpc_addr="$(${compose} port fabric-node 4317 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 health_addr="$(${compose} port fabric-node 13133 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 metrics_addr="$(${compose} port fabric-node 8888 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
@@ -116,6 +124,26 @@ else
   bad "authenticated OTLP returned ${code}, expected 200"
 fi
 
+# --- content ingress auth (spec 048: otlp/content, same authenticator) --------
+# Only the rejection is probed: an accepted probe would have to be a real,
+# digest-valid content record for an allowed tenant.
+if [ -n "${content_addr}" ]; then
+  # shellcheck disable=SC2086
+  code=$(curl ${curl_tls} -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${content_addr}/v1/logs" \
+    -H 'Content-Type: application/x-protobuf' --data-binary '')
+  if [ "${code}" = "401" ] || [ "${code}" = "403" ]; then
+    ok "unauthenticated content upload rejected (${code})"
+    # Accepting an authenticated upload into the store is NOT checked here:
+    # that needs a real, digest-valid record and exercises the bucket policy,
+    # credentials, KMS and egress. Say so instead of implying it.
+    note "NOTE" "content delivery to the store is not verified here; run the content canary (docs/wire-capture-deployment.md, section 5)"
+  else
+    bad "unauthenticated content upload on ${content_addr} returned ${code}, expected 401/403"
+  fi
+else
+  note "SKIP" "content port 4319 not published (content path not enabled)"
+fi
+
 # --- gRPC ingress auth (same authenticator, second receiver) ------------------
 if [ -n "${grpc_addr}" ]; then
   if command -v grpcurl >/dev/null 2>&1; then
@@ -157,4 +185,8 @@ if [ "${fail}" -ne 0 ]; then
   printf 'Verification FAILED -- inspect: make logs-prod ARGS=fabric-node\n' >&2
   exit 1
 fi
-printf 'Ingress checks passed -- see warnings for skipped probes; destination delivery and protection are not verified\n'
+if [ -n "${content_addr}" ]; then
+  printf 'Ingress checks passed -- see warnings for skipped probes; destination delivery and protection are not verified; content-to-store delivery needs the content canary\n'
+else
+  printf 'Ingress checks passed -- see warnings for skipped probes; destination delivery and protection are not verified\n'
+fi

@@ -28,6 +28,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Wire-capture node mode (spec 048) needs no extra entry: this exporter
+# already depends on `requests` and `opentelemetry-proto`, which the content
+# client uses. boto3 is never a wire-capture dependency (the Node writes S3).
 otlp = [
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   "urllib3>=2.8.0",
@@ -94,6 +97,11 @@ dev = [
   "PyYAML>=6.0.2,<7.0",
   "types-PyYAML>=6.0.12",
   "httpx>=0.27",
+  # Real provider SDKs qualify wire capture end to end (spec 047 §2):
+  # openai>=3 and anthropic>=1 send through httpx2. Dev-only; capture never
+  # depends on them at runtime.
+  "openai>=3.26.1",
+  "anthropic>=1.12.1",
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   "urllib3>=2.8.0",
   # cryptography exercises the real ed25519 path in the generic
@@ -205,6 +213,9 @@ ignore = ["PLR0913"]
 # satisfy Darwin's 104-byte sun_path limit, and invalid paths to
 # trigger negative-path assertions).
 "tests/**" = ["S101", "PLR2004", "S108"]
+# S603 for the fixed `python -m fabric.reference_receipts` subprocess. Kept here
+# (not as an inline noqa) so ruff 0.13 (CI pin) and newer ruff both accept it.
+"tests/test_reference_receipts.py" = ["S603"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -16,6 +16,11 @@ fullnameOverride: ""
 
 serviceAccount:
   create: true
+  # Workload identity for the content store (spec 048): the Node is the only
+  # writer, so its ServiceAccount carries the cloud role. For EKS IRSA:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<node-writer>
+  # The pod never automounts a Kubernetes API token; the IRSA/Pod Identity
+  # webhook projects its own audience-scoped token independently of that.
   annotations: {}
   name: ""
 
@@ -48,6 +53,9 @@ service:
   ports:
     otlpGrpc: 4317
     otlpHttp: 4318
+    # Content ingress (spec 048). Opened on the Pod, Service and
+    # NetworkPolicy only when content.enabled=true.
+    otlpContent: 4319
     health: 13133
 
 # OTLP ingress transport security. Supplying serverCertificateSecret.name
@@ -156,6 +164,17 @@ fabric:
     # Optional exact metadata keys for traces. The processor rejects known
     # credential/content-shaped names; prefix wildcards are not supported.
     extraAllowedTraceFields: []
+    # Model names (exact, or prefix* matching only a version-like suffix)
+    # that capture spans may carry in clear, beyond the built-in public
+    # families (spec 048 §7). Set the same list as the agents'
+    # FABRIC_WIRE_MODEL_ALLOWLIST, or the Node hashes the extra names to m-...
+    captureModelAllowlist: []
+    # Capture labels (spec 048 J1): `pseudonymous` (default) admits
+    # fabric.source_id and the capture service.name only as s-/svc- + 32 hex,
+    # dropping anything else. `clear` is the Node counterpart of agents
+    # running with FABRIC_WIRE_LABELS=clear: operator-chosen labels are
+    # exported unchanged; you guarantee they contain no personal data.
+    captureLabels: pseudonymous
 
 # OTLP/HTTP egress target.
 #
@@ -184,6 +203,12 @@ fabric:
 #
 # Fabric recorder v1 does not install a backend or a second Relay hop. For
 # fan-out, send to a customer-controlled Collector and configure its exporters.
+#
+# The endpoint must be scheme://host[:port][/path]: a DNS name, dotted IPv4
+# or bracketed IPv6 host, a port 1-65535, and no user info, query or
+# fragment (a credential in the URL would land in the ConfigMap; use
+# exporter.auth.secret). requireTLS=true also requires https://. Render
+# errors name the field and never echo the value.
 exporter:
   endpoint: ""
   # Transport security. `insecure=true` is retained as the dev default
@@ -249,6 +274,75 @@ exporter:
   # on a convention spread across several independent values.
   requireDurableQueue: false
 
+# Content delivery path (spec 048 F4). Agents in node mode POST each stored
+# request/response body as one OTLP/HTTP log record to the dedicated
+# `otlp/content` receiver; the `fabriccontent` exporter verifies digest,
+# length and tenant and writes body + descriptor to the customer store with
+# the SDK layout (<prefix><tenant>/evidence/<object_id>). The Node is the only
+# writer: agents hold no cloud credentials. Content never enters the telemetry
+# pipelines and never reaches exporter.endpoint (fabric-gate refuses that).
+content:
+  enabled: false
+  # HTTP only (no gRPC). One record must fit; the agent caps bodies at 63 MiB.
+  maxRequestBodyBytes: 67108864
+  # Tenant ids the Node accepts (FABRIC_TENANT_ID of each agent). Required;
+  # exactly one unless allowMultipleTenants=true. A content record names its
+  # own tenant, so with several tenants every authenticated agent could write
+  # under any of them.
+  allowedTenants: []
+  # Permit more than one allowedTenants entry. This trusts every
+  # authenticated agent to name its tenant; use one Node per tenant otherwise.
+  allowMultipleTenants: false
+  # "s3" (S3 or an S3-compatible store) or "file" (a directory on the queue
+  # PVC; single replica only). Required when enabled.
+  backend: ""
+  # Refuse an s3 backend without server-side encryption, and the file backend
+  # (it has no server-side encryption). shadow-production pins this on.
+  requireServerSideEncryption: false
+  file:
+    # Empty (default): <exporter.sendingQueue.persistence.directory>/content on
+    # the queue PVC (an emptyDir without persistence: development only). An
+    # explicit value must lie inside that directory: the exporter creates the
+    # content root itself (0700, owned by the Node user) and refuses a root it
+    # cannot tighten, such as a kubelet-created mount point.
+    directory: ""
+  s3:
+    bucket: ""
+    prefix: fabric/content/
+    region: ""
+    # Only for S3-compatible stores (MinIO, Ceph RGW). Same URL rule as
+    # exporter.endpoint (no user info, query or fragment; valid host/port);
+    # https:// is required whenever exporter.requireTLS=true.
+    endpoint: ""
+    usePathStyle: false
+    # Required for backend=s3: "AES256" (SSE-S3) or "aws:kms" (optionally
+    # with kmsKeyId). The exporter never writes content without requested
+    # server-side encryption, so an empty value fails the render.
+    sse: AES256
+    kmsKeyId: ""
+    # Static keys are for S3-compatible stores without workload identity.
+    # Values never hold keys: name an operator-created Secret. On AWS leave
+    # this empty and use IRSA (serviceAccount.annotations); the default
+    # credential chain picks it up.
+    credentialsSecret:
+      name: ""
+      accessKeyIdKey: AWS_ACCESS_KEY_ID
+      secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  # Durable content queue. With exporter.sendingQueue.persistence enabled it
+  # lives on the same PVC (<persistence.directory>/content-queue, fsync as
+  # configured there); size that PVC for queueSize x maxRequestBodyBytes on
+  # top of the telemetry queue. Without persistence it is memory-only.
+  queue:
+    queueSize: 64
+    numConsumers: 4
+  retry:
+    initialInterval: 1s
+    maxInterval: 30s
+  timeout: 60s
+  # memory_limiter limit while content is enabled (the larger of this and
+  # memoryLimiter.limitMib). Must stay below resources.limits.memory.
+  memoryLimiterMiB: 768
+
 # Also write to the debug exporter? Useful in dev, noisy in prod.
 # NOTE: the debug exporter is added automatically whenever
 # `exporter.endpoint` is empty, regardless of this flag — that is the
@@ -306,6 +400,14 @@ networkPolicy:
   # Production enables this so a successful install cannot silently expose
   # the OTLP receiver to every namespace in the cluster.
   requireExplicitIngress: false
+  # Every peer supplied in ingressFrom, exporterEgress.to, contentEgress.to
+  # and egressTo must restrict its sources/destinations, in every profile.
+  # Rejected at render time: {}; a namespaceSelector that is empty, null or
+  # exclusion-only (NotIn/DoesNotExist) without a podSelector that narrows
+  # it; an empty podSelector alone (every pod in this namespace); an ipBlock
+  # with prefix length 0 (0.0.0.0/0, ::/0, 10.0.0.0/0, ...); an ipBlock
+  # combined with a selector. A selector restricts when it has matchLabels
+  # or an In/Exists matchExpression.
   ingressFrom: []
   # Exporter egress is distinct from additional destinations so regulated
   # profiles can prove that an operator deliberately named both a peer and
@@ -317,8 +419,15 @@ networkPolicy:
     ports: []
   # Additional non-exporter peers. This compatibility surface remains for
   # DNS-independent internal services and operator extensions. The same
-  # non-empty, non-world peer rule applies.
+  # peer rule applies.
   egressTo: []
+  # Egress from the Node to the content store (content.backend=s3), e.g. the
+  # S3 VPC endpoint CIDRs plus STS for IRSA, or the MinIO Service. Required
+  # (to + ports) whenever the policy is enabled and content uses s3: without
+  # it the policy blocks every content write.
+  contentEgress:
+    to: []
+    ports: []
   # Optional LabelSelector for the monitoring namespace allowed to reach
   # the health extension. Empty (default) renders no health ingress rule:
   # kubelet liveness/readiness probes are node traffic and do not need a

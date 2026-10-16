@@ -1,0 +1,240 @@
+{
+  "schema_version": "fabric.stitch-digest-fixture/v1",
+  "projection": "fabric.stitch/v1",
+  "cases": [
+    {
+      "name": "openai-chat-assistant-tool-call-response",
+      "api": "openai.chat_completions",
+      "side": "response",
+      "raw": {
+        "role": "assistant",
+        "content": null,
+        "refusal": null,
+        "annotations": [],
+        "tool_calls": [
+          {
+            "id": "call_7Qx2",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            }
+          }
+        ]
+      },
+      "projected": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_7Qx2",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            }
+          }
+        ]
+      },
+      "canonical": "{\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\",\"name\":\"get_weather\"},\"id\":\"call_7Qx2\",\"type\":\"function\"}]}",
+      "sha256": "sha256:40577397c954af145a6a923a4ca0d26be8c87a85f45e9006d6366d71891d3d19"
+    },
+    {
+      "name": "openai-chat-assistant-tool-call-resent",
+      "api": "openai.chat_completions",
+      "side": "request",
+      "raw": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_7Qx2",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            },
+            "index": 0
+          }
+        ]
+      },
+      "projected": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_7Qx2",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            }
+          }
+        ]
+      },
+      "canonical": "{\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\",\"name\":\"get_weather\"},\"id\":\"call_7Qx2\",\"type\":\"function\"}]}",
+      "sha256": "sha256:40577397c954af145a6a923a4ca0d26be8c87a85f45e9006d6366d71891d3d19",
+      "same_digest_as": "openai-chat-assistant-tool-call-response"
+    },
+    {
+      "name": "openai-chat-tool-result",
+      "api": "openai.chat_completions",
+      "side": "request",
+      "raw": {
+        "role": "tool",
+        "tool_call_id": "call_7Qx2",
+        "content": "18°C, light rain"
+      },
+      "projected": {
+        "role": "tool",
+        "tool_call_id": "call_7Qx2",
+        "content": "18°C, light rain"
+      },
+      "canonical": "{\"content\":\"18°C, light rain\",\"role\":\"tool\",\"tool_call_id\":\"call_7Qx2\"}",
+      "sha256": "sha256:a8434f9d517a55f61e5e033e3817696fae2af1b6c1e35f5f28b684b98e99abab"
+    },
+    {
+      "name": "anthropic-user-string-content",
+      "api": "anthropic.messages",
+      "side": "request",
+      "raw": {
+        "role": "user",
+        "content": "Plan a trip to Zürich"
+      },
+      "projected": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Plan a trip to Zürich"
+          }
+        ]
+      },
+      "canonical": "{\"content\":[{\"text\":\"Plan a trip to Zürich\",\"type\":\"text\"}],\"role\":\"user\"}",
+      "sha256": "sha256:94daecd8460fb199885231d93640e75310f293dbe1cb698423193186972177d1"
+    },
+    {
+      "name": "anthropic-user-block-content",
+      "api": "anthropic.messages",
+      "side": "request",
+      "raw": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Plan a trip to Zürich"
+          }
+        ]
+      },
+      "projected": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Plan a trip to Zürich"
+          }
+        ]
+      },
+      "canonical": "{\"content\":[{\"text\":\"Plan a trip to Zürich\",\"type\":\"text\"}],\"role\":\"user\"}",
+      "sha256": "sha256:94daecd8460fb199885231d93640e75310f293dbe1cb698423193186972177d1",
+      "same_digest_as": "anthropic-user-string-content"
+    },
+    {
+      "name": "anthropic-assistant-tool-use-response",
+      "api": "anthropic.messages",
+      "side": "response",
+      "raw": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Checking.",
+            "citations": null
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01AbC",
+            "name": "search",
+            "input": {
+              "q": "Zürich hotels"
+            }
+          }
+        ]
+      },
+      "projected": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Checking."
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_01AbC",
+            "name": "search",
+            "input": {
+              "q": "Zürich hotels"
+            }
+          }
+        ]
+      },
+      "canonical": "{\"content\":[{\"text\":\"Checking.\",\"type\":\"text\"},{\"id\":\"toolu_01AbC\",\"input\":{\"q\":\"Zürich hotels\"},\"name\":\"search\",\"type\":\"tool_use\"}],\"role\":\"assistant\"}",
+      "sha256": "sha256:364f6008a3c1a6ae51c4b03b3276082469b97c3955800bd047c5d46e90a3b4d4"
+    },
+    {
+      "name": "responses-function-call-output-item",
+      "api": "openai.responses",
+      "side": "response",
+      "raw": {
+        "type": "function_call",
+        "id": "fc_01",
+        "call_id": "call_r1",
+        "name": "lookup",
+        "arguments": "{\"id\":7}",
+        "status": "completed"
+      },
+      "projected": {
+        "type": "function_call",
+        "id": "fc_01",
+        "call_id": "call_r1",
+        "name": "lookup",
+        "arguments": "{\"id\":7}"
+      },
+      "canonical": "{\"arguments\":\"{\\\"id\\\":7}\",\"call_id\":\"call_r1\",\"id\":\"fc_01\",\"name\":\"lookup\",\"type\":\"function_call\"}",
+      "sha256": "sha256:1edabcd5a57e7902ca037b58d799fc4ceed9f9fe843d48fa48fb2fd938438533"
+    },
+    {
+      "name": "responses-function-call-resent-input",
+      "api": "openai.responses",
+      "side": "request",
+      "raw": {
+        "type": "function_call",
+        "id": "fc_01",
+        "call_id": "call_r1",
+        "name": "lookup",
+        "arguments": "{\"id\":7}"
+      },
+      "projected": {
+        "type": "function_call",
+        "id": "fc_01",
+        "call_id": "call_r1",
+        "name": "lookup",
+        "arguments": "{\"id\":7}"
+      },
+      "canonical": "{\"arguments\":\"{\\\"id\\\":7}\",\"call_id\":\"call_r1\",\"id\":\"fc_01\",\"name\":\"lookup\",\"type\":\"function_call\"}",
+      "sha256": "sha256:1edabcd5a57e7902ca037b58d799fc4ceed9f9fe843d48fa48fb2fd938438533",
+      "same_digest_as": "responses-function-call-output-item"
+    },
+    {
+      "name": "responses-string-input",
+      "api": "openai.responses",
+      "side": "request",
+      "raw": "What is 2+2?",
+      "projected": {
+        "type": "message",
+        "role": "user",
+        "content": "What is 2+2?"
+      },
+      "canonical": "{\"content\":\"What is 2+2?\",\"role\":\"user\",\"type\":\"message\"}",
+      "sha256": "sha256:46c47ab6bfb80e3515c94471d99c6f267ddc20af3967baa603436366f6d21a0f"
+    }
+  ]
+}

@@ -58,6 +58,20 @@ The same objectives apply to the single-node Compose overlay
 (`deploy/compose/docker-compose.production.yml`). The durable state is the
 `fabric-queue` named volume mounted at `/var/lib/fabric-node/queue`.
 
+With wire capture in node mode ([spec 048](../../specs/048-node-content-delivery-and-agent-spool.md))
+two more volumes hold state: `fabric-content-queue`
+(`/var/lib/fabric-node/content-queue`, the fsync'd queue of content records
+waiting for the store, up to `queue_size` × 64 MiB) and `fabric-content`
+(`/var/lib/fabric-node/content`, the content store itself when the file
+backend is used; empty with the S3 backend). Back them up and restore them
+exactly like `fabric-queue` below, with the Node stopped. The content queue
+holds request/response bodies: protect its backups like the content store. On start the Node
+tightens a restored content queue to directories `0700` and files `0600`
+and refuses one holding a symlink or special file.
+Agents keep their own durable spool (`FABRIC_WIRE_SPOOL_DIR`) for records
+the Node has not accepted yet; a restarted agent on the same spool replays
+them.
+
 ### Queue volume sizing
 
 - `sending_queue.queue_size` bounds **items** (queued batches), not bytes.
@@ -113,8 +127,14 @@ assumes exclusive access.
 - **Liveness**: poll the health extension at `127.0.0.1:13133` and alert on
   container restarts (`docker compose ps`, `restart: unless-stopped` only
   covers process exits).
-- **Host resources**: `fabric-queue` volume disk utilization, since the
-  queue bounds items, not bytes.
+- **Host resources**: `fabric-queue` and `fabric-content-queue` volume disk
+  utilization, since the queues bound items, not bytes.
+- **Content drops**: the content exporter's `fabriccontent_dropped_records`
+  counter (attribute `reason`; the Prometheus endpoint may add the usual
+  prefix and `_total` suffix) and the log line `fabriccontent: dropped
+  content record` count records the Node refused permanently (bad
+  descriptor, digest mismatch, tenant not allowed, conflict). Any non-zero
+  value needs review: the verifier will report those objects as missing.
 
 ## Evidence boundaries
 

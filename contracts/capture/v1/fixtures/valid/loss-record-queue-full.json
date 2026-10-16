@@ -1,0 +1,13 @@
+{
+  "schema_version": "fabric.loss-record/v1",
+  "kind": "loss",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "emitted_at": "2026-10-08T09:00:04.000Z",
+  "reason": "queue_full",
+  "count": 1,
+  "first_sequence": 3,
+  "last_sequence": 3
+}

@@ -1,7 +1,10 @@
 {{- include "otel-collector.validateReceiver" . -}}
 {{- include "otel-collector.validateExporter" . -}}
 {{- include "otel-collector.validateDelivery" . -}}
+{{- include "otel-collector.validateContent" . -}}
 {{- include "otel-collector.validateNetworkPolicy" . -}}
+{{- $content := .Values.content -}}
+{{- $persist := .Values.exporter.sendingQueue.persistence -}}
 {{- $exporters := include "otel-collector.exporterNames" . -}}
 apiVersion: v1
 kind: ConfigMap
@@ -63,6 +66,35 @@ data:
               client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
               {{- end }}
             {{- end }}
+      {{- if $content.enabled }}
+      # Content ingress (spec 048): HTTP only, same TLS/mTLS (and workload
+      # bearer token, when enabled) as telemetry,
+      # sized for one 64 MiB body per request. Never part of a telemetry
+      # pipeline; fabric-gate refuses any other routing.
+      otlp/content:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:{{ .Values.service.ports.otlpContent }}
+            {{- if .Values.receiver.workloadAuthentication.enabled }}
+            # The content port holds the same workload credential as 4317/4318
+            # (fabric-gate refuses a content receiver without the telemetry
+            # receivers' authenticator).
+            auth:
+              authenticator: bearertokenauth/workload
+            {{- end }}
+            read_header_timeout: 5s
+            read_timeout: 120s
+            idle_timeout: 120s
+            max_request_body_size: {{ int64 $content.maxRequestBodyBytes }}
+            {{- if .Values.receiver.tls.serverCertificateSecret.name }}
+            tls:
+              cert_file: /etc/fabric/receiver-tls/tls.crt
+              key_file: /etc/fabric/receiver-tls/tls.key
+              {{- if .Values.receiver.tls.clientCASecret.name }}
+              client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+              {{- end }}
+            {{- end }}
+      {{- end }}
 
     extensions:
       health_check:
@@ -77,18 +109,36 @@ data:
         filename: /etc/fabric/workload-auth/token
         require_single_token: true
       {{- end }}
+      {{- if .Values.exporter.endpoint }}
+      # Spec 048 H1: refuse HTTP redirects on the OTLP/HTTP exporter. Any 3xx
+      # from the destination is a retryable failure; the batch and its
+      # Authorization header are never re-sent to another location.
+      # fabric-gate refuses an otlp_http exporter without this middleware.
+      noredirect: {}
+      {{- end }}
       {{- if .Values.exporter.sendingQueue.persistence.enabled }}
       file_storage/fabric:
         directory: {{ .Values.exporter.sendingQueue.persistence.directory | quote }}
         timeout: 1s
         create_directory: true
         fsync: {{ .Values.exporter.sendingQueue.persistence.fsync }}
+      {{- if $content.enabled }}
+      file_storage/fabric_content:
+        directory: {{ printf "%s/content-queue" $persist.directory | quote }}
+        timeout: 1s
+        create_directory: true
+        # Queued records are raw model bytes: created private. An existing
+        # directory and its database are tightened by fabriccontent at start
+        # (queue_directory below); file_storage never tightens them.
+        directory_permissions: "0700"
+        fsync: {{ $persist.fsync }}
+      {{- end }}
       {{- end }}
 
     processors:
       memory_limiter:
         check_interval: {{ .Values.memoryLimiter.checkIntervalSeconds }}s
-        limit_mib: {{ .Values.memoryLimiter.limitMib }}
+        limit_mib: {{ include "otel-collector.memoryLimitMiB" . }}
       fabricguard:
         event_class_attribute: {{ .Values.fabric.guard.eventClassAttribute | quote }}
         drop_unknown_classes: {{ .Values.fabric.guard.dropUnknownClasses }}
@@ -98,12 +148,17 @@ data:
           tenant_id: {{ .Values.receiver.evidenceSourceBinding.tenantId | quote }}
           source_id: {{ .Values.receiver.evidenceSourceBinding.sourceId | quote }}
         {{- end }}
+        capture_labels: {{ .Values.fabric.guard.captureLabels | default "pseudonymous" | quote }}
         {{- with .Values.fabric.guard.extraAllowedFields }}
         extra_allowed_fields:
           {{- toYaml . | nindent 10 }}
         {{- end }}
         {{- with .Values.fabric.guard.extraAllowedTraceFields }}
         extra_allowed_trace_fields:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.fabric.guard.captureModelAllowlist }}
+        capture_model_allowlist:
           {{- toYaml . | nindent 10 }}
         {{- end }}
       {{- if .Values.batch.enabled }}
@@ -117,6 +172,8 @@ data:
       otlp_http/fabric:
         endpoint: {{ .Values.exporter.endpoint | quote }}
         timeout: {{ .Values.exporter.timeout | quote }}
+        middlewares:
+          - id: noredirect
         {{- if .Values.exporter.auth.secret.name }}
         headers:
           {{ .Values.exporter.auth.headerName | quote }}: "${env:FABRIC_EXPORT_AUTH}"
@@ -149,6 +206,54 @@ data:
           max_elapsed_time: {{ .Values.exporter.retry.maxElapsedTime | quote }}
           {{- end }}
       {{- end }}
+      {{- if $content.enabled }}
+      fabriccontent:
+        allowed_tenants:
+          {{- range $content.allowedTenants }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- if $content.allowMultipleTenants }}
+        allow_multiple_tenants: true
+        {{- end }}
+        backend: {{ $content.backend | quote }}
+        {{- if eq $content.backend "file" }}
+        file:
+          directory: {{ include "otel-collector.contentFileDirectory" . | quote }}
+        {{- else }}
+        s3:
+          bucket: {{ $content.s3.bucket | quote }}
+          prefix: {{ $content.s3.prefix | quote }}
+          {{- with $content.s3.region }}
+          region: {{ . | quote }}
+          {{- end }}
+          {{- with $content.s3.endpoint }}
+          endpoint: {{ . | quote }}
+          {{- end }}
+          use_path_style: {{ $content.s3.usePathStyle }}
+          sse: {{ $content.s3.sse | quote }}
+          {{- with $content.s3.kmsKeyId }}
+          kms_key_id: {{ . | quote }}
+          {{- end }}
+        {{- end }}
+        timeout: {{ $content.timeout | quote }}
+        {{- if $persist.enabled }}
+        queue_directory: {{ printf "%s/content-queue" $persist.directory | quote }}
+        {{- end }}
+        sending_queue:
+          enabled: true
+          num_consumers: {{ $content.queue.numConsumers }}
+          queue_size: {{ $content.queue.queueSize }}
+          block_on_overflow: true
+          {{- if $persist.enabled }}
+          storage: file_storage/fabric_content
+          {{- end }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: {{ $content.retry.initialInterval | quote }}
+          max_interval: {{ $content.retry.maxInterval | quote }}
+          # Never give up on content: it is retried until the store accepts it.
+          max_elapsed_time: "0s"
+      {{- end }}
       {{- if or .Values.debugExporter.enabled (not .Values.exporter.endpoint) }}
       debug:
         verbosity: {{ .Values.debugExporter.verbosity }}
@@ -163,8 +268,14 @@ data:
         {{- if .Values.receiver.workloadAuthentication.enabled }}
         - bearertokenauth/workload
         {{- end }}
+        {{- if .Values.exporter.endpoint }}
+        - noredirect
+        {{- end }}
         {{- if .Values.exporter.sendingQueue.persistence.enabled }}
         - file_storage/fabric
+        {{- if $content.enabled }}
+        - file_storage/fabric_content
+        {{- end }}
         {{- end }}
       telemetry:
         logs:
@@ -178,3 +289,11 @@ data:
           receivers: [otlp]
           processors: [memory_limiter, fabricguard{{ if .Values.batch.enabled }}, batch{{ end }}]
           exporters: [{{ $exporters }}]
+        {{- if $content.enabled }}
+        # Content bodies bypass fabricguard (they must pass unchanged); the
+        # fabriccontent exporter enforces the closed descriptor itself.
+        logs/content:
+          receivers: [otlp/content]
+          processors: [memory_limiter]
+          exporters: [fabriccontent]
+        {{- end }}

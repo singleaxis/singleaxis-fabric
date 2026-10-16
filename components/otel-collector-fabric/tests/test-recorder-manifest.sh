@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# Assert that the OCB manifest, the Dockerfile, and the fabricguard
-# processor's go.mod all agree on the exact recorder component inventory.
+# Assert that the OCB manifest, the Dockerfile, and the local components'
+# go.mods all agree on the exact recorder component inventory.
 # Name-based greps are evadable; this test compares parsed entries against
 # the explicit expected set.
 set -eu
@@ -18,14 +18,17 @@ fail() {
 # ---- 1. Exact component inventory ----------------------------------------
 # Every `gomod:` entry in the manifest must appear in this list and nothing
 # else may be listed. The list is the recorder's release promise:
-#   extensions: health_check, file_storage, bearertokenauth
+#   extensions: health_check, file_storage, bearertokenauth,
+#               noredirect (local path — spec 048 H1)
 #   receivers:  otlp, audit (local path — spec 030)
 #   processors: memory_limiter, batch, fabricguard (local path)
-#   exporters:  debug, otlphttp
+#   exporters:  debug, otlphttp, fabriccontent (local path — spec 048)
 #   providers:  env, file, yaml
 expected_gomods='github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
+github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter v0.1.0
+github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver v0.1.0
 go.opentelemetry.io/collector/confmap/provider/envprovider v1.56.0
@@ -50,21 +53,27 @@ if [ "${actual_gomods}" != "${expected_sorted}" ]; then
 fi
 
 # Local path references (`path:` keys and `replaces:` targets) may resolve
-# only to the in-repo component source trees (fabricguard + auditreceiver).
+# only to the in-repo component source trees (fabricguard, auditreceiver,
+# fabriccontent, noredirect).
 actual_paths="$( { grep -E '(^|[[:space:]])path:[[:space:]]*\./' "${manifest}" | sed -E 's/^[[:space:]-]*path:[[:space:]]*//';
                  grep -E '=>[[:space:]]*\./' "${manifest}" | sed -E 's/.*=>[[:space:]]*//'; } \
                | sed -E 's/[[:space:]]+$//' | sort -u )"
-expected_paths='./processor/fabricguardprocessor
+expected_paths='./exporter/fabriccontentexporter
+./extension/noredirectextension
+./processor/fabricguardprocessor
 ./receiver/auditreceiver'
 [ "${actual_paths}" = "$(printf '%s\n' "${expected_paths}" | sort)" ] \
   || fail "manifest resolves unexpected local paths: ${actual_paths}"
 
 # ---- 2. Dockerfile may only COPY the in-repo component sources -----------
-# Any processor/ or receiver/ token inside a COPY instruction must be one of
-# the two local components (covers both source and destination args).
+# Any processor/, receiver/, exporter/ or extension/ token inside a COPY
+# instruction must be one of the four local components (covers both source and destination
+# args).
 copy_local="$(grep -E '^[[:space:]]*COPY([[:space:]]|$)' "${dockerfile}" \
-              | grep -oE '(processor|receiver)/[A-Za-z0-9_.-]+' | sort -u)" || true
-expected_copy='processor/fabricguardprocessor
+              | grep -oE '(processor|receiver|exporter|extension)/[A-Za-z0-9_.-]+' | sort -u)" || true
+expected_copy='exporter/fabriccontentexporter
+extension/noredirectextension
+processor/fabricguardprocessor
 receiver/auditreceiver'
 [ "${copy_local}" = "$(printf '%s\n' "${expected_copy}" | sort)" ] \
   || fail "Dockerfile COPY references unexpected component sources: ${copy_local:-<none>}"
@@ -88,7 +97,7 @@ train_stable="$(grep -E 'gomod:.*opentelemetry' "${manifest}" | grep -oE 'v1\.[0
 [ "$(printf '%s\n' "${train_stable}" | grep -c .)" -eq 1 ] \
   || fail "manifest has divergent v1.x collector trains: ${train_stable}"
 
-local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod"
+local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod ${root}/extension/noredirectextension/go.mod"
 for gomod in ${local_gomods}; do
   for req in $(grep -oE 'go\.opentelemetry\.io/collector/[A-Za-z0-9/._-]+ v[0-9]+\.[0-9]+\.[0-9]+' "${gomod}" | tr ' ' ':'); do
     mod="${req%%:*}"
@@ -103,4 +112,12 @@ for gomod in ${local_gomods}; do
   done
 done
 
-echo 'PASS: recorder manifest, Dockerfile, and processor go.mod match the expected component set'
+# ---- 4. Content ingress is exposed and its volumes are pre-created ------
+grep -qE '^EXPOSE .*\b4319\b' "${dockerfile}" \
+  || fail "Dockerfile must EXPOSE the content port 4319"
+for dir in /var/lib/fabric-node/content-queue /var/lib/fabric-node/content; do
+  grep -qE "^COPY --from=builder --chown=nonroot:nonroot [^ ]+ ${dir}\$" "${dockerfile}" \
+    || fail "Dockerfile must pre-create ${dir} owned by nonroot"
+done
+
+echo 'PASS: recorder manifest, Dockerfile, and component go.mods match the expected component set'

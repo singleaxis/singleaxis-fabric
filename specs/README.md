@@ -11,7 +11,7 @@ the next unused number. Numbers are never reused; a superseded spec
 remains in place with `Status: superseded by NNN`.
 
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 047.
+next unused public number is 050.
 
 Spec [027](027-recorder-v1.md) is the authoritative product and release scope
 for the first stable OSS recorder. Specs describing capabilities outside
@@ -73,3 +73,6 @@ Every spec declares a `Status` in its header:
 | [044](044-production-evidence-closure.md) | Authenticated ingress, source metadata finalization and remaining proof gates | implementation in progress; NO-GO |
 | [045](045-independent-evidence-feeds.md) | Authenticated independent operation and byte feeds | draft; no complete-run claim |
 | [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | implementation in progress; NO-GO |
+| [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | draft; NO_COVERAGE_CLAIM; partly superseded by 048 |
+| [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | draft; NO_COVERAGE_CLAIM |
+| [049](049-four-layer-capture-coverage.md) | Four-layer capture coverage: context, structure, content, decisions and effects (plan, phases P0–P5) | draft; NO_COVERAGE_CLAIM |
