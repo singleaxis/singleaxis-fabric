@@ -69,9 +69,11 @@ def drain_reaper(timeout_s: float) -> bool:
 
 
 def _after_fork_in_child() -> None:
-    global _FINISH_LOCK, _REAPER_LOCK, _ABANDONED, _REAPER_PID
+    global _FINISH_LOCK, _REAPER_LOCK, _ABANDONED, _REAPER_PID, _SLOT_PLAN_LOCK, _SLOT_PLAN
     _FINISH_LOCK, _REAPER_LOCK = threading.Lock(), threading.Lock()
     _ABANDONED, _REAPER_PID = queue.SimpleQueue(), None
+    # The parent may have forked mid-insert: start the copy-plan cache afresh.
+    _SLOT_PLAN_LOCK, _SLOT_PLAN = threading.Lock(), weakref.WeakKeyDictionary()
 
 
 if hasattr(os, "register_at_fork"):
@@ -415,8 +417,13 @@ def _slot_plan(cls: type) -> tuple[Any, ...] | None:
     plan: tuple[Any, ...] | None = None
     with contextlib.suppress(Exception):
         plan = _build_slot_plan(cls)
-    with _SLOT_PLAN_LOCK, contextlib.suppress(TypeError):  # not weak-referenceable
-        _SLOT_PLAN[cls] = plan
+    # Caching is an optimisation: never wait on it from a host request.
+    if _SLOT_PLAN_LOCK.acquire(timeout=0.05):
+        try:
+            with contextlib.suppress(TypeError):  # not weak-referenceable
+                _SLOT_PLAN[cls] = plan
+        finally:
+            _SLOT_PLAN_LOCK.release()
     return plan
 
 

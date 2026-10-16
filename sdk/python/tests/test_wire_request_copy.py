@@ -21,6 +21,10 @@ an explicit wrapper around a middleware transport that inspects the request it i
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
+import threading
+import time
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
@@ -346,3 +350,49 @@ def test_slot_rebound_by_the_transport_is_carried_back(installed: Installed, mod
     (span,) = installed.spans()
     assert installed.losses() == []
     assert attrs(span)["fabric.wire.truncated"] is False
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="needs fork")
+def test_fork_while_the_copy_plan_lock_is_held_does_not_hang_the_child() -> None:
+    """Review fix: a child forked mid cache-insert must never block on the inherited lock."""
+    held, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with _stream._SLOT_PLAN_LOCK:
+            held.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    assert held.wait(5)
+    pid = os.fork()
+    if pid == 0:  # child: the lock's owner thread does not exist here
+        signal.alarm(5)
+        sub = type("ForkedChildRequest", (httpx.Request,), {})
+        _stream._slot_plan(sub)
+        os._exit(0)
+    release.set()
+    holder.join(5)
+    _, status = os.waitpid(pid, 0)
+    assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, status
+
+
+def test_copy_plan_cache_never_waits_on_a_busy_lock() -> None:
+    held, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with _stream._SLOT_PLAN_LOCK:
+            held.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    assert held.wait(5)
+    try:
+        sub = type("BusyCacheRequest", (httpx.Request,), {})
+        start = time.monotonic()
+        assert _stream._slot_plan(sub) is not None
+        assert time.monotonic() - start < 1.0
+    finally:
+        release.set()
+        holder.join(5)
