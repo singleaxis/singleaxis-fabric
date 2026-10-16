@@ -483,8 +483,10 @@ def check_content_endpoint_url(name: str, value: str) -> None:
     check_endpoint_url(name, value)
     parts = urlsplit(value.strip())
     scheme, host = parts.scheme.lower(), (parts.hostname or "")
-    if not host or scheme not in ("http", "https") or (
-        scheme == "http" and host not in _LOOPBACK_HOSTS
+    if (
+        not host
+        or scheme not in ("http", "https")
+        or (scheme == "http" and host not in _LOOPBACK_HOSTS)
     ):
         raise ValueError(f"{name} requires verified HTTPS or loopback HTTP")
 
