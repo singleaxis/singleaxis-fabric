@@ -86,6 +86,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Migration: `fabric-gate` tightenings.** Existing collector configurations
+  that the gate accepted before may now be refused at container start; the
+  shipped Compose, Helm and example configurations already comply:
+  - every `otlphttp`/`otlp_http` exporter must list the `noredirect` client
+    middleware (`middlewares: [{id: noredirect}]`), defined under
+    `extensions` and enabled in `service.extensions`, so a 3xx is never
+    followed (spec 048 J4);
+  - every `traces` and `logs` pipeline must run `fabricguard` itself,
+    followed only by `batch`/`memory_limiter`; a pipeline without
+    processors, or one relying on a sibling pipeline's guard, is refused;
+  - `--feature-gates` is refused (a gate such as
+    `confmap.enableMergeAppendOption` changes how `--config` sources merge);
+  - receivers, protocols, `auth`/`tls` blocks, extensions, processors,
+    pipelines, pipeline component lists and `service.extensions` must be
+    literal YAML (a whole-value `${env:...}` is refused; leaf fields may
+    still use `${env:...}`);
+  - a content receiver must be at least as strict as the telemetry
+    receivers: same authenticator, TLS (no older `min_version`) when they
+    serve TLS, client certificates when they require mTLS.
+  Main's gate tests were updated for the first two rules only (they now add
+  the middleware and a guard to fixtures that lacked them).
+- The Compose production overlay is telemetry only again and starts with an
+  existing `.env`; the content path is the opt-in
+  `docker-compose.content.yml` (`FABRIC_CONTENT_BACKEND=s3`, or `file` with
+  `FABRIC_CONTENT_REQUIRE_SSE=false`, mirroring Helm's
+  `content.requireServerSideEncryption`).
+- Wire capture resolves its tracer provider at emit time: records are never
+  sent through a Fabric-protected (metadata-only) route; without a private
+  provider they are counted `span_dropped` losses and `flush()` is `False`.
+- Explicit-wins deferral lasts exactly as long as the explicit call; a
+  response that outlives the call is wire-captured, and
+  `fabric.bind_capture_context()` keeps the call's scope on thread-pool
+  workers.
+- Node content upload requires verified HTTPS, or plain HTTP to a loopback
+  host only.
+- `fabricguard` recognises capture records by their marker keys only, so a
+  second guard pass leaves governed LLM spans unchanged.
+- `fabric.reconstruct` validates exchange claims before marker classes and
+  checks each content descriptor against the full content-v2 contract and
+  the exchange identity.
 - Documented Python reference support and the narrower TypeScript capture
   subset, including target-specific production qualification gates.
 - Pinned the optional OpenAI instrumentation dependency combination verified
