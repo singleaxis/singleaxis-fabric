@@ -74,6 +74,10 @@ class FinalHTTPAdapter:
         if parsed.scheme == "https":
             context = ssl.create_default_context()
             context.minimum_version = max(context.minimum_version, ssl.TLSVersion.TLSv1_2)
+            # Verified false positive: `context` is ssl.create_default_context()
+            # (CERT_REQUIRED + hostname check), pinned to TLS >= 1.2, on Python >= 3.11.
+            # The rule flags every HTTPSConnection regardless of the context passed.
+            # nosemgrep: httpsconnection-detected
             connection: http.client.HTTPConnection = http.client.HTTPSConnection(
                 parsed.hostname,
                 parsed.port,

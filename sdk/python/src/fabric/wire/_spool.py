@@ -145,7 +145,7 @@ def _secure_dir(path: str) -> None:
         raise ValueError("FABRIC_WIRE_SPOOL_DIR must be a real directory")
     if info.st_uid != os.getuid():
         raise ValueError("FABRIC_WIRE_SPOOL_DIR must be owned by this user")
-    os.chmod(target, 0o700)
+    os.chmod(target, stat.S_IRWXU)  # owner-only directory (0o700)
 
 
 def _own_name(name: str) -> bool:

@@ -260,6 +260,10 @@ def _export_projected_metadata(  # noqa: PLR0912
             context.load_cert_chain(client_cert_path, client_key_path)
         except Exception:
             raise ValueError("OTLP TLS configuration failed") from None
+        # Verified false positive: `context` is ssl.create_default_context(cafile=...)
+        # plus a client cert (CERT_REQUIRED + hostname check), TLS >= 1.2, Python >= 3.11.
+        # The rule flags every HTTPSConnection regardless of the context passed.
+        # nosemgrep: httpsconnection-detected
         connection: http.client.HTTPConnection = http.client.HTTPSConnection(
             parsed.hostname, parsed.port or 443, timeout=timeout_s, context=context
         )
