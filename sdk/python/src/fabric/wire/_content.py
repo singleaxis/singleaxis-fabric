@@ -51,12 +51,17 @@ def encode_content_request(
 
 class NodeContentClient:
     """POSTs content log records; ``send`` never raises. Redirects are never followed: a 3xx
-    is a delivery failure retried later (H1), so content never reaches another host."""
+    is a delivery failure retried later (H1), so content never reaches another host. The
+    endpoint must be verified HTTPS or loopback HTTP (the metadata delivery rule), and TLS
+    verification cannot be turned off."""
 
     def __init__(
         self, endpoint: str, *, headers: Mapping[str, str], timeout_s: float,
         verify: str | bool, cert: tuple[str, str] | None, service_name: str,
     ) -> None:  # fmt: skip
+        tracing.check_content_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", endpoint)
+        if verify is not True and not (isinstance(verify, str) and verify):
+            raise ValueError("content delivery TLS verification cannot be disabled")
         self._endpoint, self._timeout, self._service = endpoint, timeout_s, service_name
         self._session = tracing.no_redirect_session()
         self._session.headers.update(headers)
@@ -111,7 +116,7 @@ def content_client_from_env(
     url = (endpoint or environ.get("FABRIC_WIRE_CONTENT_ENDPOINT") or "").strip()
     if not url:
         raise ValueError("node mode needs FABRIC_WIRE_CONTENT_ENDPOINT")
-    tracing.check_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", url)
+    tracing.check_content_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", url)
     s = tracing.otlp_signal_settings("logs", environ)
     cert = (s.client_certificate, s.client_key) if s.client_certificate and s.client_key else None
     return NodeContentClient(

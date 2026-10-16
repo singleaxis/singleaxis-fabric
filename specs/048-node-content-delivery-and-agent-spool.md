@@ -218,7 +218,7 @@ spool is in use. Capture outside the new spool, sender and content client
 | Variable | Values | Notes |
 |---|---|---|
 | `FABRIC_WIRE_STORE` | unset, `node`, `file:///abs/dir` | Unset = `node` when `FABRIC_WIRE_CONTENT_ENDPOINT` is set, else metadata-only. `s3://…` → `ValueError` ("written by the Fabric Node"). `file://` together with a content endpoint → `ValueError`. |
-| `FABRIC_WIRE_CONTENT_ENDPOINT` | full URL, e.g. `https://fabric-node:4319/v1/logs` | Used as given (no path appended). User info, query or fragment → `ValueError` whose message never echoes the URL (047 E8). |
+| `FABRIC_WIRE_CONTENT_ENDPOINT` | full URL, e.g. `https://fabric-node:4319/v1/logs` | Used as given (no path appended). User info, query or fragment → `ValueError` whose message never echoes the URL (047 E8). Verified HTTPS, or plain HTTP only to a loopback host (`localhost`, `127.0.0.1`, `::1`), the same rule as metadata delivery; any other scheme or host → `ValueError`. TLS verification cannot be disabled. |
 | `FABRIC_TENANT_ID` | safe identifier | Required in `node` and `file` modes. |
 | `FABRIC_WIRE_SPOOL_DIR` | absolute directory | Required in `node` mode; optional otherwise (enables spool delivery). |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | int | Default 1 GiB; minimum `2 × max_body_bytes + 1 MiB`. |

@@ -473,6 +473,22 @@ def check_endpoint_url(name: str, value: str) -> None:
         raise ValueError(f"{name} must not carry credentials, a query or a fragment")
 
 
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def check_content_endpoint_url(name: str, value: str) -> None:
+    """:func:`check_endpoint_url`, plus the content transport rule shared with metadata
+    delivery: verified HTTPS, or plain HTTP only to a loopback host (content bytes never
+    cross a network unencrypted). The error never echoes the URL."""
+    check_endpoint_url(name, value)
+    parts = urlsplit(value.strip())
+    scheme, host = parts.scheme.lower(), (parts.hostname or "")
+    if not host or scheme not in ("http", "https") or (
+        scheme == "http" and host not in _LOOPBACK_HOSTS
+    ):
+        raise ValueError(f"{name} requires verified HTTPS or loopback HTTP")
+
+
 def _read_tls_file(name: str, path: str) -> bytes:
     try:
         return Path(path).read_bytes()

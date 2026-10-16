@@ -64,7 +64,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `FABRIC_WIRE_CONTENT_ENDPOINT` | node mode | Full URL of the Node's content receiver, used as given (`https://node:4319/v1/logs`). Setting it selects node mode. A URL with user info, a query or a fragment is rejected without echoing it. Redirects are never followed (below). |
+| `FABRIC_WIRE_CONTENT_ENDPOINT` | node mode | Full URL of the Node's content receiver, used as given (`https://node:4319/v1/logs`). Setting it selects node mode. It must be HTTPS (verified; verification cannot be turned off) or plain HTTP to a loopback host only. A URL with user info, a query or a fragment is rejected without echoing it. Redirects are never followed (below). |
 | `FABRIC_WIRE_STORE` | no | Unset: node mode when a content endpoint is set, else metadata only (no bytes stored; runs can only be `unverified`). `node`: node mode explicitly. `file:///absolute/dir`: the agent writes a local store itself (development, offline or single-host; refused together with a content endpoint). `s3://…` is **refused**: S3 is written by the Node. |
 | `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix chosen by you, not an access boundary; never personal data (see below). |
 | `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). Optional in file mode, where it enables the same delivery path. |

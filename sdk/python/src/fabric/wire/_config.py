@@ -14,7 +14,7 @@ from urllib.parse import unquote, urlsplit
 from .._model_names import parse_model_allowlist
 from .._sequence import OPAQUE_ID_RE, Labels, check_id_key, id_key_from_env, labels_from_env
 from ..content_store.s3 import S3ContentStore  # boto3 stays lazy
-from ..tracing import check_endpoint_url
+from ..tracing import check_content_endpoint_url
 from ._model import EndpointMatcher
 
 if TYPE_CHECKING:
@@ -128,7 +128,7 @@ class WireConfig:
             _int("spool_max_receipts", self.spool_max_receipts, 1, 1 << 20)
         if self.content_endpoint is None:
             return
-        check_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", str(self.content_endpoint))
+        check_content_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", str(self.content_endpoint))
         if self.store is not None or not self.tenant_id or self.spool_dir is None:
             raise ValueError("node mode needs FABRIC_TENANT_ID, FABRIC_WIRE_SPOOL_DIR, no store")
         _int("max_body_bytes", self.max_body_bytes, 1, NODE_MAX_BODY_BYTES)
