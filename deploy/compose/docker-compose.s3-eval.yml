@@ -70,10 +70,13 @@ services:
           "$$ROOT_KEY" "$$ROOT_SECRET" "$$NODE_KEY" "$$NODE_SECRET" "$$BUCKET" "$$PREFIX" "$$BUCKET" "$$PREFIX" \
           "$$READER_KEY" "$$READER_SECRET" "$$BUCKET" "$$PREFIX" > /tmp/fabric-s3-identities.json
         chown seaweed:seaweed /tmp/fabric-s3-identities.json
+        # Fixed small volumes: without them weed sizes its volume count from
+        # host free disk, and later buckets fail on a nearly full Docker disk.
         exec /entrypoint.sh server -ip=127.0.0.1 -ip.bind=127.0.0.1 \
           -s3 -s3.ip.bind=0.0.0.0 -s3.port=8333 -s3.iam=false \
           -s3.port.iceberg=0 -s3.port.lance=0 \
-          -s3.config=/tmp/fabric-s3-identities.json -master.telemetry=false
+          -s3.config=/tmp/fabric-s3-identities.json -master.telemetry=false \
+          -master.volumeSizeLimitMB=64 -volume.max=64
     volumes:
       - s3-eval-data:/data
     ports:

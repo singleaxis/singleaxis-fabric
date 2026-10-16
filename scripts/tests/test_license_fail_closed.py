@@ -34,7 +34,9 @@ ROOT = Path(__file__).resolve().parents[2]
         # exact artifact URLs/hashes are retained in the provenance ledger.
         ("3-Clause BSD License", True),
         ("3-Clause BSD License WITH unknown-exception", False),
-        ("MIT-0", False),
+        ("MIT-0", True),
+        # A near-miss of an allowed id must not pass by prefix match.
+        ("MIT-CMU", False),
         ("MIT License (MIT)", True),
     ],
 )
