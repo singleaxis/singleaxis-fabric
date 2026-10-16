@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -85,6 +86,10 @@ class WireConfig:
     spool_max_bytes: int = 1 << 30
     # Delivery receipts kept for other writer processes (spec 048 §2), oldest expire first.
     spool_max_receipts: int = 4096
+    # Optional provisioned durable boundary for the spool's directory barrier (spec 048
+    # §2; FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY): spool_dir or one of its ancestors, treated
+    # like a mount point (fsync'd, never its parent).
+    spool_durable_boundary: str | None = None
     model_allowlist: tuple[str, ...] = ()
     # Run-id pseudonym key (H3; FABRIC_WIRE_ID_KEY): a secret, so never in repr or logs.
     id_key: bytes | None = field(default=None, repr=False)
@@ -126,6 +131,15 @@ class WireConfig:
             low = 2 * self.max_body_bytes + SPOOL_RESERVE_BYTES
             _int("spool_max_bytes", self.spool_max_bytes, low)
             _int("spool_max_receipts", self.spool_max_receipts, 1, 1 << 20)
+            if (boundary := self.spool_durable_boundary) is not None:
+                spool = self.spool_dir.rstrip("/") or "/"
+                if (not isinstance(boundary, str) or not boundary.startswith("/")
+                        or os.path.normpath(boundary) != boundary
+                        or not (spool == boundary
+                                or spool.startswith(boundary.rstrip("/") + "/"))):  # fmt: skip
+                    raise ValueError("spool_durable_boundary must be spool_dir or an ancestor")
+        elif self.spool_durable_boundary is not None:
+            raise ValueError("spool_durable_boundary needs spool_dir")
         if self.content_endpoint is None:
             return
         check_content_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", str(self.content_endpoint))
@@ -202,6 +216,7 @@ def config_from_env(
         "source_id": environ.get("FABRIC_SOURCE_ID") or None, "tenant_id": tenant,
         "content_endpoint": endpoint if node else None,
         "spool_dir": environ.get("FABRIC_WIRE_SPOOL_DIR") or None,
+        "spool_durable_boundary": environ.get("FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY") or None,
         "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
         "id_key": id_key_from_env(environ), "labels": labels_from_env(environ),
     }  # fmt: skip

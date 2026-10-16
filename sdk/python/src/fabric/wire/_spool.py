@@ -8,6 +8,7 @@ spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``."""
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -31,6 +32,11 @@ ACK_SUFFIX = ".ack"  # a drainer's delivery receipt for another process's record
 # number is bounded too (oldest first), as is their age.
 RECEIPT_OVERHEAD, DEFAULT_MAX_RECEIPTS, RECEIPT_TTL_S = 128, 4096, 3600.0
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+# The spool's directory barrier (spec 048 §2): present once a walk fsync'd every directory
+# from the spool's parent up to the durable boundary (see Spool.establish_barrier).
+BARRIER_MARKER = ".barrier"
+_BARRIER_CONTENT = b"fabric wire spool barrier v1\n"
+_REFUSED = (errno.EACCES, errno.EPERM, errno.EROFS)  # this process may not sync that dir
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
 _KEYS = {"exchange": {"service_name", "span", "bodies"}, "loss": {"loss"}, "marker": {"marker"}}
 _COMMON = {"schema_version", "record_kind", "source", "order", "written_at_unix_nano"}
@@ -131,8 +137,9 @@ def exchange_doc(
                 bodies=bodies)  # fmt: skip
 
 
-def _secure_dir(path: str) -> None:
-    """Create ``path`` (and missing parents) ``0700``; refuse a symlink or foreign owner."""
+def _secure_dir(path: str) -> list[str]:
+    """Create ``path`` (and missing parents) ``0700``; refuse a symlink or foreign owner.
+    Returns the directories created (deepest first): their entries are not yet durable."""
     missing = []
     while not os.path.lexists(path):
         missing.append(path)
@@ -146,12 +153,32 @@ def _secure_dir(path: str) -> None:
     if info.st_uid != os.getuid():
         raise ValueError("FABRIC_WIRE_SPOOL_DIR must be owned by this user")
     os.chmod(target, stat.S_IRWXU)  # owner-only directory (0o700)
+    return missing
+
+
+def _fsync_dir(path: str) -> None:
+    """fsync a directory (an ancestor may be a symlink the kernel resolves)."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _mount_point(path: str) -> bool:
+    """Whether ``path`` is the root of its filesystem (its entry lives on another one).
+    Unknown is "no": the fsync decides."""
+    try:
+        return path == os.path.dirname(path) or (
+            os.stat(path).st_dev != os.stat(os.path.dirname(path)).st_dev)  # fmt: skip
+    except OSError:
+        return False
 
 
 def _own_name(name: str) -> bool:
     """Whether ``name`` is one the wire spool itself creates."""
     return (
-        name == ".lock"
+        name in (".lock", BARRIER_MARKER)
         or name.startswith(".tmp-")
         or name.endswith((".rec", ACK_SUFFIX, QUARANTINE_SUFFIX))
     )
@@ -186,16 +213,24 @@ class Spool:
     At most ``max_receipts`` receipts are kept (never more than an eighth of the bound)."""
 
     def __init__(
-        self, directory: str, max_bytes: int, max_receipts: int = DEFAULT_MAX_RECEIPTS
-    ) -> None:
+        self, directory: str, max_bytes: int, max_receipts: int = DEFAULT_MAX_RECEIPTS,
+        durable_boundary: str | None = None,
+    ) -> None:  # fmt: skip
         try:
             import fcntl  # noqa: PLC0415
         except ImportError:
             raise ValueError("the wire spool needs POSIX fcntl") from None
-        _secure_dir(directory)
+        created = _secure_dir(directory)
         _refuse_foreign(directory)
         self.dir, self.max_bytes, self._fcntl = directory.rstrip("/") or "/", max_bytes, fcntl
         self.max_receipts = max(1, min(max_receipts, max_bytes // (8 * RECEIPT_OVERHEAD)))
+        # The directory barrier (establish_barrier): until it is established, records are
+        # written and delivered but not durable against power loss. On disk once done
+        # (BARRIER_MARKER), so it survives fork (the flag is kept) and restarts.
+        self.durable, self.barrier_failures = False, 0
+        self._boundary = os.path.realpath(durable_boundary) if durable_boundary else None
+        # Parents holding an entry this process created: never accepted as the boundary.
+        self._created_in = {os.path.dirname(os.path.realpath(d)) for d in created}
         self._init_state()
         self.rescan()
 
@@ -213,6 +248,7 @@ class Spool:
         self._own_retiring: set[str] = set()  # own records delivered, not yet unlinked
         self.failed = 0  # own records quarantined, or gone without a delivery receipt
         self._lock_fd = os.open(self._path(".lock"), os.O_RDWR | os.O_CREAT | _NOFOLLOW, 0o600)
+        self._barrier_lock = threading.Lock()  # one barrier walk at a time
 
     def _path(self, name: str) -> str:
         return os.path.join(self.dir, name)
@@ -277,6 +313,76 @@ class Spool:
             os.fsync(fd)
         finally:
             os.close(fd)
+
+    def establish_barrier(self) -> bool:
+        """Make the spool directory's own entry, and its ancestors' entries, durable: fsync,
+        top-down, every directory from the spool's parent up to the durable boundary (``/``,
+        the root of the spool's filesystem, or the configured boundary, which is fsync'd
+        but never its parent). Once a walk completes, ``BARRIER_MARKER`` is written inside
+        the spool (fsync'd, then the spool fsync'd). Only while that marker is present may a
+        later walk (a restart) take an ancestor whose fsync is refused (``EACCES``,
+        ``EPERM``, ``EROFS``) as the boundary, and never one holding a directory this
+        process created; otherwise the refusal fails the walk, as any other error does.
+
+        Runs on the sender (or a flush helper) thread, never on the host's request path.
+        ``True`` once established; a failure is counted and retried by the next call."""
+        with self._barrier_lock:
+            if self.durable:
+                return True
+            try:
+                self._walk()
+            except (OSError, ValueError):
+                self.barrier_failures += 1
+                return False
+            self.durable = True
+            return True
+
+    def _chain(self) -> list[str]:
+        """Bottom-up, the directories whose fsync makes the spool's entry durable."""
+        chain, current = [], os.path.realpath(self.dir)
+        while current != self._boundary and not _mount_point(current):
+            current = os.path.dirname(current)
+            chain.append(current)
+        return chain
+
+    def _marked(self) -> bool:
+        try:
+            info = os.lstat(self._path(BARRIER_MARKER))
+        except FileNotFoundError:
+            return False
+        if not stat.S_ISREG(info.st_mode):  # never followed, never a record of a walk
+            raise ValueError("the spool barrier marker is not a regular file")
+        return True
+
+    def _walk(self) -> None:
+        marked = self._marked()
+        for parent in reversed(self._chain()):
+            try:
+                _fsync_dir(parent)
+            except OSError as exc:
+                if not marked or exc.errno not in _REFUSED or parent in self._created_in:
+                    raise
+                # A completed walk is on record: this ancestor and those above it were made
+                # durable then. Directories below it must still succeed.
+        if marked:
+            return
+        path = self._path(BARRIER_MARKER)
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+        except FileExistsError:  # another process recorded it first
+            if not self._marked():
+                raise
+        else:
+            try:
+                os.write(fd, _BARRIER_CONTENT)
+                os.fsync(fd)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(path)
+                raise
+            finally:
+                os.close(fd)
+        self._sync_dir()
 
     def write(
         self, doc: Mapping[str, Any], bodies: Sequence[bytes] = (), *, reserve: bool = False

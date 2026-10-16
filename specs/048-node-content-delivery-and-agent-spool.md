@@ -251,6 +251,39 @@ on the same directory, or a forked worker whose parent holds it) writes
 records and retries the lock every 5 s on its sender thread, taking over
 when the holder exits.
 
+**Directory barrier.** A record's own `fsync` and the spool directory's
+`fsync` make the record durable *inside* the spool directory; the spool
+directory's entry, and the entries of any ancestors created with it, are
+durable only once their parents are fsync'd. The sender thread (or a
+`flush()`/`close()` helper thread, never the host's call path) establishes
+that barrier before it reports durability, in every process, retried every
+5 s until it succeeds. Durability boundary rules (shared with the Node
+content root, §4):
+
+- The walk fsyncs, top-down, every directory from the spool's parent (by
+  its real path) up to the **durable boundary**: `/`, the root of the
+  spool's filesystem (a mount point's own entry lives on another
+  filesystem), or the configured `spool_durable_boundary`
+  (`FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY`: `spool_dir` or one of its
+  ancestors, which the operator vouches for like a mount point: it is
+  fsync'd, its parent never).
+- When a walk completes, the spool records it in `.barrier` (`0600`,
+  created `O_EXCL | O_NOFOLLOW`, fsync'd, then the spool directory
+  fsync'd). The marker lives inside the spool, so recreating the spool or
+  an ancestor removes it.
+- Only while `.barrier` is present may a later walk (a restart) take an
+  ancestor whose fsync is refused with `EACCES`, `EPERM` or `EROFS` as the
+  boundary, and never one holding a directory this process created.
+  Without it, a refusal fails the walk like any other error: a restart
+  never turns an unfinished barrier into a boundary because the record of
+  what an earlier process created was lost with it. A non-regular
+  `.barrier` (a symlink, a directory) is never followed and fails the walk.
+- Until the barrier holds, records are still written and delivered (the
+  host is never blocked or delayed), but `flush()` and `close()` return
+  `False`, `WireStats.spool_undurable` is `1`, `spool_barrier_failures`
+  counts the failed walks and one warning (exception class only) is
+  logged until it succeeds.
+
 **Record file.** Name `<source_epoch:020d>-<pid:010d>-<order:012d>.rec`
 (`order` = per-process monotonic counter); lexicographic order is drain
 order. Written as `.tmp-<name>` (`0600`), `fsync`, `rename`, `fsync(dir)`.
@@ -538,6 +571,27 @@ an empty or missing `sse` fails configuration validation (F12);
 `kms_key_id` only with `aws:kms`; `PutObject` with `If-None-Match: *`, on 412 `GetObject` and
 byte-compare). A store without conditional-write support is a retryable
 error, never an unconditional write.
+
+**Content root barrier.** Every directory on an object's path below the
+content root is made durable in its parent (its parent fsync'd) before the
+first acknowledgement in each process, created or not. The content root
+and its ancestors follow the durability boundary rules of §2's directory
+barrier: at Start when the root exists, and in any case before the first
+acknowledgement, the exporter fsyncs every ancestor of the root up to the
+filesystem root, a mount point, or the configured `file.durable_boundary`
+(the content root or one of its ancestors; fsync'd itself, its parent
+never). A completed walk is recorded in `<root>/.fabric-root-barrier`
+(`0600`, `O_EXCL | O_NOFOLLOW`, fsync'd, then the root fsync'd; never an
+object, never swept). Only while that marker exists is an ancestor whose
+fsync is refused with `EACCES`, `EPERM` or `EROFS` accepted as the
+boundary (never one holding a directory this process created); without
+it, the refusal fails Start, or the write, retryably — also after a
+restart that no longer knows it created the root. A shipped deployment
+needs no configuration: the Helm chart's root is `<queue PVC
+mount>/content` (its parent is a mount point) and Compose mounts the
+`fabric-content` volume at the root itself. `file.durable_boundary` is for
+a root provisioned under a directory the Node cannot open; naming the
+pre-created root itself is the narrowest choice.
 
 Durability: exporterhelper `sending_queue` on its own `file_storage`
 (fsync, `block_on_overflow: true`) and `retry_on_failure` with
@@ -923,6 +977,23 @@ projected. `--run` values go through the same projection.
     (before: released until the next rescan), and the random interleavings
     with a concurrent writer and `lstat` failures keep the disk within the
     bound and the ledger at every sampled moment, and equal after a rescan.
+
+16. Revision 7 (`tests/test_wire_spool_barrier.py`,
+    `fabriccontentexporter/backend_file_boundary_test.go`): a spool created
+    at `<base>/a/b/spool` fsyncs `<base>`, `a` and `b` top-down on a Fabric
+    thread before `flush()` succeeds (before: only the record and `spool`);
+    `Spool.write` never walks; an injected `EIO` on an ancestor fsync keeps
+    `flush()`/`close()` `False` with `spool_undurable = 1` while records
+    are still delivered, through a restart, until a walk completes; with a
+    real `0300` parent neither the first process nor a restart accepts the
+    refusal (Node: Start and puts refuse) until the parent is fixed, after
+    which the recorded walk lets the same refusal stand as the boundary; a
+    recreated root or spool loses the record; a configured boundary is
+    fsync'd and nothing above it; a planted marker symlink is refused.
+    Overlapping sends of one request with a reusable streamed body
+    (`tests/test_wire_nested_capture.py`) each store exactly the body their
+    server request received, in both finish orders, and the request's
+    stream is the original again afterwards.
 
 ## 12. Open questions
 

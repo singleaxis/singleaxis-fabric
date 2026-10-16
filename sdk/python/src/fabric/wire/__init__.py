@@ -79,6 +79,11 @@ class WireStats:
     content_rejected: int = 0
     quarantined: int = 0
     markers_dropped: int = 0
+    # 1 while the spool's directory barrier is not established (spec 048 §2): spooled
+    # records are delivered but not durable against power loss, and flush()/close()
+    # return False; failed attempts so far.
+    spool_undurable: int = 0
+    spool_barrier_failures: int = 0
     # Matched requests deferred to an explicit model call (fabric._capture_scope); a
     # local counter only, never exported as telemetry.
     deferred_to_explicit: int = 0

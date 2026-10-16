@@ -68,6 +68,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_STORE` | no | Unset: node mode when a content endpoint is set, else metadata only (no bytes stored; runs can only be `unverified`). `node`: node mode explicitly. `file:///absolute/dir`: the agent writes a local store itself (development, offline or single-host; refused together with a content endpoint). `s3://…` is **refused**: S3 is written by the Node. |
 | `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix chosen by you, not an access boundary; never personal data (see below). |
 | `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). Optional in file mode, where it enables the same delivery path. |
+| `FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY` | no | `FABRIC_WIRE_SPOOL_DIR` or one of its ancestors, provisioned durable by you (like a mount point): the spool's directory barrier fsyncs it and the directories below it, never above. Needed only when an ancestor of the spool cannot be opened by the agent and no earlier walk was recorded; see "The spool". |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | no | Spool bound, default 1 GiB, minimum `2 × FABRIC_WIRE_MAX_BODY_BYTES + 1 MiB`. When full, new exchanges are dropped and recorded as `queue_full` losses; the host is unaffected. |
 | `FABRIC_WIRE_SPOOL_MAX_RECEIPTS` | no | Delivery receipts kept for other processes sharing the spool, default 4096 (at most `max_bytes / 1024`); the oldest expire first. Raise it for large forked worker pools. |
 | `FABRIC_WIRE_MODEL_ALLOWLIST` | no | Comma-separated model names emitted as is, in addition to the built-in public families. An exact entry matches only that name; a `prefix*` entry matches only a version-like suffix (§3). Any other model name is emitted as `m-` + a hash. |
@@ -123,7 +124,15 @@ sent. One sender thread posts each body to the content endpoint, then
 exports its span, and deletes the record only after both succeeded; it
 retries with backoff (0.5 s doubling to 30 s) for as long as the Node is
 unreachable. After a crash or restart, leftover records from earlier
-processes are delivered first. A record that fails its checksum is kept as
+processes are delivered first. The spool directory's own entry (and any
+ancestors created with it) is durable only once its parents are fsync'd:
+the sender thread walks every ancestor up to the filesystem root, a mount
+point or `FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY`, records a completed walk in
+`.barrier`, and until then `flush()`/`close()` return `False` and
+`WireStats.spool_undurable` is `1` (records are still written and sent).
+An ancestor the agent may not open (`EACCES`, `EPERM`, `EROFS`) is accepted
+as the boundary only once a walk was recorded (spec 048 §2, "Directory
+barrier"). A record that fails its checksum is kept as
 `*.corrupt` and reported as an `internal_error` loss. Delivery is
 at-least-once; the Node and the verifier deduplicate. Size the spool for
 the longest Node outage you want to ride out. It lives on the agent host
@@ -595,7 +604,7 @@ Wire capture coexists with the explicit evidence line (specs 035–046:
 - **One directory per spool.** `FABRIC_WIRE_SPOOL_DIR` must not be the root
   of a `SyntheticSourceSpool`, `DurableByteSpool` or `JournalMetadataSender`;
   the wire spool refuses a directory holding any file it does not own
-  (`.lock`, `*.rec`, `*.ack`, `.tmp-*`, `*.corrupt`) and capture is not
+  (`.lock`, `.barrier`, `*.rec`, `*.ack`, `.tmp-*`, `*.corrupt`) and capture is not
   installed.
 
 ## 3. What is streamed and who can read it

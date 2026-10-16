@@ -109,7 +109,7 @@ share a `.lock`:
 
 | Spool | Owner | Configured by | Files it owns |
 |---|---|---|---|
-| Wire agent spool | `fabric.wire` (spec 048) | `FABRIC_WIRE_SPOOL_DIR` | `.lock`, `*.rec`, `*.ack`, `.tmp-*`, `*.corrupt` |
+| Wire agent spool | `fabric.wire` (spec 048) | `FABRIC_WIRE_SPOOL_DIR` | `.lock`, `.barrier`, `*.rec`, `*.ack`, `.tmp-*`, `*.corrupt` |
 | Source spool | `SyntheticSourceSpool` (passed to `CallRecorder(source_spool=...)`) | `SyntheticSourceSpool(root, ...)` | `.lock`, `state.json`, `event-*.json`, `seal-*.json`, `intent-*.json` |
 | Protected byte spool | `byte_spool.DurableByteSpool` | `DurableByteSpool(root, ...)` | `.lock`, `health`, envelopes |
 | Metadata delivery ledger | `metadata_delivery.JournalMetadataSender` | `JournalMetadataSender(root, ...)` | `.lock`, `owner.json`, `cursor.json`, `batch-*/result-*.json` |

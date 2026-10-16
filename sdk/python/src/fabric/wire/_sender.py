@@ -121,7 +121,24 @@ class Sender:
 
     def stats(self) -> Mapping[str, int]:
         dropped = self._stats["markers_dropped"] + self.loss.markers_dropped
-        return {**self._stats, "markers_dropped": dropped, "spool_bytes": self.spool.bytes}
+        return {**self._stats, "markers_dropped": dropped, "spool_bytes": self.spool.bytes,
+                "spool_undurable": int(not self.spool.durable),
+                "spool_barrier_failures": self.spool.barrier_failures}  # fmt: skip
+
+    def ensure_durable(self) -> bool:
+        """Establish the spool's directory barrier (sender or flush-helper thread only);
+        a failure is logged once until it succeeds, by exception class only."""
+        if self.spool.durable:
+            return True
+        failures = self.spool.barrier_failures
+        if self.spool.establish_barrier():
+            if failures:
+                _LOG.warning("fabric.wire: spool directory barrier established")
+            return True
+        if not failures:
+            _LOG.warning("fabric.wire: spool directory barrier not established; spooled "
+                         "records are not durable against power loss (retrying)")  # fmt: skip
+        return False
 
     def spool_exchange(
         self, source_id: str, epoch: int, span: Mapping[str, Any],
@@ -167,9 +184,12 @@ class Sender:
             self._pump_lock.release()
 
     def _run(self) -> None:
-        backoff, scanned, locked = 0.0, 0.0, -_LOCK_RETRY_S
+        backoff, scanned, locked, barrier = 0.0, 0.0, -_LOCK_RETRY_S, -_RESCAN_S
         while not self._stop.is_set():
             try:
+                if not self.spool.durable and (now := time.monotonic()) - barrier >= _RESCAN_S:
+                    barrier = now
+                    self.ensure_durable()
                 if (now := time.monotonic()) - scanned >= _RESCAN_S:
                     self.spool.rescan()
                     self.spool.settle()  # own records drained elsewhere: consume receipts
@@ -298,9 +318,11 @@ class Sender:
         (delivered, or failed: quarantined or gone without a receipt). All of it, the
         admission check included, runs on a helper thread: the caller waits only until
         ``deadline``, even while another pump holds the lock during stalled disk I/O.
-        ``False`` also when a loss range could not be spooled."""
+        ``False`` also when a loss range could not be spooled, or while the spool's
+        directory barrier is not established (records are then not durable)."""
 
         def work() -> bool:
+            durable = self.ensure_durable()
             self.pump(deadline=deadline)
             if not self._pump_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
                 return False
@@ -314,7 +336,7 @@ class Sender:
                 if time.monotonic() >= deadline:
                     return False
                 time.sleep(0.02)
-            return admitted
+            return admitted and durable
 
         return self._bounded(work, deadline)
 
@@ -368,7 +390,8 @@ def build_sender(
     if config.content_endpoint is not None and content is None:
         content = content_client_from_env(
             os.environ, endpoint=config.content_endpoint, service_name=service)  # fmt: skip
-    spool = Spool(config.spool_dir, config.spool_max_bytes, config.spool_max_receipts)
+    spool = Spool(config.spool_dir, config.spool_max_bytes, config.spool_max_receipts,
+                  durable_boundary=config.spool_durable_boundary)  # fmt: skip
     factory = None if exporter is not None else tracing.build_capture_span_exporter
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
     return Sender(spool, exporter, loss, content=content, service_name=service,
