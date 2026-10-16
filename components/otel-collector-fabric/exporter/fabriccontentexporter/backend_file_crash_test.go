@@ -127,3 +127,98 @@ func TestFileBackend_StartWithoutDirectoryIsANoop(t *testing.T) {
 		t.Errorf("start created the content root")
 	}
 }
+
+// countDirSyncs replaces syncDir for the test: it counts fsyncs of dir and
+// fails them with EIO while *fail is set.
+func countDirSyncs(t *testing.T, dir string, fail *bool) *int {
+	t.Helper()
+	calls := 0
+	original := syncDir
+	syncDir = func(d string) error {
+		if d == dir {
+			calls++
+			if *fail {
+				return syscall.EIO
+			}
+		}
+		return original(d)
+	}
+	t.Cleanup(func() { syncDir = original })
+	return &calls
+}
+
+// Sol F2: a put that published the object and dropped its temp but failed
+// its directory fsync leaves a visible single-link object. The replay must
+// fsync the directory before it reports success (the queue then retires
+// the record), and must keep failing while that fsync fails.
+func TestFileBackend_ReplayAfterFailedDirFsyncSyncsTheDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "content")
+	b := newFileBackend(dir)
+	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000001"))
+	parent := filepath.Dir(filepath.FromSlash(key))
+	if err := b.privateDirs(parent); err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("exact wire body")
+	fail := true
+	calls := countDirSyncs(t, parent, &fail)
+	if err := b.put(context.Background(), key, body); err == nil {
+		t.Fatal("first put: want the injected directory fsync failure")
+	}
+	if n := nlink(t, key); n != 1 {
+		t.Fatalf("object after failed fsync: nlink = %d, want 1 (published, temp dropped)", n)
+	}
+	*calls = 0
+	if err := b.put(context.Background(), key, body); err == nil {
+		t.Fatal("replay while the directory fsync still fails must not succeed")
+	}
+	fail, *calls = false, 0
+	if err := b.put(context.Background(), key, body); err != nil {
+		t.Fatalf("replay put: %v", err)
+	}
+	if *calls == 0 {
+		t.Fatal("replay accepted the object without fsyncing its directory")
+	}
+}
+
+// The concurrent-writer path: link(2) finds the target another writer
+// published (identical bytes) after this put's existence check. It must also
+// fsync the directory before accepting.
+func TestFileBackend_ConcurrentExistingTargetSyncsTheDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "content")
+	b := newFileBackend(dir)
+	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000002"))
+	parent := filepath.Dir(filepath.FromSlash(key))
+	body := []byte("exact wire body")
+	originalLink := linkFile
+	t.Cleanup(func() { linkFile = originalLink })
+	linkFile = func(oldname, newname string) error {
+		// The other writer wins between the existence check and link(2),
+		// publishing the same bytes without (yet) fsyncing the directory.
+		if err := os.WriteFile(newname, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return originalLink(oldname, newname)
+	}
+	fail := true
+	if err := b.privateDirs(parent); err != nil {
+		t.Fatal(err)
+	}
+	calls := countDirSyncs(t, parent, &fail)
+	if err := b.put(context.Background(), key, body); err == nil {
+		t.Fatal("concurrent replay accepted without a successful directory fsync")
+	}
+	fail, *calls = false, 0
+	if err := os.Remove(filepath.FromSlash(key)); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.put(context.Background(), key, body); err != nil {
+		t.Fatalf("concurrent replay: %v", err)
+	}
+	if *calls == 0 {
+		t.Fatal("concurrent replay accepted the object without fsyncing its directory")
+	}
+	if left := temps(t, dir); len(left) != 0 {
+		t.Errorf("temp files left: %v", left)
+	}
+}

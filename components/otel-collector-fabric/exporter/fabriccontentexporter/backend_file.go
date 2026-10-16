@@ -111,17 +111,23 @@ func (b *fileBackend) sweepStaleTemps() {
 
 // healStaleTemps removes the temp files of the object at target when it has
 // more than one link (a crash after link(2) in an earlier put), then fsyncs
-// the directory. Called when a replay finds the object already stored.
+// the directory. Called whenever a put finds the object already stored (a
+// replay, or a concurrent writer that published it first). The directory
+// fsync is unconditional: the earlier put may have published the object and
+// dropped its temp but failed (or crashed) before its own directory fsync,
+// so a visible, single-link object is not yet durable, and success here is
+// what lets the delivery queue retire the record (Sol F2).
 func healStaleTemps(target string) error {
 	info, err := os.Lstat(target)
 	if err != nil {
 		return &storeError{op: "file read"}
 	}
+	parent := filepath.Dir(target)
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || stat.Nlink <= 1 {
-		return nil
+		return syncDir(parent)
 	}
-	parent, prefix := filepath.Dir(target), "."+filepath.Base(target)+"."
+	prefix := "." + filepath.Base(target) + "."
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return &storeError{op: "dir read"}
@@ -179,7 +185,12 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 		if err == nil && !done {
 			return &storeError{op: "file link"} // vanished: retry
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		// Identical bytes another writer published: it may not have
+		// fsync'd the directory yet, so do that before accepting.
+		return healStaleTemps(target)
 	}
 	// Drop the temp's name before the directory fsync, so the object is
 	// durable with exactly one link (readers refuse nlink != 1). After a
@@ -295,7 +306,10 @@ func writeSynced(f *os.File, data []byte) error {
 	return nil
 }
 
-func syncDir(dir string) error {
+// syncDir fsyncs a directory; tests replace it to inject failures.
+var syncDir = syncDirectory
+
+func syncDirectory(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
 		return &storeError{op: "dir open"}
