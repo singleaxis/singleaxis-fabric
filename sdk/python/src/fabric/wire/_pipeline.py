@@ -32,7 +32,7 @@ from opentelemetry.trace import (
 )  # fmt: skip
 from opentelemetry.util.types import AttributeValue
 
-from .._loss import LossEmitter, LossReason
+from .._loss import LossEmitter, LossReason, PrivateFallback, resolve_capture_provider
 from .._model_names import expose_model
 from .._sequence import OPAQUE_ID_RE
 from .._version import __version__
@@ -50,7 +50,10 @@ _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
 _ERROR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
 _FINISH_KEY = {"openai.responses": "status", "anthropic.messages": "stop_reason"}
-_STATS = ("submitted", "dropped", "truncated", "internal_errors", "store_failures", "spans_emitted")
+_STATS = (
+    "submitted", "dropped", "truncated", "internal_errors", "store_failures", "spans_emitted",
+    "spans_refused",
+)  # fmt: skip
 _BACKOFFS_S = (0.1, 0.4, 1.6)  # one try plus three retries
 _METADATA_MAX_BYTES = 256 * 1024  # json.loads holds the GIL; larger bodies are left to reconstruct
 _STOP = object()
@@ -155,8 +158,11 @@ class CapturePipeline:
         loss: LossEmitter, queue_max_items: int = 256,
         on_job_done: Callable[[CaptureJob], None] | None = None, sender: Sender | None = None,
         node_tenant_id: str | None = None, model_allowlist: Sequence[str] = (),
+        fallback: PrivateFallback | None = None,
     ) -> None:  # fmt: skip
-        """``node_tenant_id`` (with ``sender``): bodies go into spool records for the Node."""
+        """``node_tenant_id`` (with ``sender``): bodies go into spool records for the Node.
+        ``fallback``: the private provider used when ``tracer_provider`` (or, without one,
+        the global provider) has a Fabric-protected route at emit time."""
         if type(queue_max_items) is not int or not 1 <= queue_max_items <= 65536:  # noqa: PLR2004
             raise ValueError("queue_max_items must be an integer between 1 and 65536")
         tenant = getattr(store, "tenant_id", None) if node_tenant_id is None else node_tenant_id
@@ -167,6 +173,7 @@ class CapturePipeline:
         self._store, self._tenant_id, self._provider = store, tenant, tracer_provider
         self._sender, self._node, self._models = sender, node_tenant_id is not None, model_allowlist
         self._loss, self._max_items, self._on_job_done = loss, queue_max_items, on_job_done
+        self._fallback = fallback
         self._backoffs: tuple[float, ...] = _BACKOFFS_S
         self._init_state()
         _PIPELINES.add(self)
@@ -245,6 +252,10 @@ class CapturePipeline:
         with self._cond:
             return {**self._stats, "queue_depth": self._queue.qsize()}
 
+    def resolved_provider(self) -> trace.TracerProvider | None:
+        """The provider exchange spans go through now; ``None`` when they are refused."""
+        return resolve_capture_provider(self._provider, self._fallback)
+
     def _commit(self, job: CaptureJob) -> bool:
         """The job's single terminal transition: ``True`` gives the worker its outcome;
         ``False`` means ``close`` already reported it as a shutdown loss. Exactly one wins.
@@ -320,7 +331,13 @@ class CapturePipeline:
             if self._commit(job):
                 self._spool(self._sender, job, attrs, staged)
             return
-        tracer = trace.get_tracer("fabric.wire", __version__, tracer_provider=self._provider)
+        provider = resolve_capture_provider(self._provider, self._fallback)
+        if provider is None:  # a protected route would rename it and erase its identifiers
+            if self._commit(job):
+                self._stats["spans_refused"] += 1
+                self._lose(job, "span_dropped")
+            return
+        tracer = trace.get_tracer("fabric.wire", __version__, tracer_provider=provider)
         parent = capture_parent(job.parent_context)
         span = tracer.start_span(
             SPAN_EXCHANGE, parent, SpanKind.CLIENT, attrs, start_time=job.started_ns

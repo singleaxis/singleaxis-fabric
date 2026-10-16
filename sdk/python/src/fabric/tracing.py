@@ -330,6 +330,23 @@ def trace_export_protection_status(provider: object | None = None) -> dict[str, 
     }
 
 
+def has_protected_route(provider: object) -> bool:
+    """Whether ``provider`` has a Fabric-managed projection route (the metadata-only
+    projection of :func:`install_default_provider`, content opt-in included).
+
+    Capture records (wire exchange spans, loss and heartbeat markers) must never travel
+    such a route: the projection renames them and hashes or drops their identifiers. A
+    provider that cannot be inspected has no Fabric-managed route."""
+    processor = getattr(provider, "_active_span_processor", None)
+    processors = getattr(processor, "_span_processors", None)
+    if not isinstance(processors, tuple):
+        return False
+    return any(
+        isinstance(getattr(item, "span_exporter", None), MetadataOnlySpanExporter)
+        for item in processors
+    )
+
+
 def otlp_endpoint_configured() -> bool:
     """Whether the standard env names an OTLP traces endpoint."""
     names = ("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")

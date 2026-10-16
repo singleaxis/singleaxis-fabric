@@ -191,6 +191,156 @@ def test_capture_llm_content_logs_that_wire_is_unaffected(
     assert "off telemetry" in warnings[0]
 
 
+# ------------------------------- D3 at emit time: the host installs its provider later
+
+
+def _protected_names(mem: InMemorySpanExporter) -> list[str]:
+    return [json.dumps(dict(s.attributes or {})) for s in mem.get_finished_spans()]
+
+
+def test_protected_global_installed_after_wire_refuses_spans_without_endpoint(
+    isolated: None, fresh_global: None, fake_llm: FakeLLM, tmp_path: Path
+) -> None:
+    """Reverse order (wire first, then the quickstart's install_default_provider): no
+    exchange or marker reaches the projection, every exchange is a counted
+    ``span_dropped`` refusal and flush() reports the failure."""
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="tenant-a")
+    handle = wire.install(WireConfig(store=store, extra_endpoints=fake_llm.matchers()))
+    assert handle.config.tracer_provider is None  # global mode: nothing protected yet
+    mem = InMemorySpanExporter()
+    protected = install_default_provider(exporter=mem)
+    for _ in range(2):
+        _post(fake_llm)
+    assert handle.flush(10.0) is False  # never silently degraded
+    protected.force_flush(5000)
+    assert mem.get_finished_spans() == ()  # nothing renamed into fabric.capture.span
+    stats = handle.stats()
+    assert stats.spans_refused == 2
+    assert stats.spans_emitted == 0
+    assert fabric._loss._EMITTER is not None
+    assert fabric._loss._EMITTER.spans_refused >= 1  # the span_dropped range, refused too
+    wire.uninstall()
+    protected.shutdown()
+
+
+def test_protected_global_installed_after_wire_routes_to_private_provider(
+    isolated: None, fresh_global: None, fake_llm: FakeLLM, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    private = _Collect()
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://127.0.0.1:9/v1/traces")
+    monkeypatch.setattr(ft, "_otlp_exporter", lambda: private)
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="tenant-a")
+    handle = wire.install(WireConfig(store=store, extra_endpoints=fake_llm.matchers()))
+    assert handle.config.tracer_provider is None
+    mem = InMemorySpanExporter()
+    protected = install_default_provider(exporter=mem)
+    for _ in range(3):
+        _post(fake_llm)
+    assert handle.flush(10.0)
+    protected.force_flush(5000)
+    assert all("fabric.wire" not in text for text in _protected_names(mem))
+    assert [s.name for s in mem.get_finished_spans()] == []
+    assert private.names.count("fabric.model_call") == 3
+    assert handle.stats().spans_refused == 0
+    wire.uninstall()
+    protected.shutdown()
+
+
+def test_autoload_before_install_default_provider_routes_to_private_provider(
+    isolated: None, fresh_global: None, fake_llm: FakeLLM, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """The autoload path (FABRIC_WIRE_TRACER=global at interpreter start), then the app's
+    install_default_provider(): exchanges move to the private provider."""
+    private = _Collect()
+    monkeypatch.setattr(ft, "_otlp_exporter", lambda: private)
+    endpoint = {"endpoint_id": "fake", "dialect": "openai", "hosts": ["127.0.0.1"],
+                "ports": [fake_llm.port], "schemes": ["http"], "path_prefix": "/v1"}  # fmt: skip
+    env = {"FABRIC_WIRE_STORE": f"file://{tmp_path / 'store'}", "FABRIC_TENANT_ID": "tenant-a",
+           "FABRIC_WIRE_TRACER": "global", "FABRIC_WIRE_ENDPOINTS": json.dumps([endpoint]),
+           "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://127.0.0.1:9/v1/traces"}  # fmt: skip
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    handle = wire.install_from_env()
+    assert handle is not None
+    assert handle.config.tracer_provider is None  # global mode at autoload
+    mem = InMemorySpanExporter()
+    protected = install_default_provider(exporter=mem)
+    _post(fake_llm)
+    assert handle.flush(10.0)
+    protected.force_flush(5000)
+    assert mem.get_finished_spans() == ()
+    assert private.names.count("fabric.model_call") == 1
+    wire.uninstall()
+    protected.shutdown()
+
+
+def test_autoload_before_install_default_provider_without_endpoint_is_refused(
+    isolated: None, fresh_global: None, fake_llm: FakeLLM, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    endpoint = {"endpoint_id": "fake", "dialect": "openai", "hosts": ["127.0.0.1"],
+                "ports": [fake_llm.port], "schemes": ["http"], "path_prefix": "/v1"}  # fmt: skip
+    env = {"FABRIC_WIRE_STORE": f"file://{tmp_path / 'store'}", "FABRIC_TENANT_ID": "tenant-a",
+           "FABRIC_WIRE_TRACER": "global", "FABRIC_WIRE_ENDPOINTS": json.dumps([endpoint])}
+    handle = wire.install_from_env(env)
+    assert handle is not None
+    mem = InMemorySpanExporter()
+    protected = install_default_provider(exporter=mem)
+    _post(fake_llm)
+    assert handle.flush(10.0) is False
+    protected.force_flush(5000)
+    assert mem.get_finished_spans() == ()
+    assert handle.stats().spans_refused == 1
+    wire.uninstall()
+    protected.shutdown()
+
+
+def test_explicitly_passed_protected_provider_is_never_used(
+    isolated: None, fresh_global: None, fake_llm: FakeLLM, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    mem = InMemorySpanExporter()
+    protected = install_default_provider(exporter=mem)
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="tenant-a")
+    with pytest.raises(ValueError, match="protected tracer provider"):
+        wire.install(WireConfig(store=store, tracer_provider=protected))
+    private = _Collect()
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://127.0.0.1:9/v1/traces")
+    monkeypatch.setattr(ft, "_otlp_exporter", lambda: private)
+    handle = wire.install(WireConfig(store=store, tracer_provider=protected,
+                                     extra_endpoints=fake_llm.matchers()))  # fmt: skip
+    assert handle.config.tracer_provider is not protected
+    _post(fake_llm)
+    assert handle.flush(10.0)
+    protected.force_flush(5000)
+    assert mem.get_finished_spans() == ()
+    assert private.names.count("fabric.model_call") == 1
+    wire.uninstall()
+    protected.shutdown()
+
+
+def test_explicit_provider_protected_after_install_is_refused(
+    isolated: None, fake_llm: FakeLLM, tmp_path: Path
+) -> None:
+    """The emit-time check also covers an explicitly passed provider."""
+    from fabric._span_protection import MetadataOnlySpanExporter  # noqa: PLC0415
+
+    provider = TracerProvider()
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="tenant-a")
+    handle = wire.install(WireConfig(store=store, tracer_provider=provider,
+                                     extra_endpoints=fake_llm.matchers()))  # fmt: skip
+    mem = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(MetadataOnlySpanExporter(mem)))
+    _post(fake_llm)
+    assert handle.flush(10.0) is False
+    assert mem.get_finished_spans() == ()
+    assert handle.stats().spans_refused == 1
+    wire.uninstall()
+    provider.shutdown()
+
+
 # ------------------------------------------------------- D5 spool directory refusal
 
 

@@ -21,7 +21,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from .._capture_scope import explicit_model_call_active
-from .._loss import LossEmitter, LossReason
+from .._loss import LossEmitter, LossReason, PrivateFallback
 from .._sequence import SourceAllocator
 from ._match import EndpointIndex
 from ._model import CaptureJob
@@ -56,6 +56,7 @@ class WireTee:
     def __init__(
         self, config: WireConfig, *, allocator: SourceAllocator, loss: LossEmitter,
         pipeline: CapturePipeline | None = None, sender: Sender | None = None,
+        fallback: PrivateFallback | None = None,
     ) -> None:  # fmt: skip
         self.config, self.allocator, self.loss, self.sender = config, allocator, loss, sender
         self.max_body_bytes, self.budget = config.max_body_bytes, Budget(config.max_inflight_bytes)
@@ -67,7 +68,7 @@ class WireTee:
             store=config.store, tracer_provider=config.tracer_provider, loss=loss,
             queue_max_items=config.queue_max_items, on_job_done=self._release, sender=sender,
             node_tenant_id=config.content_endpoint and config.tenant_id,
-            model_allowlist=config.model_allowlist,
+            model_allowlist=config.model_allowlist, fallback=fallback,
         )  # fmt: skip
         _TEES.add(self)
 

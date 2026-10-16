@@ -24,7 +24,7 @@ from opentelemetry.util.types import AttributeValue
 
 from ._sequence import RunScope, SourceAllocator
 from ._version import __version__
-from .tracing import FABRIC_SDK_NAME
+from .tracing import FABRIC_SDK_NAME, has_protected_route
 
 LossReason = Literal["queue_full", "internal_error", "shutdown", "span_dropped"]
 HeartbeatKind = Literal["periodic", "run_start", "run_end", "final"]
@@ -86,6 +86,53 @@ def run_bounded(
     return done.wait(max(0.0, deadline - time.monotonic())) and result[0]
 
 
+class PrivateFallback:
+    """The private provider capture records use when their configured (or the global)
+    provider carries a Fabric-protected route (047 "Two capture lines"): built lazily, once,
+    off the host's thread by ``build``; ``build`` returning ``None`` (no OTLP endpoint) or
+    raising means there is none, and those records are refused rather than projected."""
+
+    def __init__(self, build: Callable[[], TracerProvider | None] | None) -> None:
+        self._build, self._lock = build, threading.Lock()
+        self.provider: TracerProvider | None = None
+        self._resolved = build is None
+        self._warned = False
+
+    def get(self) -> TracerProvider | None:
+        if not self._resolved:
+            with self._lock:
+                if not self._resolved:
+                    try:
+                        self.provider = self._build() if self._build is not None else None
+                    except Exception:
+                        self.provider = None
+                    self._resolved = True
+        if self.provider is None and not self._warned:
+            self._warned = True
+            _LOG.warning(
+                "fabric capture: records refused (%s)", "ProtectedTracerProviderWithoutEndpoint"
+            )
+        return self.provider
+
+
+def resolve_capture_provider(
+    configured: trace.TracerProvider | None, fallback: PrivateFallback | None
+) -> trace.TracerProvider | None:
+    """The provider a capture record is emitted through, resolved at emit time: the
+    configured one (``None``: the global provider), unless it has a Fabric-protected route
+    (its projection would rename the record and erase its identifiers); then ``fallback``'s
+    private provider, or ``None`` when there is none (the record is refused, never silently
+    degraded)."""
+    candidate = configured if configured is not None else trace.get_tracer_provider()
+    try:
+        protected = has_protected_route(candidate)
+    except Exception:
+        protected = True  # unknown: never risk the projection
+    if not protected:
+        return candidate
+    return fallback.get() if fallback is not None else None
+
+
 def _force_flush(provider: object, deadline: float) -> bool:
     force_flush = getattr(provider, "force_flush", None)
     if not callable(force_flush):
@@ -102,6 +149,7 @@ class LossEmitter:
         self._provider, self._interval = tracer_provider, heartbeat_interval_s
         self.exit_timeout_s = 2.0  # the at-exit close budget; wire.install sets its own
         self._wake: Callable[[], None] | None = None  # the spool sender, when attached
+        self._fallback: PrivateFallback | None = None  # used instead of a protected route
         self._init_state()
         _EMITTERS.add(self)
 
@@ -116,6 +164,7 @@ class LossEmitter:
         self._flushing: threading.Event | None = None  # the flush still running, if any
         self._undelivered = False  # a record was sampled away or failed to emit
         self.spans_unsampled = self.internal_errors = self.markers_dropped = 0
+        self.spans_refused = 0  # records a protected route would have projected
         self.recorded = 0  # exchanges lost before reaching the record (admission failures)
 
     def record(self, source_id: str, source_epoch: int, reason: LossReason, sequence: int) -> None:
@@ -186,6 +235,14 @@ class LossEmitter:
     def tracer_provider(self) -> TracerProvider | None:
         return self._provider
 
+    def set_fallback(self, fallback: PrivateFallback | None) -> None:
+        """The private provider used when the configured one has a protected route."""
+        self._fallback = fallback
+
+    def resolved_provider(self) -> trace.TracerProvider | None:
+        """The provider records are emitted through now; ``None`` when they are refused."""
+        return resolve_capture_provider(self._provider, self._fallback)
+
     def attach(self, wake: Callable[[], None] | None) -> None:
         """Hand draining to the spool sender (``wake`` is called on new work); ``None`` undoes."""
         self._wake = wake
@@ -234,8 +291,13 @@ class LossEmitter:
             self._emit(SPAN_HEARTBEAT, beat_attributes(beat))
 
     def _emit(self, name: str, attrs: dict[str, AttributeValue]) -> None:
-        provider, now = self._provider or trace.get_tracer_provider(), time.time_ns()
+        now = time.time_ns()
         try:
+            provider = self.resolved_provider()
+            if provider is None:  # a protected route would rename it and erase its ids
+                self.spans_refused += 1
+                self._undelivered = True  # the next flush() reports it
+                return
             tracer = provider.get_tracer(FABRIC_SDK_NAME, __version__)
             span = tracer.start_span(name, Context(), SpanKind.INTERNAL, attrs, start_time=now)
             if span.is_recording():
@@ -272,7 +334,8 @@ class LossEmitter:
                 self._drain(periodic=False, every_source=True)
             finally:
                 self._emit_lock.release()
-            exported = _force_flush(self._provider or trace.get_tracer_provider(), deadline)
+            provider = self.resolved_provider()
+            exported = provider is not None and _force_flush(provider, deadline)
             with self._lock:
                 undelivered, self._undelivered = self._undelivered, False
                 return exchanges and exported and not undelivered and not (

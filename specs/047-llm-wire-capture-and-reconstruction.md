@@ -243,12 +243,20 @@ The explicit evidence line (specs 035–046) and this zero-code wire line
   wire-captured. Work the delegate hands back and the caller consumes later
   outside the activated scope (an awaitable or iterator that is not a
   `RecordedStream`) is wire-captured too; that is the only expected duplicate.
-- **A Fabric-protected global provider never carries wire spans.** When
-  `FABRIC_WIRE_TRACER=global` resolves to a provider whose routes
-  `install_default_provider` protects (metadata-only projection or content
-  opt-in), wire uses its private provider when an OTLP endpoint is set and
-  otherwise does not install (one class-only warning). Wire never adds a
-  pass-through to the projection.
+- **A Fabric-protected provider never carries wire spans.** When
+  `FABRIC_WIRE_TRACER=global` (or an explicitly passed `tracer_provider`)
+  resolves to a provider whose routes `install_default_provider` protects
+  (metadata-only projection or content opt-in), wire uses its private provider
+  when an OTLP endpoint is set and otherwise does not install (one class-only
+  warning). The same check runs again at emit time for every exchange span and
+  every loss/heartbeat marker, because the host may call
+  `install_default_provider()` after wire was installed (autoload first, then
+  the quickstart): such records then go to the private provider when an OTLP
+  endpoint is set; otherwise each exchange is refused as a counted
+  `span_dropped` loss (`WireStats.spans_refused`), refused markers are counted,
+  and `flush()` returns `False`. Nothing is ever emitted through the
+  projection, and success is never reported for refused records. Wire never
+  adds a pass-through to the projection.
 
 ## 1. Capture point
 

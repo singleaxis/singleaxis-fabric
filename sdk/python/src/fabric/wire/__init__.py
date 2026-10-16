@@ -8,6 +8,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import dataclasses
+import functools
 import logging
 import os
 import threading
@@ -31,6 +32,8 @@ from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
+
+    from .._loss import PrivateFallback
 
     from ._content import NodeContentClient
     from ._transport import AsyncWireTransport, WireTee, WireTransport
@@ -80,13 +83,22 @@ class WireStats:
     # Matched requests deferred to an explicit model call (fabric._capture_scope); a
     # local counter only, never exported as telemetry.
     deferred_to_explicit: int = 0
+    # Exchange spans refused because the provider had a Fabric-protected route and no
+    # private provider was available (each is a ``span_dropped`` loss).
+    spans_refused: int = 0
 
 
 class WireHandle:
     """An installed wire tee, returned by :func:`install`."""
 
-    def __init__(self, config: WireConfig, tee: WireTee, *, patched: bool) -> None:
+    def __init__(
+        self, config: WireConfig, tee: WireTee, *, patched: bool,
+        fallback: PrivateFallback | None = None,
+    ) -> None:  # fmt: skip
+        from .._loss import PrivateFallback  # noqa: PLC0415
+
         self.config, self._tee, self._patched = config, tee, patched
+        self._fallback = fallback or PrivateFallback(None)
         self._result: bool | None = None  # set once closed
 
     @property
@@ -99,8 +111,12 @@ class WireHandle:
 
         if (sender := self._tee.sender) is not None:  # undelivered records stay on disk
             return sender.close(timeout_s) if closing else sender.flush(timeout_s)
-        providers = (self.config.tracer_provider or trace.get_tracer_provider(),)
-        return self._tee.loss.flush(timeout_s, also=providers)
+        # Resolved now: the host may have installed a Fabric-protected global provider since
+        # install. A refused route (``None``) is never reported as delivered.
+        provider = self._tee.pipeline.resolved_provider()
+        providers = (provider,) if provider is not None else (trace.get_tracer_provider(),)
+        delivered = self._tee.loss.flush(timeout_s, also=providers)
+        return delivered and provider is not None
 
     def flush(self, timeout_s: float = 5.0) -> bool:
         """Deliver queued exchanges, losses and heartbeats within ``timeout_s``; ``False`` when
@@ -152,7 +168,8 @@ class WireHandle:
             loss, sender = self._tee.loss, self._tee.sender
             if sender is None:  # the direct path: the loss emitter's thread and provider
                 closed = loss.close(max(0.0, deadline - time.monotonic())) and closed
-            providers = {self.config.tracer_provider, loss.tracer_provider} - {None}
+            providers = {self.config.tracer_provider, loss.tracer_provider,
+                         self._fallback.provider} - {None}  # fmt: skip
             targets: list[Any] = [sender.exporter] if sender else [
                 p for p in providers if is_private_provider(p)]  # fmt: skip
             for target in targets if closed else ():  # else presumed blocked: skipped
@@ -167,7 +184,7 @@ def install(
     """Install the tee (idempotent; invalid config raises first). The spool delivers through
     ``span_exporter`` and ``content_client`` (defaults: from the environment)."""
     global _HANDLE  # noqa: PLW0603
-    from .._loss import get_loss_emitter  # noqa: PLC0415
+    from .._loss import PrivateFallback, get_loss_emitter  # noqa: PLC0415
     from . import _transport  # noqa: PLC0415
     from ._sender import build_sender  # noqa: PLC0415
 
@@ -180,9 +197,12 @@ def install(
             config = dataclasses.replace(config, id_key=key)
         if config.labels is None:
             config = dataclasses.replace(config, labels=labels_from_env(os.environ))
-        if config.spool_dir is None and config.tracer_provider is None and _protected_global():
-            # D3: a Fabric-protected global provider never carries wire spans (its
-            # metadata-only projection would erase them); use the private provider.
+        explicit = config.tracer_provider is not None
+        if config.spool_dir is None and (
+            _protected_provider(config.tracer_provider) if explicit else _protected_global()
+        ):
+            # D3: a Fabric-protected provider (the global one, or one passed in) never
+            # carries wire spans (its metadata-only projection would erase them).
             from ..tracing import (  # noqa: PLC0415
                 build_private_provider,
                 capture_service_name,
@@ -191,7 +211,9 @@ def install(
 
             if not otlp_endpoint_configured():
                 raise ValueError(
-                    "a Fabric-protected global tracer provider cannot carry wire spans"
+                    "a Fabric-protected tracer provider cannot carry wire spans"
+                    if explicit
+                    else "a Fabric-protected global tracer provider cannot carry wire spans"
                 )
             private = build_private_provider(service_name=capture_service_name(
                 id_key=config.id_key, clear=config.labels == "clear"))  # fmt: skip
@@ -201,12 +223,19 @@ def install(
         if config.tracer_provider is not None:
             loss.set_tracer_provider(config.tracer_provider)
         loss.exit_timeout_s = config.shutdown_timeout_s
+        # The same rule at emit time: the host may install a protected provider later.
+        fallback = PrivateFallback(
+            None if sender is not None else functools.partial(_fallback_provider, config, loss)
+        )
+        loss.set_fallback(fallback)
         allocator = get_allocator("wire", source_id=_source_id(config))
-        tee = _transport.WireTee(config, allocator=allocator, loss=loss, sender=sender)
+        tee = _transport.WireTee(
+            config, allocator=allocator, loss=loss, sender=sender, fallback=fallback
+        )
         loss.attach(sender.wake if sender is not None else None)
         if sender is not None:  # starts draining: replays what earlier processes left
             sender.wake()
-        _HANDLE = WireHandle(config, tee, patched=config.patch_httpx)
+        _HANDLE = WireHandle(config, tee, patched=config.patch_httpx, fallback=fallback)
         if config.patch_httpx:
             _transport.patch_httpx()
         _transport._ACTIVE = tee
@@ -221,6 +250,36 @@ def install(
 
 def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _protected_provider(provider: Any) -> bool:
+    """Whether ``provider`` has a Fabric-protected route (see :func:`_protected_global`)."""
+    try:
+        from ..tracing import has_protected_route  # noqa: PLC0415
+
+        return has_protected_route(provider)
+    except Exception:
+        return False
+
+
+def _fallback_provider(config: WireConfig, loss: Any) -> Any:
+    """The private provider for records a protected route would erase: the loss emitter's
+    when it is private, else a new one when an OTLP endpoint is set, else ``None``."""
+    from ..tracing import (  # noqa: PLC0415
+        build_private_provider,
+        capture_service_name,
+        is_private_provider,
+        otlp_endpoint_configured,
+    )
+
+    if is_private_provider(current := loss.tracer_provider):
+        return current
+    if config.tracer_provider is not None and is_private_provider(config.tracer_provider):
+        return config.tracer_provider
+    if not otlp_endpoint_configured():
+        return None
+    return build_private_provider(service_name=capture_service_name(
+        id_key=config.id_key, clear=config.labels == "clear"))  # fmt: skip
 
 
 def _protected_global() -> bool:
