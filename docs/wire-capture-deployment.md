@@ -79,7 +79,8 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_TRACER` | no | `private` (default, and required in node mode). `global` sends exchange spans through the agent's own provider without the spool; it is refused in node mode (see "Global mode" below). |
 | `FABRIC_WIRE_STORE_SSE`, `FABRIC_WIRE_STORE_KMS_KEY_ID` | — | **Removed.** Setting either is an error: encryption is configured on the Fabric Node. |
 | `OTEL_SERVICE_NAME` | no | Source of the capture spans' one resource attribute, `service.name` (must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, else `fabric-wire`), emitted as its `svc-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`); `OTEL_RESOURCE_ATTRIBUTES` and resource detectors are ignored. |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` | yes | Node span ingress. Over HTTP the traces-specific variable takes the full URL (`https://node:4318/v1/traces`) and the general one gets `/v1/traces` appended; over gRPC use `https://node:4317`. User info, query or fragment is rejected. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` | yes | Node span ingress. Over HTTP the traces-specific variable takes the full URL (`https://node:4318/v1/traces`) and the general one gets `/v1/traces` appended; over gRPC use `https://node:4317`. User info, query or fragment is rejected. The content rule applies to spans too: verified TLS, or plaintext only to a loopback host (`localhost`, `127.0.0.1`, `[::1]`). Over gRPC Fabric decides the channel security itself: `https://` is TLS, `http://` is plaintext, and a scheme-less `host:port` is plaintext only when `OTEL_EXPORTER_OTLP_TRACES_INSECURE` (else `OTEL_EXPORTER_OTLP_INSECURE`) is `true`; plaintext to any other host fails installation. |
+| `FABRIC_WIRE_PROXY` | no | Explicit forward proxy (`http://proxy:3128`, optional user info) for Fabric's own span and content delivery to an **HTTPS** endpoint; requests are tunnelled with `CONNECT`, so TLS (and its verification) stays end to end with the Node. Never used for a loopback endpoint. See "Proxies" below. |
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` / `OTEL_EXPORTER_OTLP_PROTOCOL` | no | `http/protobuf` (default, port 4318) or `grpc` (port 4317). The content endpoint is always OTLP/HTTP protobuf. |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | over TLS | CA bundle that signs the Node's server certificate. |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | Helm `shadow-production` | Client certificate and key for mTLS ingress (spans and content). |
@@ -100,6 +101,16 @@ Node's final `https://` URL. A proxy or load balancer in front of the Node
 that redirects (`http://` to `https://`, a trailing-slash rewrite, a login
 page) stalls delivery and grows the spool until the URL is corrected; it
 never yields a false success.
+
+**Proxies.** Fabric's own capture delivery (the content client and the span
+exporter it builds) never takes a proxy from the environment: `HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` (and macOS/Windows system proxy
+settings) are ignored, so a process-wide proxy setting cannot route raw
+content or the ingress credential to a proxy. A loopback endpoint always
+connects directly. An HTTPS endpoint connects directly unless you set
+`FABRIC_WIRE_PROXY`, which is then the only proxy used (gRPC span delivery
+gets the same rule through its channel options). The host's own HTTP
+clients, and exporters you pass in yourself, are unaffected.
 
 Invalid configuration installs nothing and logs one warning naming only the
 error class; the agent runs unchanged. Fabric never logs environment

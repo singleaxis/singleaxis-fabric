@@ -150,6 +150,11 @@ def _exporter_of(provider: TracerProvider) -> Any:
     return getattr(processor, "span_exporter")._inner  # noqa: B009
 
 
+class _KwargsExporter(InMemorySpanExporter):
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__()
+
+
 def test_private_provider_selects_exporter_by_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", ENDPOINT)
     http = _exporter_of(fabric.tracing.build_private_provider())
@@ -160,7 +165,7 @@ def test_private_provider_selects_exporter_by_protocol(monkeypatch: pytest.Monke
     with pytest.raises(ValueError, match="grpc"):
         fabric.tracing.build_private_provider()
     fake = types.ModuleType(grpc_module)
-    fake.OTLPSpanExporter = InMemorySpanExporter  # type: ignore[attr-defined]
+    fake.OTLPSpanExporter = _KwargsExporter  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, grpc_module, fake)
     assert isinstance(_exporter_of(fabric.tracing.build_private_provider()), InMemorySpanExporter)
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/json")  # traces wins

@@ -7,16 +7,19 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from .. import tracing
+from .._export_diagnostics import sanitized_export_diagnostics
 
 Result = Literal["ok", "retry", "rejected"]
 _LOG = logging.getLogger("fabric.wire")
 _PERMANENT = frozenset({400, 413, 415, 422})
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_ORPHANED: list[object] = []  # sessions a forked child replaced (see _live_session)
 
 
 def _value(value: Any) -> dict[str, Any]:
@@ -58,14 +61,33 @@ class NodeContentClient:
     def __init__(
         self, endpoint: str, *, headers: Mapping[str, str], timeout_s: float,
         verify: str | bool, cert: tuple[str, str] | None, service_name: str,
+        proxy: str | None = None,
     ) -> None:  # fmt: skip
         tracing.check_content_endpoint_url("FABRIC_WIRE_CONTENT_ENDPOINT", endpoint)
         if verify is not True and not (isinstance(verify, str) and verify):
             raise ValueError("content delivery TLS verification cannot be disabled")
         self._endpoint, self._timeout, self._service = endpoint, timeout_s, service_name
-        self._session = tracing.no_redirect_session()
-        self._session.headers.update(headers)
-        self._session.verify, self._session.cert = verify, cert
+        self._settings = dict(headers), verify, cert, proxy
+        self._session = self._new_session()
+
+    def _new_session(self) -> Any:
+        """A session that never redirects and never takes a proxy from the environment
+        (loopback: always direct; HTTPS: only the explicit ``proxy``)."""
+        headers, verify, cert, proxy = self._settings
+        session = tracing.no_redirect_session()
+        session.headers.update(headers)
+        session.verify, session.cert = verify, cert
+        self._pid = os.getpid()
+        return tracing.pin_delivery_proxies(session, self._endpoint, proxy)
+
+    def _live_session(self) -> Any:
+        """This process's session: a forked child builds its own before delivering (the
+        parent's connection pools may hold locks no thread of the child will release); the
+        parent's is kept, never closed, so no pool finalizer runs in the child."""
+        if self._pid != os.getpid():
+            _ORPHANED.append(self._session)
+            self._session = self._new_session()
+        return self._session
 
     def send(self, descriptor: Mapping[str, Any], body: bytes | memoryview) -> Result:
         """``ok`` (2xx only); ``rejected`` (400/413/415/422, a rejected record or an
@@ -74,8 +96,8 @@ class NodeContentClient:
 
         try:
             payload = encode_content_request(descriptor, body, service_name=self._service)
-            with tracing.sanitized_export_diagnostics():
-                response = self._session.post(
+            with sanitized_export_diagnostics():
+                response = self._live_session().post(
                     self._endpoint, data=payload, timeout=self._timeout, allow_redirects=False,
                     headers={"Content-Type": "application/x-protobuf"},
                 )  # fmt: skip
@@ -122,4 +144,5 @@ def content_client_from_env(
     return NodeContentClient(
         url, headers=s.headers, timeout_s=s.timeout_s, verify=s.certificate or True, cert=cert,
         service_name=service_name or tracing.capture_service_name(environ),
+        proxy=tracing.delivery_proxy_from_env(environ),
     )  # fmt: skip

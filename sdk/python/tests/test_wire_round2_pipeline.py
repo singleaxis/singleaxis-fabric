@@ -398,7 +398,7 @@ def test_install_rejects_secret_bearing_exporter_urls(
 
 def test_effective_endpoint_only_is_checked(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://node:4318?host-only=1")
-    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://node:4318/v1/traces")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://node:4318/v1/traces")
     provider = fabric.tracing.build_private_provider()
     provider.shutdown()
 
@@ -445,6 +445,11 @@ def test_fabric_exports_log_codes_and_classes_only(caplog: pytest.LogCaptureFixt
 
 
 # -- re_report3 #4: gRPC TLS material resolved one variable at a time ----------------------
+
+
+# Fabric decides the channel security itself and never lets gRPC take a proxy from the
+# environment (S5/S8).
+TLS_NO_ENV_PROXY = {"insecure": False, "channel_options": (("grpc.enable_http_proxy", 0),)}
 
 
 @pytest.fixture
@@ -505,12 +510,12 @@ def test_grpc_tls_material_is_resolved_per_variable(
         monkeypatch.setenv(f"OTEL_EXPORTER_OTLP_{suffix}", str(fake_grpc["dir"] / file))
     fabric.tracing.build_private_provider().shutdown()
     assert fake_grpc["credentials"] == expected
-    assert fake_grpc["exporter"] == {"credentials": "creds"}
+    assert fake_grpc["exporter"] == {"credentials": "creds", **TLS_NO_ENV_PROXY}
 
 
 def test_grpc_without_tls_files_keeps_exporter_defaults(fake_grpc: dict[str, Any]) -> None:
     fabric.tracing.build_private_provider().shutdown()
-    assert "credentials" not in fake_grpc and fake_grpc["exporter"] == {}
+    assert "credentials" not in fake_grpc and fake_grpc["exporter"] == TLS_NO_ENV_PROXY
 
 
 def test_grpc_half_a_client_pair_or_a_missing_file_is_rejected(

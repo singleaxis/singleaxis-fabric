@@ -452,6 +452,70 @@ def check_content_endpoint_url(name: str, value: str) -> None:
         raise ValueError(f"{name} requires verified HTTPS or loopback HTTP")
 
 
+def is_loopback_endpoint(value: str) -> bool:
+    """Whether the URL ``value`` names a loopback host (``localhost``, ``127.0.0.1``,
+    ``[::1]``): delivery to it never leaves the host and never uses a proxy."""
+    try:
+        host = urlsplit(value.strip()).hostname or ""
+    except ValueError:
+        return False
+    return host.lower() in _LOOPBACK_HOSTS
+
+
+PROXY_ENV = "FABRIC_WIRE_PROXY"
+
+
+def delivery_proxy_from_env(environ: Mapping[str, str] = os.environ) -> str | None:
+    """The explicit proxy for Fabric's own capture delivery to HTTPS endpoints
+    (``FABRIC_WIRE_PROXY``: ``http://`` or ``https://`` proxy host, port and optional user
+    info; no path, query or fragment), else ``None``. ``ValueError`` names only the variable."""
+    value = environ.get(PROXY_ENV, "").strip()
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        _ = parts.port
+    except ValueError:
+        raise ValueError(f"{PROXY_ENV} is not a valid URL") from None
+    if (
+        parts.scheme.lower() not in ("http", "https") or not parts.hostname
+        or parts.path not in ("", "/") or parts.query or parts.fragment
+        or "?" in value or "#" in value
+    ):  # fmt: skip
+        raise ValueError(f"{PROXY_ENV} must be an http:// or https:// proxy host and port")
+    return value
+
+
+def pin_delivery_proxies(session: Any, endpoint: str, proxy: str | None = None) -> Any:
+    """Route ``session`` (a ``requests`` session delivering to ``endpoint``) independently of
+    the proxy environment (``HTTP_PROXY``, ``HTTPS_PROXY``, ``ALL_PROXY``, ``NO_PROXY``): a
+    loopback endpoint always connects directly (a proxy would receive plaintext content and
+    the ingress credential); an HTTPS endpoint goes through ``proxy`` (an explicit
+    ``FABRIC_WIRE_PROXY``, tunnelled with CONNECT, TLS verified end to end with the Node)
+    or connects directly. Other environment settings (CA bundle variables) apply as before."""
+    from requests.sessions import (  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
+        merge_setting,
+    )
+
+    pinned = {"https": proxy} if proxy and not is_loopback_endpoint(endpoint) else {}
+
+    def merge_environment_settings(
+        url: str, proxies: Any, stream: Any, verify: Any, cert: Any
+    ) -> dict[str, Any]:
+        """``requests``' own merge without any proxy discovery (no environment variables,
+        no system proxy configuration, which is also unsafe in a forked macOS child)."""
+        if session.trust_env and (verify is True or verify is None):
+            verify = (
+                os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("CURL_CA_BUNDLE") or verify
+            )
+        return {"proxies": dict(pinned), "stream": merge_setting(stream, session.stream),
+                "verify": merge_setting(verify, session.verify),
+                "cert": merge_setting(cert, session.cert)}  # fmt: skip
+
+    session.merge_environment_settings = merge_environment_settings
+    return session
+
+
 def _read_tls_file(name: str, path: str) -> bytes:
     try:
         return Path(path).read_bytes()
@@ -510,6 +574,32 @@ def _harden_exporter_session(exporter: object) -> None:
     no_redirect_session(session)
 
 
+def _grpc_options(endpoint: str) -> dict[str, Any]:
+    """The effective gRPC channel security, decided here and passed explicitly (``insecure``)
+    so the exporter's own environment rules cannot change it: ``https://`` is TLS, ``http://``
+    is plaintext, and a scheme-less ``host:port`` is plaintext only when
+    ``OTEL_EXPORTER_OTLP_TRACES_INSECURE`` (else ``OTEL_EXPORTER_OTLP_INSECURE``) is ``true``.
+    Plaintext is refused unless the host is loopback. The error never echoes the URL."""
+    name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    check_endpoint_url(name, endpoint)
+    value = endpoint.strip()
+    parts = urlsplit(value)
+    if parts.scheme.lower() in ("http", "https") and parts.netloc:
+        insecure = parts.scheme.lower() == "http"
+    else:  # host:port
+        parts = urlsplit("//" + value)
+        flag = os.environ.get("OTEL_EXPORTER_OTLP_TRACES_INSECURE")
+        flag = flag if flag is not None else os.environ.get("OTEL_EXPORTER_OTLP_INSECURE", "")
+        insecure = flag.strip().lower() == "true"
+    try:
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        host = ""
+    if not host or (insecure and host not in _LOOPBACK_HOSTS):
+        raise ValueError(f"{name} requires verified TLS or loopback plaintext")
+    return {"insecure": insecure}
+
+
 def _grpc_credentials(settings: OtlpSettings) -> Any:
     """gRPC channel credentials with CA, client key and client certificate resolved one by
     one; ``None`` when none is set. (The gRPC exporter resolves the three as a group, which
@@ -566,19 +656,31 @@ def _otlp_exporter() -> SpanExporter | None:
     if settings.endpoint is None:
         return None
     name = "http" if settings.protocol == "http/protobuf" else "grpc"
+    # Fabric-owned trace delivery follows the content rule: verified TLS, or plaintext to a
+    # loopback host only (the ingress credential never crosses a network unencrypted).
+    if name == "http":
+        check_content_endpoint_url("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", settings.endpoint)
+        options: dict[str, Any] = {}
+    else:
+        options = _grpc_options(settings.endpoint)
+    proxy = delivery_proxy_from_env()
     try:
         module = importlib.import_module(f"opentelemetry.exporter.otlp.proto.{name}.trace_exporter")
     except ImportError:
         raise ValueError(f"OTLP {name} needs opentelemetry-exporter-otlp-proto-{name}") from None
     try:
         with sanitized_export_diagnostics():
-            credentials = _grpc_credentials(settings) if name == "grpc" else None
-            exporter: SpanExporter = (
-                module.OTLPSpanExporter() if credentials is None
-                else module.OTLPSpanExporter(credentials=credentials)
-            )  # fmt: skip
+            if name == "grpc":
+                if (credentials := _grpc_credentials(settings)) is not None:
+                    options["credentials"] = credentials
+                proxied = proxy is not None and not options["insecure"]
+                options["channel_options"] = (
+                    ("grpc.http_proxy", proxy) if proxied else ("grpc.enable_http_proxy", 0),
+                )
+            exporter: SpanExporter = module.OTLPSpanExporter(**options)
             if name == "http":  # its own (or a credential plugin's) session, never redirecting
                 _harden_exporter_session(exporter)
+                pin_delivery_proxies(exporter_session(exporter), settings.endpoint, proxy)
     except Exception as exc:
         raise ValueError(f"OTLP span exporter construction failed ({type(exc).__name__})") from None
     return exporter

@@ -14,7 +14,7 @@ import os
 import threading
 import time
 import weakref
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from opentelemetry.sdk.resources import Resource
@@ -36,6 +36,20 @@ _BATCH, _RESCAN_S, _LOCK_RETRY_S, _BACKOFF_S, _BACKOFF_CAP_S = 64, 5.0, 5.0, 0.5
 _STATS = ("spooled", "spool_full_drops", "delivered", "send_retries", "content_rejected",
           "quarantined", "markers_dropped")  # fmt: skip
 _SENDERS: weakref.WeakSet[Sender] = weakref.WeakSet()
+# Delivery objects a forked child replaced: kept referenced, never closed or collected,
+# because closing (or finalizing) them may need a lock a parent thread held at fork.
+_ORPHANED: list[object] = []
+
+
+class _Unavailable(SpanExporter):
+    """Stands in while a forked child cannot rebuild its exporter: every export fails (the
+    records stay spooled and are retried); the next delivery tries to rebuild again."""
+
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+        return SpanExportResult.FAILURE
+
+    def shutdown(self) -> None:
+        return None
 
 
 class Sender:
@@ -44,9 +58,13 @@ class Sender:
     def __init__(
         self, spool: Spool, exporter: SpanExporter, loss: LossEmitter, *,
         content: NodeContentClient | None, service_name: str,
+        exporter_factory: Callable[[], SpanExporter] | None = None,
     ) -> None:  # fmt: skip
+        """``exporter_factory`` marks ``exporter`` as Fabric-owned: a forked child builds
+        its own from it before delivering (a host-supplied exporter is the host's)."""
         self.spool, self.content, self.loss = spool, content, loss
-        self.exporter, self.service_name = tracing.guarded_exporter(exporter), service_name
+        self._exporter, self.service_name = tracing.guarded_exporter(exporter), service_name
+        self._exporter_factory, self._forked = exporter_factory, False
         self._resource = Resource({"service.name": service_name})
         self._init_state()
         _SENDERS.add(self)
@@ -54,6 +72,10 @@ class Sender:
     def _init_state(self) -> None:
         self._wake, self._stop, self._thread = threading.Event(), threading.Event(), None
         self._pump_lock, self._start_lock = threading.Lock(), threading.Lock()
+        # One flush/close helper at a time (each may block in stalled disk or network I/O).
+        self._helper_lock = threading.Lock()
+        self._helper_done: threading.Event | None = None
+        self._exporter_lock = threading.Lock()
         self._stats: dict[str, int] = dict.fromkeys(_STATS, 0)
         self._progress: dict[str, int] = {}  # bodies the Node already accepted, per record
         # Delivered records whose retirement failed (ENOSPC, EIO ...): still on disk, never
@@ -61,6 +83,25 @@ class Sender:
         self._retiring: dict[str, None] = {}  # names, in delivery order
         # Admission failures (lost exchanges, dropped markers) at start and at the last flush.
         self._failed_at_start = self._failed_at_flush = self._failures()
+
+    @property
+    def exporter(self) -> SpanExporter:
+        """The span exporter; in a forked child, a Fabric-owned one is first rebuilt (the
+        parent's may hold connection-pool locks no thread of the child will release)."""
+        if not self._forked:
+            return self._exporter
+        with self._exporter_lock:
+            if self._forked and self._exporter_factory is not None:
+                if not isinstance(self._exporter, _Unavailable):
+                    _ORPHANED.append(self._exporter)
+                try:
+                    self._exporter = tracing.guarded_exporter(self._exporter_factory())
+                except Exception as exc:  # retried on the next delivery
+                    _LOG.warning("fabric.wire: span exporter not rebuilt (%s)", type(exc).__name__)
+                    self._exporter = _Unavailable()
+                    return self._exporter
+            self._forked = False
+            return self._exporter
 
     def _failures(self) -> int:
         """Capture events of this process that will never be delivered: exchanges lost
@@ -102,10 +143,14 @@ class Sender:
                 return True
         return False
 
-    def pump(self, *, every_source: bool = False) -> bool:
+    def pump(self, *, every_source: bool = False, deadline: float | None = None) -> bool:
         """Spool pending losses and markers, export due periodic heartbeats (best effort);
-        ``False`` when a periodic heartbeat was not exported."""
-        with self._pump_lock:
+        ``False`` when a periodic heartbeat was not exported, or when ``deadline`` passed
+        before another pump (perhaps stalled in disk I/O) released the lock."""
+        timeout = -1.0 if deadline is None else max(0.0, deadline - time.monotonic())
+        if not self._pump_lock.acquire(timeout=timeout):
+            return False
+        try:
             due = every_source or self.loss.periodic_due()
             losses, beats = self.loss.take(periodic=due, every_source=every_source)
             for loss in losses:
@@ -118,6 +163,8 @@ class Sender:
             spans = [self._root(SPAN_HEARTBEAT, beat_attributes(b), now, f"{b}{now}")
                      for b in beats if b[-1] == "periodic"]  # fmt: skip
             return not spans or self.exporter.export(spans) is SpanExportResult.SUCCESS
+        finally:
+            self._pump_lock.release()
 
     def _run(self) -> None:
         backoff, scanned, locked = 0.0, 0.0, -_LOCK_RETRY_S
@@ -254,7 +301,7 @@ class Sender:
         ``False`` also when a loss range could not be spooled."""
 
         def work() -> bool:
-            self.pump()
+            self.pump(deadline=deadline)
             if not self._pump_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
                 return False
             try:  # after a pump: no loss range is still waiting in memory
@@ -269,15 +316,29 @@ class Sender:
                 time.sleep(0.02)
             return admitted
 
-        return _loss.run_bounded(work, deadline, "fabric-wire-flush")
+        return self._bounded(work, deadline)
+
+    def _bounded(self, work: Callable[[], bool], deadline: float) -> bool:
+        """:func:`_loss.run_bounded` with at most one helper per sender: while an earlier
+        helper is still blocked (stalled disk or exporter), wait for it until ``deadline``
+        and fail, rather than start another thread on every timed-out flush."""
+        while True:
+            with self._helper_lock:
+                busy = self._helper_done
+                if busy is None or busy.is_set():
+                    self._helper_done = finished = threading.Event()
+                    break
+            if not busy.wait(max(0.0, deadline - time.monotonic())):
+                return False
+        return _loss.run_bounded(work, deadline, "fabric-wire-flush", finished)
 
     def flush(self, timeout_s: float) -> bool:
         """:meth:`_settle`, then a periodic heartbeat for every source; within ``timeout_s``.
         ``False`` too when, since the previous flush, an exchange was lost before the spool
         or a marker was dropped (the record is incomplete even once all is delivered)."""
         deadline = time.monotonic() + max(0.0, timeout_s)
-        delivered = self._settle(deadline) and _loss.run_bounded(
-            lambda: self.pump(every_source=True), deadline, "fabric-wire-flush")  # fmt: skip
+        delivered = self._settle(deadline) and self._bounded(
+            lambda: self.pump(every_source=True, deadline=deadline), deadline)  # fmt: skip
         previous, self._failed_at_flush = self._failed_at_flush, self._failures()
         return delivered and self._failed_at_flush == previous
 
@@ -308,8 +369,10 @@ def build_sender(
         content = content_client_from_env(
             os.environ, endpoint=config.content_endpoint, service_name=service)  # fmt: skip
     spool = Spool(config.spool_dir, config.spool_max_bytes, config.spool_max_receipts)
+    factory = None if exporter is not None else tracing.build_capture_span_exporter
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
-    return Sender(spool, exporter, loss, content=content, service_name=service)
+    return Sender(spool, exporter, loss, content=content, service_name=service,
+                  exporter_factory=factory)  # fmt: skip
 
 
 def _after_fork_in_child() -> None:
@@ -317,6 +380,7 @@ def _after_fork_in_child() -> None:
         with contextlib.suppress(Exception):
             sender.spool.after_fork()
             sender._init_state()
+            sender._forked = True  # Fabric-owned delivery objects are rebuilt lazily
 
 
 if hasattr(os, "register_at_fork"):
