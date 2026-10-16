@@ -1,7 +1,8 @@
 # Production add-on: write content to S3 (or an S3-compatible store) instead
-# of the local fabric-content volume (spec 048).
+# of the local fabric-content volume (spec 048). Merged after
+# docker-compose.content.yml, which it needs.
 #
-#   FABRIC_CONTENT_BACKEND=s3 in .env   # make up-prod then adds this file
+#   FABRIC_CONTENT_BACKEND=s3 in .env   # make up-prod then adds both files
 #
 # The Node is the only writer: grant ITS identity (instance role, or keys for
 # an S3-compatible store) s3:PutObject + s3:GetObject on
@@ -19,6 +20,7 @@ services:
   fabric-node:
     command:
       - --config=/etc/fabric-node/collector-production.yaml
+      - --config=/etc/fabric-node/collector-content.yaml
       - --config=/etc/fabric-node/collector-content-s3.yaml
     environment:
       FABRIC_CONTENT_S3_BUCKET: ${FABRIC_CONTENT_S3_BUCKET:?set FABRIC_CONTENT_S3_BUCKET in .env}

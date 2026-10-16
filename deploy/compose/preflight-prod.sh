@@ -62,6 +62,7 @@ FABRIC_INGRESS_TLS_CERT_FILE="$(envget FABRIC_INGRESS_TLS_CERT_FILE)"
 FABRIC_INGRESS_TLS_KEY_FILE="$(envget FABRIC_INGRESS_TLS_KEY_FILE)"
 FABRIC_TENANT_ID="$(envget FABRIC_TENANT_ID)"
 FABRIC_CONTENT_BACKEND="$(envget FABRIC_CONTENT_BACKEND)"
+FABRIC_CONTENT_REQUIRE_SSE="$(envget FABRIC_CONTENT_REQUIRE_SSE)"
 FABRIC_CONTENT_S3_BUCKET="$(envget FABRIC_CONTENT_S3_BUCKET)"
 FABRIC_CONTENT_S3_PREFIX="$(envget FABRIC_CONTENT_S3_PREFIX)"
 FABRIC_CONTENT_S3_REGION="$(envget FABRIC_CONTENT_S3_REGION)"
@@ -319,7 +320,26 @@ yaml_flatten() {
       printf "%s\t%s\n", path, val
     }' "$1"
 }
+# The content path (spec 048) is opt-in: FABRIC_CONTENT_BACKEND=s3 or file
+# makes `make up-prod` merge docker-compose.content.yml, which adds
+# collector-content.yaml (and, for s3, collector-content-s3.yaml) after
+# COLLECTOR_CONFIG. The checks below see those files too, the way the
+# collector and fabric-gate see the merged configuration. Unset: telemetry
+# only, exactly the production profile without content.
+CONTENT_CONFIGS=""
+case "${FABRIC_CONTENT_BACKEND:-}" in
+  s3) CONTENT_CONFIGS="collector-config/collector-content.yaml collector-config/collector-content-s3.yaml" ;;
+  file) CONTENT_CONFIGS="collector-config/collector-content.yaml" ;;
+esac
 FLAT_CONFIG="$(yaml_flatten "${COLLECTOR_CONFIG}")"
+for content_config in ${CONTENT_CONFIGS}; do
+  if [ -f "${content_config}" ]; then
+    FLAT_CONFIG="${FLAT_CONFIG}
+$(yaml_flatten "${content_config}")"
+  else
+    bad "FABRIC_CONTENT_BACKEND=${FABRIC_CONTENT_BACKEND} needs ${content_config} (run from deploy/compose)"
+  fi
+done
 
 # --- persistent queue disk headroom (warn-only) -----------------------------
 # Worst case = queue_size items x max request size, per queue. Telemetry uses
@@ -525,6 +545,14 @@ content_configured() {
     n == 2 && k[1] == "exporters" && k[2] ~ /^fabriccontent(\/|$)/ { found = 1 }
     END { exit(found ? 0 : 1) }'
 }
+case "${FABRIC_CONTENT_BACKEND:-}" in
+  ''|file|s3) ;;
+  *) bad "FABRIC_CONTENT_BACKEND must be s3 or file, or unset for a telemetry-only Node" ;;
+esac
+case "${FABRIC_CONTENT_REQUIRE_SSE:-true}" in
+  true|false) ;;
+  *) bad "FABRIC_CONTENT_REQUIRE_SSE must be true or false" ;;
+esac
 if content_configured; then
   if [ -z "${FABRIC_TENANT_ID:-}" ]; then
     bad "FABRIC_TENANT_ID unset; the content exporter would accept no tenant"
@@ -543,11 +571,20 @@ if content_configured; then
   fi
   case "${FABRIC_CONTENT_BACKEND:-file}" in
     file)
-      warn "content store is the local fabric-content volume; its encryption at rest is the host disk's (FABRIC_CONTENT_BACKEND=s3 adds server-side encryption)"
+      # As the Helm shadow-production profile (content.requireServerSideEncryption):
+      # the file backend has no server-side encryption, so production refuses
+      # it unless the operator records that the host disk's encryption is
+      # accepted instead.
+      if [ "${FABRIC_CONTENT_REQUIRE_SSE:-true}" != false ]; then
+        bad "the file content backend has no server-side encryption; production requires it (as the Helm shadow-production profile does). Use FABRIC_CONTENT_BACKEND=s3, or set FABRIC_CONTENT_REQUIRE_SSE=false to accept the host disk's encryption"
+      else
+        warn "content store is the local fabric-content volume; FABRIC_CONTENT_REQUIRE_SSE=false accepts the host disk's encryption at rest (FABRIC_CONTENT_BACKEND=s3 adds server-side encryption)"
+      fi
       ;;
     s3)
       [ -f collector-config/collector-content-s3.yaml ] && [ -f docker-compose.content-s3.yml ] \
-        || bad "FABRIC_CONTENT_BACKEND=s3 needs collector-config/collector-content-s3.yaml and docker-compose.content-s3.yml"
+        && [ -f collector-config/collector-content.yaml ] && [ -f docker-compose.content.yml ] \
+        || bad "FABRIC_CONTENT_BACKEND=s3 needs collector-config/collector-content.yaml, collector-config/collector-content-s3.yaml, docker-compose.content.yml and docker-compose.content-s3.yml"
       if matches '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$' "${FABRIC_CONTENT_S3_BUCKET:-}"; then
         ok "content bucket name is valid"
       else
@@ -587,10 +624,10 @@ if content_configured; then
         bad "FABRIC_CONTENT_S3_KMS_KEY_ID is only valid with FABRIC_CONTENT_S3_SSE=aws:kms"
       fi
       ;;
-    *)
-      bad "FABRIC_CONTENT_BACKEND must be file or s3"
-      ;;
+    *) ;;  # refused above
   esac
+elif [ -n "${FABRIC_CONTENT_BACKEND:-}" ]; then
+  bad "FABRIC_CONTENT_BACKEND is set but no fabriccontent exporter is configured"
 fi
 
 # --- optional reachability probe (warn-only: destination may not exist yet) ---

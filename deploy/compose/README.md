@@ -30,9 +30,14 @@ routes content into a telemetry pipeline or to the OTLP destination.
 
 | Where content goes | How |
 |---|---|
-| `fabric-content` volume (`/var/lib/fabric-node/content`) | default (`make up`, `make up-prod`); read it with `fabric.reconstruct --store-root` |
+| `fabric-content` volume (`/var/lib/fabric-node/content`) | evaluation default (`make up`); read it with `fabric.reconstruct --store-root` |
 | local MinIO, SSE-S3, path-style | `make up-minio` (evaluation only, `docker-compose.minio.yml`) |
-| S3 / S3-compatible store | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content-s3.yml` + `collector-config/collector-content-s3.yaml`) |
+| S3 / S3-compatible store, server-side encrypted | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content.yml` + `docker-compose.content-s3.yml`, merging `collector-config/collector-content.yaml` + `collector-content-s3.yaml`) |
+| `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
+
+The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
+production overlay is telemetry only and starts unchanged with an existing
+`.env` (no `FABRIC_TENANT_ID`, no port 4319).
 
 `make up-minio` starts MinIO (`MINIO_KMS_SECRET_KEY` for SSE-S3, published
 on `127.0.0.1:9000` only), a one-shot `minio-init` job that creates the
@@ -109,12 +114,14 @@ cp .env.example .env && chmod 0600 .env
 #   FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>
 #   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
 #   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
+# Optional content path (spec 048):
+#   FABRIC_CONTENT_BACKEND    = s3 (or file with FABRIC_CONTENT_REQUIRE_SSE=false)
 #   FABRIC_TENANT_ID          = <tenant id your agents send>
 printf %s "$(openssl rand -hex 32)" > secrets/ingress.token
 sudo chown "$(id -u)":65532 secrets/ingress.token && chmod 0440 secrets/ingress.token
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
-make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --wait
-make verify-prod    # proves health, 401 unauthenticated (spans and content), 200 authenticated spans (queue metrics warn-only)
+make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml [content overlays] up -d --wait
+make verify-prod    # proves health, 401 unauthenticated (spans, and content when enabled), 200 authenticated spans (queue metrics warn-only)
 make logs-prod
 ```
 
@@ -139,21 +146,25 @@ entrypoint still refuses an unsafe token file or a non-traces/logs pipeline
 at container start.
 
 Agents on the same host send OTLP to `127.0.0.1:4317` (gRPC) or
-`127.0.0.1:4318` (HTTP), and wire-capture content to
-`http://127.0.0.1:4319/v1/logs`, with `Authorization: Bearer <contents of
-secrets/ingress.token>`. Requests without a valid token are rejected on all
-three ports; there is no unauthenticated fallback. Set `FABRIC_TENANT_ID`
-in `.env` to the tenant id your agents send (required; the content exporter
-writes no other tenant, and the shipped configs allow exactly one: run one
-Node per tenant).
+`127.0.0.1:4318` (HTTP), and, with the content path enabled, wire-capture
+content to `http://127.0.0.1:4319/v1/logs`, with `Authorization: Bearer
+<contents of secrets/ingress.token>`. Requests without a valid token are
+rejected on every port; there is no unauthenticated fallback. With the
+content path, set `FABRIC_TENANT_ID` in `.env` to the tenant id your agents
+send (required; the content exporter writes no other tenant, and the shipped
+configs allow exactly one: run one Node per tenant).
 
-**Content store.** By default content lands on the `fabric-content` volume
-(back it up with `fabric-queue`; its encryption at rest is the host disk's,
-which preflight warns about). For S3 set `FABRIC_CONTENT_BACKEND=s3`,
-`FABRIC_CONTENT_S3_BUCKET`, `FABRIC_CONTENT_S3_REGION` and optionally
-`FABRIC_CONTENT_S3_PREFIX`, `FABRIC_CONTENT_S3_SSE` (`aws:kms` by default, or
-`AES256`) and `FABRIC_CONTENT_S3_KMS_KEY_ID`; `make up-prod` then adds
-`docker-compose.content-s3.yml`. The Node writes with the EC2 instance role
+**Content store.** The production content path is S3 with server-side
+encryption: set `FABRIC_CONTENT_BACKEND=s3`, `FABRIC_CONTENT_S3_BUCKET`,
+`FABRIC_CONTENT_S3_REGION` and optionally `FABRIC_CONTENT_S3_PREFIX`,
+`FABRIC_CONTENT_S3_SSE` (`aws:kms` by default, or `AES256`) and
+`FABRIC_CONTENT_S3_KMS_KEY_ID`; `make up-prod` then adds
+`docker-compose.content.yml` and `docker-compose.content-s3.yml`.
+`FABRIC_CONTENT_BACKEND=file` keeps content on the `fabric-content` volume
+(back it up with `fabric-queue`) without server-side encryption; preflight
+refuses it unless `FABRIC_CONTENT_REQUIRE_SSE=false` records that the host
+disk's encryption is accepted instead, matching the Helm chart's
+`content.requireServerSideEncryption` (pinned on in shadow-production). The Node writes with the EC2 instance role
 (containers reach IMDSv2 only with a metadata hop limit of 2), or, for an
 S3-compatible store, with keys from a credentials file you mount as a
 Compose secret and point `AWS_SHARED_CREDENTIALS_FILE` at in a further
@@ -185,13 +196,15 @@ cosign signature per [`docs/verify-release.md`](../../docs/verify-release.md), t
 OTLP, health (`13133`), and metrics (`8888`) publish on `127.0.0.1` only.
 Setting `FABRIC_BIND_ADDR` to a LAN address is an explicit operator choice:
 first uncomment the `tls:` stanzas in
-`collector-config/collector-production.yaml`, drop `server.crt`/`server.key`
+`collector-config/collector-production.yaml` (and, with the content path,
+the one in `collector-config/collector-content.yaml`), drop `server.crt`/`server.key`
 into `./tls` (or set `FABRIC_INGRESS_TLS_DIR`; `server.key` operator-owned,
 group 65532, mode `0440`), and open only ports
-4317/4318/4319 in the host firewall. All three ports publish on
-`FABRIC_BIND_ADDR`, so `make preflight-prod` fails unless **every**
+4317/4318 (and 4319 with the content path) in the host firewall. These ports
+publish on `FABRIC_BIND_ADDR`, so `make preflight-prod` fails unless **every**
 receiver protocol serving one of them (gRPC, HTTP and the content receiver)
-has TLS genuinely enabled: an uncommented `tls:` mapping with non-empty
+has TLS genuinely enabled (and `fabric-gate` refuses a content receiver
+weaker than the telemetry receivers): an uncommented `tls:` mapping with non-empty
 `cert_file` and `key_file`. A commented stanza, a bare `tls:`, `tls: {}`,
 `tls: null`/`~`, or a stanza missing either file counts as disabled
 (fixtures: `fixtures/preflight-tls/`). Preflight also requires every

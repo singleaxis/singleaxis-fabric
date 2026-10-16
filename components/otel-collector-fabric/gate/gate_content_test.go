@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -205,27 +206,73 @@ func loadYAML(t *testing.T, path string) map[string]any {
 	return cfg
 }
 
-// The compose configurations, alone and merged with the S3 content overlay
-// the way the collector merges --config files, pass the gate and carry the
-// content pipeline.
+const composeConfigDir = "../../../deploy/compose/collector-config/"
+
+// The compose configurations with the content path (the evaluation config,
+// and the production config merged with its opt-in content overlay), alone
+// and with the S3 content overlay, merged the way the collector merges
+// --config files, pass the gate and carry the content pipeline.
 func TestShippedComposeContentConfigsPass(t *testing.T) {
-	const dir = "../../../deploy/compose/collector-config/"
 	for _, files := range [][]string{
 		{"collector.yaml"},
-		{"collector-production.yaml"},
+		{"collector-production.yaml", "collector-content.yaml"},
 		{"collector.yaml", "collector-content-s3.yaml"},
-		{"collector-production.yaml", "collector-content-s3.yaml"},
+		{"collector-production.yaml", "collector-content.yaml", "collector-content-s3.yaml"},
 	} {
 		t.Run(strings.Join(files, "+"), func(t *testing.T) {
 			merged := map[string]any{}
 			for _, f := range files {
-				deepMerge(merged, loadYAML(t, dir+f))
+				deepMerge(merged, loadYAML(t, composeConfigDir+f))
+			}
+			if err := checkLiteralStructure(merged); err != nil {
+				t.Fatalf("shipped config rejected by gate: %v", err)
 			}
 			if err := checkPipelines(merged); err != nil {
 				t.Fatalf("shipped config rejected by gate: %v", err)
 			}
 			assertContentPipeline(t, merged)
 		})
+	}
+}
+
+// B6: the production profile without the opt-in content overlay is
+// telemetry only, as on main.
+func TestShippedComposeProductionIsTelemetryOnly(t *testing.T) {
+	cfg := loadYAML(t, composeConfigDir+"collector-production.yaml")
+	if carriesContentPath(cfg) {
+		t.Fatal("collector-production.yaml carries the content path; it must stay opt-in (collector-content.yaml)")
+	}
+	if err := checkPipelines(cfg); err != nil {
+		t.Fatalf("production config rejected by gate: %v", err)
+	}
+}
+
+// The documented TLS edits: enabling TLS on the telemetry receivers but not
+// on the merged content receiver leaves the content port weaker, which the
+// gate refuses; enabling both passes.
+func TestShippedComposeContentTLSMustFollowTelemetry(t *testing.T) {
+	uncomment := func(name string) map[string]any {
+		raw, err := os.ReadFile(composeConfigDir + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := regexp.MustCompile(`(?m)^(\s*)# tls:$`).ReplaceAllString(string(raw), "${1}tls:")
+		text = regexp.MustCompile(`(?m)^(\s*)#   (cert_file|key_file|min_version):`).ReplaceAllString(text, "${1}  ${2}:")
+		var cfg map[string]any
+		if err := yaml.Unmarshal([]byte(text), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	weaker := uncomment("collector-production.yaml")
+	deepMerge(weaker, loadYAML(t, composeConfigDir+"collector-content.yaml"))
+	if err := checkPipelines(weaker); err == nil || !strings.Contains(err.Error(), "must serve TLS") {
+		t.Fatalf("plaintext content receiver beside TLS telemetry accepted: %v", err)
+	}
+	both := uncomment("collector-production.yaml")
+	deepMerge(both, uncomment("collector-content.yaml"))
+	if err := checkPipelines(both); err != nil {
+		t.Fatalf("documented TLS edits rejected: %v", err)
 	}
 }
 

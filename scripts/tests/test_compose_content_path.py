@@ -58,9 +58,13 @@ def _stage(tmp_path: Path, config_text: str) -> None:
 
 
 def _run(tmp_path: Path, **overrides: str) -> subprocess.CompletedProcess[str]:
+    """Preflight in ``tmp_path``. The fixtures embed a file-backed content path in
+    collector-production.yaml, so the file backend's explicit SSE opt-out is the
+    default here; ``FABRIC_CONTENT_REQUIRE_SSE=""`` restores preflight's default."""
     token = H._token(tmp_path, 0o600)
     env = H._preflight_environment(tmp_path, token)
     env["FABRIC_TENANT_ID"] = "tenant-a"
+    env["FABRIC_CONTENT_REQUIRE_SSE"] = "false"
     for key, value in overrides.items():
         if value == "":
             env.pop(key, None)
@@ -129,33 +133,47 @@ def test_loopback_bind_accepts_every_fixture(tmp_path: Path, fixture: str) -> No
     assert "OTLP ports bind loopback only" in result.stdout
 
 
-def _shipped_production(
-    *, enable_tls: bool, keep_content_commented: bool = False
-) -> str:
-    text = (COMPOSE_DIR / "collector-config" / "collector-production.yaml").read_text(
+def _uncomment_tls(text: str) -> str:
+    text = re.sub(r"(?m)^(\s*)# tls:$", r"\1tls:", text)
+    return re.sub(r"(?m)^(\s*)#   (cert_file|key_file|min_version):", r"\1  \2:", text)
+
+
+def _stage_shipped(
+    tmp_path: Path, *, telemetry_tls: bool, content: bool = True, content_tls: bool = True
+) -> None:
+    """The shipped production config, and (``content``) the opt-in content overlay
+    config, with the documented TLS edits applied where asked."""
+    production = (COMPOSE_DIR / "collector-config" / "collector-production.yaml").read_text(
         encoding="utf-8"
     )
-    if not enable_tls:
-        return text
-    blocks = text.split("  otlp/content:\n")
-    assert len(blocks) == 2
-    head, content = blocks
-
-    def uncomment(part: str) -> str:
-        part = re.sub(r"(?m)^(\s*)# tls:$", r"\1tls:", part)
-        return re.sub(
-            r"(?m)^(\s*)#   (cert_file|key_file|min_version):", r"\1  \2:", part
+    _stage(tmp_path, _uncomment_tls(production) if telemetry_tls else production)
+    if content:
+        overlay = (COMPOSE_DIR / "collector-config" / "collector-content.yaml").read_text(
+            encoding="utf-8"
+        )
+        (tmp_path / "collector-config" / "collector-content.yaml").write_text(
+            _uncomment_tls(overlay) if content_tls else overlay, encoding="utf-8"
         )
 
-    head = uncomment(head)
-    if not keep_content_commented:
-        content = uncomment(content)
-    return head + "  otlp/content:\n" + content
+
+FILE_CONTENT = {"FABRIC_CONTENT_BACKEND": "file"}
 
 
-def test_shipped_production_config_is_loopback_safe(tmp_path: Path) -> None:
-    _stage(tmp_path, _shipped_production(enable_tls=False))
-    result = _run(tmp_path)
+def test_shipped_production_config_is_telemetry_only_and_loopback_safe(
+    tmp_path: Path,
+) -> None:
+    """B6: without FABRIC_CONTENT_BACKEND the production profile runs as on main:
+    no content checks, no FABRIC_TENANT_ID needed."""
+    _stage_shipped(tmp_path, telemetry_tls=False, content=False)
+    result = _run(tmp_path, FABRIC_TENANT_ID="", FABRIC_CONTENT_REQUIRE_SSE="")
+    assert result.returncode == 0, result.stdout
+    assert "every OTLP receiver requires the bearer token" in result.stdout
+    assert "content" not in result.stdout.lower().replace("contents", "")
+
+
+def test_shipped_content_overlay_is_loopback_safe(tmp_path: Path) -> None:
+    _stage_shipped(tmp_path, telemetry_tls=False)
+    result = _run(tmp_path, **FILE_CONTENT)
     assert result.returncode == 0, result.stdout
     assert "every OTLP receiver requires the bearer token" in result.stdout
     assert "content receiver is HTTP only" in result.stdout
@@ -164,8 +182,8 @@ def test_shipped_production_config_is_loopback_safe(tmp_path: Path) -> None:
 def test_shipped_production_config_with_documented_tls_edits_passes(
     tmp_path: Path,
 ) -> None:
-    _stage(tmp_path, _shipped_production(enable_tls=True))
-    result = _run(tmp_path, FABRIC_BIND_ADDR="0.0.0.0")
+    _stage_shipped(tmp_path, telemetry_tls=True)
+    result = _run(tmp_path, FABRIC_BIND_ADDR="0.0.0.0", **FILE_CONTENT)
     assert result.returncode == 0, result.stdout
     assert "with TLS on every published OTLP receiver" in result.stdout
 
@@ -173,11 +191,18 @@ def test_shipped_production_config_with_documented_tls_edits_passes(
 def test_shipped_production_config_refuses_plaintext_content_port(
     tmp_path: Path,
 ) -> None:
-    """Telemetry TLS alone is not enough once 4319 is published."""
-    _stage(tmp_path, _shipped_production(enable_tls=True, keep_content_commented=True))
-    result = _run(tmp_path, FABRIC_BIND_ADDR="0.0.0.0")
+    """Telemetry TLS alone is not enough once the content overlay publishes 4319."""
+    _stage_shipped(tmp_path, telemetry_tls=True, content_tls=False)
+    result = _run(tmp_path, FABRIC_BIND_ADDR="0.0.0.0", **FILE_CONTENT)
     assert result.returncode == 1, result.stdout
     assert "TLS is not enabled on: otlp/content.http:4319;" in result.stdout
+
+
+def test_content_backend_needs_the_content_overlay_config(tmp_path: Path) -> None:
+    _stage_shipped(tmp_path, telemetry_tls=False, content=False)
+    result = _run(tmp_path, **FILE_CONTENT)
+    assert result.returncode == 1, result.stdout
+    assert "needs collector-config/collector-content.yaml" in result.stdout
 
 
 # --------------------------------------------------------------------------
@@ -239,23 +264,44 @@ def test_content_requires_a_safe_tenant(
     assert expected in result.stdout
 
 
-def test_file_backend_is_accepted_with_a_disk_encryption_warning(
+@pytest.mark.parametrize("require_sse", ["", "true"])
+def test_file_backend_is_refused_without_the_explicit_sse_opt_out(
+    tmp_path: Path, require_sse: str
+) -> None:
+    """B6, as the Helm shadow-production profile: the file backend has no
+    server-side encryption, so production refuses it by default."""
+    _stage_shipped(tmp_path, telemetry_tls=False)
+    result = _run(tmp_path, FABRIC_CONTENT_REQUIRE_SSE=require_sse, **FILE_CONTENT)
+    assert result.returncode == 1, result.stdout
+    assert "the file content backend has no server-side encryption" in result.stdout
+
+
+def test_file_backend_is_accepted_with_the_opt_out_and_a_warning(
     tmp_path: Path,
 ) -> None:
     _content_config(tmp_path)
     result = _run(tmp_path)
     assert result.returncode == 0, result.stdout
     assert "content tenant set" in result.stdout
-    assert "encryption at rest is the host disk's" in result.stdout
+    assert "accepts the host disk's encryption at rest" in result.stdout
+
+
+def test_require_sse_is_a_boolean(tmp_path: Path) -> None:
+    _content_config(tmp_path)
+    result = _run(tmp_path, FABRIC_CONTENT_REQUIRE_SSE="no")
+    assert result.returncode == 1, result.stdout
+    assert "FABRIC_CONTENT_REQUIRE_SSE must be true or false" in result.stdout
 
 
 def _s3_overlay(tmp_path: Path) -> None:
-    (tmp_path / "collector-config" / "collector-content-s3.yaml").write_text(
-        "exporters: {}\n", encoding="utf-8"
-    )
-    (tmp_path / "docker-compose.content-s3.yml").write_text(
-        "services: {}\n", encoding="utf-8"
-    )
+    # The fixture already embeds the content path in collector-production.yaml,
+    # so the content overlay files only need to exist.
+    for name in ("collector-content.yaml", "collector-content-s3.yaml"):
+        (tmp_path / "collector-config" / name).write_text(
+            "exporters: {}\n", encoding="utf-8"
+        )
+    for name in ("docker-compose.content.yml", "docker-compose.content-s3.yml"):
+        (tmp_path / name).write_text("services: {}\n", encoding="utf-8")
 
 
 S3_OK = {
@@ -328,7 +374,7 @@ def test_s3_backend_defaults_to_kms(tmp_path: Path) -> None:
         ({"FABRIC_CONTENT_S3_PATH_STYLE": "yes"}, "must be true or false"),
         (
             {"FABRIC_CONTENT_BACKEND": "gcs"},
-            "FABRIC_CONTENT_BACKEND must be file or s3",
+            "FABRIC_CONTENT_BACKEND must be s3 or file, or unset",
         ),
     ],
 )
@@ -431,9 +477,13 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
     return base
 
 
-@pytest.mark.parametrize("name", ["collector.yaml", "collector-production.yaml"])
-def test_collector_configs_keep_content_on_its_own_path(name: str) -> None:
-    config = _collector(name)
+@pytest.mark.parametrize(
+    "names", [("collector.yaml",), ("collector-production.yaml", "collector-content.yaml")]
+)
+def test_collector_configs_keep_content_on_its_own_path(names: tuple[str, ...]) -> None:
+    config: dict[str, Any] = {}
+    for name in names:
+        _deep_merge(config, _collector(name))
     receiver = config["receivers"]["otlp/content"]["protocols"]
     assert set(receiver) == {"http"}
     assert receiver["http"]["endpoint"] == "0.0.0.0:4319"
@@ -464,8 +514,26 @@ def test_collector_configs_keep_content_on_its_own_path(name: str) -> None:
     assert config["processors"]["memory_limiter"]["limit_mib"] >= 1536
 
 
+def test_production_profile_has_no_content_path() -> None:
+    """B6: content is opt-in; collector-production.yaml is telemetry only."""
+    config = _collector("collector-production.yaml")
+    assert "otlp/content" not in config["receivers"]
+    assert not any(name.startswith("fabriccontent") for name in config["exporters"])
+    assert "logs/content" not in config["service"]["pipelines"]
+    assert "file_storage/fabric_content" not in config["extensions"]
+    assert config["processors"]["memory_limiter"]["limit_mib"] == 512
+
+
+def test_content_overlay_keeps_every_production_extension() -> None:
+    """service.extensions is a list: the overlay's replaces the base's, so it must
+    hold every production extension plus the content queue."""
+    base = _collector("collector-production.yaml")["service"]["extensions"]
+    overlay = _collector("collector-content.yaml")["service"]["extensions"]
+    assert set(overlay) == set(base) | {"file_storage/fabric_content"}
+
+
 def test_production_content_receiver_uses_the_bearer_authenticator() -> None:
-    http = _collector("collector-production.yaml")["receivers"]["otlp/content"][
+    http = _collector("collector-content.yaml")["receivers"]["otlp/content"][
         "protocols"
     ]["http"]
     assert http["auth"] == {"authenticator": "bearertokenauth"}
@@ -474,7 +542,8 @@ def test_production_content_receiver_uses_the_bearer_authenticator() -> None:
 
 def test_s3_overlay_replaces_only_the_content_exporter() -> None:
     merged = _deep_merge(
-        _collector("collector-production.yaml"), _collector("collector-content-s3.yaml")
+        _deep_merge(_collector("collector-production.yaml"), _collector("collector-content.yaml")),
+        _collector("collector-content-s3.yaml"),
     )
     pipelines = merged["service"]["pipelines"]
     assert pipelines["logs/content"]["exporters"] == ["fabriccontent/s3"]
@@ -499,19 +568,31 @@ def test_compose_publishes_content_port_and_volumes() -> None:
     assert "fabric-content-queue:/var/lib/fabric-node/content-queue" in base["volumes"]
     assert "fabric-content:/var/lib/fabric-node/content" in base["volumes"]
 
+    # B6: the production overlay is main's, telemetry only.
     production = _compose("docker-compose.production.yml")
     node = production["services"]["fabric-node"]
+    assert not any("4319" in port for port in _ports(node))
+    assert not any("content" in str(volume) for volume in node["volumes"])
+    assert set(production["volumes"]) == {"fabric-queue"}
+    assert "FABRIC_TENANT_ID" not in node["environment"]
+    assert node["mem_limit"] == "1g"
+    assert node["command"] == ["--config=/etc/fabric-node/collector-production.yaml"]
+
+    content = _compose("docker-compose.content.yml")
+    node = content["services"]["fabric-node"]
     assert (
         "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_CONTENT_PORT:-4319}:4319"
         in _ports(node)
     )
     assert "fabric-content-queue:/var/lib/fabric-node/content-queue" in node["volumes"]
     assert "fabric-content:/var/lib/fabric-node/content" in node["volumes"]
-    assert {"fabric-queue", "fabric-content-queue", "fabric-content"} <= set(
-        production["volumes"]
-    )
+    assert {"fabric-content-queue", "fabric-content"} <= set(content["volumes"])
     assert node["environment"]["FABRIC_TENANT_ID"].startswith("${FABRIC_TENANT_ID:?")
     assert node["mem_limit"] == "2g"
+    assert node["command"] == [
+        "--config=/etc/fabric-node/collector-production.yaml",
+        "--config=/etc/fabric-node/collector-content.yaml",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -519,6 +600,7 @@ def test_compose_publishes_content_port_and_volumes() -> None:
     [
         "docker-compose.yml",
         "docker-compose.production.yml",
+        "docker-compose.content.yml",
         "docker-compose.content-s3.yml",
     ],
 )
@@ -532,6 +614,7 @@ def test_content_s3_overlay_requires_bucket_and_region() -> None:
     node = _compose("docker-compose.content-s3.yml")["services"]["fabric-node"]
     assert node["command"] == [
         "--config=/etc/fabric-node/collector-production.yaml",
+        "--config=/etc/fabric-node/collector-content.yaml",
         "--config=/etc/fabric-node/collector-content-s3.yaml",
     ]
     env = node["environment"]
@@ -598,9 +681,9 @@ def test_chart_and_compose_share_the_content_request_bound() -> None:
     ).read_text(encoding="utf-8")
     assert "maxRequestBodyBytes: 67108864" in template
     assert (
-        _collector("collector-production.yaml")["receivers"]["otlp/content"][
-            "protocols"
-        ]["http"]["max_request_body_size"]
+        _collector("collector-content.yaml")["receivers"]["otlp/content"]["protocols"][
+            "http"
+        ]["max_request_body_size"]
         == 67_108_864
     )
 
@@ -652,9 +735,9 @@ def test_verify_prod_does_not_claim_content_delivery() -> None:
     "names",
     [
         ("collector.yaml",),
-        ("collector-production.yaml",),
+        ("collector-production.yaml", "collector-content.yaml"),
         ("collector.yaml", "collector-content-s3.yaml"),
-        ("collector-production.yaml", "collector-content-s3.yaml"),
+        ("collector-production.yaml", "collector-content.yaml", "collector-content-s3.yaml"),
     ],
     ids=lambda names: "+".join(names),
 )
@@ -680,3 +763,70 @@ def test_effective_config_has_one_tenant_across_all_content_exporters(
         assert "allow_multiple_tenants" not in exporter, name
         tenants.update(exporter["allowed_tenants"])
     assert tenants == {"${env:FABRIC_TENANT_ID}"}
+
+
+# --------------------------------------------------------------------------
+# B6: main's production overlay starts unchanged with main's .env
+# --------------------------------------------------------------------------
+
+MAIN_ENV = {
+    "FABRIC_EXPORT_ENDPOINT": "https://otlp.example.invalid:4318",
+    "FABRIC_EXPORT_AUTH_HEADER": "Bearer test-only",
+}
+
+
+def _render(tmp_path: Path, files: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    token = tmp_path / "ingress.token"
+    token.write_text("0123456789abcdef0123456789abcdef", encoding="utf-8")
+    (tmp_path / "empty.env").write_text("", encoding="utf-8")
+    import os  # noqa: PLC0415
+
+    base = {k: v for k, v in os.environ.items() if not k.startswith("FABRIC_")}
+    command = ["docker", "compose", "--project-directory", str(COMPOSE_DIR),
+               "--env-file", str(tmp_path / "empty.env")]  # fmt: skip
+    for name in files:
+        command += ["-f", str(COMPOSE_DIR / name)]
+    return subprocess.run(
+        [*command, "config", "--format", "json"], cwd=COMPOSE_DIR,
+        env={**base, "FABRIC_INGRESS_TOKEN_FILE": str(token), **env},
+        capture_output=True, text=True, check=False, timeout=60,
+    )  # fmt: skip
+
+
+PROD = ["docker-compose.yml", "docker-compose.production.yml"]
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI unavailable")
+def test_production_overlay_renders_with_mains_env(tmp_path: Path) -> None:
+    result = _render(tmp_path, PROD, MAIN_ENV)
+    if result.returncode != 0 and "docker compose" in result.stderr.lower():
+        pytest.skip("docker compose plugin unavailable")
+    assert result.returncode == 0, result.stderr
+    import json  # noqa: PLC0415
+
+    node = json.loads(result.stdout)["services"]["fabric-node"]
+    assert node["command"] == ["--config=/etc/fabric-node/collector-production.yaml"]
+    assert {int(p["target"]) for p in node["ports"]} == {4317, 4318, 13133, 8888}
+    assert not any("content" in str(v.get("source", "")) for v in node["volumes"])
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI unavailable")
+def test_content_overlay_needs_the_tenant_and_publishes_content(tmp_path: Path) -> None:
+    files = [*PROD, "docker-compose.content.yml"]
+    missing = _render(tmp_path, files, MAIN_ENV)
+    if missing.returncode != 0 and "docker compose" in missing.stderr.lower():
+        pytest.skip("docker compose plugin unavailable")
+    assert missing.returncode != 0
+    assert "FABRIC_TENANT_ID" in missing.stderr
+    result = _render(tmp_path, files, {**MAIN_ENV, "FABRIC_TENANT_ID": "tenant-a"})
+    assert result.returncode == 0, result.stderr
+    import json  # noqa: PLC0415
+
+    node = json.loads(result.stdout)["services"]["fabric-node"]
+    assert node["command"] == [
+        "--config=/etc/fabric-node/collector-production.yaml",
+        "--config=/etc/fabric-node/collector-content.yaml",
+    ]
+    assert {int(p["target"]) for p in node["ports"]} == {4317, 4318, 4319, 13133, 8888}
+    assert {"/var/lib/fabric-node/queue", "/var/lib/fabric-node/content-queue",
+            "/var/lib/fabric-node/content"} <= {v["target"] for v in node["volumes"]}  # fmt: skip

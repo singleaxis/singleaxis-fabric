@@ -1,6 +1,7 @@
 # Content store overlay: S3 or an S3-compatible store (MinIO, Ceph RGW).
-# Merged after collector.yaml / collector-production.yaml with an extra
-# --config (docker-compose.content-s3.yml, docker-compose.minio.yml);
+# Merged with an extra --config after collector.yaml (evaluation,
+# docker-compose.minio.yml) or after collector-production.yaml +
+# collector-content.yaml (production, docker-compose.content-s3.yml);
 # fabric-gate validates the merged result.
 #
 # The Node is the only writer (spec 048). Credentials come from the AWS

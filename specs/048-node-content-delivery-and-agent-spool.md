@@ -753,6 +753,21 @@ loggers.
 
 ## 9. Compose preflight (F9)
 
+**Opt-in content path.** The Compose production overlay
+(`docker-compose.production.yml` + `collector-production.yaml`) is
+telemetry only and starts unchanged with an existing `.env`. The content
+path is added by `docker-compose.content.yml` (merging
+`collector-content.yaml`: the `otlp/content` receiver, the content queue,
+the `fabriccontent` exporter, port 4319, `FABRIC_TENANT_ID` required), which
+`make up-prod` includes when `FABRIC_CONTENT_BACKEND` is `s3` (plus
+`docker-compose.content-s3.yml` / `collector-content-s3.yaml`) or `file`.
+As in the Helm shadow-production profile (`content.requireServerSideEncryption`),
+production content is server-side encrypted: preflight refuses
+`FABRIC_CONTENT_BACKEND=file` unless `FABRIC_CONTENT_REQUIRE_SSE=false`
+records that the host disk's encryption is accepted instead, and checks
+the merged configuration (production plus the content files) the way the
+collector and fabric-gate see it.
+
 When any of 4317, 4318 or 4319 is published on a non-loopback
 `FABRIC_BIND_ADDR`, preflight fails unless the receiver instance serving
 that port has TLS enabled: an uncommented `tls:` mapping under that

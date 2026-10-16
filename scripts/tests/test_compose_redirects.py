@@ -30,7 +30,8 @@ MERGES = [
     ("collector-production.yaml",),
     ("collector-host-monitor.yaml",),
     ("collector.yaml", "collector-content-s3.yaml"),
-    ("collector-production.yaml", "collector-content-s3.yaml"),
+    ("collector-production.yaml", "collector-content.yaml"),
+    ("collector-production.yaml", "collector-content.yaml", "collector-content-s3.yaml"),
 ]
 
 

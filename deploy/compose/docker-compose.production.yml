@@ -31,11 +31,6 @@ secrets:
 volumes: !override
   # Durable exporter queue; the eval-only sink-data volume is dropped.
   fabric-queue:
-  # Durable content queue and the local content store (file backend). With
-  # docker-compose.content-s3.yml the store is S3 and fabric-content stays
-  # empty. Back both up like fabric-queue (docs/operations/dr.md).
-  fabric-content-queue:
-  fabric-content:
 
 services:
   # Eval-only controlled sink. Pinning it behind a profile means the merged
@@ -68,16 +63,12 @@ services:
       # collector-production.yaml are uncommented.
       FABRIC_INGRESS_TLS_CERT_FILE: ${FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
       FABRIC_INGRESS_TLS_KEY_FILE: ${FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
-      # Content (spec 048): the only tenant the content exporter writes.
-      FABRIC_TENANT_ID: ${FABRIC_TENANT_ID:?set FABRIC_TENANT_ID in .env to the tenant id your agents send}
     depends_on: !reset []
     secrets:
       - fabric_ingress_token
     volumes: !override
       - ./collector-config/collector-production.yaml:/etc/fabric-node/collector-production.yaml:ro
       - fabric-queue:/var/lib/fabric-node/queue
-      - fabric-content-queue:/var/lib/fabric-node/content-queue
-      - fabric-content:/var/lib/fabric-node/content
       # TLS material for ingress (cert/key) and egress (private CA). The
       # directory is mounted even while TLS is disabled so enabling it is a
       # config-only change; keep it empty rather than deleting it. Files keep
@@ -90,9 +81,6 @@ services:
       # in collector-production.yaml and open the firewall deliberately first.
       - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_GRPC_PORT:-4317}:4317"
       - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_HTTP_PORT:-4318}:4318"
-      # Content ingress (spec 048): same bearer token; preflight requires its
-      # own receiver TLS before this leaves loopback.
-      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_OTLP_CONTENT_PORT:-4319}:4319"
       # Health and internal metrics are always loopback-only; use an SSH
       # tunnel or a host-local scraper for remote access.
       - "127.0.0.1:${FABRIC_HEALTH_PORT:-13133}:13133"
@@ -105,10 +93,10 @@ services:
     # Graceful drain: let in-flight exports finish and the persistent queue
     # flush cleanly before SIGKILL. Default 10s can truncate a large backlog.
     stop_grace_period: 60s
-    # Keep a leak from taking down the host: memory_limiter is 1536 MiB (64 MiB
-    # content requests), so the ceiling sits above it; the kernel OOM-kills
-    # and restart policy recovers.
-    mem_limit: 2g
+    # Keep a leak from taking down the host: memory_limiter is 512 MiB, so the
+    # ceiling sits above it; the kernel OOM-kills and restart policy recovers.
+    # docker-compose.content.yml raises both for 64 MiB content requests.
+    mem_limit: 1g
     pids_limit: 256
     restart: unless-stopped
     logging:

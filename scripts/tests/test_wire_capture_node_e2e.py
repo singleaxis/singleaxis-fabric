@@ -12,7 +12,9 @@ real sockets:
         -> sender: bodies as OTLP/HTTP log records to the Node's content
            port (4319), then the span over OTLP/HTTP (4318); TLS + bearer
     Fabric Node (the custom Collector image, fabric-gate entrypoint,
-    collector-production.yaml with its documented TLS stanzas enabled):
+    collector-production.yaml plus the opt-in content path,
+    docker-compose.content.yml / collector-content.yaml, with their documented
+    TLS stanzas enabled):
         traces/logs: memory_limiter + fabricguard -> persistent queue
             -> OTLP/HTTP over TLS (private CA) + egress Authorization
             -> fsync sink -> decoded JSONL
@@ -74,6 +76,7 @@ from _wire_capture_common import (
     build_image,
     compose_available,
     free_port,
+    content_config_with_tls,
     production_config_with_tls,
     pseudonym,
     spool_header,
@@ -213,6 +216,8 @@ class Stack:
         self.reports: list[str] = []
         self.config = root / "collector-production.yaml"
         production_config_with_tls(self.config)
+        self.content_config = root / "collector-content.yaml"
+        content_config_with_tls(self.content_config)
         self.override = root / "compose.override.yml"
         self.override.write_text(
             "services:\n"
@@ -220,6 +225,7 @@ class Stack:
             "    pull_policy: never\n"
             "    volumes:\n"
             f"      - {self.config}:/etc/fabric-node/collector-production.yaml:ro\n"
+            f"      - {self.content_config}:/etc/fabric-node/collector-content.yaml:ro\n"
             "    extra_hosts:\n"
             '      - "host.docker.internal:host-gateway"\n',
             "utf-8",
@@ -253,6 +259,8 @@ class Stack:
             "--env-file", str(self.root / "empty.env"),
             "-f", str(COMPOSE_DIR / "docker-compose.yml"),
             "-f", str(COMPOSE_DIR / "docker-compose.production.yml"),
+            # The opt-in production content path (FABRIC_CONTENT_BACKEND=file).
+            "-f", str(COMPOSE_DIR / "docker-compose.content.yml"),
             "-f", str(self.override), *args,
         ]  # fmt: skip
         return subprocess.run(

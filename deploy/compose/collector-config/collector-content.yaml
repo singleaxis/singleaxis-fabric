@@ -1,0 +1,105 @@
+# Content path for the production profile (spec 048), opt-in.
+#
+# Merged after collector-production.yaml by docker-compose.content.yml, which
+# `make up-prod` adds when FABRIC_CONTENT_BACKEND is set in .env:
+#
+#   FABRIC_CONTENT_BACKEND=s3    # S3 with server-side encryption (also merges
+#                                # collector-content-s3.yaml); the production
+#                                # default, as in the Helm shadow-production
+#                                # profile
+#   FABRIC_CONTENT_BACKEND=file  # the local fabric-content volume; refused by
+#                                # preflight unless FABRIC_CONTENT_REQUIRE_SSE=false
+#                                # (no server-side encryption: at rest it is
+#                                # only as encrypted as the host disk)
+#
+# Without FABRIC_CONTENT_BACKEND the production profile is telemetry only and
+# runs unchanged with an existing .env.
+#
+# Agents in node mode POST stored request/response bodies to the separate
+# otlp/content receiver (4319, HTTP only). It must be at least as strict as
+# the telemetry receivers in collector-production.yaml: the same bearer
+# token, and TLS (same min_version) whenever their tls: stanzas are
+# uncommented -- fabric-gate and preflight refuse a weaker content port. The
+# logs/content pipeline runs only memory_limiter and the fabriccontent
+# exporter, which verifies digest, length and tenant and writes body +
+# descriptor to the content store. The Node is the only writer; agents hold
+# no store credentials. fabric-gate refuses any routing of content into a
+# telemetry pipeline.
+
+extensions:
+  file_storage/fabric_content:
+    # Separate durable queue for content records (up to 64 MiB each).
+    directory: /var/lib/fabric-node/content-queue
+    timeout: 1s
+    create_directory: true
+    fsync: true
+    compaction:
+      directory: /var/lib/fabric-node/content-queue
+      on_start: true
+      on_rebound: true
+
+receivers:
+  otlp/content:
+    protocols:
+      # HTTP only: fabric-gate refuses a content receiver with grpc.
+      http:
+        endpoint: 0.0.0.0:4319
+        auth:
+          authenticator: bearertokenauth
+        read_header_timeout: 5s
+        # Sized for one 64 MiB body over a slow link.
+        read_timeout: 120s
+        idle_timeout: 120s
+        max_request_body_size: 67108864 # 64 MiB -- one stored body per request
+        # Uncomment together with the telemetry receivers' tls: stanzas in
+        # collector-production.yaml (required before 4319 leaves loopback).
+        # tls:
+        #   cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
+        #   key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
+        #   min_version: "1.3"
+
+processors:
+  memory_limiter:
+    # Headroom for 64 MiB content requests next to telemetry;
+    # docker-compose.content.yml raises mem_limit above this so the limiter
+    # refuses before the kernel kills.
+    limit_mib: 1536
+
+exporters:
+  # Content store: the local fabric-content volume, in the SDK store layout
+  # (<dir>/<tenant>/evidence/<object_id> + evidence/meta/<id>.json) that
+  # `fabric.reconstruct --store-root` reads. collector-content-s3.yaml
+  # replaces it in the pipeline with an S3 exporter. Only tenants listed here
+  # are written; anything else is dropped with a content-free log line.
+  fabriccontent:
+    allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
+    backend: file
+    file:
+      directory: /var/lib/fabric-node/content
+    timeout: 60s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      # Items, not bytes: worst case queue_size x 64 MiB on the content-queue
+      # volume. preflight-prod.sh estimates this next to the telemetry queue.
+      queue_size: 64
+      block_on_overflow: true
+      storage: file_storage/fabric_content
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      # Never give up: the agent spool already handed these bytes over.
+      max_elapsed_time: 0s
+
+service:
+  # Lists replace on merge: this is collector-production.yaml's list plus the
+  # content queue.
+  extensions: [health_check, noredirect, file_storage/fabric, file_storage/fabric_content, bearertokenauth]
+  pipelines:
+    # Bodies pass unchanged (no fabricguard); fabriccontent enforces the
+    # closed descriptor itself. Never routed to otlp_http/fabric.
+    logs/content:
+      receivers: [otlp/content]
+      processors: [memory_limiter]
+      exporters: [fabriccontent]

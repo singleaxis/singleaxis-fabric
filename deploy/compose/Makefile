@@ -1,12 +1,17 @@
 COMPOSE ?= docker compose
 
 # Production overlay (client VM). `make up-prod` merges it over the base file.
-# FABRIC_CONTENT_BACKEND=s3 (environment or .env) adds the S3 content store
-# overlay; preflight-prod.sh reads the same variable.
+# The content path (spec 048) is opt-in: FABRIC_CONTENT_BACKEND=s3 or file
+# (environment or .env) adds docker-compose.content.yml, plus the S3 store
+# overlay for s3; preflight-prod.sh reads the same variable (and refuses
+# file unless FABRIC_CONTENT_REQUIRE_SSE=false). Unset: telemetry only.
 FABRIC_CONTENT_BACKEND ?= $(shell sed -n 's/^FABRIC_CONTENT_BACKEND=//p' .env 2>/dev/null | tail -n 1 | tr -d "\"'")
 PROD_FILES := -f docker-compose.yml -f docker-compose.production.yml
 ifeq ($(FABRIC_CONTENT_BACKEND),s3)
-PROD_FILES += -f docker-compose.content-s3.yml
+PROD_FILES += -f docker-compose.content.yml -f docker-compose.content-s3.yml
+endif
+ifeq ($(FABRIC_CONTENT_BACKEND),file)
+PROD_FILES += -f docker-compose.content.yml
 endif
 # Evaluation with a local MinIO content store (SSE-S3), spec 048.
 MINIO_FILES := -f docker-compose.yml -f docker-compose.minio.yml

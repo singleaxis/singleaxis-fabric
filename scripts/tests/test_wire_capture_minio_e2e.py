@@ -6,8 +6,8 @@
     explicit run scopes (one nested), no cloud credentials, no boto3
         -> durable spool -> OTLP/HTTP + TLS + bearer to the Node
     production-shaped Fabric Node (fabric-gate entrypoint,
-    collector-production.yaml with its documented TLS stanzas enabled,
-    merged with collector-content-s3.yaml):
+    collector-production.yaml and the opt-in collector-content.yaml with their
+    documented TLS stanzas enabled, merged with collector-content-s3.yaml):
         traces/logs: memory_limiter + fabricguard -> persistent queue
             -> HTTPS fsync OTLP sink (host process)
         logs/content: memory_limiter -> fabriccontent (s3 backend,
@@ -83,6 +83,7 @@ from _wire_capture_common import (
     build_image,
     compose_available,
     free_port,
+    content_config_with_tls,
     production_config_with_tls,
     pseudonym,
     spool_header,
@@ -219,6 +220,8 @@ class Stack:
         self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
         self.config = root / "collector-production.yaml"
         production_config_with_tls(self.config)
+        self.content_config = root / "collector-content.yaml"
+        content_config_with_tls(self.content_config)
         self.override = root / "compose.override.yml"
         # Production Node + the content-s3 overlay, wired to the MinIO
         # overlay's environment (endpoint, path style, SSE, writer keys).
@@ -228,9 +231,11 @@ class Stack:
             "    pull_policy: never\n"
             "    command:\n"
             "      - --config=/etc/fabric-node/collector-production.yaml\n"
+            "      - --config=/etc/fabric-node/collector-content.yaml\n"
             "      - --config=/etc/fabric-node/collector-content-s3.yaml\n"
             "    volumes:\n"
             f"      - {self.config}:/etc/fabric-node/collector-production.yaml:ro\n"
+            f"      - {self.content_config}:/etc/fabric-node/collector-content.yaml:ro\n"
             "    extra_hosts:\n"
             '      - "host.docker.internal:host-gateway"\n',
             "utf-8",
@@ -271,7 +276,7 @@ class Stack:
         self, *args: str, check: bool = True
     ) -> subprocess.CompletedProcess[str]:
         files = ("docker-compose.yml", "docker-compose.production.yml",
-                 "docker-compose.minio.yml")  # fmt: skip
+                 "docker-compose.content.yml", "docker-compose.minio.yml")  # fmt: skip
         command = [
             "docker", "compose", "-p", self.project, "--project-directory", str(COMPOSE_DIR),
             "--env-file", str(self.root / "empty.env"),

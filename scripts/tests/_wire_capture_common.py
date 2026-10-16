@@ -39,6 +39,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_DIR = REPO_ROOT / "deploy" / "compose"
 PRODUCTION_CONFIG = COMPOSE_DIR / "collector-config" / "collector-production.yaml"
+CONTENT_CONFIG = COMPOSE_DIR / "collector-config" / "collector-content.yaml"
 NODE_CONTEXT = REPO_ROOT / "components" / "otel-collector-fabric"
 AGENT = Path(__file__).with_name("_wire_capture_agent.py")
 SINK = Path(__file__).with_name("_wire_capture_sink.py")
@@ -191,24 +192,36 @@ def write_tls(directory: Path) -> None:
         path.chmod(0o644)
 
 
-def production_config_with_tls(target: Path) -> None:
-    """collector-production.yaml with exactly its documented TLS edits applied.
-
-    The file says: uncomment the receiver ``tls:`` stanzas (gRPC and HTTP
-    telemetry, and the spec 048 content receiver) before publishing beyond
-    loopback, and the exporter ``ca_file`` line for a private-CA destination.
-    Nothing else changes, so drift in the shipped file shows up here instead
-    of being masked by a hand-written test config.
-    """
-    text = PRODUCTION_CONFIG.read_text("utf-8")
+def _uncomment_tls(text: str) -> tuple[str, int, int, int]:
     text, stanzas = re.subn(r"(?m)^(\s*)# tls:$", r"\1tls:", text)
     text, fields = re.subn(
         r"(?m)^(\s*)#   (cert_file|key_file|min_version):", r"\1  \2:", text
     )
     text, ca = re.subn(r"(?m)^(\s*)# (ca_file:)", r"\1\2", text)
-    assert (stanzas, fields, ca) == (3, 9, 1), (
-        "collector-production.yaml TLS stanzas moved"
-    )
+    return text, stanzas, fields, ca
+
+
+def production_config_with_tls(target: Path) -> None:
+    """collector-production.yaml with exactly its documented TLS edits applied.
+
+    The file says: uncomment the receiver ``tls:`` stanzas (gRPC and HTTP
+    telemetry) before publishing beyond loopback, and the exporter ``ca_file``
+    line for a private-CA destination. Nothing else changes, so drift in the
+    shipped file shows up here instead of being masked by a hand-written test
+    config.
+    """
+    text, stanzas, fields, ca = _uncomment_tls(PRODUCTION_CONFIG.read_text("utf-8"))
+    assert (stanzas, fields, ca) == (2, 6, 1), "collector-production.yaml TLS stanzas moved"
+    target.write_text(text, "utf-8")
+
+
+def content_config_with_tls(target: Path) -> None:
+    """collector-content.yaml (the opt-in production content path) with its
+    documented TLS edit applied: the content receiver's ``tls:`` stanza, enabled
+    together with the telemetry receivers' (fabric-gate refuses a weaker content
+    port)."""
+    text, stanzas, fields, ca = _uncomment_tls(CONTENT_CONFIG.read_text("utf-8"))
+    assert (stanzas, fields, ca) == (1, 3, 0), "collector-content.yaml TLS stanza moved"
     target.write_text(text, "utf-8")
 
 

@@ -4,7 +4,6 @@
 # and queue metrics. Does not prove protection or destination delivery.
 set -eu
 
-compose="${COMPOSE:-docker compose} -f docker-compose.yml -f docker-compose.production.yml"
 fail=0
 note() { printf '  %s %s\n' "$1" "$2"; }
 ok()   { note "PASS" "$1"; }
@@ -18,6 +17,14 @@ envget() {
   fi
   printf '%s' "${val}"
 }
+
+# The same files `make up-prod` merges: the content overlays only when the
+# opt-in content path is enabled (FABRIC_CONTENT_BACKEND).
+compose="${COMPOSE:-docker compose} -f docker-compose.yml -f docker-compose.production.yml"
+case "$(envget FABRIC_CONTENT_BACKEND)" in
+  s3) compose="${compose} -f docker-compose.content.yml -f docker-compose.content-s3.yml" ;;
+  file) compose="${compose} -f docker-compose.content.yml" ;;
+esac
 
 printf 'Fabric Node production verification\n'
 
@@ -134,7 +141,7 @@ if [ -n "${content_addr}" ]; then
     bad "unauthenticated content upload on ${content_addr} returned ${code}, expected 401/403"
   fi
 else
-  note "SKIP" "content port 4319 not published"
+  note "SKIP" "content port 4319 not published (content path not enabled)"
 fi
 
 # --- gRPC ingress auth (same authenticator, second receiver) ------------------
