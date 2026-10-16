@@ -52,7 +52,7 @@ func crashAfterLink(t *testing.T, b *fileBackend, key string, body []byte) strin
 }
 
 func TestFileBackend_PutLeavesOneLinkAndNoTemp(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "content")
+	dir := filepath.Join(physicalTempDir(t), "content")
 	b := newFileBackend(dir)
 	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000001"))
 	if err := b.put(context.Background(), key, []byte("exact wire body")); err != nil {
@@ -69,7 +69,7 @@ func TestFileBackend_PutLeavesOneLinkAndNoTemp(t *testing.T) {
 // m4: a replay of the record after a crash between link(2) and the temp's
 // removal heals the object (readers refuse nlink != 1).
 func TestFileBackend_ReplayHealsACrashAfterLink(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "content")
+	dir := filepath.Join(physicalTempDir(t), "content")
 	b := newFileBackend(dir)
 	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000001"))
 	body := []byte("exact wire body")
@@ -92,7 +92,7 @@ func TestFileBackend_ReplayHealsACrashAfterLink(t *testing.T) {
 // m4: when the record is never replayed (an in-memory queue lost it in the
 // crash), the next start sweeps the stale temps, healing the object too.
 func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "content")
+	dir := filepath.Join(physicalTempDir(t), "content")
 	b := newFileBackend(dir)
 	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000001"))
 	crashAfterLink(t, b, key, []byte("exact wire body"))
@@ -103,7 +103,7 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 	if err := os.WriteFile(orphan, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	outside := filepath.Join(t.TempDir(), ".keep.tmp")
+	outside := filepath.Join(physicalTempDir(t), ".keep.tmp")
 	if err := os.WriteFile(outside, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 }
 
 func TestFileBackend_StartWithoutDirectoryIsANoop(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "absent")
+	dir := filepath.Join(physicalTempDir(t), "absent")
 	if _, err := startFileBackend(dir, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func countDirSyncs(t *testing.T, dir string, fail *bool) *int {
 // fsync the directory before it reports success (the queue then retires
 // the record), and must keep failing while that fsync fails.
 func TestFileBackend_ReplayAfterFailedDirFsyncSyncsTheDirectory(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "content")
+	dir := filepath.Join(physicalTempDir(t), "content")
 	b := newFileBackend(dir)
 	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000001"))
 	parent := filepath.Dir(filepath.FromSlash(key))
@@ -191,7 +191,7 @@ func TestFileBackend_ReplayAfterFailedDirFsyncSyncsTheDirectory(t *testing.T) {
 // published (identical bytes) after this put's existence check. It must also
 // fsync the directory before accepting.
 func TestFileBackend_ConcurrentExistingTargetSyncsTheDirectory(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "content")
+	dir := filepath.Join(physicalTempDir(t), "content")
 	b := newFileBackend(dir)
 	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000002"))
 	parent := filepath.Dir(filepath.FromSlash(key))
@@ -283,7 +283,7 @@ func countOf(list []string, item string) int {
 // for the tenant directory's entry) before it acknowledges, and must keep
 // failing while that fsync fails.
 func TestFileBackend_RetryAfterFailedParentFsyncSyncsTheParent(t *testing.T) {
-	root := t.TempDir()
+	root := physicalTempDir(t)
 	markRoot(t, root) // the root barrier is on record: only the tenant's fails
 	b := newFileBackend(root)
 	key := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000003"))
@@ -322,7 +322,7 @@ func TestFileBackend_RetryAfterFailedParentFsyncSyncsTheParent(t *testing.T) {
 // fails, a retry (the root now exists) must still complete every barrier,
 // top-down, before it acknowledges.
 func TestFileBackend_RetryCompletesTheBarriersOfCreatedRootAncestors(t *testing.T) {
-	base := t.TempDir()
+	base := physicalTempDir(t)
 	root := filepath.Join(base, "a", "b", "content")
 	b := newFileBackend(root)
 	key := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000005"))
@@ -356,7 +356,7 @@ func TestFileBackend_RetryCompletesTheBarriersOfCreatedRootAncestors(t *testing.
 // created re-establishes each directory's barrier once before its first
 // acknowledgement: their creator may have failed its fsync.
 func TestFileBackend_FreshBackendSyncsAnExistingChainOnce(t *testing.T) {
-	root := t.TempDir()
+	root := physicalTempDir(t)
 	parent := filepath.Join(root, "acme", "evidence")
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		t.Fatal(err)
@@ -380,7 +380,7 @@ func TestFileBackend_FreshBackendSyncsAnExistingChainOnce(t *testing.T) {
 // still fsync <base> (and every ancestor below the boundary) before its first
 // acknowledgement.
 func TestFileBackend_RestartCompletesTheRootChainBarrierBeforeAcknowledging(t *testing.T) {
-	base := t.TempDir()
+	base := physicalTempDir(t)
 	root := filepath.Join(base, "a", "b", "content")
 	key := filepath.ToSlash(filepath.Join(root, "tenant", "evidence", "0b1c2d3e-0000-4000-8000-000000000010"))
 	body := []byte("exact content")
@@ -413,7 +413,7 @@ func TestFileBackend_RestartCompletesTheRootChainBarrierBeforeAcknowledging(t *t
 // at Start, a non-boundary failure fails Start retryably, and the next Start
 // completes the barrier before any put.
 func TestFileBackend_StartReestablishesTheRootChainBarrier(t *testing.T) {
-	base := t.TempDir()
+	base := physicalTempDir(t)
 	root := filepath.Join(base, "a", "content")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
@@ -466,7 +466,7 @@ func TestFileBackend_RootBarrierBoundary(t *testing.T) {
 		{"eacces created", syscall.EACCES, true, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			base := t.TempDir()
+			base := physicalTempDir(t)
 			root := filepath.Join(base, "content")
 			if !tc.created {
 				if err := os.Mkdir(root, 0o700); err != nil {
@@ -502,7 +502,7 @@ func TestFileBackend_RootBarrierBoundary(t *testing.T) {
 
 // A mount point ends the chain: its own entry lives on another filesystem.
 func TestFileBackend_RootBarrierStopsAtTheFilesystemRoot(t *testing.T) {
-	base := t.TempDir()
+	base := physicalTempDir(t)
 	mount := filepath.Join(base, "mnt")
 	root := filepath.Join(mount, "content")
 	if err := os.MkdirAll(root, 0o700); err != nil {

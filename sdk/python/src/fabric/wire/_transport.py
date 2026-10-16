@@ -25,7 +25,7 @@ from .._sequence import SourceAllocator, current_run_scope
 from ._match import EndpointIndex
 from ._model import CaptureJob
 from ._pipeline import CapturePipeline
-from ._stream import FLAVORS, Budget, Exchange, drain_reaper
+from ._stream import DELEGATION_MARK, FLAVORS, Budget, Exchange, drain_reaper, private_copy
 
 if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_wrapper
     from httpx import AsyncBaseTransport as _AsyncBase
@@ -44,19 +44,20 @@ _LOG = logging.getLogger("fabric.wire")
 # Nested capture (spec 047 §1). Every invocation of a patched transport method is captured
 # once, and so is every call through an explicit wrapper. The only nesting is structural:
 # a WireTransport/AsyncWireTransport wrapping a transport that ends in a patched method.
-# The wrapper never consults shared state to avoid capturing twice: when its inner
-# transport's method *is* Fabric's patch it calls the saved original directly; otherwise
-# (a middleware transport, a subclass that overrides and calls ``super()``, another
-# wrapper) it hands the inner transport a private shallow copy of the request carrying a
-# delegation mark, and a patched method or wrapper receiving a marked copy passes it
-# through uncaptured. The mark lives only on that per-invocation copy, so it follows the
-# delegated call across tasks and threads, while independent sends of the same request
-# object (concurrently, or in a forked child) are each captured. Nothing is global.
-_MARK = "_fabric_wire_delegated"
+# A captured invocation never hands the transport the caller's request: it sends a private
+# shallow copy carrying a delegation mark (and, for a streamed body, its own tee). The
+# wrapper never consults shared state to avoid capturing twice: when its inner transport's
+# method *is* Fabric's patch it calls the saved original directly; otherwise (a middleware
+# transport, a subclass that overrides and calls ``super()``, another wrapper) it hands the
+# inner transport that marked copy, and a patched method or wrapper receiving a marked copy
+# passes it through uncaptured. The mark lives only on that per-invocation copy, so it
+# follows the delegated call across tasks and threads, while independent sends of the same
+# request object (concurrently, or in a forked child) are each captured. Nothing is global.
+_MARK = DELEGATION_MARK
 
 
 def _delegated(request: Any) -> bool:
-    """Whether ``request`` is a wrapper's marked copy (its exchange is already captured)."""
+    """Whether ``request`` is a marked copy (its exchange is already captured)."""
     try:
         return vars(request).get(_MARK) is True
     except TypeError:  # no instance dict: never marked
@@ -64,18 +65,13 @@ def _delegated(request: Any) -> bool:
 
 
 def _marked(request: Any) -> Any:
-    """A shallow copy of ``request`` carrying the delegation mark: same method, URL,
-    headers, extensions and (possibly teed) stream. A request that cannot be copied is
-    passed as is; a patched transport under it then captures it again (a duplicate, never
-    a silent omission)."""
-    try:
-        clone = object.__new__(type(request))
-        state = vars(clone)
-        state.update(vars(request))
-        state[_MARK] = True
-        return clone
-    except Exception:
+    """``request`` itself when it is already a marked copy, else a marked shallow copy. A
+    request that cannot be copied is passed as is; a patched transport under it then
+    captures it again (a duplicate, never a silent omission)."""
+    if _delegated(request):
         return request
+    clone = private_copy(request)
+    return request if clone is None else clone
 
 
 def _original(inner: Any, attr: str) -> Any | None:
@@ -171,7 +167,7 @@ class WireTee:
         except Exception:
             with contextlib.suppress(Exception):
                 if exchange is not None:
-                    exchange.end_request(request)  # put back a request stream it teed
+                    exchange.end_request()  # drop the private copy; the caller's is unchanged
                     exchange.detach(lost=True)
                 elif deferral is None:
                     self.lose(epoch, sequence, "internal_error")
@@ -210,15 +206,17 @@ class WireTee:
         owned, exchange = self.begin(request)
         if not owned:
             return call(transport, request)
+        # The transport gets this invocation's private copy (its own tee), never ``request``.
+        outgoing = request if exchange is None else exchange.outgoing
         try:
-            response = (delegate or call)(transport, request)
+            response = (delegate or call)(transport, outgoing)
         except BaseException as exc:
             if exchange is not None:
-                exchange.end_request(request)
+                exchange.end_request()
                 exchange.fail(exc)
             raise
         if exchange is not None:
-            exchange.end_request(request)  # the transport has sent the body (or stopped)
+            exchange.end_request()  # the transport has sent the body (or stopped)
             exchange.attach(response, is_async=False)
         return response
 
@@ -229,15 +227,17 @@ class WireTee:
         owned, exchange = self.begin(request)
         if not owned:
             return await call(transport, request)
+        # The transport gets this invocation's private copy (its own tee), never ``request``.
+        outgoing = request if exchange is None else exchange.outgoing
         try:
-            response = await (delegate or call)(transport, request)
+            response = await (delegate or call)(transport, outgoing)
         except BaseException as exc:
             if exchange is not None:
-                exchange.end_request(request)
+                exchange.end_request()
                 exchange.fail(exc)
             raise
         if exchange is not None:
-            exchange.end_request(request)  # the transport has sent the body (or stopped)
+            exchange.end_request()  # the transport has sent the body (or stopped)
             exchange.attach(response, is_async=True)
         return response
 

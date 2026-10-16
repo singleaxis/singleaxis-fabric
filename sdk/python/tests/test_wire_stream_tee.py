@@ -217,3 +217,56 @@ def test_oversized_in_memory_request_body_is_not_sliced(tmp_path: Path) -> None:
         assert a["fabric.wire.request_sha256"] == hashlib.sha256(b"").hexdigest()
     finally:
         rig.close()
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
+def test_transport_reading_its_request_leaves_the_caller_as_without_fabric(
+    rig: Rig, flavor: str, mode: str
+) -> None:
+    """Sol M 1 follow-up: the transport is handed a private copy of the request, never the
+    caller's. A transport that itself reads the body (``request.read()``, as
+    ``MockTransport`` does) still leaves the caller's request exactly as it would without
+    Fabric (its ``content`` set, its stream the in-memory bytes), and the capture is exact."""
+    module = _flavor(flavor)
+    sent = b"".join(BODY)
+
+    def outcome(wrap: bool) -> tuple[bytes, type[Any], bytes]:
+        if mode == "sync":
+
+            def gen() -> Iterator[bytes]:
+                yield from BODY
+
+            def handler(request: Any) -> Any:
+                return module.Response(200, json={"read": len(request.read())})
+
+            request = module.Request("POST", OPENAI_CHAT, content=gen())
+            inner: Any = module.MockTransport(handler)
+            transport = WireTransport(inner, handle=rig.handle) if wrap else inner
+            with module.Client(transport=transport) as client:
+                assert client.send(request).json() == {"read": len(sent)}
+            return request.content, type(request.stream), b"".join(request.stream)
+
+        async def agen() -> AsyncIterator[bytes]:
+            for chunk in BODY:
+                yield chunk
+
+        async def ahandler(request: Any) -> Any:
+            return module.Response(200, json={"read": len(await request.aread())})
+
+        async def run() -> tuple[bytes, type[Any], bytes]:
+            request = module.Request("POST", OPENAI_CHAT, content=agen())
+            inner: Any = module.MockTransport(ahandler)
+            transport = AsyncWireTransport(inner, handle=rig.handle) if wrap else inner
+            async with module.AsyncClient(transport=transport) as client:
+                assert (await client.send(request)).json() == {"read": len(sent)}
+            return request.content, type(request.stream), b"".join(request.stream)
+
+        return asyncio.run(run())
+
+    assert outcome(wrap=True) == outcome(wrap=False) == (sent, module.ByteStream, sent)
+    rig.flush()
+    (span,) = rig.spans()
+    a = attrs(span)
+    assert a["fabric.wire.truncated"] is False
+    assert rig.read_ref(a["fabric.content.request_ref"]) == sent

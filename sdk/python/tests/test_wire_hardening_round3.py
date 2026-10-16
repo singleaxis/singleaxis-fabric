@@ -102,7 +102,7 @@ def _host_finalization_peak(close_early: bool) -> tuple[int, int, list[CaptureJo
     owned, exchange = tee.begin(request)
     assert owned and exchange is not None
     response = httpx.Response(200, stream=ChunkStream(chunks))
-    exchange.end_request(request)
+    exchange.end_request()
     exchange.attach(response, is_async=False)
     stream = iter(response.stream)  # type: ignore[arg-type]
     for _ in chunks[:-1] if close_early else chunks:

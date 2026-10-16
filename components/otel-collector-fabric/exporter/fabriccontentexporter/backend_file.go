@@ -97,6 +97,18 @@ func (e *storeError) Error() string {
 // the earlier process created was lost with it. A directory this backend
 // created inside a refusing ancestor is never accepted on that basis either.
 //
+// The walk follows the physical directories (Sol M1 #2): the content root
+// and the configured boundary are resolved to their physical paths
+// (physicalPath: symlinks in the deepest existing ancestor resolved, the
+// not-yet-created remainder appended) before the chain is built, so a
+// symlinked ancestor (alias -> physical/a) never lets the walk fsync the
+// alias's parent instead of the physical parent that holds a's entry. A
+// boundary whose physical path is not the root's or one of its physical
+// ancestors fails Start with a configuration error. The marker records the
+// algorithm (rootMarkerContent, "v2 physical-walk"): a marker written by an
+// earlier, lexical walk is not a record, and a fresh walk must complete
+// before a refused fsync is again treated as the boundary.
+//
 // Any other failure (EIO, ENOSPC, ...) fails Start, or the put, retryably;
 // the whole chain is retried until one walk completes.
 type fileBackend struct {
@@ -136,8 +148,10 @@ var (
 // keys all live below <root>/<tenant>/.
 const rootMarkerName = ".fabric-root-barrier"
 
-// rootMarkerContent is the marker's fixed content; only its presence counts.
-var rootMarkerContent = []byte("fabric content root barrier v1\n")
+// rootMarkerContent is the marker's fixed content. Only a marker with exactly
+// this content is a record: v1 markers were written by a lexical walk that
+// could skip a symlinked ancestor's physical parent (Sol M1 #2).
+var rootMarkerContent = []byte("fabric content root barrier v2 physical-walk\n")
 
 func newFileBackend(dir string) *fileBackend {
 	return &fileBackend{dir: dir, durable: map[string]bool{}, created: map[string]bool{}}
@@ -149,6 +163,11 @@ func newFileBackend(dir string) *fileBackend {
 // than reaching the durable boundary fails Start with a retryable error.
 // A missing root is created, and its barrier completed, by the first put.
 func startFileBackend(dir, boundary string) (*fileBackend, error) {
+	if boundary != "" {
+		if err := checkPhysicalBoundary(dir, boundary); err != nil {
+			return nil, err
+		}
+	}
 	b := newFileBackend(dir)
 	b.boundary = boundary
 	b.sweepStaleTemps()
@@ -395,17 +414,35 @@ func (b *fileBackend) ensureRoot() error {
 // ancestor's entry durable. The root's own entries are made durable by the
 // barriers of the directories below it (makeDurable).
 func (b *fileBackend) rootBarrier() error {
-	chain := rootAncestors(b.dir, b.boundary) // bottom-up
+	root, err := physicalPath(b.dir)
+	if err != nil {
+		return &storeError{op: "file resolve", err: err}
+	}
+	boundary := ""
+	if b.boundary != "" {
+		if boundary, err = physicalPath(b.boundary); err != nil {
+			return &storeError{op: "file resolve", err: err}
+		}
+	}
+	chain := rootAncestors(root, boundary) // bottom-up, physical
 	marked, err := hasRootMarker(b.dir)
 	if err != nil {
 		return err
 	}
 	b.mu.Lock()
-	created := make(map[string]bool, len(b.created))
+	createdDirs := make([]string, 0, len(b.created))
 	for d := range b.created {
-		created[filepath.Dir(d)] = true // parents holding a created entry
+		createdDirs = append(createdDirs, d)
 	}
 	b.mu.Unlock()
+	created := make(map[string]bool, len(createdDirs))
+	for _, d := range createdDirs {
+		parent, err := physicalPath(filepath.Dir(d)) // a parent holding a created entry
+		if err != nil {
+			return &storeError{op: "file resolve", err: err}
+		}
+		created[parent] = true
+	}
 	for i := len(chain) - 1; i >= 0; i-- {
 		parent := chain[i]
 		err := syncDir(parent)
@@ -436,41 +473,68 @@ func (b *fileBackend) rootBarrier() error {
 	return nil
 }
 
-// hasRootMarker reports whether the content root holds the barrier marker
-// as a regular file. Anything else at that name (a symlink, a directory) is
-// a layout error, never followed.
+// hasRootMarker reports whether the content root holds the current barrier
+// marker: a regular file whose content is exactly rootMarkerContent. A
+// marker of an earlier algorithm (other content) is not a record. Anything
+// else at that name (a symlink, a directory) is a layout error, never
+// followed.
 func hasRootMarker(root string) (bool, error) {
-	info, err := os.Lstat(filepath.Join(root, rootMarkerName))
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, &storeError{op: "file read"}
-	}
-	if !info.Mode().IsRegular() {
-		return false, &storeError{op: "file layout"}
-	}
-	return true, nil
+	current, _, err := readRootMarker(filepath.Join(root, rootMarkerName))
+	return current, err
 }
 
-// writeRootMarker creates the barrier marker (0600, O_EXCL and O_NOFOLLOW:
-// never through a planted link), fsyncs it, then fsyncs the content root so
-// its entry is durable before any later walk relies on it.
+// readRootMarker reports whether the marker at path is current, and whether
+// a regular file (current or stale) is there at all.
+func readRootMarker(path string) (current, present bool, err error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, &storeError{op: "file read"}
+	}
+	if !info.Mode().IsRegular() {
+		return false, false, &storeError{op: "file layout"}
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, &storeError{op: "file read"}
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, int64(len(rootMarkerContent))+1))
+	if err != nil {
+		return false, false, &storeError{op: "file read"}
+	}
+	return bytes.Equal(data, rootMarkerContent), true, nil
+}
+
+// writeRootMarker records a completed walk: the marker's content is written
+// to a private temp file in the content root (0600, O_EXCL; a leftover is
+// swept like put's temps), fsync'd, renamed over the marker name (replacing
+// a stale marker of an earlier algorithm; never following a link), then the
+// content root is fsync'd so the entry is durable before any later walk
+// relies on it. Readers therefore never see a partially written marker, and
+// concurrent writers each install the same content.
 func writeRootMarker(root string) error {
 	path := filepath.Join(root, rootMarkerName)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
-	switch {
-	case errors.Is(err, os.ErrExist): // another writer recorded it first
-		if ok, err := hasRootMarker(root); err != nil || !ok {
-			return &storeError{op: "file layout"}
-		}
-	case err != nil:
+	if _, _, err := readRootMarker(path); err != nil {
+		return err // a symlink or directory at the name: a layout error
+	}
+	f, err := os.CreateTemp(root, rootMarkerName+".*.tmp")
+	if err != nil {
 		return &storeError{op: "file create", err: err}
-	default:
-		if err := writeSynced(f, rootMarkerContent); err != nil {
-			_ = os.Remove(path)
-			return err
-		}
+	}
+	temp := f.Name()
+	if err := writeSynced(f, rootMarkerContent); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	if err := os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return &storeError{op: "file rename", err: err}
 	}
 	return syncDir(root)
 }
@@ -498,6 +562,58 @@ func rootAncestors(root, boundary string) []string {
 		chain = append(chain, parent)
 		d = parent
 	}
+}
+
+// physicalPath resolves p to its physical spelling: the symlinks in its
+// deepest existing ancestor are resolved (filepath.EvalSymlinks) and the
+// components that do not exist yet are appended unchanged. The root barrier
+// walks these physical directories, never the configured spelling's
+// lexical parents (Sol M1 #2).
+func physicalPath(p string) (string, error) {
+	var rest []string // missing components, deepest first
+	d := filepath.Clean(p)
+	for {
+		_, err := os.Lstat(d)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
+		}
+		rest = append(rest, filepath.Base(d))
+		d = parent
+	}
+	real, err := filepath.EvalSymlinks(d)
+	if err != nil {
+		return "", err
+	}
+	for i := len(rest) - 1; i >= 0; i-- {
+		real = filepath.Join(real, rest[i])
+	}
+	return real, nil
+}
+
+// checkPhysicalBoundary fails Start when the configured durable boundary is
+// not, physically, the content root or one of its ancestors: through a
+// symlinked ancestor, the directories the operator vouched for would not be
+// the ones holding the root's entries. The message names no path.
+func checkPhysicalBoundary(dir, boundary string) error {
+	root, err := physicalPath(dir)
+	if err != nil {
+		return &storeError{op: "file resolve", err: err}
+	}
+	edge, err := physicalPath(boundary)
+	if err != nil {
+		return &storeError{op: "file resolve", err: err}
+	}
+	if edge == root || strings.HasPrefix(root, strings.TrimSuffix(edge, string(filepath.Separator))+string(filepath.Separator)) {
+		return nil
+	}
+	return errors.New("fabriccontent: file.durable_boundary does not resolve to the content root's physical directory or one of its physical ancestors (a symlinked ancestor?); name the physical path")
 }
 
 // sameFilesystem reports whether dir and its parent are on one filesystem

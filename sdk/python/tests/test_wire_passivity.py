@@ -221,19 +221,44 @@ def measure(request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0) 
             rig.close()
 
 
+def _fresh_interpreter(code: str, *args: str) -> Any:
+    """Run ``code`` in a fresh interpreter of this test's Python, with no coverage
+    measurement (no tracer) and none of this process's threads; its last stdout line
+    is JSON."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_CORE_", "COVERAGE_"))}
+    done = subprocess.run(  # noqa: S603 - the test interpreter, a fixed script
+        [sys.executable, "-c", code, *args],
+        cwd=SDK_ROOT, env=env, capture_output=True, text=True, timeout=600, check=False,
+    )  # fmt: skip
+    assert done.returncode == 0, done.stderr[-4000:]
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
 def _measured(request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0) -> dict[str, Any]:
     """:func:`measure` in a fresh interpreter, with no coverage measurement."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_CORE_", "COVERAGE_"))}
     code = (
         "import json, sys; from tests.test_wire_passivity import measure; "
         "print(json.dumps(measure(float(sys.argv[1]), float(sys.argv[2]))))"
     )
-    done = subprocess.run(  # noqa: S603 - the test interpreter, a fixed script
-        [sys.executable, "-c", code, str(request_sleep_factor), str(chunk_sleep_factor)],
-        cwd=SDK_ROOT, env=env, capture_output=True, text=True, timeout=600, check=False,
-    )  # fmt: skip
-    assert done.returncode == 0, done.stderr[-4000:]
-    return dict(json.loads(done.stdout.strip().splitlines()[-1]))
+    return dict(_fresh_interpreter(code, str(request_sleep_factor), str(chunk_sleep_factor)))
+
+
+def calibrate_untraced_and_traced(runs: int = 5) -> tuple[int, int, bool]:
+    """In the calling interpreter: the calibration with no tracer, then with a tracer that
+    taxes every line (a local trace function), installed only for that measurement; and
+    whether no tracer was installed for the first."""
+    untraced_clean = sys.gettrace() is None
+    untraced = calibrate(runs=runs)
+
+    def tracer(frame: Any, event: str, arg: Any) -> Any:
+        return tracer  # also the local tracer: every line of the workload is an event
+
+    sys.settrace(tracer)
+    try:
+        traced = calibrate(runs=runs)
+    finally:
+        sys.settrace(None)
+    return untraced, traced, untraced_clean
 
 
 @pytest.fixture(scope="module")
@@ -267,15 +292,19 @@ def test_budget_scaling_is_bounded_and_never_tightens() -> None:
 
 def test_calibration_tracks_interpreter_speed() -> None:
     """The calibration measures this machine: the same workload under a tracer that
-    taxes every line (as a slow runner does) calibrates slower."""
-    fast = calibrate(runs=5)
-    previous = sys.gettrace()
-    sys.settrace(lambda *_: None)
-    try:
-        slow = calibrate(runs=5)
-    finally:
-        sys.settrace(previous)
-    assert slow > fast
+    taxes every line (as a slow runner does) calibrates slower.
+
+    Measured where the gate measures, in a fresh interpreter with no coverage tracer:
+    in the pytest process under pytest-cov the "untraced" baseline was already traced
+    (and a call-only tracer replacing coverage's ran *faster*), so the comparison
+    failed on CI (3.11/3.12: 8_192_338 ns "untraced" vs 7_918_262 ns "traced")."""
+    code = (
+        "import json; from tests.test_wire_passivity import calibrate_untraced_and_traced; "
+        "print(json.dumps(calibrate_untraced_and_traced()))"
+    )
+    fast, slow, clean = _fresh_interpreter(code)
+    assert clean, "the baseline interpreter had a tracer installed"
+    assert slow > 1.5 * fast, (fast, slow)
 
 
 def test_the_measured_calls_were_captured(measured: dict[str, Any]) -> None:

@@ -179,9 +179,9 @@ class Exchange:
     allocates its sequence then (:meth:`WireTee.adopt`)."""
 
     __slots__ = (
-        "__weakref__", "api", "deferral", "done", "epoch", "exchange_id", "finalizer", "matcher",
-        "parent_context", "request", "request_sent", "request_tee", "response", "run_id", "scope",
-        "sequence", "started_ns", "status_code", "tee", "trace_id",
+        "__weakref__", "api", "deferral", "done", "epoch", "exchange_id", "finalizer", "handoff",
+        "matcher", "outgoing", "parent_context", "request", "request_sent", "request_tee",
+        "response", "run_id", "scope", "sequence", "started_ns", "status_code", "tee", "trace_id",
     )  # fmt: skip
 
     def __init__(
@@ -198,9 +198,20 @@ class Exchange:
         self.request_tee: _RequestTee | None = None  # set while a streamed body is teed
         self.request_sent = True  # False until a teed request stream is exhausted
         self.response: _Side | None = None
+        self.outgoing: Any = None  # set by start(): the request object the transport gets
+        # (caller's request, private copy, the copy's attributes as handed over); until
+        # end_request.
+        self.handoff: tuple[Any, Any, dict[str, Any]] | None = None
 
     def start(self, request: Any) -> None:
-        """Capture context and the request body; on failure the caller detaches (lost)."""
+        """Capture context and the request body, and set :attr:`outgoing`, the request the
+        transport is handed; on failure the caller detaches (lost) and sends ``request``.
+
+        The caller's request object is never changed: the transport gets a private shallow
+        copy (same method, URL, headers and extensions, carrying the delegation mark) and, for
+        a streamed body, this invocation's own tee wrapping the caller's stream. Overlapping
+        sends of one request therefore each read through their own tee, whatever the order
+        in which they reach, read or finish their transport calls."""
         self.started_ns = time.time_ns()
         self.parent_context, trace_id = _capture_parent()
         self.trace_id = trace_id
@@ -209,33 +220,32 @@ class Exchange:
         self.run_id = scope.run_id if scope else resolve_run_id(allocator, trace_id=trace_id)
         self.exchange_id = str(uuid.uuid4())
         self.request = side = _Side(request.headers)
+        self.outgoing = request
+        private = private_copy(request)
         content = getattr(request, "_content", None)
         if isinstance(content, bytes):
             self._retain(side, content)
-        elif (kind := _request_tee_type(stream := _untee(request.stream))) is not None:
-            # An overlapping send of the same request finds another invocation's tee in
-            # ``request.stream``: tee its original stream, never that tee (whose chunks
-            # would then be retained by both exchanges).
-            self.request_tee, self.request_sent = kind(stream, self), False
-            request.stream = self.request_tee  # yields the same chunks; restored by end_request
-        else:  # not an httpx byte stream: the transport handles it, unretained
+        elif private is not None and (kind := _request_tee_type(request.stream)) is not None:
+            self.request_tee, self.request_sent = kind(request.stream, self), False
+            private.stream = self.request_tee  # yields the same chunks, on the copy only
+        else:  # not an httpx byte stream (or not copyable): sent as is, unretained
             side.truncated = True
+        if private is not None:
+            self.handoff = (request, private, dict(vars(private)))
+            self.outgoing = private
 
-    def end_request(self, request: Any) -> None:
-        """After the transport call: restore a teed request stream; a body the transport did
-        not read to its end is ``truncated``. Never raises.
-
-        Overlapping sends of one request finish in any order: each restores the original
-        only while its own tee is installed; one installed later by another invocation
-        is left to that invocation, which restores the same original."""
-        if (tee := self.request_tee) is None:
-            return
+    def end_request(self) -> None:
+        """After the transport call: a teed body the transport did not read to its end is
+        ``truncated``; changes the transport itself made to the request it was handed (e.g.
+        ``request.read()`` replacing the stream with the bytes it read) are carried to the
+        caller's request, as if it had been handed that request. Never raises."""
+        handoff, self.handoff, self.outgoing = self.handoff, None, None
         try:
-            self.request_tee = None
-            if request.stream is tee:
-                request.stream = tee._inner
-            if not self.request_sent:
+            if self.request_tee is not None and not self.request_sent:
                 self.request.truncated = True
+            self.request_tee = None
+            if handoff is not None:
+                _carry_back(*handoff)
         except Exception:
             self.detach(lost=True)
 
@@ -367,11 +377,34 @@ class Exchange:
         return True
 
 
-def _untee(stream: Any) -> Any:
-    """The original request stream under any Fabric request tee(s) installed on it."""
-    while isinstance(stream, _RequestTee):
-        stream = stream._inner
-    return stream
+# Spec 047 §1: a request object carrying this attribute is a private per-invocation copy
+# handed to a transport by an exchange that already captures it; a patched method or
+# wrapper receiving it passes it through uncaptured.
+DELEGATION_MARK = "_fabric_wire_delegated"
+
+
+def private_copy(request: Any) -> Any | None:
+    """A shallow copy of ``request`` carrying the delegation mark (same method, URL,
+    headers, extensions and stream objects), or ``None`` when it cannot be copied."""
+    try:
+        clone = object.__new__(type(request))
+        state = vars(clone)
+        state.update(vars(request))
+        state[DELEGATION_MARK] = True
+        return clone
+    except Exception:
+        return None
+
+
+def _carry_back(request: Any, private: Any, handed: dict[str, Any]) -> None:
+    """Set on ``request`` each attribute the transport rebound on ``private`` (compared by
+    identity with what it was handed): never the mark, never this invocation's tee."""
+    for name, value in list(vars(private).items()):
+        if name != DELEGATION_MARK and handed.get(name, _ABSENT) is not value:
+            setattr(request, name, value)
+
+
+_ABSENT = object()
 
 
 class _RequestTee:

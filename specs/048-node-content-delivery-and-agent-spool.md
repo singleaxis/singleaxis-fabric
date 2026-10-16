@@ -580,9 +580,19 @@ barrier: at Start when the root exists, and in any case before the first
 acknowledgement, the exporter fsyncs every ancestor of the root up to the
 filesystem root, a mount point, or the configured `file.durable_boundary`
 (the content root or one of its ancestors; fsync'd itself, its parent
-never). A completed walk is recorded in `<root>/.fabric-root-barrier`
-(`0600`, `O_EXCL | O_NOFOLLOW`, fsync'd, then the root fsync'd; never an
-object, never swept). Only while that marker exists is an ancestor whose
+never). The walk follows **physical** directories: the root and the
+boundary are resolved to their physical paths (symlinks in the deepest
+existing ancestor resolved, the not-yet-created remainder appended) before
+the chain is built, so a symlinked ancestor (`alias -> physical/a`) never
+lets the walk skip the physical parent that holds the entry; a boundary
+that is not physically the root or one of its ancestors fails Start with a
+configuration error. A completed walk is recorded in
+`<root>/.fabric-root-barrier` (`0600`, content `fabric content root barrier
+v2 physical-walk`, written to a private temp file, fsync'd, renamed into
+place without following links, then the root fsync'd; never an object).
+A marker with any other content (the earlier lexical walk's `v1`) is not a
+record: a fresh physical walk must complete first. Only while a current
+marker exists is an ancestor whose
 fsync is refused with `EACCES`, `EPERM` or `EROFS` accepted as the
 boundary (never one holding a directory this process created); without
 it, the refusal fails Start, or the write, retryably — also after a

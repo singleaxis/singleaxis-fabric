@@ -31,8 +31,10 @@ destination. SingleAxis Platform is optional.
   every directory on the object's path and every ancestor of the content
   root up to the durable boundary (the content root's filesystem root, a
   mount point, or the optional `file.durable_boundary`, which is fsync'd
-  but never its parent), even when those directories already exist. A
-  completed walk is recorded in `<root>/.fabric-root-barrier`; only then
+  but never its parent), even when those directories already exist. The
+  walk follows physical directories (symlinked ancestors are resolved
+  first). A completed walk is recorded in `<root>/.fabric-root-barrier`
+  (a `v2 physical-walk` marker; an older marker demands a fresh walk); only then
   may a later process treat an ancestor that refuses fsync with `EACCES`,
   `EPERM` or `EROFS` as the boundary. Without that record a refusal, like
   any other fsync failure, fails Start or the write retryably (spec 048

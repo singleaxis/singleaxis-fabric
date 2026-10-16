@@ -25,6 +25,7 @@ import asyncio
 import concurrent.futures
 import json
 import os
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -282,7 +283,7 @@ def test_overlapping_streamed_sends_each_store_exactly_their_own_body(
 
         asyncio.run(run())
 
-    assert request.stream is stream  # restored, whichever invocation finished first
+    assert request.stream is stream  # never replaced: each send teed a private copy
     assert sorted(seen.request for seen in fake_llm.seen) == sorted(BODIES)
     spans = installed.spans()
     assert [attrs(span)["fabric.source.sequence"] for span in spans] == [0, 1]
@@ -290,6 +291,123 @@ def test_overlapping_streamed_sends_each_store_exactly_their_own_body(
               for span in spans]  # fmt: skip
     assert stored == list(BODIES)  # sequence 0 is the first send, which iterated first
     assert installed.losses() == []
+
+
+# --- Sol M 1: a send paused before its transport reads the request stream ---------------
+
+
+class _EntryGate:
+    """Pauses each send, in its own thread, at the entry of the saved original transport
+    method (before it reads ``request.stream``) until released; records whether the
+    transport was handed a private request while the caller's stream was untouched."""
+
+    def __init__(self, code: Any, request: Any, stream: Any) -> None:
+        self.code, self.request, self.stream = code, request, stream
+        self.entered = (threading.Event(), threading.Event())
+        self.release = (threading.Event(), threading.Event())
+        self.isolated: list[bool] = []
+
+    def tracer(self, index: int) -> Any:
+        paused = [False]
+
+        def trace(frame: Any, event: str, arg: Any) -> None:
+            if event == "call" and frame.f_code is self.code and not paused[0]:
+                paused[0] = True  # a coroutine's resumptions are "call" events too
+                sent = frame.f_locals.get("request")
+                self.isolated.append(
+                    sent is not self.request and self.request.stream is self.stream
+                )
+                self.entered[index].set()
+                assert self.release[index].wait(15)
+
+        return trace
+
+
+def _gated_send(gate: _EntryGate, index: int, send: Any) -> int:
+    sys.settrace(gate.tracer(index))
+    try:
+        return int(send())
+    finally:
+        sys.settrace(None)
+
+
+def _sender_for(module: Any, how: str, mode: str, installed: Installed, request: Any) -> Any:
+    """A callable sending ``request`` once through a new client; returns the status."""
+    if mode == "sync":
+
+        def send() -> int:
+            transport = _client_transport(module, how, installed, is_async=False)
+            with module.Client(transport=transport, trust_env=False) as client:
+                return int(client.send(request).status_code)
+
+        return send
+
+    async def run() -> int:
+        transport = _client_transport(module, how, installed, is_async=True)
+        async with module.AsyncClient(transport=transport, trust_env=False) as client:
+            return int((await client.send(request)).status_code)
+
+    return lambda: asyncio.run(run())
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+@pytest.mark.parametrize("how", ["patched", "wrapped"])
+@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.parametrize("released_first", [1, 0])
+def test_send_paused_before_its_transport_reads_the_stream_stores_its_own_body(
+    installed: Installed, fake_llm: FakeLLM, flavor: str, how: str, mode: str,
+    released_first: int,
+) -> None:  # fmt: skip
+    """Sol M 1: two sends of one request with a reusable streamed body each pause at the
+    entry of the original transport method, before it reads ``request.stream``; then one is
+    released and runs to its end, then the other. With ``released_first == 1`` the second
+    send completes while the first is paused (the reported schedule).
+
+    The tee used to be installed on the caller's ``request.stream``: whichever send ended
+    first put the original back (or the other's tee was still there), so the paused send's
+    body bypassed its own tee (stored empty, ``truncated``) or went through the other's.
+    Each invocation now hands the transport a private request carrying its own tee: every
+    stored request is exactly what its server request received, the transport never sees
+    the caller's request object, and the caller's ``request.stream`` is never replaced."""
+    module = _module(flavor)
+    attr = "handle_request" if mode == "sync" else "handle_async_request"
+    code = _transport._PATCHED[module.__name__, attr][1].__code__  # the saved original
+    stream = _reusable_stream(module, 0, threading.Event(), threading.Event())
+    headers = {"host": f"127.0.0.1:{fake_llm.port}", "content-type": "application/json",
+               "transfer-encoding": "chunked"}  # fmt: skip
+    request = module.Request("POST", _url(fake_llm), stream=stream, headers=headers)
+    gate, send = (
+        _EntryGate(code, request, stream),
+        _sender_for(module, how, mode, installed, request),
+    )
+    pool = concurrent.futures.ThreadPoolExecutor(2)
+    try:
+        sends = [pool.submit(_gated_send, gate, 0, send)]
+        assert gate.entered[0].wait(10)
+        sends.append(pool.submit(_gated_send, gate, 1, send))
+        assert gate.entered[1].wait(10)
+        untouched_while_paused = request.stream is stream
+        for index in (released_first, 1 - released_first):
+            gate.release[index].set()
+            assert sends[index].result(10) == 200
+    finally:
+        for event in gate.release:
+            event.set()
+        pool.shutdown(wait=True)
+
+    # The send released first iterates the reusable stream first: BODIES[0].
+    expected = [BODIES[0], BODIES[1]] if released_first == 0 else [BODIES[1], BODIES[0]]
+    assert sorted(seen.request for seen in fake_llm.seen) == sorted(BODIES)
+    metadata = [attrs(span) for span in installed.spans()]  # sequence 0 began first
+    assert [a["fabric.source.sequence"] for a in metadata] == [0, 1]
+    assert [a["fabric.wire.truncated"] for a in metadata] == [False, False]
+    stored = [read_ref(installed.store, a["fabric.content.request_ref"]) for a in metadata]
+    assert stored == expected
+    assert installed.losses() == []
+    # Structurally: neither send replaced the caller's stream, and each transport call
+    # received a private request object, never the caller's.
+    assert untouched_while_paused and request.stream is stream
+    assert gate.isolated == [True, True]
 
 
 # --- wrapper delegation is one exchange, wherever the inner transport runs it ------------

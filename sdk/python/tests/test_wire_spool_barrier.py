@@ -230,6 +230,32 @@ def test_a_configured_boundary_is_synced_never_above(
     assert (root / BARRIER_MARKER).is_file()
 
 
+def test_a_symlinked_ancestor_walks_the_physical_parent(base: Path, senders: list[Sender]) -> None:
+    """Sol M1 #2, Python side: the spool is configured through a symlinked ancestor
+    (``alias -> physical/a``) whose physical parent the process cannot open. The walk
+    follows real paths, so it must refuse (first process and restart, no marker) until
+    the physical parent's fsync truly succeeds, never accept by walking the alias's
+    lexical parents."""
+    physical = base / "physical"
+    (physical / "a").mkdir(parents=True, mode=0o700)
+    (base / "alias").symlink_to(physical / "a")
+    root = base / "alias" / "spool"
+    _unreadable(physical)
+    try:
+        for _ in range(2):  # the first process, then a restart
+            senders.append(sender := _sender(root))
+            assert sender.spool.write(_final(0), reserve=True)
+            assert not sender.flush(5.0)
+            assert sender.stats()["spool_undurable"] == 1
+            assert not (root / BARRIER_MARKER).exists()
+            sender.close(2.0)
+            senders.remove(sender)
+    finally:
+        physical.chmod(0o700)
+    senders.append(fixed := _sender(root))
+    assert fixed.flush(5.0) and (root / BARRIER_MARKER).is_file()
+
+
 def test_a_planted_marker_is_never_followed(tmp_path: Path, senders: list[Sender]) -> None:
     root = tmp_path / "spool"
     root.mkdir(mode=0o700)

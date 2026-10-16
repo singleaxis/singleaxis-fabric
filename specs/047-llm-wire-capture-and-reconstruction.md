@@ -301,19 +301,27 @@ call and its delegation is never captured again:
 - an inner transport whose method is Fabric's patch is called through the
   saved original method;
 - any other inner transport (a middleware transport, a subclass that
-  overrides the method and calls `super()`, another wrapper) receives a
-  private shallow copy of the request carrying a delegation mark, and a
-  patched method or wrapper that receives a marked copy passes it through
-  uncaptured, on whichever task or thread it runs. The mark lives only on
-  that copy, never on the caller's request.
+  overrides the method and calls `super()`, another wrapper) receives the
+  invocation's private request copy (below), which carries a delegation
+  mark, and a patched method or wrapper that receives a marked copy passes
+  it through uncaptured, on whichever task or thread it runs. The mark lives
+  only on that copy, never on the caller's request.
 
-Each invocation tees a streamed request body on its own: while it is in
-flight the request's `stream` is that invocation's tee, and a concurrent
-send of the same `Request` with a reusable stream tees the *original*
-stream underneath, never another invocation's tee, so each exchange retains
-exactly the bytes its transport read. An invocation restores the original
-stream only while its own tee is still installed, so they may finish in any
-order.
+**The caller's `Request` is never mutated.** Each captured invocation hands
+the transport a private, per-invocation shallow copy of the request (the
+same method, URL, headers and extensions objects, plus the delegation mark)
+and, for a streamed body, sets *the copy's* `stream` to this invocation's own
+tee wrapping the caller's stream. The caller's `request.stream` is never
+replaced, so overlapping sends of the same `Request` with a reusable stream
+(threads or tasks, whatever the order in which they enter, pause in, read
+or finish their transport calls) each read through their own tee, and each
+exchange retains exactly the bytes its transport read. Attributes the
+transport itself rebinds on the copy it was handed (for example
+`request.read()` replacing the stream with the bytes it read) are set on the
+caller's request after the call returns or raises, exactly as if the
+transport had been handed that request; the delegation mark and the tee are
+never carried back. A request that cannot be copied is sent as is with its
+streamed body unretained (`truncated`).
 
 An inner transport that rebuilds the request object (dropping the mark)
 before it reaches a patched transport is captured by the wrapper and again
@@ -429,13 +437,13 @@ protection fails **closed**: the Node drops unknown keys and invalid values.
    or extensions and never injects headers. Response chunks are yielded as
    the *same* `bytes` objects, in order, as soon as the inner stream yields
    them. No read-ahead. A streamed request body (one that is not already
-   `bytes`) is teed the same way: for the duration of the transport call
-   `request.stream` is a wrapper with exactly the original stream's
-   sync/async byte-stream base classes, yielding the original chunks as the
-   transport reads them; the original stream is put back when the call
-   returns or raises (unless the transport replaced it itself, e.g. by
-   `request.read()`). A body the transport did not read to its end is
-   stored as `truncated`.
+   `bytes`) is teed the same way: the transport is handed a private copy of
+   the request (§1, nested capture) whose `stream` is a wrapper with exactly
+   the original stream's sync/async byte-stream base classes, yielding the
+   original chunks as the transport reads them; the caller's
+   `request.stream` is never replaced (a change the transport makes itself,
+   e.g. `request.read()`, is carried back to the caller's request). A body
+   the transport did not read to its end is stored as `truncated`.
 2. **No new failure modes.** Exceptions from the inner transport or stream
    are re-raised as the same object. Any exception in tee code is caught;
    the exchange becomes a pass-through and an `internal_error` loss is
