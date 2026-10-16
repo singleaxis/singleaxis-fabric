@@ -43,3 +43,4 @@ db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_
 db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_tool_result_followup.json:generic-api-key:194
 db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_failure_rate_limit.json:generic-api-key:65
 db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_failure_rate_limit.json:generic-api-key:152
+dcc028a17e6543b7e2b51a818f0eaab77ab7fa63:deploy/compose/docker-compose.s3-eval.yml:curl-auth-user:103

@@ -99,8 +99,12 @@ services:
       <<: *s3-eval-identities
     command:
       - |
+        # Admin keys go to curl through a config file, never on its command
+        # line (visible in the process list).
+        umask 077
+        printf 'user = "%s:%s"\n' "$$ROOT_KEY" "$$ROOT_SECRET" > /tmp/s3-eval-init.curlrc
         s3() {
-          curl -sS --aws-sigv4 "aws:amz:us-east-1:s3" --user "$$ROOT_KEY:$$ROOT_SECRET" \
+          curl -sS -K /tmp/s3-eval-init.curlrc --aws-sigv4 "aws:amz:us-east-1:s3" \
             -o /tmp/s3-eval-init.out -w '%{http_code}' "$$@"
         }
         fail() { echo "s3-eval-init: $$1 (HTTP $$code)"; cat /tmp/s3-eval-init.out; exit 1; }
