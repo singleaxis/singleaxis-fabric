@@ -140,6 +140,22 @@ and holds message content (`0600` files, `0700` directory; host disk
 encryption is the at-rest protection). Several processes may share one
 spool directory: one drains, all write.
 
+*Sharing a spool across processes.* `FABRIC_WIRE_SPOOL_MAX_BYTES` bounds the
+directory as a whole, not each process: every writer admits a record under
+a shared admission lock (`.admit` in the spool, separate from the
+drainer's `.lock`) against the bytes actually on disk, and reserves the
+record's full size on disk before releasing the lock. With the Node down,
+N processes together hold at most the bound (plus the 1 MiB reserve for
+loss and marker records); whichever process finds the spool full records a
+`queue_full` loss. A writer killed mid-write leaves a temp file that keeps
+counting until the drainer removes it after an hour. The lock is taken only
+on Fabric's background threads, never on your request path; a lock held
+for more than 5 s (for example by a stopped process) makes new records
+`queue_full` losses rather than blocking. Run the same Fabric version in
+every process sharing a spool: an older writer does not take the lock, and
+an older process refuses a spool directory holding `.admit` (remove it
+only when downgrading every process together).
+
 *Delivery receipts in a shared spool.* When the draining process has
 delivered a record another process wrote, it renames that record in place
 to its receipt `<record>.ack` and truncates it to zero, so retiring a

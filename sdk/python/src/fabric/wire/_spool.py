@@ -17,13 +17,17 @@ import stat
 import struct
 import threading
 import time
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any
 
 from .._loss import _Beat, _Range
 
 MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
 RESERVE_BYTES = 1024 * 1024  # loss and marker records may exceed the bound by this much
+# Cross-process admission (spec 048 §2 "Shared bound"): every process sharing the spool
+# admits under this flock'd file (never the drainer's ``.lock``), against the bytes on disk.
+ADMIT_LOCK = ".admit"
+ADMIT_TIMEOUT_S = 5.0  # a busy admission lock past this fails closed (the record is refused)
 QUARANTINE_SUFFIX = ".corrupt"  # quarantined records count against the bound until removed
 ACK_SUFFIX = ".ack"  # a drainer's delivery receipt for another process's record (empty file)
 # A receipt counts against the bound at its size, but at least this much (an inode and a
@@ -178,7 +182,7 @@ def _mount_point(path: str) -> bool:
 def _own_name(name: str) -> bool:
     """Whether ``name`` is one the wire spool itself creates."""
     return (
-        name in (".lock", BARRIER_MARKER)
+        name in (".lock", ADMIT_LOCK, BARRIER_MARKER)
         or name.startswith(".tmp-")
         or name.endswith((".rec", ACK_SUFFIX, QUARANTINE_SUFFIX))
     )
@@ -205,9 +209,12 @@ class Spool:
     plus own writes in flight. :meth:`rescan` rebuilds the ledger from disk (all writers);
     every other transition sets a file's entry from what is on disk after its physical
     step, so a failed or retried step never counts anything twice. A rename moves the
-    charge to the new name in one step under the admission lock, so no admission ever
+    charge to the new name in one step under the ledger lock, so no admission ever
     sees the file uncharged. An observation error never lowers a charge: the entry keeps
-    its value until a rescan observes the file. ``mine`` holds this
+    its value until a rescan observes the file. The ledger is this process's view: every
+    admission it passes is also checked, under the cross-process admission lock, against
+    the bytes on disk of every process sharing the directory (:meth:`_reserve`, spec 048
+    §2 "Shared bound"). ``mine`` holds this
     process's records until their outcome is known; ``failed`` counts those that will
     never be delivered: quarantined (by any drainer) or gone without a drainer's receipt.
     At most ``max_receipts`` receipts are kept (never more than an eighth of the bound)."""
@@ -249,6 +256,15 @@ class Spool:
         self.failed = 0  # own records quarantined, or gone without a delivery receipt
         self._lock_fd = os.open(self._path(".lock"), os.O_RDWR | os.O_CREAT | _NOFOLLOW, 0o600)
         self._barrier_lock = threading.Lock()  # one barrier walk at a time
+        # The shared admission lock (spec 048 §2 "Shared bound"): this process's own open
+        # file description (a forked child opens its own), taken by one thread at a time.
+        self._admit_fd = os.open(self._path(ADMIT_LOCK), os.O_RDWR | os.O_CREAT | _NOFOLLOW, 0o600)
+        self._admit_mutex = threading.Lock()
+        # Accounted size of each spool file by (name, inode), as last observed under the
+        # admission lock: only new names, temp files and untruncated receipts are re-stat'd.
+        self._disk: dict[tuple[str, int], int] = {}
+        self.shared_bytes = 0  # the shared total at this process's last admission
+        self.admission_timeouts = 0  # admissions refused because the lock stayed busy
 
     def _path(self, name: str) -> str:
         return os.path.join(self.dir, name)
@@ -299,7 +315,104 @@ class Spool:
 
     def after_fork(self) -> None:  # the child drops the parent's lock and only writes
         self.release()
+        with contextlib.suppress(OSError):  # the parent's description: never shared
+            os.close(self._admit_fd)
         self._init_state()
+
+    @contextlib.contextmanager
+    def _admission(self) -> Iterator[None]:
+        """Hold the shared admission lock: one thread of this process (``_admit_mutex``),
+        then ``flock(.admit)`` across processes. Never taken on the host's request path
+        (capture worker, sender and flush-helper threads only) and held only for a
+        directory scan, a temp file's creation or a rename, never for a write or fsync.
+        Raises ``TimeoutError`` after ``ADMIT_TIMEOUT_S`` (the caller fails closed)."""
+        deadline = time.monotonic() + ADMIT_TIMEOUT_S
+        if not self._admit_mutex.acquire(timeout=ADMIT_TIMEOUT_S):
+            raise TimeoutError("spool admission lock busy")
+        try:
+            pause = 0.0005
+            while True:
+                try:
+                    self._fcntl.flock(self._admit_fd, self._fcntl.LOCK_EX | self._fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("spool admission lock busy") from None
+                    time.sleep(pause)
+                    pause = min(pause * 2, 0.01)
+            try:
+                yield
+            finally:
+                with contextlib.suppress(OSError):
+                    self._fcntl.flock(self._admit_fd, self._fcntl.LOCK_UN)
+        finally:
+            self._admit_mutex.release()
+
+    def _shared_total(self) -> int:
+        """Under the admission lock: what every process's spool files count against the
+        bound, from disk (records, temp files, receipts, quarantined records), so a
+        crashed writer's leftovers count and no shared counter can drift. A file is
+        re-stat'd only when its (name, inode) is new, it is a temp file, or it is a receipt
+        not yet seen truncated; every other spool file keeps its size until it is gone (a
+        record never changes size; a rename makes a new name). Every name is created
+        (temp file, rename) under this lock, so the scan sees each file under one name.
+        An observation error on a new name raises (the caller fails closed)."""
+        disk, total = {}, 0
+        with os.scandir(self.dir) as entries:
+            for entry in entries:
+                name = entry.name
+                if _accounted(name, 0) is None:
+                    continue
+                key = (name, entry.inode())
+                size = self._disk.get(key)
+                if size is None or name.startswith(".tmp-") or (
+                    name.endswith(ACK_SUFFIX) and size > RECEIPT_OVERHEAD
+                ):  # fmt: skip
+                    try:
+                        size = _accounted(name, os.lstat(self._path(name)).st_size)
+                    except FileNotFoundError:
+                        continue  # removed meanwhile (a rename happens under this lock)
+                    except OSError:
+                        if size is None:
+                            raise
+                if size is not None:
+                    disk[key] = size
+                    total += size
+        self._disk = disk
+        return total
+
+    def _reserve(self, tmp: str, size: int, limit: int) -> int | None:
+        """Shared admission (spec 048 §2 "Shared bound"): under the admission lock, admit
+        ``size`` bytes only while the spool's on-disk total plus ``size`` stays within
+        ``limit``, and reserve them on disk before the lock is released: the temp file is
+        created at its full size (its last byte written), so every other process's next
+        scan counts it. Returns the temp file's descriptor, or ``None`` (refused: over the
+        bound, the lock busy, or the total unknown)."""
+        try:
+            with self._admission():
+                total = self._shared_total()
+                self.shared_bytes = total
+                if total + size > limit:
+                    return None
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+                try:  # its last byte: the file has its full size (sparse below it)
+                    os.pwrite(fd, b"\0", size - 1)
+                except BaseException:
+                    os.close(fd)
+                    with contextlib.suppress(OSError):
+                        os.unlink(tmp)
+                    raise
+                self.shared_bytes = total + size
+                return fd
+        except TimeoutError:
+            self.admission_timeouts += 1
+            return None
+
+    def _rename(self, src: str, dst: str) -> None:
+        """A rename under the admission lock, so an admission's scan never misses the file
+        under both names (a busy lock raises ``TimeoutError``, an ``OSError``)."""
+        with self._admission():
+            os.rename(self._path(src), self._path(dst))
 
     def try_lock(self) -> bool:
         with contextlib.suppress(OSError):
@@ -395,14 +508,20 @@ class Spool:
         pieces = frame(doc, bodies)
         size = sum(map(len, pieces))
         name = f"{doc['source']['source_epoch']:020d}-{os.getpid():010d}-{order:012d}.rec"
+        limit = self.max_bytes + (RESERVE_BYTES if reserve else 0)
         with self._lock:  # admitted: counted at its full size until the outcome is known
-            if self.bytes + size > self.max_bytes + (RESERVE_BYTES if reserve else 0):
+            if self.bytes + size > limit:
                 return None
             self._writing.add(name)
             self._account(name, size)
         tmp = self._path(".tmp-" + name)
         try:
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+            # Then across every process sharing the spool, against the disk (048 §2).
+            if (fd := self._reserve(tmp, size, limit)) is None:
+                with self._lock:
+                    self._writing.discard(name)
+                    self._account(name, None)
+                return None
             try:
                 for piece in pieces:
                     view = memoryview(piece)
@@ -411,7 +530,7 @@ class Spool:
                 os.fsync(fd)
             finally:
                 os.close(fd)
-            os.rename(tmp, self._path(name))
+            self._rename(".tmp-" + name, name)
             self._sync_dir()
         except BaseException:
             with contextlib.suppress(OSError):
@@ -471,7 +590,7 @@ class Spool:
                     os.unlink(path)
             else:
                 with contextlib.suppress(FileNotFoundError):  # renamed by an earlier attempt
-                    os.rename(path, receipt)
+                    self._rename(name, name + ACK_SUFFIX)
                 renamed = True
                 self._truncate(receipt)  # a missing receipt was consumed by its writer
             self._sync_dir()
@@ -528,7 +647,7 @@ class Spool:
             if name in self.mine:
                 self.mine.discard(name)
                 self.failed += 1
-        os.rename(self._path(name), self._path(name + QUARANTINE_SUFFIX))  # else still charged
+        self._rename(name, name + QUARANTINE_SUFFIX)  # else still charged
         try:
             self._sync_dir()
         finally:

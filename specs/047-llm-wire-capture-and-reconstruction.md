@@ -308,9 +308,11 @@ call and its delegation is never captured again:
   only on that copy, never on the caller's request.
 
 **The caller's `Request` is never mutated.** Each captured invocation hands
-the transport a private, per-invocation shallow copy of the request (the
-same method, URL, headers and extensions objects, plus the delegation mark)
-and, for a streamed body, sets *the copy's* `stream` to this invocation's own
+the transport a private, per-invocation shallow copy of the request: its
+whole instance state, the instance `__dict__` and every `__slots__` member
+set on it across the class hierarchy (the same method, URL, headers,
+extensions and stream objects, and any attribute a `Request` subclass keeps
+in slots), plus the delegation mark; and, for a streamed body, sets *the copy's* `stream` to this invocation's own
 tee wrapping the caller's stream. The caller's `request.stream` is never
 replaced, so overlapping sends of the same `Request` with a reusable stream
 (threads or tasks, whatever the order in which they enter, pause in, read
@@ -320,8 +322,25 @@ transport itself rebinds on the copy it was handed (for example
 `request.read()` replacing the stream with the bytes it read) are set on the
 caller's request after the call returns or raises, exactly as if the
 transport had been handed that request; the delegation mark and the tee are
-never carried back. A request that cannot be copied is sent as is with its
-streamed body unretained (`truncated`).
+never carried back. Slot members are carried back the same way.
+
+**No faithful copy: fail open.** The copy is made only when it is
+faithful: every class in the request's hierarchy (other than `object`) is
+a class statement (no C-level instance state), none defines `__new__`,
+`__copy__`, `__deepcopy__`, `__reduce__`, `__reduce_ex__`,
+`__getnewargs__` or `__getnewargs_ex__` (a class that owns its creation
+or copy protocol is not second-guessed), instances have a `__dict__` (for
+the mark) and every slot is a plain member descriptor. `__getstate__` and
+`__setstate__` are not consulted (they shape pickling; httpx's own
+`Request` drops its stream there), so a subclass defining them is copied
+from its raw state. When no faithful copy can be made, or preparing the
+copy raises (for example setting the tee on a request whose `stream`
+cannot be rebound), the caller's original request is sent unchanged with no
+tee, the sequence is recorded as an `internal_error` loss, and nothing is
+raised into the host: the caller gets exactly the server's response. Under
+an explicit wrapper whose inner transport is a middleware, such a request
+reaches a patched transport unmarked and is lost there a second time (an
+expected duplicate loss, never a silent omission).
 
 An inner transport that rebuilds the request object (dropping the mark)
 before it reaches a patched transport is captured by the wrapper and again

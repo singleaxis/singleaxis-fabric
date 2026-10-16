@@ -16,7 +16,7 @@ import time
 import uuid
 import weakref
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
-from types import ModuleType
+from types import MemberDescriptorType, ModuleType
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry import context as otel_context
@@ -199,16 +199,18 @@ class Exchange:
         self.request_sent = True  # False until a teed request stream is exhausted
         self.response: _Side | None = None
         self.outgoing: Any = None  # set by start(): the request object the transport gets
-        # (caller's request, private copy, the copy's attributes as handed over); until
+        # (caller's request, private copy, the copy's state as handed over); until
         # end_request.
-        self.handoff: tuple[Any, Any, dict[str, Any]] | None = None
+        self.handoff: tuple[Any, Any, dict[Any, Any]] | None = None
 
     def start(self, request: Any) -> None:
         """Capture context and the request body, and set :attr:`outgoing`, the request the
-        transport is handed; on failure the caller detaches (lost) and sends ``request``.
+        transport is handed; on failure (including a request that cannot be copied
+        faithfully) the caller detaches (lost) and sends ``request`` unchanged.
 
         The caller's request object is never changed: the transport gets a private shallow
-        copy (same method, URL, headers and extensions, carrying the delegation mark) and, for
+        copy (its whole instance state, ``__dict__`` and every ``__slots__`` member across
+        the class hierarchy, plus the delegation mark) and, for
         a streamed body, this invocation's own tee wrapping the caller's stream. Overlapping
         sends of one request therefore each read through their own tee, whatever the order
         in which they reach, read or finish their transport calls."""
@@ -222,17 +224,18 @@ class Exchange:
         self.request = side = _Side(request.headers)
         self.outgoing = request
         private = private_copy(request)
+        if private is None:  # no faithful copy: fail open (spec 047 §1), the caller's
+            raise UncopyableRequestError(type(request).__name__)  # request is sent unchanged
         content = getattr(request, "_content", None)
         if isinstance(content, bytes):
             self._retain(side, content)
-        elif private is not None and (kind := _request_tee_type(request.stream)) is not None:
+        elif (kind := _request_tee_type(request.stream)) is not None:
             self.request_tee, self.request_sent = kind(request.stream, self), False
             private.stream = self.request_tee  # yields the same chunks, on the copy only
-        else:  # not an httpx byte stream (or not copyable): sent as is, unretained
+        else:  # not an httpx byte stream: sent as is, unretained
             side.truncated = True
-        if private is not None:
-            self.handoff = (request, private, dict(vars(private)))
-            self.outgoing = private
+        self.handoff = (request, private, _instance_state(private))
+        self.outgoing = private
 
     def end_request(self) -> None:
         """After the transport call: a teed body the transport did not read to its end is
@@ -383,25 +386,115 @@ class Exchange:
 DELEGATION_MARK = "_fabric_wire_delegated"
 
 
-def private_copy(request: Any) -> Any | None:
-    """A shallow copy of ``request`` carrying the delegation mark (same method, URL,
-    headers, extensions and stream objects), or ``None`` when it cannot be copied."""
+class UncopyableRequestError(Exception):
+    """A request :func:`private_copy` cannot copy faithfully: the exchange fails open."""
+
+
+# Hooks through which a class takes over how its instances are created or copied. A request
+# class defining one (``object`` aside) is never raw-state copied: Fabric does not second
+# guess it and fails open instead. ``__getstate__``/``__setstate__`` are not among them: they
+# shape what pickling keeps (httpx's own ``Request`` drops its stream there), while the
+# private copy carries the whole raw state, so the transport sees every attribute it would.
+_COPY_HOOKS = frozenset({
+    "__new__", "__copy__", "__deepcopy__", "__reduce__", "__reduce_ex__",
+    "__getnewargs__", "__getnewargs_ex__",
+})  # fmt: skip
+_HEAP_TYPE = 1 << 9  # Py_TPFLAGS_HEAPTYPE: a class statement, not C-level instance state
+_SLOT_PLAN: weakref.WeakKeyDictionary[type, tuple[Any, ...] | None] = weakref.WeakKeyDictionary()
+_SLOT_PLAN_LOCK = threading.Lock()
+
+
+def _slot_plan(cls: type) -> tuple[Any, ...] | None:
+    """The member descriptors of every ``__slots__`` entry across ``cls``'s hierarchy, or
+    ``None`` when instances of ``cls`` cannot be raw-state copied faithfully (C-level
+    state, a class owning its copy protocol, no instance dict, a shadowed slot)."""
     try:
-        clone = object.__new__(type(request))
+        return _SLOT_PLAN[cls]
+    except KeyError:
+        pass
+    plan: tuple[Any, ...] | None = None
+    with contextlib.suppress(Exception):
+        plan = _build_slot_plan(cls)
+    with _SLOT_PLAN_LOCK, contextlib.suppress(TypeError):  # not weak-referenceable
+        _SLOT_PLAN[cls] = plan
+    return plan
+
+
+def _build_slot_plan(cls: type) -> tuple[Any, ...] | None:
+    members: list[Any] = []
+    has_dict = False
+    for klass in cls.__mro__:
+        if klass is object:
+            continue
+        namespace = vars(klass)
+        if not klass.__flags__ & _HEAP_TYPE or _COPY_HOOKS & namespace.keys():
+            return None
+        slots = namespace.get("__slots__")
+        if slots is None:
+            has_dict = True  # a class without __slots__ gives its instances a __dict__
+            continue
+        if isinstance(slots, str):
+            slots = (slots,)
+        elif not isinstance(slots, tuple | list | dict | set | frozenset):
+            return None  # e.g. an iterator, already consumed by the class statement
+        for name in slots:
+            if name == "__dict__":
+                has_dict = True
+                continue
+            if name == "__weakref__":
+                continue
+            mangled = name.startswith("__") and not name.endswith("__")
+            member = namespace.get(f"_{klass.__name__.lstrip('_')}{name}" if mangled else name)
+            if not isinstance(member, MemberDescriptorType):
+                return None
+            members.append(member)
+    return tuple(members) if has_dict else None
+
+
+def _instance_state(obj: Any) -> dict[Any, Any]:
+    """``obj``'s shallow state: ``__dict__`` items by name, set slots by descriptor."""
+    state: dict[Any, Any] = dict(vars(obj))
+    for member in _slot_plan(type(obj)) or ():
+        with contextlib.suppress(AttributeError):  # an unset slot
+            state[member] = member.__get__(obj, type(obj))
+    return state
+
+
+def private_copy(request: Any) -> Any | None:
+    """A faithful shallow copy of ``request`` carrying the delegation mark: its whole
+    instance state (``__dict__`` and every set ``__slots__`` member, across the class
+    hierarchy; same method, URL, headers, extensions and stream objects), or ``None`` when
+    such a copy cannot be made (the caller then fails open with the original request)."""
+    try:
+        cls = type(request)
+        if (plan := _slot_plan(cls)) is None:
+            return None
+        clone = object.__new__(cls)
         state = vars(clone)
         state.update(vars(request))
+        for member in plan:
+            try:
+                value = member.__get__(request, cls)
+            except AttributeError:  # unset on the original: left unset on the copy
+                continue
+            member.__set__(clone, value)
         state[DELEGATION_MARK] = True
         return clone
     except Exception:
         return None
 
 
-def _carry_back(request: Any, private: Any, handed: dict[str, Any]) -> None:
-    """Set on ``request`` each attribute the transport rebound on ``private`` (compared by
-    identity with what it was handed): never the mark, never this invocation's tee."""
-    for name, value in list(vars(private).items()):
-        if name != DELEGATION_MARK and handed.get(name, _ABSENT) is not value:
-            setattr(request, name, value)
+def _carry_back(request: Any, private: Any, handed: dict[Any, Any]) -> None:
+    """Set on ``request`` each attribute or slot the transport rebound on ``private``
+    (compared by identity with what it was handed): never the mark, never this
+    invocation's tee."""
+    for key, value in _instance_state(private).items():
+        if key == DELEGATION_MARK or handed.get(key, _ABSENT) is value:
+            continue
+        if isinstance(key, str):
+            setattr(request, key, value)
+        else:
+            key.__set__(request, value)
 
 
 _ABSENT = object()

@@ -244,7 +244,8 @@ Programmatic `WireConfig(store=…)` rejects an `S3ContentStore` instance.
 
 **Directory.** Created `0700` if absent (parents too, like the local store);
 an existing directory must be owned by the process uid, not a symlink, and
-is tightened to `0700`, else `ValueError`. Lock file `.lock` (`0600`),
+is tightened to `0700`, else `ValueError`. Admission lock `.admit`
+(`0600`, "Shared bound" below). Lock file `.lock` (`0600`),
 `flock(LOCK_EX | LOCK_NB)`. The lock holder is the only **drainer**; any
 process can **write**. A process that does not get the lock (a second agent
 on the same directory, or a forked worker whose parent holds it) writes
@@ -370,8 +371,34 @@ a `queue_full` loss. Loss and marker records may use a 1 MiB reserve above
 the bound; past it, loss ranges stay in the in-memory table (merged per key,
 as 047) and are spooled when space frees, and a marker is dropped and
 counted (its scope then stays open: `unverified`, never false complete).
-With several writer processes the bound is approximate by one rescan
-interval. Delivery receipts (`*.ack`, below) count against the same bound
+**Shared bound.** The bound holds across every process sharing the spool
+directory, at every moment. After the local ledger admits a record, the
+writer takes the **admission lock** — a thread lock, then
+`flock(LOCK_EX)` on `.admit` (`0600`), a file separate from the drainer's
+`.lock`, opened anew by a forked child — and, under it, computes the
+spool's total from disk: every process's pending, temp and quarantined
+records and receipts, at the sizes the ledger uses. The record is admitted
+only while that total plus its size stays within the bound (plus the 1 MiB
+reserve for loss and marker records); admitted, its temp file is created
+at its full size (its last byte written) before the lock is released, so
+the reservation is on disk for every other process's next admission and a
+writer that crashes after admission leaves a temp file that keeps counting
+until the drainer removes it (older than one hour). Nothing is kept in a
+shared counter, so nothing can drift. Every rename that moves a charge
+(temp to record, record to receipt, record to `*.corrupt`) also happens
+under the admission lock, so a scan sees each file under exactly one name;
+removals and truncations only lower the total. The lock is held only for
+the directory scan, the temp file's creation and those renames — never for
+a record's write or fsync — and only on the capture worker, sender and
+flush-helper threads, never on the host's request path. A lock that stays
+busy for 5 s, or a total that cannot be observed, refuses the record (fail
+closed: `queue_full` for an exchange; a loss range stays in memory, a
+marker is dropped). The scan is bounded: one directory listing per
+admission, re-stat'ing only new (name, inode) pairs, temp files and
+receipts not yet seen truncated; a record's size never changes under its
+name. All processes sharing a spool must run a version with the admission
+lock (an older writer neither takes it nor counts others' reservations,
+and an older process refuses a directory holding `.admit`). Delivery receipts (`*.ack`, below) count against the same bound
 at their size but at least 128 bytes each (an inode and directory entry),
 less than any record, so neither the rename nor the truncation of a
 retirement grows the accounted total, even when the truncation fails.
@@ -1004,6 +1031,26 @@ projected. `--run` values go through the same projection.
     (`tests/test_wire_nested_capture.py`) each store exactly the body their
     server request received, in both finish orders, and the request's
     stream is the original again afterwards.
+
+17. Revision 8 (`tests/test_wire_spool_shared_bound.py`,
+    `tests/test_wire_request_copy.py`): two and four real agent processes
+    sharing one spool with the Node down admit exactly what fits the bound
+    across all of them (two exchange records under the smallest bound),
+    record every other exchange as a `queue_full` loss, never exceed the
+    bound plus the reserve at any sampled moment, and deliver every admitted
+    exchange and every loss once the Node returns (before: two processes on
+    a 5 MiB spool left 8.4 MB on disk); a writer killed after its admission
+    leaves a full-size temp file that every other process's admission counts
+    until the drainer removes it; a busy admission lock refuses the record
+    instead of blocking. A `Request` subclass keeping attributes in
+    `__slots__` (one level, several levels, name-mangled, unset), or
+    defining `__getstate__`/`__setstate__`, is captured exactly and the
+    transport sees every attribute (before: `AttributeError` raised into the
+    host, sync and async, httpx and httpx2, patched and wrapped); one that
+    owns its copy protocol, or whose copy cannot take the tee, is sent
+    unchanged as an `internal_error` loss; in every case the caller gets the
+    server's response exactly as without Fabric, and slot members the
+    transport rebinds are carried back.
 
 ## 12. Open questions
 
