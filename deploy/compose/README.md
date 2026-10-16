@@ -31,7 +31,7 @@ routes content into a telemetry pipeline or to the OTLP destination.
 | Where content goes | How |
 |---|---|
 | `fabric-content` volume (`/var/lib/fabric-node/content`) | evaluation default (`make up`); read it with `fabric.reconstruct --store-root` |
-| local MinIO, SSE-S3, path-style | `make up-minio` (evaluation only, `docker-compose.minio.yml`) |
+| local S3-compatible store (SeaweedFS), SSE-S3, path-style | `make up-s3-eval` (evaluation only, `docker-compose.s3-eval.yml`) |
 | S3 / S3-compatible store, server-side encrypted | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content.yml` + `docker-compose.content-s3.yml`, merging `collector-config/collector-content.yaml` + `collector-content-s3.yaml`) |
 | `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
 
@@ -39,14 +39,16 @@ The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
 production overlay is telemetry only and starts unchanged with an existing
 `.env` (no `FABRIC_TENANT_ID`, no port 4319).
 
-`make up-minio` starts MinIO (`MINIO_KMS_SECRET_KEY` for SSE-S3, published
-on `127.0.0.1:9000` only), a one-shot `minio-init` job that creates the
-bucket with default encryption, a writer policy and user for the Node
-(`s3:PutObject` + `s3:GetObject` on `fabric-content/fabric/content/*`) and a
-read-only user for reconstruction, and points the Node at
-`http://minio:9000` with `use_path_style` and `sse: AES256`. Only the
-`fabric-node` service receives the writer keys. Read back with the reader
-user:
+`make up-s3-eval` starts an S3-compatible evaluation store (SeaweedFS,
+Apache-2.0, pinned by digest; an SSE-S3 key from `FABRIC_S3_EVAL_SSE_KEK`;
+S3 published on `127.0.0.1:9000` only) with three static identities: an
+admin used only by the one-shot `s3-eval-init` job, a writer for the Node
+(GetObject + PutObject on `fabric-content/fabric/content/*`) and a
+GetObject-only reader on the same prefix for reconstruction. `s3-eval-init`
+creates the bucket with default SSE-S3 encryption and a bucket policy that
+denies `s3:DeleteObject` to everyone. The Node is pointed at
+`http://s3-eval:8333` with `use_path_style` and `sse: AES256`. Only the
+`fabric-node` service receives the writer keys. Read back with the reader:
 
 ```bash
 AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret \
@@ -55,7 +57,17 @@ python -m fabric.reconstruct --spans spans.json --tenant evaluation \
   --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1
 ```
 
-All MinIO credentials have evaluation-only defaults (see `.env.example`).
+All store credentials and the SSE key have evaluation-only defaults (see
+`.env.example`).
+
+This overlay used MinIO until October 2026. MinIO no longer publishes
+community images and the pinned image stopped being pullable, so it was
+replaced; the Node only needs S3 with `If-None-Match` writes and SSE, and
+any S3-compatible store that has both can stand in. The S3 end-to-end test
+(`scripts/tests/test_wire_capture_s3_eval_e2e.py`) runs against this overlay.
+It verifies SSE as the store reports it (`ServerSideEncryption: AES256`) and
+that the bytes kept below its S3 gateway are not the plaintext; it does not
+verify AWS KMS (`aws:kms`) or bucket-key behaviour, which need real S3.
 
 ## Start and inspect
 

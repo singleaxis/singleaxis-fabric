@@ -21,7 +21,7 @@ holds interpreter exit for at most `shutdown_timeout_s` (default 2 s).
 ┌─────────────────────────────────────┐   ┌───────────────────────────────────────────┐
 │ agent ─► wire tee ─► spool (fsync)  │   │ otlp :4317/:4318 ─► fabricguard ─► queue ─│─► OTLP destination
 │                        │ one sender ├──►│                                           │   (spans only)
-│                        │ thread     ├──►│ otlp/content :4319 ─► fabriccontent ─► q ─│─► S3 / MinIO / directory
+│                        │ thread     ├──►│ otlp/content :4319 ─► fabriccontent ─► q ─│─► S3 / S3-compatible / directory
 └─────────────────────────────────────┘   │   (descriptor, digest, length, tenant)    │   (bodies + descriptors)
   no cloud credentials, Node ingress only └───────────────────────────────────────────┘
 ```
@@ -332,7 +332,7 @@ backend without `sse: AES256` or `sse: aws:kms`, whatever the launch path.
 |---|---|---|---|
 | Helm `shadow-production` ([deployment.md](deployment.md)) | TLS with a verified client certificate **and** the workload-scoped bearer token (`receiver.workloadAuthentication`, required by the profile); the chart puts the same `bearertokenauth/workload` authenticator on 4317, 4318 and 4319. NetworkPolicy admits only labelled agent namespaces to all three ports | `otel-collector.content.backend=s3` with `content.s3.sse` (`AES256`, the default, or `aws:kms` + key); the Node writes with its IRSA role. The file backend is refused in this profile, and `content.allowedTenants` must be exactly `[tenant.id]`. | `https://` endpoints, `OTEL_EXPORTER_OTLP_CERTIFICATE`, `..._CLIENT_CERTIFICATE`, `..._CLIENT_KEY`, and `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<workload token>` for both signals. Neither credential alone is accepted. |
 | Compose production overlay ([deploy/compose](../deploy/compose/README.md)) | Bearer token; ports bound to `127.0.0.1` unless every published receiver has TLS (preflight) | Opt-in (`FABRIC_CONTENT_BACKEND`; unset keeps the overlay telemetry only): `s3` (bucket, region and SSE on the Node; instance role or a credentials-file secret), or `file` (the `fabric-content` volume, no server-side encryption; preflight refuses it unless `FABRIC_CONTENT_REQUIRE_SSE=false`, as Helm's shadow-production profile refuses it) | `http://127.0.0.1:4318` and `:4319`, `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<token>`. Use `https://` and receiver TLS before leaving the host. |
-| Compose evaluation + MinIO (`make up-minio`) | None (loopback evaluation only) | Local MinIO bucket with SSE-S3, path-style addressing, Node-only writer keys | `http://127.0.0.1:4318` and `:4319`, `FABRIC_TENANT_ID=evaluation` |
+| Compose evaluation + local S3 store (`make up-s3-eval`) | None (loopback evaluation only) | Local S3-compatible bucket (SeaweedFS; MinIO until October 2026) with default SSE-S3, path-style addressing, Node-only writer keys, a GetObject-only reader and a no-delete bucket policy | `http://127.0.0.1:4318` and `:4319`, `FABRIC_TENANT_ID=evaluation` |
 
 **Helm.** Enable content with `otel-collector.content.enabled=true`,
 `content.allowedTenants` (one tenant; in `shadow-production` exactly
@@ -706,7 +706,7 @@ the default AWS chain:
 ```bash
 python -m fabric.reconstruct --spans spans.json \
   --store-uri s3://<bucket>/<prefix> --tenant <tenant> --out report.json
-# S3-compatible store (the MinIO evaluation overlay):
+# S3-compatible store (the `make up-s3-eval` evaluation overlay):
 python -m fabric.reconstruct --spans spans.json \
   --store-uri s3://fabric-content/fabric/content/ --tenant <tenant> \
   --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1

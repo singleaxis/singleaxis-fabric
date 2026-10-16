@@ -7,7 +7,7 @@ networks:
 volumes:
   fabric-queue:
   # Spec 048 content path: durable content queue and the local content store
-  # (the file backend; docker-compose.minio.yml switches to MinIO).
+  # (the file backend; docker-compose.s3-eval.yml switches to a local S3 store).
   fabric-content-queue:
   fabric-content:
   sink-data:

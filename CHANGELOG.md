@@ -29,8 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   offline. No coverage claim beyond instrumented httpx/httpx2 calls.
 - Added Fabric Node content delivery and the agent durable spool (spec 048,
   draft): agents spool capture events to disk and deliver bodies to the
-  Node's `fabriccontent` exporter, so only the Node writes to S3, MinIO or a
-  directory store; run scopes bracket exchanges with run markers.
+  Node's `fabriccontent` exporter, so only the Node writes to S3, an
+  S3-compatible store or a directory store; run scopes bracket exchanges with
+  run markers. The Compose S3 evaluation overlay is
+  `docker-compose.s3-eval.yml` (`make up-s3-eval`, SeaweedFS), replacing the
+  MinIO overlay whose pinned image is no longer published.
 - Added spec 049 (draft): the four-layer capture coverage plan (context,
   structure, content, decisions and effects) with phases P0–P5, building on
   both the explicit evidence line (035–046) and wire capture (047/048).

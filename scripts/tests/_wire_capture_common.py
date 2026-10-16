@@ -3,8 +3,8 @@
 """Shared pieces of the wire-capture Node end-to-end tests (specs 047 and 048).
 
 Not a test module. Both ``test_wire_capture_node_e2e.py`` (file backend) and
-``test_wire_capture_minio_e2e.py`` (S3 backend on MinIO) drive real processes
-and real sockets with:
+``test_wire_capture_s3_eval_e2e.py`` (S3 backend on the S3-compatible
+evaluation store) drive real processes and real sockets with:
 
 - throwaway TLS material (one private CA, one leaf for the Node and the sink);
 - ``collector-production.yaml`` with exactly its documented TLS edits applied;

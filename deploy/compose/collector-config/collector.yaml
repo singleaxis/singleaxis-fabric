@@ -79,7 +79,7 @@ exporters:
       max_elapsed_time: 0s
   # Content store: the SDK layout <dir>/<tenant>/evidence/<object_id> plus
   # evidence/meta/<object_id>.json, readable by `fabric.reconstruct
-  # --store-root`. collector-content-s3.yaml switches to S3 / MinIO.
+  # --store-root`. collector-content-s3.yaml switches to S3.
   fabriccontent:
     allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
     backend: file

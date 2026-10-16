@@ -1,6 +1,6 @@
-# Content store overlay: S3 or an S3-compatible store (MinIO, Ceph RGW).
+# Content store overlay: S3 or an S3-compatible store (Ceph RGW, SeaweedFS, ...).
 # Merged with an extra --config after collector.yaml (evaluation,
-# docker-compose.minio.yml) or after collector-production.yaml +
+# docker-compose.s3-eval.yml) or after collector-production.yaml +
 # collector-content.yaml (production, docker-compose.content-s3.yml);
 # fabric-gate validates the merged result.
 #
@@ -20,13 +20,15 @@ exporters:
     s3:
       bucket: ${env:FABRIC_CONTENT_S3_BUCKET}
       prefix: ${env:FABRIC_CONTENT_S3_PREFIX:-fabric/content/}
-      # The bucket region (required by the SDK; any value for MinIO).
+      # The bucket region (required by the SDK; any value for most
+      # S3-compatible stores).
       region: ${env:FABRIC_CONTENT_S3_REGION:-}
       # Empty for AWS; http(s)://host:port for an S3-compatible store.
       endpoint: ${env:FABRIC_CONTENT_S3_ENDPOINT:-}
       use_path_style: ${env:FABRIC_CONTENT_S3_PATH_STYLE:-false}
       # aws:kms (with FABRIC_CONTENT_S3_KMS_KEY_ID, or the AWS-managed key)
-      # or AES256 (SSE-S3; MinIO with MINIO_KMS_SECRET_KEY).
+      # or AES256 (SSE-S3; on an S3-compatible store, configure its SSE-S3
+      # key, e.g. WEED_S3_SSE_KEK in docker-compose.s3-eval.yml).
       sse: ${env:FABRIC_CONTENT_S3_SSE:-aws:kms}
       kms_key_id: ${env:FABRIC_CONTENT_S3_KMS_KEY_ID:-}
     timeout: 60s

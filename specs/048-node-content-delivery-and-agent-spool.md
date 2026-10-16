@@ -532,8 +532,8 @@ refuse (`nlink != 1`): a replay that finds the object stored removes that
 object's temps when it has more than one link, and every start sweeps
 the temps an earlier process left below the content root, never following
 a symlink) and `s3` (aws-sdk-go-v2 default credential chain
-incl. IRSA; optional `endpoint` and `use_path_style` for MinIO and other
-S3-compatible stores; `region`; `sse: AES256 | aws:kms`, **required** —
+incl. IRSA; optional `endpoint` and `use_path_style` for S3-compatible
+stores; `region`; `sse: AES256 | aws:kms`, **required** —
 an empty or missing `sse` fails configuration validation (F12);
 `kms_key_id` only with `aws:kms`; `PutObject` with `If-None-Match: *`, on 412 `GetObject` and
 byte-compare). A store without conditional-write support is a retryable
@@ -804,8 +804,13 @@ unchanged `--store-root` (file backend directory) or `--store-uri
 s3://bucket/prefix`, plus new `--s3-endpoint-url URL`, `--s3-region REGION`
 and `--s3-path-style` (passed to `S3ContentStore(endpoint_url=…,
 region_name=…, addressing_style="path")`). Credentials come from the default
-boto3 chain. The e2e qualifies the path agent → Node → MinIO (SSE via
-`MINIO_KMS_SECRET_KEY`) → reconstruct.
+boto3 chain. The e2e qualifies the path agent → Node → an S3-compatible
+evaluation store (`deploy/compose/docker-compose.s3-eval.yml`: SeaweedFS
+with an SSE-S3 key and default bucket encryption; MinIO until its community
+images stopped being published) → reconstruct. It verifies `If-None-Match:
+*` (412 on an existing key), SSE-S3 as the store reports it and as stored
+below its S3 gateway, and the writer/reader scopes; `aws:kms` needs real S3
+and is not covered by the evaluation store.
 
 `--run RUN_ID` takes the id given to `fabric.wire.run()` in the clear (or
 its `r-` pseudonym, or a fallback id) and selects the run whose recorded id
@@ -827,8 +832,8 @@ projected. `--run` values go through the same projection.
 ## 11. Acceptance
 
 1. Node mode: an agent with no AWS variables captures a three-step ReAct run;
-   the Node writes bodies + descriptors to MinIO; reconstruct from the span
-   sink and MinIO is complete (`complete_for_declared_scope` for an unscoped
+   the Node writes bodies + descriptors to an S3-compatible store; reconstruct
+   from the span sink and the store is complete (`complete_for_declared_scope` for an unscoped
    run, `complete_for_observed_scopes` with every scope complete for a run
    in `fabric.wire.run()` blocks).
 2. Kill -9 the agent after the worker spooled N exchanges but before

@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Agent -> Fabric Node -> MinIO (SSE) -> reconstruct, with real processes (spec 048 §11).
+"""Agent -> Fabric Node -> S3 store (SSE) -> reconstruct, with real processes (spec 048 §11).
 
     real OpenAI SDK agent (>=3, httpx2), zero-code autoload, node mode,
     explicit run scopes (one nested), no cloud credentials, no boto3
@@ -12,38 +12,51 @@
             -> HTTPS fsync OTLP sink (host process)
         logs/content: memory_limiter -> fabriccontent (s3 backend,
             path-style endpoint, SSE AES256, If-None-Match writes,
-            persistent content queue) -> MinIO (MINIO_KMS_SECRET_KEY)
+            persistent content queue) -> the S3-compatible evaluation store
+            (docker-compose.s3-eval.yml: SeaweedFS with an SSE-S3 key,
+            default bucket encryption, prefix-scoped writer and reader)
     ``python -m fabric.reconstruct --spans <sink> --store-uri s3://...
-      --s3-endpoint-url <minio> --s3-path-style`` (reader credentials only)
+      --s3-endpoint-url <store> --s3-path-style`` (reader credentials only)
+
+The store is a stand-in for any S3-compatible service: nothing here relies on
+SeaweedFS beyond reading the bytes its filer holds below the S3 gateway, to
+check encryption at rest (test 7).
 
 Proves, in order (the tests share one stack):
 
 1. the agent process sees no ``AWS_*`` variable, imports no boto3/botocore
-   and its spool drains; MinIO holds every body and descriptor under
-   ``<prefix><tenant>/evidence/<id>`` and ``.../meta/<id>.json`` with SSE,
-   and nothing readable on MinIO's disk; reconstruct (``--run`` with the
-   clear run id) reports every scope ``complete_for_declared_scope`` and
+   and its spool drains; the store holds every body and descriptor under
+   ``<prefix><tenant>/evidence/<id>`` and ``.../meta/<id>.json``, each
+   reported ``ServerSideEncryption: AES256``; reconstruct (``--run`` with
+   the clear run id) reports every scope ``complete_for_declared_scope`` and
    the run ``complete_for_observed_scopes`` with zero gaps over an outer
    and a nested run scope;
-2. MinIO down: the Node's content queue holds the bodies; MinIO back: they
+2. the store honours what the Node and the docs rely on: ``If-None-Match:
+   *`` on an existing key is refused with 412 and leaves the object intact;
+   the writer cannot delete or write outside the prefix; the reader can
+   GetObject but cannot put or list;
+3. store down: the Node's content queue holds the bodies; store back: they
    are written and the run is still complete;
-3. Node down: the agent's spool holds every record, the agent exits
+4. Node down: the agent's spool holds every record, the agent exits
    normally, a restarted agent on the same spool replays them once the
    Node is back, and both runs are complete;
-4. a wrong ingress token is rejected on 4318 and 4319; the agent is
+5. a wrong ingress token is rejected on 4318 and 4319; the agent is
    unaffected and keeps its records on disk;
-5. an unscoped run whose process is SIGKILLed mid-run is NOT complete;
-6. leak scan: prompts, completions, tool data, API key and tokens appear in
+6. an unscoped run whose process is SIGKILLed mid-run is NOT complete;
+7. leak scan: prompts, completions, tool data, API key and tokens appear in
    no sink output, delivered OTLP byte, Node log or telemetry queue — only
-   in MinIO objects and the agent spool; the clear run ids and the run-id
-   pseudonym key (``FABRIC_WIRE_ID_KEY``, H3) appear nowhere, not even in
-   the spool, the MinIO objects or the reconstruction reports; by default
-   (spec 048 J1) the agents' clear source ids and service names appear in
-   none of the sink, the delivered bytes, the Node logs, the reports, the
-   MinIO objects or any spool, and the clear tenant id (which routes content
-   and names object keys) in none of the sink, bytes, logs or reports.
+   in the store's objects and the agent spool; the clear run ids and the
+   run-id pseudonym key (``FABRIC_WIRE_ID_KEY``, H3) appear nowhere, not
+   even in the spool, the stored objects or the reconstruction reports; by
+   default (spec 048 J1) the agents' clear source ids and service names
+   appear in none of the sink, the delivered bytes, the Node logs, the
+   reports, the stored objects or any spool, and the clear tenant id (which
+   routes content and names object keys) in none of the sink, bytes, logs
+   or reports. At rest, every stored object's bytes below the S3 gateway
+   differ from what GetObject returns and hold no marker, while a plaintext
+   control object reads back verbatim through the same path.
 
-Gates: Docker Compose (else skip) and boto3 for the reconstruct/MinIO
+Gates: Docker Compose (else skip) and boto3 for the reconstruct/store
 reader side, which is never installed into the agent: either importable
 here or a directory named by ``FABRIC_E2E_BOTO3_PATH`` (else skip).
 ``FABRIC_NODE_IMAGE`` reuses a prebuilt Node image instead of building one.
@@ -93,7 +106,7 @@ from _wire_capture_common import (
     write_tls,
 )
 
-TENANT = "minio-e2e-tenant"
+TENANT = "s3-eval-e2e-tenant"
 BUCKET = "fabric-content"
 PREFIX = "fabric/content/"
 REGION = "us-east-1"
@@ -101,7 +114,7 @@ OBJECT_ID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
 
-MARK = f"MINIOE2E{uuid.uuid4().hex[:12]}"
+MARK = f"S3EVALE2E{uuid.uuid4().hex[:12]}"
 PROMPT = f"{MARK}_prompt What is the temperature in Paris in Fahrenheit?"
 CITY = f"{MARK}_city"
 TOOL_RESULT = f"{MARK}_toolresult"
@@ -111,20 +124,22 @@ INGRESS_TOKEN = f"{MARK}_ingress_token"
 WRONG_TOKEN = f"{MARK}_wrong_token"
 EGRESS_AUTH = f"Bearer {MARK}_egress_token"
 TRACE_STATE = f"{MARK}_tracestate"
-# MinIO credentials (secret keys are at most 40 characters).
+# Store identities (static, prefix-scoped; see docker-compose.s3-eval.yml).
 ROOT_USER = "fabric-e2e-root"
 ROOT_PASSWORD = f"{MARK}_rootpw"
 NODE_ACCESS_KEY = "fabric-node-writer"
 NODE_SECRET = f"{MARK}_nodesecret"
 READER_ACCESS_KEY = "fabric-reader"
 READER_SECRET = f"{MARK}_readersecret"
+# The store's SSE-S3 key-encryption key (hex of 32 bytes), per run.
+SSE_KEK = uuid.uuid4().hex + uuid.uuid4().hex
 # The run-id pseudonym key (spec 048 §6, H3), shared by the agents and the
 # reconstruct reader; never emitted.
 ID_KEY = f"{MARK}_idkey"
 CONTENT_MARKERS = [f"{MARK}_prompt", CITY, TOOL_RESULT, COMPLETION]
 SECRET_MARKERS = [
     API_KEY, INGRESS_TOKEN, WRONG_TOKEN, f"{MARK}_egress_token", TRACE_STATE,
-    ROOT_PASSWORD, NODE_SECRET, READER_SECRET, ID_KEY,
+    ROOT_PASSWORD, NODE_SECRET, READER_SECRET, ID_KEY, SSE_KEK,
 ]  # fmt: skip
 # Caller-supplied run ids, given to fabric.wire.run() in the clear: only their
 # pseudonyms may leave the agent (H3).
@@ -171,7 +186,7 @@ pytestmark = [
 ]
 
 # Lists, heads and reads the content prefix as the reader identity; prints JSON.
-_MINIO_READ = """
+_STORE_READ = """
 import base64, json, sys
 import boto3
 from botocore.config import Config
@@ -187,6 +202,52 @@ for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=p
 print(json.dumps(out))
 """
 
+# Runs S3 calls (JSON list on stdin) as the identity in AWS_*; prints one
+# result per call: HTTP status, error code, SSE header and body.
+_STORE_CALLS = """
+import base64, json, sys
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
+endpoint, bucket = sys.argv[1:3]
+s3 = boto3.client("s3", endpoint_url=endpoint, region_name="us-east-1",
+                  config=Config(s3={"addressing_style": "path"},
+                                retries={"max_attempts": 1}))
+out = []
+for call in json.load(sys.stdin):
+    args = {"Bucket": call.get("bucket", bucket)}
+    op = call["op"]
+    if op == "put":
+        args.update(Key=call["key"], Body=base64.b64decode(call["body"]))
+        if call.get("if_none_match"):
+            args["IfNoneMatch"] = "*"
+        if call.get("sse"):
+            args["ServerSideEncryption"] = "AES256"
+        method = s3.put_object
+    elif op == "get":
+        args["Key"] = call["key"]
+        method = s3.get_object
+    elif op == "delete":
+        args["Key"] = call["key"]
+        method = s3.delete_object
+    elif op == "list":
+        args["Prefix"] = call["prefix"]
+        method = s3.list_objects_v2
+    elif op == "create_bucket":
+        method = s3.create_bucket
+    try:
+        got = method(**args)
+    except ClientError as error:
+        out.append({"status": error.response["ResponseMetadata"]["HTTPStatusCode"],
+                    "code": error.response["Error"].get("Code")})
+        continue
+    body = got["Body"].read() if "Body" in got else b""
+    out.append({"status": got["ResponseMetadata"]["HTTPStatusCode"], "code": None,
+                "sse": got.get("ServerSideEncryption"),
+                "body": base64.b64encode(body).decode()})
+print(json.dumps(out))
+"""
+
 
 @dataclass
 class Agent:
@@ -199,12 +260,12 @@ class Agent:
 class Stack:
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.project = f"fabric-minio-e2e-{uuid.uuid4().hex[:12]}"
+        self.project = f"fabric-s3-eval-e2e-{uuid.uuid4().hex[:12]}"
         self.tls = root / "tls"
         self.ports = {
             name: free_port()
             for name in ("otlp_http", "otlp_grpc", "otlp_content", "health", "metrics",
-                         "minio")
+                         "store")
         }  # fmt: skip
         self.image = os.environ.get("FABRIC_NODE_IMAGE") or DEFAULT_NODE_IMAGE
         self.model = FakeModel(api_key=API_KEY, city=CITY, completion=COMPLETION)
@@ -223,7 +284,7 @@ class Stack:
         self.content_config = root / "collector-content.yaml"
         content_config_with_tls(self.content_config)
         self.override = root / "compose.override.yml"
-        # Production Node + the content-s3 overlay, wired to the MinIO
+        # Production Node + the content-s3 overlay, wired to the s3-eval
         # overlay's environment (endpoint, path style, SSE, writer keys).
         self.override.write_text(
             "services:\n"
@@ -254,19 +315,20 @@ class Stack:
             "FABRIC_OTLP_CONTENT_PORT": str(self.ports["otlp_content"]),
             "FABRIC_HEALTH_PORT": str(self.ports["health"]),
             "FABRIC_METRICS_PORT": str(self.ports["metrics"]),
-            "FABRIC_MINIO_PORT": str(self.ports["minio"]),
+            "FABRIC_S3_EVAL_PORT": str(self.ports["store"]),
             "FABRIC_INGRESS_TOKEN_FILE": str(token_file),
             "FABRIC_INGRESS_TLS_DIR": str(self.tls),
             "FABRIC_EXPORT_ENDPOINT": self.sink.endpoint,
             "FABRIC_EXPORT_AUTH_HEADER": EGRESS_AUTH,
             "FABRIC_TENANT_ID": TENANT,
-            "FABRIC_MINIO_BUCKET": BUCKET,
-            "FABRIC_MINIO_ROOT_USER": ROOT_USER,
-            "FABRIC_MINIO_ROOT_PASSWORD": ROOT_PASSWORD,
-            "FABRIC_MINIO_NODE_ACCESS_KEY": NODE_ACCESS_KEY,
-            "FABRIC_MINIO_NODE_SECRET_KEY": NODE_SECRET,
-            "FABRIC_MINIO_READER_ACCESS_KEY": READER_ACCESS_KEY,
-            "FABRIC_MINIO_READER_SECRET_KEY": READER_SECRET,
+            "FABRIC_S3_EVAL_BUCKET": BUCKET,
+            "FABRIC_S3_EVAL_ROOT_ACCESS_KEY": ROOT_USER,
+            "FABRIC_S3_EVAL_ROOT_SECRET_KEY": ROOT_PASSWORD,
+            "FABRIC_S3_EVAL_NODE_ACCESS_KEY": NODE_ACCESS_KEY,
+            "FABRIC_S3_EVAL_NODE_SECRET_KEY": NODE_SECRET,
+            "FABRIC_S3_EVAL_READER_ACCESS_KEY": READER_ACCESS_KEY,
+            "FABRIC_S3_EVAL_READER_SECRET_KEY": READER_SECRET,
+            "FABRIC_S3_EVAL_SSE_KEK": SSE_KEK,
         }
         self._autoload = autoload_path()
 
@@ -276,7 +338,7 @@ class Stack:
         self, *args: str, check: bool = True
     ) -> subprocess.CompletedProcess[str]:
         files = ("docker-compose.yml", "docker-compose.production.yml",
-                 "docker-compose.content.yml", "docker-compose.minio.yml")  # fmt: skip
+                 "docker-compose.content.yml", "docker-compose.s3-eval.yml")  # fmt: skip
         command = [
             "docker", "compose", "-p", self.project, "--project-directory", str(COMPOSE_DIR),
             "--env-file", str(self.root / "empty.env"),
@@ -328,41 +390,81 @@ class Stack:
         ]
         return max(sizes, default=0.0)
 
-    # -- MinIO (reader identity, never the agent's) ---------------------------
+    # -- S3 store (reader identity, never the agent's) ------------------------
 
     @property
-    def minio_url(self) -> str:
-        return f"http://127.0.0.1:{self.ports['minio']}"
+    def store_url(self) -> str:
+        return f"http://127.0.0.1:{self.ports['store']}"
 
-    def reader_env(self, *, operator: bool = False) -> dict[str, str]:
-        """The reconstruct reader (GetObject only), or the operator listing the bucket."""
+    def reader_env(
+        self, *, operator: bool = False, writer: bool = False
+    ) -> dict[str, str]:
+        """The reconstruct reader (GetObject only), the operator listing the
+        bucket, or (store probes only) the Node's writer identity."""
         env = {
             k: v for k, v in os.environ.items()
             if not k.startswith(("FABRIC_", "AWS_", "OTEL_"))
         }  # fmt: skip
+        key, secret = (
+            (ROOT_USER, ROOT_PASSWORD) if operator
+            else (NODE_ACCESS_KEY, NODE_SECRET) if writer
+            else (READER_ACCESS_KEY, READER_SECRET)
+        )  # fmt: skip
         env.update(
-            AWS_ACCESS_KEY_ID=ROOT_USER if operator else READER_ACCESS_KEY,
-            AWS_SECRET_ACCESS_KEY=ROOT_PASSWORD if operator else READER_SECRET,
+            AWS_ACCESS_KEY_ID=key,
+            AWS_SECRET_ACCESS_KEY=secret,
             AWS_EC2_METADATA_DISABLED="true",
             AWS_CONFIG_FILE=os.devnull,
             AWS_SHARED_CREDENTIALS_FILE=os.devnull,
         )
-        if not operator:  # --run <clear id> needs the agents' pseudonym key
+        if not (operator or writer):  # --run <clear id> needs the pseudonym key
             env["FABRIC_WIRE_ID_KEY"] = ID_KEY
         if BOTO3_PATH:
             env["PYTHONPATH"] = BOTO3_PATH
         return env
 
-    def minio_objects(self) -> dict[str, dict[str, Any]]:
+    def store_objects(self) -> dict[str, dict[str, Any]]:
         """Every object under the content prefix with its SSE header (operator view)."""
         result = subprocess.run(
-            [sys.executable, "-c", _MINIO_READ, self.minio_url, BUCKET, PREFIX],
+            [sys.executable, "-c", _STORE_READ, self.store_url, BUCKET, PREFIX],
             env=self.reader_env(operator=True), capture_output=True, text=True,
             timeout=120, check=False,
         )  # fmt: skip
         assert result.returncode == 0, result.stderr[-2000:]
         objects: dict[str, dict[str, Any]] = json.loads(result.stdout)
         return objects
+
+    def store_calls(
+        self, identity: str, calls: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """S3 calls as 'operator', 'writer' or 'reader'; bodies are base64."""
+        result = subprocess.run(
+            [sys.executable, "-c", _STORE_CALLS, self.store_url, BUCKET],
+            input=json.dumps(calls),
+            env=self.reader_env(
+                operator=identity == "operator", writer=identity == "writer"
+            ),
+            capture_output=True, text=True, timeout=120, check=False,
+        )  # fmt: skip
+        assert result.returncode == 0, result.stderr[-2000:]
+        results: list[dict[str, Any]] = json.loads(result.stdout)
+        return results
+
+    def stored_bytes(self, bucket: str, key: str) -> bytes:
+        """An object's bytes as the store keeps them, below its S3 gateway.
+
+        SeaweedFS-specific: its filer (loopback-only inside the container)
+        serves an entry's stored bytes without SSE-S3 decryption, which only
+        the S3 gateway performs.
+        """
+        result = subprocess.run(
+            ["docker", "exec", self.container("s3-eval"), "curl", "-fsS",
+             "--max-time", "30",
+             f"http://127.0.0.1:8888/buckets/{bucket}/{quote(key, safe='/')}"],
+            capture_output=True, timeout=60, check=False,
+        )  # fmt: skip
+        assert result.returncode == 0, result.stderr.decode(errors="replace")
+        return result.stdout
 
     def wait_objects(
         self, object_ids: set[str], timeout_s: float = 120.0
@@ -371,14 +473,33 @@ class Stack:
 
         def written() -> bool:
             objects.clear()
-            objects.update(self.minio_objects())
+            objects.update(self.store_objects())
             return all(key in objects for oid in object_ids for key in _keys(oid))
 
         wait_until(
             written, timeout_s,
-            lambda: f"MinIO is missing objects\n{self.node_logs()[-4000:]}",
+            lambda: f"the store is missing objects\n{self.node_logs()[-4000:]}",
         )  # fmt: skip
         return objects
+
+    def wait_store_healthy(self, timeout_s: float = 90.0) -> None:
+        """After a restart: the store's own healthcheck, then a listing that works."""
+        container = self.container("s3-eval")
+
+        def ready() -> bool:
+            state = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.Health.Status}}", container],
+                capture_output=True, text=True, timeout=30, check=False,
+            ).stdout.strip()  # fmt: skip
+            if state != "healthy":
+                return False
+            try:
+                self.store_objects()
+            except AssertionError:
+                return False
+            return True
+
+        wait_until(ready, timeout_s, lambda: "the S3 store did not come back")
 
     # -- sink ------------------------------------------------------------------
 
@@ -486,7 +607,7 @@ class Stack:
         command = [
             sys.executable, "-m", "fabric.reconstruct", "--spans", str(self.sink.records),
             "--store-uri", f"s3://{BUCKET}/{PREFIX}", "--tenant", TENANT,
-            "--s3-endpoint-url", self.minio_url, "--s3-region", REGION, "--s3-path-style",
+            "--s3-endpoint-url", self.store_url, "--s3-region", REGION, "--s3-path-style",
             "--out", str(out),
         ]  # fmt: skip
         for run in runs:
@@ -537,7 +658,7 @@ def _decode(objects: dict[str, Any], key: str) -> bytes:
     return base64.b64decode(objects[key]["body"])
 
 
-def _assert_minio_holds(
+def _assert_store_holds(
     objects: dict[str, Any], exchanges: list[dict[str, Any]]
 ) -> None:
     """(2) Every body and descriptor under the SDK layout, SSE, digests agreeing."""
@@ -594,7 +715,7 @@ def _assert_complete(report: dict[str, Any], runs: set[str]) -> dict[str, Any]:
 
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
-    stack = Stack(tmp_path_factory.mktemp("wire-minio"))
+    stack = Stack(tmp_path_factory.mktemp("wire-s3-eval"))
     try:
         if not os.environ.get("FABRIC_NODE_IMAGE"):
             build_image(stack.image)
@@ -614,11 +735,11 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
 
 
 # --------------------------------------------------------------------------
-# Tests (module order matters: they share one Node, one MinIO and one sink)
+# Tests (module order matters: they share one Node, one store and one sink)
 # --------------------------------------------------------------------------
 
 
-def test_scoped_openai_run_lands_in_minio_and_reconstructs(stack: Stack) -> None:
+def test_scoped_openai_run_lands_in_the_store_and_reconstructs(stack: Stack) -> None:
     container = stack.container("fabric-node")
     entrypoint = subprocess.run(
         ["docker", "inspect", "--format", "{{json .Config.Entrypoint}}", container],
@@ -627,7 +748,7 @@ def test_scoped_openai_run_lands_in_minio_and_reconstructs(stack: Stack) -> None
     assert entrypoint == '["/fabric-gate"]'
 
     outer = RUN_REACT
-    agent = stack.run_agent("minio-e2e-scoped", scopes=outer)
+    agent = stack.run_agent("s3-eval-e2e-scoped", scopes=outer)
     spans = stack.wait_spans(agent.service, exchanges=3)
     exchanges = _exchanges(spans)
     assert [s["attributes"]["fabric.source.sequence"] for s in exchanges] == [0, 1, 2]
@@ -651,7 +772,7 @@ def test_scoped_openai_run_lands_in_minio_and_reconstructs(stack: Stack) -> None
     assert models and all(re.fullmatch(r"m-[0-9a-f]{16}", m) for m in models), models
 
     objects = stack.wait_objects(_refs(exchanges))
-    _assert_minio_holds(objects, exchanges)
+    _assert_store_holds(objects, exchanges)
     assert spool_records(agent.spool) == [], "the spool did not drain"
 
     # --run takes the clear id; the reader computes its pseudonym (H3).
@@ -668,11 +789,46 @@ def test_scoped_openai_run_lands_in_minio_and_reconstructs(stack: Stack) -> None
     assert {w["scope_id"] for w in windows} == set(scope_ids)
 
 
-def test_minio_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> None:
-    minio = stack.container("minio")
-    stack.docker("stop", minio)
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+def test_store_enforces_conditional_writes_and_identity_scopes(stack: Stack) -> None:
+    """(2) What the Node's no-overwrite write and the documented identities rely on."""
+    key = f"{PREFIX}store-probe/{uuid.uuid4()}"
+    first, second = b"store-probe first", b"store-probe second"
+    put_once, put_again, delete, outside, read = stack.store_calls("writer", [
+        {"op": "put", "key": key, "body": _b64(first), "if_none_match": True, "sse": True},
+        {"op": "put", "key": key, "body": _b64(second), "if_none_match": True,
+         "sse": True},
+        {"op": "delete", "key": key},
+        {"op": "put", "key": f"outside/{uuid.uuid4()}", "body": _b64(first)},
+        {"op": "get", "key": key},
+    ])  # fmt: skip
+    assert put_once["status"] == 200 and put_once["sse"] == "AES256", put_once
+    # The Node treats 412 as "already written" and compares digests.
+    assert (put_again["status"], put_again["code"]) == (412, "PreconditionFailed")
+    assert delete["status"] == 403, delete
+    assert outside["status"] == 403, outside
+    assert read["status"] == 200 and read["sse"] == "AES256", read
+    after_delete = base64.b64decode(read["body"])
+    assert after_delete == first, "the conditional write or the delete changed it"
+
+    get, put, listing = stack.store_calls("reader", [
+        {"op": "get", "key": key},
+        {"op": "put", "key": f"{PREFIX}store-probe/{uuid.uuid4()}", "body": _b64(first)},
+        {"op": "list", "prefix": PREFIX},
+    ])  # fmt: skip
+    assert get["status"] == 200 and base64.b64decode(get["body"]) == first, get
+    assert put["status"] == 403, put
+    assert listing["status"] == 403, listing
+
+
+def test_store_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> None:
+    store = stack.container("s3-eval")
+    stack.docker("stop", store)
     try:
-        agent = stack.run_agent("minio-e2e-store-outage", scopes=RUN_OUTAGE)
+        agent = stack.run_agent("s3-eval-e2e-store-outage", scopes=RUN_OUTAGE)
         spans = stack.wait_spans(agent.service, exchanges=3)
         # The Node accepted every body (the agent's spool drained) and holds
         # the writes in its persistent content queue while the store is down.
@@ -688,10 +844,11 @@ def test_minio_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> Non
             ),
         )
     finally:
-        stack.docker("start", minio)
+        stack.docker("start", store)
+    stack.wait_store_healthy()
     exchanges = _exchanges(spans)
     objects = stack.wait_objects(_refs(exchanges), timeout_s=180)
-    _assert_minio_holds(objects, exchanges)
+    _assert_store_holds(objects, exchanges)
     wait_until(
         lambda: stack.queue_size("fabriccontent/s3") == 0, 60,
         lambda: "the content queue did not drain",
@@ -702,7 +859,7 @@ def test_minio_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> Non
 
 
 def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -> None:
-    service = "minio-e2e-node-outage"
+    service = "s3-eval-e2e-node-outage"
     spool = stack.root / "spool" / service
     node = stack.container("fabric-node")
     stack.docker("stop", "-t", "60", node)
@@ -731,7 +888,7 @@ def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -
     exchanges = _exchanges(spans)
     assert len({s["attributes"]["fabric.source.epoch"] for s in exchanges}) == 2
     objects = stack.wait_objects(_refs(exchanges))
-    _assert_minio_holds(objects, exchanges)
+    _assert_store_holds(objects, exchanges)
     code, report = stack.reconstruct(RUN_BEFORE, RUN_AFTER)
     by_run = _assert_complete(report, {RUN_BEFORE, RUN_AFTER})
     assert code == 0
@@ -757,7 +914,7 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
         assert rejected.value.code in (401, 403), (path, rejected.value.code)
 
     started = time.monotonic()
-    bad = stack.run_agent("minio-e2e-wrong-token", token=WRONG_TOKEN)
+    bad = stack.run_agent("s3-eval-e2e-wrong-token", token=WRONG_TOKEN)
     assert time.monotonic() - started < 60
     headers = [spool_header(path) for path in spool_records(bad.spool)]
     rejected_ids = {
@@ -766,12 +923,12 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
     }  # fmt: skip
     assert len(rejected_ids) == 3, [h["record_kind"] for h in headers]
     # Barrier: a correctly authenticated run sent afterwards arrives first.
-    barrier = stack.run_agent("minio-e2e-barrier", scopes=RUN_BARRIER)
+    barrier = stack.run_agent("s3-eval-e2e-barrier", scopes=RUN_BARRIER)
     stack.wait_objects(
         _refs(_exchanges(stack.wait_spans(barrier.service, exchanges=3)))
     )
     assert stack.sink.spans_of(bad.service) == []
-    objects = stack.minio_objects()
+    objects = stack.store_objects()
     descriptors = [
         json.loads(_decode(objects, key)) for key in objects if "/meta/" in key
     ]
@@ -779,7 +936,7 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
 
 
 def test_unscoped_run_killed_mid_run_is_not_complete(stack: Stack) -> None:
-    service = "minio-e2e-killed"
+    service = "s3-eval-e2e-killed"
     spool = stack.root / "spool" / service
     process = subprocess.Popen(  # noqa: S603
         stack.agent_command("--pause-after", "2"),
@@ -824,7 +981,7 @@ def _values_of(node: Any, key: str) -> Iterator[Any]:
             yield from _values_of(item, key)
 
 
-def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
+def test_content_exists_only_in_the_store_and_the_agent_spool(stack: Stack) -> None:
     """(4) Leak scan over everything the stack wrote."""
     sink_text = stack.sink.records.read_text("utf-8")
     raw = stack.sink.raw_bytes()
@@ -864,20 +1021,45 @@ def test_content_exists_only_in_minio_and_the_agent_spool(stack: Stack) -> None:
         assert volume_grep(f"{stack.project}_fabric-content-queue", secret) == "", (
             secret
         )
-    # SSE: MinIO's disk holds no readable content, but the objects do.
-    assert volume_grep(f"{stack.project}_minio-data", MARK) == "", (
-        "plaintext content on MinIO's disk: server-side encryption is off"
+    # SSE at rest. No marker anywhere in the store's volume; on its own that
+    # is weak (the store may compress what it keeps), so below.
+    assert volume_grep(f"{stack.project}_s3-eval-data", MARK) == "", (
+        "plaintext content on the store's disk: server-side encryption is off"
     )
-    objects = stack.minio_objects()
+    objects = stack.store_objects()
     stored = b"".join(_decode(objects, key) for key in objects)
     for marker in CONTENT_MARKERS:
-        assert marker.encode() in stored, f"{marker} is not in the MinIO objects"
+        assert marker.encode() in stored, f"{marker} is not in the stored objects"
     for secret in SECRET_MARKERS + RUN_MARKERS + labels:
-        assert secret.encode() not in stored, f"{secret} was written to MinIO"
+        assert secret.encode() not in stored, f"{secret} was written to the store"
+    # Below the S3 gateway every evidence object (body and descriptor) is
+    # ciphertext: not what GetObject returns and no marker in it.
+    evidence = [key for key in objects if key.startswith(f"{PREFIX}{TENANT}/")]
+    assert evidence, "an at-rest check would be vacuous"
+    for key in evidence:
+        at_rest = stack.stored_bytes(BUCKET, key)
+        assert at_rest and at_rest != _decode(objects, key), f"{key} is stored in clear"
+        assert MARK.encode() not in at_rest, f"{key} holds a marker at rest"
+    # Control: the same path returns an unencrypted copy of a content body
+    # verbatim, so the check above would have seen plaintext.
+    control_body = next(
+        body
+        for body in (_decode(objects, key) for key in evidence)
+        if f"{MARK}_prompt".encode() in body
+    )
+    control_bucket = f"plaintext-control-{uuid.uuid4().hex[:8]}"
+    created, put = stack.store_calls("operator", [
+        {"op": "create_bucket", "bucket": control_bucket},
+        {"op": "put", "bucket": control_bucket, "key": "control",
+         "body": _b64(control_body)},
+    ])  # fmt: skip
+    assert created["status"] == 200 and put["status"] == 200, (created, put)
+    assert put["sse"] is None, put
+    assert stack.stored_bytes(control_bucket, "control") == control_body
     # The wrong-token agent's undelivered records still hold its content.
     spooled = b"".join(
         path.read_bytes()
-        for path in spool_records(stack.root / "spool" / "minio-e2e-wrong-token")
+        for path in spool_records(stack.root / "spool" / "s3-eval-e2e-wrong-token")
     )
     for marker in CONTENT_MARKERS:
         assert marker.encode() in spooled, f"{marker} is not in the undelivered spool"
