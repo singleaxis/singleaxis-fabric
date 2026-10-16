@@ -459,7 +459,282 @@ def test_call_recorder_output_is_identical_without_the_flag(
     with_flag = _deterministic_snapshot(tmp_path / "with", monkeypatch)
 
     monkeypatch.setattr(
-        fabric.call_recorder, "explicit_model_call", lambda active=True: nullcontext()
+        fabric.call_recorder, "explicit_model_call", lambda active=True, scope=None: nullcontext()
     )
     without_flag = _deterministic_snapshot(tmp_path / "without", monkeypatch)
     assert with_flag == without_flag
+
+
+# ------------------------------------- 8. the explicit scope lives exactly as long as its call
+
+
+def test_task_spawned_in_explicit_call_is_wire_captured_after_the_call_ends(
+    installed: Installed, fake_llm: FakeLLM, recording: Recording
+) -> None:
+    """A task copies the context (and so the explicit scope) when it is created; a model
+    request it makes after the explicit call has ended is not that call's and must be
+    wire-captured, never silently omitted."""
+    payload = json.dumps(CHAT).encode()
+
+    async def asend(data: bytes) -> bytes:
+        async with httpx.AsyncClient() as client:
+            return bytes((await client.post(_url(fake_llm), content=data)).content)
+
+    async def scenario() -> None:
+        go = asyncio.Event()
+        tasks: list[asyncio.Task[bytes]] = []
+
+        async def later() -> bytes:
+            await go.wait()
+            return await asend(payload)
+
+        async def delegate(data: bytes) -> bytes:
+            tasks.append(asyncio.create_task(later()))
+            return await asend(data)
+
+        await recording.recorder.acall(payload, delegate, kind="model")
+        assert not explicit_model_call_active()
+        go.set()
+        await tasks[0]
+
+    asyncio.run(scenario())
+    assert len(fake_llm.seen) == 2
+    assert len(recording.stored("model.output.messages")) == 1
+    spans = installed.spans()
+    assert len(spans) == 1  # the later request: wire's, not the ended call's
+    assert installed.handle.stats().deferred_to_explicit == 1
+    assert installed.losses() == []
+
+
+def test_thread_with_copied_context_stops_deferring_when_the_call_ends(
+    installed: Installed, fake_llm: FakeLLM, recording: Recording
+) -> None:
+    import contextvars  # noqa: PLC0415
+    import threading  # noqa: PLC0415
+
+    payload = json.dumps(CHAT).encode()
+    go, done = threading.Event(), threading.Event()
+
+    def send(data: bytes) -> bytes:
+        with httpx.Client() as client:
+            return bytes(client.post(_url(fake_llm), content=data).content)
+
+    def background() -> None:
+        go.wait(10.0)
+        send(payload)
+        done.set()
+
+    def delegate(data: bytes) -> bytes:
+        context = contextvars.copy_context()
+        threading.Thread(target=context.run, args=(background,), daemon=True).start()
+        return send(data)
+
+    recording.recorder.call(payload, delegate, kind="model")
+    go.set()
+    assert done.wait(10.0)
+    assert len(installed.spans()) == 1
+    assert installed.handle.stats().deferred_to_explicit == 1
+
+
+def test_scope_object_ends_with_its_call() -> None:
+    from fabric._capture_scope import (  # noqa: PLC0415
+        ExplicitScope,
+        current_explicit_model_scope,
+        explicit_model_call,
+    )
+
+    with explicit_model_call() as scope:
+        assert current_explicit_model_scope() is scope
+        with explicit_model_call(False):
+            assert not explicit_model_call_active()
+        assert explicit_model_call_active()
+    assert scope.ended and not scope.defers
+    shared = ExplicitScope(True)
+    with explicit_model_call(scope=shared):
+        pass
+    assert shared.defers  # a shared (call-owned) scope is ended by its owner only
+    shared.end()
+    assert not shared.defers
+
+
+# ------------------------------------------ 9. ByteBoundaryAdapter(tool) clears the scope
+
+
+def test_byte_boundary_tool_adapter_nested_in_model_call_is_wire_captured(
+    installed: Installed, fake_llm: FakeLLM, recording: Recording, tmp_path: Path
+) -> None:
+    store = LocalFilesystemContentStore(str(tmp_path / "boundary"), tenant_id="test-tenant")
+    writer = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=ROLES))
+    session = SyntheticCaptureSession(writer, tenant_id="test-tenant", run_id="run-1")
+    try:
+        tool = ByteBoundaryAdapter(session, kind="tool", source_id="tool-1")
+
+        def send(data: bytes) -> bytes:  # the tool's own LLM request
+            with httpx.Client() as client:
+                return bytes(client.post(_url(fake_llm), content=data).content)
+
+        def model(data: bytes) -> bytes:
+            return tool.call(data, send, operation_id="t", attempt_id="1")
+
+        recording.recorder.call(json.dumps(CHAT).encode(), model, kind="model")
+        assert len(fake_llm.seen) == 1
+        assert len(installed.spans()) == 1
+        assert installed.handle.stats().deferred_to_explicit == 0
+    finally:
+        writer.close()
+
+
+# ------------------------- 10. a response that outlives its explicit call is wire's
+
+
+@pytest.mark.parametrize("flavor", [httpx, httpx2], ids=["httpx", "httpx2"])
+def test_lazy_stream_returned_by_explicit_model_call_is_wire_captured(
+    flavor: Any, installed: Installed, fake_llm: FakeLLM, recording: Recording
+) -> None:
+    """``call(kind="model")`` returning an unread streamed response: the explicit record
+    cannot hold the response bytes (it records the result as unsupported), so wire must."""
+    client = flavor.Client()
+    try:
+        payload = json.dumps(STREAM).encode()
+
+        def open_stream(data: bytes) -> Any:
+            return client.send(client.build_request("POST", _url(fake_llm), content=data),
+                               stream=True)  # fmt: skip
+
+        response = recording.recorder.call(payload, open_stream, kind="model")
+        body = b"".join(response.iter_raw())
+        response.close()
+    finally:
+        client.close()
+    assert body == fake_llm.seen[0].response
+    events = recording.recorder.snapshot()["events"]
+    assert [e["status"] for e in events if e["role"] == "model.output.messages"] == ["unsupported"]
+    (span,) = installed.spans()
+    found = attrs(span)
+    assert found["fabric.wire.response_state"] == "complete"
+    assert found["fabric.source.sequence"] == 0
+    assert (
+        installed.store.read(installed.store.evidence_ref_for(found["fabric.content.result_ref"]))
+        == body
+    )
+    assert installed.handle.stats().deferred_to_explicit == 0
+
+
+def test_response_consumed_inside_the_call_still_defers(
+    installed: Installed, fake_llm: FakeLLM, recording: Recording
+) -> None:
+    payload = json.dumps(STREAM).encode()
+
+    def read_all(data: bytes) -> bytes:
+        with httpx.Client() as client, client.stream("POST", _url(fake_llm), content=data) as r:
+            return b"".join(r.iter_raw())
+
+    recording.recorder.call(payload, read_all, kind="model")
+    _wire_nothing(installed)
+    assert installed.handle.stats().deferred_to_explicit == 1
+
+
+def test_late_adopted_exchange_leaves_a_run_scope_closed_meanwhile(
+    installed: Installed, fake_llm: FakeLLM, recording: Recording
+) -> None:
+    """Its sequence is allocated after run_end: it must not claim that scope."""
+    client = httpx.Client()
+    try:
+        with wire.run("run-a"):
+            response = recording.recorder.call(
+                json.dumps(STREAM).encode(),
+                lambda data: client.send(
+                    client.build_request("POST", _url(fake_llm), content=data), stream=True
+                ),
+                kind="model",
+            )
+        response.read()
+        response.close()
+    finally:
+        client.close()
+    (span,) = installed.spans()
+    found = attrs(span)
+    assert "fabric.run.scope_id" not in found
+    assert not str(found["fabric.run.id"]).startswith("r-")
+
+
+def test_provisional_exchange_stranded_at_close(
+    fake_llm: FakeLLM, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording
+) -> None:
+    """At close, a provisional exchange whose call is still live stays the explicit
+    record's (no loss); one that outlived its call is a counted shutdown loss."""
+    emitter = LossEmitter()
+    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
+    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="tenant-a")
+    handle = wire.install(
+        WireConfig(store=store, tracer_provider=provider, extra_endpoints=fake_llm.matchers())
+    )
+    client = httpx.Client()
+    try:
+
+        def open_stream(data: bytes) -> Any:
+            return client.send(client.build_request("POST", _url(fake_llm), content=data),
+                               stream=True)  # fmt: skip
+
+        outlived = recording.recorder.call(json.dumps(STREAM).encode(), open_stream, kind="model")
+        live: list[Any] = []
+
+        def open_and_close(data: bytes) -> bytes:
+            live.append(open_stream(data))
+            assert handle.close(5.0) is False  # one stranded exchange is lost
+            return b""
+
+        recording.recorder.call(json.dumps(STREAM).encode(), open_and_close, kind="model")
+        outlived.close()
+        live[0].close()
+    finally:
+        client.close()
+        emitter.close(1.0)
+    stats = handle.stats()
+    assert stats.deferred_to_explicit == 1
+    losses = [dict(s.attributes or {}) for s in exporter.get_finished_spans()
+              if s.name == "fabric.capture_loss"]  # fmt: skip
+    assert [(x["fabric.loss.reason"], x["fabric.loss.count"]) for x in losses] == [("shutdown", 1)]
+
+
+# --------------------------- 11. work handed to a thread pool inside an explicit call
+
+
+def test_thread_pool_without_context_double_captures_and_bind_fixes_it(
+    installed: Installed, fake_llm: FakeLLM, recording: Recording
+) -> None:
+    """``ThreadPoolExecutor.submit`` / ``run_in_executor`` do not copy the context: the
+    worker's request is not seen as the explicit call's (documented duplicate).
+    ``bind_capture_context`` keeps the explicit scope on the worker."""
+    import concurrent.futures  # noqa: PLC0415
+
+    from fabric import bind_capture_context  # noqa: PLC0415
+
+    payload = json.dumps(CHAT).encode()
+
+    def send(data: bytes) -> bytes:
+        with httpx.Client() as client:
+            return bytes(client.post(_url(fake_llm), content=data).content)
+
+    with concurrent.futures.ThreadPoolExecutor(2) as pool:
+        recording.recorder.call(payload, lambda p: pool.submit(send, p).result(), kind="model")
+        assert len(installed.spans()) == 1  # the documented duplicate
+        recording.recorder.call(
+            payload, lambda p: pool.submit(bind_capture_context(send), p).result(), kind="model"
+        )
+
+        async def via_executor() -> bytes:
+            loop = asyncio.get_running_loop()
+            return await recording.recorder.acall(
+                payload,
+                lambda p: loop.run_in_executor(pool, bind_capture_context(send), p),
+                kind="model",
+            )
+
+        asyncio.run(via_executor())
+    assert len(installed.spans()) == 1  # nothing more: both bound requests deferred
+    assert installed.handle.stats().deferred_to_explicit == 2

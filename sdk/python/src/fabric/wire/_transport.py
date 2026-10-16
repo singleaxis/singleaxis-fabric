@@ -20,9 +20,9 @@ from collections.abc import Callable, Mapping
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from .._capture_scope import explicit_model_call_active
+from .._capture_scope import current_explicit_model_scope
 from .._loss import LossEmitter, LossReason, PrivateFallback
-from .._sequence import SourceAllocator
+from .._sequence import SourceAllocator, current_run_scope
 from ._match import EndpointIndex
 from ._model import CaptureJob
 from ._pipeline import CapturePipeline
@@ -74,11 +74,14 @@ class WireTee:
 
     def begin(self, request: Any) -> tuple[bool, Exchange | None]:
         """Match ``request``, open an exchange; never raises. ``owned`` once a sequence is
-        allocated (nested tees stay off; a failed setup is an ``internal_error`` loss).
+        allocated or a provisional exchange opened (nested tees stay off; a failed setup is
+        an ``internal_error`` loss).
 
-        Explicit wins: inside an explicit model call (``fabric._capture_scope``) a matched
-        request is deferred before any sequence is allocated, so the explicit record owns it
-        and the wire record shows no gap."""
+        Explicit wins: inside a live explicit model call (``fabric._capture_scope``) a matched
+        request opens a *provisional* exchange with no sequence. If the call is still live
+        when the response ends, the explicit record owns it and the tee allocates nothing
+        (no gap); if the response outlives the call (a lazy stream the call returned), the
+        tee captures it then (:meth:`adopt`)."""
         if self.closed or _IN_TEE.get():
             return False, None
         try:
@@ -86,30 +89,55 @@ class WireTee:
             found = self.index.match(request.method, url.scheme, url.host, url.port, url.path)
             if found is None:
                 return False, None
-            if explicit_model_call_active():
-                self.deferred_to_explicit += 1
-                return False, None
-            epoch, sequence, scope = self.allocator.next_sequence()
+            if (deferral := current_explicit_model_scope()) is None:
+                epoch, sequence, scope = self.allocator.next_sequence()
+            else:  # provisional: nothing allocated until it is adopted
+                epoch, sequence, scope = -1, -1, current_run_scope()
         except Exception:  # nothing allocated: nothing to account for
             self.internal_errors += 1
             return False, None
         exchange: Exchange | None = None
         try:
-            self.matched += 1
-            with contextlib.suppress(Exception):  # heartbeats cover the source from now on
-                self.loss.note_activity(self.allocator)
-            exchange = Exchange(self, found[0], found[1], epoch, sequence, scope)
+            if deferral is None:
+                self.matched += 1
+                with contextlib.suppress(Exception):  # heartbeats cover the source from now on
+                    self.loss.note_activity(self.allocator)
+            exchange = Exchange(self, found[0], found[1], epoch, sequence, scope, deferral=deferral)
             exchange.start(request)
             self._active.add(exchange)
             return True, exchange
         except Exception:
             with contextlib.suppress(Exception):
-                if exchange is None:
-                    self.lose(epoch, sequence, "internal_error")
-                else:
+                if exchange is not None:
                     exchange.end_request(request)  # put back a request stream it teed
                     exchange.detach(lost=True)
+                elif deferral is None:
+                    self.lose(epoch, sequence, "internal_error")
+                else:
+                    self.internal_errors += 1
             return True, None
+
+    def adopt(self, exchange: Exchange) -> bool:
+        """A finished provisional exchange: ``False`` (bytes released) when its explicit model
+        call is still live, so the explicit record owns it; else allocate its sequence now
+        and ``True`` (the response outlived the call, which therefore could not own it)."""
+        deferral = exchange.deferral
+        if deferral is None:
+            return True
+        if deferral.defers:
+            self.deferred_to_explicit += 1
+            exchange.release()
+            return False
+        try:
+            exchange.assign(*self.allocator.next_sequence_for(exchange.scope))
+        except Exception:  # nothing allocated: nothing to account for
+            self.internal_errors += 1
+            exchange.release()
+            return False
+        self.matched += 1
+        with contextlib.suppress(Exception):
+            self.loss.note_activity(self.allocator)
+        return True
 
     def handle_sync(self, call: Callable[..., Any], transport: Any, request: Any) -> Any:
         owned, exchange = self.begin(request)
@@ -169,9 +197,19 @@ class WireTee:
         deadline = time.monotonic() + max(0.0, timeout_s)
         drain_reaper(timeout_s / 4)  # streams already finalized still get their span
         # The caller still gets every byte; only exchanges this call claims are lost.
-        stranded = [exchange for exchange in list(self._active) if exchange.detach()]
-        for exchange in stranded:
-            self.lose(exchange.epoch, exchange.sequence, "shutdown")
+        stranded: list[tuple[int, int]] = []
+        for exchange in list(self._active):
+            deferral = getattr(exchange, "deferral", None)
+            if not exchange.detach():
+                continue
+            if deferral is None:
+                stranded.append((exchange.epoch, exchange.sequence))
+            elif deferral.defers:  # its explicit call is still live and owns it
+                self.deferred_to_explicit += 1
+            else:  # it outlived its explicit call: wire's, and now lost
+                stranded.append(self.allocator.next_sequence_for(None)[:2])
+        for epoch, sequence in stranded:
+            self.lose(epoch, sequence, "shutdown")
         return self.pipeline.close(max(0.0, deadline - time.monotonic())) and not stranded
 
     def flush(self, timeout_s: float) -> bool:

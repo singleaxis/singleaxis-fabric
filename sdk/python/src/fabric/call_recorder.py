@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from opentelemetry import trace
 
-from ._capture_scope import explicit_model_call
+from ._capture_scope import ExplicitScope, explicit_model_call
 from .byte_evidence import ByteEvidenceRecorder
 from .content_join import CONTENT_JOIN_FIELDS, capture_content_binding
 from .source_spool import _MAX_SEAL_TIMEOUT_S, SyntheticSourceSpool
@@ -76,6 +76,9 @@ class _Call:
     span: trace.Span | None
     retained: bool
     ended: bool = False
+    # This call's explicit scope (fabric._capture_scope), shared by all its activations and
+    # ended with the call: a context copied inside it stops deferring wire capture then.
+    capture_scope: ExplicitScope | None = None
 
 
 class CallRecorder:
@@ -264,7 +267,12 @@ class CallRecorder:
                 fields["span_id"] = format(correlation.span_id, "016x")
         except Exception:
             self._fault()
-        call = _Call(fields, span, self._append(self._calls, fields))
+        call = _Call(
+            fields,
+            span,
+            self._append(self._calls, fields),
+            capture_scope=ExplicitScope(kind == "model"),
+        )
         start = self._base(call)
         start.update(role="operation.start", status="recorded", streaming=streaming)
         self._append(self._starts, start)
@@ -278,10 +286,10 @@ class CallRecorder:
     def _activate(self, call: _Call) -> Iterator[None]:
         token = self._current.set(call)
         # Disable exception recording: exception messages can contain data.
-        # The explicit-model-call flag (fabric._capture_scope) only tells an
-        # installed wire tee to defer to this record; it changes nothing here.
+        # The call's explicit scope (fabric._capture_scope) only tells an installed
+        # wire tee to defer to this record while the call runs; it changes nothing here.
         try:
-            with explicit_model_call(call.fields["kind"] == "model"):
+            with explicit_model_call(scope=call.capture_scope):
                 if call.span is None:
                     yield
                 else:
@@ -363,6 +371,8 @@ class CallRecorder:
         if call.ended:
             return
         call.ended = True
+        if call.capture_scope is not None:
+            call.capture_scope.end()
         try:
             event = self._base(call)
             result = "deferred" if status == "partial" else status

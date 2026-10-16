@@ -85,14 +85,17 @@ verifiers, verdicts, fabricguard classes and Node ingress profiles.
 | Fabricguard | Exact-key `evidence` log class | Exact-key capture span profile (`fabric.model_call`) |
 | Verifier and verdicts | `call_reconcile` / spec 046 (`verified_complete_for_declared_scope`, `invalid`, `incomplete`) | `python -m fabric.reconstruct` (`complete_for_declared_scope`, `complete_for_observed_scopes`, `partial`, `unverified`) |
 
-**Explicit wins.** Inside an explicit model call (`CallRecorder` with
+**Explicit wins.** Inside a live explicit model call (`CallRecorder` with
 `kind="model"`, including every `RecordedStream` step, or
-`ByteBoundaryAdapter(kind="model")`) the wire tee defers: it allocates no
-sequence, writes nothing and passes the request through untouched, so the
-call is recorded once and the wire record shows no gap. Tool, database and
-agent calls do not suppress wire capture. The only expected duplicate is
-work the delegate returns and the caller consumes later outside the
-recorder's scope (an awaitable or iterator that is not a `RecordedStream`).
+`ByteBoundaryAdapter(kind="model")`) the wire tee defers: an exchange whose
+response ends while the call is live gets no sequence and writes nothing, so
+the call is recorded once and the wire record shows no gap. The scope ends
+with the call: a task or thread spawned inside it, or a streamed response
+the call returns unread, is wire-captured afterwards. Tool, database and
+agent calls (either API) do not suppress wire capture. The only expected
+duplicate is work handed to `ThreadPoolExecutor.submit` or
+`loop.run_in_executor`, which do not copy the context; wrap the function in
+`fabric.bind_capture_context(...)` to keep it in the explicit call.
 
 **A Fabric-protected global provider never carries wire spans.** With
 `FABRIC_WIRE_TRACER=global`, if the global provider is one that

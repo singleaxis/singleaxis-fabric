@@ -231,18 +231,34 @@ The explicit evidence line (specs 035–046) and this zero-code wire line
 (047–049) coexist in one process by two fixed rules:
 
 - **Explicit wins.** `fabric/_capture_scope.py` holds a context variable
-  that `CallRecorder` sets for the activated scope of every `kind="model"`
-  call (including each `RecordedStream` / `RecordedAsyncStream` step and
-  close), and that `ByteBoundaryAdapter(kind="model")` sets around its
-  delegate. While it is set, `WireTee.begin` allocates no sequence, writes
-  nothing, counts `WireStats.deferred_to_explicit` and passes the request
-  through untouched (explicit `WireTransport` wrappers included). No sequence
-  is allocated, so reconstruction sees no gap; wire verdicts cover only the
-  exchanges the tee owned. Tool, database and agent explicit calls do not
-  suppress wire capture: a model request made inside a tool call is still
-  wire-captured. Work the delegate hands back and the caller consumes later
-  outside the activated scope (an awaitable or iterator that is not a
-  `RecordedStream`) is wire-captured too; that is the only expected duplicate.
+  with the innermost explicit call *scope object*. Every `CallRecorder`
+  call has one scope, set for each of its activations (the delegate, each
+  `RecordedStream` / `RecordedAsyncStream` step and close) and ended when
+  the call ends; every `ByteBoundaryAdapter` call has one around its
+  delegate, ended when the delegate returns. A `kind="model"` scope defers
+  wire capture while it is live; a tool, database or agent scope (either
+  API) clears an enclosing model scope, so a model request made inside a
+  tool call is still wire-captured. Because the variable holds the live
+  scope, not a flag, a task, thread or callback that copied the context
+  inside a model call stops deferring once that call ends: its later
+  requests are wire-captured, never silently omitted.
+  Inside a live model scope `WireTee.begin` opens a *provisional* exchange:
+  it tees the bytes but allocates no sequence. If the explicit call is still
+  live when the response ends (the delegate consumed it), the tee discards
+  the bytes, counts `WireStats.deferred_to_explicit` and allocates nothing,
+  so reconstruction sees no gap and the explicit record owns the call. If
+  the response outlives the call (for example `call(kind="model")` returning
+  an unread streamed response, which the explicit record can only label
+  `unsupported`), the tee allocates the sequence then and captures the
+  exchange; a run scope that closed meanwhile is not claimed. Requests pass
+  through untouched either way (explicit `WireTransport` wrappers included);
+  wire verdicts cover only the exchanges the tee owned.
+  **Expected duplicate:** `ThreadPoolExecutor.submit` and
+  `loop.run_in_executor` do not copy the caller's context (unlike
+  `asyncio.to_thread`), so a model request a delegate hands to such a worker
+  is not seen as the explicit call's and is recorded by both lines. Submit
+  `fabric.bind_capture_context(fn)` instead of `fn` to keep the scope on the
+  worker.
 - **A Fabric-protected provider never carries wire spans.** When
   `FABRIC_WIRE_TRACER=global` (or an explicitly passed `tracer_provider`)
   resolves to a provider whose routes `install_default_provider` protects

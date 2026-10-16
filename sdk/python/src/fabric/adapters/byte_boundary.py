@@ -10,7 +10,7 @@ the adapter. See spec 042 before using it for a coverage claim.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from contextlib import nullcontext, suppress
+from contextlib import suppress
 from inspect import isawaitable
 from typing import TypeVar
 
@@ -134,11 +134,12 @@ class ByteBoundaryAdapter:
             operation_id=operation_id,
             attempt_id=attempt_id,
         )
-        # Explicit wins: an installed wire tee defers to this record for the
-        # delegate's model request (fabric._capture_scope); nothing else changes.
-        scope = explicit_model_call() if self.kind == "model" else nullcontext()
+        # Explicit wins: an installed wire tee defers to a model adapter's record for
+        # the delegate's model request, and a tool adapter clears an enclosing explicit
+        # model scope so a model request its tool makes is still wire-captured
+        # (fabric._capture_scope); nothing else changes.
         try:
-            with scope:
+            with explicit_model_call(self.kind == "model"):
                 result = delegate(payload)
         except BaseException as exc:
             with suppress(Exception):

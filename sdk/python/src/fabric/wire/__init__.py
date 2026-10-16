@@ -34,7 +34,6 @@ if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
 
     from .._loss import PrivateFallback
-
     from ._content import NodeContentClient
     from ._transport import AsyncWireTransport, WireTee, WireTransport
 

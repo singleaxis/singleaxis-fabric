@@ -23,11 +23,12 @@ from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.context import Context
 
-from .._sequence import RunScope, resolve_run_id
+from .._sequence import RunScope, encode_opaque_id, resolve_run_id
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ResponseState, WireApi
 from ._pipeline import capture_parent
 
 if TYPE_CHECKING:
+    from .._capture_scope import ExplicitScope
     from ._transport import WireTee
 
 _FINISH_LOCK = threading.Lock()
@@ -169,20 +170,28 @@ def _capture_parent() -> tuple[Context, int | None]:
 
 
 class Exchange:
-    """One matched model call, from its sequence allocation to finalization."""
+    """One matched model call, from its sequence allocation to finalization.
+
+    A *provisional* exchange (``deferral`` set) began inside a live explicit model call
+    (``fabric._capture_scope``): it has no sequence yet. When it finishes, the explicit
+    record owns it if that call is still live (the call consumed the response); otherwise
+    the response outlived the call (e.g. a lazy stream the call returned) and the tee
+    allocates its sequence then (:meth:`WireTee.adopt`)."""
 
     __slots__ = (
-        "__weakref__", "api", "done", "epoch", "exchange_id", "finalizer", "matcher",
+        "__weakref__", "api", "deferral", "done", "epoch", "exchange_id", "finalizer", "matcher",
         "parent_context", "request", "request_sent", "request_tee", "response", "run_id", "scope",
-        "sequence", "started_ns", "status_code", "tee",
+        "sequence", "started_ns", "status_code", "tee", "trace_id",
     )  # fmt: skip
 
     def __init__(
         self, tee: WireTee, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int,
-        scope: RunScope | None = None,
+        scope: RunScope | None = None, *, deferral: ExplicitScope | None = None,
     ) -> None:  # fmt: skip
         self.tee, self.matcher, self.api, self.scope = tee, matcher, api, scope
         self.epoch, self.sequence, self.done = epoch, sequence, False
+        self.deferral = deferral
+        self.trace_id: int | None = None
         self.finalizer: weakref.finalize[Any, Any] | None = None
         self.status_code: int | None = None
         self.request = _Side({})  # replaced by start()
@@ -194,6 +203,7 @@ class Exchange:
         """Capture context and the request body; on failure the caller detaches (lost)."""
         self.started_ns = time.time_ns()
         self.parent_context, trace_id = _capture_parent()
+        self.trace_id = trace_id
         scope = self.scope  # the innermost open run scope at allocation (spec 048 §6)
         allocator = self.tee.allocator
         self.run_id = scope.run_id if scope else resolve_run_id(allocator, trace_id=trace_id)
@@ -273,6 +283,26 @@ class Exchange:
         except Exception:
             self.detach(lost=True)
 
+    def assign(self, epoch: int, sequence: int, scope: RunScope | None) -> None:
+        """Give a provisional exchange the sequence the tee allocated when it adopted it;
+        a run scope closed meanwhile no longer applies (spec 048 §6)."""
+        begun_in = self.scope
+        self.deferral, self.epoch, self.sequence, self.scope = None, epoch, sequence, scope
+        if scope is not begun_in:
+            allocator, trace_id = self.tee.allocator, self.trace_id
+            self.run_id = scope.run_id if scope else (
+                f"trace:{trace_id:032x}" if isinstance(trace_id, int) and 0 < trace_id < 1 << 128
+                else encode_opaque_id(f"source:{allocator.source_id}:{epoch}")
+            )  # fmt: skip
+
+    def release(self) -> None:
+        """Drop the retained bytes and give their budget back; never raises."""
+        for side in (self.request, self.response):
+            if side is not None:
+                with contextlib.suppress(Exception):
+                    side.chunks = []
+                    self.tee.budget.release(side.retained)
+
     def _claim(self) -> bool:
         with _FINISH_LOCK:
             if self.done:
@@ -296,6 +326,8 @@ class Exchange:
                 return
             tee = self.tee
             tee.forget(self)
+            if self.deferral is not None and not tee.adopt(self):
+                return  # owned by the explicit record (or not allocatable: counted)
             response = self.response.body() if self.response is not None else None
             tee.submit(CaptureJob(
                 exchange_id=self.exchange_id, api=self.api,
@@ -318,14 +350,13 @@ class Exchange:
             return False
         if lost:
             with contextlib.suppress(Exception):
-                self.tee.lose(self.epoch, self.sequence, "internal_error")
+                if self.deferral is None:
+                    self.tee.lose(self.epoch, self.sequence, "internal_error")
+                else:  # provisional: no sequence was allocated, nothing to account for
+                    self.tee.internal_errors += 1
         with contextlib.suppress(Exception):
             self.tee.forget(self)
-        for side in (self.request, self.response):
-            if side is not None:
-                with contextlib.suppress(Exception):
-                    side.chunks = []
-                    self.tee.budget.release(side.retained)
+        self.release()
         return True
 
 

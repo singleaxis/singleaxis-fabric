@@ -16,6 +16,7 @@ transport, starts a thread or enables capture.
 """
 
 from ._calls import LLMCall, ToolCall, ToolErrorCategory
+from ._capture_scope import bind_capture_context
 from ._content import CONTENT_ROLES, ContentRole, ContentStatus
 from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._version import __version__
@@ -131,6 +132,7 @@ __all__ = [
     "ToolCall",
     "ToolErrorCategory",
     "__version__",
+    "bind_capture_context",
     "bundled_taxonomy_names",
     "extract",
     "get_tracer",

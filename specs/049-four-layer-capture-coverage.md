@@ -24,16 +24,19 @@ and authenticated verification) records what the caller hands it. The
 zero-code wire line (specs 047/048) observes httpx/httpx2 model traffic
 below the framework. They coexist by two fixed rules:
 
-- **Explicit wins (D2).** While an explicit model call is active
-  (`fabric/_capture_scope.py` context variable, set by
+- **Explicit wins (D2).** While an explicit model call is live
+  (`fabric/_capture_scope.py` holds the call's scope object, set by
   `CallRecorder` for `kind="model"` and by
-  `ByteBoundaryAdapter(kind="model")`), the wire tee defers: it allocates no
-  sequence, writes nothing and passes the request through untouched. Tool,
-  database and agent calls do not suppress wire capture.
-- **Protected global provider (D3).** A global tracer provider that Fabric
-  protects (`install_default_provider`'s metadata-only projection) never
-  carries wire spans: wire resolves to its private provider, or does not
-  install.
+  `ByteBoundaryAdapter(kind="model")`, ended with the call), the wire tee
+  defers every exchange whose response ends while the call is live: it
+  allocates no sequence and passes the request through untouched. A response
+  that outlives the call is wire-captured. Tool, database and agent calls of
+  either API clear the scope. See spec 047 "Two capture lines".
+- **Protected provider (D3).** A tracer provider that Fabric protects
+  (`install_default_provider`'s metadata-only projection) never carries wire
+  spans or markers, checked at install and again at emit time: wire resolves
+  to its private provider, or refuses the records (counted `span_dropped`
+  losses, `flush()` is `False`).
 
 1. **Context** — what the agent was asked to do, and under which rules.
 2. **Structure** — what happened, in what order, and who did it.

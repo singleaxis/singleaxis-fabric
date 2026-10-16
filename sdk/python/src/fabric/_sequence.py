@@ -137,6 +137,16 @@ class SourceAllocator:
             self._next += 1
             return self.epoch, self._next - 1, _open_scope()
 
+    def next_sequence_for(self, scope: RunScope | None) -> tuple[int, int, RunScope | None]:
+        """Allocate one sequence for work begun earlier under ``scope``: ``(epoch, sequence,
+        the innermost of its scopes still open now)``, read under the lock ``run_end`` closes
+        scopes under, so the sequence never lies outside a closed scope's markers."""
+        with self._lock:
+            self._next += 1
+            while scope is not None and scope.closed:
+                scope = scope.parent
+            return self.epoch, self._next - 1, scope
+
     def open_scope(self, scope: RunScope) -> tuple[int, int]:  # its run_start position
         return self.last_sequence()
 
@@ -191,6 +201,11 @@ def run_scope(run_id: str, key: bytes | None = None) -> Iterator[RunScope]:
     finally:
         scope.closed = True  # normally already closed under the allocator lock
         _SCOPE.reset(token)
+
+
+def current_run_scope() -> RunScope | None:
+    """The innermost open run scope of the current context."""
+    return _open_scope()
 
 
 def current_run_id() -> str | None:

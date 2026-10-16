@@ -544,14 +544,23 @@ Wire capture coexists with the explicit evidence line (specs 035–046:
 `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`). See
 [Two capture lines](README.md#two-capture-lines) for the full comparison.
 
-- **Explicit wins.** Inside a `CallRecorder` model call (or
-  `ByteBoundaryAdapter(kind="model")`) the tee defers: no sequence, no span,
-  no content; `WireStats.deferred_to_explicit` counts it. Tool, database and
-  agent calls do not suppress wire capture.
-- **Protected global provider.** With `FABRIC_WIRE_TRACER=global`, a global
-  provider protected by `install_default_provider` never carries wire spans:
-  wire switches to its private provider when an OTLP endpoint is set, and
-  otherwise does not install (one class-only warning).
+- **Explicit wins.** Inside a live `CallRecorder` model call (or
+  `ByteBoundaryAdapter(kind="model")`) the tee defers every exchange whose
+  response ends while the call is live: no sequence, no span, no content;
+  `WireStats.deferred_to_explicit` counts it. A response that outlives the
+  call, and requests from tasks or threads after the call ended, are
+  wire-captured. Tool, database and agent calls do not suppress wire
+  capture. Work handed to `ThreadPoolExecutor.submit` or
+  `loop.run_in_executor` inside a model call is recorded by both lines unless
+  the function is wrapped in `fabric.bind_capture_context(...)`.
+- **Protected provider.** A provider protected by `install_default_provider`
+  (the global one with `FABRIC_WIRE_TRACER=global`, or one passed in) never
+  carries wire spans: wire switches to its private provider when an OTLP
+  endpoint is set, and otherwise does not install (one class-only warning).
+  The check runs again at emit time, so calling `install_default_provider()`
+  after the autoload installed wire is safe: records then go to the private
+  provider, or are refused as counted `span_dropped` losses
+  (`WireStats.spans_refused`) and `flush()` returns `False`.
   `FABRIC_CAPTURE_LLM_CONTENT` never affects wire.
 - **One directory per spool.** `FABRIC_WIRE_SPOOL_DIR` must not be the root
   of a `SyntheticSourceSpool`, `DurableByteSpool` or `JournalMetadataSender`;
