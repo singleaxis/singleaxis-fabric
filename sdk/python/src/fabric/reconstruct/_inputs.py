@@ -450,12 +450,19 @@ def observe(span: SpanRecord) -> Observation | None:
     attrs = span.attributes
     source_id = opaque_id(attrs.get(A_SOURCE_ID))
     epoch = int_at_least(attrs.get(A_SOURCE_EPOCH), 0)
+    markers = (H_LAST in attrs) + (L_REASON in attrs)
+    if A_EXCHANGE_ID in attrs:
+        # Exchange claims are validated first, whatever else the span carries: a record
+        # that also claims a marker class keeps its identity claims (sequence and
+        # conflict accounting) and is a completeness-blocking malformed record, never a
+        # marker that silently drops them.
+        return _exchange(span, source_id, epoch, ambiguous=markers > 0)
+    if markers > 1:
+        raise ReconstructInputError("a span claims both the loss and the heartbeat record class")
     if H_LAST in attrs:
         return _heartbeat(attrs, source_id, epoch)
     if L_REASON in attrs:
         return _loss(attrs, source_id, epoch)
-    if A_EXCHANGE_ID in attrs:
-        return _exchange(span, source_id, epoch)
     return None
 
 
@@ -502,9 +509,12 @@ def _ref(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> ExchangeObs:
+def _exchange(
+    span: SpanRecord, source_id: str | None, epoch: int | None, *, ambiguous: bool = False
+) -> ExchangeObs:
     """An exchange observation; ``ReconstructInputError`` (fixed text) when its identity is
-    malformed, ``malformed=True`` when only its payload is."""
+    malformed, ``malformed=True`` when only its payload is or the span also claims a marker
+    record class (``ambiguous``)."""
     attrs = span.attributes
     exchange_id = opaque_id(attrs.get(A_EXCHANGE_ID))
     sequence = int_at_least(attrs.get(A_SOURCE_SEQUENCE), 0)
@@ -534,7 +544,8 @@ def _exchange(span: SpanRecord, source_id: str | None, epoch: int | None) -> Exc
     truncated = attrs.get(A_TRUNCATED)
     http_status = _http_status(attrs.get(A_HTTP_STATUS))
     malformed = (
-        api is None
+        ambiguous
+        or api is None
         or state is None
         or store_status is None
         or request_sha256 is None

@@ -463,3 +463,70 @@ def test_report_names_no_input_paths(tmp_path: Path) -> None:
         "kind": "local",
         "tenant_id": report_tenant_id("tenant-a"),
     }
+
+
+# --------------------------------------------------------------------------
+# Ambiguous record classes (B7)
+# --------------------------------------------------------------------------
+
+
+def _exchange_rows(capture: Capture) -> list[dict[str, Any]]:
+    return [row for row in capture.rows if "fabric.wire.exchange_id" in row["attributes"]]
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        {"fabric.heartbeat.last_sequence": 2},
+        {"fabric.heartbeat.last_sequence": 2, "fabric.heartbeat.kind": "final"},
+        {"fabric.loss.reason": "shutdown", "fabric.loss.count": 1,
+         "fabric.loss.first_sequence": 1, "fabric.loss.last_sequence": 1},
+    ],
+    ids=["heartbeat", "final-heartbeat", "loss"],
+)  # fmt: skip
+def test_marker_keys_never_hide_an_exchange_claim(tmp_path: Path, marker: dict[str, Any]) -> None:
+    """A record carrying both marker keys and exchange identity is validated as an
+    exchange first: its sequence claim is counted (here it conflicts with ex-1) and it is
+    a malformed record, so the run can never be complete."""
+    import copy  # noqa: PLC0415
+
+    capture = Capture(tmp_path)
+    react_run(capture)
+    forged = copy.deepcopy(_exchange_rows(capture)[1])
+    forged["span_id"] = "f" * 16
+    forged["attributes"].update(marker, **{"fabric.wire.exchange_id": "ex-forged"})
+    capture.rows.append(forged)
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial"
+    gaps = {(g["gap_type"], g.get("exchange_id")) for g in run["gaps"]}
+    assert any(exchange == "ex-forged" for _, exchange in gaps), gaps
+
+
+def test_exchange_with_marker_keys_is_a_malformed_exchange() -> None:
+    attributes = {
+        "fabric.wire.exchange_id": "ex-1", "fabric.source_id": "wire-1",
+        "fabric.source.epoch": 7, "fabric.source.sequence": 3, "fabric.run.id": "r-1",
+        "fabric.wire.api": "openai.chat_completions", "fabric.wire.response_state": "complete",
+        "fabric.wire.store_status": "disabled", "fabric.wire.truncated": False,
+        "fabric.wire.request_sha256": "a" * 64, "fabric.heartbeat.last_sequence": 3,
+    }  # fmt: skip
+    record = SpanRecord("a" * 32, "b" * 16, None, "fabric.model_call", 1, 2, attributes, {})
+    observed = observe(record)
+    assert getattr(observed, "exchange_id", None) == "ex-1"
+    assert getattr(observed, "malformed", None) is True
+    del attributes["fabric.wire.request_sha256"]
+    assert getattr(observe(record), "malformed", None) is True
+    attributes["fabric.source.sequence"] = "x"  # a malformed identity still refuses the input
+    with pytest.raises(ReconstructInputError, match="malformed identity"):
+        observe(record)
+
+
+def test_loss_and_heartbeat_keys_on_one_span_refuse_the_input() -> None:
+    attributes = {
+        "fabric.source_id": "wire-1", "fabric.source.epoch": 7,
+        "fabric.heartbeat.last_sequence": 3, "fabric.loss.reason": "shutdown",
+        "fabric.loss.count": 1, "fabric.loss.first_sequence": 3, "fabric.loss.last_sequence": 3,
+    }  # fmt: skip
+    record = SpanRecord("a" * 32, "b" * 16, None, "fabric.capture_loss", 1, 2, attributes, {})
+    with pytest.raises(ReconstructInputError, match="loss and the heartbeat"):
+        observe(record)

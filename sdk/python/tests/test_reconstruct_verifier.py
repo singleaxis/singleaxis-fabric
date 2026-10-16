@@ -1085,6 +1085,82 @@ def test_descriptor_disagreement_is_a_digest_mismatch(capture: Capture) -> None:
     sidecar.write_text(json.dumps(descriptor))
     run = only_run(capture.reconstruct())
     gap = next(g for g in run["gaps"] if g["gap_type"] == "digest_mismatch")
+    assert gap["reason"] == "binding_mismatch"
+    assert run["verdict"] == "partial"
+
+
+def _edit_sidecar(capture: Capture, edit: Any) -> dict[str, Any]:
+    exchanges = react_run(capture)
+    assert exchanges[0].request_id is not None
+    meta = capture.object_path(exchanges[0].request_id).parent / "meta"
+    sidecar = meta / f"{exchanges[0].request_id}.json"
+    descriptor = json.loads(sidecar.read_text())
+    edit(descriptor)
+    sidecar.write_text(json.dumps(descriptor))
+    return only_run(capture.reconstruct())
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_id", "wire-somewhere-else"),
+        ("source_epoch", 1),
+        ("source_epoch", True),
+        ("source_sequence", 99),
+        ("source_sequence", "0"),
+        ("run_id", "r-" + "0" * 32),
+    ],
+)
+def test_descriptor_identity_must_bind_to_its_exchange(
+    capture: Capture, field: str, value: Any
+) -> None:
+    """B8: a descriptor naming another source position, run or a re-typed value is an
+    integrity gap, never complete."""
+    run = _edit_sidecar(capture, lambda d: d.__setitem__(field, value))
+    gaps = [g for g in run["gaps"] if g["gap_type"] == "digest_mismatch"]
+    assert [(g["exchange_id"], g["object_role"]) for g in gaps] == [("ex-0", "request")]
+    assert gaps[0]["reason"] in {"binding_mismatch", "sidecar_mismatch"}
+    assert run["verdict"] == "partial"
+    assert run["exchanges"][0]["objects"]["request"]["verification"] == "digest_mismatch"
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["operation_id", "run_id", "source_id", "source_epoch", "source_sequence", "captured_at",
+     "media_type", "provenance", "boundary", "representation", "transformations",
+     "source_byte_length", "encoding", "ref"],
+)  # fmt: skip
+def test_descriptor_missing_a_required_field_is_a_digest_mismatch(
+    capture: Capture, field: str
+) -> None:
+    run = _edit_sidecar(capture, lambda d: d.pop(field))
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "digest_mismatch")
+    assert gap["reason"] == "sidecar_mismatch"
+    assert run["verdict"] == "partial"
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda d: d.__setitem__("note", "unexpected key"),
+        lambda d: d.__setitem__("status", "truncated"),
+        lambda d: d.__setitem__("transformations", ["truncate"]),
+        lambda d: d.pop("source_sha256"),
+        lambda d: d.__setitem__("source_byte_length", d["source_byte_length"] + 1),
+        lambda d: d.__setitem__("representation", "partial"),  # partial request
+        lambda d: d.__setitem__("media_type", "Text/Plain; x=y"),
+        lambda d: d.__setitem__("captured_at", "yesterday"),
+        lambda d: d.__setitem__("schema_version", "fabric.content-object/v1"),
+        lambda d: d.__setitem__("boundary", "tool"),
+    ],
+    ids=["unknown-key", "status", "transformations", "no-source-digest", "source-length",
+         "partial-request", "media-type", "captured-at", "schema", "boundary"],
+)  # fmt: skip
+def test_descriptor_violating_the_content_v2_contract_is_a_digest_mismatch(
+    capture: Capture, edit: Any
+) -> None:
+    run = _edit_sidecar(capture, edit)
+    gap = next(g for g in run["gaps"] if g["gap_type"] == "digest_mismatch")
     assert gap["reason"] == "sidecar_mismatch"
     assert run["verdict"] == "partial"
 

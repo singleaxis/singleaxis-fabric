@@ -853,7 +853,16 @@ class _Run:
             self._gap(exchange, "missing_object", side=side, reason="invalid_ref")
             return ObjectResult("missing", sha256=digest), False
         result = reader.fetch(
-            object_id, role=_ROLES[side], operation_id=exchange.exchange_id, expected_sha256=digest
+            object_id,
+            role=_ROLES[side],
+            expected_sha256=digest,
+            binding={
+                "source_id": exchange.source_id,
+                "source_epoch": exchange.source_epoch,
+                "source_sequence": exchange.source_sequence,
+                "run_id": exchange.run_id,
+                "operation_id": exchange.exchange_id,
+            },
         )
         if result.verification == "missing":
             self._gap(exchange, "missing_object", side=side, reason=result.reason)

@@ -723,7 +723,12 @@ own function. The report is still customer data.
    appears in. *(Revision 8, G6:)* an observation with a valid identity but
    malformed payload fields counts the same way and is also a
    `digest_mismatch` (`malformed_record`, partial) of the run and scope it
-   names; a malformed identity refuses the input. A sequence claimed by conflicting observations, or by more
+   names; a malformed identity refuses the input. Record classes are
+   decided exchange-first: a span carrying `fabric.wire.exchange_id` is
+   validated as an exchange even when it also carries loss or heartbeat
+   keys, and such an ambiguous record is a `malformed_record` exchange
+   (its claims still count); a span carrying both loss and heartbeat keys
+   refuses the input. A sequence claimed by conflicting observations, or by more
    than one exchange id (`sequence_conflict` on each exchange), is
    *conflicted*: any window holding it (or, for a window without a scope,
    adjacent to it) gets a `digest_mismatch` gap (`conflicting_claim`,
@@ -782,7 +787,18 @@ own function. The report is still customer data.
 5. *Bytes* (needs a store; otherwise `checks.bytes = skipped`). Each body
    with a ref is fetched and its sha256 compared with the span digest and
    the descriptor: absent → `missing_object` (partial); mismatch →
-   `digest_mismatch` (partial). A captured body without a ref under
+   `digest_mismatch` (partial). The descriptor must satisfy the whole
+   content-v2 contract the Node enforces (spec 048 §4: closed key set plus
+   `encoding`/`ref`, value shapes, truncation consistency) and its
+   `source_id`, `source_epoch`, `source_sequence`, `run_id` and
+   `operation_id` must equal the exchange's identity (`operation_id` is the
+   exchange id). Integers compare as integers (OTLP/JSON decimal-string
+   int64 values are decoded on input; a boolean never matches);
+   identifiers compare as exact strings, without case folding, trimming or
+   pseudonym mapping, since capture writes the same emitted labels into
+   both. A violation or a missing field → `digest_mismatch`
+   (`sidecar_mismatch`, or `binding_mismatch` for the identity fields,
+   partial). A captured body without a ref under
    `store_status` `failed`/`partial` → `missing_object` (partial);
    `disabled` → `checks.bytes = skipped`. `truncated` → `truncated`
    (partial). An exchange whose `response_state` is `complete`,
