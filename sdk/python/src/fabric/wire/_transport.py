@@ -5,9 +5,7 @@ libraries (httpx2: openai>=3, anthropic>=1) have independent transport classes."
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
-import contextvars
 import functools
 import importlib
 import importlib.util
@@ -43,53 +41,36 @@ _W = TypeVar("_W")
 _LOG = logging.getLogger("fabric.wire")
 
 
-class _Delegation:
-    """One tee's delegation of one request to its inner transport. Bound to the task (or
-    thread) that delegates and live only until that call returns: a patched HTTPTransport
-    under an explicit WireTransport does not capture the same request twice, while a task
-    or thread that merely inherited the context (created inside the delegated call) is
-    captured normally, during and after it."""
-
-    __slots__ = ("active", "owner")
-
-    def __init__(self) -> None:
-        self.active, self.owner = True, _owner()
+# Requests a tee is delegating to its inner transport right now, by identity: id(request)
+# -> (request, depth). The entry holds the request itself, so its id cannot be reused by
+# another object while it is live. Suppression follows the *request object*, never the
+# task, thread or context: a patched default transport under an explicit wrapper does not
+# capture the same request twice, even when the wrapper hands it to another task or
+# thread, while any other request (one made from a streamed request body, a task spawned
+# inside the delegated call, a copied-context thread) is captured normally.
+_DELEGATED: dict[int, tuple[Any, int]] = {}
+_DELEGATED_LOCK = threading.Lock()
 
 
-def _owner() -> tuple[str, int]:
-    """Identity of the running task (asyncio or trio), else of the running thread. Compared
-    only while its delegation is live, when that task or thread cannot have been freed."""
-    with contextlib.suppress(RuntimeError):
-        if (task := asyncio.current_task()) is not None:
-            return "asyncio", id(task)
-    if (trio := sys.modules.get("trio")) is not None:
-        with contextlib.suppress(Exception):
-            return "trio", id(trio.lowlevel.current_task())
-    return "thread", threading.get_ident()
-
-
-# The live delegation, if any; never a plain flag (a flag is inherited by tasks created
-# inside the delegated call and would silently exempt their later requests from capture).
-_IN_TEE: contextvars.ContextVar[_Delegation | None] = contextvars.ContextVar(
-    "fabric_wire_in_tee", default=None
-)
-
-
-def _delegating() -> bool:
-    """Whether the current task or thread is inside a live delegation of a tee."""
-    guard = _IN_TEE.get()
-    return guard is not None and guard.active and guard.owner == _owner()
+def _delegating(request: Any) -> bool:
+    """Whether ``request`` itself is inside a live delegation of a tee."""
+    entry = _DELEGATED.get(id(request))
+    return entry is not None and entry[0] is request
 
 
 @contextlib.contextmanager
-def _delegation() -> Iterator[None]:
-    guard = _Delegation()
-    token = _IN_TEE.set(guard)
+def _delegation(request: Any) -> Iterator[None]:
+    key = id(request)
+    with _DELEGATED_LOCK:
+        depth = _DELEGATED[key][1] if key in _DELEGATED else 0
+        _DELEGATED[key] = (request, depth + 1)
     try:
         yield
     finally:
-        guard.active = False  # copies of this context held by spawned tasks see it end
-        _IN_TEE.reset(token)
+        with _DELEGATED_LOCK:
+            entry = _DELEGATED.pop(key, None)
+            if entry is not None and entry[1] > 1:
+                _DELEGATED[key] = (entry[0], entry[1] - 1)
 
 
 _ACTIVE: WireTee | None = None  # set by fabric.wire.install
@@ -131,7 +112,7 @@ class WireTee:
         when the response ends, the explicit record owns it and the tee allocates nothing
         (no gap); if the response outlives the call (a lazy stream the call returned), the
         tee captures it then (:meth:`adopt`)."""
-        if self.closed or _delegating():
+        if self.closed or _delegating(request):
             return False, None
         try:
             url = request.url
@@ -193,7 +174,7 @@ class WireTee:
         if not owned:
             return call(transport, request)
         try:
-            with _delegation():  # also after a setup failure: no nested second capture
+            with _delegation(request):  # also after a setup failure: no nested capture
                 response = call(transport, request)
         except BaseException as exc:
             if exchange is not None:
@@ -210,7 +191,7 @@ class WireTee:
         if not owned:
             return await call(transport, request)
         try:
-            with _delegation():  # also after a setup failure: no nested second capture
+            with _delegation(request):  # also after a setup failure: no nested capture
                 response = await call(transport, request)
         except BaseException as exc:
             if exchange is not None:
@@ -272,8 +253,9 @@ class WireTee:
 
 
 def _after_fork_in_child() -> None:
-    global _PATCH_LOCK  # noqa: PLW0603
+    global _PATCH_LOCK, _DELEGATED_LOCK  # noqa: PLW0603
     _PATCH_LOCK = threading.Lock()  # a parent thread may have held it at fork
+    _DELEGATED_LOCK = threading.Lock()
     for tee in list(_TEES):  # in-flight exchanges belong to the parent's epoch
         for exchange in list(tee._active):
             exchange.done = True

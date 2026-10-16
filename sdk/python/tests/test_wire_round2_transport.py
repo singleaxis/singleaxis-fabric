@@ -163,7 +163,7 @@ def test_setup_failure_under_explicit_wrapper_is_not_captured_twice(
     (loss,) = installed.losses()
     a = attrs(loss)
     assert (a["fabric.loss.reason"], a["fabric.loss.count"]) == ("internal_error", 1)
-    assert not _transport._IN_TEE.get()
+    assert not _transport._DELEGATED
 
 
 # --- 9: empty and tiny chunks stay bounded -------------------------------------------
@@ -322,7 +322,7 @@ def test_task_spawned_inside_delegation_is_captured_after_it_returns(rig: Rig) -
 
         async with rig.async_client(handler) as client:
             await client.post(OPENAI_CHAT, json={"messages": [{"content": "first"}]})
-            assert not _transport._delegating()
+            assert not _transport._DELEGATED
             ready.set()
             await asyncio.gather(*tasks)
 
@@ -391,4 +391,145 @@ def test_nested_delegation_of_the_same_request_stays_suppressed(
     with module.Client(transport=transport) as client:
         assert client.post(url, json={"messages": []}).status_code == 200
     assert installed.handle.allocator.last_sequence()[1] == 0  # one sequence, not two
-    assert _transport._IN_TEE.get() is None
+    assert not _transport._DELEGATED
+
+
+# --- Sol G 1+3: suppression follows the delegated request object -----------------------
+
+
+@pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_distinct_request_from_a_streamed_request_body_is_captured(
+    installed: Installed, fake_llm: FakeLLM, flavor: str, mode: str
+) -> None:
+    """Sol G finding 1: a streamed request body makes another matched model call before it
+    yields, from the delegating task or thread. That distinct request was silently
+    suppressed (one sequence, no loss); it is captured as its own exchange."""
+    module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
+    url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
+    body = b'{"messages":[{"role":"user","content":"outer"}]}'
+    inner_body = {"messages": [{"role": "user", "content": "inner"}]}
+    if mode == "sync":
+        with module.Client(trust_env=False) as client:
+
+            def stream() -> Iterator[bytes]:
+                assert client.post(url, json=inner_body).status_code == 200
+                yield body
+
+            assert client.post(url, content=stream()).status_code == 200
+    else:
+
+        async def run() -> None:
+            async with module.AsyncClient(trust_env=False) as client:
+
+                async def stream() -> Any:
+                    assert (await client.post(url, json=inner_body)).status_code == 200
+                    yield body
+
+                assert (await client.post(url, content=stream())).status_code == 200
+
+        asyncio.run(run())
+    assert len(fake_llm.seen) == 2  # both calls reached the server
+    spans = installed.spans()
+    assert [attrs(s)["fabric.source.sequence"] for s in spans] == [0, 1]
+    assert installed.losses() == []
+    assert not _transport._DELEGATED
+
+
+@pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
+def test_same_request_delegated_to_another_task_is_captured_once(
+    installed: Installed, fake_llm: FakeLLM, flavor: str
+) -> None:
+    """Sol G finding 3: an explicit wrapper whose inner transport hands the request to the
+    patched default transport on another task (``asyncio.create_task``) captured the one
+    exchange twice (sequences 0 and 1). The same live request is captured once."""
+    module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
+    url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
+
+    class Offload(module.AsyncBaseTransport):  # type: ignore[misc,name-defined]
+        def __init__(self) -> None:
+            self.inner = module.AsyncHTTPTransport(trust_env=False)
+
+        async def handle_async_request(self, request: Any) -> Any:
+            return await asyncio.create_task(self.inner.handle_async_request(request))
+
+        async def aclose(self) -> None:
+            await self.inner.aclose()
+
+    async def run() -> None:
+        transport = wire.AsyncWireTransport(Offload(), handle=installed.handle)
+        async with module.AsyncClient(transport=transport, trust_env=False) as client:
+            assert (await client.post(url, json={"messages": []})).status_code == 200
+
+    asyncio.run(run())
+    assert len(fake_llm.seen) == 1
+    assert [attrs(s)["fabric.source.sequence"] for s in installed.spans()] == [0]
+    assert installed.handle.allocator.last_sequence()[1] == 0  # one sequence, not two
+    assert installed.losses() == []
+    assert not _transport._DELEGATED
+
+
+@pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
+def test_same_request_delegated_to_another_thread_is_captured_once(
+    installed: Installed, fake_llm: FakeLLM, flavor: str
+) -> None:
+    """The sync counterpart: the explicit wrapper's inner transport sends the same request
+    through the patched default transport on a worker thread."""
+    module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
+    url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
+
+    class Offload(module.BaseTransport):  # type: ignore[misc,name-defined]
+        def __init__(self) -> None:
+            self.inner = module.HTTPTransport(trust_env=False)
+
+        def handle_request(self, request: Any) -> Any:
+            result: list[Any] = []
+            worker = threading.Thread(
+                target=lambda: result.append(self.inner.handle_request(request))
+            )
+            worker.start()
+            worker.join(10)
+            return result[0]
+
+        def close(self) -> None:
+            self.inner.close()
+
+    transport = wire.WireTransport(Offload(), handle=installed.handle)
+    with module.Client(transport=transport, trust_env=False) as client:
+        assert client.post(url, json={"messages": []}).status_code == 200
+    assert len(fake_llm.seen) == 1
+    assert [attrs(s)["fabric.source.sequence"] for s in installed.spans()] == [0]
+    assert installed.losses() == []
+    assert not _transport._DELEGATED
+
+
+@pytest.mark.parametrize("flavor", ["httpx", "httpx2"])
+def test_distinct_request_from_the_delegating_task_is_captured(
+    installed: Installed, fake_llm: FakeLLM, flavor: str
+) -> None:
+    """An explicit wrapper's inner transport makes a different matched call from the same
+    task before delegating the original: both are captured, each once."""
+    module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
+    url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
+
+    class Prefetch(module.AsyncBaseTransport):  # type: ignore[misc,name-defined]
+        def __init__(self) -> None:
+            self.inner = module.AsyncHTTPTransport(trust_env=False)
+
+        async def handle_async_request(self, request: Any) -> Any:
+            async with module.AsyncClient(trust_env=False) as side:
+                assert (await side.post(url, json={"messages": [{"content": "side"}]})).is_success
+            return await self.inner.handle_async_request(request)
+
+        async def aclose(self) -> None:
+            await self.inner.aclose()
+
+    async def run() -> None:
+        transport = wire.AsyncWireTransport(Prefetch(), handle=installed.handle)
+        async with module.AsyncClient(transport=transport, trust_env=False) as client:
+            assert (await client.post(url, json={"messages": []})).status_code == 200
+
+    asyncio.run(run())
+    assert len(fake_llm.seen) == 2
+    assert [attrs(s)["fabric.source.sequence"] for s in installed.spans()] == [0, 1]
+    assert installed.losses() == []
