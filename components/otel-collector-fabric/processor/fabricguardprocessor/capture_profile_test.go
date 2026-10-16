@@ -216,8 +216,7 @@ func TestCaptureProfile_ExtraKeysDroppedFromEveryCaptureKind(t *testing.T) {
 }
 
 // Classification uses the unfiltered span, so an invalid marker value cannot
-// opt a span out of the strict profile, and a native capture name alone
-// claims it.
+// opt a span out of the strict profile, whatever the span's name.
 func TestCaptureProfile_ClassificationCannotBeEvaded(t *testing.T) {
 	for _, tc := range []struct {
 		native string
@@ -226,9 +225,8 @@ func TestCaptureProfile_ClassificationCannotBeEvaded(t *testing.T) {
 		{"native", map[string]any{"fabric.wire.exchange_id": "bad id"}},
 		{"native", map[string]any{"fabric.loss.reason": "patient Jane Doe"}},
 		{"native", map[string]any{"fabric.heartbeat.last_sequence": "x"}},
-		{"fabric.model_call", map[string]any{}},
-		{"fabric.capture_loss", map[string]any{}},
-		{"fabric.capture_heartbeat", map[string]any{}},
+		{"chat gpt-4o", map[string]any{"fabric.wire.exchange_id": "bad id", "gen_ai.request.model": "gpt-4o"}},
+		{"fabric.activity", map[string]any{"fabric.heartbeat.last_sequence": "x"}},
 	} {
 		g := newTestGuard(t, nil)
 		attrs := map[string]any{"fabric.tenant_id": "alice@example.com", "fabric.source_id": testSourceLabel}

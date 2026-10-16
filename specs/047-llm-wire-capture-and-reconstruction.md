@@ -641,8 +641,10 @@ by `hashAttributeKey` (bare 64-hex). `activityCategory` checks
 `fabric.wire.exchange_id` like `gen_ai.request.model` (→
 `fabric.model_call`). Both capture names join the pass-through vocabulary.
 
-**Strict capture profile.** On spans named `fabric.model_call`,
-`fabric.capture_loss` or `fabric.capture_heartbeat`, fabricguard admits
+**Strict capture profile.** On capture records, which fabricguard
+recognises by a marker key (`fabric.wire.exchange_id`,
+`fabric.loss.reason` or `fabric.heartbeat.last_sequence`, whatever its
+value), never by name, fabricguard admits
 only the capture keys and reused keys of this section, each with a value
 validator: object-id refs match the lowercase uuid4 pattern; `error.type`
 the identifier pattern `^[A-Za-z_][A-Za-z0-9_.]{0,127}$`; finish reasons
@@ -654,7 +656,11 @@ say. A resource group that holds **any** capture span gets the strict
 capture policy as a whole: its resource keeps only a valid `service.name`
 and its scopes keep no attributes, so application spans batched with
 capture spans (for example under `FABRIC_WIRE_TRACER=global`) cannot widen
-the shared metadata. Other spans keep the general policy.
+the shared metadata. Other spans keep the general policy, including spans
+merely named `fabric.model_call`: `activityCategory` gives that name to
+governed and framework LLM spans too, so the name is not a discriminator,
+and a second fabricguard pass (edge Node, then central Node) leaves every
+span exactly as the first pass did.
 
 **Boot gate.** *(→ 048 §5: `logs/content*` pipelines carry content without
 `fabricguard` and are fenced off from telemetry pipelines.)* `fabric-gate` refuses to start the collector when any

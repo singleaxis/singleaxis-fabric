@@ -906,23 +906,21 @@ var captureNewKeys = toSet(
 // runMarkerKinds are the heartbeat kinds that carry fabric.run.scope_id.
 var runMarkerKinds = toSet("run_start", "run_end")
 
-var (
-	captureSpanNames = toSet("fabric.model_call", "fabric.capture_loss", "fabric.capture_heartbeat")
-	// captureMarkers are the keys that make activityCategory (and the
-	// offline verifier) treat a span as a capture record.
-	captureMarkers = []string{"fabric.wire.exchange_id", "fabric.loss.reason", "fabric.heartbeat.last_sequence"}
-)
+// captureMarkers are the keys that make activityCategory (and the offline
+// verifier) treat a span as a capture record. They are the only capture
+// discriminator: the normalized name is not one, because activityCategory
+// also names governed and framework LLM spans (gen_ai.request.model,
+// fabric.llm.system) fabric.model_call, and a second guard pass (edge Node ->
+// central Node) must leave those spans as the first pass did.
+var captureMarkers = []string{"fabric.wire.exchange_id", "fabric.loss.reason", "fabric.heartbeat.last_sequence"}
 
-// isCaptureSpan reports whether a span is, or presents itself as, a spec 047
-// capture record: its native name is a capture name or it carries a capture
-// marker key (whatever the value). Classification uses the unfiltered span so
-// an invalid marker cannot opt a span out of the strict profile. Governed and
-// framework LLM spans (native names such as "chat gpt-4o") are not capture
-// spans and keep the general allowlist.
+// isCaptureSpan reports whether a span is a spec 047 capture record: it
+// carries a capture marker key (whatever the value). Classification uses the
+// unfiltered span so an invalid marker cannot opt a span out of the strict
+// profile. A span without a marker is not a capture record, whatever its
+// name (the verifier ignores it too), and keeps the general allowlist, so
+// governed and framework LLM spans are processed identically on every pass.
 func isCaptureSpan(span ptrace.Span) bool {
-	if _, ok := captureSpanNames[span.Name()]; ok {
-		return true
-	}
 	for _, key := range captureMarkers {
 		if _, ok := span.Attributes().Get(key); ok {
 			return true
