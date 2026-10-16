@@ -282,8 +282,12 @@ def test_autoload_before_install_default_provider_without_endpoint_is_refused(
 ) -> None:  # fmt: skip
     endpoint = {"endpoint_id": "fake", "dialect": "openai", "hosts": ["127.0.0.1"],
                 "ports": [fake_llm.port], "schemes": ["http"], "path_prefix": "/v1"}  # fmt: skip
-    env = {"FABRIC_WIRE_STORE": f"file://{tmp_path / 'store'}", "FABRIC_TENANT_ID": "tenant-a",
-           "FABRIC_WIRE_TRACER": "global", "FABRIC_WIRE_ENDPOINTS": json.dumps([endpoint])}
+    env = {
+        "FABRIC_WIRE_STORE": f"file://{tmp_path / 'store'}",
+        "FABRIC_TENANT_ID": "tenant-a",
+        "FABRIC_WIRE_TRACER": "global",
+        "FABRIC_WIRE_ENDPOINTS": json.dumps([endpoint]),
+    }
     handle = wire.install_from_env(env)
     assert handle is not None
     mem = InMemorySpanExporter()
