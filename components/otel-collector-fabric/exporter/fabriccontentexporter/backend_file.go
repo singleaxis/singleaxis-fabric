@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -54,9 +55,32 @@ func (e *storeError) Error() string {
 // there is no check-then-rename fallback, because two exporter processes
 // sharing the directory could both see the name free and overwrite an
 // accepted object (Sol data-exposure #5).
+//
+// Every directory below the content root, and every directory this backend
+// created for the root itself, is durable in its parent only after that
+// parent has been fsync'd successfully. That state is tracked per directory
+// and set only after the fsync succeeds, so a put that created a directory
+// but failed its parent's fsync does not leave the next attempt (which sees
+// the directory already present) free to acknowledge an object whose
+// directory entry may still be lost on power failure (Sol G #2). A fresh
+// process re-establishes the barrier once per directory below the root,
+// covering directories an earlier process or another writer created.
 type fileBackend struct {
 	dir string
+
+	mu sync.Mutex
+	// durable holds directories whose entry in their parent is known to be
+	// fsync'd. Bounded by maxDurableDirs: forgetting entries only costs a
+	// repeated (harmless) parent fsync.
+	durable map[string]bool
+	// pendingRoot lists, top-down, the directories ensureRoot created (the
+	// content root and any missing ancestors) whose parent fsync has not yet
+	// succeeded. Every put completes them before it can acknowledge.
+	pendingRoot []string
 }
+
+// maxDurableDirs bounds the durable set (three directories per tenant).
+const maxDurableDirs = 4096
 
 // linkFile and renameNoReplace are the no-replace primitives; tests replace
 // them to simulate filesystems without hard links or without either.
@@ -65,7 +89,9 @@ var (
 	renameNoReplace = platformRenameNoReplace
 )
 
-func newFileBackend(dir string) *fileBackend { return &fileBackend{dir: dir} }
+func newFileBackend(dir string) *fileBackend {
+	return &fileBackend{dir: dir, durable: map[string]bool{}}
+}
 
 // startFileBackend is newFileBackend plus a sweep of the temp files an
 // earlier process left behind (see sweepStaleTemps).
@@ -203,9 +229,11 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 
 // privateDirs walks from the content root down to dir, top-down so that no
 // component is ever resolved through a symlink: a missing directory is
-// created 0700 (and its parent fsync'd), an existing one must be a real
-// directory and is tightened to 0700, as the SDK's local store does. The
-// content root itself may be created with its missing parents.
+// created 0700, an existing one must be a real directory and is tightened to
+// 0700, as the SDK's local store does. The content root itself may be
+// created with its missing parents. Before it returns, every directory on
+// the chain has a durable entry in its parent (see makeDurable): created or
+// not, on this attempt or an earlier one.
 func (b *fileBackend) privateDirs(dir string) error {
 	rel, err := filepath.Rel(b.dir, dir)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
@@ -220,7 +248,14 @@ func (b *fileBackend) privateDirs(dir string) error {
 			continue
 		}
 		next := filepath.Join(current, part)
-		if err := privateDir(next); err != nil {
+		created, err := privateDir(next)
+		if err != nil {
+			return err
+		}
+		if created { // removed and recreated since it was last made durable
+			b.forget(next)
+		}
+		if err := b.makeDurable(next); err != nil {
 			return err
 		}
 		current = next
@@ -228,41 +263,113 @@ func (b *fileBackend) privateDirs(dir string) error {
 	return nil
 }
 
+// makeDurable fsyncs dir's parent unless dir's entry there is already known
+// durable, and records it only after that fsync succeeds.
+func (b *fileBackend) makeDurable(dir string) error {
+	b.mu.Lock()
+	known := b.durable[dir]
+	b.mu.Unlock()
+	if known {
+		return nil
+	}
+	if err := syncDir(filepath.Dir(dir)); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	if len(b.durable) >= maxDurableDirs {
+		b.durable = map[string]bool{}
+	}
+	b.durable[dir] = true
+	b.mu.Unlock()
+	return nil
+}
+
+func (b *fileBackend) forget(dir string) {
+	b.mu.Lock()
+	delete(b.durable, dir)
+	b.mu.Unlock()
+}
+
 // ensureRoot creates the content root (0700, with missing parents) or checks
-// that it is a real directory.
+// that it is a real directory. The directories it creates stay pending until
+// their parents' fsyncs succeed; until then every put retries those
+// barriers, so a failed fsync is never skipped because the root now exists.
 func (b *fileBackend) ensureRoot() error {
 	if _, err := os.Lstat(b.dir); errors.Is(err, os.ErrNotExist) {
+		var missing []string // bottom-up: the root, then its missing parents
+		for d := b.dir; ; {
+			if _, err := os.Lstat(d); !errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			missing = append(missing, d)
+			up := filepath.Dir(d)
+			if up == d {
+				break
+			}
+			d = up
+		}
 		if err := os.MkdirAll(b.dir, 0o700); err != nil {
 			return &storeError{op: "file mkdir"}
 		}
-		if err := syncDir(filepath.Dir(b.dir)); err != nil {
-			return err
+		b.mu.Lock()
+		for i := len(missing) - 1; i >= 0; i-- {
+			b.pendingRoot = append(b.pendingRoot, missing[i])
 		}
+		b.mu.Unlock()
 	}
-	return privateDir(b.dir)
+	if err := b.syncPendingRoot(); err != nil {
+		return err
+	}
+	_, err := privateDir(b.dir)
+	return err
 }
 
-func privateDir(path string) error {
+// syncPendingRoot completes, top-down, the parent fsyncs of the directories
+// ensureRoot created; each leaves the pending list only once its fsync has
+// succeeded.
+func (b *fileBackend) syncPendingRoot() error {
+	for {
+		b.mu.Lock()
+		if len(b.pendingRoot) == 0 {
+			b.mu.Unlock()
+			return nil
+		}
+		next := b.pendingRoot[0]
+		b.mu.Unlock()
+		if err := syncDir(filepath.Dir(next)); err != nil {
+			return err
+		}
+		b.mu.Lock()
+		if len(b.pendingRoot) > 0 && b.pendingRoot[0] == next {
+			b.pendingRoot = b.pendingRoot[1:]
+		}
+		b.mu.Unlock()
+	}
+}
+
+// privateDir creates path 0700 when it is missing (created reports that),
+// or checks that it is a real directory and tightens it to 0700. It never
+// fsyncs: the caller makes the directory's entry durable (makeDurable,
+// syncPendingRoot).
+func privateDir(path string) (created bool, err error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-			return &storeError{op: "file mkdir"}
+			return false, &storeError{op: "file mkdir"}
 		}
-		if err := syncDir(filepath.Dir(path)); err != nil {
-			return err
-		}
+		created = true
 		info, err = os.Lstat(path)
 	}
 	if err != nil || !info.IsDir() {
 		// A symlink or file in the layout is never followed.
-		return &storeError{op: "file layout"}
+		return created, &storeError{op: "file layout"}
 	}
 	if info.Mode().Perm() != 0o700 {
 		if err := os.Chmod(path, 0o700); err != nil {
-			return &storeError{op: "file chmod"}
+			return created, &storeError{op: "file chmod"}
 		}
 	}
-	return nil
+	return created, nil
 }
 
 // existing reports whether path already exists. An existing object holding

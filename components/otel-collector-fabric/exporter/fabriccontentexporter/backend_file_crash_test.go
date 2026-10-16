@@ -222,3 +222,126 @@ func TestFileBackend_ConcurrentExistingTargetSyncsTheDirectory(t *testing.T) {
 		t.Errorf("temp files left: %v", left)
 	}
 }
+
+// syncLog replaces syncDir for the test: it records every successful
+// directory fsync and fails the fsyncs of dir with EIO while *fail is set.
+func syncLog(t *testing.T, dir string, fail *bool) *[]string {
+	t.Helper()
+	var synced []string
+	original := syncDir
+	syncDir = func(d string) error {
+		if d == dir && *fail {
+			return syscall.EIO
+		}
+		if err := original(d); err != nil {
+			return err
+		}
+		synced = append(synced, d)
+		return nil
+	}
+	t.Cleanup(func() { syncDir = original })
+	return &synced
+}
+
+func countOf(list []string, item string) int {
+	n := 0
+	for _, s := range list {
+		if s == item {
+			n++
+		}
+	}
+	return n
+}
+
+// Sol G #2: a put creates <root>/acme, then its fsync of <root> fails. The
+// retry sees <root>/acme present; it must still fsync <root> (the barrier
+// for the tenant directory's entry) before it acknowledges, and must keep
+// failing while that fsync fails.
+func TestFileBackend_RetryAfterFailedParentFsyncSyncsTheParent(t *testing.T) {
+	root := t.TempDir()
+	b := newFileBackend(root)
+	key := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000003"))
+	body := []byte("exact wire body")
+	fail := true
+	synced := syncLog(t, root, &fail)
+	if err := b.put(context.Background(), key, body); err == nil {
+		t.Fatal("first put: want the injected fsync failure of the content root")
+	}
+	if _, err := os.Lstat(filepath.Join(root, "acme")); err != nil {
+		t.Fatalf("the tenant directory was not created before the failed fsync: %v", err)
+	}
+	if err := b.put(context.Background(), key, body); err == nil {
+		t.Fatal("retry while the parent fsync still fails must not succeed")
+	}
+	fail, *synced = false, nil
+	if err := b.put(context.Background(), key, body); err != nil {
+		t.Fatalf("retry put: %v", err)
+	}
+	if countOf(*synced, root) == 0 {
+		t.Fatalf("retry acknowledged without fsyncing the content root; synced %v", *synced)
+	}
+	// Once durable, later puts in the same directories do not repeat it.
+	*synced = nil
+	other := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000004"))
+	if err := b.put(context.Background(), other, body); err != nil {
+		t.Fatal(err)
+	}
+	if countOf(*synced, root) != 0 {
+		t.Errorf("an already durable chain was fsync'd again: %v", *synced)
+	}
+}
+
+// Sol G #2 for the root: ensureRoot creates the content root with missing
+// ancestors. When the fsync that makes the topmost created ancestor durable
+// fails, a retry (the root now exists) must still complete every barrier,
+// top-down, before it acknowledges.
+func TestFileBackend_RetryCompletesTheBarriersOfCreatedRootAncestors(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "a", "b", "content")
+	b := newFileBackend(root)
+	key := filepath.ToSlash(filepath.Join(root, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000005"))
+	body := []byte("exact wire body")
+	fail := true
+	synced := syncLog(t, base, &fail)
+	if err := b.put(context.Background(), key, body); err == nil {
+		t.Fatal("first put: want the injected fsync failure of the ancestor's parent")
+	}
+	if _, err := os.Lstat(root); err != nil {
+		t.Fatalf("the content root was not created: %v", err)
+	}
+	fail, *synced = false, nil
+	if err := b.put(context.Background(), key, body); err != nil {
+		t.Fatalf("retry put: %v", err)
+	}
+	want := []string{base, filepath.Join(base, "a"), filepath.Join(base, "a", "b"), root}
+	got := (*synced)[:min(len(*synced), len(want))]
+	if len(got) != len(want) {
+		t.Fatalf("retry synced %v, want the chain %v first", *synced, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("retry synced %v, want the chain %v first", *synced, want)
+		}
+	}
+}
+
+// A fresh backend over a tree an earlier process (or another writer)
+// created re-establishes each directory's barrier once before its first
+// acknowledgement: their creator may have failed its fsync.
+func TestFileBackend_FreshBackendSyncsAnExistingChainOnce(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "acme", "evidence")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b := newFileBackend(root)
+	fail := false
+	synced := syncLog(t, "", &fail)
+	key := filepath.ToSlash(filepath.Join(parent, "0b1c2d3e-0000-4000-8000-000000000006"))
+	if err := b.put(context.Background(), key, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if countOf(*synced, root) != 1 || countOf(*synced, filepath.Join(root, "acme")) != 1 {
+		t.Fatalf("existing chain not made durable once: %v", *synced)
+	}
+}
