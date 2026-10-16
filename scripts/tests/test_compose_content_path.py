@@ -375,6 +375,14 @@ def test_s3_backend_defaults_to_kms(tmp_path: Path) -> None:
             {"FABRIC_CONTENT_S3_ENDPOINT": f"s3://{SECRET_MARKER}"},
             "FABRIC_CONTENT_S3_ENDPOINT is not an absolute http(s):// URL",
         ),
+        (  # Sol F3/2: the exporter refuses an endpoint path at startup
+            {"FABRIC_CONTENT_S3_ENDPOINT": f"https://store.example.com/{SECRET_MARKER}"},
+            "FABRIC_CONTENT_S3_ENDPOINT must not contain a path",
+        ),
+        (
+            {"FABRIC_CONTENT_S3_ENDPOINT": f"https://store.example.com:9000/{SECRET_MARKER}/"},
+            "FABRIC_CONTENT_S3_ENDPOINT must not contain a path",
+        ),
         ({"FABRIC_CONTENT_S3_PATH_STYLE": "yes"}, "must be true or false"),
         (
             {"FABRIC_CONTENT_BACKEND": "gcs"},
@@ -399,7 +407,7 @@ def test_https_s3_compatible_endpoint_passes(tmp_path: Path) -> None:
     result = _run(
         tmp_path,
         **S3_OK,
-        FABRIC_CONTENT_S3_ENDPOINT="https://minio.internal:9000",
+        FABRIC_CONTENT_S3_ENDPOINT="https://minio.internal:9000/",
         FABRIC_CONTENT_S3_PATH_STYLE="true",
         FABRIC_CONTENT_S3_SSE="AES256",
     )

@@ -197,3 +197,40 @@ func TestExporterEndpointCredentialsRejected(t *testing.T) {
 		t.Fatalf("overlay adding credentials not refused cleanly: %v", err)
 	}
 }
+
+// Sol F3/2: the fabriccontent exporter refuses an S3 endpoint with a path at
+// startup ("s3.endpoint must not contain a path"); the gate refuses it before
+// the collector starts, consistently with the Helm chart and Compose
+// preflight, without echoing the endpoint.
+func TestContentS3EndpointPathRefused(t *testing.T) {
+	s3 := func(endpoint string) string {
+		return contentConfig + "exporters:\n  fabriccontent:\n    allowed_tenants: [tenant-a]\n    backend: s3\n    s3:\n      bucket: customer-evidence\n      region: us-east-1\n      sse: AES256\n      endpoint: " + endpoint + "\n"
+	}
+	t.Setenv("GATE_TEST_S3_ENDPOINT", "https://store.example.com/s3")
+	for name, endpoint := range map[string]string{
+		"path":             "https://store.example.com/s3",
+		"nested path":      "https://store.example.com:9000/a/b/",
+		"path through env": "${env:GATE_TEST_S3_ENDPOINT}",
+	} {
+		t.Run("refused/"+name, func(t *testing.T) {
+			_, err := validateArgs([]string{"--config=" + writeConfig(t, s3(endpoint))})
+			if err == nil || !strings.Contains(err.Error(), "s3.endpoint must not contain a path") {
+				t.Fatalf("S3 endpoint path not refused: %v", err)
+			}
+			if strings.Contains(err.Error(), "store.example.com") {
+				t.Fatalf("diagnostic echoes the endpoint: %v", err)
+			}
+		})
+	}
+	for name, endpoint := range map[string]string{
+		"host and port":  "https://store.example.com:9000",
+		"trailing slash": "https://store.example.com/",
+		"unset":          "${env:GATE_TEST_UNSET_S3_ENDPOINT}",
+	} {
+		t.Run("accepted/"+name, func(t *testing.T) {
+			if _, err := validateArgs([]string{"--config=" + writeConfig(t, s3(endpoint))}); err != nil {
+				t.Fatalf("rejected: %v", err)
+			}
+		})
+	}
+}

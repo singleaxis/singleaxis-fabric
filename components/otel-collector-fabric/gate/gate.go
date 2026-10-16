@@ -1094,6 +1094,9 @@ func checkExporterEndpoints(cfg map[string]any) error {
 			if unsafeEndpoint(s3["endpoint"]) {
 				return fmt.Errorf("exporter %q s3.endpoint must not contain user info, a query or a fragment; S3 credentials come from the AWS credential chain", id)
 			}
+			if endpointHasPath(s3["endpoint"]) {
+				return fmt.Errorf("exporter %q s3.endpoint must not contain a path: it is scheme://host[:port]; the bucket and prefix are separate settings", id)
+			}
 		}
 	}
 	return nil
@@ -1120,6 +1123,24 @@ func unsafeEndpoint(v any) bool {
 	}
 	authority, _, _ := strings.Cut(s, "/")
 	return strings.Contains(authority, "@")
+}
+
+// endpointHasPath reports whether a URL endpoint value (after env expansion)
+// has a path other than "/". The fabriccontent exporter refuses such an S3
+// endpoint at startup; the gate refuses it first, consistently with the Helm
+// chart and Compose preflight (Sol F3/2).
+func endpointHasPath(v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	s = strings.TrimSpace(expandEnvRefs(s))
+	_, rest, ok := strings.Cut(s, "://")
+	if !ok {
+		return false
+	}
+	_, path, found := strings.Cut(rest, "/")
+	return found && path != ""
 }
 
 // configTrue: a YAML true, or a string (after env expansion) reading true.

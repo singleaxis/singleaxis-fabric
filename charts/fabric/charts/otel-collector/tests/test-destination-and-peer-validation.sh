@@ -153,6 +153,16 @@ expect_fail "S3 endpoint port is validated" "content.s3.endpoint port" \
 expect_fail "S3 endpoint host is validated" "content.s3.endpoint host" \
   "${production_args[@]}" --set otel-collector.exporter.endpoint=https://otlp.example.com \
   "${content_args[@]}" --set "otel-collector.content.s3.endpoint=https://-${marker}:9000"
+# Sol F3/2: the exporter refuses an endpoint path at startup; the chart must too.
+expect_fail "S3 endpoint path is refused" "content.s3.endpoint must not contain a path" \
+  "${production_args[@]}" --set otel-collector.exporter.endpoint=https://otlp.example.com \
+  "${content_args[@]}" --set otel-collector.content.s3.endpoint=https://store.example.com/s3
+expect_fail "S3 endpoint nested path is refused" "content.s3.endpoint must not contain a path" \
+  "${production_args[@]}" --set otel-collector.exporter.endpoint=https://otlp.example.com \
+  "${content_args[@]}" --set otel-collector.content.s3.endpoint=https://store.example.com:9000/a/b/
+expect_ok "S3 endpoint with a bare trailing slash is accepted" \
+  "${production_args[@]}" --set otel-collector.exporter.endpoint=https://otlp.example.com \
+  "${content_args[@]}" --set otel-collector.content.s3.endpoint=https://minio.storage.svc:9000/
 
 printf '\n=== Unrestricted NetworkPolicy peers (sol3 #3) ===\n'
 # Each peer list is supplied exactly once (a values file), so a probe peer is

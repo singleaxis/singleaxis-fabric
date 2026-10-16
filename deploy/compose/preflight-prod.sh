@@ -155,7 +155,7 @@ host_tls_path() {
 # belong in FABRIC_EXPORT_AUTH_HEADER or the store's credential chain. Runs in
 # the current shell (no subshell) and never prints anything.
 url_check() {
-  URL_PROBLEM=""; URL_SCHEME=""; URL_HOST=""; URL_PORT=""
+  URL_PROBLEM=""; URL_SCHEME=""; URL_HOST=""; URL_PORT=""; URL_PATH=""
   case "$1" in
     https://*) URL_SCHEME=https; url_rest=${1#https://} ;;
     http://*) URL_SCHEME=http; url_rest=${1#http://} ;;
@@ -172,6 +172,7 @@ url_check() {
     *\?*|*\#*) URL_PROBLEM="must not contain a query or fragment ('?' or '#')"; return 0 ;;
   esac
   url_authority=${url_rest%%/*}
+  URL_PATH=${url_rest#"${url_authority}"}
   url_has_port=0
   case "${url_authority}" in
     \[*\]) URL_HOST=${url_authority} ;;
@@ -607,6 +608,9 @@ if content_configured; then
         url_check "${FABRIC_CONTENT_S3_ENDPOINT}"
         if [ -n "${URL_PROBLEM}" ]; then
           bad "FABRIC_CONTENT_S3_ENDPOINT ${URL_PROBLEM} (value not shown); store credentials come from the instance role or the credentials-file overlay"
+        elif [ -n "${URL_PATH}" ] && [ "${URL_PATH}" != / ]; then
+          # The exporter refuses an endpoint path at startup (config.go).
+          bad "FABRIC_CONTENT_S3_ENDPOINT must not contain a path: it is scheme://host[:port]; the bucket and FABRIC_CONTENT_S3_PREFIX are separate settings"
         elif [ "${URL_SCHEME}" != https ]; then
           bad "FABRIC_CONTENT_S3_ENDPOINT is plaintext http; content would leave the Node unencrypted in transit -- use https"
         else

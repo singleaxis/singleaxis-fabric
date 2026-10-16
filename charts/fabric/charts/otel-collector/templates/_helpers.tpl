@@ -556,6 +556,10 @@ a profile that requires encryption.
 {{- end -}}
 {{- if $s3.endpoint -}}
 {{- include "otel-collector.validateURL" (dict "url" $s3.endpoint "field" "content.s3.endpoint" "credentials" "use the default AWS credential chain (IRSA) or content.s3.credentialsSecret") -}}
+{{- /* The exporter refuses an endpoint path (config.go validEndpoint): refuse it here too. */ -}}
+{{- if not (has (regexReplaceAll "^https?://[^/]*" ($s3.endpoint | toString) "") (list "" "/")) -}}
+{{- fail "content.s3.endpoint must not contain a path: it is scheme://host[:port]; the bucket and content.s3.prefix are separate settings" -}}
+{{- end -}}
 {{- if and .Values.exporter.requireTLS (not (hasPrefix "https://" ($s3.endpoint | toString))) -}}
 {{- fail "exporter.requireTLS=true requires an https:// content.s3.endpoint" -}}
 {{- end -}}

@@ -376,9 +376,12 @@ special files in it before the queue opens it. `fabric-gate` refuses a
 persistent content queue without both settings; Compose uses the same
 configuration.
 
-*Destination URLs and network peers.* `exporter.endpoint` and
-`content.s3.endpoint` must be absolute URLs of the form
-`scheme://host[:port][/path]`: the host a DNS name, a dotted IPv4 address
+*Destination URLs and network peers.* `exporter.endpoint` must be an
+absolute URL of the form `scheme://host[:port][/path]`, and
+`content.s3.endpoint` one of the form `scheme://host[:port]` (no path: the
+bucket and `content.s3.prefix` are separate settings, and the exporter
+refuses an endpoint path, so the chart, Compose preflight and `fabric-gate`
+refuse it too): the host a DNS name, a dotted IPv4 address
 or a bracketed IPv6 address, the port 1–65535, and no user info
 (`user:password@`), query or fragment, which would put a credential or a
 signed token into the rendered ConfigMap. `shadow-production` also requires
