@@ -63,3 +63,27 @@ acceptance remain in force. No provider credential or live access was tested.
 This classification does not provide production security acceptance. A fresh
 commit containing the same synthetic canary must still fail detection, proving
 that these exact historical fingerprints do not exempt future matches.
+
+## Squash-merge and unmerged-branch findings (2026-10-16)
+
+PR #165 was squash-merged as `4a5c9453296e602d3b0df44607c2fb9e27c34168`.
+The squash created a new commit for the same seven lines classified above, so
+the `18ec69a…` fingerprints no longer matched and the scheduled scan on `main`
+failed. The seven lines are byte-identical; `.gitleaksignore` adds the same
+path/rule/line fingerprints for the squash commit only.
+
+The secret-scan job checks out with `fetch-depth: 0`, which fetches every
+remote branch, so unmerged branches are scanned too. The unmerged branch
+`feat/llm-wire-capture` contributes ten source-proven non-credential matches:
+
+| Commit / path / line | Source evidence and classification |
+| --- | --- |
+| `abc48f0…` `scripts/tests/test_compose_content_path.py:33` | Synthetic privacy canary string that the test asserts is absent from rendered compose output. Grants no access. |
+| `abc48f0…` `sdk/python/tests/test_reconstruct_inputs.py:326` | Deliberate UUIDv1 literal proving a non-v4 run scope id is rejected. Not a key. |
+| `db4dc94…` `sdk/python/tests/gateway_fixtures/*.json` (8 lines) | Recorded LiteLLM gateway payloads. `user_api_key_hash` is the SHA-256 of `sk-1234`, LiteLLM's documented placeholder master key; it is a digest, not a credential. |
+
+The current branch tree for PR #185 contains none of these matches (the
+canary is built at runtime and the gateway fixtures are not carried), so the
+eventual squash commit adds no new finding. As above, only exact
+commit/path/rule/line fingerprints are baselined, and the synthetic
+new-commit probe must still fail.

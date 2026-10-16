@@ -18,3 +18,28 @@ b52a3b1fdb51dd5172a8de92111580f5213be19f:charts/fabric/tests/fixtures/v0.6-suppo
 18ec69a4ddd6e5fdab7a097b30b34571096e708f:sdk/python/tests/test_deployment_policy.py:generic-api-key:22
 18ec69a4ddd6e5fdab7a097b30b34571096e708f:sdk/python/tests/test_span_protection.py:generic-api-key:24
 18ec69a4ddd6e5fdab7a097b30b34571096e708f:sdk/typescript/test/deployment-policy.test.ts:generic-api-key:20
+# PR #165 squash-merge commit on main: the same seven lines triaged above under
+# 18ec69a (the squash produced a new commit SHA, so the old fingerprints no
+# longer match). Content unchanged; see "Capture publication findings".
+4a5c9453296e602d3b0df44607c2fb9e27c34168:.github/workflows/e2e-production-profile.yml:curl-auth-header:279
+4a5c9453296e602d3b0df44607c2fb9e27c34168:benchmarks/fabric-comparison/run.py:generic-api-key:20
+4a5c9453296e602d3b0df44607c2fb9e27c34168:docs/protected-byte-spool.md:generic-api-key:19
+4a5c9453296e602d3b0df44607c2fb9e27c34168:examples/enterprise-reference/run.py:generic-api-key:79
+4a5c9453296e602d3b0df44607c2fb9e27c34168:sdk/python/tests/test_deployment_policy.py:generic-api-key:22
+4a5c9453296e602d3b0df44607c2fb9e27c34168:sdk/python/tests/test_span_protection.py:generic-api-key:24
+4a5c9453296e602d3b0df44607c2fb9e27c34168:sdk/typescript/test/deployment-policy.test.ts:generic-api-key:20
+# Unmerged branch feat/llm-wire-capture (scanned because CI fetches all refs).
+# Synthetic privacy canary string asserted absent from compose output.
+abc48f03891ff931043dab2b99c36b97af8d863a:scripts/tests/test_compose_content_path.py:generic-api-key:33
+# Deliberate UUIDv1 literal used to prove a non-v4 run scope id is rejected.
+abc48f03891ff931043dab2b99c36b97af8d863a:sdk/python/tests/test_reconstruct_inputs.py:generic-api-key:326
+# Recorded LiteLLM gateway fixtures: user_api_key_hash is SHA-256("sk-1234"),
+# LiteLLM's documented placeholder master key - a hash, not a credential.
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_streaming_success.json:generic-api-key:42
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_streaming_success.json:generic-api-key:132
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_tool_call_success.json:generic-api-key:65
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_tool_call_success.json:generic-api-key:154
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_tool_result_followup.json:generic-api-key:85
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_tool_result_followup.json:generic-api-key:194
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_failure_rate_limit.json:generic-api-key:65
+db4dc9405e2b808e11b6ed253f3d158a9cd2eb63:sdk/python/tests/gateway_fixtures/chat_failure_rate_limit.json:generic-api-key:152
