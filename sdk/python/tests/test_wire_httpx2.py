@@ -113,6 +113,9 @@ class FakeLLM:
                 else:
                     request = self.rfile.read(int(self.headers.get("content-length", "0")))
                 media, chunks = fake.reply(self.path, json.loads(request or b"{}"))
+                # Record before replying: a client that has its response must already
+                # find the exchange in ``seen`` (recording after the flush raced it).
+                fake.seen.append(Exchange(self.path, request, b"".join(chunks)))
                 self.send_response(200)
                 self.send_header("content-type", media)
                 if media == "application/json":
@@ -127,7 +130,6 @@ class FakeLLM:
                         self.wfile.flush()
                     self.wfile.write(b"0\r\n\r\n")
                 self.wfile.flush()
-                fake.seen.append(Exchange(self.path, request, b"".join(chunks)))
 
             def log_message(self, format: str, *args: Any) -> None:
                 return
