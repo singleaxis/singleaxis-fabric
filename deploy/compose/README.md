@@ -48,14 +48,31 @@ GetObject-only reader on the same prefix for reconstruction. `s3-eval-init`
 creates the bucket with default SSE-S3 encryption and a bucket policy that
 denies `s3:DeleteObject` to everyone. The Node is pointed at
 `http://s3-eval:8333` with `use_path_style` and `sse: AES256`. Only the
-`fabric-node` service receives the writer keys. Read back with the reader:
+`fabric-node` service receives the writer keys.
+
+End to end, from a fresh stack to a verdict:
 
 ```bash
+cd deploy/compose
+make up-s3-eval                       # prints the commands below with your ports
+# ... run the agent with capture on (docs/wire-capture-deployment.md §1) ...
+make export-spans OUT=/tmp/fabric-spans   # the sink's span requests, traces-*.otlp
+pip install "singleaxis-fabric[s3]"   # reader only: boto3; agents never need it
 AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret \
-python -m fabric.reconstruct --spans spans.json --tenant evaluation \
+python -m fabric.reconstruct --spans /tmp/fabric-spans --tenant evaluation \
   --store-uri s3://fabric-content/fabric/content/ \
-  --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1
+  --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1 \
+  --wait-for-objects 30 --out report.json
 ```
+
+`make export-spans` copies the controlled sink's stored span requests (raw
+OTLP protobuf, one `traces-<id>.otlp` file per request) out of the
+`test-sink` container into `OUT` (default `./fabric-spans`), replacing the
+`traces-*.otlp` files already there; `fabric.reconstruct --spans` reads such
+a directory directly. Content is delivered to the store separately from the
+spans, so an object can still be in flight just after a run:
+`--wait-for-objects 30` re-reads absent objects for up to 30 seconds before
+reporting them missing.
 
 All store credentials and the SSE key have evaluation-only defaults (see
 `.env.example`).
@@ -318,3 +335,15 @@ authoritative evidence store.
 make down        # keeps queue and sink volumes
 make reset       # deletes this Compose project's evaluation volumes
 ```
+
+The S3 evaluation overlay has its own pair, which also covers the store
+volume (`s3-eval-data`) that the base project does not declare:
+
+```bash
+make down-s3-eval    # stops it, keeping the store, queue, content and sink volumes
+make reset-s3-eval   # deletes them all, including every stored object
+```
+
+Use the same `COMPOSE` (for example a `-p` project name) as for
+`make up-s3-eval`. `make down` and `make reset` read only the base file:
+they do not know the overlay's store service or its `s3-eval-data` volume.

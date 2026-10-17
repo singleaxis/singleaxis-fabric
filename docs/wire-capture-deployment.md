@@ -75,7 +75,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_ID_KEY` | recommended in production | Secret key for identifier pseudonyms: a run id passed to `fabric.wire.run(run_id)` is emitted as `r-` + 32 hex of `HMAC-SHA256(key, run_id)`, and (by default, see `FABRIC_WIRE_LABELS`) the source id as `s-` + 32 hex and `service.name` as `svc-` + 32 hex of the same function. Unset, an unkeyed SHA-256 that anyone who can guess the value can recompute. Never logged. See "The id key" below. |
 | `FABRIC_WIRE_LABELS` | no | Unset or `pseudonymous` (default): source id and `service.name` leave the agent only as `s-`/`svc-` pseudonyms. `clear`: they are emitted unchanged; **operator-chosen labels are exported unchanged; you guarantee they contain no personal data**. Any other value is a configuration error. Run ids are pseudonymised in both modes. |
 | `FABRIC_SOURCE_ID` | no | Id of this capture source, emitted as its `s-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`). Default `wire-` + 16 hex derived from host name and `service.name`. |
-| `FABRIC_WIRE_ENDPOINTS` | no | JSON array of extra endpoint matchers (vLLM, Ollama, an internal proxy). OpenAI, Anthropic and Azure OpenAI are matched by default. |
+| `FABRIC_WIRE_ENDPOINTS` | no | JSON array of extra endpoint matchers (vLLM, Ollama, an internal proxy); schema and example below. OpenAI, Anthropic and Azure OpenAI are matched by default. |
 | `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and worker queue length (default 256). |
 | `FABRIC_WIRE_TRACER` | no | `private` (default, and required in node mode). `global` sends exchange spans through the agent's own provider without the spool; it is refused in node mode (see "Global mode" below). |
 | `FABRIC_WIRE_STORE_SSE`, `FABRIC_WIRE_STORE_KMS_KEY_ID` | — | **Removed.** Setting either is an error: encryption is configured on the Fabric Node. |
@@ -86,6 +86,30 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | over TLS | CA bundle that signs the Node's server certificate. |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | Helm `shadow-production` | Client certificate and key for mTLS ingress (spans and content). |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Helm `shadow-production` (workload authentication) and Compose production | `Authorization=Bearer%20<token>` for bearer ingress. The general variable covers both signals (spans and content); if you set `OTEL_EXPORTER_OTLP_TRACES_HEADERS` or `OTEL_EXPORTER_OTLP_LOGS_HEADERS`, set the same value on both. |
+
+**Extra endpoints (`FABRIC_WIRE_ENDPOINTS`).** Each array entry is one
+matcher object; unknown fields, or an invalid value, make the whole
+configuration invalid (capture is then not installed, one warning):
+
+| Field | Required | Meaning |
+|---|---|---|
+| `endpoint_id` | yes | Unique id, `^[a-z0-9][a-z0-9._-]{0,63}$`. |
+| `dialect` | yes | `openai` (paths ending `/chat/completions`, `/responses`, `/completions`, `/embeddings`) or `anthropic` (`/messages`). |
+| `hosts` / `host_suffixes` | at least one | Exact host names (or IP literals), or suffixes such as `.internal.example.com`; compared case-insensitively. |
+| `ports` | no | Allowed ports; omitted means any port. A URL without a port uses the scheme's default (443/80). |
+| `path_prefix` | no | The request path must start with it (`/v1/`); default `""`. |
+| `schemes` | no | `["https"]` by default. Add `"http"` only for a plaintext loopback or in-cluster endpoint. |
+| `provider_name` | no | `gen_ai.provider.name` on the span, default `openai`. |
+
+A local or self-hosted OpenAI-compatible server (vLLM, Ollama, a proxy) on
+`http://127.0.0.1:8000/v1`:
+
+```bash
+export FABRIC_WIRE_ENDPOINTS='[{"endpoint_id":"local-llm","dialect":"openai","hosts":["127.0.0.1","localhost"],"ports":[8000],"path_prefix":"/v1/","schemes":["http"]}]'
+```
+
+Without `"schemes":["http"]` a plain-HTTP endpoint is never matched, because
+the default is HTTPS only.
 
 Span settings resolve `OTEL_EXPORTER_OTLP_TRACES_*` before the general
 `OTEL_EXPORTER_OTLP_*` variables; the content client resolves
@@ -138,7 +162,10 @@ at-least-once; the Node and the verifier deduplicate. Size the spool for
 the longest Node outage you want to ride out. It lives on the agent host
 and holds message content (`0600` files, `0700` directory; host disk
 encryption is the at-rest protection). Several processes may share one
-spool directory: one drains, all write.
+spool directory: one drains, all write. Nothing drains a spool while no
+agent runs: records left by an agent that exited before the Node took them
+are delivered when the next agent with the same `FABRIC_WIRE_SPOOL_DIR`
+(and the same endpoints and credentials) starts.
 
 *Sharing a spool across processes.* `FABRIC_WIRE_SPOOL_MAX_BYTES` bounds the
 directory as a whole, not each process: every writer admits a record under
@@ -754,20 +781,39 @@ principals except the Node writer role.
 
 ## 5. Verify a run
 
-Export the capture spans from your destination (OTLP/JSON, or the
-collector file exporter's output) and run with the reader credentials in
-the default AWS chain:
+Verification runs on a reader's machine, not in the agent. Reading an S3
+store needs boto3, which the agent never does; install the reader with the
+`[s3]` extra (the agent keeps `[otlp]`):
+
+```bash
+pip install "singleaxis-fabric[s3]"
+```
+
+Without boto3, `--store-uri` stops with a usage error (exit `2`) naming
+that extra; it never reports the objects as missing.
+
+Export the capture spans from your destination (OTLP/JSON, the collector
+file exporter's output, or raw OTLP protobuf trace requests in `*.otlp`
+files; a directory stands for its `*.otlp` files) and run with the reader
+credentials in the default AWS chain:
 
 ```bash
 python -m fabric.reconstruct --spans spans.json \
   --store-uri s3://<bucket>/<prefix> --tenant <tenant> --out report.json
-# S3-compatible store (the `make up-s3-eval` evaluation overlay):
-python -m fabric.reconstruct --spans spans.json \
-  --store-uri s3://fabric-content/fabric/content/ --tenant <tenant> \
-  --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1
+# S3-compatible store (the `make up-s3-eval` evaluation overlay; spans from
+# `make export-spans OUT=<dir>`, see deploy/compose/README.md):
+AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret \
+python -m fabric.reconstruct --spans <dir> \
+  --store-uri s3://fabric-content/fabric/content/ --tenant evaluation \
+  --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1 \
+  --wait-for-objects 30 --out report.json
 # Node file backend: the Node's content directory
 python -m fabric.reconstruct --spans spans.json --store-root <content dir> --tenant <tenant>
 ```
+
+The Compose evaluation flow end to end: `make up-s3-eval`, run the agent,
+`make export-spans OUT=<dir>` (copies the controlled sink's span requests),
+then the second command above with `--spans <dir>`.
 
 `--tenant` takes the clear tenant id (it names the store prefix); the
 report shows it only as its `t-` pseudonym.
@@ -862,6 +908,16 @@ fabric-canary-<date>` with the reader credentials. Exit code `0` (the run
 `complete_for_observed_scopes` with one complete scope) proves the whole
 path; `missing_object` or `unverified` names the broken leg without
 exposing content.
+
+Spans and content travel separately: a final heartbeat in your destination
+does not mean the Node has finished writing every object to the store, so
+right after a run an object can still be absent. Pass
+`--wait-for-objects SECONDS` (for example `60`) to re-read absent objects
+and descriptors, with backoff, until that long after the start before they
+are reported as `missing_object` (`absent`); the default `0` reports them
+at once. Only absence is retried: a digest mismatch, a read error or a
+missing span is reported immediately. Treat an object still absent after a
+bounded wait as missing.
 
 ## 6. Known limits
 

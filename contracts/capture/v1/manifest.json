@@ -6,7 +6,7 @@
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "aa3c599c73065a3e2807ad5a5f93b4d492aa43d43819736f13542ef91bfca471", "expectation": "schema", "expected_error": null},
     {"path": "schema/llm-exchange-v1.schema.json", "sha256": "69a46054b2416b9078b39b2a7bb6920cf951957982064c5ef18d1d57c91ef95b", "expectation": "schema", "expected_error": null},
     {"path": "schema/loss-record-v1.schema.json", "sha256": "3db7c4a048e89b52410d865b2dfd9677bd4033e69c503e8ab70352bd95d4b4a0", "expectation": "schema", "expected_error": null},
-    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "42c432bd34b6006f20e336940fd07b71e2bae3012fc97aab7f7d39ccd0299058", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "de5c7c109840566be20e621050185a9ce986dcfa2a210121ff5b9bec4df2d093", "expectation": "schema", "expected_error": null},
     {"path": "schema/spool-record-v1.schema.json", "sha256": "9a154e464636a0b922d5ce28121c9fadac50556164a3cbe442a284f7719f4219", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-request.json", "sha256": "aca0284cba0d0b41d9fa98200400ac46711878fda2bc9f69e1e74b2eb67a19cd", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-truncated.json", "sha256": "a105468714387effbd1ee6609103885f2d52f9cd93c0af54b01f63de45adaae8", "expectation": "valid", "expected_error": null},

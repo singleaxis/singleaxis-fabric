@@ -71,8 +71,11 @@ class Handler(BaseHTTPRequestHandler):
             body = gzip.decompress(body)
 
         record_id = uuid.uuid4().hex
+        # The signal names the file (traces-/logs-/metrics-<id>.otlp) so
+        # `make export-spans` copies span requests only.
+        signal = self.path.rsplit("/", 1)[-1]
         temporary = DATA_DIR / f".{record_id}.tmp"
-        final = DATA_DIR / f"{record_id}.otlp"
+        final = DATA_DIR / f"{signal}-{record_id}.otlp"
         with temporary.open("wb") as stream:
             stream.write(body)
             stream.flush()

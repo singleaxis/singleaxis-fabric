@@ -32,7 +32,7 @@
             "required": ["sha256", "format", "records"],
             "properties": {
               "sha256": {"$ref": "#/$defs/digest"},
-              "format": {"enum": ["sink_jsonl", "otlp_json"]},
+              "format": {"enum": ["sink_jsonl", "otlp_json", "otlp_proto"]},
               "records": {"type": "integer", "minimum": 0}
             }
           }

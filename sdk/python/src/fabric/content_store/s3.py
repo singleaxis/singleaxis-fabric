@@ -26,7 +26,7 @@ from fabric.content_store.base import (
     content_hash_bytes,
 )
 
-_IMPORT_HINT = "S3ContentStore requires boto3; install with `pip install boto3`"
+_IMPORT_HINT = 'S3ContentStore requires boto3; install with `pip install "singleaxis-fabric[s3]"`'
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 _ADDRESSING_STYLES = frozenset({None, "auto", "virtual", "path"})
@@ -93,6 +93,11 @@ class S3ContentStore:
             "s3", region_name=self.region_name, endpoint_url=self.endpoint_url, **options
         )
         return self._client
+
+    def ensure_client(self) -> None:
+        """Create the boto3 client now: a missing boto3 raises :class:`ImportError` here,
+        before any object is read, instead of failing each read."""
+        self._get_client()
 
     # -- legacy contract ---------------------------------------------------
 

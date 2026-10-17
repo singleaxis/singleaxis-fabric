@@ -42,7 +42,7 @@ fi
 FABRIC_GATE_ARGS=()
 # Each published optional install surface is scanned independently so mutually
 # incompatible optional instrumentors do not force an artificial combined env.
-for extra in otlp openai anthropic bedrock otel-langchain cohere mcp signing; do
+for extra in otlp s3 openai anthropic bedrock otel-langchain cohere mcp signing; do
   FABRIC_PYTHON_VENV="${FABRIC_RAW_DIR}/python-venv-${extra}"
   "${FABRIC_PYTHON_BIN}" -m venv "${FABRIC_PYTHON_VENV}"
   "${FABRIC_PYTHON_VENV}/bin/python" -m pip install --quiet --upgrade pip

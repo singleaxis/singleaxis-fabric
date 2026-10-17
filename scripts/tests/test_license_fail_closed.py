@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
     [
         ("MIT WITH Commons Clause", False),
         ("MIT; Proprietary", False),
+        # pip-licenses joins classifiers with "; ": every one must be allowed.
+        ("Apache Software License; BSD License", True),
+        ("Apache Software License; Not a license", False),
+        ("Apache Software License; GPL", False),
+        ("MIT;", False),
         ("Not MIT licensed", False),
         ("MIT AND", False),
         ("MIT OR", False),

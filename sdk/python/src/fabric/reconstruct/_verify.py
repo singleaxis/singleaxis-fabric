@@ -35,6 +35,7 @@ from fabric.reconstruct._inputs import (
     MalformedMarkerObs,
     ReconstructInputError,
     SpanFormat,
+    list_span_inputs,
     object_id_from_ref,
     observe,
     read_span_file,
@@ -244,8 +245,14 @@ def reconstruct(
     generated_at: datetime | None = None,
     model_allowlist: Sequence[str] = (),
     id_key: bytes | None = None,
+    wait_for_objects_s: float = 0.0,
 ) -> dict[str, Any]:
     """Reconstruct runs from span files and an optional customer store.
+
+    A ``span_paths`` entry that is a directory stands for its ``*.otlp`` files.
+    ``wait_for_objects_s`` bounds how long, in total from the start, an absent
+    object (or its descriptor) is re-read before it is reported missing: content
+    can still be in flight to the store just after a run (default ``0``: no wait).
 
     ``model_allowlist`` extends the built-in model allowlist (spec 048 §7):
     exact names or ``prefix*`` entries. ``id_key`` (``FABRIC_WIRE_ID_KEY``) keys
@@ -256,11 +263,15 @@ def reconstruct(
     Raises :class:`ReconstructInputError` for unusable input or options.
     """
 
-    paths = list(span_paths)
-    if not paths:
+    if not list(span_paths):
         raise ReconstructInputError("at least one span file is required")
+    paths = list_span_inputs(span_paths)
     allowlist = _allowlist(model_allowlist)
-    reader = StoreReader(store, tenant_id) if store is not None else None
+    reader = (
+        StoreReader(store, tenant_id, wait_for_objects_s=wait_for_objects_s)
+        if store is not None
+        else None
+    )
     span_files: list[dict[str, Any]] = []
     verifier = _Verifier(reader, allowlist, id_key)
     for index, path in enumerate(paths, start=1):

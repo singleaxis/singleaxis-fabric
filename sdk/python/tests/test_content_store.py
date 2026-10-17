@@ -201,7 +201,7 @@ def test_s3_satisfies_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_s3_missing_dep_raises_on_put(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "boto3", None)
     store = S3ContentStore(bucket="content-bucket")
-    with pytest.raises(ImportError, match=r"pip install boto3"):
+    with pytest.raises(ImportError, match=r"pip install \"singleaxis-fabric\[s3\]\""):
         store.put("x")
 
 

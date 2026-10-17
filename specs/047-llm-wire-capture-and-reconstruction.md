@@ -755,10 +755,13 @@ Offline and read-only; the only component that parses messages. Output:
 `fabric.run-reconstruction/v1`, no content.
 
 **Inputs.** `--spans PATH` (repeatable; sink JSONL or OTLP/JSON, whole-file
-or one export per line), `--store-root DIR` or `--store-uri
+or one export per line, or a raw OTLP protobuf `ExportTraceServiceRequest`
+in a `*.otlp` file; a directory stands for its `*.otlp` files), `--store-root DIR` or `--store-uri
 s3://bucket/prefix` with `--tenant ID`, `--run ID` (repeatable; default
 all; the clear id given to `fabric.wire.run()` is matched through its
-pseudonym, 048 §10), `--id-key-env NAME`, `--out FILE`. Exit `0` when every
+pseudonym, 048 §10), `--id-key-env NAME`, `--wait-for-objects SECONDS`
+(default `0`; an absent object or descriptor is re-read until that long
+after the start before it is reported missing), `--out FILE`. Exit `0` when every
 reported scope and every reported unscoped run is complete (runs
 `complete_for_declared_scope` or `complete_for_observed_scopes`, every
 `scopes[]` entry `complete_for_declared_scope`), `1` when anything is not

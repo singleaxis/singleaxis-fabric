@@ -41,6 +41,10 @@ _DEFAULT_S3_PREFIX = "fabric/content/"
 MODEL_ALLOWLIST_ENV = "FABRIC_WIRE_MODEL_ALLOWLIST"
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _PROG = "fabric.reconstruct"
+_MAX_WAIT_S = 3600.0
+_S3_DEPENDENCY_HINT = (
+    '--store-uri needs boto3, which agents never need: pip install "singleaxis-fabric[s3]"'
+)
 
 
 def _fail(message: str) -> None:
@@ -69,7 +73,9 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         required=True,
         metavar="PATH",
-        help="sink JSONL or OTLP/JSON span file (repeatable)",
+        help="span file (repeatable): sink JSONL, OTLP/JSON, or a raw OTLP protobuf trace "
+        "export request (*.otlp, as `make export-spans` copies them); a directory stands for "
+        "its *.otlp files",
     )
     stores = parser.add_mutually_exclusive_group()
     stores.add_argument(
@@ -116,6 +122,16 @@ def _parser() -> argparse.ArgumentParser:
         "capture does)",
     )
     parser.add_argument(
+        "--wait-for-objects",
+        dest="wait_for_objects",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="re-read objects absent from the store until this many seconds after the start "
+        f"(at most {_MAX_WAIT_S:.0f}) before reporting them missing: content can still be in "
+        "flight to the store just after a run (default 0: no wait)",
+    )
+    parser.add_argument(
         "--out",
         metavar="FILE",
         help="write the report here (atomically, mode 0600) instead of stdout",
@@ -148,6 +164,17 @@ def _endpoint_url(value: str) -> str:
     return value
 
 
+def _wait_for_objects(args: argparse.Namespace) -> float:
+    wait = float(args.wait_for_objects)
+    if not 0.0 <= wait <= _MAX_WAIT_S:  # also refuses nan
+        raise ReconstructInputError(
+            f"--wait-for-objects must be between 0 and {_MAX_WAIT_S:.0f} seconds"
+        )
+    if wait and args.store_root is None and args.store_uri is None:
+        raise ReconstructInputError("--wait-for-objects needs --store-root or --store-uri")
+    return wait
+
+
 def _store(args: argparse.Namespace) -> Any | None:
     s3_options = (
         args.s3_endpoint_url is not None or args.s3_region is not None or args.s3_path_style
@@ -176,7 +203,7 @@ def _store(args: argparse.Namespace) -> Any | None:
             raise ReconstructInputError("--store-uri must look like s3://bucket/prefix")
         bucket, _, prefix = uri[len("s3://") :].partition("/")
         prefix = prefix.strip("/")
-        return S3ContentStore(
+        store = S3ContentStore(
             bucket=bucket,
             prefix=f"{prefix}/" if prefix else _DEFAULT_S3_PREFIX,
             tenant_id=args.tenant,
@@ -186,10 +213,14 @@ def _store(args: argparse.Namespace) -> Any | None:
             ),
             addressing_style="path" if args.s3_path_style else None,
         )
+        # Fail fast: without boto3 every read would fail, which must be a setup error
+        # (exit 2), never a report of missing objects.
+        store.ensure_client()
+        return store
     except ReconstructInputError:
         raise
     except ImportError:
-        raise ReconstructInputError("--store-uri needs the fabric[s3] extra (boto3)") from None
+        raise ReconstructInputError(_S3_DEPENDENCY_HINT) from None
     except ValueError:
         # Fixed text: a constructor message can echo a bucket, prefix or credential.
         raise ReconstructInputError(
@@ -274,6 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         allowlist = _model_allowlist(args, os.environ)
         key = _id_key(args, os.environ)
+        wait = _wait_for_objects(args)
         document = reconstruct(
             args.spans,
             store=_store(args),
@@ -283,9 +315,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_ids=args.runs,
             model_allowlist=allowlist,
             id_key=key,
+            wait_for_objects_s=wait,
         )
     except ReconstructInputError as exc:
         _fail(str(exc))
+        return EXIT_USAGE
+    except ImportError:  # a reader dependency went missing mid-run: setup, never a gap
+        _fail(_S3_DEPENDENCY_HINT if args.store_uri is not None else "internal error (ImportError)")
         return EXIT_USAGE
     except Exception as exc:  # fixed text: a message can carry paths or secrets
         _fail(f"internal error ({type(exc).__name__})")

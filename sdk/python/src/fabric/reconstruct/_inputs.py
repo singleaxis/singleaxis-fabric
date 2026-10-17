@@ -2,16 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 """Span-file readers and normalization into verifier observations (specs 047 §9, 048 §6).
 
-Two input shapes are accepted: the demo sink's JSONL rows (``{"kind":
-"span", ...}``; ``log`` rows are ignored) and OTLP/JSON, either as one
+Three input shapes are accepted: the demo sink's JSONL rows (``{"kind":
+"span", ...}``; ``log`` rows are ignored); OTLP/JSON, either as one
 whole-file ``ExportTraceServiceRequest`` or one per line as the collector
-file exporter writes it. Every attribute value is re-validated here: a loss
-or heartbeat span whose fields are absent or malformed is not used. An
-exchange span whose identity (exchange id, source, epoch, sequence, run id,
-scope id when present) is malformed makes the input unusable
-(:class:`ReconstructInputError`); one with a valid identity but malformed
-payload fields keeps its identity claims and is marked ``malformed``, which
-the verifier reports as a completeness-blocking gap (sol2 #5).
+file exporter writes it; and a raw OTLP protobuf ``ExportTraceServiceRequest``
+in a ``*.otlp`` file, as the Compose evaluation sink stores each request
+(decoded with ``opentelemetry-proto``, part of the ``[otlp]`` extra). Every
+attribute value is re-validated here: a loss or heartbeat span whose fields
+are absent or malformed is not used. An exchange span whose identity
+(exchange id, source, epoch, sequence, run id, scope id when present) is
+malformed makes the input unusable (:class:`ReconstructInputError`); one
+with a valid identity but malformed payload fields keeps its identity claims
+and is marked ``malformed``, which the verifier reports as a
+completeness-blocking gap (sol2 #5).
 """
 
 from __future__ import annotations
@@ -22,14 +25,15 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
 from fabric._model_names import MODEL_PATTERN
 
-SpanFormat = Literal["sink_jsonl", "otlp_json"]
+SpanFormat = Literal["sink_jsonl", "otlp_json", "otlp_proto"]
+OTLP_PROTO_SUFFIX = ".otlp"
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -127,6 +131,8 @@ def read_span_file(
         data = location.read_bytes()
     except OSError:
         raise ReconstructInputError(f"{label}: cannot be read") from None
+    if location.suffix.lower() == OTLP_PROTO_SUFFIX:
+        return "otlp_proto", _otlp_proto_spans(data, label)
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -152,6 +158,52 @@ def read_span_file(
             raise ReconstructInputError(f"{where}: sink rows and OTLP exports are mixed")
         records.extend(spans)
     return fmt or "sink_jsonl", records
+
+
+def _otlp_proto_spans(data: bytes, label: str) -> list[SpanRecord]:
+    """One binary ``ExportTraceServiceRequest``, through its OTLP/JSON mapping."""
+
+    try:
+        from google.protobuf.json_format import (  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
+            MessageToDict,
+        )
+        from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (  # noqa: PLC0415
+            ExportTraceServiceRequest,
+        )
+    except ImportError:
+        raise ReconstructInputError(
+            f"{label}: reading *.otlp needs opentelemetry-proto: "
+            'pip install "singleaxis-fabric[otlp]"'
+        ) from None
+    try:
+        request = ExportTraceServiceRequest.FromString(data)
+    except Exception:  # DecodeError and friends; fixed text, never the parser's message
+        raise ReconstructInputError(f"{label}: not an OTLP protobuf trace export") from None
+    return _otlp_spans(MessageToDict(request), label)
+
+
+def list_span_inputs(paths: Sequence[str | os.PathLike[str]]) -> list[Path]:
+    """Span files in argument order; a directory stands for its ``*.otlp`` files (sorted by
+    name, not recursive). Errors name an input by position only, never by path."""
+
+    files: list[Path] = []
+    for index, path in enumerate(paths, start=1):
+        location = Path(path)
+        if not location.is_dir():
+            files.append(location)
+            continue
+        try:
+            found = sorted(
+                entry
+                for entry in location.iterdir()
+                if entry.suffix.lower() == OTLP_PROTO_SUFFIX and entry.is_file()
+            )
+        except OSError:
+            raise ReconstructInputError(f"--spans input {index}: cannot be read") from None
+        if not found:
+            raise ReconstructInputError(f"--spans input {index}: directory holds no *.otlp files")
+        files.extend(found)
+    return files
 
 
 def _parse_line(line: str, where: str) -> tuple[SpanFormat, list[SpanRecord]]:

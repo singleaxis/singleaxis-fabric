@@ -20,7 +20,10 @@ S3_EVAL_FILES := -f docker-compose.yml -f docker-compose.s3-eval.yml
 # (0.0.0.0 / [::]) to loopback. Usage: $(call port_for,<service>,<port>)
 port_for = $(shell $(COMPOSE) port $(1) $(2) 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')
 
-.PHONY: up down reset logs status build smoke qualify up-s3-eval down-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod help
+# Where `make export-spans` copies the controlled sink's span requests.
+OUT ?= $(CURDIR)/fabric-spans
+
+.PHONY: up down reset logs status build smoke qualify export-spans up-s3-eval down-s3-eval reset-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod help
 
 up: ## Build and start Fabric Node plus the controlled sink.
 	$(COMPOSE) up -d --build --wait
@@ -52,13 +55,26 @@ smoke: ## Send one protected OTLP trace to Fabric Node.
 qualify: up ## Exercise protection plus destination outage/restart recovery.
 	./qualify.sh
 
+export-spans: ## Copy the controlled sink's span requests (traces-*.otlp) to OUT (default ./fabric-spans).
+	@mkdir -p "$(OUT)"
+	@staging="$$(mktemp -d)" && trap 'rm -rf "$$staging"' EXIT && \
+	$(COMPOSE) cp test-sink:/var/lib/fabric-test-sink/. "$$staging" && \
+	find "$(OUT)" -maxdepth 1 -type f -name 'traces-*.otlp' -exec rm -f {} + && \
+	find "$$staging" -maxdepth 1 -type f -name 'traces-*.otlp' -exec cp {} "$(OUT)"/ \; && \
+	echo "$$(find "$(OUT)" -maxdepth 1 -type f -name 'traces-*.otlp' | wc -l | tr -d ' ') span request file(s) in $(OUT)"
+
 up-s3-eval: ## Evaluation with a local S3-compatible content store (SSE-S3, path-style).
 	$(COMPOSE) $(S3_EVAL_FILES) up -d --build --wait
 	@echo "Content ingress: http://localhost:$${FABRIC_OTLP_CONTENT_PORT:-4319}/v1/logs (tenant $${FABRIC_TENANT_ID:-evaluation})"
-	@echo "Reconstruct: AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret python -m fabric.reconstruct --store-uri s3://fabric-content/fabric/content/ --s3-endpoint-url http://127.0.0.1:$${FABRIC_S3_EVAL_PORT:-9000} --s3-path-style --s3-region us-east-1 ..."
+	@echo "After a run, export its spans: make export-spans OUT=$(OUT)"
+	@echo "Then reconstruct (the reader needs pip install \"singleaxis-fabric[s3]\"; agents never do):"
+	@echo "  AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret python -m fabric.reconstruct --spans $(OUT) --tenant $${FABRIC_TENANT_ID:-evaluation} --store-uri s3://$${FABRIC_S3_EVAL_BUCKET:-fabric-content}/fabric/content/ --s3-endpoint-url http://127.0.0.1:$${FABRIC_S3_EVAL_PORT:-9000} --s3-path-style --s3-region us-east-1 --wait-for-objects 30 --out report.json"
 
 down-s3-eval: ## Stop the S3 evaluation setup while keeping volumes.
 	$(COMPOSE) $(S3_EVAL_FILES) down
+
+reset-s3-eval: ## Delete the S3 evaluation setup and all its volumes (store, queues, sink).
+	$(COMPOSE) $(S3_EVAL_FILES) down -v
 
 # --- Client-VM production overlay -------------------------------------------
 # Requires .env (see .env.example): FABRIC_EXPORT_ENDPOINT,

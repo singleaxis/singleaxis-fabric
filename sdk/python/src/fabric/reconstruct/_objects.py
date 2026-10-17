@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -46,6 +47,10 @@ Verification = Literal["verified", "missing", "digest_mismatch", "not_stored", "
 StoreKind = Literal["local", "s3"]
 
 _ABSENT_CODES = frozenset({"NoSuchKey", "404", "NotFound"})
+# Still in flight to the store just after a run (the Node writes body, then descriptor).
+_IN_FLIGHT_REASONS = frozenset({"absent", "descriptor_missing"})
+_RETRY_FIRST_S = 0.2
+_RETRY_MAX_S = 2.0
 # The wire content-v2 descriptor (spec 048 §4, fabriccontentexporter record.go): the
 # closed key set, plus "encoding" and "ref" that every writer adds.
 _REQUIRED_KEYS = frozenset(
@@ -191,7 +196,9 @@ def _is_absent(exc: BaseException) -> bool:
 class StoreReader:
     """Duck-typed, read-only view over a tenant-scoped content store."""
 
-    def __init__(self, store: Any, tenant_id: str | None) -> None:
+    def __init__(
+        self, store: Any, tenant_id: str | None, *, wait_for_objects_s: float = 0.0
+    ) -> None:
         tenant = tenant_id if tenant_id is not None else getattr(store, "tenant_id", None)
         if opaque_id(tenant) is None:
             raise ReconstructInputError("a store needs a valid tenant id (--tenant)")
@@ -209,6 +216,8 @@ class StoreReader:
             # Fixed text: a store error can echo a bucket, path or credential.
             raise ReconstructInputError("the content store cannot resolve object refs") from None
         self.kind: StoreKind = "s3" if probe.startswith("s3://") else "local"
+        # One deadline for the whole run: an absent object is re-read until then.
+        self._deadline = time.monotonic() + max(0.0, wait_for_objects_s)
 
     def fetch(
         self,
@@ -219,13 +228,41 @@ class StoreReader:
         binding: Mapping[str, Any],
         id_key: bytes | None = None,
     ) -> ObjectResult:
-        """Fetch ``object_id`` and verify it; never raises. ``binding`` holds the exchange's
+        """Fetch ``object_id`` and verify it; raises only :class:`ImportError` (a missing
+        reader dependency is a setup error, not a missing object). ``binding`` holds the exchange's
         ``BINDING_KEYS`` values (ids in report form under ``id_key``) its descriptor must
-        carry."""
+        carry. An absent object or descriptor is re-read, with backoff, until the reader's
+        ``wait_for_objects_s`` deadline."""
 
+        delay = _RETRY_FIRST_S
+        while True:
+            result = self._fetch_once(
+                object_id,
+                role=role,
+                expected_sha256=expected_sha256,
+                binding=binding,
+                id_key=id_key,
+            )
+            remaining = self._deadline - time.monotonic()
+            if result.reason not in _IN_FLIGHT_REASONS or remaining <= 0:
+                return result
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 2, _RETRY_MAX_S)
+
+    def _fetch_once(
+        self,
+        object_id: str,
+        *,
+        role: str,
+        expected_sha256: str,
+        binding: Mapping[str, Any],
+        id_key: bytes | None,
+    ) -> ObjectResult:
         try:
             uri = str(self._store.evidence_ref_for(object_id))
             data = self._store.read(uri)
+        except ImportError:
+            raise  # a missing reader dependency is a setup error, never a missing object
         except Exception as exc:
             reason = "absent" if _is_absent(exc) else "read_error"
             return ObjectResult("missing", object_id, sha256=expected_sha256, reason=reason)
@@ -234,6 +271,8 @@ class StoreReader:
         data = bytes(data)
         try:
             descriptor: Any = self._store.read_descriptor(uri)
+        except ImportError:
+            raise
         except Exception as exc:
             if _is_absent(exc):
                 return ObjectResult(
