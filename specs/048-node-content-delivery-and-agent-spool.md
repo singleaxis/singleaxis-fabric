@@ -215,6 +215,12 @@ spool is in use. Capture outside the new spool, sender and content client
 
 ## 1. Activation (supersedes 047 §3 store and SSE bullets)
 
+> **Superseded in part by [049 §7.3](049-four-layer-capture-coverage.md#73-production-privacy-default)
+> (from 049 phase P0-A):** node mode is the `production` profile, so content
+> capture also needs a capture policy (`FABRIC_CAPTURE_POLICY`) and
+> `FABRIC_WIRE_ID_KEY`; without them content capture is disabled and
+> metadata continues. Malformed configuration still raises at `install()`.
+
 | Variable | Values | Notes |
 |---|---|---|
 | `FABRIC_WIRE_STORE` | unset, `node`, `file:///abs/dir` | Unset = `node` when `FABRIC_WIRE_CONTENT_ENDPOINT` is set, else metadata-only. `s3://…` → `ValueError` ("written by the Fabric Node"). `file://` together with a content endpoint → `ValueError`. |

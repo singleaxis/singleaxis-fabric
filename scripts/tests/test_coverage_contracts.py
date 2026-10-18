@@ -115,3 +115,15 @@ def test_unpinned_registry_change_is_rejected(tmp_path: Path) -> None:
     path = root / FAMILY / REGISTRY["keys"]
     path.write_text(path.read_text(encoding="utf-8") + " ", encoding="utf-8")
     _assert_code(root, "coverage.manifest.digest")
+
+
+def test_manifest_property_without_telemetry_key_is_rejected(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+
+    def change(document: Any) -> None:
+        for key in document["keys"]:
+            if key.get("manifest_property") == "limits/part_min_bytes":
+                del key["manifest_property"]
+
+    _edit_registry(root, "keys", change)
+    _assert_code(root, "coverage.keys.manifest")

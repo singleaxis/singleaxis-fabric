@@ -1,8 +1,8 @@
 ---
 title: Four-layer capture contract (context, structure, content, decisions and effects)
-status: Final draft rev 3, pending owner confirmation
+status: Final draft rev 3.1, pending owner confirmation
 qualification: NO_COVERAGE_CLAIM
-revision: 3
+revision: 3.1
 last_updated: 2026-10-18
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
@@ -14,7 +14,7 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 
 # 049 — Four-layer capture contract
 
-**Status: Final draft rev 3, pending owner confirmation.** Every owner
+**Status: Final draft rev 3.1, pending owner confirmation.** Every owner
 decision in section 9 is applied in this text as its recommended default
 and marked *Recommended — pending owner confirmation*. If the owner changes
 one, only the sections that decision lists change.
@@ -23,6 +23,8 @@ Revision 3 resolves the rev-2 confirmation reviews (appendix D): records
 are sequenced on their own source, attempt identity is always minted,
 manifests have their own counting rule, layer verdicts are a decision
 table, the role table is complete, and protection composes with extraction.
+Revision 3.1 applies the rev-3 confirmation fixes (appendix D, rows
+R3F-*).
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -264,7 +266,7 @@ identified by `attempt_id` (`X19`):
 
 | Source record | `step_id` | `attempt_id` | Aliases kept | `parent_step_id` |
 |---|---|---|---|---|
-| Wire exchange | the reported logical id of the enclosing explicit or `llm_call()` step when it reports a retry/fallback relation (`S13`), else `exchange_id` | `exchange_id` | `wire.span_id` | innermost open Fabric step in the context, else the run-scope step |
+| Wire exchange | the reported logical id of the enclosing explicit or `llm_call()` step when it reports a retry/fallback relation (`S13`), else `exchange_id` | `exchange_id` | `wire.span_id` | the step whose span is the exchange's OTel parent (`wire/_pipeline.py:319,341-343`), resolved through its `records.span_id` or explicit alias; else the run-scope step |
 | Explicit call | `explicit:<source_id>:<operation_id>` | `call_id` | `explicit.operation_id`, `explicit.attempt_id`, `explicit.parent_call_id` | the step of `parent_call_id` |
 | Decision record (`record_*`, `tool_call()`, `llm_call()`) | `records:<source_id>:<fabric.step.id>` when supplied, else the minted attempt id | minted `fabric.attempt.uid` | `records.step_id`, `records.step_attempt_id`, `records.decision_id`, `records.span_id` | the decision's step |
 | Decision span | `records:<source_id>:<decision_id>` | minted `fabric.attempt.uid` | `records.request_id`, `records.execution_id` | delegating parent decision when propagated |
@@ -274,6 +276,12 @@ identified by `attempt_id` (`X19`):
 
 A reported `S13` reaches a wire exchange only through its enclosing
 explicit or `llm_call()` step, because the caller never sees `exchange_id`.
+The wire `parent_step_id` uses the existing OTel parent-span join: the
+exchange span starts under the host's current span, and the verifier maps
+that span id to a step through the `records.span_id` alias (or the explicit
+line's alias); no step context variable is added. Every step the SDK emits
+carries `actor.type` (`S03`) = `agent` unless the caller supplies another
+value.
 
 **Step kinds** (`S01`, telemetry `fabric.step.kind`). `fabric.step.type`
 stays a free host label (`S02`).
@@ -668,7 +676,7 @@ Mapping from existing statuses:
 | wire `store_status` | `stored` | `captured` |
 | | `partial` | per side |
 | | `failed` | `not_captured(store_failed)` |
-| | `disabled` | `not_captured` with the reason in `fabric.wire.store_reason` (`X40`) |
+| | `disabled` | `not_captured` with the reason from `fabric.wire.store_reason` (`X40`): `no_store` → `not_configured`; every other value is the coverage reason of the same name |
 | wire loss reason | `queue_full`, `internal_error`, `shutdown`, `span_dropped` | `not_captured` with the same reason |
 | explicit `deferred` | — | lifecycle `deferred`, result `unknown` |
 
@@ -747,9 +755,13 @@ needs to tell "nothing happened" from "nothing was instrumented".
 
 - emitted per source and sequenced by the rules of section 2.4
   (`manifest_seq`, `after_source_sequence`, `previous_manifest_sha256`);
-- travels as one `fabric.capture_manifest` span with closed attributes
-  (arrays of `id@version:state` strings, enums, integers); no content, no
-  endpoint hostnames (only the digest of the endpoint set);
+- travels as one `fabric.capture_manifest` span with closed attributes;
+  every schema property has an exact telemetry key (`fabric.manifest.*` or
+  a reused key, column "Manifest property" in section 4.2), checked by the
+  validator, so fabricguard admits them; capture points travel as
+  `fabric.manifest.capture_points` and `fabric.manifest.capture_point_fields`
+  string arrays; no content, no endpoint hostnames (only the digest of the
+  endpoint set);
 - contents: path, profile (`local`/`production`), identity mode,
   pseudonym mode and key id, capture policy reference (including
   `encrypted_store_required` from `deployment.encrypted_store_required`),
@@ -878,7 +890,7 @@ manifest (section 4).
 | X15 | `conversation_id` | conv-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.conversation_id` | Application conversation. Distinct from provider conversation ids (C39) and inferred threads. |
 | X16 | `turn_id` | turn-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.turn_id` | One user turn inside a conversation. |
 | X17 | `step_id` | opaque id | `fabric.self` | metadata | ID | R | always | P1 | T `fabric.step.id` | Logical node, stable across retries. Fabric-minted (uuid4) when no logical id is supplied; a caller-supplied logical id (host `fabric.step.id`, explicit `operation_id`) is qualified `<path>:<source_id>:<value>`. |
-| X18 | `parent_step_id` | opaque id | `fabric.self`, `explicit.call_recorder` | metadata | ID | O | absent (root) | P1 | T `fabric.step.parent_id` | Nesting parent only. Causal edges use `links`. Via ambient Fabric context or explicit `parent_call_id`. |
+| X18 | `parent_step_id` | opaque id | `fabric.self`, `explicit.call_recorder` | metadata | ID | O | absent (root) | P1 | T `fabric.step.parent_id` | Nesting parent only; causal edges use `links`. For a wire exchange it comes from the existing OTel parent-span join: the exchange span starts under the host's current span (`wire/_pipeline.py:319,341-343`, `parent_span_id`), and the verifier resolves that span id through the `records.span_id` (or explicit) alias to the enclosing step; no step context variable is added. Via ambient OTel context or explicit `parent_call_id`. |
 | X19 | `attempt_id` | uuid4 | `fabric.self` | metadata | ID | R | always | built (wire, explicit), P1 (records) | T `fabric.wire.exchange_id` (wire), explicit `call_id`, T `fabric.attempt.uid` (records); P | Fabric-minted id of one physical execution, unique in a projection: wire `exchange_id`, explicit `call_id`, a uuid4 minted per record call on the records path. Never defaulted from `step_id` and never taken from the caller. |
 | X20 | trace_id, span_id, parent_span_id | OTel ids | `fabric.self` | metadata | ID | O | absent | built | OTLP | Native trace position. Never synthesised from host metadata. |
 | X21 | `links` | list of Link | `sdk.records`, `run.scope`, `reconstruct.infer` | metadata | ID | O | absent | P0 (contract), P1 (projection) | P; T only for nesting parent | Typed causal links (section 2.5). |
@@ -959,7 +971,7 @@ manifest (section 4).
 |---|---|---|---|---|---|---|---|---|---|---|
 | S01 | `step.kind` | enum (section 2.3) | `fabric.self`, `reconstruct.parse` | metadata | META | R | always | P1 | T `fabric.step.kind` | Closed kind of the step. |
 | S02 | `step.label` | label | `sdk.records` | metadata | LABEL | O | absent | built | T `fabric.step.type` | Host label such as `plan` or `act`; free text, not the kind. |
-| S03 | `actor.type` | enum (section 2.3) | `fabric.self`, `sdk.records`, `reconstruct.parse` | metadata | META | R | unknown | P1 | T `fabric.actor.type` | Who acted. |
+| S03 | `actor.type` | enum (section 2.3) | `fabric.self`, `sdk.records`, `reconstruct.parse` | metadata | META | R | always (SDK default `agent`) | P1 | T `fabric.actor.type` | Who acted. The SDK stamps `agent` on every step it emits (wire, explicit and records paths) unless the caller supplies another value, so a reported step without an actor argument is `captured` (`agent`), never `unknown`. |
 | S04 | `actor.id` | act-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted or missing_id_key) | P1 | T `fabric.actor.id` | Actor id, keyed. |
 | S05 | `actor.identity` | text | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P0-A | C `actor.identity` | Clear identity behind the pseudonym. |
 | S06 | `actor.on_behalf_of` | actor ref | `sdk.records` | metadata | ID | O | unknown | P2 | P | Represented principal. An agent role is not proof of user identity. |
@@ -1197,119 +1209,157 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 `fabric.control.enforced_by_fabric` admits only `false`.
 
 <!-- generated:keys:begin -->
-| Key | Change | Field | Validator | Phase | Note |
-|---|---|---|---|---|---|
-| `fabric.delegation.to_agent` | changed | S22 | ID: `agt-` + 32 hex | P0-A | Admitted clear today. |
-| `fabric.file.path` | changed | N46 | never admitted; the SDK stops emitting it in pseudonymous mode | P0-A | Clear path moves to the `artifact.locator` role. |
-| `fabric.interaction.target` | changed | N58 | ID: `tgt-` + 32 hex (newly admitted) | P0-A | Decided: pseudonymise. Emitted clear today when not hashed and dropped by the Node; `fabric.interaction.target_hash` stays. |
-| `fabric.memory.key` | changed | N31 | ID: `mkey-` + 32 hex (newly admitted) | P0-A | Decided: pseudonymise. Emitted clear today and dropped by the Node; the clear key stays in the memory content roles. |
-| `fabric.session_id` | changed | X13 | ID: `sess-` + 32 hex under a pseudonymous Node; clear only when the Node is configured `identity_mode: clear` | P0-A | Admitted clear today. |
-| `fabric.user_id` | changed | X14 | ID: `usr-` + 32 hex (newly admitted; clear values rejected) | P0-A | Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted). |
-| `db.system.name` | new | N38 | LABEL: pattern, exposure rule | P4 |  |
-| `fabric.actor.id` | new | S04 | ID: `act-` + 32 hex | P1 |  |
-| `fabric.actor.type` | new | S03 | META: closed enum (field type) | P1 |  |
-| `fabric.attempt.uid` | new | X19 | ID: uuid4 | P1 (records) |  |
-| `fabric.batch.item_index` | new | S21 | META: integer range | P2 |  |
-| `fabric.build.digest` | new | C12 | DIGEST: bare 64 hex | P2 |  |
-| `fabric.cancel.state` | new | S32 | META: closed enum (field type) | P2 |  |
-| `fabric.capture.manifest_id` | new | X34 | ID: uuid4 | P1 |  |
-| `fabric.capture.manifest_seq` | new | X39 | META: integer range | P1 |  |
-| `fabric.capture.manifest_sha256` | new | X34 | DIGEST: bare 64 hex | P1 |  |
-| `fabric.capture.path` | new | X06 | META: closed enum (source_path vocabulary) | P1 (records) |  |
-| `fabric.capture.point` | new | X26 | LABEL: pattern, exposure rule | P1 |  |
-| `fabric.checkpoint.action` | new | S27 | META: closed enum (field type) | P2 |  |
-| `fabric.config.digest` | new | C13 | DIGEST: bare 64 hex | P2 |  |
-| `fabric.context.change_kind` | new | D14 | META: closed enum (field type) | P3 |  |
-| `fabric.context.token_basis` | new | D15 | META: closed enum (field type) | P3 |  |
-| `fabric.context.tokens_after` | new | D15 | META: integer range | P3 |  |
-| `fabric.context.tokens_before` | new | D15 | META: integer range | P3 |  |
-| `fabric.context.trigger` | new | D14 | META: closed enum (field type) | P3 |  |
-| `fabric.control.action_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
-| `fabric.control.authentication` | new | D11 | META: const `unverified_caller_report` | P3 |  |
-| `fabric.control.decision` | new | D04 | META: closed enum (field type) | P3 |  |
-| `fabric.control.enforced_by_fabric` | new | D11 | META: const `false` | P3 | A boolean validator would admit `true`. |
-| `fabric.control.gated_step_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
-| `fabric.control.id` | new | D01 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
-| `fabric.control.kind` | new | D02 | META: closed enum (field type) | P3 |  |
-| `fabric.control.phase` | new | D03 | META: closed enum (field type) | P3 |  |
-| `fabric.control.policy_digest` | new | D08 | DIGEST: bare 64 hex | P3 |  |
-| `fabric.control.policy_id` | new | D08 | LABEL: pattern, exposure rule | P3 |  |
-| `fabric.control.policy_version` | new | D08 | META: integer range | P3 |  |
-| `fabric.control.proof_ref` | new | D09 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
-| `fabric.control.resolves` | new | D05 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
-| `fabric.conversation_id` | new | X15 | ID: `conv-` + 32 hex | P2 |  |
-| `fabric.db.namespace_id` | new | N38 | ID: `dbn-` + 32 hex | P4 |  |
-| `fabric.db.rows_affected` | new | N41 | META: integer range | P4 |  |
-| `fabric.db.rows_fetched` | new | N41 | META: integer range | P4 |  |
-| `fabric.db.transaction_id` | new | N42 | ID: `txn-` + 32 hex | P4 |  |
-| `fabric.delegation.state` | new | S24 | META: closed enum (field type) | P2 |  |
-| `fabric.dispatch.id` | new | S20 | ID: `dsp-` + 32 hex | P2 |  |
-| `fabric.dispatch.kind` | new | S20 | META: closed enum (field type) | P2 |  |
-| `fabric.dispatch.state` | new | S20 | META: closed enum (field type) | P2 |  |
-| `fabric.error.code` | new | S11 | META: `^[A-Za-z0-9_.-]{1,64}$` | P1 (provider) |  |
-| `fabric.error.domain` | new | S09 | META: closed enum (field type) | P1 |  |
-| `fabric.event.supersedes` | new | X03 | ID: uuid4 | P1 |  |
-| `fabric.execution.host_id` | new | C41 | ID: `hst-` + 32 hex | P2 |  |
-| `fabric.execution.image_digest` | new | C41 | DIGEST: bare 64 hex | P2 |  |
-| `fabric.execution.sandbox_id` | new | C41 | ID: `sbx-` + 32 hex | P2 |  |
-| `fabric.framework.name` | new | C15 | LABEL: pattern, exposure rule | P2 |  |
-| `fabric.framework.version` | new | C15 | LABEL: pattern, exposure rule | P2 |  |
-| `fabric.input.kind` | new | C08 | META: closed enum (field type) | P1 (I), P2 (R) |  |
-| `fabric.input.state` | new | C09 | META: closed enum (field type) | P2 |  |
-| `fabric.mcp.direction` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |
-| `fabric.mcp.error_kind` | new | N25 | META: closed enum (field type) | P2 |  |
-| `fabric.mcp.method` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |
-| `fabric.mcp.protocol_version` | new | C27 | META: `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | P2 |  |
-| `fabric.mcp.server_version` | new | C26 | LABEL: pattern, exposure rule | P2 |  |
-| `fabric.memory.op` | new | N30 | META: closed enum (field type) | P2 |  |
-| `fabric.memory.store_id` | new | N30 | ID: `mst-` + 32 hex | P2 |  |
-| `fabric.network.host_id` | new | N43 | ID: `hst-` + 32 hex | P4 |  |
-| `fabric.outcome.channel_kind` | new | D27 | META: closed enum (field type) | P2 |  |
-| `fabric.outcome.delivery_state` | new | D28 | META: closed enum (field type) | P2 |  |
-| `fabric.outcome.target_id` | new | D27 | ID: `tgt-` + 32 hex | P2 |  |
-| `fabric.process.exit_code` | new | N35 | META: integer range | P4 |  |
-| `fabric.process.pid` | new | N35 | META: integer range | P4 |  |
-| `fabric.process.signal` | new | N35 | META: integer range | P4 |  |
-| `fabric.records.heartbeat.kind` | new | X35 | META: closed enum (`periodic`, `final`) | P1 |  |
-| `fabric.records.last_sequence` | new | X35 | META: integer range | P1 |  |
-| `fabric.records.loss.count` | new | X35 | META: integer range | P1 |  |
-| `fabric.records.loss.first_sequence` | new | X35 | META: integer range | P1 |  |
-| `fabric.records.loss.last_sequence` | new | X35 | META: integer range | P1 |  |
-| `fabric.records.loss.reason` | new | X35 | META: closed enum (loss reasons (047)) | P1 |  |
-| `fabric.remote.host_key_verified` | new | N36 | META: boolean | P4 |  |
-| `fabric.remote.target_id` | new | N36 | ID: `hst-` + 32 hex | P4 |  |
-| `fabric.run.agent_policy_digest` | new | C33 | DIGEST: bare 64 hex | P2 |  |
-| `fabric.run.agent_policy_id` | new | C33 | LABEL: pattern, exposure rule | P2 |  |
-| `fabric.run.agent_policy_version` | new | C33 | META: integer range | P2 |  |
-| `fabric.run.approval_policy` | new | C31 | META: closed enum (field type) | P2 |  |
-| `fabric.run.execution_mode` | new | C30 | META: closed enum (field type) | P2 |  |
-| `fabric.run.links` | new | X12 | ID: `r-` + 32 hex (array, max 16) | P1 |  |
-| `fabric.run.outcome` | new | D30 | META: closed enum (field type) | P2 |  |
-| `fabric.run.parent_id` | new | X10 | ID: `r-` + 32 hex | P1 |  |
-| `fabric.run.permissions.count` | new | C32 | META: integer range | P2 |  |
-| `fabric.run.resumed_from` | new | X11 | ID: `r-` + 32 hex | P1 |  |
-| `fabric.run.scope_status` | new | S34 | META: closed enum (field type) | P1 |  |
-| `fabric.run.stop_reason` | new | D30 | META: closed enum (field type) | P2 |  |
-| `fabric.run.trigger.kind` | new | C01 | META: closed enum (field type) | P2 |  |
-| `fabric.run.trigger.ref` | new | C02 | ID: `trg-` + 32 hex | P2 |  |
-| `fabric.selection.kind` | new | D12 | META: closed enum (field type) | P3 |  |
-| `fabric.selection.reason` | new | D12 | META: closed enum (field type) | P3 |  |
-| `fabric.side_effect.commit_basis` | new | D24 | META: closed enum (commit_basis vocabulary) | P3 |  |
-| `fabric.side_effect.commit_state` | new | D23 | META: closed enum (field type) | P3 (R), P4 (H) |  |
-| `fabric.side_effect.compensation_state` | new | D26 | META: closed enum (field type) | P3 |  |
-| `fabric.side_effect.state` | new | D19 | META: closed enum (field type) | P2 |  |
-| `fabric.step.attempt_kind` | new | S13 | META: closed enum (field type) | P1 (I), P2 (R) |  |
-| `fabric.step.attempt_selected` | new | S16 | META: boolean | P2 |  |
-| `fabric.step.kind` | new | S01 | META: closed enum (field type) | P1 |  |
-| `fabric.step.lifecycle_state` | new | S07 | META: closed enum (field type) | P1 |  |
-| `fabric.step.parent_id` | new | X18 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P1 |  |
-| `fabric.step.status` | new | S08 | META: closed enum (field type) | P1 |  |
-| `fabric.tool.execution_side` | new | N18 | META: closed enum (field type) | P1 |  |
-| `fabric.turn_id` | new | X16 | ID: `turn-` + 32 hex | P2 |  |
-| `fabric.wire.first_chunk_offset_ns` | new | S30 | META: integer range | P1 |  |
-| `fabric.wire.store_reason` | new | X40 | META: closed enum (store_reason vocabulary) | P0-A |  |
-| `fabric.workflow.iteration` | new | S18 | META: integer range | P2 |  |
-| `fabric.workflow.node` | new | S18 | LABEL: pattern, exposure rule | P2 |  |
+| Key | Change | Field | Validator | Phase | Manifest property | Note |
+|---|---|---|---|---|---|---|
+| `fabric.delegation.to_agent` | changed | S22 | ID: `agt-` + 32 hex | P0-A |  | Admitted clear today. |
+| `fabric.file.path` | changed | N46 | never admitted; the SDK stops emitting it in pseudonymous mode | P0-A |  | Clear path moves to the `artifact.locator` role. |
+| `fabric.interaction.target` | changed | N58 | ID: `tgt-` + 32 hex (newly admitted) | P0-A |  | Decided: pseudonymise. Emitted clear today when not hashed and dropped by the Node; `fabric.interaction.target_hash` stays. |
+| `fabric.memory.key` | changed | N31 | ID: `mkey-` + 32 hex (newly admitted) | P0-A |  | Decided: pseudonymise. Emitted clear today and dropped by the Node; the clear key stays in the memory content roles. |
+| `fabric.session_id` | changed | X13 | ID: `sess-` + 32 hex under a pseudonymous Node; clear only when the Node is configured `identity_mode: clear` | P0-A |  | Admitted clear today. |
+| `fabric.user_id` | changed | X14 | ID: `usr-` + 32 hex (newly admitted; clear values rejected) | P0-A |  | Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted). |
+| `db.system.name` | new | N38 | LABEL: pattern, exposure rule | P4 |  |  |
+| `fabric.actor.id` | new | S04 | ID: `act-` + 32 hex | P1 |  |  |
+| `fabric.actor.type` | new | S03 | META: closed enum (field type) | P1 |  |  |
+| `fabric.attempt.uid` | new | X19 | ID: uuid4 | P1 (records) |  |  |
+| `fabric.batch.item_index` | new | S21 | META: integer range | P2 |  |  |
+| `fabric.build.digest` | new | C12 | DIGEST: bare 64 hex | P2 |  |  |
+| `fabric.cancel.state` | new | S32 | META: closed enum (field type) | P2 |  |  |
+| `fabric.capture.manifest_id` | new | X34 | ID: uuid4 | P1 | `manifest_id` |  |
+| `fabric.capture.manifest_seq` | new | X39 | META: integer range | P1 |  |  |
+| `fabric.capture.manifest_sha256` | new | X34 | DIGEST: bare 64 hex | P1 |  |  |
+| `fabric.capture.path` | new | X06 | META: closed enum (source_path vocabulary) | P1 (records) | `path` |  |
+| `fabric.capture.point` | new | X26 | LABEL: pattern, exposure rule | P1 |  |  |
+| `fabric.checkpoint.action` | new | S27 | META: closed enum (field type) | P2 |  |  |
+| `fabric.config.digest` | new | C13 | DIGEST: bare 64 hex | P2 |  |  |
+| `fabric.context.change_kind` | new | D14 | META: closed enum (field type) | P3 |  |  |
+| `fabric.context.token_basis` | new | D15 | META: closed enum (field type) | P3 |  |  |
+| `fabric.context.tokens_after` | new | D15 | META: integer range | P3 |  |  |
+| `fabric.context.tokens_before` | new | D15 | META: integer range | P3 |  |  |
+| `fabric.context.trigger` | new | D14 | META: closed enum (field type) | P3 |  |  |
+| `fabric.control.action_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.control.authentication` | new | D11 | META: const `unverified_caller_report` | P3 |  |  |
+| `fabric.control.decision` | new | D04 | META: closed enum (field type) | P3 |  |  |
+| `fabric.control.enforced_by_fabric` | new | D11 | META: const `false` | P3 |  | A boolean validator would admit `true`. |
+| `fabric.control.gated_step_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.control.id` | new | D01 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.control.kind` | new | D02 | META: closed enum (field type) | P3 |  |  |
+| `fabric.control.phase` | new | D03 | META: closed enum (field type) | P3 |  |  |
+| `fabric.control.policy_digest` | new | D08 | DIGEST: bare 64 hex | P3 |  |  |
+| `fabric.control.policy_id` | new | D08 | LABEL: pattern, exposure rule | P3 |  |  |
+| `fabric.control.policy_version` | new | D08 | META: integer range | P3 |  |  |
+| `fabric.control.proof_ref` | new | D09 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.control.resolves` | new | D05 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.conversation_id` | new | X15 | ID: `conv-` + 32 hex | P2 |  |  |
+| `fabric.db.namespace_id` | new | N38 | ID: `dbn-` + 32 hex | P4 |  |  |
+| `fabric.db.rows_affected` | new | N41 | META: integer range | P4 |  |  |
+| `fabric.db.rows_fetched` | new | N41 | META: integer range | P4 |  |  |
+| `fabric.db.transaction_id` | new | N42 | ID: `txn-` + 32 hex | P4 |  |  |
+| `fabric.delegation.state` | new | S24 | META: closed enum (field type) | P2 |  |  |
+| `fabric.dispatch.id` | new | S20 | ID: `dsp-` + 32 hex | P2 |  |  |
+| `fabric.dispatch.kind` | new | S20 | META: closed enum (field type) | P2 |  |  |
+| `fabric.dispatch.state` | new | S20 | META: closed enum (field type) | P2 |  |  |
+| `fabric.error.code` | new | S11 | META: `^[A-Za-z0-9_.-]{1,64}$` | P1 (provider) |  |  |
+| `fabric.error.domain` | new | S09 | META: closed enum (field type) | P1 |  |  |
+| `fabric.event.supersedes` | new | X03 | ID: uuid4 | P1 |  |  |
+| `fabric.execution.host_id` | new | C41 | ID: `hst-` + 32 hex | P2 |  |  |
+| `fabric.execution.image_digest` | new | C41 | DIGEST: bare 64 hex | P2 |  |  |
+| `fabric.execution.sandbox_id` | new | C41 | ID: `sbx-` + 32 hex | P2 |  |  |
+| `fabric.framework.name` | new | C15 | LABEL: pattern, exposure rule | P2 |  |  |
+| `fabric.framework.version` | new | C15 | LABEL: pattern, exposure rule | P2 |  |  |
+| `fabric.input.kind` | new | C08 | META: closed enum (field type) | P1 (I), P2 (R) |  |  |
+| `fabric.input.state` | new | C09 | META: closed enum (field type) | P2 |  |  |
+| `fabric.manifest.after_source_sequence` | new | X39 | META: integer ≥ -1 | P1 | `after_source_sequence` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_point_fields` | new | X34 | META: array (max 64) of `<id>=<field id>,<field id>,…`, field ids `^[XCSND][0-9]{2}$` | P1 | `capture_points/fields` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_points` | new | X34 | META: array (max 64) of `<id>@<version>:<kind>:<state>:<process_global 0/1>:<opt_in 0/1>:<reason or ->`, each part closed-validated | P1 | `capture_points` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_policy.encrypted_store_required` | new | X31 | META: boolean | P0-A | `capture_policy/encrypted_store_required` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_policy.policy_digest` | new | X31 | DIGEST: bare 64 hex | P0-A | `capture_policy/policy_digest` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_policy.policy_id` | new | X31 | LABEL: opaque id pattern | P0-A | `capture_policy/policy_id` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_policy.policy_version` | new | X31 | META: integer range | P0-A | `capture_policy/policy_version` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.chunk_boundaries_retained` | new | S31 | META: boolean | P1 | `chunk_boundaries_retained` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.clock.domain` | new | X25 | META: closed enum `wall_utc`, `monotonic_process` | P1 | `clock/domain` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.clock.uncertainty_ns` | new | X25 | META: integer range | P1 | `clock/uncertainty_ns` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.content_capture` | new | X33 | META: closed enum `enabled`, `disabled`, `metadata_only` | P0-A | `content_capture` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.content_capture_reason` | new | X33 | META: closed enum (schema) | P0-A | `content_capture_reason` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.coverage_profile` | new | X33 | META: `^fabric\.profile\.[a-z0-9-]+/v[0-9]+$` | P1 | `coverage_profile` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.emitted_at` | new | X24 | META: RFC 3339 date-time | P1 | `emitted_at` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.endpoint_set_sha256` | new | C35 | DIGEST: bare 64 hex | P1 | `endpoint_set_sha256` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.explicit_wins` | new | X34 | META: boolean | P1 | `explicit_wins` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.identity_mode` | new | X33 | META: closed enum `pseudonymous`, `clear` | P0-A | `identity_mode` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.key_id` | new | X33 | META: `^kid-[0-9a-f]{8}$` | P0-A | `key_id` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.limits.max_body_bytes` | new | X34 | META: integer range 1-67108864 | P1 | `limits/max_body_bytes` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.limits.max_inflight_bytes` | new | X34 | META: integer range | P1 | `limits/max_inflight_bytes` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.limits.max_retain_bytes` | new | X34 | META: integer range 1-67108864 | P1 | `limits/max_retain_bytes` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.limits.part_min_bytes` | new | X34 | META: integer range | P1 | `limits/part_min_bytes` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.limits.queue_max_items` | new | X34 | META: integer range 1-65536 | P1 | `limits/queue_max_items` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.manifest_seq` | new | X39 | META: integer range | P1 | `manifest_seq` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.previous_manifest_sha256` | new | X39 | DIGEST: bare 64 hex | P1 | `previous_manifest_sha256` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.profile` | new | X33 | META: closed enum `local`, `production` | P0-A | `profile` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.pseudonym_mode` | new | X33 | META: closed enum `keyed`, `unkeyed` | P0-A | `pseudonym_mode` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.role_table_version` | new | X34 | META: `^fabric\.content-role-table/v[0-9]+@[0-9]+$` | P0-A | `role_table_version` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.runtime.name` | new | C16 | META: closed enum (schema) | P1 | `runtime/name` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.runtime.version` | new | C16 | META: `^[0-9A-Za-z.+-]{1,64}$` | P1 | `runtime/version` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.sdk.language` | new | X36 | META: closed enum `python`, `typescript` | P1 | `sdk/language` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.sequence_unit` | new | X07 | META: closed enum `exchange`, `record` | P1 | `sequence_unit` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.uncaptured_classes` | new | X34 | META: array of closed enum (schema) | P1 | `uncaptured_classes` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.mcp.direction` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |  |
+| `fabric.mcp.error_kind` | new | N25 | META: closed enum (field type) | P2 |  |  |
+| `fabric.mcp.method` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |  |
+| `fabric.mcp.protocol_version` | new | C27 | META: `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | P2 |  |  |
+| `fabric.mcp.server_version` | new | C26 | LABEL: pattern, exposure rule | P2 |  |  |
+| `fabric.memory.op` | new | N30 | META: closed enum (field type) | P2 |  |  |
+| `fabric.memory.store_id` | new | N30 | ID: `mst-` + 32 hex | P2 |  |  |
+| `fabric.network.host_id` | new | N43 | ID: `hst-` + 32 hex | P4 |  |  |
+| `fabric.outcome.channel_kind` | new | D27 | META: closed enum (field type) | P2 |  |  |
+| `fabric.outcome.delivery_state` | new | D28 | META: closed enum (field type) | P2 |  |  |
+| `fabric.outcome.target_id` | new | D27 | ID: `tgt-` + 32 hex | P2 |  |  |
+| `fabric.process.exit_code` | new | N35 | META: integer range | P4 |  |  |
+| `fabric.process.pid` | new | N35 | META: integer range | P4 |  |  |
+| `fabric.process.signal` | new | N35 | META: integer range | P4 |  |  |
+| `fabric.records.heartbeat.kind` | new | X35 | META: closed enum (`periodic`, `final`) | P1 |  |  |
+| `fabric.records.last_sequence` | new | X35 | META: integer range | P1 |  |  |
+| `fabric.records.loss.count` | new | X35 | META: integer range | P1 |  |  |
+| `fabric.records.loss.first_sequence` | new | X35 | META: integer range | P1 |  |  |
+| `fabric.records.loss.last_sequence` | new | X35 | META: integer range | P1 |  |  |
+| `fabric.records.loss.reason` | new | X35 | META: closed enum (loss reasons (047)) | P1 |  |  |
+| `fabric.remote.host_key_verified` | new | N36 | META: boolean | P4 |  |  |
+| `fabric.remote.target_id` | new | N36 | ID: `hst-` + 32 hex | P4 |  |  |
+| `fabric.run.agent_policy_digest` | new | C33 | DIGEST: bare 64 hex | P2 |  |  |
+| `fabric.run.agent_policy_id` | new | C33 | LABEL: pattern, exposure rule | P2 |  |  |
+| `fabric.run.agent_policy_version` | new | C33 | META: integer range | P2 |  |  |
+| `fabric.run.approval_policy` | new | C31 | META: closed enum (field type) | P2 |  |  |
+| `fabric.run.execution_mode` | new | C30 | META: closed enum (field type) | P2 |  |  |
+| `fabric.run.links` | new | X12 | ID: `r-` + 32 hex (array, max 16) | P1 |  |  |
+| `fabric.run.outcome` | new | D30 | META: closed enum (field type) | P2 |  |  |
+| `fabric.run.parent_id` | new | X10 | ID: `r-` + 32 hex | P1 |  |  |
+| `fabric.run.permissions.count` | new | C32 | META: integer range | P2 |  |  |
+| `fabric.run.resumed_from` | new | X11 | ID: `r-` + 32 hex | P1 |  |  |
+| `fabric.run.scope_status` | new | S34 | META: closed enum (field type) | P1 |  |  |
+| `fabric.run.stop_reason` | new | D30 | META: closed enum (field type) | P2 |  |  |
+| `fabric.run.trigger.kind` | new | C01 | META: closed enum (field type) | P2 |  |  |
+| `fabric.run.trigger.ref` | new | C02 | ID: `trg-` + 32 hex | P2 |  |  |
+| `fabric.selection.kind` | new | D12 | META: closed enum (field type) | P3 |  |  |
+| `fabric.selection.reason` | new | D12 | META: closed enum (field type) | P3 |  |  |
+| `fabric.side_effect.commit_basis` | new | D24 | META: closed enum (commit_basis vocabulary) | P3 |  |  |
+| `fabric.side_effect.commit_state` | new | D23 | META: closed enum (field type) | P3 (R), P4 (H) |  |  |
+| `fabric.side_effect.compensation_state` | new | D26 | META: closed enum (field type) | P3 |  |  |
+| `fabric.side_effect.state` | new | D19 | META: closed enum (field type) | P2 |  |  |
+| `fabric.step.attempt_kind` | new | S13 | META: closed enum (field type) | P1 (I), P2 (R) |  |  |
+| `fabric.step.attempt_selected` | new | S16 | META: boolean | P2 |  |  |
+| `fabric.step.kind` | new | S01 | META: closed enum (field type) | P1 |  |  |
+| `fabric.step.lifecycle_state` | new | S07 | META: closed enum (field type) | P1 |  |  |
+| `fabric.step.parent_id` | new | X18 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P1 |  |  |
+| `fabric.step.status` | new | S08 | META: closed enum (field type) | P1 |  |  |
+| `fabric.tool.execution_side` | new | N18 | META: closed enum (field type) | P1 |  |  |
+| `fabric.turn_id` | new | X16 | ID: `turn-` + 32 hex | P2 |  |  |
+| `fabric.wire.first_chunk_offset_ns` | new | S30 | META: integer range | P1 |  |  |
+| `fabric.wire.store_reason` | new | X40 | META: closed enum (store_reason vocabulary) | P0-A |  |  |
+| `fabric.workflow.iteration` | new | S18 | META: integer range | P2 |  |  |
+| `fabric.workflow.node` | new | S18 | LABEL: pattern, exposure rule | P2 |  |  |
+| `fabric.event_id` | reused | X02 | existing validator (uuid4) | P1 | `event_id` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.schema_version` | reused | X01 | existing validator (const `fabric.capture-manifest/v1` on this span) | built | `schema_version` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.sdk.version` | reused | X36 | existing validator | built | `sdk/version` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.source.epoch` | reused | X06 | existing validator | built | `source_epoch` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.source_id` | reused | X06 | existing validator | built | `source_id` | Attribute of the `fabric.capture_manifest` span. |
 <!-- generated:keys:end -->
 
 `fabric.wire.store_reason` values:
@@ -1317,7 +1367,7 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 <!-- generated:vocab:store_reason:begin -->
 | Value | Meaning |
 |---|---|
-| `no_store` | Metadata-only mode: no content destination configured. |
+| `no_store` | Metadata-only mode: no content destination configured. Coverage reason `not_configured`. |
 | `missing_capture_policy` | Production profile without a capture policy (section 7.3). |
 | `missing_id_key` | Production profile without `FABRIC_WIRE_ID_KEY`. |
 | `privacy_policy` | The role's privacy mode retains no bytes. |
@@ -1381,15 +1431,15 @@ explicit line's `byte_spool` / governed store stays supported.
 | Role | Status | Layer | Boundary | Provenance | Media types | Default policy | Cap | Phase | Holds |
 |---|---|---|---|---|---|---|---|---|---|
 | `model.request.instructions` | existing | context | caller | caller_reported | `text/plain`, `application/json` | content | max_body_bytes | built |  |
-| `model.request.messages` | existing | content | caller | caller_reported | `application/json` | content | max_body_bytes | built |  |
+| `model.request.messages` | existing | content | caller, provider_bound | caller_reported | `application/json` | content | max_body_bytes | built | Built explicit line: `CallRecorder` kind `model` writes these with boundary `provider_bound` (call_recorder.py:41-45). |
 | `model.request.tool_definitions` | existing | context | caller | caller_reported | `application/json` | content | 4 MiB | built |  |
 | `model.request.parameters` | existing | context | caller | caller_reported | `application/json` | content | 1 MiB | built |  |
-| `model.output.messages` | existing | content | caller | caller_reported | `application/json` | content | max_body_bytes | built |  |
+| `model.output.messages` | existing | content | caller, provider_bound | caller_reported | `application/json` | content | max_body_bytes | built | Built explicit line: `CallRecorder` kind `model` writes these with boundary `provider_bound` (call_recorder.py:41-45). |
 | `model.exchange.request` | existing | content | provider_bound | protocol, caller_reported | `*` | content | max_body_bytes | built |  |
 | `model.exchange.response` | existing | content | provider_bound | protocol, caller_reported | `*` | content | max_body_bytes | built |  |
 | `tool.definition` | existing | context | tool, caller | caller_reported, protocol | `application/json` | content | 1 MiB | built |  |
-| `tool.call.arguments` | existing | content | provider_bound, tool | caller_reported, protocol | `text/plain`, `application/json` | content | 4 MiB | built |  |
-| `tool.call.result` | existing | content | provider_bound, tool | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `tool.call.arguments` | existing | content | provider_bound, tool, caller | caller_reported, protocol | `text/plain`, `application/json` | content | 4 MiB | built | Built explicit line: `CallRecorder` kind `agent` writes these with boundary `caller` (call_recorder.py:41-45). |
+| `tool.call.result` | existing | content | provider_bound, tool, caller | caller_reported, protocol | `*` | content | max_body_bytes | built | Built explicit line: `CallRecorder` kind `agent` writes these with boundary `caller` (call_recorder.py:41-45). |
 | `retrieval.query` | existing | content | caller, service | caller_reported, protocol | `text/plain`, `application/json` | content | 1 MiB | built |  |
 | `retrieval.results` | existing | content | caller, service | caller_reported, protocol | `application/json` | content | max_body_bytes | built |  |
 | `memory.write.content` | existing | content | caller, service | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
@@ -1776,7 +1826,7 @@ large inline parts when (a) the side is at most `max_retain_bytes`
 (64 MiB), (b) the skeleton is at most `max_body_bytes` (32 MiB default),
 and (c) the side is JSON. A part above `max_body_bytes` is withheld with
 its length (and digest where 7.5 allows). A side above 64 MiB is truncated
-by whole chunks and its text may be lost. The P1 gate tests a 63 MiB
+by whole chunks and its text may be lost. The P0-A gate tests a 63 MiB
 skeleton plus descriptor against the Node's 64 MiB request cap. The
 explicit line's `byte_object_max_bytes` (16 MiB, `coverage_manifest.py:77`)
 is a separate limit and unchanged.
@@ -1966,7 +2016,7 @@ fields that need no new role.
   receipts, compensation, run outcome and stop reason on `run_end`.
 - Exit: allow, deny, modify, pending → resolved, revoked, timeout, and a
   denied action with no executed step; invariants on every control event;
-  legacy `committed=True` maps to `legacy_default`; `history_rewritten`
+  legacy `committed=True` maps to `legacy_unspecified`; `history_rewritten`
   stays inferred; artifact scan finds no evaluator, policy engine or
   approval orchestration.
 
@@ -2296,5 +2346,13 @@ Each is applied in this spec as its recommended default.
 | R2F-O1 | Fable | Node-mode behaviour change needs supersession note and louder logging | Resolved: 048 §1 supersession; disabled state logged at every install and first exchange per epoch | 7.3 |
 | R2F-O2 | Fable | No per-exchange reason for absent content | Resolved: `fabric.wire.store_reason` | `X40`, 4.2 |
 | R2F-O3 | Fable | Malformed config must still raise | Resolved: stated explicitly | 7.3 |
-| R2F-O4 | Fable | Test 63 MiB skeleton against 64 MiB Node cap | Resolved: P0-A/P1 gate | 7.4, 8.2 |
+| R2F-O4 | Fable | Test 63 MiB skeleton against 64 MiB Node cap | Resolved: P0-A gate | 7.4, 8.2 |
 | R2F-O5 | Fable | Semantic-cache hits and backoff unmapped (borderline) | Resolved: §3.7 row (reported only) | 3.7 |
+| R3F-D1 | Fable | Manifest span attributes have no telemetry keys; fabricguard would strip them | Resolved: a key row per manifest-schema property (`manifest_property`), validator check | 2.8, 4.2 |
+| R3F-D2 | Fable | Role table rejects the built explicit line | Resolved: messages roles accept `provider_bound`; `tool.call.*` accept `caller` (call_recorder.py:41-45) | 4.3 |
+| R3F-D3 | Fable | `store_reason=no_store` has no coverage reason | Resolved: `no_store` → `not_configured`; validator check | 2.6, 4.2 |
+| R3F-D4 | Fable | P3 exit says `legacy_default` | Resolved: `legacy_unspecified` | 8.2 P3 |
+| R3F-D5 | Fable | 63 MiB skeleton test at two gates | Resolved: P0-A gate only | 7.4, 8.2 |
+| R3F-C1 | Fable | 048 §1 has no supersession pointer | Resolved: pointer in 048 §1 to 049 §7.3 | 048 §1 |
+| R3F-Qa | Fable | Wire `parent_step_id` mechanism | Resolved: existing OTel parent-span join via `records.span_id` alias | 2.3, `X18` |
+| R3F-Qb | Fable | `S03` on reported steps without an actor | Resolved: SDK stamps `agent` unless supplied | 2.3, `S03` |

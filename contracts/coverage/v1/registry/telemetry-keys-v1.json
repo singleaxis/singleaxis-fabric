@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 1,
+  "registry_revision": 2,
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -104,7 +104,8 @@
       "change": "new",
       "field": "X34",
       "validator": "ID: uuid4",
-      "phase": "P1"
+      "phase": "P1",
+      "manifest_property": "manifest_id"
     },
     {
       "key": "fabric.capture.manifest_seq",
@@ -125,7 +126,8 @@
       "change": "new",
       "field": "X06",
       "validator": "META: closed enum (source_path vocabulary)",
-      "phase": "P1 (records)"
+      "phase": "P1 (records)",
+      "manifest_property": "path"
     },
     {
       "key": "fabric.capture.point",
@@ -407,6 +409,303 @@
       "field": "C09",
       "validator": "META: closed enum (field type)",
       "phase": "P2"
+    },
+    {
+      "key": "fabric.manifest.after_source_sequence",
+      "change": "new",
+      "field": "X39",
+      "validator": "META: integer ≥ -1",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "after_source_sequence"
+    },
+    {
+      "key": "fabric.manifest.capture_point_fields",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: array (max 64) of `<id>=<field id>,<field id>,…`, field ids `^[XCSND][0-9]{2}$`",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "capture_points/fields"
+    },
+    {
+      "key": "fabric.manifest.capture_points",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: array (max 64) of `<id>@<version>:<kind>:<state>:<process_global 0/1>:<opt_in 0/1>:<reason or ->`, each part closed-validated",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "capture_points"
+    },
+    {
+      "key": "fabric.manifest.capture_policy.encrypted_store_required",
+      "change": "new",
+      "field": "X31",
+      "validator": "META: boolean",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "capture_policy/encrypted_store_required"
+    },
+    {
+      "key": "fabric.manifest.capture_policy.policy_digest",
+      "change": "new",
+      "field": "X31",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "capture_policy/policy_digest"
+    },
+    {
+      "key": "fabric.manifest.capture_policy.policy_id",
+      "change": "new",
+      "field": "X31",
+      "validator": "LABEL: opaque id pattern",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "capture_policy/policy_id"
+    },
+    {
+      "key": "fabric.manifest.capture_policy.policy_version",
+      "change": "new",
+      "field": "X31",
+      "validator": "META: integer range",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "capture_policy/policy_version"
+    },
+    {
+      "key": "fabric.manifest.chunk_boundaries_retained",
+      "change": "new",
+      "field": "S31",
+      "validator": "META: boolean",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "chunk_boundaries_retained"
+    },
+    {
+      "key": "fabric.manifest.clock.domain",
+      "change": "new",
+      "field": "X25",
+      "validator": "META: closed enum `wall_utc`, `monotonic_process`",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "clock/domain"
+    },
+    {
+      "key": "fabric.manifest.clock.uncertainty_ns",
+      "change": "new",
+      "field": "X25",
+      "validator": "META: integer range",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "clock/uncertainty_ns"
+    },
+    {
+      "key": "fabric.manifest.content_capture",
+      "change": "new",
+      "field": "X33",
+      "validator": "META: closed enum `enabled`, `disabled`, `metadata_only`",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "content_capture"
+    },
+    {
+      "key": "fabric.manifest.content_capture_reason",
+      "change": "new",
+      "field": "X33",
+      "validator": "META: closed enum (schema)",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "content_capture_reason"
+    },
+    {
+      "key": "fabric.manifest.coverage_profile",
+      "change": "new",
+      "field": "X33",
+      "validator": "META: `^fabric\\.profile\\.[a-z0-9-]+/v[0-9]+$`",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "coverage_profile"
+    },
+    {
+      "key": "fabric.manifest.emitted_at",
+      "change": "new",
+      "field": "X24",
+      "validator": "META: RFC 3339 date-time",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "emitted_at"
+    },
+    {
+      "key": "fabric.manifest.endpoint_set_sha256",
+      "change": "new",
+      "field": "C35",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "endpoint_set_sha256"
+    },
+    {
+      "key": "fabric.manifest.explicit_wins",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: boolean",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "explicit_wins"
+    },
+    {
+      "key": "fabric.manifest.identity_mode",
+      "change": "new",
+      "field": "X33",
+      "validator": "META: closed enum `pseudonymous`, `clear`",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "identity_mode"
+    },
+    {
+      "key": "fabric.manifest.key_id",
+      "change": "new",
+      "field": "X33",
+      "validator": "META: `^kid-[0-9a-f]{8}$`",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "key_id"
+    },
+    {
+      "key": "fabric.manifest.limits.max_body_bytes",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: integer range 1-67108864",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "limits/max_body_bytes"
+    },
+    {
+      "key": "fabric.manifest.limits.max_inflight_bytes",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: integer range",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "limits/max_inflight_bytes"
+    },
+    {
+      "key": "fabric.manifest.limits.max_retain_bytes",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: integer range 1-67108864",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "limits/max_retain_bytes"
+    },
+    {
+      "key": "fabric.manifest.limits.part_min_bytes",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: integer range",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "limits/part_min_bytes"
+    },
+    {
+      "key": "fabric.manifest.limits.queue_max_items",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: integer range 1-65536",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "limits/queue_max_items"
+    },
+    {
+      "key": "fabric.manifest.manifest_seq",
+      "change": "new",
+      "field": "X39",
+      "validator": "META: integer range",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "manifest_seq"
+    },
+    {
+      "key": "fabric.manifest.previous_manifest_sha256",
+      "change": "new",
+      "field": "X39",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "previous_manifest_sha256"
+    },
+    {
+      "key": "fabric.manifest.profile",
+      "change": "new",
+      "field": "X33",
+      "validator": "META: closed enum `local`, `production`",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "profile"
+    },
+    {
+      "key": "fabric.manifest.pseudonym_mode",
+      "change": "new",
+      "field": "X33",
+      "validator": "META: closed enum `keyed`, `unkeyed`",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "pseudonym_mode"
+    },
+    {
+      "key": "fabric.manifest.role_table_version",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: `^fabric\\.content-role-table/v[0-9]+@[0-9]+$`",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "role_table_version"
+    },
+    {
+      "key": "fabric.manifest.runtime.name",
+      "change": "new",
+      "field": "C16",
+      "validator": "META: closed enum (schema)",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "runtime/name"
+    },
+    {
+      "key": "fabric.manifest.runtime.version",
+      "change": "new",
+      "field": "C16",
+      "validator": "META: `^[0-9A-Za-z.+-]{1,64}$`",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "runtime/version"
+    },
+    {
+      "key": "fabric.manifest.sdk.language",
+      "change": "new",
+      "field": "X36",
+      "validator": "META: closed enum `python`, `typescript`",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "sdk/language"
+    },
+    {
+      "key": "fabric.manifest.sequence_unit",
+      "change": "new",
+      "field": "X07",
+      "validator": "META: closed enum `exchange`, `record`",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "sequence_unit"
+    },
+    {
+      "key": "fabric.manifest.uncaptured_classes",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: array of closed enum (schema)",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "uncaptured_classes"
     },
     {
       "key": "fabric.mcp.direction",
@@ -785,6 +1084,52 @@
       "field": "S18",
       "validator": "LABEL: pattern, exposure rule",
       "phase": "P2"
+    },
+    {
+      "key": "fabric.event_id",
+      "change": "reused",
+      "field": "X02",
+      "validator": "existing validator (uuid4)",
+      "phase": "P1",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "event_id"
+    },
+    {
+      "key": "fabric.schema_version",
+      "change": "reused",
+      "field": "X01",
+      "validator": "existing validator (const `fabric.capture-manifest/v1` on this span)",
+      "phase": "built",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "schema_version"
+    },
+    {
+      "key": "fabric.sdk.version",
+      "change": "reused",
+      "field": "X36",
+      "validator": "existing validator",
+      "phase": "built",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "sdk/version"
+    },
+    {
+      "key": "fabric.source.epoch",
+      "change": "reused",
+      "field": "X06",
+      "validator": "existing validator",
+      "phase": "built",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "source_epoch"
+    },
+    {
+      "key": "fabric.source_id",
+      "change": "reused",
+      "field": "X06",
+      "validator": "existing validator",
+      "phase": "built",
+      "note": "Attribute of the `fabric.capture_manifest` span.",
+      "manifest_property": "source_id"
     }
-  ]
+  ],
+  "manifest_span": "fabric.capture_manifest"
 }

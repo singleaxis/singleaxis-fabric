@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 2,
+  "registry_revision": 3,
   "coverage_status": [
     {
       "value": "captured",
@@ -710,7 +710,7 @@
   "store_reason": [
     {
       "value": "no_store",
-      "meaning": "Metadata-only mode: no content destination configured."
+      "meaning": "Metadata-only mode: no content destination configured. Coverage reason `not_configured`."
     },
     {
       "value": "missing_capture_policy",

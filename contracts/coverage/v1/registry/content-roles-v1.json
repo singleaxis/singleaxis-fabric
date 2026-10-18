@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.content-role-table/v1",
-  "registry_revision": 2,
+  "registry_revision": 3,
   "content_object_schema": "fabric.content-object/v2",
   "media_type_rule": "exact type/subtype, type/* wildcard, or * (any value passing the 047 §7 media rule)",
   "unknown_role": "rejected (destination_rejected)",
@@ -31,7 +31,8 @@
       "status": "existing",
       "layer": "content",
       "boundary": [
-        "caller"
+        "caller",
+        "provider_bound"
       ],
       "provenance": [
         "caller_reported"
@@ -42,7 +43,8 @@
       "default_policy": "content",
       "cap": "max_body_bytes",
       "phase": "built",
-      "telemetry_forbidden": true
+      "telemetry_forbidden": true,
+      "holds": "Built explicit line: `CallRecorder` kind `model` writes these with boundary `provider_bound` (call_recorder.py:41-45)."
     },
     {
       "role": "model.request.tool_definitions",
@@ -85,7 +87,8 @@
       "status": "existing",
       "layer": "content",
       "boundary": [
-        "caller"
+        "caller",
+        "provider_bound"
       ],
       "provenance": [
         "caller_reported"
@@ -96,7 +99,8 @@
       "default_policy": "content",
       "cap": "max_body_bytes",
       "phase": "built",
-      "telemetry_forbidden": true
+      "telemetry_forbidden": true,
+      "holds": "Built explicit line: `CallRecorder` kind `model` writes these with boundary `provider_bound` (call_recorder.py:41-45)."
     },
     {
       "role": "model.exchange.request",
@@ -162,7 +166,8 @@
       "layer": "content",
       "boundary": [
         "provider_bound",
-        "tool"
+        "tool",
+        "caller"
       ],
       "provenance": [
         "caller_reported",
@@ -175,7 +180,8 @@
       "default_policy": "content",
       "cap": "4 MiB",
       "phase": "built",
-      "telemetry_forbidden": true
+      "telemetry_forbidden": true,
+      "holds": "Built explicit line: `CallRecorder` kind `agent` writes these with boundary `caller` (call_recorder.py:41-45)."
     },
     {
       "role": "tool.call.result",
@@ -183,7 +189,8 @@
       "layer": "content",
       "boundary": [
         "provider_bound",
-        "tool"
+        "tool",
+        "caller"
       ],
       "provenance": [
         "caller_reported",
@@ -195,7 +202,8 @@
       "default_policy": "content",
       "cap": "max_body_bytes",
       "phase": "built",
-      "telemetry_forbidden": true
+      "telemetry_forbidden": true,
+      "holds": "Built explicit line: `CallRecorder` kind `agent` writes these with boundary `caller` (call_recorder.py:41-45)."
     },
     {
       "role": "retrieval.query",

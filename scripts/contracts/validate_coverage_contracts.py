@@ -48,6 +48,7 @@ LAYERS = {"X": "cross_cutting", "C": "context", "S": "structure", "N": "content"
           "D": "decisions_effects"}
 TITLES = {"X": "fields:X", "C": "fields:C", "S": "fields:S", "N": "fields:N", "D": "fields:D"}
 OUT_OF_SCOPE = "out of scope"
+STORE_REASON_MAP = {"no_store": "not_configured"}
 MEDIA_RE = re.compile(r"^(\*|[a-z0-9!#$&^_.+-]+/(\*|[a-z0-9!#$&^_.+-]+))$")
 BLOCK_RE = re.compile(
     r"<!-- generated:(?P<name>[a-z_:A-Z]+):begin -->\n(?P<body>.*?)<!-- generated:(?P=name):end -->",
@@ -185,10 +186,10 @@ def render_blocks(reg: Mapping[str, Any]) -> dict[str, str]:
         ],
     )
     blocks["keys"] = _table(
-        ["Key", "Change", "Field", "Validator", "Phase", "Note"],
+        ["Key", "Change", "Field", "Validator", "Phase", "Manifest property", "Note"],
         [
             (f"`{k['key']}`", k["change"], k["field"], k["validator"], k["phase"],
-             k.get("note", ""))
+             f"`{k['manifest_property']}`" if "manifest_property" in k else "", k.get("note", ""))
             for k in reg["keys"]["keys"]
         ],
     )
@@ -303,8 +304,32 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
     if len({k["key"] for k in keys}) != len(keys):
         _fail("coverage.keys.duplicate", "telemetry-keys", "duplicate key")
     for k in keys:
-        if k["field"] not in ids or k["change"] not in ("new", "changed"):
+        if k["field"] not in ids or k["change"] not in ("new", "changed", "reused"):
             _fail("coverage.keys.field", k["key"], "unknown field or change kind")
+    # every attribute of the fabric.capture_manifest span needs an exact key row,
+    # otherwise fabricguard strips it at the Node
+    mapped = {k["manifest_property"] for k in keys if "manifest_property" in k}
+    for prop in _manifest_leaves(schemas["manifest"]):
+        if prop not in mapped:
+            _fail("coverage.keys.manifest", prop, "manifest property has no telemetry key row")
+    # store_reason values map onto coverage reasons (no_store -> not_configured)
+    for value in (r["value"] for r in vocab["store_reason"]):
+        if STORE_REASON_MAP.get(value, value) not in reasons:
+            _fail("coverage.vocab.store_reason", value, "store reason has no coverage-reason mapping")
+
+
+def _manifest_leaves(schema: Mapping[str, Any], prefix: str = "") -> list[str]:
+    """Leaf property paths of the manifest schema (objects recurse, arrays are leaves)."""
+    leaves: list[str] = []
+    for name, sub in schema.get("properties", {}).items():
+        path = f"{prefix}{name}"
+        branches = [b for b in sub.get("oneOf", []) if b.get("type") == "object"]
+        node = branches[0] if branches else sub
+        if node.get("type") == "object" and "properties" in node:
+            leaves += _manifest_leaves(node, path + "/")
+        else:
+            leaves.append(path)
+    return leaves
 
 
 def check_spec(root: Path, reg: Mapping[str, Any], *, write: bool = False) -> list[str]:

@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 2,
+  "registry_revision": 3,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -378,7 +378,7 @@
       "status_if_hook_absent": "absent (root)",
       "phase": "P1",
       "lives_in": "T `fabric.step.parent_id`",
-      "definition": "Nesting parent only. Causal edges use `links`. Via ambient Fabric context or explicit `parent_call_id`."
+      "definition": "Nesting parent only; causal edges use `links`. For a wire exchange it comes from the existing OTel parent-span join: the exchange span starts under the host's current span (`wire/_pipeline.py:319,341-343`, `parent_span_id`), and the verifier resolves that span id through the `records.span_id` (or explicit) alias to the enclosing step; no step context variable is added. Via ambient OTel context or explicit `parent_call_id`."
     },
     {
       "id": "X19",
@@ -1474,10 +1474,10 @@
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
-      "status_if_hook_absent": "unknown",
+      "status_if_hook_absent": "always (SDK default `agent`)",
       "phase": "P1",
       "lives_in": "T `fabric.actor.type`",
-      "definition": "Who acted."
+      "definition": "Who acted. The SDK stamps `agent` on every step it emits (wire, explicit and records paths) unless the caller supplies another value, so a reported step without an actor argument is `captured` (`agent`), never `unknown`."
     },
     {
       "id": "S04",
