@@ -1,0 +1,554 @@
+{
+  "schema_version": "fabric.content-role-table/v1",
+  "registry_revision": 1,
+  "content_object_schema": "fabric.content-object/v2",
+  "existing_roles": [
+    "model.request.instructions",
+    "model.request.messages",
+    "model.request.tool_definitions",
+    "model.request.parameters",
+    "model.output.messages",
+    "model.exchange.request",
+    "model.exchange.response",
+    "tool.definition",
+    "tool.call.arguments",
+    "tool.call.result",
+    "retrieval.query",
+    "retrieval.results",
+    "memory.write.content",
+    "memory.read.content",
+    "side_effect.request",
+    "side_effect.result",
+    "context.file",
+    "interaction.payload",
+    "terminal.argv",
+    "terminal.stdin",
+    "terminal.stdout",
+    "terminal.stderr",
+    "remote.request",
+    "remote.result",
+    "remote.stream",
+    "database.query",
+    "database.parameters",
+    "database.rows",
+    "database.mutation",
+    "network.request",
+    "network.response",
+    "network.stream",
+    "sandbox.config",
+    "sandbox.output",
+    "artifact.before",
+    "artifact.after",
+    "service.receipt"
+  ],
+  "new_roles": [
+    {
+      "role": "model.exchange.part",
+      "layer": "content",
+      "boundary": [
+        "provider_bound"
+      ],
+      "provenance": [
+        "protocol",
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P1",
+      "telemetry_forbidden": true,
+      "holds": "One inline media/binary part extracted from a model request or response (section 7.4)."
+    },
+    {
+      "role": "model.output.reasoning",
+      "layer": "content",
+      "boundary": [
+        "provider_bound"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "1 MiB",
+      "phase": "P1",
+      "telemetry_forbidden": true,
+      "holds": "Reasoning as handed to an explicit recorder. Wire capture uses locators into the response instead."
+    },
+    {
+      "role": "actor.identity",
+      "layer": "structure",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "off",
+      "cap": "64 KiB",
+      "phase": "P0-A",
+      "telemetry_forbidden": true,
+      "holds": "Clear identity of a user, approver or operator behind a pseudonym."
+    },
+    {
+      "role": "run.trigger",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "4 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Trigger payload."
+    },
+    {
+      "role": "run.goal",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "1 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Stated goal and constraints, as supplied."
+    },
+    {
+      "role": "run.input",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "4 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "A mid-run input payload."
+    },
+    {
+      "role": "run.permissions",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "1 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Execution policy detail: allowed and denied tools, paths, hosts, scopes."
+    },
+    {
+      "role": "run.configuration",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "off",
+      "cap": "4 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Agent configuration and prompt templates, as supplied."
+    },
+    {
+      "role": "run.environment",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "off",
+      "cap": "256 KiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Allowlisted environment snapshot; values of non-allowlisted variables never."
+    },
+    {
+      "role": "run.outcome",
+      "layer": "content",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "The application's final output."
+    },
+    {
+      "role": "outcome.delivery",
+      "layer": "decisions_effects",
+      "boundary": [
+        "service"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "1 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Recipient, channel and delivery evidence."
+    },
+    {
+      "role": "step.error",
+      "layer": "structure",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "256 KiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Error message, stack and cause chain."
+    },
+    {
+      "role": "tool.inventory",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "4 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Tools available to an executor (set, with schemas)."
+    },
+    {
+      "role": "agent.handoff",
+      "layer": "structure",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "4 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Delegation request payload."
+    },
+    {
+      "role": "checkpoint.state",
+      "layer": "structure",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "off",
+      "cap": "max_body_bytes",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Checkpoint state, when exposed."
+    },
+    {
+      "role": "workflow.definition",
+      "layer": "structure",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "off",
+      "cap": "4 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Workflow or graph definition."
+    },
+    {
+      "role": "mcp.request",
+      "layer": "content",
+      "boundary": [
+        "tool"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "MCP JSON-RPC request bytes."
+    },
+    {
+      "role": "mcp.response",
+      "layer": "content",
+      "boundary": [
+        "tool"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "MCP JSON-RPC response bytes."
+    },
+    {
+      "role": "mcp.notification",
+      "layer": "content",
+      "boundary": [
+        "tool"
+      ],
+      "provenance": [
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "1 MiB",
+      "phase": "P4",
+      "telemetry_forbidden": true,
+      "holds": "MCP notifications and server-to-client requests."
+    },
+    {
+      "role": "mcp.server",
+      "layer": "context",
+      "boundary": [
+        "tool"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "1 MiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Server info, capabilities and instructions from initialization."
+    },
+    {
+      "role": "computer.action",
+      "layer": "content",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "256 KiB",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "An executed UI action: action, target, coordinates, typed text, navigation."
+    },
+    {
+      "role": "computer.snapshot",
+      "layer": "content",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P2",
+      "telemetry_forbidden": true,
+      "holds": "Screenshot, DOM or accessibility snapshot that already existed."
+    },
+    {
+      "role": "control.checked",
+      "layer": "decisions_effects",
+      "boundary": [
+        "service"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "1 MiB",
+      "phase": "P3",
+      "telemetry_forbidden": true,
+      "holds": "What an external control checked."
+    },
+    {
+      "role": "control.reason",
+      "layer": "decisions_effects",
+      "boundary": [
+        "service"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "256 KiB",
+      "phase": "P3",
+      "telemetry_forbidden": true,
+      "holds": "Reason text for a control decision."
+    },
+    {
+      "role": "control.approval",
+      "layer": "decisions_effects",
+      "boundary": [
+        "service"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "256 KiB",
+      "phase": "P3",
+      "telemetry_forbidden": true,
+      "holds": "Scope and duration of an approval or denial."
+    },
+    {
+      "role": "selection.decision",
+      "layer": "decisions_effects",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "256 KiB",
+      "phase": "P3",
+      "telemetry_forbidden": true,
+      "holds": "Candidates, selection and reason for a routing decision."
+    },
+    {
+      "role": "context.change",
+      "layer": "decisions_effects",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P3",
+      "telemetry_forbidden": true,
+      "holds": "Dropped items and summary of a context change."
+    },
+    {
+      "role": "terminal.context",
+      "layer": "content",
+      "boundary": [
+        "terminal"
+      ],
+      "provenance": [
+        "protocol",
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "64 KiB",
+      "phase": "P4",
+      "telemetry_forbidden": true,
+      "holds": "Executable, cwd, shell flag; environment variable names only."
+    },
+    {
+      "role": "artifact.diff",
+      "layer": "content",
+      "boundary": [
+        "host"
+      ],
+      "provenance": [
+        "inferred",
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P4",
+      "telemetry_forbidden": true,
+      "holds": "A diff derived from `artifact.before`/`artifact.after`."
+    },
+    {
+      "role": "asset.bytes",
+      "layer": "content",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "max_body_bytes",
+      "phase": "P5",
+      "telemetry_forbidden": true,
+      "holds": "A file the agent saw or produced that is not otherwise a role."
+    },
+    {
+      "role": "media.frames",
+      "layer": "content",
+      "boundary": [
+        "provider_bound"
+      ],
+      "provenance": [
+        "protocol"
+      ],
+      "default_policy": "off",
+      "cap": "max_body_bytes",
+      "phase": "P5",
+      "telemetry_forbidden": true,
+      "holds": "Realtime frames (audio, video, events)."
+    },
+    {
+      "role": "media.events",
+      "layer": "content",
+      "boundary": [
+        "provider_bound"
+      ],
+      "provenance": [
+        "protocol"
+      ],
+      "default_policy": "content",
+      "cap": "4 MiB",
+      "phase": "P5",
+      "telemetry_forbidden": true,
+      "holds": "Realtime turn, interruption, gap and playback events."
+    },
+    {
+      "role": "media.transcript",
+      "layer": "content",
+      "boundary": [
+        "provider_bound"
+      ],
+      "provenance": [
+        "protocol",
+        "caller_reported"
+      ],
+      "default_policy": "content",
+      "cap": "4 MiB",
+      "phase": "P5",
+      "telemetry_forbidden": true,
+      "holds": "Transcripts returned by the provider or reported."
+    }
+  ],
+  "default_max_body_bytes": 33554432,
+  "node_mode_max_object_bytes": 66060288
+}

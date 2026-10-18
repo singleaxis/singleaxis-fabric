@@ -1,0 +1,620 @@
+{
+  "schema_version": "fabric.coverage-vocabularies/v1",
+  "registry_revision": 1,
+  "coverage_status": [
+    {
+      "value": "captured",
+      "meaning": "The value, or an exact locator to it, was recorded from the named capture point. Says nothing about whether the asserted fact is true or whether the record was delivered."
+    },
+    {
+      "value": "absent",
+      "meaning": "A complete, parsed observation of the carrying object shows the property was not there (for example a request with no `tools` key). Needs the carrier `captured`, not truncated, and parsed."
+    },
+    {
+      "value": "not_applicable",
+      "meaning": "The field has no meaning for this step kind or API (for example reasoning on an embeddings call)."
+    },
+    {
+      "value": "not_captured",
+      "meaning": "The field applies and the information existed or may have existed, but Fabric did not keep it. A reason is required."
+    },
+    {
+      "value": "redacted",
+      "meaning": "The original was withheld or transformed, by a declared privacy policy or by the provider. A reason is required; any derivative (mask, token) is described separately."
+    },
+    {
+      "value": "truncated",
+      "meaning": "Only a bounded portion was kept. A reason is required."
+    },
+    {
+      "value": "unsupported",
+      "meaning": "The capture point or parser for this runtime, API or version cannot provide the field, as declared in the capture manifest."
+    },
+    {
+      "value": "unknown",
+      "meaning": "The evidence cannot establish whether the field applies or what it holds (for example no capture manifest for the source epoch)."
+    },
+    {
+      "value": "conflict",
+      "meaning": "Two or more assertions disagree. All are kept in the field evidence; none is chosen."
+    }
+  ],
+  "reason": [
+    {
+      "value": "not_instrumented",
+      "meaning": "The capture point that observes this field was not installed or not active for this source epoch."
+    },
+    {
+      "value": "hook_disabled",
+      "meaning": "The capture point is installed but this field is switched off (default `off` policy)."
+    },
+    {
+      "value": "not_configured",
+      "meaning": "A required install-time value (for example `FABRIC_AGENT_ID`) was not set."
+    },
+    {
+      "value": "unsupported_api",
+      "meaning": "The parser does not know this API or item type."
+    },
+    {
+      "value": "unsupported_runtime",
+      "meaning": "No capture point exists for this runtime or client library."
+    },
+    {
+      "value": "unsupported_version",
+      "meaning": "The runtime or library version is outside the qualified range."
+    },
+    {
+      "value": "parse_failed",
+      "meaning": "The carrier was captured but could not be parsed."
+    },
+    {
+      "value": "body_cap",
+      "meaning": "A side exceeded `max_retain_bytes`, or could not be split under `max_body_bytes`; whole-chunk truncation applied."
+    },
+    {
+      "value": "part_cap",
+      "meaning": "An extracted part exceeded `max_body_bytes`; its digest and length are kept, its bytes are not."
+    },
+    {
+      "value": "inflight_budget",
+      "meaning": "`max_inflight_bytes` was exhausted."
+    },
+    {
+      "value": "queue_full",
+      "meaning": "The capture queue was full (existing loss reason)."
+    },
+    {
+      "value": "shutdown",
+      "meaning": "The process stopped before the record was persisted (existing loss reason)."
+    },
+    {
+      "value": "internal_error",
+      "meaning": "Fabric code failed; the application was unaffected (existing loss reason)."
+    },
+    {
+      "value": "span_dropped",
+      "meaning": "The telemetry record was refused or sampled out (existing loss reason)."
+    },
+    {
+      "value": "store_failed",
+      "meaning": "The content store did not accept the object after retries."
+    },
+    {
+      "value": "destination_rejected",
+      "meaning": "The Fabric Node refused the content record (unknown role, bad descriptor, tenant not allowed)."
+    },
+    {
+      "value": "transport_incomplete",
+      "meaning": "The transport did not read or deliver the whole body."
+    },
+    {
+      "value": "stream_closed_early",
+      "meaning": "The consumer closed the stream before its end."
+    },
+    {
+      "value": "privacy_policy",
+      "meaning": "The capture policy maps this role to `omit`, `metadata_only`, `redact` or `tokenize`."
+    },
+    {
+      "value": "missing_capture_policy",
+      "meaning": "Content capture needs a capture policy and none was configured."
+    },
+    {
+      "value": "missing_id_key",
+      "meaning": "A keyed pseudonym was required and `FABRIC_WIRE_ID_KEY` was not set."
+    },
+    {
+      "value": "provider_redacted",
+      "meaning": "The provider returned a redaction marker instead of the content."
+    },
+    {
+      "value": "provider_encrypted",
+      "meaning": "The provider returned the content only as an encrypted or opaque object."
+    },
+    {
+      "value": "provider_summarised",
+      "meaning": "The provider returned a summary instead of the original."
+    },
+    {
+      "value": "provider_not_returned",
+      "meaning": "The provider did not return the content at all."
+    },
+    {
+      "value": "provider_held",
+      "meaning": "The content lives in provider-side state (stored conversation, previous response, thread, cache) and was not in the observed bytes."
+    },
+    {
+      "value": "caller_omitted",
+      "meaning": "A reporting API was used but this argument was not supplied."
+    },
+    {
+      "value": "deferred_to_explicit",
+      "meaning": "Explicit-wins (D2): the explicit recorder owns this exchange."
+    },
+    {
+      "value": "explicit_withheld",
+      "meaning": "The explicit recorder withheld the bytes under its privacy policy; the wire line does not fall back to raw capture."
+    },
+    {
+      "value": "not_exposed",
+      "meaning": "The fact never crosses a boundary Fabric can observe (for example a pipe the caller reads directly)."
+    },
+    {
+      "value": "source_lost",
+      "meaning": "The whole source or epoch is missing from the record."
+    },
+    {
+      "value": "uninstrumented_client",
+      "meaning": "Traffic went through a client the capture point does not see (for example `requests`, `boto3`, gRPC)."
+    },
+    {
+      "value": "sampling",
+      "meaning": "A sampler dropped the record."
+    },
+    {
+      "value": "retention_expired",
+      "meaning": "The object existed and was removed by retention."
+    },
+    {
+      "value": "deleted",
+      "meaning": "The object existed and was deleted on request."
+    }
+  ],
+  "provenance": [
+    {
+      "value": "observed",
+      "meaning": "Recorded by a capture point Fabric installs itself, with no caller cooperation (W, H), including literal values parsed from those bytes (P)."
+    },
+    {
+      "value": "reported",
+      "meaning": "Supplied by the application through an API it must call (R), including literal values parsed from bytes it handed over (P)."
+    },
+    {
+      "value": "inferred",
+      "meaning": "Derived offline by `fabric.reconstruct` (I). Always carries `method` and `confidence`."
+    }
+  ],
+  "capture_point_kind": [
+    {
+      "value": "W",
+      "meaning": "Copies bytes already passing a qualified transport boundary."
+    },
+    {
+      "value": "H",
+      "meaning": "Observes an operation the application already performs (driver, protocol, process API) and values it already returns."
+    },
+    {
+      "value": "R",
+      "meaning": "Records facts or bytes the application passes to a Fabric API."
+    },
+    {
+      "value": "P",
+      "meaning": "A literal value parsed offline from captured bytes. Inherits the provenance of the bytes (observed for W, reported for R); the provider is the assertion origin."
+    },
+    {
+      "value": "I",
+      "meaning": "A deterministic offline derivation with input locators, method and parser version."
+    },
+    {
+      "value": "S",
+      "meaning": "Host sensor or independent feed record; linked as `corroborated_by`, never upgrades the provenance of another record."
+    }
+  ],
+  "assertion_origin": [
+    {
+      "value": "application",
+      "meaning": "The monitored application or its framework."
+    },
+    {
+      "value": "provider",
+      "meaning": "A model provider, in the bytes it returned."
+    },
+    {
+      "value": "service",
+      "meaning": "An external service (database, API, MCP server, queue)."
+    },
+    {
+      "value": "human",
+      "meaning": "A person, through a system that recorded the action."
+    },
+    {
+      "value": "fabric",
+      "meaning": "Fabric describing itself (manifest, loss, heartbeat)."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not established."
+    }
+  ],
+  "link_type": [
+    {
+      "value": "parent",
+      "meaning": "Nesting: the target step contains this step. Exactly one per step at most; distinct from causal links."
+    },
+    {
+      "value": "caused_by",
+      "meaning": "The target event or step triggered this one."
+    },
+    {
+      "value": "depends_on",
+      "meaning": "This step used an output of the target (DAG edge, join)."
+    },
+    {
+      "value": "result_of",
+      "meaning": "This content or step is the result of the target request."
+    },
+    {
+      "value": "emits",
+      "meaning": "A model call emitted the target tool call."
+    },
+    {
+      "value": "consumes",
+      "meaning": "A model call consumed the target tool result or retrieval result."
+    },
+    {
+      "value": "continues",
+      "meaning": "Same conversation thread continues from the target (stitching)."
+    },
+    {
+      "value": "retries",
+      "meaning": "A later attempt of the same logical operation."
+    },
+    {
+      "value": "fallback_of",
+      "meaning": "An alternate attempt after the target failed or was rejected."
+    },
+    {
+      "value": "hedges",
+      "meaning": "A concurrent duplicate attempt of the target."
+    },
+    {
+      "value": "delegates",
+      "meaning": "Hands work to the target agent, run or service."
+    },
+    {
+      "value": "resumes",
+      "meaning": "Continues a suspended run, segment or checkpoint."
+    },
+    {
+      "value": "gates",
+      "meaning": "A control observation applied to the target step or action."
+    },
+    {
+      "value": "resolves",
+      "meaning": "A control resolution answers the target control request."
+    },
+    {
+      "value": "compensates",
+      "meaning": "Reverses or offsets the target effect."
+    },
+    {
+      "value": "delivers",
+      "meaning": "Delivers the target output to a recipient or channel."
+    },
+    {
+      "value": "derived_from",
+      "meaning": "Content derived from the target object (diff, mask, transcript)."
+    },
+    {
+      "value": "part_of",
+      "meaning": "An extracted content part of the target object."
+    },
+    {
+      "value": "corroborated_by",
+      "meaning": "An independent sensor or feed record about the same fact."
+    },
+    {
+      "value": "same_as",
+      "meaning": "An explicit alias: both ids name the same thing."
+    }
+  ],
+  "link_state": [
+    {
+      "value": "resolved",
+      "meaning": "The target is in the record."
+    },
+    {
+      "value": "unresolved",
+      "meaning": "The target id is known but not in the record."
+    },
+    {
+      "value": "ambiguous",
+      "meaning": "More than one candidate target; all are listed."
+    },
+    {
+      "value": "conflict",
+      "meaning": "Assertions about this link disagree."
+    }
+  ],
+  "step_kind": [
+    {
+      "value": "run",
+      "meaning": "Root of a run or of one `fabric.wire.run()` scope."
+    },
+    {
+      "value": "model_call",
+      "meaning": "One model API exchange (chat, responses, messages, completions)."
+    },
+    {
+      "value": "embedding",
+      "meaning": "One embeddings exchange."
+    },
+    {
+      "value": "input",
+      "meaning": "An input that arrives after the trigger (human reply, webhook, queue message, resume)."
+    },
+    {
+      "value": "message",
+      "meaning": "An application-level message between actors that is not itself a model exchange."
+    },
+    {
+      "value": "tool_call",
+      "meaning": "Execution of a tool by the agent or a sandbox."
+    },
+    {
+      "value": "provider_tool_call",
+      "meaning": "A hosted tool executed by the provider inside a model response."
+    },
+    {
+      "value": "mcp_call",
+      "meaning": "One MCP JSON-RPC request, response or notification."
+    },
+    {
+      "value": "retrieval",
+      "meaning": "A retrieval or search over an index."
+    },
+    {
+      "value": "memory",
+      "meaning": "A memory read, write, delete or search."
+    },
+    {
+      "value": "terminal",
+      "meaning": "A local process execution."
+    },
+    {
+      "value": "remote_exec",
+      "meaning": "A remote command (SSH or equivalent)."
+    },
+    {
+      "value": "database",
+      "meaning": "A database statement and its results."
+    },
+    {
+      "value": "network",
+      "meaning": "A non-model HTTP or RPC exchange."
+    },
+    {
+      "value": "file",
+      "meaning": "A file operation."
+    },
+    {
+      "value": "ui_action",
+      "meaning": "A browser or computer-use action."
+    },
+    {
+      "value": "media_stream",
+      "meaning": "A realtime audio, video or event stream segment."
+    },
+    {
+      "value": "delegation",
+      "meaning": "A hand-off to another agent, run or service."
+    },
+    {
+      "value": "workflow_node",
+      "meaning": "A node of a workflow, graph or plan."
+    },
+    {
+      "value": "checkpoint",
+      "meaning": "A checkpoint save, load or resume."
+    },
+    {
+      "value": "control",
+      "meaning": "An observation of an external guardrail, policy check, permission request or approval."
+    },
+    {
+      "value": "context_change",
+      "meaning": "A change to the model context (truncate, compact, reset, switch)."
+    },
+    {
+      "value": "selection",
+      "meaning": "An exposed routing or selection decision."
+    },
+    {
+      "value": "side_effect",
+      "meaning": "An external mutation (write, send, charge, publish)."
+    },
+    {
+      "value": "outcome",
+      "meaning": "The application's output and its delivery."
+    },
+    {
+      "value": "hook",
+      "meaning": "An existing `record_hook` record."
+    },
+    {
+      "value": "skill",
+      "meaning": "An existing `record_skill` record."
+    },
+    {
+      "value": "interaction",
+      "meaning": "An existing generic `record_interaction` record."
+    },
+    {
+      "value": "extension",
+      "meaning": "A registered `x-<namespace>.<name>` kind; older readers keep it opaque."
+    }
+  ],
+  "actor_type": [
+    {
+      "value": "user",
+      "meaning": "The end user the agent serves."
+    },
+    {
+      "value": "agent",
+      "meaning": "The agent itself (default for Fabric-observed model and tool steps)."
+    },
+    {
+      "value": "sub_agent",
+      "meaning": "An agent invoked by another agent."
+    },
+    {
+      "value": "human_approver",
+      "meaning": "A person who decided a control request."
+    },
+    {
+      "value": "human_operator",
+      "meaning": "A person who took over or intervened."
+    },
+    {
+      "value": "system",
+      "meaning": "The application, platform or runtime."
+    },
+    {
+      "value": "scheduler",
+      "meaning": "A cron, timer or workflow scheduler."
+    },
+    {
+      "value": "external_service",
+      "meaning": "An external service, including MCP servers."
+    },
+    {
+      "value": "provider",
+      "meaning": "A model provider (assertion origin of provider-reported facts)."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not established."
+    }
+  ],
+  "result_status": [
+    {
+      "value": "ok",
+      "meaning": "The operation finished and reported success."
+    },
+    {
+      "value": "error",
+      "meaning": "The operation finished with an error."
+    },
+    {
+      "value": "cancelled",
+      "meaning": "The operation was cancelled."
+    },
+    {
+      "value": "timeout",
+      "meaning": "A deadline expired."
+    },
+    {
+      "value": "unknown",
+      "meaning": "No outcome was observed or reported. Never inferred as `ok`."
+    }
+  ],
+  "lifecycle_state": [
+    {
+      "value": "queued",
+      "meaning": "Accepted, not started."
+    },
+    {
+      "value": "running",
+      "meaning": "Started, no end observed yet."
+    },
+    {
+      "value": "suspended",
+      "meaning": "Waiting on an external input or resume."
+    },
+    {
+      "value": "deferred",
+      "meaning": "Handed to a later completion (legacy explicit-line `deferred`)."
+    },
+    {
+      "value": "completed",
+      "meaning": "Ended (see `result_status`)."
+    },
+    {
+      "value": "cancelled",
+      "meaning": "Ended by cancellation."
+    },
+    {
+      "value": "unknown",
+      "meaning": "No lifecycle evidence."
+    }
+  ],
+  "layer_verdict": [
+    {
+      "value": "captured_for_declared_fields",
+      "meaning": "Every required applicable field of the layer is `captured`, `absent` or `not_applicable`; the underlying bytes have an intact integrity verdict; a capture manifest covers the source epoch."
+    },
+    {
+      "value": "captured_with_policy_withholding",
+      "meaning": "As above, except that some required fields are `redacted` or `not_captured` with reason `privacy_policy` only."
+    },
+    {
+      "value": "partial",
+      "meaning": "At least one required applicable field is `not_captured` (any other reason), `truncated` or `conflict`, or the run integrity verdict is `partial`."
+    },
+    {
+      "value": "unverified",
+      "meaning": "A required field is `unknown`, the manifest is missing, or the run integrity verdict is `unverified`."
+    },
+    {
+      "value": "unsupported",
+      "meaning": "The manifest declares the capture points for this layer unsupported on this source."
+    }
+  ],
+  "privacy_class": [
+    {
+      "value": "ID",
+      "meaning": "Identifier. Generated random ids go as is; externally meaningful ids go only as keyed pseudonyms (section 2.9). Clear values only in content."
+    },
+    {
+      "value": "META",
+      "meaning": "Bounded enum, count, time, size or version."
+    },
+    {
+      "value": "LABEL",
+      "meaning": "Operator- or provider-chosen name (model, tool, server, step label). Pattern-validated; may still carry sensitive text; exposure rules apply."
+    },
+    {
+      "value": "DIGEST",
+      "meaning": "SHA-256 of content. Emitted only where the capture policy permits digests; a digest of a low-entropy value is not anonymisation."
+    },
+    {
+      "value": "CONTENT",
+      "meaning": "Customer content. Only in content objects; never on telemetry, logs or diagnostics."
+    }
+  ],
+  "policy": [
+    {
+      "value": "metadata",
+      "meaning": "Captured whenever its capture point is active."
+    },
+    {
+      "value": "content",
+      "meaning": "Captured only when content capture is enabled and the capture policy maps the role to a retaining mode."
+    },
+    {
+      "value": "off",
+      "meaning": "Captured only when explicitly enabled for this field or role, even with content capture on."
+    }
+  ]
+}

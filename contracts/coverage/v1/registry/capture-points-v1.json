@@ -1,0 +1,215 @@
+{
+  "schema_version": "fabric.capture-point-registry/v1",
+  "registry_revision": 1,
+  "capture_points": [
+    {
+      "id": "wire.py.httpx",
+      "kind": "W",
+      "runtime": "Python 3.11+",
+      "process_global": "yes (patches httpx/httpx2 transports)",
+      "activation": "opt-in: `install()` or `FABRIC_WIRE_AUTOLOAD=1`",
+      "state": "built (047/048)",
+      "observes": "matched POST model exchanges: request/response body bytes, timing, response state, HTTP status, error class, scope",
+      "cannot_observe": "headers; GET, files, batch, images, audio, realtime endpoints; unmatched hosts or paths; `requests`, `urllib3`/`boto3`, `aiohttp`, gRPC; TLS; provider-side receipt",
+      "passivity_gate": "`sdk/python/tests/test_wire_passivity.py` (047 §4.10)"
+    },
+    {
+      "id": "wire.ts.undici",
+      "kind": "W",
+      "runtime": "Node.js 24+, qualified undici versions only",
+      "process_global": "yes (diagnostics_channel subscription)",
+      "activation": "opt-in",
+      "state": "TS track; manifest reports `unsupported` until built",
+      "observes": "global `fetch` model exchanges: request/response body chunks",
+      "cannot_observe": "axios, `node:http`, custom fetch, Node.js below 24, unqualified undici versions",
+      "passivity_gate": "TS-1 (section 8.2)"
+    },
+    {
+      "id": "explicit.call_recorder",
+      "kind": "R",
+      "runtime": "Python",
+      "process_global": "no",
+      "activation": "explicit API",
+      "state": "built (043)",
+      "observes": "model/tool/database/agent call bytes and lifecycle as handed to `CallRecorder`",
+      "cannot_observe": "anything not passed through the recorder",
+      "passivity_gate": "043 acceptance"
+    },
+    {
+      "id": "explicit.byte_boundary",
+      "kind": "R",
+      "runtime": "Python",
+      "process_global": "no",
+      "activation": "explicit API",
+      "state": "built (043/044)",
+      "observes": "bytes at a caller-declared boundary",
+      "cannot_observe": "anything outside the declared boundary",
+      "passivity_gate": "043/044 acceptance"
+    },
+    {
+      "id": "explicit.final_http",
+      "kind": "R",
+      "runtime": "Python",
+      "process_global": "no",
+      "activation": "explicit API",
+      "state": "built (043)",
+      "observes": "final HTTP request/response bodies routed through `FinalHTTPAdapter`",
+      "cannot_observe": "hosts not routed through it",
+      "passivity_gate": "043 acceptance"
+    },
+    {
+      "id": "sdk.records",
+      "kind": "R",
+      "runtime": "Python, TypeScript",
+      "process_global": "no",
+      "activation": "explicit API",
+      "state": "built (metadata); content roles P0-A/P2",
+      "observes": "`fabric.decision` records: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill; new P2/P3 reporting APIs",
+      "cannot_observe": "anything the application does not report",
+      "passivity_gate": "P2/P3 recording-failure tests"
+    },
+    {
+      "id": "run.scope",
+      "kind": "R",
+      "runtime": "Python",
+      "process_global": "no",
+      "activation": "`fabric.wire.run()`",
+      "state": "built (048 §6); P1 adds arguments",
+      "observes": "run id, scope, block exit status, session/parent/resume links passed as arguments",
+      "cannot_observe": "work started outside a block (047 run-id fallback applies)",
+      "passivity_gate": "048 acceptance"
+    },
+    {
+      "id": "mcp.wrapper",
+      "kind": "R",
+      "runtime": "Python",
+      "process_global": "no",
+      "activation": "explicit wrapper",
+      "state": "built (hash-only); content P2",
+      "observes": "`tools/list` inventory, `tools/call` arguments and results through the wrapper",
+      "cannot_observe": "other MCP methods, notifications, server-to-client requests, unwrapped sessions",
+      "passivity_gate": "P2"
+    },
+    {
+      "id": "mcp.client",
+      "kind": "H",
+      "runtime": "Python (`mcp` client)",
+      "process_global": "yes",
+      "activation": "opt-in",
+      "state": "P4",
+      "observes": "every JSON-RPC message a wrapped client session sends and receives, stdio and Streamable HTTP",
+      "cannot_observe": "server internals, other client libraries",
+      "passivity_gate": "P4-MCP"
+    },
+    {
+      "id": "exec.subprocess",
+      "kind": "H",
+      "runtime": "Python",
+      "process_global": "yes",
+      "activation": "opt-in",
+      "state": "P4",
+      "observes": "argv, cwd, pid, exit code/signal; stdout/stderr only as returned by `communicate()` / `run(capture_output=True)`",
+      "cannot_observe": "bytes the caller reads directly from pipes; descendants; PTYs; environment values",
+      "passivity_gate": "P4-EXEC"
+    },
+    {
+      "id": "exec.audit",
+      "kind": "H",
+      "runtime": "Python 3.8+ (PEP 578)",
+      "process_global": "yes, irremovable",
+      "activation": "opt-in, installed once",
+      "state": "P4",
+      "observes": "exec-family audit events (`subprocess.Popen`, `os.system`, `os.exec*`, `os.posix_spawn`): executable, argv, cwd",
+      "cannot_observe": "output, exit, environment values",
+      "passivity_gate": "P4-AUDIT"
+    },
+    {
+      "id": "db.dbapi",
+      "kind": "H",
+      "runtime": "Python, named drivers",
+      "process_global": "yes",
+      "activation": "opt-in per driver",
+      "state": "P4",
+      "observes": "statement, parameters, rows the caller fetched, rows affected, commit/rollback calls",
+      "cannot_observe": "rows not fetched, server-side effects, other drivers, console access",
+      "passivity_gate": "P4-DB"
+    },
+    {
+      "id": "http.nonmodel",
+      "kind": "W",
+      "runtime": "Python httpx/httpx2",
+      "process_global": "yes (same patch as wire.py.httpx)",
+      "activation": "opt-in per host allowlist",
+      "state": "P4",
+      "observes": "method, status, host; path, query and bodies only for allowlisted hosts with a retaining role policy",
+      "cannot_observe": "headers, non-httpx clients, hosts not allowlisted",
+      "passivity_gate": "P4-HTTP"
+    },
+    {
+      "id": "file.audit",
+      "kind": "H",
+      "runtime": "Python 3.8+ (PEP 578)",
+      "process_global": "yes, irremovable",
+      "activation": "opt-in",
+      "state": "P4",
+      "observes": "`open`, `os.rename`, `os.remove` audit events: path, mode, operation",
+      "cannot_observe": "bytes read or written (reported only), memory-mapped I/O, other processes",
+      "passivity_gate": "P4-FILE"
+    },
+    {
+      "id": "ui.automation",
+      "kind": "H",
+      "runtime": "Python (Playwright, Selenium)",
+      "process_global": "yes",
+      "activation": "opt-in",
+      "state": "P5",
+      "observes": "automation actions and their results, screenshots the automation already produced",
+      "cannot_observe": "human browser tabs, pages not driven by the library",
+      "passivity_gate": "P5-UI"
+    },
+    {
+      "id": "rt.websocket",
+      "kind": "W",
+      "runtime": "Python (`websockets`, `aiohttp` client WS)",
+      "process_global": "yes",
+      "activation": "opt-in",
+      "state": "P5",
+      "observes": "frames in both directions with timestamps on qualified realtime endpoints",
+      "cannot_observe": "WebRTC media, other clients",
+      "passivity_gate": "P5-RT"
+    },
+    {
+      "id": "reconstruct.parse",
+      "kind": "P/I",
+      "runtime": "offline verifier",
+      "process_global": "n/a",
+      "activation": "`python -m fabric.reconstruct`",
+      "state": "built (stitching); projection P1",
+      "observes": "literal fields from stored bytes; stitching; inferred links",
+      "cannot_observe": "anything not in stored bytes",
+      "passivity_gate": "verifier tests"
+    },
+    {
+      "id": "host.ebpf / host.auditd",
+      "kind": "S",
+      "runtime": "Linux nodes",
+      "process_global": "n/a (separate component)",
+      "activation": "customer-deployed",
+      "state": "built (030/031)",
+      "observes": "exec and connect records",
+      "cannot_observe": "in-process content; used only as `corroborated_by`",
+      "passivity_gate": "030/031"
+    },
+    {
+      "id": "feed.independent",
+      "kind": "S",
+      "runtime": "customer services",
+      "process_global": "n/a",
+      "activation": "customer-deployed",
+      "state": "built (045)",
+      "observes": "service-side records and receipts",
+      "cannot_observe": "used only as `corroborated_by`",
+      "passivity_gate": "045"
+    }
+  ]
+}

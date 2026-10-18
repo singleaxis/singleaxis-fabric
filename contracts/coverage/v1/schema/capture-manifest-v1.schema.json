@@ -1,0 +1,366 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/coverage/v1/capture-manifest-v1.schema.json",
+  "title": "fabric.capture-manifest/v1 (draft, spec 049 rev 2)",
+  "description": "JSON form of the per-source-epoch capture manifest record (a fabric.capture_manifest span with closed attributes). Metadata only: no content, hostnames, keys or paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "event_id",
+    "source_id",
+    "source_epoch",
+    "emitted_at",
+    "sdk",
+    "runtime",
+    "profile",
+    "coverage_profile",
+    "identity_mode",
+    "pseudonym_mode",
+    "content_capture",
+    "role_table_version",
+    "limits",
+    "sequence_unit",
+    "clock",
+    "capture_points",
+    "uncaptured_classes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "fabric.capture-manifest/v1"
+    },
+    "manifest_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "source_id": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "source_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sdk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "version"
+      ],
+      "properties": {
+        "language": {
+          "enum": [
+            "python",
+            "typescript"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z.+-]{1,64}$"
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "cpython",
+            "pypy",
+            "nodejs",
+            "other"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9A-Za-z.+-]{1,64}$"
+        }
+      }
+    },
+    "profile": {
+      "enum": [
+        "local",
+        "production"
+      ]
+    },
+    "coverage_profile": {
+      "type": "string",
+      "pattern": "^fabric\\.profile\\.[a-z0-9-]+/v[0-9]+$"
+    },
+    "identity_mode": {
+      "enum": [
+        "pseudonymous",
+        "clear"
+      ]
+    },
+    "pseudonym_mode": {
+      "enum": [
+        "keyed",
+        "unkeyed"
+      ]
+    },
+    "key_id": {
+      "type": "string",
+      "pattern": "^kid-[0-9a-f]{8}$"
+    },
+    "capture_policy": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy_id",
+            "policy_version",
+            "policy_digest"
+          ],
+          "properties": {
+            "policy_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "policy_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "policy_digest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "encrypted_store_required": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "content_capture": {
+      "enum": [
+        "enabled",
+        "disabled",
+        "metadata_only"
+      ]
+    },
+    "content_capture_reason": {
+      "enum": [
+        "missing_capture_policy",
+        "missing_id_key",
+        "not_configured",
+        "hook_disabled"
+      ]
+    },
+    "role_table_version": {
+      "type": "string",
+      "pattern": "^fabric\\.content-role-table/v[0-9]+@[0-9]+$"
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_body_bytes",
+        "max_retain_bytes",
+        "max_inflight_bytes",
+        "queue_max_items",
+        "part_min_bytes"
+      ],
+      "properties": {
+        "max_body_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "max_retain_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "max_inflight_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "queue_max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "part_min_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "sequence_unit": {
+      "enum": [
+        "exchange",
+        "record"
+      ]
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "domain"
+      ],
+      "properties": {
+        "domain": {
+          "enum": [
+            "wall_utc",
+            "monotonic_process"
+          ]
+        },
+        "uncertainty_ns": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "endpoint_set_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "explicit_wins": {
+      "type": "boolean"
+    },
+    "capture_points": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "kind",
+          "state",
+          "process_global",
+          "opt_in",
+          "fields"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z.+-]{1,32}$"
+          },
+          "kind": {
+            "enum": [
+              "W",
+              "H",
+              "R",
+              "P",
+              "I",
+              "S"
+            ]
+          },
+          "state": {
+            "enum": [
+              "active",
+              "installed_inactive",
+              "disabled",
+              "unsupported",
+              "failed"
+            ]
+          },
+          "process_global": {
+            "type": "boolean"
+          },
+          "opt_in": {
+            "type": "boolean"
+          },
+          "fields": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "string",
+              "pattern": "^[XCSND][0-9]{2}$"
+            }
+          },
+          "reason": {
+            "enum": [
+              "not_instrumented",
+              "hook_disabled",
+              "not_configured",
+              "unsupported_api",
+              "unsupported_runtime",
+              "unsupported_version",
+              "parse_failed",
+              "body_cap",
+              "part_cap",
+              "inflight_budget",
+              "queue_full",
+              "shutdown",
+              "internal_error",
+              "span_dropped",
+              "store_failed",
+              "destination_rejected",
+              "transport_incomplete",
+              "stream_closed_early",
+              "privacy_policy",
+              "missing_capture_policy",
+              "missing_id_key",
+              "provider_redacted",
+              "provider_encrypted",
+              "provider_summarised",
+              "provider_not_returned",
+              "provider_held",
+              "caller_omitted",
+              "deferred_to_explicit",
+              "explicit_withheld",
+              "not_exposed",
+              "source_lost",
+              "uninstrumented_client",
+              "sampling",
+              "retention_expired",
+              "deleted"
+            ]
+          }
+        }
+      }
+    },
+    "uncaptured_classes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "requests",
+          "urllib3",
+          "boto3",
+          "aiohttp",
+          "grpc",
+          "websocket",
+          "webrtc",
+          "node_http",
+          "axios",
+          "custom_fetch",
+          "node_below_24",
+          "stdio_mcp",
+          "direct_pipe_reads",
+          "provider_batch_files",
+          "non_post_endpoints",
+          "unmatched_endpoints",
+          "other_runtime"
+        ]
+      }
+    }
+  }
+}

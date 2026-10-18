@@ -1,0 +1,13 @@
+{
+  "contract": "singleaxis.fabric.coverage",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "registry/capture-points-v1.json", "sha256": "92f87c713865d3b08d1022cff445003e6678bf174e3aa054e0e5ea740fd6c43e", "expectation": "registry", "expected_error": null},
+    {"path": "registry/content-roles-v1.json", "sha256": "df9cce63317a3b79b6ec759d4892bf67619ef2a8cf7cf26e14e12a817f53a8fa", "expectation": "registry", "expected_error": null},
+    {"path": "registry/field-registry-v1.json", "sha256": "46320ebf02c92993336ea78c7a8ac45d924e99776320be0eeec74dd893ab52a5", "expectation": "registry", "expected_error": null},
+    {"path": "registry/vocabularies-v1.json", "sha256": "8824dfb94e7e51bb8388b91b1751fb24091b454bfe86541ab9268cf0166ada8c", "expectation": "registry", "expected_error": null},
+    {"path": "schema/capture-manifest-v1.schema.json", "sha256": "f6d9c3de7a0768cdc7ef964791cb9371cd8bd608a5602bad42ba988b5b46eb00", "expectation": "schema", "expected_error": null},
+    {"path": "schema/step-projection-v1.schema.json", "sha256": "d1918f1b169255e6a21491f31e6bf6db356f3d0f84af3bc9897cdeabccad6cf8", "expectation": "schema", "expected_error": null}
+  ]
+}
