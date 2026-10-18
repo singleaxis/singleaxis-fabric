@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 3,
+  "registry_revision": 4,
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -89,7 +89,7 @@
       "key": "fabric.build.digest",
       "change": "new",
       "field": "C12",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P2"
     },
     {
@@ -107,6 +107,13 @@
       "phase": "P1"
     },
     {
+      "key": "fabric.capture.manifest_digest",
+      "change": "new",
+      "field": "X34",
+      "validator": "DIGEST: `sha256:` + 64 hex",
+      "phase": "P1"
+    },
+    {
       "key": "fabric.capture.manifest_id",
       "change": "new",
       "field": "X34",
@@ -119,13 +126,6 @@
       "change": "new",
       "field": "X39",
       "validator": "META: integer range",
-      "phase": "P1"
-    },
-    {
-      "key": "fabric.capture.manifest_sha256",
-      "change": "new",
-      "field": "X34",
-      "validator": "DIGEST: bare 64 hex",
       "phase": "P1"
     },
     {
@@ -146,7 +146,7 @@
       "key": "fabric.config.digest",
       "change": "new",
       "field": "C13",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P2"
     },
     {
@@ -245,7 +245,7 @@
       "key": "fabric.control.policy_digest",
       "change": "new",
       "field": "D08",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P3"
     },
     {
@@ -371,7 +371,7 @@
       "key": "fabric.execution.image_digest",
       "change": "new",
       "field": "C41",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P2"
     },
     {
@@ -394,6 +394,13 @@
       "field": "C15",
       "validator": "LABEL: pattern, exposure rule",
       "phase": "P2"
+    },
+    {
+      "key": "fabric.heartbeat.ledger_digest",
+      "change": "new",
+      "field": "X45",
+      "validator": "DIGEST: `sha256:` + 64 hex (only on `final`)",
+      "phase": "P1"
     },
     {
       "key": "fabric.input.kind",
@@ -449,7 +456,7 @@
       "key": "fabric.manifest.capture_policy.policy_digest",
       "change": "new",
       "field": "X31",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P0-A",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_policy/policy_digest"
@@ -536,10 +543,10 @@
       "manifest_property": "emitted_at"
     },
     {
-      "key": "fabric.manifest.endpoint_set_sha256",
+      "key": "fabric.manifest.endpoint_set_digest",
       "change": "new",
       "field": "C35",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "endpoint_set_sha256"
@@ -650,10 +657,18 @@
       "manifest_property": "manifest_seq"
     },
     {
-      "key": "fabric.manifest.previous_manifest_sha256",
+      "key": "fabric.manifest.max_clock_uncertainty_ns",
+      "change": "new",
+      "field": "X25",
+      "validator": "META: integer range",
+      "phase": "P1",
+      "manifest_property": "clock/max_uncertainty_ns"
+    },
+    {
+      "key": "fabric.manifest.previous_manifest_digest",
       "change": "new",
       "field": "X39",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "previous_manifest_sha256"
@@ -737,6 +752,14 @@
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "uncaptured_classes"
+    },
+    {
+      "key": "fabric.manifest.unsealed_prior_epochs",
+      "change": "new",
+      "field": "X45",
+      "validator": "META: array (max 64) of decimal epoch strings",
+      "phase": "P1",
+      "manifest_property": "unsealed_prior_epochs"
     },
     {
       "key": "fabric.mcp.direction",
@@ -854,7 +877,7 @@
       "key": "fabric.run.agent_policy_digest",
       "change": "new",
       "field": "C33",
-      "validator": "DIGEST: bare 64 hex",
+      "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P2"
     },
     {
@@ -924,7 +947,7 @@
       "key": "fabric.run.predecessors",
       "change": "new",
       "field": "X41",
-      "validator": "ID: array (max 64) of `none` or `<s-label>:<epoch>:<last_sequence>:<64 hex>`",
+      "validator": "ID: array (max 64) of `none` or `<seg-id>/<opaque source id>/<epoch>/<last_sequence>/sha256:<64 hex>`; source id is the opaque id as emitted (pseudonymous or clear label)",
       "phase": "P1"
     },
     {
@@ -946,6 +969,13 @@
       "change": "new",
       "field": "S34",
       "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.run.segment_id",
+      "change": "new",
+      "field": "X43",
+      "validator": "ID: `seg-` + 32 hex",
       "phase": "P1"
     },
     {
@@ -975,6 +1005,27 @@
       "field": "C02",
       "validator": "ID: `trg-` + 32 hex",
       "phase": "P2"
+    },
+    {
+      "key": "fabric.segment.last_sequence",
+      "change": "new",
+      "field": "X44",
+      "validator": "META: integer ≥ -1",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.segment.ledger_digest",
+      "change": "new",
+      "field": "X44",
+      "validator": "DIGEST: `sha256:` + 64 hex",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.segment.manifest_digest",
+      "change": "new",
+      "field": "X44",
+      "validator": "DIGEST: `sha256:` + 64 hex",
+      "phase": "P1"
     },
     {
       "key": "fabric.selection.kind",
@@ -1148,5 +1199,6 @@
       "manifest_property": "source_id"
     }
   ],
-  "manifest_span": "fabric.capture_manifest"
+  "manifest_span": "fabric.capture_manifest",
+  "digest_form": "sha256:<64 lowercase hex> on every new key; keys named `*_digest`. Built keys ending in `_sha256`/`_hash` keep bare hex (Node hash-key rule)."
 }

@@ -127,3 +127,19 @@ def test_manifest_property_without_telemetry_key_is_rejected(tmp_path: Path) -> 
 
     _edit_registry(root, "keys", change)
     _assert_code(root, "coverage.keys.manifest")
+
+
+def test_step_level_open_verdict_is_rejected_by_the_projection_schema() -> None:
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads((REPO_ROOT / FAMILY / "schema/step-projection-v1.schema.json").read_text())
+    verdict = {"verdict": "open"}
+    layers = {k: verdict for k in ("context", "structure", "content", "decisions_effects")}
+    validator = Draft202012Validator(schema)
+    step_layers = {"$ref": "#/$defs/step_layer_verdicts"}
+    run_layers = {"$ref": "#/$defs/run_layer_verdicts"}
+    sub_step = {"$defs": schema["$defs"], **step_layers}
+    sub_run = {"$defs": schema["$defs"], **run_layers}
+    assert list(Draft202012Validator(sub_step).iter_errors(layers))
+    assert not list(Draft202012Validator(sub_run).iter_errors(layers))
+    assert validator is not None

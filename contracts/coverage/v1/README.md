@@ -1,6 +1,6 @@
 # Coverage contract v1 (draft)
 
-Specified by [spec 049 revision 4](../../../specs/049-four-layer-capture-coverage.md)
+Specified by [spec 049 revision 5](../../../specs/049-four-layer-capture-coverage.md)
 (four-layer capture contract). **Draft, pending owner confirmation. No
 runtime emits these documents yet**, and this family is not part of the
 published contracts archive (`scripts/release/release-policy.json`

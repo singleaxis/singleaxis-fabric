@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-point-registry/v1",
-  "registry_revision": 4,
+  "registry_revision": 5,
   "capture_points": [
     {
       "id": "fabric.self",
@@ -34,6 +34,8 @@
         "X36",
         "X38",
         "X39",
+        "X44",
+        "X45",
         "C16",
         "S01",
         "S03",
@@ -304,7 +306,7 @@
       "process_global": "no",
       "activation": "`fabric.wire.run()`",
       "state": "built (048 §6); P1 adds arguments",
-      "observes": "run id, scope, block exit status, session/parent/resume links, segment predecessors, resumable/terminal flags",
+      "observes": "run id, scope, block exit status, session/parent/resume links, segment ids, predecessors and seals, resumable/terminal flags",
       "cannot_observe": "work started outside a block (047 run-id fallback applies)",
       "passivity_gate": "048 acceptance",
       "supplies": [
@@ -318,6 +320,8 @@
         "X21",
         "X41",
         "X42",
+        "X43",
+        "X44",
         "S34"
       ],
       "input": "wire, records"

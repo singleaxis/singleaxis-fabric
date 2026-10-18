@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/schemas/fabric/coverage/v1/step-projection-v1.schema.json",
-  "title": "fabric.step-projection/v1 (draft, spec 049 rev 4)",
+  "title": "fabric.step-projection/v1 (draft, spec 049 rev 5)",
   "description": "Customer-side verifier output: per-step four-layer field wrappers with coverage status, provenance and locators. Never produced by the Node or the application process. CONTENT-class values are locators unless content_inline is true.",
   "type": "object",
   "additionalProperties": false,
@@ -384,7 +384,12 @@
             "not_exposed",
             "source_lost",
             "segment_missing",
+            "segment_conflict",
             "run_unterminated",
+            "post_terminal_activity",
+            "clock_uncertain",
+            "unsealed_epoch",
+            "seal_mismatch",
             "uninstrumented_client",
             "sampling",
             "retention_expired",
@@ -635,30 +640,6 @@
         }
       }
     },
-    "layer_verdicts": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "context",
-        "structure",
-        "content",
-        "decisions_effects"
-      ],
-      "properties": {
-        "context": {
-          "$ref": "#/$defs/verdict"
-        },
-        "structure": {
-          "$ref": "#/$defs/verdict"
-        },
-        "content": {
-          "$ref": "#/$defs/verdict"
-        },
-        "decisions_effects": {
-          "$ref": "#/$defs/verdict"
-        }
-      }
-    },
     "run": {
       "type": "object",
       "additionalProperties": false,
@@ -691,7 +672,7 @@
           ]
         },
         "layer_verdicts": {
-          "$ref": "#/$defs/layer_verdicts"
+          "$ref": "#/$defs/run_layer_verdicts"
         },
         "kinds_none_observed": {
           "type": "array",
@@ -737,7 +718,8 @@
             "terminated",
             "open",
             "unterminated",
-            "not_resumable_unclosed"
+            "not_resumable_unclosed",
+            "deadline_uncertain"
           ]
         },
         "resumable": {
@@ -746,10 +728,6 @@
         "open_run_deadline_s": {
           "type": "integer",
           "minimum": 60
-        },
-        "last_activity_at": {
-          "type": "string",
-          "format": "date-time"
         },
         "run_aliases": {
           "type": "array",
@@ -766,49 +744,61 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "source_id",
-              "source_epoch",
+              "segment_id",
               "state",
               "predecessors"
             ],
             "properties": {
+              "segment_id": {
+                "type": "string",
+                "pattern": "^seg-[0-9a-f]{32}$"
+              },
               "source_id": {
                 "type": "string",
                 "maxLength": 160
               },
               "source_epoch": {
                 "type": "integer",
-                "minimum": 0
-              },
-              "first_sequence": {
-                "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9223372036854775807
               },
               "last_sequence": {
                 "type": "integer",
                 "minimum": -1
               },
-              "final_manifest_sha256": {
+              "manifest_digest": {
                 "type": "string",
                 "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "ledger_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "terminal": {
+                "type": "boolean"
               },
               "predecessors": {
                 "type": "array",
                 "maxItems": 64,
                 "items": {
                   "type": "string",
-                  "maxLength": 256
+                  "maxLength": 320
                 }
               },
               "state": {
                 "enum": [
-                  "present",
+                  "sealed",
+                  "unsealed",
                   "missing",
                   "conflict"
                 ]
               }
             }
           }
+        },
+        "deadline_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -925,7 +915,8 @@
             },
             "source_epoch": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9223372036854775807
             },
             "source_sequence": {
               "type": "integer",
@@ -1055,7 +1046,7 @@
           "$ref": "#/$defs/layers"
         },
         "layer_verdicts": {
-          "$ref": "#/$defs/layer_verdicts"
+          "$ref": "#/$defs/step_layer_verdicts"
         },
         "method": {
           "enum": [
@@ -1079,6 +1070,10 @@
             "certain",
             "tentative"
           ]
+        },
+        "segment_id": {
+          "type": "string",
+          "pattern": "^seg-[0-9a-f]{32}$"
         }
       },
       "allOf": [
@@ -1119,7 +1114,7 @@
         }
       ]
     },
-    "verdict": {
+    "run_verdict": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1174,13 +1169,134 @@
               "not_exposed",
               "source_lost",
               "segment_missing",
+              "segment_conflict",
               "run_unterminated",
+              "post_terminal_activity",
+              "clock_uncertain",
+              "unsealed_epoch",
+              "seal_mismatch",
               "uninstrumented_client",
               "sampling",
               "retention_expired",
               "deleted"
             ]
           }
+        }
+      }
+    },
+    "step_verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": [
+            "captured_for_declared_fields",
+            "captured_with_withholding",
+            "partial",
+            "unsupported",
+            "unverified"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "not_instrumented",
+              "hook_disabled",
+              "not_configured",
+              "unsupported_api",
+              "unsupported_runtime",
+              "unsupported_version",
+              "parse_failed",
+              "body_cap",
+              "part_cap",
+              "inflight_budget",
+              "queue_full",
+              "shutdown",
+              "internal_error",
+              "span_dropped",
+              "store_failed",
+              "destination_rejected",
+              "transport_incomplete",
+              "stream_closed_early",
+              "privacy_policy",
+              "missing_capture_policy",
+              "missing_id_key",
+              "provider_redacted",
+              "provider_encrypted",
+              "provider_summarised",
+              "provider_not_returned",
+              "provider_held",
+              "caller_omitted",
+              "deferred_to_explicit",
+              "explicit_withheld",
+              "not_exposed",
+              "source_lost",
+              "segment_missing",
+              "segment_conflict",
+              "run_unterminated",
+              "post_terminal_activity",
+              "clock_uncertain",
+              "unsealed_epoch",
+              "seal_mismatch",
+              "uninstrumented_client",
+              "sampling",
+              "retention_expired",
+              "deleted"
+            ]
+          }
+        }
+      }
+    },
+    "run_layer_verdicts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "structure",
+        "content",
+        "decisions_effects"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/run_verdict"
+        },
+        "structure": {
+          "$ref": "#/$defs/run_verdict"
+        },
+        "content": {
+          "$ref": "#/$defs/run_verdict"
+        },
+        "decisions_effects": {
+          "$ref": "#/$defs/run_verdict"
+        }
+      }
+    },
+    "step_layer_verdicts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "structure",
+        "content",
+        "decisions_effects"
+      ],
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/step_verdict"
+        },
+        "structure": {
+          "$ref": "#/$defs/step_verdict"
+        },
+        "content": {
+          "$ref": "#/$defs/step_verdict"
+        },
+        "decisions_effects": {
+          "$ref": "#/$defs/step_verdict"
         }
       }
     }

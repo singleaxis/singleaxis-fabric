@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 4,
+  "registry_revision": 5,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -172,7 +172,7 @@
       "id": "X06",
       "layer": "cross_cutting",
       "name": "input, source_id, source_epoch, source_sequence",
-      "type": "enum wire/records; opaque id; int; int",
+      "type": "enum wire/records; opaque id; int (63-bit random epoch from P1); int",
       "observed_by": [
         "fabric.self"
       ],
@@ -182,7 +182,7 @@
       "status_if_hook_absent": "always",
       "phase": "built (wire), P1 (records on the shared allocator)",
       "lives_in": "T `fabric.capture.input`, `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`",
-      "definition": "One allocator per (source, epoch) is shared by both inputs from P1: wire exchanges and records take positions from the same counter and travel through the same spool (section 2.4). `input` says which input produced the record."
+      "definition": "One allocator per (source, epoch) is shared by both inputs from P1: wire exchanges and records take positions from the same counter and travel through the same spool (section 2.4). `input` says which input produced the record. The epoch is a 63-bit CSPRNG value from P1 (section 2.4), collision-checked at spool admission."
     },
     {
       "id": "X07",
@@ -642,8 +642,8 @@
       "required": "R",
       "status_if_hook_absent": "always",
       "phase": "P1",
-      "lives_in": "T `fabric.capture.manifest_id`, `fabric.capture.manifest_sha256` on run markers; M",
-      "definition": "Capture manifest in force (section 2.8), named by id and SHA-256."
+      "lives_in": "T `fabric.capture.manifest_id`, `fabric.capture.manifest_digest` on run markers; M",
+      "definition": "Capture manifest in force (section 2.8), named by id and digest (`sha256:<hex>`)."
     },
     {
       "id": "X35",
@@ -745,7 +745,7 @@
       "id": "X41",
       "layer": "cross_cutting",
       "name": "segment.predecessors",
-      "type": "list of `<source_id>:<epoch>:<last_sequence>:<manifest_sha256>` (max 64), or `none`",
+      "type": "list (max 64) of `<seg-id>/<opaque source id>/<epoch>/<last_sequence>/sha256:<64 hex>`, or `none`",
       "observed_by": [
         "run.scope"
       ],
@@ -754,8 +754,8 @@
       "required": "R (first run_start of each segment of a run)",
       "status_if_hook_absent": "not_captured(caller_omitted)",
       "phase": "P1",
-      "lives_in": "T `fabric.run.predecessors` on `run_start` markers",
-      "definition": "The segments this segment continues: taken from the resume token(s) the application passed in, `none` for a run's first segment. A join lists every segment it joins. The verifier builds the segment graph from it (section 2.10)."
+      "lives_in": "T `fabric.run.predecessors` on the segment's `run_start`",
+      "definition": "The sealed segments this segment continues, taken verbatim from the resume tokens passed in, from the locally sealed segment on local continuation, or from the parent's sealed segment after a fork; `none` only for the run's root segment. Entries are exact and immutable (section 2.10)."
     },
     {
       "id": "X42",
@@ -770,8 +770,57 @@
       "required": "R (run root)",
       "status_if_hook_absent": "always (defaults: resumable false, terminal at outermost block exit)",
       "phase": "P1",
-      "lives_in": "T `fabric.run.resumable`, `fabric.run.open_deadline_s` on `run_start`; T `fabric.run.terminal` on `run_end`",
-      "definition": "Whether the run may continue in another segment, whether this `run_end` terminates the run, and the open-run deadline for this run (else the manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits."
+      "lives_in": "T `fabric.run.resumable`, `fabric.run.open_deadline_s` (root only) on `run_start`; T `fabric.run.terminal` on `segment_seal`",
+      "definition": "Whether the run may continue in another segment, whether a segment seal terminates the run, and the open-run deadline — honoured only on the root segment's `run_start` (else the root manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits."
+    },
+    {
+      "id": "X43",
+      "layer": "cross_cutting",
+      "name": "segment_id",
+      "type": "`seg-` + 32 hex (128-bit CSPRNG)",
+      "observed_by": [
+        "run.scope"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "R (every record and marker of a run)",
+      "status_if_hook_absent": "always (from P1)",
+      "phase": "P1",
+      "lives_in": "T `fabric.run.segment_id`",
+      "definition": "Immutable segment a record belongs to, assigned at allocation under the allocator lock. A new segment starts at a run's first entry in a (source, epoch), after every seal (token issue, fork, block exit of a resumable run) on the next allocation or entry, and for every concurrent branch."
+    },
+    {
+      "id": "X44",
+      "layer": "cross_cutting",
+      "name": "segment.seal",
+      "type": "last_sequence, manifest digest, ledger seal digest, terminal",
+      "observed_by": [
+        "fabric.self",
+        "run.scope"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META/DIGEST",
+      "required": "R (every segment)",
+      "status_if_hook_absent": "not_captured(source_lost) when never sealed",
+      "phase": "P1",
+      "lives_in": "T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.ledger_digest`, `fabric.run.terminal` on the `segment_seal` marker",
+      "definition": "Sealing fixes a segment: the last source sequence allocated to it, the manifest in force, and (once its positions settle) the seal-ledger digest over its canonical record set (section 2.12). A resume token always names a sealed segment."
+    },
+    {
+      "id": "X45",
+      "layer": "cross_cutting",
+      "name": "epoch.ledger_seal",
+      "type": "digest",
+      "observed_by": [
+        "fabric.self"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "DIGEST",
+      "required": "R (every epoch)",
+      "status_if_hook_absent": "not_captured(unsealed_epoch) when never sealed",
+      "phase": "P1",
+      "lives_in": "T `fabric.heartbeat.ledger_digest` on the `final` heartbeat; M `unsealed_prior_epochs`",
+      "definition": "Seal of the whole epoch's ledger, computed after a fresh readback; prior epochs found unsealed at start-up are declared in the next manifest and accounted as gaps."
     },
     {
       "id": "C01",

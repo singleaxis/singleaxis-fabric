@@ -69,7 +69,7 @@ PROJECTION_ENUMS = {
     "actor_type": ("$defs", "step", "properties", "actor", "properties", "type", "enum"),
     "lifecycle_state": ("$defs", "step", "properties", "lifecycle_state", "enum"),
     "result_status": ("$defs", "step", "properties", "result_status", "enum"),
-    "layer_verdict": ("$defs", "verdict", "properties", "verdict", "enum"),
+    "layer_verdict": ("$defs", "run_verdict", "properties", "verdict", "enum"),
     "capture_input": ("$defs", "step", "properties", "source", "properties", "input", "enum"),
 }
 
@@ -277,6 +277,10 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
         values = [r["value"] for r in vocab[name]]
         if list(_dig(schemas["projection"], path)) != values:
             _fail("coverage.schema.enum", name, "projection schema enum differs from the vocabulary")
+    run_only = {r["value"] for r in vocab["run_only_verdicts"]}
+    step_enum = list(_dig(schemas["projection"], ("$defs", "step_verdict", "properties", "verdict", "enum")))
+    if step_enum != [r["value"] for r in vocab["layer_verdict"] if r["value"] not in run_only]:
+        _fail("coverage.schema.enum", "step_verdict", "step verdicts must exclude the run-only verdicts")
     reasons = [r["value"] for r in vocab["reason"]]
     manifest_reason = _dig(schemas["manifest"], ("properties", "capture_points", "items",
                                                   "properties", "reason", "enum"))
