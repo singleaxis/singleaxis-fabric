@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 6,
+  "registry_revision": 7,
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -343,10 +343,10 @@
       "phase": "P2"
     },
     {
-      "key": "fabric.dispatch.expected_branches",
+      "key": "fabric.dispatch.branch_id",
       "change": "new",
       "field": "X46",
-      "validator": "META: integer 1-1024",
+      "validator": "ID: `br-` + 32 hex",
       "phase": "P2"
     },
     {
@@ -942,6 +942,13 @@
       "phase": "P2"
     },
     {
+      "key": "fabric.run.branch_ids",
+      "change": "new",
+      "field": "X46",
+      "validator": "ID: array (max 64) of `br-` + 32 hex",
+      "phase": "P1"
+    },
+    {
       "key": "fabric.run.declared_branches",
       "change": "new",
       "field": "X46",
@@ -1002,7 +1009,8 @@
       "change": "new",
       "field": "X42",
       "validator": "META: boolean",
-      "phase": "P1"
+      "phase": "P1",
+      "note": "Also on token-issuing `segment_seal` markers; resumability is monotonic."
     },
     {
       "key": "fabric.run.resumed_from",
@@ -1054,10 +1062,10 @@
       "phase": "P2"
     },
     {
-      "key": "fabric.segment.expected_branches",
+      "key": "fabric.segment.branch_ids",
       "change": "new",
       "field": "X46",
-      "validator": "META: integer 1-1024",
+      "validator": "ID: array (max 64) of `br-` + 32 hex",
       "phase": "P1"
     },
     {
@@ -1128,7 +1136,9 @@
       "change": "new",
       "field": "X47",
       "validator": "META: const `true`; set only by fabricguard at a bound ingress, stripped when supplied by an agent",
-      "phase": "P0-A"
+      "phase": "P0-A",
+      "owner": "receiver",
+      "note": "Receiver-owned: excluded from the seal digest (section 2.12)."
     },
     {
       "key": "fabric.step.attempt_kind",

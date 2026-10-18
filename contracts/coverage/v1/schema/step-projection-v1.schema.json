@@ -74,7 +74,8 @@
       "additionalProperties": false,
       "required": [
         "reconstruction_sha256",
-        "manifests"
+        "manifests",
+        "telemetry_origin"
       ],
       "properties": {
         "reconstruction_sha256": {
@@ -102,6 +103,12 @@
               }
             }
           }
+        },
+        "telemetry_origin": {
+          "enum": [
+            "trusted_readback",
+            "imported"
+          ]
         }
       }
     },
@@ -804,10 +811,24 @@
                   "pattern": "^seg-[0-9a-f]{32}$"
                 }
               },
-              "expected_branches": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1024
+              "branch_ids": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^br-[0-9a-f]{32}$"
+                }
+              },
+              "consumes_branch_ids": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^br-[0-9a-f]{32}$"
+                }
+              },
+              "resumable": {
+                "type": "boolean"
               }
             }
           }
