@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-point-registry/v1",
-  "registry_revision": 2,
+  "registry_revision": 4,
   "capture_points": [
     {
       "id": "fabric.self",
@@ -41,7 +41,8 @@
         "D11",
         "D24",
         "D34"
-      ]
+      ],
+      "input": "fabric"
     },
     {
       "id": "install.config",
@@ -59,7 +60,8 @@
         "X31",
         "C12",
         "C15"
-      ]
+      ],
+      "input": "config"
     },
     {
       "id": "wire.py.httpx",
@@ -92,7 +94,8 @@
         "N02",
         "N07",
         "D31"
-      ]
+      ],
+      "input": "wire"
     },
     {
       "id": "wire.ts.undici",
@@ -106,7 +109,8 @@
       "passivity_gate": "TS-1 (section 8.2)",
       "supplies": [
         "N01"
-      ]
+      ],
+      "input": "wire"
     },
     {
       "id": "explicit.call_recorder",
@@ -114,7 +118,7 @@
       "runtime": "Python",
       "process_global": "no",
       "activation": "explicit API",
-      "state": "built (043)",
+      "state": "built (043); P1: records producer on the shared allocator and spool",
       "observes": "model/tool/database/agent call bytes and lifecycle as handed to `CallRecorder`",
       "cannot_observe": "anything not passed through the recorder",
       "passivity_gate": "043 acceptance",
@@ -133,7 +137,8 @@
         "N09",
         "N17",
         "N39"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "explicit.byte_boundary",
@@ -141,7 +146,7 @@
       "runtime": "Python",
       "process_global": "no",
       "activation": "explicit API",
-      "state": "built (043/044)",
+      "state": "built (043/044); P1: records producer on the shared allocator and spool",
       "observes": "bytes at a caller-declared boundary",
       "cannot_observe": "anything outside the declared boundary",
       "passivity_gate": "043/044 acceptance",
@@ -152,7 +157,8 @@
         "N33",
         "N34",
         "N47"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "explicit.final_http",
@@ -160,14 +166,15 @@
       "runtime": "Python",
       "process_global": "no",
       "activation": "explicit API",
-      "state": "built (043)",
+      "state": "built (043); P1: records producer on the shared allocator and spool",
       "observes": "final HTTP request/response bodies routed through `FinalHTTPAdapter`",
       "cannot_observe": "hosts not routed through it",
       "passivity_gate": "043 acceptance",
       "supplies": [
         "N43",
         "N44"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "sdk.records",
@@ -175,8 +182,8 @@
       "runtime": "Python, TypeScript",
       "process_global": "no",
       "activation": "explicit API",
-      "state": "built (metadata, unsequenced); records source P1; content roles P0-A/P2",
-      "observes": "`fabric.decision` records and spans: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill, `tool_call()`, `llm_call()`; new P2/P3 reporting APIs; sequenced on the records source from P1",
+      "state": "built (metadata, unsequenced); P1: records input on the shared allocator and spool; content roles P0-A/P2",
+      "observes": "`fabric.decision` records and spans: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill, `tool_call()`, `llm_call()`; new P2/P3 reporting APIs; sequenced on the process source from P1",
       "cannot_observe": "anything the application does not report",
       "passivity_gate": "P2/P3 recording-failure tests",
       "supplies": [
@@ -287,7 +294,8 @@
         "D28",
         "D29",
         "D30"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "run.scope",
@@ -296,7 +304,7 @@
       "process_global": "no",
       "activation": "`fabric.wire.run()`",
       "state": "built (048 §6); P1 adds arguments",
-      "observes": "run id, scope, block exit status, session/parent/resume links passed as arguments",
+      "observes": "run id, scope, block exit status, session/parent/resume links, segment predecessors, resumable/terminal flags",
       "cannot_observe": "work started outside a block (047 run-id fallback applies)",
       "passivity_gate": "048 acceptance",
       "supplies": [
@@ -308,8 +316,11 @@
         "X13",
         "X14",
         "X21",
+        "X41",
+        "X42",
         "S34"
-      ]
+      ],
+      "input": "wire, records"
     },
     {
       "id": "mcp.wrapper",
@@ -331,7 +342,8 @@
         "N22",
         "N24",
         "N25"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "mcp.client",
@@ -353,7 +365,8 @@
         "N23",
         "N24",
         "N25"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "exec.subprocess",
@@ -370,7 +383,8 @@
         "N33",
         "N34",
         "N35"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "exec.audit",
@@ -384,7 +398,8 @@
       "passivity_gate": "P4-AUDIT",
       "supplies": [
         "N32"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "db.dbapi",
@@ -404,7 +419,8 @@
         "N41",
         "N42",
         "D23"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "http.nonmodel",
@@ -422,7 +438,8 @@
         "N30",
         "N43",
         "N44"
-      ]
+      ],
+      "input": "wire"
     },
     {
       "id": "file.audit",
@@ -438,7 +455,8 @@
         "N45",
         "N46",
         "N49"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "remote.ssh_wrapper",
@@ -453,7 +471,8 @@
       "supplies": [
         "N36",
         "N37"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "ui.automation",
@@ -468,7 +487,8 @@
       "supplies": [
         "N54",
         "N55"
-      ]
+      ],
+      "input": "records"
     },
     {
       "id": "rt.websocket",
@@ -483,7 +503,8 @@
       "supplies": [
         "N56",
         "N57"
-      ]
+      ],
+      "input": "wire"
     },
     {
       "id": "reconstruct.parse",
@@ -536,7 +557,8 @@
         "D31",
         "D32",
         "D33"
-      ]
+      ],
+      "input": "offline"
     },
     {
       "id": "reconstruct.infer",
@@ -560,7 +582,8 @@
         "N48",
         "N52",
         "D17"
-      ]
+      ],
+      "input": "offline"
     },
     {
       "id": "host.ebpf",
@@ -574,7 +597,8 @@
       "passivity_gate": "031",
       "supplies": [
         "C41"
-      ]
+      ],
+      "input": "sensor"
     },
     {
       "id": "host.auditd",
@@ -588,7 +612,8 @@
       "passivity_gate": "030",
       "supplies": [
         "C41"
-      ]
+      ],
+      "input": "sensor"
     },
     {
       "id": "feed.independent",
@@ -605,7 +630,8 @@
         "D25",
         "D28",
         "D29"
-      ]
+      ],
+      "input": "sensor"
     },
     {
       "id": "delivery.receipts",
@@ -619,7 +645,8 @@
       "passivity_gate": "delivery/v1",
       "supplies": [
         "X37"
-      ]
+      ],
+      "input": "sensor"
     }
   ]
 }

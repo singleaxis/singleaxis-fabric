@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 2,
+  "registry_revision": 3,
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -100,6 +100,13 @@
       "phase": "P2"
     },
     {
+      "key": "fabric.capture.input",
+      "change": "new",
+      "field": "X06",
+      "validator": "META: closed enum (capture_input vocabulary)",
+      "phase": "P1"
+    },
+    {
       "key": "fabric.capture.manifest_id",
       "change": "new",
       "field": "X34",
@@ -120,14 +127,6 @@
       "field": "X34",
       "validator": "DIGEST: bare 64 hex",
       "phase": "P1"
-    },
-    {
-      "key": "fabric.capture.path",
-      "change": "new",
-      "field": "X06",
-      "validator": "META: closed enum (source_path vocabulary)",
-      "phase": "P1 (records)",
-      "manifest_property": "path"
     },
     {
       "key": "fabric.capture.point",
@@ -564,6 +563,14 @@
       "manifest_property": "identity_mode"
     },
     {
+      "key": "fabric.manifest.inputs",
+      "change": "new",
+      "field": "X06",
+      "validator": "META: array of closed enum (capture_input vocabulary)",
+      "phase": "P1",
+      "manifest_property": "inputs"
+    },
+    {
       "key": "fabric.manifest.key_id",
       "change": "new",
       "field": "X33",
@@ -600,6 +607,14 @@
       "manifest_property": "limits/max_retain_bytes"
     },
     {
+      "key": "fabric.manifest.limits.open_run_deadline_s",
+      "change": "new",
+      "field": "X42",
+      "validator": "META: integer range 60-31536000",
+      "phase": "P1",
+      "manifest_property": "limits/open_run_deadline_s"
+    },
+    {
       "key": "fabric.manifest.limits.part_min_bytes",
       "change": "new",
       "field": "X34",
@@ -616,6 +631,14 @@
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "limits/queue_max_items"
+    },
+    {
+      "key": "fabric.manifest.limits.records_max_object_bytes",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: integer range 1-16777216",
+      "phase": "P1",
+      "manifest_property": "limits/records_max_object_bytes"
     },
     {
       "key": "fabric.manifest.manifest_seq",
@@ -697,6 +720,14 @@
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "sequence_unit"
+    },
+    {
+      "key": "fabric.manifest.spool_encrypted",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: boolean",
+      "phase": "P0-A",
+      "manifest_property": "spool_encrypted"
     },
     {
       "key": "fabric.manifest.uncaptured_classes",
@@ -806,48 +837,6 @@
       "phase": "P4"
     },
     {
-      "key": "fabric.records.heartbeat.kind",
-      "change": "new",
-      "field": "X35",
-      "validator": "META: closed enum (`periodic`, `final`)",
-      "phase": "P1"
-    },
-    {
-      "key": "fabric.records.last_sequence",
-      "change": "new",
-      "field": "X35",
-      "validator": "META: integer range",
-      "phase": "P1"
-    },
-    {
-      "key": "fabric.records.loss.count",
-      "change": "new",
-      "field": "X35",
-      "validator": "META: integer range",
-      "phase": "P1"
-    },
-    {
-      "key": "fabric.records.loss.first_sequence",
-      "change": "new",
-      "field": "X35",
-      "validator": "META: integer range",
-      "phase": "P1"
-    },
-    {
-      "key": "fabric.records.loss.last_sequence",
-      "change": "new",
-      "field": "X35",
-      "validator": "META: integer range",
-      "phase": "P1"
-    },
-    {
-      "key": "fabric.records.loss.reason",
-      "change": "new",
-      "field": "X35",
-      "validator": "META: closed enum (loss reasons (047))",
-      "phase": "P1"
-    },
-    {
       "key": "fabric.remote.host_key_verified",
       "change": "new",
       "field": "N36",
@@ -904,6 +893,13 @@
       "phase": "P1"
     },
     {
+      "key": "fabric.run.open_deadline_s",
+      "change": "new",
+      "field": "X42",
+      "validator": "META: integer range 60-31536000",
+      "phase": "P1"
+    },
+    {
       "key": "fabric.run.outcome",
       "change": "new",
       "field": "D30",
@@ -925,6 +921,20 @@
       "phase": "P2"
     },
     {
+      "key": "fabric.run.predecessors",
+      "change": "new",
+      "field": "X41",
+      "validator": "ID: array (max 64) of `none` or `<s-label>:<epoch>:<last_sequence>:<64 hex>`",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.run.resumable",
+      "change": "new",
+      "field": "X42",
+      "validator": "META: boolean",
+      "phase": "P1"
+    },
+    {
       "key": "fabric.run.resumed_from",
       "change": "new",
       "field": "X11",
@@ -944,6 +954,13 @@
       "field": "D30",
       "validator": "META: closed enum (field type)",
       "phase": "P2"
+    },
+    {
+      "key": "fabric.run.terminal",
+      "change": "new",
+      "field": "X42",
+      "validator": "META: boolean",
+      "phase": "P1"
     },
     {
       "key": "fabric.run.trigger.kind",

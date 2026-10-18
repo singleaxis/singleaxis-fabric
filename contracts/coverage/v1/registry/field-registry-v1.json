@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 3,
+  "registry_revision": 4,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -171,8 +171,8 @@
     {
       "id": "X06",
       "layer": "cross_cutting",
-      "name": "source_path, source_id, source_epoch, source_sequence",
-      "type": "enum wire/explicit/records; opaque id; int; int",
+      "name": "input, source_id, source_epoch, source_sequence",
+      "type": "enum wire/records; opaque id; int; int",
       "observed_by": [
         "fabric.self"
       ],
@@ -180,9 +180,9 @@
       "privacy_class": "ID/META",
       "required": "R",
       "status_if_hook_absent": "always",
-      "phase": "built (wire, explicit), P1 (records)",
-      "lives_in": "T `fabric.capture.path`, `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`",
-      "definition": "Order within one producer epoch of one delivery path (section 2.4). The projection qualifies every source as `<path>:<source_id>`, so a wire, an explicit and a records source never collide."
+      "phase": "built (wire), P1 (records on the shared allocator)",
+      "lives_in": "T `fabric.capture.input`, `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`",
+      "definition": "One allocator per (source, epoch) is shared by both inputs from P1: wire exchanges and records take positions from the same counter and travel through the same spool (section 2.4). `input` says which input produced the record."
     },
     {
       "id": "X07",
@@ -198,7 +198,7 @@
       "status_if_hook_absent": "always",
       "phase": "P1",
       "lives_in": "M",
-      "definition": "What one sequence number counts: `exchange` on wire sources, `record` on explicit and records sources. Manifests, heartbeats and loss records never consume a sequence (section 2.4)."
+      "definition": "What one sequence number counts: `record` on every source from P1 (wire exchanges and records share one counter); `exchange` on pre-P1 wire-only captures. Manifests, heartbeats and loss records never consume a sequence (section 2.4)."
     },
     {
       "id": "X08",
@@ -215,7 +215,7 @@
       "status_if_hook_absent": "always (fallback)",
       "phase": "built",
       "lives_in": "T `fabric.run.id`",
-      "definition": "Logical run."
+      "definition": "Logical run. A value already in `r-` form is used verbatim (P1), so a run id carried across processes and key rotations stays the same (section 2.10)."
     },
     {
       "id": "X09",
@@ -247,7 +247,7 @@
       "status_if_hook_absent": "not_captured(caller_omitted)",
       "phase": "P1",
       "lives_in": "T `fabric.run.parent_id`",
-      "definition": "Run that started this run (sub-agent, worker)."
+      "definition": "Run that spawned this run (sub-agent, worker). A child run is a separate run; its first segment has no predecessor."
     },
     {
       "id": "X11",
@@ -263,7 +263,7 @@
       "status_if_hook_absent": "not_captured(caller_omitted)",
       "phase": "P1",
       "lives_in": "T `fabric.run.resumed_from`",
-      "definition": "Run this run resumes, when the resumed work uses a new run id. Reusing the same run id across processes is the primary mechanism."
+      "definition": "A new run id that continues the work of an earlier run (for example a re-run). Continuing the same run uses the same run id and a resume token instead (section 2.10)."
     },
     {
       "id": "X12",
@@ -361,7 +361,7 @@
       "status_if_hook_absent": "always",
       "phase": "P1",
       "lives_in": "T `fabric.step.id`",
-      "definition": "Logical node, stable across retries. Fabric-minted (uuid4) when no logical id is supplied; a caller-supplied logical id (host `fabric.step.id`, explicit `operation_id`) is qualified `<path>:<source_id>:<value>`."
+      "definition": "Logical node, stable across retries. Fabric-minted (uuid4) when no logical id is supplied; a caller-supplied logical id (host `fabric.step.id`, explicit `operation_id`) is qualified `<input>:<source_id>:<value>`."
     },
     {
       "id": "X18",
@@ -393,8 +393,8 @@
       "required": "R",
       "status_if_hook_absent": "always",
       "phase": "built (wire, explicit), P1 (records)",
-      "lives_in": "T `fabric.wire.exchange_id` (wire), explicit `call_id`, T `fabric.attempt.uid` (records); P",
-      "definition": "Fabric-minted id of one physical execution, unique in a projection: wire `exchange_id`, explicit `call_id`, a uuid4 minted per record call on the records path. Never defaulted from `step_id` and never taken from the caller."
+      "lives_in": "T `fabric.wire.exchange_id` (wire); T `fabric.attempt.uid` (records, including the explicit producers, whose `call_id` is the attempt uid); P",
+      "definition": "Fabric-minted id of one physical execution, unique in a projection: wire `exchange_id`; on the records input a uuid4 minted per record call (`CallRecorder`'s `call_id` for the explicit producer). Never defaulted from `step_id` and never taken from the caller."
     },
     {
       "id": "X20",
@@ -657,9 +657,9 @@
       "privacy_class": "META",
       "required": "R",
       "status_if_hook_absent": "always",
-      "phase": "built (wire), P1 (records)",
-      "lives_in": "T existing wire keys; T `fabric.records.*` keys on the records source",
-      "definition": "Known loss ranges and proven ends per source. The records source uses its own span names and keys so 047/048 verifiers ignore it (section 2.4)."
+      "phase": "built (wire), P1 (shared with records)",
+      "lives_in": "T existing `fabric.loss.*` and `fabric.heartbeat.*` keys",
+      "definition": "Known loss ranges and proven ends, one model per source for both inputs (P1). The rev-3 records-specific keys are withdrawn."
     },
     {
       "id": "X36",
@@ -707,7 +707,7 @@
       "status_if_hook_absent": "absent",
       "phase": "P1",
       "lives_in": "P",
-      "definition": "Source and caller ids kept for joins, each keyed `<path>.<name>` with value `<source_id>/<id>`: `operation_id`, caller `attempt_id`, `call_id`, `parent_call_id`, `decision_id`, `request_id`, `execution_id`, host `fabric.step.id`, host `fabric.step.attempt_id`, `span_id`. An alias never becomes an attempt or step identity."
+      "definition": "Source and caller ids kept for joins, each keyed `<input>.<name>` with value `<source_id>/<id>`: `records.operation_id`, caller `records.attempt_id`, `records.call_id`, `records.parent_call_id`, `records.decision_id`, `records.request_id`, `records.execution_id`, host `records.step_id`, host `records.step_attempt_id`, `wire.span_id`, `records.span_id`; pre-P1 explicit-journal ids keep the input `records` and a `legacy-explicit:` source prefix. An alias never becomes an attempt or step identity."
     },
     {
       "id": "X39",
@@ -740,6 +740,38 @@
       "phase": "P0-A",
       "lives_in": "T `fabric.wire.store_reason`",
       "definition": "Why an exchange's content is absent or partial, on the exchange span itself, so telemetry (not only the manifest) shows it."
+    },
+    {
+      "id": "X41",
+      "layer": "cross_cutting",
+      "name": "segment.predecessors",
+      "type": "list of `<source_id>:<epoch>:<last_sequence>:<manifest_sha256>` (max 64), or `none`",
+      "observed_by": [
+        "run.scope"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "R (first run_start of each segment of a run)",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P1",
+      "lives_in": "T `fabric.run.predecessors` on `run_start` markers",
+      "definition": "The segments this segment continues: taken from the resume token(s) the application passed in, `none` for a run's first segment. A join lists every segment it joins. The verifier builds the segment graph from it (section 2.10)."
+    },
+    {
+      "id": "X42",
+      "layer": "cross_cutting",
+      "name": "run.resumable, run.terminal, run.open_deadline_s",
+      "type": "bool, bool, int",
+      "observed_by": [
+        "run.scope"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (run root)",
+      "status_if_hook_absent": "always (defaults: resumable false, terminal at outermost block exit)",
+      "phase": "P1",
+      "lives_in": "T `fabric.run.resumable`, `fabric.run.open_deadline_s` on `run_start`; T `fabric.run.terminal` on `run_end`",
+      "definition": "Whether the run may continue in another segment, whether this `run_end` terminates the run, and the open-run deadline for this run (else the manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits."
     },
     {
       "id": "C01",

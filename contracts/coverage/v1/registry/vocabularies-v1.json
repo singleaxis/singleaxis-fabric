@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 3,
+  "registry_revision": 4,
   "coverage_status": [
     {
       "value": "captured",
@@ -165,6 +165,14 @@
       "meaning": "The whole source or epoch is missing from the record."
     },
     {
+      "value": "segment_missing",
+      "meaning": "A run segment named as a predecessor by another segment is absent from the record (section 2.10)."
+    },
+    {
+      "value": "run_unterminated",
+      "meaning": "A resumable run has no terminal marker and its open-run deadline has passed (section 2.10)."
+    },
+    {
       "value": "uninstrumented_client",
       "meaning": "Traffic went through a client the capture point does not see (for example `requests`, `boto3`, gRPC)."
     },
@@ -312,7 +320,7 @@
     },
     {
       "value": "resumes",
-      "meaning": "Continues a suspended run, segment or checkpoint."
+      "meaning": "Continues a suspended run, segment or checkpoint; between segments it mirrors `fabric.run.predecessors`."
     },
     {
       "value": "gates",
@@ -344,7 +352,7 @@
     },
     {
       "value": "same_as",
-      "meaning": "An explicit alias: both ids name the same thing."
+      "meaning": "An alias: both ids name the same thing. Between runs only as an explicit report or a tentative inference (`trace_id_match`, `cross_run_previous_response`)."
     }
   ],
   "link_state": [
@@ -587,6 +595,10 @@
       "meaning": "Every required applicable field is `ok` or `withheld` (privacy policy, provider redaction or encryption, explicit withholding) and at least one is `withheld`. The verdict lists the withholding reasons."
     },
     {
+      "value": "open",
+      "meaning": "Run level only: a resumable run without a terminal marker, evaluated within its `open_run_deadline`, whose observed segments all verify and chain without a missing segment. Never a completeness claim."
+    },
+    {
       "value": "partial",
       "meaning": "At least one required applicable field is in class `gap`, or supported and unsupported required fields are mixed, or the integrity verdict is `partial`."
     },
@@ -683,6 +695,14 @@
     {
       "value": "pid_time_join",
       "meaning": "Host-sensor record joined by PID and time (`corroborated_by`). Confidence `tentative`."
+    },
+    {
+      "value": "trace_id_match",
+      "meaning": "Two runs whose root steps share a W3C trace id (`same_as` between runs). Confidence `tentative`."
+    },
+    {
+      "value": "cross_run_previous_response",
+      "meaning": "An exchange in one run names a response captured in another run (`same_as` between runs). Confidence `tentative`."
     }
   ],
   "field_class": [
@@ -696,7 +716,7 @@
     },
     {
       "value": "gap",
-      "meaning": "`not_captured` with any other reason (including `provider_held`, `not_instrumented`, `caller_omitted`, `missing_capture_policy`, `missing_id_key`); `truncated` with any reason; `conflict`."
+      "meaning": "`not_captured` with any other reason (including `provider_held`, `not_instrumented`, `caller_omitted`, `missing_capture_policy`, `missing_id_key`, `segment_missing`, `run_unterminated`); `truncated` with any reason; `conflict`."
     },
     {
       "value": "unsupported",
@@ -763,18 +783,14 @@
       "meaning": "A legacy record's `committed=true`, which may have been the default."
     }
   ],
-  "source_path": [
+  "capture_input": [
     {
       "value": "wire",
-      "meaning": "Zero-code wire capture: exchanges, run markers, manifests (allocator `wire`)."
-    },
-    {
-      "value": "explicit",
-      "meaning": "Explicit evidence line: `CallRecorder` journal (its own source)."
+      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2; undici on the TypeScript track): exchanges plus their run markers."
     },
     {
       "value": "records",
-      "meaning": "SDK reporting APIs: decision records and spans (allocator `records`, from P1)."
+      "meaning": "Everything the application reports or an opt-in hook observes through the SDK: `record_*`, `tool_call()`, `llm_call()`, the new P2/P3 APIs, and the explicit exact-byte producers (`CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`)."
     }
   ]
 }

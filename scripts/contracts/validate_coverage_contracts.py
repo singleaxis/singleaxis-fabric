@@ -49,6 +49,8 @@ LAYERS = {"X": "cross_cutting", "C": "context", "S": "structure", "N": "content"
 TITLES = {"X": "fields:X", "C": "fields:C", "S": "fields:S", "N": "fields:N", "D": "fields:D"}
 OUT_OF_SCOPE = "out of scope"
 STORE_REASON_MAP = {"no_store": "not_configured"}
+# capture points that are not one of the two inputs
+NON_INPUTS = {"fabric", "config", "offline", "sensor"}
 MEDIA_RE = re.compile(r"^(\*|[a-z0-9!#$&^_.+-]+/(\*|[a-z0-9!#$&^_.+-]+))$")
 BLOCK_RE = re.compile(
     r"<!-- generated:(?P<name>[a-z_:A-Z]+):begin -->\n(?P<body>.*?)<!-- generated:(?P=name):end -->",
@@ -68,7 +70,7 @@ PROJECTION_ENUMS = {
     "lifecycle_state": ("$defs", "step", "properties", "lifecycle_state", "enum"),
     "result_status": ("$defs", "step", "properties", "result_status", "enum"),
     "layer_verdict": ("$defs", "verdict", "properties", "verdict", "enum"),
-    "source_path": ("$defs", "step", "properties", "source", "properties", "path", "enum"),
+    "capture_input": ("$defs", "step", "properties", "source", "properties", "input", "enum"),
 }
 
 
@@ -166,10 +168,10 @@ def render_blocks(reg: Mapping[str, Any]) -> dict[str, str]:
             ],
         )
     blocks["points"] = _table(
-        ["Capture point", "Kind", "Runtime", "Process-global", "Activation", "State", "Observes",
-         "Cannot observe", "Passivity gate", "Supplies"],
+        ["Capture point", "Kind", "Input", "Runtime", "Process-global", "Activation", "State",
+         "Observes", "Cannot observe", "Passivity gate", "Supplies"],
         [
-            (f"`{p['id']}`", p["kind"], p["runtime"], p["process_global"], p["activation"],
+            (f"`{p['id']}`", p["kind"], p["input"], p["runtime"], p["process_global"], p["activation"],
              p["state"], p["observes"], p["cannot_observe"], p["passivity_gate"],
              _ranges(p["supplies"]))
             for p in reg["points"]["capture_points"]
@@ -261,6 +263,9 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
     for p in points:
         if not set(p["kind"].split("/")) <= kinds:
             _fail("coverage.points.kind", p["id"], "kind not in vocabulary")
+        inputs = {r["value"] for r in vocab["capture_input"]} | NON_INPUTS
+        if not {x.strip() for x in str(p.get("input", "")).split(",")} <= inputs:
+            _fail("coverage.points.input", p["id"], "input not in capture_input vocabulary")
         derived = [f["id"] for f in fields if p["id"] in f["observed_by"]]
         if p.get("supplies") != derived:
             _fail("coverage.points.supplies", p["id"], "supplies differs from the fields that name this capture point")

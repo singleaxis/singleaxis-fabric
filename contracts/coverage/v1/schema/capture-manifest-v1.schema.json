@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/schemas/fabric/coverage/v1/capture-manifest-v1.schema.json",
-  "title": "fabric.capture-manifest/v1 (draft, spec 049 rev 3)",
+  "title": "fabric.capture-manifest/v1 (draft, spec 049 rev 4)",
   "description": "JSON form of the per-source-epoch capture manifest (a fabric.capture_manifest span with closed attributes). Manifests never consume source sequences: manifest_seq is their own contiguous counter and after_source_sequence their effective position (spec 049 §2.4). The manifest digest is SHA-256 of its spec-029 canonical JSON. Metadata only.",
   "type": "object",
   "additionalProperties": false,
@@ -25,10 +25,11 @@
     "clock",
     "capture_points",
     "uncaptured_classes",
-    "path",
+    "inputs",
     "manifest_seq",
     "after_source_sequence",
-    "chunk_boundaries_retained"
+    "chunk_boundaries_retained",
+    "spool_encrypted"
   ],
   "properties": {
     "schema_version": {
@@ -183,7 +184,9 @@
         "max_retain_bytes",
         "max_inflight_bytes",
         "queue_max_items",
-        "part_min_bytes"
+        "part_min_bytes",
+        "records_max_object_bytes",
+        "open_run_deadline_s"
       ],
       "properties": {
         "max_body_bytes": {
@@ -208,6 +211,16 @@
         "part_min_bytes": {
           "type": "integer",
           "minimum": 1
+        },
+        "records_max_object_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "open_run_deadline_s": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 31536000
         }
       }
     },
@@ -334,6 +347,8 @@
               "explicit_withheld",
               "not_exposed",
               "source_lost",
+              "segment_missing",
+              "run_unterminated",
               "uninstrumented_client",
               "sampling",
               "retention_expired",
@@ -368,13 +383,6 @@
         ]
       }
     },
-    "path": {
-      "enum": [
-        "wire",
-        "explicit",
-        "records"
-      ]
-    },
     "manifest_seq": {
       "type": "integer",
       "minimum": 0
@@ -388,6 +396,20 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "chunk_boundaries_retained": {
+      "type": "boolean"
+    },
+    "inputs": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "wire",
+          "records"
+        ]
+      }
+    },
+    "spool_encrypted": {
       "type": "boolean"
     }
   },

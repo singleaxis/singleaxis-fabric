@@ -1,6 +1,6 @@
 # Coverage contract v1 (draft)
 
-Specified by [spec 049 revision 3](../../../specs/049-four-layer-capture-coverage.md)
+Specified by [spec 049 revision 4](../../../specs/049-four-layer-capture-coverage.md)
 (four-layer capture contract). **Draft, pending owner confirmation. No
 runtime emits these documents yet**, and this family is not part of the
 published contracts archive (`scripts/release/release-policy.json`
@@ -16,7 +16,7 @@ spec differs from its rendering; `--write` regenerates the blocks.
 | File | Document |
 |---|---|
 | `registry/field-registry-v1.json` | `fabric.field-registry/v1` — every four-layer field (id, layer, type, capture-point ids that observe it, default policy, privacy class, required/optional, status when the capture point is absent, phase, where it lives, definition) and the coverage profiles |
-| `registry/vocabularies-v1.json` | statuses, reasons, field classes, provenance, capture-point kinds, assertion origins, link types and states, inference methods, step kinds, actor types, lifecycle and result states, layer verdicts, privacy classes, capture policies, source paths, store reasons, commit bases |
+| `registry/vocabularies-v1.json` | statuses, reasons, field classes, provenance, capture-point kinds, assertion origins, link types and states, inference methods, step kinds, actor types, lifecycle and result states, layer verdicts, privacy classes, capture policies, capture inputs, store reasons, commit bases |
 | `registry/capture-points-v1.json` | `fabric.capture-point-registry/v1` — every capture point, what it can and cannot observe, activation, passivity gate and the fields it `supplies` |
 | `registry/content-roles-v1.json` | `fabric.content-role-table/v1` — every content-v2 role (existing and new) with layer, boundaries, provenance, media types, default policy, cap and phase |
 | `registry/telemetry-keys-v1.json` | `fabric.telemetry-key-registry/v1` — every new telemetry key and every changed validator of an existing key |
