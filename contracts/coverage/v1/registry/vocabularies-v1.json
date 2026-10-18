@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 6,
+  "registry_revision": 7,
   "coverage_status": [
     {
       "value": "captured",
@@ -187,6 +187,10 @@
     {
       "value": "clock_uncertain",
       "meaning": "A deadline or cross-segment time comparison falls within the declared clock uncertainty, or a clock is not UTC wall time (section 2.10)."
+    },
+    {
+      "value": "source_unauthenticated",
+      "meaning": "In the production profile, a record does not carry `fabric.source.authenticated=true` stamped by fabricguard at a bound ingress (direct mode without a Node, or a Node ingress without a source binding) (section 7.9)."
     },
     {
       "value": "unsealed_epoch",
@@ -748,7 +752,7 @@
     },
     {
       "value": "uncertain",
-      "meaning": "`unknown`; `captured` with `confidence: tentative`; any field with reason `clock_uncertain`."
+      "meaning": "`unknown`; `captured` with `confidence: tentative`; any field with reason `clock_uncertain` or `source_unauthenticated`."
     }
   ],
   "store_reason": [

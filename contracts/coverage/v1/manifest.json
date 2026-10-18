@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
-    {"path": "registry/capture-points-v1.json", "sha256": "71d6e45981db7592f8c030f139a0de84aac12cb095619f6f8d997517c94c74ad", "expectation": "registry", "expected_error": null},
+    {"path": "registry/capture-points-v1.json", "sha256": "50a9cbfa78b541d96fc4550bdad395c92f0a7ea1a636f5eb84e3691d82aeafeb", "expectation": "registry", "expected_error": null},
     {"path": "registry/content-roles-v1.json", "sha256": "668d7d81605a552bec66d4aa88692526f208d383efa29682c2dcface614e11e5", "expectation": "registry", "expected_error": null},
-    {"path": "registry/field-registry-v1.json", "sha256": "fe2f7a0155481a9dbef011d6d32a966b22088c49ae889028da57bd30da2e3836", "expectation": "registry", "expected_error": null},
-    {"path": "registry/telemetry-keys-v1.json", "sha256": "c134bf2ce48cf794dad455f7a40732c8b39bd06442a3c6845549121e73e2d047", "expectation": "registry", "expected_error": null},
-    {"path": "registry/vocabularies-v1.json", "sha256": "a63ca94763fc92e48b8951405f5245227aadca7c83f701dbb5b3f4eddf31eff4", "expectation": "registry", "expected_error": null},
-    {"path": "schema/capture-manifest-v1.schema.json", "sha256": "de89746c18749cc8888821faa3b2a3702371aa1c5d9fc0995c1b41dc70361788", "expectation": "schema", "expected_error": null},
-    {"path": "schema/step-projection-v1.schema.json", "sha256": "8d98ab12c2c1921ed9d482e67b63d83b9c4b814e373b565ce47f7f57087e5992", "expectation": "schema", "expected_error": null}
+    {"path": "registry/field-registry-v1.json", "sha256": "717a81c7fca13081ef074c9c296dc2bbd766cad4747a8952123660393aeb2482", "expectation": "registry", "expected_error": null},
+    {"path": "registry/telemetry-keys-v1.json", "sha256": "9c81fa1b1c5c7cbaadf52fa722c6b6a25295144b21e80f6a9c1647c3dbe568cc", "expectation": "registry", "expected_error": null},
+    {"path": "registry/vocabularies-v1.json", "sha256": "60ec59a558a2e4cc1c9877e05c0f8303dac7d7435f4b22747a3917f714083041", "expectation": "registry", "expected_error": null},
+    {"path": "schema/capture-manifest-v1.schema.json", "sha256": "5cc313b4b895e35baf99c16ae9f864ee88e33bfd32628d6b5b0f7c4f68e526b4", "expectation": "schema", "expected_error": null},
+    {"path": "schema/step-projection-v1.schema.json", "sha256": "6a6c46560fd72ae2f1f44920effdb1b3d2a8ce8122d643824c5ee708947ffd88", "expectation": "schema", "expected_error": null}
   ]
 }

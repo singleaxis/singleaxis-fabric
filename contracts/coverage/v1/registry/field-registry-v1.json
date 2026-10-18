@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 6,
+  "registry_revision": 7,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -771,7 +771,7 @@
       "status_if_hook_absent": "always (defaults: resumable false, terminal at outermost block exit)",
       "phase": "P1",
       "lives_in": "T `fabric.run.resumable`, `fabric.run.open_deadline_s` (root only) on `run_start`; T `fabric.run.terminal` on `segment_seal`",
-      "definition": "Whether the run may continue in another segment, whether a segment seal terminates the run, and the open-run deadline — honoured only on the root segment's `run_start` (else the root manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits."
+      "definition": "Whether the run may continue in another segment, whether a segment seal terminates the run, and the open-run deadline — honoured only on the root segment's `run_start` (else the root manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits. Issuing a `resume_token()` makes the run resumable: the issuing block's exit then seals non-terminal unless it was opened with `final=True`."
     },
     {
       "id": "X43",
@@ -804,7 +804,7 @@
       "status_if_hook_absent": "not_captured(source_lost) when never sealed (segment `unsealed`, run `partial`)",
       "phase": "P1",
       "lives_in": "T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.seal_digest`, `fabric.run.terminal` on the `segment_seal` marker",
-      "definition": "One `segment_seal` record per segment, written by the worker once every position up to `last_sequence` of the segment has been delivered or lost: last sequence, manifest digest at seal, terminal flag and the seal digest over the canonical digests of the segment's delivered records sorted by sequence (section 2.12). A crash or a dropped marker leaves the segment `unsealed`."
+      "definition": "One `segment_seal` record per segment, written by the worker once every position up to `last_sequence` of the segment has settled (admitted to the spool, or recorded as a loss): last sequence, manifest digest at seal, terminal flag and the seal digest over the canonical digests of the segment's delivered records sorted by sequence (section 2.12). A crash or a dropped marker leaves the segment `unsealed`."
     },
     {
       "id": "X45",
@@ -820,7 +820,7 @@
       "status_if_hook_absent": "not_captured(unsealed_epoch) when never sealed",
       "phase": "P1",
       "lives_in": "M `unsealed_prior_epochs`, `unsealed_prior_epoch_count`",
-      "definition": "Prior epochs on the same spool that never wrote their `final` heartbeat and segment seals, declared by the next epoch's manifest 0; each is a gap for its runs. The count is exact even when the list is truncated at 64."
+      "definition": "Prior epochs registered on the same spool whose writer no longer holds its registration flock and that never wrote their `final` heartbeat and segment seals, declared by the next epoch's manifest 0; each is a gap for its runs. The count is exact even when the list is truncated at 64. Unregistered fork-child epochs are covered by the declared-branch rules instead."
     },
     {
       "id": "X46",
@@ -838,6 +838,22 @@
       "phase": "P1",
       "lives_in": "T `fabric.run.declared_branches` on `run_start`; T `fabric.segment.expected_branches` on `segment_seal`; T `fabric.dispatch.expected_branches` on dispatch records",
       "definition": "Branches a run must account for before it can terminate: fork children declared by the parent's post-fork segment, and an optional count of consumers expected for a resume token or dispatch. Declaring is non-blocking. Undeclared token consumers that are wholly lost are a residual limit (section 2.10)."
+    },
+    {
+      "id": "X47",
+      "layer": "cross_cutting",
+      "name": "source.authenticated, source_auth",
+      "type": "bool; enum bound/unbound",
+      "observed_by": [
+        "fabric.self"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (production profile)",
+      "status_if_hook_absent": "unknown (record not stamped: `unverified(source_unauthenticated)` in production)",
+      "phase": "P0-A",
+      "lives_in": "T `fabric.source.authenticated` (stamped by fabricguard at a bound ingress); M `source_auth`",
+      "definition": "Whether the record arrived on a Node ingress bound to its tenant and source. Only fabricguard sets the key; an agent-supplied value is stripped. The manifest declares the intended `source_auth`."
     },
     {
       "id": "C01",

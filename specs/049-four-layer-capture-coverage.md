@@ -1,8 +1,8 @@
 ---
 title: Four-layer capture contract (context, structure, content, decisions and effects)
-status: Final draft rev 6, pending owner confirmation
+status: Final draft rev 6.1, pending owner confirmation
 qualification: NO_COVERAGE_CLAIM
-revision: 6
+revision: 6.1
 last_updated: 2026-10-18
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
@@ -14,7 +14,7 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 
 # 049 — Four-layer capture contract
 
-**Status: Final draft rev 6, pending owner confirmation.** Every owner
+**Status: Final draft rev 6.1, pending owner confirmation.** Every owner
 decision in section 9 is applied in this text as its recommended default
 and marked *Recommended — pending owner confirmation*. If the owner changes
 one, only the sections that decision lists change.
@@ -34,7 +34,8 @@ immutable. Revision 6 converges by simplifying: qualified-run mode
 a portable digest recomputable from the store, a process has one open
 segment per run, and PROTECT, encryption at rest and source
 authentication become concrete stages on the single path (appendix E,
-rows R6-*).
+rows R6-*). Revision 6.1 makes source authentication visible to the
+verifier and applies the final-gate fixes (rows R6F-*).
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -64,7 +65,10 @@ release claims:
 > completions, responses, completions, embeddings and messages endpoints,
 > protects them before they leave the customer boundary, delivers them to a
 > customer-chosen store, and reports for every run which fields of the four
-> layers were captured, which were not, and why.
+> layers were captured, which were not, and why. In the production profile
+> a run counts as complete only if every record arrived through an
+> authenticated source binding at the Fabric Node; otherwise it is
+> `unverified`.
 
 Fabric never claims to record "all agent activity". Other model endpoints
 (images, audio speech and transcription, moderations, rerank, fine-tuning,
@@ -106,9 +110,12 @@ both on one spool and one sequencing model:
   `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`), which become
   **records producers** instead of a separate delivery path. Opt-in hooks
   (P4/P5) also emit through the records input, with provenance `observed`.
-  Reported records are `reported`.
+  Reported records are `reported`. Out-of-process optional producers (the
+  auditd receiver and the eBPF host emitter) emit records with their own
+  (source, epoch) and their own cursor or spool, not the agent spool; they
+  are corroboration only.
 
-Both inputs share one durable agent spool (the fsync'd, flock-admitted,
+In-process, both inputs share one durable agent spool (the fsync'd, flock-admitted,
 fork-safe wire spool, 048 §2), one allocator per (source, epoch), one
 loss/heartbeat/manifest model, one content writer (agent → `otlp/content`
 → `fabriccontent` → customer store; the local profile writes locally
@@ -483,8 +490,11 @@ id (the default label is host + service) can draw the same epoch. From P1:
    order comes from manifest 0's UTC `emitted_at` and segment predecessors.
 2. **Registration happens at `install()` only**, synchronously (install
    may do I/O): the pair `(source_id, epoch)` is registered in the spool's
-   admission directory under `flock(.admit)` and redrawn if another live
-   writer holds it. A forked child draws its epoch without registration and
+   admission directory under `flock(.admit)` as a registration file that
+   the writer holds `flock`ed for its whole lifetime, and redrawn if another
+   live writer holds it. A *live writer* is one holding that flock; an
+   unheld registration without a `final` heartbeat is an unsealed prior
+   epoch (section 2.12). A forked child draws its epoch without registration and
    without I/O; capture never waits for registration.
 3. **Collisions that remain** (fork children, other hosts) are found by
    the verifier: two different manifest-0 documents for one
@@ -552,7 +562,15 @@ their own counting rule:
    lowercase hex, on telemetry (keys named `*_digest`), in tokens, manifests
    and projections. Built keys ending in `_sha256` or `_hash`
    (`fabric.wire.request_sha256`, …) keep bare hex, because the Node's
-   hash-key rule admits only bare hex for those suffixes.
+   hash-key rule admits only bare hex for those suffixes. From P0-A
+   `fabric.wire.request_sha256`/`response_sha256` are the digest of the
+   **stored, protected object** and are absent when nothing is stored; no
+   digest of the original body is ever computed under `redact`, `tokenize`,
+   `masked_only` or `metadata_only` (code sites `wire/_pipeline.py:136,141,293,302`).
+   The verifier already compares them with the stored object
+   (`reconstruct/_verify.py:827-828`); `reconstruct/_inputs.py:594,603`
+   changes to require the request digest only when the request object is
+   stored.
 
 ### 2.5 Typed causal links
 
@@ -698,6 +716,7 @@ revision, never a new status). A reason is required for `not_captured`,
 | `run_unterminated` | A resumable run has no terminal marker and its open-run deadline has passed (section 2.10). |
 | `post_terminal_activity` | A segment continues a terminated run, or a record of the run was allocated outside the terminal segment's predecessor closure after it sealed (section 2.10). |
 | `clock_uncertain` | A deadline or cross-segment time comparison falls within the declared clock uncertainty, or a clock is not UTC wall time (section 2.10). |
+| `source_unauthenticated` | In the production profile, a record does not carry `fabric.source.authenticated=true` stamped by fabricguard at a bound ingress (direct mode without a Node, or a Node ingress without a source binding) (section 7.9). |
 | `unsealed_epoch` | A prior epoch on the same spool never wrote its `final` heartbeat and segment seals; declared by the next epoch's manifest 0 (section 2.12). |
 | `seal_mismatch` | The delivered records of a segment do not reproduce its `segment_seal` digest (section 2.12). |
 | `uninstrumented_client` | Traffic went through a client the capture point does not see (for example `requests`, `boto3`, gRPC). |
@@ -716,7 +735,7 @@ exactly one class:
 | `withheld` | `redacted` with reason `privacy_policy`, `provider_redacted` or `provider_encrypted`; `not_captured` with reason `privacy_policy`, `provider_summarised`, `provider_not_returned` or `explicit_withheld`. |
 | `gap` | `not_captured` with any other reason (including `provider_held`, `not_instrumented`, `caller_omitted`, `missing_capture_policy`, `missing_id_key`, `segment_missing`, `segment_conflict`, `run_unterminated`, `post_terminal_activity`, `unsealed_epoch`, `seal_mismatch`, `protection_failed`); `truncated` with any reason; `conflict`. |
 | `unsupported` | `unsupported` with any reason. |
-| `uncertain` | `unknown`; `captured` with `confidence: tentative`; any field with reason `clock_uncertain`. |
+| `uncertain` | `unknown`; `captured` with `confidence: tentative`; any field with reason `clock_uncertain` or `source_unauthenticated`. |
 <!-- generated:vocab:field_class:end -->
 
 **Field wrapper** (`fabric.step-projection/v1` `$defs/field`):
@@ -871,7 +890,7 @@ point, or if an in-scope field names none:
 <!-- generated:points:begin -->
 | Capture point | Kind | Input | Runtime | Process-global | Activation | State | Observes | Cannot observe | Passivity gate | Supplies |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `fabric.self` | F | fabric | every Fabric emitter | n/a | always (part of every capture point) | built (ids, sequences, loss, heartbeats); P1 (event ids, manifests) | Fabric's own records: ids, sequences, manifests, loss, heartbeats, modes | anything outside Fabric | C1-1, C1-2 | X01–X03, X06–X07, X17–X20, X23, X25–X27, X29, X32–X36, X38–X39, X44–X45, C16, S01, S03, S31, D11, D24, D34 |
+| `fabric.self` | F | fabric | every Fabric emitter | n/a | always (part of every capture point) | built (ids, sequences, loss, heartbeats); P1 (event ids, manifests) | Fabric's own records: ids, sequences, manifests, loss, heartbeats, modes; the Node's `fabric.source.authenticated` stamp | anything outside Fabric | C1-1, C1-2 | X01–X03, X06–X07, X17–X20, X23, X25–X27, X29, X32–X36, X38–X39, X44–X45, X47, C16, S01, S03, S31, D11, D24, D34 |
 | `install.config` | R | config | Python, TypeScript | no | install-time environment and configuration | built (tenant, labels); P0-A (policy), P1-P2 (identity block) | tenant, deployment identity block, capture policy, build digest, framework identity as configured | anything not configured | C0A-3 | X04–X05, X31, C12, C15 |
 | `wire.py.httpx` | W | wire | Python 3.11+ | yes (patches httpx/httpx2 transports) | opt-in: `install()` or `FABRIC_WIRE_AUTOLOAD=1` | built (047/048) | matched POST model exchanges: request/response body bytes, timing, response state, HTTP status, error class, scope | headers; non-chat endpoints (images, audio, moderations, rerank, fine-tuning, files, batch); GET; realtime; unmatched hosts or paths; `requests`, `urllib3`/`boto3`, `aiohttp`, gRPC; TLS; provider-side receipt | `sdk/python/tests/test_wire_passivity.py` (047 §4.10) | X08, X22, X24, X40, C34–C35, C37, C40, S07–S11, S29–S30, S32, N01–N02, N07, D31 |
 | `wire.ts.undici` | W | wire | Node.js 24+, qualified undici versions only | yes (diagnostics_channel subscription) | opt-in | TS track; manifest reports `unsupported` until built | global `fetch` model exchanges: request/response body chunks | axios, `node:http`, custom fetch, Node.js below 24, unqualified undici versions | TS-1 (section 8.2) | N01 |
@@ -893,8 +912,8 @@ point, or if an in-scope field names none:
 | `rt.websocket` | W | wire | Python (`websockets`, `aiohttp` client WS) | yes | opt-in | P5 | frames in both directions with timestamps on qualified realtime endpoints | WebRTC media, other clients | P5-RT | N56–N57 |
 | `reconstruct.parse` | P | offline | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); projection P1 | literal fields parsed from stored bytes (provenance inherited from the bytes) | anything not in stored bytes | verifier tests | X27–X28, X30, C11, C19–C22, C36–C39, S01, S03, S11–S12, N03–N15, N18–N21, N51, N53, N55, N60, D31–D33 |
 | `reconstruct.infer` | I | offline | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); P1 (projection) | inferred links and events by the closed methods of section 2.5 | anything without a listed method | C1-5 | X21, C08, C23, C39, S13, S15, N16, N29, N48, N52, D17 |
-| `host.ebpf` | S | records | Linux nodes | n/a (separate component) | customer-deployed | built (031); optional records producer with its own source (cursor/spool), corroboration only | exec and connect records; used only as `corroborated_by` | in-process content | 031 | C41 |
-| `host.auditd` | S | records | Linux nodes | n/a (separate component) | customer-deployed | built (030); optional records producer with its own source (cursor/spool), corroboration only | exec and connect records; used only as `corroborated_by` | in-process content | 030 | C41 |
+| `host.ebpf` | S | records | Linux nodes | n/a (separate component) | customer-deployed | built (031); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only | exec and connect records; used only as `corroborated_by` | in-process content | 031 | C41 |
+| `host.auditd` | S | records | Linux nodes | n/a (separate component) | customer-deployed | built (030); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only | exec and connect records; used only as `corroborated_by` | in-process content | 030 | C41 |
 | `feed.independent` | S | qualified | customer services | n/a | customer-deployed | built (045); qualified-run mode only (section 2.13) | service-side records and receipts | used only as `corroborated_by` | 045 | D23, D25, D28–D29 |
 | `delivery.receipts` | S | qualified | destination | n/a | destination-provided | contract (delivery/v1); verified in qualified-run mode only (section 2.13) | spooled, accepted and durable delivery stages | not obtained automatically by recorder v1 | delivery/v1 | X37 |
 <!-- generated:points:end -->
@@ -967,8 +986,8 @@ A segment is **sealed** by a token issue, a fork, the block exit of a
 resumable run's outermost scope in that process, `end_run`, and epoch
 `final`. The application thread only swaps the segment id under the lock
 and queues the seal; the worker writes **one** `segment_seal` record once
-every position up to the segment's `last_sequence` has been delivered or
-lost (section 2.12). A crash before that, or a dropped marker, leaves the
+every position up to the segment's `last_sequence` has **settled** —
+admitted to the spool or recorded as a loss (section 2.12). A crash before that, or a dropped marker, leaves the
 segment `unsealed`, and the run `partial`.
 
 **Fork.** The before-fork hook (lock only, no I/O) mints the child's
@@ -999,7 +1018,9 @@ and a dispatch record's `expected_branches` declare that n consumers must
 appear.
 
 **Termination (`X42`).** A non-resumable run terminates when its outermost
-block exits (its seal is terminal). A resumable run (`resumable=True` or
+block exits (its seal is terminal). Issuing a `resume_token()` makes the
+run resumable: the issuing block's exit then seals non-terminal unless it
+was opened with `final=True`. A resumable run (`resumable=True` or
 opened with a token) terminates only through a terminal seal: the exit of a
 block opened with `final=True`, or
 `fabric.wire.end_run(run_id, outcome, *, resume=tokens)`, which emits a
@@ -1014,11 +1035,11 @@ always applies in addition):
 | # | Rule | Result |
 |---|---|---|
 | G1 | The graph has a cycle, more than one root (`none`), or a predecessor entry that disagrees with the sealed segment it names, or a record with a sealed segment's id above its `last_sequence` | run state `conflicted`; `partial(segment_conflict)` |
-| G2 | A named predecessor or a declared fork child is absent | `partial(segment_missing)` |
-| G3 | A present non-root segment has no predecessor entry (for example processes joined only by the `trace:` fallback run id: each is a root, so G1 fires as more than one root) | `partial(segment_missing)` |
-| G4 | A segment names the terminal segment T or a descendant of T, or a declared branch or segment outside T's closure sealed after T — compared with the declared clock uncertainty of **the two compared segments** | `partial(post_terminal_activity)`; inside that uncertainty window `unverified(clock_uncertain)` |
-| G5 | **Terminated:** exactly one terminal segment T; every present segment except declared fork children is in T's predecessor closure; every declared fork child is present and sealed; every `expected_branches` count is met by sealed consumers | run state `terminated` |
-| G6 | Every present segment verifies for integrity (sequences, loss, heartbeats, scope windows, seal, section 2.12) | any failure: `partial` |
+| G2 | A named predecessor or a declared fork child is absent | run state `conflicted`; `partial(segment_missing)` |
+| G3 | A present non-root segment has no predecessor entry (for example processes joined only by the `trace:` fallback run id: each is a root, so G1 fires as more than one root) | run state `conflicted`; `partial(segment_missing)` |
+| G4 | A segment names the terminal segment T or a descendant of T, or a declared branch or segment outside T's closure sealed after T — compared with the declared clock uncertainty of **the two compared segments** | run state `conflicted`; `partial(post_terminal_activity)`; inside that uncertainty window `unverified(clock_uncertain)` |
+| G5 | **Terminated:** exactly one terminal segment T; every present segment is in T's predecessor closure or in the closure rooted at a declared fork child (a fork child's continuations, tokens and own declared children included, all sealed non-terminal); every declared fork child is present and sealed; every `expected_branches` count is met by sealed consumers | run state `terminated` |
+| G6 | Every present segment verifies for integrity (sequences, loss, heartbeats, scope windows, seal, section 2.12); in the production profile every record carries `fabric.source.authenticated=true` (section 7.9) | integrity failure: `partial`; an unauthenticated record in production: `unverified(source_unauthenticated)` |
 | G7 | A terminal exists but G5 fails (unjoined observed branch, second terminal, unmet declared count) | run state `conflicted`; `partial(segment_missing)` or `partial(segment_conflict)` |
 | G8 | No terminal, non-resumable run | `not_resumable_unclosed`: 048 behaviour (`partial`/`unverified`) |
 | G9 | No terminal, resumable run, before the deadline | run state `open` |
@@ -1115,18 +1136,21 @@ that emits through the records input (section 5 rule 15).
 The default seal is simple and portable: anyone with read access to the
 store and the telemetry can recompute it.
 
-1. **Canonical record digest.** For every delivered record of a segment:
-   `sha256:` over the spec-029 canonical JSON of its exported attributes
-   (the telemetry key-value set exactly as admitted by fabricguard) plus,
-   for a record with content, the `stored_sha256` of each content object it
-   references.
+1. **Canonical record digest.** For every record of a segment: `sha256:`
+   over the spec-029 canonical JSON of the record's values for the
+   registry's closed `fabric.*` key set of its record kind (the keys of
+   section 4.2 and the built keys that kind carries), plus, for a record with
+   content, the `stored_sha256` of each content object it references. The
+   agent computes it from what it emits, the verifier from what it reads;
+   neither depends on what fabricguard strips, because the Node never
+   strips a registry key.
 2. **Seal digest.** `sha256:` over the canonical JSON array of
    `[sequence, canonical record digest]` pairs of the segment's records,
    sorted by sequence, with lost positions as `[sequence, "loss:<reason>"]`.
    Allocation order defines the set; commit order does not matter.
-3. **Writer.** The worker computes it from the records it delivered and
-   writes one `segment_seal` record once the segment's positions settle
-   (section 2.10). `fabric.reconstruct` recomputes it from the store and
+3. **Writer.** The worker computes it from the records it admitted and
+   writes one `segment_seal` record once the segment's positions have
+   settled — admitted to the spool or recorded as a loss (section 2.10). `fabric.reconstruct` recomputes it from the store and
    the telemetry; a difference is `partial(seal_mismatch)`; a segment
    without a seal is `unsealed` (`partial`).
 4. **Transport.** `segment_seal` is a marker on the existing marker path
@@ -1138,11 +1162,14 @@ store and the telemetry can recompute it.
    `run_start`, `run_end` and `segment_seal`, in the same release as the
    emitter (section 4.2).
 5. **Unsealed prior epochs.** Manifest 0 of a new epoch on the same spool
-   declares every prior epoch of that spool that never wrote its `final`
+   declares every prior **registered** epoch of that spool whose writer no
+   longer holds its registration flock and that never wrote its `final`
    heartbeat and seals (`unsealed_prior_epochs`, exact
    `unsealed_prior_epoch_count`), including epochs with zero surviving
-   records; each is a gap (`unsealed_epoch`) for its runs. Lost epochs on
-   other hosts fall under chaining and the deadline (section 2.10).
+   records; each is a gap (`unsealed_epoch`) for its runs. Fork children
+   never register; a lost fork child is caught by the declared-branch rule
+   (G2). Lost epochs on other hosts fall under chaining and the deadline
+   (section 2.10).
 
 The default seal detects a deleted tail, a substituted or edited record
 and a record moved between segments, against the delivered record set. It
@@ -1224,11 +1251,12 @@ manifest (section 4).
 | X39 | manifest_seq, after_source_sequence | int, int | `fabric.self` | metadata | META | R | always | P1 | M; T `fabric.capture.manifest_seq` on heartbeats | Manifest marker counter (0, 1, 2 … per epoch, contiguous) and the last source sequence allocated when the manifest took effect. A manifest governs sequences above `after_source_sequence` until the next manifest (section 2.4). |
 | X40 | `store_reason` | enum (section 4.2) | `wire.py.httpx` | metadata | META | R (when store_status is not stored) | always | P0-A | T `fabric.wire.store_reason` | Why an exchange's content is absent or partial, on the exchange span itself, so telemetry (not only the manifest) shows it. |
 | X41 | `segment.predecessors` | list (max 64) of `<seg-id>/<opaque source id>/<epoch>/<last_sequence>/sha256:<64 hex>`, or `none` | `run.scope` | metadata | ID | R (first run_start of each segment of a run) | not_captured(caller_omitted) | P1 | T `fabric.run.predecessors` on the segment's `run_start` | The sealed segments this segment continues, taken verbatim from the resume tokens passed in, from the locally sealed segment on local continuation, or from the parent's sealed segment after a fork; `none` only for the run's root segment. Entries are exact and immutable (section 2.10). |
-| X42 | run.resumable, run.terminal, run.open_deadline_s | bool, bool, int | `run.scope` | metadata | META | R (run root) | always (defaults: resumable false, terminal at outermost block exit) | P1 | T `fabric.run.resumable`, `fabric.run.open_deadline_s` (root only) on `run_start`; T `fabric.run.terminal` on `segment_seal` | Whether the run may continue in another segment, whether a segment seal terminates the run, and the open-run deadline — honoured only on the root segment's `run_start` (else the root manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits. |
+| X42 | run.resumable, run.terminal, run.open_deadline_s | bool, bool, int | `run.scope` | metadata | META | R (run root) | always (defaults: resumable false, terminal at outermost block exit) | P1 | T `fabric.run.resumable`, `fabric.run.open_deadline_s` (root only) on `run_start`; T `fabric.run.terminal` on `segment_seal` | Whether the run may continue in another segment, whether a segment seal terminates the run, and the open-run deadline — honoured only on the root segment's `run_start` (else the root manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits. Issuing a `resume_token()` makes the run resumable: the issuing block's exit then seals non-terminal unless it was opened with `final=True`. |
 | X43 | `segment_id` | `seg-` + 32 hex (128-bit CSPRNG) | `run.scope` | metadata | ID | R (every record and marker of a run) | always (from P1) | P1 | T `fabric.run.segment_id` | Immutable segment a record belongs to, assigned at allocation under the allocator lock. Within one process every thread and task of a run shares its open segment; a new segment starts only at a run's first entry into a process, after a token issue, after a fork (parent and child), and at re-entry after a seal. |
-| X44 | `segment.seal` | last_sequence, manifest digest, seal digest, terminal | `fabric.self`, `run.scope` | metadata | META/DIGEST | R (every segment) | not_captured(source_lost) when never sealed (segment `unsealed`, run `partial`) | P1 | T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.seal_digest`, `fabric.run.terminal` on the `segment_seal` marker | One `segment_seal` record per segment, written by the worker once every position up to `last_sequence` of the segment has been delivered or lost: last sequence, manifest digest at seal, terminal flag and the seal digest over the canonical digests of the segment's delivered records sorted by sequence (section 2.12). A crash or a dropped marker leaves the segment `unsealed`. |
-| X45 | unsealed_prior_epochs, unsealed_prior_epoch_count | list of epochs (max 64); int | `fabric.self` | metadata | DIGEST | R (every epoch) | not_captured(unsealed_epoch) when never sealed | P1 | M `unsealed_prior_epochs`, `unsealed_prior_epoch_count` | Prior epochs on the same spool that never wrote their `final` heartbeat and segment seals, declared by the next epoch's manifest 0; each is a gap for its runs. The count is exact even when the list is truncated at 64. |
+| X44 | `segment.seal` | last_sequence, manifest digest, seal digest, terminal | `fabric.self`, `run.scope` | metadata | META/DIGEST | R (every segment) | not_captured(source_lost) when never sealed (segment `unsealed`, run `partial`) | P1 | T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.seal_digest`, `fabric.run.terminal` on the `segment_seal` marker | One `segment_seal` record per segment, written by the worker once every position up to `last_sequence` of the segment has settled (admitted to the spool, or recorded as a loss): last sequence, manifest digest at seal, terminal flag and the seal digest over the canonical digests of the segment's delivered records sorted by sequence (section 2.12). A crash or a dropped marker leaves the segment `unsealed`. |
+| X45 | unsealed_prior_epochs, unsealed_prior_epoch_count | list of epochs (max 64); int | `fabric.self` | metadata | DIGEST | R (every epoch) | not_captured(unsealed_epoch) when never sealed | P1 | M `unsealed_prior_epochs`, `unsealed_prior_epoch_count` | Prior epochs registered on the same spool whose writer no longer holds its registration flock and that never wrote their `final` heartbeat and segment seals, declared by the next epoch's manifest 0; each is a gap for its runs. The count is exact even when the list is truncated at 64. Unregistered fork-child epochs are covered by the declared-branch rules instead. |
 | X46 | segment.declared_branches, segment.expected_branches | list of `seg-` ids (max 64); int | `run.scope`, `sdk.records` | metadata | ID/META | O | absent | P1 | T `fabric.run.declared_branches` on `run_start`; T `fabric.segment.expected_branches` on `segment_seal`; T `fabric.dispatch.expected_branches` on dispatch records | Branches a run must account for before it can terminate: fork children declared by the parent's post-fork segment, and an optional count of consumers expected for a resume token or dispatch. Declaring is non-blocking. Undeclared token consumers that are wholly lost are a residual limit (section 2.10). |
+| X47 | source.authenticated, source_auth | bool; enum bound/unbound | `fabric.self` | metadata | META | R (production profile) | unknown (record not stamped: `unverified(source_unauthenticated)` in production) | P0-A | T `fabric.source.authenticated` (stamped by fabricguard at a bound ingress); M `source_auth` | Whether the record arrived on a Node ingress bound to its tenant and source. Only fabricguard sets the key; an agent-supplied value is stripped. The manifest declares the intended `source_auth`. |
 <!-- generated:fields:X:end -->
 
 ### 3.2 Layer 1 — Context
@@ -1536,6 +1564,8 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.memory.key` | changed | N31 | ID: `mkey-` + 32 hex (newly admitted) | P0-A |  | Decided: pseudonymise. Emitted clear today and dropped by the Node; the clear key stays in the memory content roles. |
 | `fabric.session_id` | changed | X13 | ID: `sess-` + 32 hex under a pseudonymous Node; clear only when the Node is configured `identity_mode: clear` | P0-A |  | Admitted clear today. |
 | `fabric.user_id` | changed | X14 | ID: `usr-` + 32 hex (newly admitted; clear values rejected) | P0-A |  | Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted). |
+| `fabric.wire.request_sha256` | changed | N01 | DIGEST: bare 64 hex (built form); digest of the stored, protected request object; absent when nothing is stored | P0-A |  | Today the digest of the original body (`_pipeline.py:136,293,302`). Never computed over the original under redact, tokenize, masked_only or metadata_only. |
+| `fabric.wire.response_sha256` | changed | N01 | DIGEST: bare 64 hex (built form); digest of the stored, protected response object; absent when nothing is stored | P0-A |  | Today the digest of the original body (`_pipeline.py:141,293,302`). |
 | `db.system.name` | new | N38 | LABEL: pattern, exposure rule | P4 |  |  |
 | `fabric.actor.id` | new | S04 | ID: `act-` + 32 hex | P1 |  |  |
 | `fabric.actor.type` | new | S03 | META: closed enum (field type) | P1 |  |  |
@@ -1624,6 +1654,7 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.manifest.runtime.version` | new | C16 | META: `^[0-9A-Za-z.+-]{1,64}$` | P1 | `runtime/version` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.sdk.language` | new | X36 | META: closed enum `python`, `typescript` | P1 | `sdk/language` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.sequence_unit` | new | X07 | META: closed enum `exchange`, `record` | P1 | `sequence_unit` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.source_auth` | new | X47 | META: closed enum `bound`, `unbound` | P0-A | `source_auth` |  |
 | `fabric.manifest.spool_encrypted` | new | X34 | META: boolean | P0-A | `spool_encrypted` |  |
 | `fabric.manifest.uncaptured_classes` | new | X34 | META: array of closed enum (schema) | P1 | `uncaptured_classes` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.unsealed_prior_epoch_count` | new | X45 | META: integer ≥ 0 | P1 | `unsealed_prior_epoch_count` |  |
@@ -1674,6 +1705,7 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.side_effect.commit_state` | new | D23 | META: closed enum (field type) | P3 (R), P4 (H) |  |  |
 | `fabric.side_effect.compensation_state` | new | D26 | META: closed enum (field type) | P3 |  |  |
 | `fabric.side_effect.state` | new | D19 | META: closed enum (field type) | P2 |  |  |
+| `fabric.source.authenticated` | new | X47 | META: const `true`; set only by fabricguard at a bound ingress, stripped when supplied by an agent | P0-A |  |  |
 | `fabric.step.attempt_kind` | new | S13 | META: closed enum (field type) | P1 (I), P2 (R) |  |  |
 | `fabric.step.attempt_selected` | new | S16 | META: boolean | P2 |  |  |
 | `fabric.step.kind` | new | S01 | META: closed enum (field type) | P1 |  |  |
@@ -2000,6 +2032,7 @@ step whose evidence is complete is `captured_for_declared_fields`.
 | # | Condition | Verdict |
 |---|---|---|
 | RR1 | Integrity verdict `unverified`, or any step verdict `unverified` | `unverified` |
+| RR1a | Production profile and any record of the run without `fabric.source.authenticated=true` (G6) | `unverified`, reason `source_unauthenticated` |
 | RR2 | Run-level fields of the profile (`run_fields`) evaluated as one pseudo-step give `unverified` | `unverified` |
 | RR3 | No step and no run-level field of the profile in this layer | `none_observed` (with the manifest states of the supplying capture points) |
 | RR3a | Segment-graph rules G1–G7 (2.10) report `segment_missing`, `segment_conflict` or `post_terminal_activity`, or a seal check fails (`seal_mismatch`, `unsealed`, `unsealed_epoch`, section 2.12) | `partial` with that reason |
@@ -2014,8 +2047,8 @@ step whose evidence is complete is `captured_for_declared_fields`.
 Precedence, worst first: `unverified` > `partial` > `unsupported` >
 `open` > `captured_with_withholding` > `captured_for_declared_fields`;
 `open` is never a completeness claim, and the projection's `run_state`
-(`terminated`, `open`, `unterminated`, `not_resumable_unclosed`,
-`deadline_uncertain`), `deadline_at` and `evaluated_at` make the deadline
+(`terminated`, `open`, `unterminated`, `conflicted`,
+`not_resumable_unclosed`, `deadline_uncertain`), `deadline_at` and `evaluated_at` make the deadline
 evaluation reproducible. `open` and `none_observed` are run-only: the
 schema's step verdicts exclude them (`$defs/step_verdict`):
 
@@ -2248,7 +2281,10 @@ the content writer or the network before it has run.
 5. **Exit.** Only protected objects are admitted to the spool; the
    `fabriccontent` exporter admits the privacy fields (section 4.3 rule 6).
 6. **Gate (P0-A).** For every mode: a canary scan of spool files, Node
-   queue and store finds no original bytes where the mode forbids them;
+   queue, store **and telemetry** finds no original bytes, and no digest of
+   the original body (`fabric.wire.request_sha256`/`response_sha256` are the
+   stored object's digest or absent, section 2.4 rule 8), where the mode
+   forbids them;
    injected transformation failures produce `protection_failed` and no raw
    bytes; a crash between capture and protection persists nothing (a loss,
    not a leak); review copies never satisfy original requirements in
@@ -2278,8 +2314,13 @@ forged identity) today accepts only evidence logs and rejects every trace
 batch (`processor.go:472-473`). From P0-A it covers traces, content logs
 and markers: each record's `tenant_id` and `fabric.source_id` must equal
 the binding of the ingress it arrived on. The production profile rejects
-unauthenticated sources at the Node; the local profile may run without a
-binding, and its records are marked unauthenticated.
+unauthenticated sources at the Node. fabricguard stamps
+`fabric.source.authenticated=true` on every record admitted at a bound
+ingress and strips the key when an agent supplies it; the manifest declares
+the intended `source_auth` (`bound`/`unbound`). In the production profile
+any record without the stamp — direct mode with no Node, or a Node ingress
+without a binding — makes the run `unverified(source_unauthenticated)`
+(G6, RR1a). The local profile may run unbound; its records lack the stamp.
 
 ### 7.10 Content v1 and reads
 
@@ -2858,10 +2899,10 @@ Each is applied in this spec as its recommended default.
 | R4-2 | Long-running runs: how is a run that is still going reported? | `open` run verdict within a customer-set `open_run_deadline`, `partial(run_unterminated)` after it; reproducible via `evaluated_at` | 2.10, 6.2 |
 | R4-3 | Long-running runs: what must be propagated across processes and machines? | Resume contract: `r-` run id and resume token via `fabric.wire.run()`, `FABRIC_RUN_ID`/`FABRIC_RUN_RESUME_TOKEN`, W3C `baggage` (`fabric.run`, `fabric.resume`) or message attributes; `resumed_from` vs `parent_run_id`; missing propagation → separate runs, tentative `same_as` only by `trace_id_match` or `cross_run_previous_response`; reference scenario LR-1 in P1/P2 gates | 2.10, 8.2 |
 | R4-4 | Two-input model: one allocator or two? | One allocator per (source, epoch) for both inputs: both now travel through the same spool and sender, so the rev-2 sampling objection no longer applies; host-tracer copies are unsequenced duplicates | 1.3, 2.4 |
-| R4-5 | Two-input model: where do the explicit line's guarantees go? | Kept and moved: exact boundary (records producers), governed redaction (before spool admission), encrypted spool (unified spool envelope), 16 MiB cap (`records_max_object_bytes`), per-run accounting (scope windows + chaining), receipts (`fabric.reconstruct --receipts`), governed local store (writer backend); modules retired only with owner sign-off | 2.11 |
+| R4-5 | Two-input model: where do the explicit line's guarantees go? | Kept and moved: exact boundary (records producers), governed redaction (before spool admission), encrypted spool (unified spool envelope), 16 MiB cap (`records_max_object_bytes`), per-run accounting (scope windows + chaining), receipts (qualified-run mode, section 2.13; superseded in rev 6), governed local store (writer backend); modules retired only with owner sign-off | 2.11 |
 | R4-6 | CrewAI and framework adapters | Removed from the default package and from the matrix wording; framework-specific capture only as an optional extension through the records input | 2.11, 5 rule 15, 8.3 |
 | R5-1 | Segment identity mutable; tokens checked against a moving position (Astra B2, Fable F1) | Immutable `seg-` ids; a token seals its segment; re-entry, fork, concurrent work and post-fan-out continuation each get a new segment; predecessor entries name sealed boundaries | 2.10, `X41`, `X43`, `X44` |
-| R5-2 | One terminal branch could close the whole run (Astra B1, Fable F1) | Termination requires every present segment and every token- or dispatch-named branch in the terminal's predecessor closure; rules G1–G12 for token reuse, multiple roots, cycles, post-terminal continuation | 2.10, 6.2 |
+| R5-2 | One terminal branch could close the whole run (Astra B1, Fable F1) | Termination requires every present segment and every token- or dispatch-named branch in the terminal's predecessor closure; rules G1–G10 (renumbered in rev 6) for token reuse, multiple roots, cycles, post-terminal continuation | 2.10, 6.2 |
 | R5-3 | `end_run` had no carrier (Fable F2) | `end_run(run_id, outcome, resume=token)` emits a zero-width terminal segment; refused without a token | 2.10 |
 | R5-4 | Fork unspecified (Fable F3) | Before-fork seal in the parent, after-fork `run_start` in the child naming the sealed segment | 2.10 |
 | R5-5 | Epochs collide across processes; 045 bound and 046 epoch-0 rule (Astra §2) | 63-bit CSPRNG epochs, admission-time re-draw, verifier `segment_conflict`; 045/046 qualify one sealed segment as epoch 0 of `<source>/<segment>`, bounds unchanged | 2.4 |
@@ -2887,3 +2928,12 @@ Each is applied in this spec as its recommended default.
 | R6-13 | Audit G8, G9 | Content v1 stays readable (public family), not emitted by new capture; authorized reads out of capture scope | 7.10 |
 | R6-14 | Audit G3, G4, G6 | Qualified-run mode | 2.13 |
 | R6-15 | Stale auditd claim | Corrected with `netlink_linux.go:317-347` | 2.1 |
+| R6F-D1 | Source authentication not observable to the verifier | fabricguard stamps `fabric.source.authenticated`; manifest `source_auth`; production records without it → `unverified(source_unauthenticated)` (G6, RR1a); claim in 1.1 tightened | 1.1, 2.10, 6.2, 7.9 |
+| R6F-M1 | Raw-body digests on telemetry bypass PROTECT | `fabric.wire.*_sha256` = stored protected object's digest, absent when nothing stored; never over the original in protective modes; P0-A canary; verifier sites noted | 2.4 rule 8, 7.7, 4.2 |
+| R6F-M2 | Seal input not computable agent-side | Digest over the registry's closed key set per record kind | 2.12 |
+| R6F-M3 | "Delivered" ambiguous in the seal trigger | Settled = admitted to the spool or recorded as a loss | 2.10, 2.12, `X44` |
+| R6F-M4 | Nested fork / fork-child hand-off | G5 exempts the whole closure rooted at a declared fork child | 2.10 |
+| R6F-M5 | Token issued in a non-resumable run | Token issue makes the run resumable | 2.10, `X42` |
+| R6F-M6 | Writer liveness and X45 scope | Live writer = holder of the registration flock; X45 limited to registered epochs; fork children via declared branches | 2.4, 2.12, `X45` |
+| R6F-M7 | Run states for G2/G3/G4; `conflicted` missing in 6.2 | Added | 2.10, 6.2 |
+| R6F-M8 | Stale text (host sensors, G1–G12, `--receipts`) | Host sensors are out-of-process producers with their own source and spool; numbering and receipts rows corrected | 1.3, App. E |
