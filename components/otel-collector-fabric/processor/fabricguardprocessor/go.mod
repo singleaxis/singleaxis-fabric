@@ -1,20 +1,20 @@
 module github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor
 
-go 1.25.0
+go 1.26.0
 
 require (
 	go.opentelemetry.io/collector/component v1.56.0
 	go.opentelemetry.io/collector/consumer v1.56.0
 	go.opentelemetry.io/collector/consumer/consumererror v0.150.0
 	go.opentelemetry.io/collector/consumer/consumertest v0.150.0
-	go.opentelemetry.io/collector/pdata v1.56.0
+	go.opentelemetry.io/collector/pdata v1.68.0
 	go.opentelemetry.io/collector/processor v1.56.0
 	go.opentelemetry.io/collector/processor/processorhelper v0.150.0
 	go.opentelemetry.io/collector/processor/processortest v0.150.0
 	go.uber.org/zap v1.27.1
 )
 
-require google.golang.org/protobuf v1.36.11 // indirect
+require google.golang.org/protobuf v1.36.12 // indirect
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -30,7 +30,7 @@ require (
 	go.opentelemetry.io/collector/component/componentstatus v0.150.0 // indirect
 	go.opentelemetry.io/collector/component/componenttest v0.150.0 // indirect
 	go.opentelemetry.io/collector/consumer/xconsumer v0.150.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.56.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.68.0 // indirect
 	go.opentelemetry.io/collector/internal/componentalias v0.150.0 // indirect
 	go.opentelemetry.io/collector/pdata/pprofile v0.150.0 // indirect
 	go.opentelemetry.io/collector/pdata/testdata v0.150.0 // indirect
@@ -46,5 +46,5 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/grpc v1.83.2 // indirect
+	google.golang.org/grpc v1.83.2
 )
