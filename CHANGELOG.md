@@ -136,6 +136,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Enabled existing CI workflows for the exact #164 parent branch so the
   stacked capture draft receives validation.
 
+### Removed
+
+- **Breaking: removed the CrewAI adapter** (`fabric.adapters.crewai`,
+  `attach_callbacks`). Fabric captures at the LLM wire and through
+  app-reported records, not through framework adapters. Callers that used it
+  should drop the callbacks; `fabric.wire` (zero-code model capture) and the
+  `Decision` record APIs (`record_hook`, `tool_call`, `llm_call`) cover the
+  same activity without framework coupling. The Fabric Node guard
+  (`fabricguard`) no longer allowlists the `fabric.crewai.*` attributes, and
+  `fabric.crewai.step` / `fabric.crewai.task` event names now normalize to
+  `fabric.activity`; telemetry from older SDKs that still emit them loses
+  those attributes. The module is now a forbidden wheel/sdist member in the
+  release policy and wheel qualifier, and the Python SDK connector manifest
+  declares `framework_lifecycle` as `caller_reported`.
+
 ### Known limitations
 
 - Production remains NO_GO pending target infrastructure and security-owner

@@ -45,6 +45,7 @@ def test_release_policy_is_recorder_only() -> None:
     assert policy["python_distribution"]["required_console_scripts"] == {}
     forbidden = set(policy["python_distribution"]["forbidden_wheel_paths"])
     assert {
+        "fabric/adapters/crewai.py",
         "fabric/guardrails.py",
         "fabric/judge.py",
         "fabric/policy.py",

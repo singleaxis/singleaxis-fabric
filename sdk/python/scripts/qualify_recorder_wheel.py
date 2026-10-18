@@ -36,6 +36,7 @@ FORBIDDEN_MEMBERS = {
     "fabric/stream.py",
     "fabric/tool_auth.py",
     "fabric/adapters/agent_framework.py",
+    "fabric/adapters/crewai.py",
     "fabric/adapters/langgraph.py",
 }
 FORBIDDEN_PREFIXES = (
