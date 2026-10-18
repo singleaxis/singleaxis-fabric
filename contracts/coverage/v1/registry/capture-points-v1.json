@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-point-registry/v1",
-  "registry_revision": 5,
+  "registry_revision": 6,
   "capture_points": [
     {
       "id": "fabric.self",
@@ -149,7 +149,7 @@
       "process_global": "no",
       "activation": "explicit API",
       "state": "built (043/044); P1: records producer on the shared allocator and spool",
-      "observes": "bytes at a caller-declared boundary",
+      "observes": "bytes at a caller-declared boundary; optional records producer",
       "cannot_observe": "anything outside the declared boundary",
       "passivity_gate": "043/044 acceptance",
       "supplies": [
@@ -169,7 +169,7 @@
       "process_global": "no",
       "activation": "explicit API",
       "state": "built (043); P1: records producer on the shared allocator and spool",
-      "observes": "final HTTP request/response bodies routed through `FinalHTTPAdapter`",
+      "observes": "final HTTP request/response bodies routed through `FinalHTTPAdapter`; optional records producer",
       "cannot_observe": "hosts not routed through it",
       "passivity_gate": "043 acceptance",
       "supplies": [
@@ -177,6 +177,25 @@
         "N44"
       ],
       "input": "records"
+    },
+    {
+      "id": "explicit.subprocess_artifact",
+      "kind": "R",
+      "input": "records",
+      "runtime": "Python",
+      "process_global": "no",
+      "activation": "explicit adapter (`adapters/synthetic_evidence.py`)",
+      "state": "built (040); optional records producer",
+      "observes": "no-shell subprocess argv, stdin, stdout, stderr, exit; file before/after bytes, as handed to the adapter",
+      "cannot_observe": "processes and files not routed through the adapter",
+      "passivity_gate": "040 acceptance",
+      "supplies": [
+        "N32",
+        "N33",
+        "N34",
+        "N35",
+        "N47"
+      ]
     },
     {
       "id": "sdk.records",
@@ -197,6 +216,7 @@
         "X22",
         "X24",
         "X28",
+        "X46",
         "C01",
         "C02",
         "C03",
@@ -322,6 +342,7 @@
         "X42",
         "X43",
         "X44",
+        "X46",
         "S34"
       ],
       "input": "wire, records"
@@ -595,14 +616,14 @@
       "runtime": "Linux nodes",
       "process_global": "n/a (separate component)",
       "activation": "customer-deployed",
-      "state": "built (031)",
+      "state": "built (031); optional records producer with its own source (cursor/spool), corroboration only",
       "observes": "exec and connect records; used only as `corroborated_by`",
       "cannot_observe": "in-process content",
       "passivity_gate": "031",
       "supplies": [
         "C41"
       ],
-      "input": "sensor"
+      "input": "records"
     },
     {
       "id": "host.auditd",
@@ -610,14 +631,14 @@
       "runtime": "Linux nodes",
       "process_global": "n/a (separate component)",
       "activation": "customer-deployed",
-      "state": "built (030)",
+      "state": "built (030); optional records producer with its own source (cursor/spool), corroboration only",
       "observes": "exec and connect records; used only as `corroborated_by`",
       "cannot_observe": "in-process content",
       "passivity_gate": "030",
       "supplies": [
         "C41"
       ],
-      "input": "sensor"
+      "input": "records"
     },
     {
       "id": "feed.independent",
@@ -625,7 +646,7 @@
       "runtime": "customer services",
       "process_global": "n/a",
       "activation": "customer-deployed",
-      "state": "built (045)",
+      "state": "built (045); qualified-run mode only (section 2.13)",
       "observes": "service-side records and receipts",
       "cannot_observe": "used only as `corroborated_by`",
       "passivity_gate": "045",
@@ -635,7 +656,7 @@
         "D28",
         "D29"
       ],
-      "input": "sensor"
+      "input": "qualified"
     },
     {
       "id": "delivery.receipts",
@@ -643,14 +664,14 @@
       "runtime": "destination",
       "process_global": "n/a",
       "activation": "destination-provided",
-      "state": "contract only (delivery/v1)",
+      "state": "contract (delivery/v1); verified in qualified-run mode only (section 2.13)",
       "observes": "spooled, accepted and durable delivery stages",
       "cannot_observe": "not obtained automatically by recorder v1",
       "passivity_gate": "delivery/v1",
       "supplies": [
         "X37"
       ],
-      "input": "sensor"
+      "input": "qualified"
     }
   ]
 }

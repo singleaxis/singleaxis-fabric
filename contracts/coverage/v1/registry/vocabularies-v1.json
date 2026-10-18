@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 5,
+  "registry_revision": 6,
   "coverage_status": [
     {
       "value": "captured",
@@ -117,6 +117,10 @@
       "meaning": "The capture policy maps this role to `omit`, `metadata_only`, `redact` or `tokenize`."
     },
     {
+      "value": "protection_failed",
+      "meaning": "The PROTECT stage could not apply the role's privacy mode (transformation error, timeout, unsupported media, no configured transformation); the content is withheld, never stored raw (section 7.7)."
+    },
+    {
       "value": "missing_capture_policy",
       "meaning": "Content capture needs a capture policy and none was configured."
     },
@@ -170,7 +174,7 @@
     },
     {
       "value": "segment_conflict",
-      "meaning": "The segment graph of a run is inconsistent: a cycle, more than one root, more than one terminal segment, or a predecessor entry that disagrees with the sealed segment it names (section 2.10)."
+      "meaning": "The segment graph of a run is inconsistent: a cycle, more than one root, more than one terminal segment, an epoch collision, or a predecessor entry that disagrees with the sealed segment it names (section 2.10)."
     },
     {
       "value": "run_unterminated",
@@ -186,11 +190,11 @@
     },
     {
       "value": "unsealed_epoch",
-      "meaning": "A prior epoch recorded in the seal ledger was never sealed (crash before its final seal) (section 2.12)."
+      "meaning": "A prior epoch on the same spool never wrote its `final` heartbeat and segment seals; declared by the next epoch's manifest 0 (section 2.12)."
     },
     {
       "value": "seal_mismatch",
-      "meaning": "The delivered record set of a segment or epoch does not reproduce its ledger seal digest (section 2.12)."
+      "meaning": "The delivered records of a segment do not reproduce its `segment_seal` digest (section 2.12)."
     },
     {
       "value": "uninstrumented_client",
@@ -736,7 +740,7 @@
     },
     {
       "value": "gap",
-      "meaning": "`not_captured` with any other reason (including `provider_held`, `not_instrumented`, `caller_omitted`, `missing_capture_policy`, `missing_id_key`, `segment_missing`, `segment_conflict`, `run_unterminated`, `post_terminal_activity`, `unsealed_epoch`, `seal_mismatch`); `truncated` with any reason; `conflict`."
+      "meaning": "`not_captured` with any other reason (including `provider_held`, `not_instrumented`, `caller_omitted`, `missing_capture_policy`, `missing_id_key`, `segment_missing`, `segment_conflict`, `run_unterminated`, `post_terminal_activity`, `unsealed_epoch`, `seal_mismatch`, `protection_failed`); `truncated` with any reason; `conflict`."
     },
     {
       "value": "unsupported",
@@ -763,6 +767,10 @@
     {
       "value": "privacy_policy",
       "meaning": "The role's privacy mode retains no bytes."
+    },
+    {
+      "value": "protection_failed",
+      "meaning": "The PROTECT stage failed; content withheld (coverage reason `protection_failed`)."
     },
     {
       "value": "explicit_withheld",

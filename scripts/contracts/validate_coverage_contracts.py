@@ -50,7 +50,7 @@ TITLES = {"X": "fields:X", "C": "fields:C", "S": "fields:S", "N": "fields:N", "D
 OUT_OF_SCOPE = "out of scope"
 STORE_REASON_MAP = {"no_store": "not_configured"}
 # capture points that are not one of the two inputs
-NON_INPUTS = {"fabric", "config", "offline", "sensor"}
+NON_INPUTS = {"fabric", "config", "offline", "sensor", "qualified"}
 MEDIA_RE = re.compile(r"^(\*|[a-z0-9!#$&^_.+-]+/(\*|[a-z0-9!#$&^_.+-]+))$")
 BLOCK_RE = re.compile(
     r"<!-- generated:(?P<name>[a-z_:A-Z]+):begin -->\n(?P<body>.*?)<!-- generated:(?P=name):end -->",

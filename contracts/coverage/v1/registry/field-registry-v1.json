@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 5,
+  "registry_revision": 6,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -182,7 +182,7 @@
       "status_if_hook_absent": "always",
       "phase": "built (wire), P1 (records on the shared allocator)",
       "lives_in": "T `fabric.capture.input`, `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`",
-      "definition": "One allocator per (source, epoch) is shared by both inputs from P1: wire exchanges and records take positions from the same counter and travel through the same spool (section 2.4). `input` says which input produced the record. The epoch is a 63-bit CSPRNG value from P1 (section 2.4), collision-checked at spool admission."
+      "definition": "One allocator per (source, epoch) is shared by both inputs from P1: wire exchanges and records take positions from the same counter and travel through the same spool (section 2.4). `input` says which input produced the record. The epoch is a 63-bit CSPRNG value from P1, registered at `install()` only; collisions are found by the verifier (section 2.4)."
     },
     {
       "id": "X07",
@@ -659,7 +659,7 @@
       "status_if_hook_absent": "always",
       "phase": "built (wire), P1 (shared with records)",
       "lives_in": "T existing `fabric.loss.*` and `fabric.heartbeat.*` keys",
-      "definition": "Known loss ranges and proven ends, one model per source for both inputs (P1). The rev-3 records-specific keys are withdrawn."
+      "definition": "Known loss ranges and proven ends, one model per source for both inputs (P1)."
     },
     {
       "id": "X36",
@@ -787,13 +787,13 @@
       "status_if_hook_absent": "always (from P1)",
       "phase": "P1",
       "lives_in": "T `fabric.run.segment_id`",
-      "definition": "Immutable segment a record belongs to, assigned at allocation under the allocator lock. A new segment starts at a run's first entry in a (source, epoch), after every seal (token issue, fork, block exit of a resumable run) on the next allocation or entry, and for every concurrent branch."
+      "definition": "Immutable segment a record belongs to, assigned at allocation under the allocator lock. Within one process every thread and task of a run shares its open segment; a new segment starts only at a run's first entry into a process, after a token issue, after a fork (parent and child), and at re-entry after a seal."
     },
     {
       "id": "X44",
       "layer": "cross_cutting",
       "name": "segment.seal",
-      "type": "last_sequence, manifest digest, ledger seal digest, terminal",
+      "type": "last_sequence, manifest digest, seal digest, terminal",
       "observed_by": [
         "fabric.self",
         "run.scope"
@@ -801,16 +801,16 @@
       "default_policy": "metadata",
       "privacy_class": "META/DIGEST",
       "required": "R (every segment)",
-      "status_if_hook_absent": "not_captured(source_lost) when never sealed",
+      "status_if_hook_absent": "not_captured(source_lost) when never sealed (segment `unsealed`, run `partial`)",
       "phase": "P1",
-      "lives_in": "T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.ledger_digest`, `fabric.run.terminal` on the `segment_seal` marker",
-      "definition": "Sealing fixes a segment: the last source sequence allocated to it, the manifest in force, and (once its positions settle) the seal-ledger digest over its canonical record set (section 2.12). A resume token always names a sealed segment."
+      "lives_in": "T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.seal_digest`, `fabric.run.terminal` on the `segment_seal` marker",
+      "definition": "One `segment_seal` record per segment, written by the worker once every position up to `last_sequence` of the segment has been delivered or lost: last sequence, manifest digest at seal, terminal flag and the seal digest over the canonical digests of the segment's delivered records sorted by sequence (section 2.12). A crash or a dropped marker leaves the segment `unsealed`."
     },
     {
       "id": "X45",
       "layer": "cross_cutting",
-      "name": "epoch.ledger_seal",
-      "type": "digest",
+      "name": "unsealed_prior_epochs, unsealed_prior_epoch_count",
+      "type": "list of epochs (max 64); int",
       "observed_by": [
         "fabric.self"
       ],
@@ -819,8 +819,25 @@
       "required": "R (every epoch)",
       "status_if_hook_absent": "not_captured(unsealed_epoch) when never sealed",
       "phase": "P1",
-      "lives_in": "T `fabric.heartbeat.ledger_digest` on the `final` heartbeat; M `unsealed_prior_epochs`",
-      "definition": "Seal of the whole epoch's ledger, computed after a fresh readback; prior epochs found unsealed at start-up are declared in the next manifest and accounted as gaps."
+      "lives_in": "M `unsealed_prior_epochs`, `unsealed_prior_epoch_count`",
+      "definition": "Prior epochs on the same spool that never wrote their `final` heartbeat and segment seals, declared by the next epoch's manifest 0; each is a gap for its runs. The count is exact even when the list is truncated at 64."
+    },
+    {
+      "id": "X46",
+      "layer": "cross_cutting",
+      "name": "segment.declared_branches, segment.expected_branches",
+      "type": "list of `seg-` ids (max 64); int",
+      "observed_by": [
+        "run.scope",
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID/META",
+      "required": "O",
+      "status_if_hook_absent": "absent",
+      "phase": "P1",
+      "lives_in": "T `fabric.run.declared_branches` on `run_start`; T `fabric.segment.expected_branches` on `segment_seal`; T `fabric.dispatch.expected_branches` on dispatch records",
+      "definition": "Branches a run must account for before it can terminate: fork children declared by the parent's post-fork segment, and an optional count of consumers expected for a resume token or dispatch. Declaring is non-blocking. Undeclared token consumers that are wholly lost are a residual limit (section 2.10)."
     },
     {
       "id": "C01",
@@ -2590,7 +2607,8 @@
       "observed_by": [
         "exec.subprocess",
         "exec.audit",
-        "explicit.byte_boundary"
+        "explicit.byte_boundary",
+        "explicit.subprocess_artifact"
       ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
@@ -2607,7 +2625,8 @@
       "type": "bytes",
       "observed_by": [
         "exec.subprocess",
-        "explicit.byte_boundary"
+        "explicit.byte_boundary",
+        "explicit.subprocess_artifact"
       ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
@@ -2624,7 +2643,8 @@
       "type": "bytes",
       "observed_by": [
         "exec.subprocess",
-        "explicit.byte_boundary"
+        "explicit.byte_boundary",
+        "explicit.subprocess_artifact"
       ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
@@ -2640,7 +2660,8 @@
       "name": "terminal.exit_code, terminal.signal, terminal.pid",
       "type": "int",
       "observed_by": [
-        "exec.subprocess"
+        "exec.subprocess",
+        "explicit.subprocess_artifact"
       ],
       "default_policy": "metadata",
       "privacy_class": "META",
@@ -2838,7 +2859,8 @@
       "name": "file.before, file.after",
       "type": "bytes",
       "observed_by": [
-        "explicit.byte_boundary"
+        "explicit.byte_boundary",
+        "explicit.subprocess_artifact"
       ],
       "default_policy": "content",
       "privacy_class": "CONTENT",

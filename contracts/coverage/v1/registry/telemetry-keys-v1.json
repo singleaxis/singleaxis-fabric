@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 4,
+  "registry_revision": 5,
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -17,6 +17,14 @@
       "validator": "never admitted; the SDK stops emitting it in pseudonymous mode",
       "phase": "P0-A",
       "note": "Clear path moves to the `artifact.locator` role."
+    },
+    {
+      "key": "fabric.heartbeat.kind",
+      "change": "changed",
+      "field": "X44",
+      "validator": "META: closed enum `periodic`, `run_start`, `run_end`, `final`, `segment_seal` (adds `segment_seal`; `fabric.run.scope_id` admitted on `run_start`, `run_end` and `segment_seal`)",
+      "phase": "P1",
+      "note": "fabricguard `captureHeartbeatKinds` (processor.go:827) and the scope-id rule change in the same release as the emitter."
     },
     {
       "key": "fabric.interaction.target",
@@ -319,6 +327,13 @@
       "phase": "P2"
     },
     {
+      "key": "fabric.dispatch.expected_branches",
+      "change": "new",
+      "field": "X46",
+      "validator": "META: integer 1-1024",
+      "phase": "P2"
+    },
+    {
       "key": "fabric.dispatch.id",
       "change": "new",
       "field": "S20",
@@ -394,13 +409,6 @@
       "field": "C15",
       "validator": "LABEL: pattern, exposure rule",
       "phase": "P2"
-    },
-    {
-      "key": "fabric.heartbeat.ledger_digest",
-      "change": "new",
-      "field": "X45",
-      "validator": "DIGEST: `sha256:` + 64 hex (only on `final`)",
-      "phase": "P1"
     },
     {
       "key": "fabric.input.kind",
@@ -754,6 +762,14 @@
       "manifest_property": "uncaptured_classes"
     },
     {
+      "key": "fabric.manifest.unsealed_prior_epoch_count",
+      "change": "new",
+      "field": "X45",
+      "validator": "META: integer ≥ 0",
+      "phase": "P1",
+      "manifest_property": "unsealed_prior_epoch_count"
+    },
+    {
       "key": "fabric.manifest.unsealed_prior_epochs",
       "change": "new",
       "field": "X45",
@@ -902,6 +918,13 @@
       "phase": "P2"
     },
     {
+      "key": "fabric.run.declared_branches",
+      "change": "new",
+      "field": "X46",
+      "validator": "ID: array (max 64) of `seg-` + 32 hex",
+      "phase": "P1"
+    },
+    {
       "key": "fabric.run.execution_mode",
       "change": "new",
       "field": "C30",
@@ -1007,6 +1030,13 @@
       "phase": "P2"
     },
     {
+      "key": "fabric.segment.expected_branches",
+      "change": "new",
+      "field": "X46",
+      "validator": "META: integer 1-1024",
+      "phase": "P1"
+    },
+    {
       "key": "fabric.segment.last_sequence",
       "change": "new",
       "field": "X44",
@@ -1014,14 +1044,14 @@
       "phase": "P1"
     },
     {
-      "key": "fabric.segment.ledger_digest",
+      "key": "fabric.segment.manifest_digest",
       "change": "new",
       "field": "X44",
       "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P1"
     },
     {
-      "key": "fabric.segment.manifest_digest",
+      "key": "fabric.segment.seal_digest",
       "change": "new",
       "field": "X44",
       "validator": "DIGEST: `sha256:` + 64 hex",

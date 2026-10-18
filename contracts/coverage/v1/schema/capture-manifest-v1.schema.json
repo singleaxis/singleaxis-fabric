@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/schemas/fabric/coverage/v1/capture-manifest-v1.schema.json",
-  "title": "fabric.capture-manifest/v1 (draft, spec 049 rev 5)",
+  "title": "fabric.capture-manifest/v1 (draft, spec 049 rev 6)",
   "description": "JSON form of the per-source-epoch capture manifest (a fabric.capture_manifest span with closed attributes). Manifests never consume source sequences: manifest_seq is their own contiguous counter and after_source_sequence their effective position (spec 049 §2.4). The manifest digest is SHA-256 of its spec-029 canonical JSON. Metadata only.",
   "type": "object",
   "additionalProperties": false,
@@ -30,7 +30,8 @@
     "after_source_sequence",
     "chunk_boundaries_retained",
     "spool_encrypted",
-    "unsealed_prior_epochs"
+    "unsealed_prior_epochs",
+    "unsealed_prior_epoch_count"
   ],
   "properties": {
     "schema_version": {
@@ -236,7 +237,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "domain"
+        "domain",
+        "uncertainty_ns"
       ],
       "properties": {
         "domain": {
@@ -338,6 +340,7 @@
               "transport_incomplete",
               "stream_closed_early",
               "privacy_policy",
+              "protection_failed",
               "missing_capture_policy",
               "missing_id_key",
               "provider_redacted",
@@ -428,6 +431,10 @@
         "minimum": 0,
         "maximum": 9223372036854775807
       }
+    },
+    "unsealed_prior_epoch_count": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "allOf": [
