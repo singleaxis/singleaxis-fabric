@@ -1,6 +1,6 @@
 ---
 title: Four-layer capture contract (context, structure, content, decisions and effects)
-status: Final draft rev 6.2, pending owner confirmation
+status: Final rev 6.2, owner-approved 2026-10-18
 qualification: NO_COVERAGE_CLAIM
 revision: 6.2
 last_updated: 2026-10-18
@@ -14,10 +14,10 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 
 # 049 — Four-layer capture contract
 
-**Status: Final draft rev 6.2, pending owner confirmation.** Every owner
-decision in section 9 is applied in this text as its recommended default
-and marked *Recommended — pending owner confirmation*. If the owner changes
-one, only the sections that decision lists change.
+**Status: Final rev 6.2, owner-approved 2026-10-18.** Every owner
+decision in section 9 was approved as recommended and is applied in this
+text, marked *Approved (owner, 2026-10-18)*. A later change to a decision
+changes only the sections that decision lists.
 
 Revision 3 resolves the rev-2 confirmation reviews (appendix D): records
 are sequenced on their own source, attempt identity is always minted,
@@ -59,7 +59,7 @@ How to read it:
 
 ### 1.1 Claim
 
-**Recommended — pending owner confirmation (decision 1).** The first
+**Approved (owner, 2026-10-18) (decision 1).** The first
 release claims:
 
 > Fabric records model calls made through supported clients in Python (and
@@ -924,7 +924,7 @@ point, or if an in-scope field names none:
 
 ### 2.9 Pseudonymisation
 
-**Recommended — pending owner confirmation (decisions 7 and 8).**
+**Approved (owner, 2026-10-18) (decisions 7 and 8).**
 
 1. **All externally meaningful ids are keyed pseudonyms by default**:
    run, source, service, session, user, actor, conversation, turn,
@@ -1788,7 +1788,7 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 
 ### 4.3 Content roles and the Node content path (role widening)
 
-**Recommended — pending owner confirmation (decision 6).** Role widening
+**Approved (owner, 2026-10-18) (decision 6).** Role widening
 is part of this spec. The role table
 `contracts/coverage/v1/registry/content-roles-v1.json` is the single source
 for Python, TypeScript and the `fabriccontent` exporter (loaded like
@@ -1908,7 +1908,7 @@ explicit line's `byte_spool` / governed store stays supported.
 
 ### 4.4 `fabric.step-projection/v1`
 
-**Recommended — pending owner confirmation (decision 10).** The
+**Approved (owner, 2026-10-18) (decision 10).** The
 projection is a verifier output, not an interchange envelope:
 
 - produced offline from the stored bytes, telemetry records, manifests
@@ -2131,7 +2131,7 @@ unchanged; the projection adds layer verdicts. Neither ever emits
 
 ### 7.1 Passivity
 
-**Recommended — pending owner confirmation (decision 2).**
+**Approved (owner, 2026-10-18) (decision 2).**
 
 1. **Never waits.** No monitored call waits on recording: no network,
    store, fsync, lock held across application code, or queue wait on the
@@ -2157,7 +2157,7 @@ unchanged; the projection adds layer verdicts. Neither ever emits
 
 ### 7.2 Process-global hooks
 
-**Recommended — pending owner confirmation (decision 5).** Every capture
+**Approved (owner, 2026-10-18) (decision 5).** Every capture
 point marked process-global in section 2.8 is:
 
 - **opt-in**, each separately (`install(exec=True)`, `FABRIC_WIRE_EXEC=1`,
@@ -2178,7 +2178,7 @@ point marked process-global in section 2.8 is:
 
 ### 7.3 Production privacy default
 
-**Recommended — pending owner confirmation (decision 3).**
+**Approved (owner, 2026-10-18) (decision 3).**
 
 | Profile | When | Content capture requires | If missing |
 |---|---|---|---|
@@ -2214,7 +2214,7 @@ this and fail their own preflight checks, never the application.
 
 ### 7.4 Body limits and typed extraction
 
-**Recommended — pending owner confirmation (decision 12).**
+**Approved (owner, 2026-10-18) (decision 12).**
 
 | Limit | Default | Bound | Meaning |
 |---|---|---|---|
@@ -2689,26 +2689,26 @@ Each is applied in this spec as its recommended default.
 
 | # | Decision | Recommended default (applied) | Sections affected |
 |---|---|---|---|
-| 1 | First-release claim | Bounded Python + TypeScript model-call capture with four-layer coverage reporting; never "all agent activity". **Recommended — pending owner confirmation.** | 1.1, 6.1, 8.2 release gate |
-| 2 | Passivity | Never waits, never alters, bounded measured overhead (047 §4.10 method). Literal zero added latency is not achievable in-process. **Recommended — pending owner confirmation.** | 7.1 |
-| 3 | Production privacy default | Production content capture requires an explicit capture policy and an id key; missing protection disables content recording while safe metadata continues; the application is never blocked; malformed configuration still fails at install; supersedes 048 §1 for node mode. **Recommended — pending owner confirmation.** | 2.7, 2.9, 7.3 |
-| 4 | P3 control observations | In OSS, record-only, with invariants `unverified_caller_report` and `enforced_by_fabric=false`. **Recommended — pending owner confirmation.** | 1.4, 3.5, 8.2 P3 |
-| 5 | Process-global hooks | Opt-in, each with its own passivity test. **Recommended — pending owner confirmation.** | 2.8, 7.2 |
-| 6 | Content role widening | In this spec (no spec 050 dependency). **Recommended — pending owner confirmation.** | 4.3, P0/P0-A |
-| 7 | User and session ids | Keyed pseudonyms by default; versioned flag `FABRIC_IDENTITY_MODE`. **Recommended — pending owner confirmation.** | 2.9, `X13`, `X14` |
-| 8 | Provider ids | Keyed pseudonyms (`p-` + 32 hex). **Recommended — pending owner confirmation.** | 2.9, `N12`, `C39`, `C40` |
-| 9 | TypeScript | Parallel track; manifest says `unsupported` until each TS gate passes. **Recommended — pending owner confirmation.** | 2.8, 8.2 TS track |
-| 10 | Projection home | New `fabric.step-projection/v1`; Activity Envelope v2 exports untouched. **Recommended — pending owner confirmation.** | 4.4 |
-| 11 | Cost | Downstream; Fabric records usage only. **Recommended — pending owner confirmation.** | 1.4, `D35` |
-| 12 | Body size | `max_body_bytes` 32 MiB default per stored object (63 MiB ceiling in node mode, Node 64 MiB request cap) and `max_retain_bytes` 64 MiB per side, with typed extraction of image and binary parts. Text survives large parts only within those bounds (7.4). **Recommended — pending owner confirmation.** | 7.4, 7.5 |
-| 13 | Two-input model | Two inputs (wire, records) on one spool, one allocator per (source, epoch), one content writer, one verifier; explicit exact-byte line folded in as a records producer; no framework adapters (owner-directed, TARGET). **Recommended — pending owner confirmation.** | 1.3, 2.4, 2.11 |
-| 14 | Open-run deadline | Default `open_run_deadline_s` 7 days, customer-set globally or per run; `open` only for runs declared resumable. **Recommended — pending owner confirmation.** | 2.10, 6.2 |
-| 15 | Qualified-run mode | 045/046 qualification stays an opt-in mode on the explicit journal, unchanged; default capture never claims 046. **Recommended — pending owner confirmation.** | 2.13 |
-| 16 | Encryption at rest in production | Required spool envelope (and Node directory envelope); volume attestation rejected as unverifiable. **Recommended — pending owner confirmation.** | 7.8 |
-| 17 | Source-authentication verdict | fabricguard stamps `fabric.source.authenticated`; production records without it are `unverified(source_unauthenticated)` (rev 6.1). **Recommended — pending owner confirmation.** | 7.9, 6.2 |
-| 18 | Branch guarantee | Distinct branch identities: `resume_token(branches=n)` and dispatch mint `br-` ids bound to the issuing seal; each must have exactly one sealed consumer; count-only semantics rejected. **Recommended — pending owner confirmation.** | 2.10 |
-| 19 | Node content-queue encryption | The `fabriccontent` persistent queue is encrypted with the same customer-key envelope, required in production; delivery semantics unchanged. **Recommended — pending owner confirmation.** | 7.8 |
-| 20 | Authentication trust boundary | The stamp counts only on trusted readback (Node export, configured store); imported files are authentication-unverified; portable proof stays in qualified-run mode. **Recommended — pending owner confirmation.** | 1.1, 7.9 |
+| 1 | First-release claim | Bounded Python + TypeScript model-call capture with four-layer coverage reporting; never "all agent activity". **Approved (owner, 2026-10-18).** | 1.1, 6.1, 8.2 release gate |
+| 2 | Passivity | Never waits, never alters, bounded measured overhead (047 §4.10 method). Literal zero added latency is not achievable in-process. **Approved (owner, 2026-10-18).** | 7.1 |
+| 3 | Production privacy default | Production content capture requires an explicit capture policy and an id key; missing protection disables content recording while safe metadata continues; the application is never blocked; malformed configuration still fails at install; supersedes 048 §1 for node mode. **Approved (owner, 2026-10-18).** | 2.7, 2.9, 7.3 |
+| 4 | P3 control observations | In OSS, record-only, with invariants `unverified_caller_report` and `enforced_by_fabric=false`. **Approved (owner, 2026-10-18).** | 1.4, 3.5, 8.2 P3 |
+| 5 | Process-global hooks | Opt-in, each with its own passivity test. **Approved (owner, 2026-10-18).** | 2.8, 7.2 |
+| 6 | Content role widening | In this spec (no spec 050 dependency). **Approved (owner, 2026-10-18).** | 4.3, P0/P0-A |
+| 7 | User and session ids | Keyed pseudonyms by default; versioned flag `FABRIC_IDENTITY_MODE`. **Approved (owner, 2026-10-18).** | 2.9, `X13`, `X14` |
+| 8 | Provider ids | Keyed pseudonyms (`p-` + 32 hex). **Approved (owner, 2026-10-18).** | 2.9, `N12`, `C39`, `C40` |
+| 9 | TypeScript | Parallel track; manifest says `unsupported` until each TS gate passes. **Approved (owner, 2026-10-18).** | 2.8, 8.2 TS track |
+| 10 | Projection home | New `fabric.step-projection/v1`; Activity Envelope v2 exports untouched. **Approved (owner, 2026-10-18).** | 4.4 |
+| 11 | Cost | Downstream; Fabric records usage only. **Approved (owner, 2026-10-18).** | 1.4, `D35` |
+| 12 | Body size | `max_body_bytes` 32 MiB default per stored object (63 MiB ceiling in node mode, Node 64 MiB request cap) and `max_retain_bytes` 64 MiB per side, with typed extraction of image and binary parts. Text survives large parts only within those bounds (7.4). **Approved (owner, 2026-10-18).** | 7.4, 7.5 |
+| 13 | Two-input model | Two inputs (wire, records) on one spool, one allocator per (source, epoch), one content writer, one verifier; explicit exact-byte line folded in as a records producer; no framework adapters (owner-directed, TARGET). **Approved (owner, 2026-10-18).** | 1.3, 2.4, 2.11 |
+| 14 | Open-run deadline | Default `open_run_deadline_s` 7 days, customer-set globally or per run; `open` only for runs declared resumable. **Approved (owner, 2026-10-18).** | 2.10, 6.2 |
+| 15 | Qualified-run mode | 045/046 qualification stays an opt-in mode on the explicit journal, unchanged; default capture never claims 046. **Approved (owner, 2026-10-18).** | 2.13 |
+| 16 | Encryption at rest in production | Required spool envelope (and Node directory envelope); volume attestation rejected as unverifiable. **Approved (owner, 2026-10-18).** | 7.8 |
+| 17 | Source-authentication verdict | fabricguard stamps `fabric.source.authenticated`; production records without it are `unverified(source_unauthenticated)` (rev 6.1). **Approved (owner, 2026-10-18).** | 7.9, 6.2 |
+| 18 | Branch guarantee | Distinct branch identities: `resume_token(branches=n)` and dispatch mint `br-` ids bound to the issuing seal; each must have exactly one sealed consumer; count-only semantics rejected. **Approved (owner, 2026-10-18).** | 2.10 |
+| 19 | Node content-queue encryption | The `fabriccontent` persistent queue is encrypted with the same customer-key envelope, required in production; delivery semantics unchanged. **Approved (owner, 2026-10-18).** | 7.8 |
+| 20 | Authentication trust boundary | The stamp counts only on trusted readback (Node export, configured store); imported files are authentication-unverified; portable proof stays in qualified-run mode. **Approved (owner, 2026-10-18).** | 1.1, 7.9 |
 
 ---
 
