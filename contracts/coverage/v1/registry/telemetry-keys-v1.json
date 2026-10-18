@@ -1,0 +1,790 @@
+{
+  "schema_version": "fabric.telemetry-key-registry/v1",
+  "registry_revision": 1,
+  "keys": [
+    {
+      "key": "fabric.delegation.to_agent",
+      "change": "changed",
+      "field": "S22",
+      "validator": "ID: `agt-` + 32 hex",
+      "phase": "P0-A",
+      "note": "Admitted clear today."
+    },
+    {
+      "key": "fabric.file.path",
+      "change": "changed",
+      "field": "N46",
+      "validator": "never admitted; the SDK stops emitting it in pseudonymous mode",
+      "phase": "P0-A",
+      "note": "Clear path moves to the `artifact.locator` role."
+    },
+    {
+      "key": "fabric.interaction.target",
+      "change": "changed",
+      "field": "N58",
+      "validator": "ID: `tgt-` + 32 hex (newly admitted)",
+      "phase": "P0-A",
+      "note": "Decided: pseudonymise. Emitted clear today when not hashed and dropped by the Node; `fabric.interaction.target_hash` stays."
+    },
+    {
+      "key": "fabric.memory.key",
+      "change": "changed",
+      "field": "N31",
+      "validator": "ID: `mkey-` + 32 hex (newly admitted)",
+      "phase": "P0-A",
+      "note": "Decided: pseudonymise. Emitted clear today and dropped by the Node; the clear key stays in the memory content roles."
+    },
+    {
+      "key": "fabric.session_id",
+      "change": "changed",
+      "field": "X13",
+      "validator": "ID: `sess-` + 32 hex under a pseudonymous Node; clear only when the Node is configured `identity_mode: clear`",
+      "phase": "P0-A",
+      "note": "Admitted clear today."
+    },
+    {
+      "key": "fabric.user_id",
+      "change": "changed",
+      "field": "X14",
+      "validator": "ID: `usr-` + 32 hex (newly admitted; clear values rejected)",
+      "phase": "P0-A",
+      "note": "Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted)."
+    },
+    {
+      "key": "db.system.name",
+      "change": "new",
+      "field": "N38",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.actor.id",
+      "change": "new",
+      "field": "S04",
+      "validator": "ID: `act-` + 32 hex",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.actor.type",
+      "change": "new",
+      "field": "S03",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.attempt.uid",
+      "change": "new",
+      "field": "X19",
+      "validator": "ID: uuid4",
+      "phase": "P1 (records)"
+    },
+    {
+      "key": "fabric.batch.item_index",
+      "change": "new",
+      "field": "S21",
+      "validator": "META: integer range",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.build.digest",
+      "change": "new",
+      "field": "C12",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.cancel.state",
+      "change": "new",
+      "field": "S32",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.capture.manifest_id",
+      "change": "new",
+      "field": "X34",
+      "validator": "ID: uuid4",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.capture.manifest_seq",
+      "change": "new",
+      "field": "X39",
+      "validator": "META: integer range",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.capture.manifest_sha256",
+      "change": "new",
+      "field": "X34",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.capture.path",
+      "change": "new",
+      "field": "X06",
+      "validator": "META: closed enum (source_path vocabulary)",
+      "phase": "P1 (records)"
+    },
+    {
+      "key": "fabric.capture.point",
+      "change": "new",
+      "field": "X26",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.checkpoint.action",
+      "change": "new",
+      "field": "S27",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.config.digest",
+      "change": "new",
+      "field": "C13",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.context.change_kind",
+      "change": "new",
+      "field": "D14",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.context.token_basis",
+      "change": "new",
+      "field": "D15",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.context.tokens_after",
+      "change": "new",
+      "field": "D15",
+      "validator": "META: integer range",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.context.tokens_before",
+      "change": "new",
+      "field": "D15",
+      "validator": "META: integer range",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.context.trigger",
+      "change": "new",
+      "field": "D14",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.action_id",
+      "change": "new",
+      "field": "D06",
+      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.authentication",
+      "change": "new",
+      "field": "D11",
+      "validator": "META: const `unverified_caller_report`",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.decision",
+      "change": "new",
+      "field": "D04",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.enforced_by_fabric",
+      "change": "new",
+      "field": "D11",
+      "validator": "META: const `false`",
+      "phase": "P3",
+      "note": "A boolean validator would admit `true`."
+    },
+    {
+      "key": "fabric.control.gated_step_id",
+      "change": "new",
+      "field": "D06",
+      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.id",
+      "change": "new",
+      "field": "D01",
+      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.kind",
+      "change": "new",
+      "field": "D02",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.phase",
+      "change": "new",
+      "field": "D03",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.policy_digest",
+      "change": "new",
+      "field": "D08",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.policy_id",
+      "change": "new",
+      "field": "D08",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.policy_version",
+      "change": "new",
+      "field": "D08",
+      "validator": "META: integer range",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.proof_ref",
+      "change": "new",
+      "field": "D09",
+      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.control.resolves",
+      "change": "new",
+      "field": "D05",
+      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.conversation_id",
+      "change": "new",
+      "field": "X15",
+      "validator": "ID: `conv-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.db.namespace_id",
+      "change": "new",
+      "field": "N38",
+      "validator": "ID: `dbn-` + 32 hex",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.db.rows_affected",
+      "change": "new",
+      "field": "N41",
+      "validator": "META: integer range",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.db.rows_fetched",
+      "change": "new",
+      "field": "N41",
+      "validator": "META: integer range",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.db.transaction_id",
+      "change": "new",
+      "field": "N42",
+      "validator": "ID: `txn-` + 32 hex",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.delegation.state",
+      "change": "new",
+      "field": "S24",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.dispatch.id",
+      "change": "new",
+      "field": "S20",
+      "validator": "ID: `dsp-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.dispatch.kind",
+      "change": "new",
+      "field": "S20",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.dispatch.state",
+      "change": "new",
+      "field": "S20",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.error.code",
+      "change": "new",
+      "field": "S11",
+      "validator": "META: `^[A-Za-z0-9_.-]{1,64}$`",
+      "phase": "P1 (provider)"
+    },
+    {
+      "key": "fabric.error.domain",
+      "change": "new",
+      "field": "S09",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.event.supersedes",
+      "change": "new",
+      "field": "X03",
+      "validator": "ID: uuid4",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.execution.host_id",
+      "change": "new",
+      "field": "C41",
+      "validator": "ID: `hst-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.execution.image_digest",
+      "change": "new",
+      "field": "C41",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.execution.sandbox_id",
+      "change": "new",
+      "field": "C41",
+      "validator": "ID: `sbx-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.framework.name",
+      "change": "new",
+      "field": "C15",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.framework.version",
+      "change": "new",
+      "field": "C15",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.input.kind",
+      "change": "new",
+      "field": "C08",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1 (I), P2 (R)"
+    },
+    {
+      "key": "fabric.input.state",
+      "change": "new",
+      "field": "C09",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.mcp.direction",
+      "change": "new",
+      "field": "N22",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2 (R), P4 (H)"
+    },
+    {
+      "key": "fabric.mcp.error_kind",
+      "change": "new",
+      "field": "N25",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.mcp.method",
+      "change": "new",
+      "field": "N22",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2 (R), P4 (H)"
+    },
+    {
+      "key": "fabric.mcp.protocol_version",
+      "change": "new",
+      "field": "C27",
+      "validator": "META: `^[0-9]{4}-[0-9]{2}-[0-9]{2}$`",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.mcp.server_version",
+      "change": "new",
+      "field": "C26",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.memory.op",
+      "change": "new",
+      "field": "N30",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.memory.store_id",
+      "change": "new",
+      "field": "N30",
+      "validator": "ID: `mst-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.network.host_id",
+      "change": "new",
+      "field": "N43",
+      "validator": "ID: `hst-` + 32 hex",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.outcome.channel_kind",
+      "change": "new",
+      "field": "D27",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.outcome.delivery_state",
+      "change": "new",
+      "field": "D28",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.outcome.target_id",
+      "change": "new",
+      "field": "D27",
+      "validator": "ID: `tgt-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.process.exit_code",
+      "change": "new",
+      "field": "N35",
+      "validator": "META: integer range",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.process.pid",
+      "change": "new",
+      "field": "N35",
+      "validator": "META: integer range",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.process.signal",
+      "change": "new",
+      "field": "N35",
+      "validator": "META: integer range",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.records.heartbeat.kind",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: closed enum (`periodic`, `final`)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.records.last_sequence",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: integer range",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.records.loss.count",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: integer range",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.records.loss.first_sequence",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: integer range",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.records.loss.last_sequence",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: integer range",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.records.loss.reason",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: closed enum (loss reasons (047))",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.remote.host_key_verified",
+      "change": "new",
+      "field": "N36",
+      "validator": "META: boolean",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.remote.target_id",
+      "change": "new",
+      "field": "N36",
+      "validator": "ID: `hst-` + 32 hex",
+      "phase": "P4"
+    },
+    {
+      "key": "fabric.run.agent_policy_digest",
+      "change": "new",
+      "field": "C33",
+      "validator": "DIGEST: bare 64 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.agent_policy_id",
+      "change": "new",
+      "field": "C33",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.agent_policy_version",
+      "change": "new",
+      "field": "C33",
+      "validator": "META: integer range",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.approval_policy",
+      "change": "new",
+      "field": "C31",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.execution_mode",
+      "change": "new",
+      "field": "C30",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.links",
+      "change": "new",
+      "field": "X12",
+      "validator": "ID: `r-` + 32 hex (array, max 16)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.run.outcome",
+      "change": "new",
+      "field": "D30",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.parent_id",
+      "change": "new",
+      "field": "X10",
+      "validator": "ID: `r-` + 32 hex",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.run.permissions.count",
+      "change": "new",
+      "field": "C32",
+      "validator": "META: integer range",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.resumed_from",
+      "change": "new",
+      "field": "X11",
+      "validator": "ID: `r-` + 32 hex",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.run.scope_status",
+      "change": "new",
+      "field": "S34",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.run.stop_reason",
+      "change": "new",
+      "field": "D30",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.trigger.kind",
+      "change": "new",
+      "field": "C01",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.run.trigger.ref",
+      "change": "new",
+      "field": "C02",
+      "validator": "ID: `trg-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.selection.kind",
+      "change": "new",
+      "field": "D12",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.selection.reason",
+      "change": "new",
+      "field": "D12",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.side_effect.commit_basis",
+      "change": "new",
+      "field": "D24",
+      "validator": "META: closed enum (commit_basis vocabulary)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.side_effect.commit_state",
+      "change": "new",
+      "field": "D23",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3 (R), P4 (H)"
+    },
+    {
+      "key": "fabric.side_effect.compensation_state",
+      "change": "new",
+      "field": "D26",
+      "validator": "META: closed enum (field type)",
+      "phase": "P3"
+    },
+    {
+      "key": "fabric.side_effect.state",
+      "change": "new",
+      "field": "D19",
+      "validator": "META: closed enum (field type)",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.step.attempt_kind",
+      "change": "new",
+      "field": "S13",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1 (I), P2 (R)"
+    },
+    {
+      "key": "fabric.step.attempt_selected",
+      "change": "new",
+      "field": "S16",
+      "validator": "META: boolean",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.step.kind",
+      "change": "new",
+      "field": "S01",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.step.lifecycle_state",
+      "change": "new",
+      "field": "S07",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.step.parent_id",
+      "change": "new",
+      "field": "X18",
+      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.step.status",
+      "change": "new",
+      "field": "S08",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.tool.execution_side",
+      "change": "new",
+      "field": "N18",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.turn_id",
+      "change": "new",
+      "field": "X16",
+      "validator": "ID: `turn-` + 32 hex",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.wire.first_chunk_offset_ns",
+      "change": "new",
+      "field": "S30",
+      "validator": "META: integer range",
+      "phase": "P1"
+    },
+    {
+      "key": "fabric.wire.store_reason",
+      "change": "new",
+      "field": "X40",
+      "validator": "META: closed enum (store_reason vocabulary)",
+      "phase": "P0-A"
+    },
+    {
+      "key": "fabric.workflow.iteration",
+      "change": "new",
+      "field": "S18",
+      "validator": "META: integer range",
+      "phase": "P2"
+    },
+    {
+      "key": "fabric.workflow.node",
+      "change": "new",
+      "field": "S18",
+      "validator": "LABEL: pattern, exposure rule",
+      "phase": "P2"
+    }
+  ]
+}

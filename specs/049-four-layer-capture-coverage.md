@@ -1,36 +1,39 @@
 ---
 title: Four-layer capture contract (context, structure, content, decisions and effects)
-status: Final draft rev 2, pending owner confirmation
+status: Final draft rev 3, pending owner confirmation
 qualification: NO_COVERAGE_CLAIM
-revision: 2
+revision: 3
 last_updated: 2026-10-18
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
 related: 030, 031, 036, 038, 040, 041, 042, 044, 045, 046
-supersedes: 049 revision 1 (plan); the content-role widening previously deferred to "spec 050"
-contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), contracts/capture/v1 (manifest record)
+supersedes: 049 revision 2; the content-role widening previously deferred to "spec 050"
+supersedes_in_part: 048 §1 (node-mode activation now also needs a capture policy and an id key for content capture, section 7.3)
+contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), contracts/capture/v1 (manifest and records markers)
 ---
 
 # 049 — Four-layer capture contract
 
-**Status: Final draft rev 2, pending owner confirmation.** Every owner
-decision in section 9 is already applied in this text as its recommended
-default and marked *Recommended — pending owner confirmation*. If the owner
-changes one, only the sections that decision lists change.
+**Status: Final draft rev 3, pending owner confirmation.** Every owner
+decision in section 9 is applied in this text as its recommended default
+and marked *Recommended — pending owner confirmation*. If the owner changes
+one, only the sections that decision lists change.
 
-This revision turns the rev 1 plan into a field contract. It folds in the
-Astra and Fable reviews (appendix A and B map every finding to the section
-that resolves it) and was checked against the code at `c3f1e51`
-(section 2.1). It specifies; it does not change runtime code.
+Revision 3 resolves the rev-2 confirmation reviews (appendix D): records
+are sequenced on their own source, attempt identity is always minted,
+manifests have their own counting rule, layer verdicts are a decision
+table, the role table is complete, and protection composes with extraction.
+It specifies; it does not change runtime code.
 
 How to read it:
 
-- Section 3 is the core: every field, its type, the capture point that
-  observes it, its default policy, privacy class, whether it is required,
-  what it reports when its capture point is absent, where it lives, and the
-  phase that delivers it. The tables are generated from
-  `contracts/coverage/v1/registry/field-registry-v1.json`; on any
-  disagreement the registry wins and the table is regenerated.
+- Section 3 is the core. Its tables, the vocabulary tables, the
+  capture-point, role and telemetry-key tables are **generated blocks**
+  (`<!-- generated:… -->`) rendered from the registries in
+  `contracts/coverage/v1/registry/`. The registries are the source of
+  truth. `python scripts/contracts/validate_coverage_contracts.py` fails if
+  any block differs from its rendering, and `--write` regenerates them;
+  `scripts/tests/test_coverage_contracts.py` runs it in CI.
 - "MUST", "MUST NOT" and "never" are normative.
 - Field ids (`X02`, `C19`, `N34`, ...) are stable. A field is never
   renumbered or reused.
@@ -45,14 +48,17 @@ How to read it:
 release claims:
 
 > Fabric records model calls made through supported clients in Python (and
-> in TypeScript once its capture point is qualified), protects them before
-> they leave the customer boundary, delivers them to a customer-chosen
-> store, and reports for every run which fields of the four layers were
-> captured, which were not, and why.
+> in TypeScript once its capture point is qualified) to the chat
+> completions, responses, completions, embeddings and messages endpoints,
+> protects them before they leave the customer boundary, delivers them to a
+> customer-chosen store, and reports for every run which fields of the four
+> layers were captured, which were not, and why.
 
-Fabric never claims to record "all agent activity". Coverage is always
-stated per field, per capture point, per runtime version, against a
-declared coverage profile (section 6.1).
+Fabric never claims to record "all agent activity". Other model endpoints
+(images, audio speech and transcription, moderations, rerank, fine-tuning,
+files, batch, realtime) are outside the first-release claim (section 3.7,
+P5). Coverage is always stated per field, per capture point, per runtime
+version, against a declared coverage profile (section 6.1).
 
 ### 1.2 The four layers and the product model
 
@@ -69,7 +75,7 @@ CAPTURE -> PROTECT -> DELIVER
 | 2 Structure | What happened, in what order, by whom, how did it end? | `S01`–`S34` |
 | 3 Content | What was said, sent, run, read and returned? | `N01`–`N60` |
 | 4 Decisions and effects | What was decided by external controls, what changed in the world, what was delivered, what was consumed? | `D01`–`D35` |
-| Cross-cutting | Identity, ordering, links, provenance, coverage, policy | `X01`–`X37` |
+| Cross-cutting | Identity, ordering, links, provenance, coverage, policy | `X01`–`X40` |
 
 Connect (SDK, OTLP, HTTP, adapters) is an input method. Verify (manifest,
 integrity verdicts, coverage verdicts, receipts) is a property of the
@@ -87,20 +93,33 @@ Fabric has two capture lines; this contract covers both.
   of model calls, the agent spool, Node content delivery and the offline
   verifier. What it records is `observed`.
 
-They coexist by two fixed rules (047 "Two capture lines"), stated here as
-the code implements them:
+The SDK reporting APIs (`record_*`, `tool_call()`, `llm_call()`, the new
+P2/P3 APIs) are a third **delivery path**, `records` (section 2.4); what
+they record is `reported`.
+
+The lines coexist by two fixed rules (047 "Two capture lines"):
 
 - **D2 Explicit wins.** Inside a live explicit `kind="model"` scope
   (`fabric/_capture_scope.py`), the tee opens a *provisional* exchange: it
-  tees the bytes but allocates no sequence
-  (`wire/_transport.py` `WireTee.begin`). If the explicit call is still live
-  when the response ends, the tee discards the bytes and allocates nothing;
-  the explicit record owns the call. If the response outlives the call, the
-  tee allocates a sequence then and captures it. Requests always pass
-  through untouched. In the projection, a deferred exchange's wire fields
-  are `not_captured(deferred_to_explicit)`; when the explicit recorder
-  withheld bytes by policy the wire line never falls back to raw capture
-  (`not_captured(explicit_withheld)`).
+  tees the bytes but allocates no sequence (`wire/_transport.py`
+  `WireTee.begin`). If the explicit call is still live when the response
+  ends, `adopt()` releases the bytes and allocates nothing; the explicit
+  record owns the call. If the response outlives the call, `adopt()`
+  allocates a sequence then and captures it. Requests always pass through
+  untouched.
+- **Sticky withholding (new, P1-A).** Today `ExplicitScope` holds only
+  `model` and `ended`, and `adopt()` captures an outliving response without
+  knowing whether the explicit recorder withheld it. Rev 3 adds a
+  `withheld` flag to the scope object, set by the explicit recorder when its
+  privacy policy withholds the call's model bytes. The flag is read at
+  `adopt()` time from the scope object, so it survives the scope's end: a
+  withheld exchange is still allocated a sequence (so completeness stays
+  provable) but stores no bytes, and its span carries
+  `fabric.wire.store_status=disabled`, `fabric.wire.store_reason=explicit_withheld`.
+  In the projection a deferred exchange's wire fields are
+  `not_captured(deferred_to_explicit)`; a withheld one is
+  `not_captured(explicit_withheld)`. The wire line never falls back to raw
+  capture of bytes the explicit line withheld.
 - **D3 Protected provider.** A tracer provider Fabric protects never
   carries wire spans or markers (checked at install and at emit time).
 
@@ -141,51 +160,64 @@ Fabric OSS never does, and this contract never specifies:
 | Claim | Verified state | Evidence |
 |---|---|---|
 | `fabric.event_id` is emitted | **False.** No Python or TypeScript code emits it. It is only admitted by the span protection list and the fabricguard allowlist. The explicit line has its own per-record `record_id` (uuid4 hex). | `sdk/python/src/fabric/_span_protection.py:76`; `fabricguardprocessor/allowlist.go:24`; `call_recorder.py:156` |
-| User and session ids are protected | **False.** `decision()` sets `fabric.session_id` and `fabric.user_id` in clear (Python and TypeScript), with only a PII-shape warning. fabricguard admits `fabric.session_id` in clear; it does not admit `fabric.user_id` (only `user_id_hash`), so the Node drops it, but any non-Node exporter receives it. | `decision.py:256,271,418,663-666`; `sdk/typescript/src/decision.ts:725`; `allowlist.go:23,27` |
-| An oversized model request keeps its text | **False.** Default `max_body_bytes` is 8 MiB. Retention keeps whole chunks only; an in-memory request body is one chunk, so a 9 MiB request (for example one embedded image) retains nothing: digest but no stored object, and no metadata parse. | `wire/_config.py:31,78`; `wire/_stream.py:257-271`; `wire/_pipeline.py:92,364`; 047 §4 rule 4 |
+| SDK records are sequenced | **False.** `record_*`, `tool_call()` and `llm_call()` spans carry no `fabric.source.*`; only the wire pipeline and loss/heartbeat records set them. `SourceAllocator` refuses any component other than `wire`; the spool knows only `exchange`, `loss`, `marker`. | `wire/_pipeline.py:134-135`; `_loss.py:50,59`; `_sequence.py:126-127`; `wire/_spool.py:45` |
+| The verifier ignores unknown records | **True, by attributes.** `observe()` classifies a span as an exchange if it has `fabric.wire.exchange_id`, as a heartbeat if it has `fabric.heartbeat.last_sequence`, as a loss if it has `fabric.loss.reason`; anything else is ignored. Heartbeats and loss records do not consume sequences. | `reconstruct/_inputs.py:498-518`; 047 §6 |
+| Explicit withholding survives `adopt()` | **False.** `ExplicitScope` has only `model` and `ended`. | `_capture_scope.py:43-58`; `wire/_transport.py:178-198` |
+| User and session ids are protected | **False.** `decision()` sets `fabric.session_id` and `fabric.user_id` in clear (Python and TypeScript). fabricguard admits `fabric.session_id` in clear; it does not admit `fabric.user_id` (only `user_id_hash`), so the Node drops it, but any non-Node exporter receives it. `fabric.memory.key`, `fabric.interaction.target` and `fabric.file.path` are emitted clear and not admitted. | `decision.py:256,271,663-666,1209,1295,1373`; `sdk/typescript/src/decision.ts:725`; `allowlist.go:23,27` |
+| An oversized model request keeps its text | **False.** Default `max_body_bytes` is 8 MiB. Retention keeps whole chunks only; an in-memory request body is one chunk, so a 9 MiB request retains nothing: digest but no stored object, and no metadata parse. | `wire/_config.py:31,78`; `wire/_stream.py:257-271`; `wire/_pipeline.py:92,364`; 047 §4 rule 4 |
 | Node accepts large bodies | Node receiver `max_request_body_size` is 64 MiB per request; in node mode the SDK caps one body at 63 MiB (1 MiB for the record envelope); in-process cap 64 MiB. | 048 §4; `wire/_config.py:31,148` |
-| The Node content path can carry new roles | **False.** `fabriccontent` admits exactly two roles, `provenance` must be `protocol`, `boundary` must be `provider_bound`, `status` only `stored`/`truncated`. Content-v2 has 37 roles and lacks trigger, permissions, error, reason, reasoning, identity. | `fabriccontentexporter/record.go:35-37,55-60`; `contracts/content/v2/schema/content-object-v2.schema.json` |
+| Node mode needs a policy and a key | **False.** Node mode needs tenant, spool directory, content endpoint and a traces endpoint; the id key is optional and `FABRIC_CAPTURE_POLICY` does not exist. Malformed node-mode configuration raises `ValueError` at install. | `wire/_config.py:95,144-148`; 048 §1 |
+| The Node content path can carry new roles | **False.** `fabriccontent` admits exactly two roles, `provenance` must be `protocol`, `boundary` must be `provider_bound`, `status` only `stored`/`truncated`. | `fabriccontentexporter/record.go:35-37,55-60` |
 | Activity v2 can carry the projection | **False.** Closed schema, 13 event types, no per-field status. | `contracts/activity/v2/schema/activity-sequence-v2.schema.json` |
-| `fabric.step.type` is a closed step enum | **False.** It is a host-overridable label (`llm_call`, `tool_call`, or e.g. `plan`). | `_calls.py:164-192` |
+| `fabric.step.type` is a closed step enum | **False.** It is a host-overridable label. | `_calls.py:164-192` |
+| Attempt ids are always distinct | **False for callers.** `CallRecorder` mints `call_id` per call, but accepts a caller `attempt_id`; decision records take a host `fabric.step.attempt_id`. | `call_recorder.py:236,250`; `_calls.py:171-175` |
 | Provider ids are keyed pseudonyms | **False.** `p-` + 16 hex of unkeyed SHA-256. | `reconstruct/_inputs.py:386-389` |
 | Run/source labels without a key | Fall back to unkeyed SHA-256. | `_sequence.py:65-71` |
-| Hosted tool items are projected | **False.** Only `function_call`/`custom_tool_call` are treated as emitted tool calls. | `reconstruct/_stitch.py:73` |
-| History rewrite detection | Exists as an `info` gap `prefix_break`, reason `history_rewritten`. It is not compaction evidence. | `reconstruct/_stitch_check.py:127` |
-| Control vocabulary | `ControlObservation.decision` ∈ allow, deny, requires_review, unknown; caller-reported. | `control_evidence.py:58` |
-| Side effects default to committed | **True (unsafe).** `committed: bool = True`. | `side_effect.py:92`; `decision.py:1404` |
-| auditd netlink splits raw frames | **Stale.** `decodeAuditNetlink` parses netlink headers. Removed as a P4 prerequisite. | `receiver/auditreceiver/netlink_linux.go:317` |
-| Capability declarations exist | `fabric.capture-sdk-capabilities/v1` (repository support matrix) and `fabric.integration-coverage/v1` (integration registration). Neither records which capture points were active in a source epoch. | `capture_capabilities.py`; `coverage_manifest.py` |
-| TypeScript wire capture | Not implemented: no wire, spool or reconstruct module. | `sdk/typescript/src/` |
-| Wire endpoints | POST only; chat/completions, responses, completions, embeddings, messages; OpenAI, Anthropic, Azure OpenAI by default. | `wire/_match.py:18-21,46`; `wire/_config.py:33-40` |
+| Hosted tool items are projected | **False.** Only `function_call`/`custom_tool_call` are emitted tool calls. | `reconstruct/_stitch.py:73` |
+| History rewrite detection | An `info` gap `prefix_break`, reason `history_rewritten`; not compaction evidence. | `reconstruct/_stitch_check.py:127` |
+| Control vocabulary | `ControlObservation.decision` ∈ allow, deny, requires_review, unknown. | `control_evidence.py:58` |
+| Side effects default to committed | **True (unsafe).** `committed: bool = True`; the emitted boolean does not say whether it was defaulted. | `side_effect.py:92`; `decision.py:1404,1519` |
+| A side-effect context manager exists | **False.** Only `delegate()`/`adelegate()` are context managers. | `decision.py:1990-1991,2032` |
+| auditd netlink splits raw frames | **Stale.** `decodeAuditNetlink` parses netlink headers. | `receiver/auditreceiver/netlink_linux.go:317` |
+| Capability declarations exist | `fabric.capture-sdk-capabilities/v1` and `fabric.integration-coverage/v1`; neither records active capture points per source epoch. | `capture_capabilities.py`; `coverage_manifest.py` |
+| TypeScript wire capture | Not implemented. | `sdk/typescript/src/` |
+| Wire endpoints | POST only; chat/completions, responses, completions, embeddings, messages; OpenAI, Anthropic, Azure OpenAI by default. | `wire/_match.py:16-21,46`; `wire/_config.py:33-40` |
 
 ### 2.2 Provenance, capture points and assertion origin
 
 Three independent facts are recorded for every value:
 
 1. **Provenance** — how Fabric came to know it.
-2. **Capture point** — which named hook, at which version (section 2.8).
+2. **Capture point** — which named capture point, at which version
+   (section 2.8). Every field's "Observed by" lists capture-point ids only.
 3. **Assertion origin** — who asserted it. Observing a provider's
    "completed" does not establish that the claimed effect happened.
 
+<!-- generated:vocab:provenance:begin -->
 | Value | Meaning |
 |---|---|
 | `observed` | Recorded by a capture point Fabric installs itself, with no caller cooperation (W, H), including literal values parsed from those bytes (P). |
 | `reported` | Supplied by the application through an API it must call (R), including literal values parsed from bytes it handed over (P). |
 | `inferred` | Derived offline by `fabric.reconstruct` (I). Always carries `method` and `confidence`. |
+<!-- generated:vocab:provenance:end -->
 
 Capture point kinds:
 
+<!-- generated:vocab:capture_point_kind:begin -->
 | Kind | Name | Provenance | Meaning |
 |---|---|---|---|
+| F | `fabric` | observed | Fabric's own records about itself (ids, sequences, manifests, loss, heartbeats); assertion origin `fabric`. |
 | W | `wire` | observed | Copies bytes already passing a qualified transport boundary. |
 | H | `hook` | observed | Observes an operation the application already performs (driver, protocol, process API) and values it already returns. |
 | R | `reported` | reported | Records facts or bytes the application passes to a Fabric API. |
 | P | `provider_assertion` | inherited | A literal value parsed offline from captured bytes. Inherits the provenance of the bytes (observed for W, reported for R); the provider is the assertion origin. |
 | I | `inference` | inferred | A deterministic offline derivation with input locators, method and parser version. |
 | S | `sensor` | (own record) | Host sensor or independent feed record; linked as `corroborated_by`, never upgrades the provenance of another record. |
+<!-- generated:vocab:capture_point_kind:end -->
 
 Assertion origins:
 
+<!-- generated:vocab:assertion_origin:begin -->
 | Value | Meaning |
 |---|---|
 | `application` | The monitored application or its framework. |
@@ -194,6 +226,7 @@ Assertion origins:
 | `human` | A person, through a system that recorded the action. |
 | `fabric` | Fabric describing itself (manifest, loss, heartbeat). |
 | `unknown` | Not established. |
+<!-- generated:vocab:assertion_origin:end -->
 
 Content-v2 `provenance` maps as: `protocol` → observed; `caller_reported` →
 reported; `inferred` → inferred; `native` → the record of an independent
@@ -207,28 +240,45 @@ record.
 
 | Form | Rule | Examples |
 |---|---|---|
-| Generated | Random (uuid4) minted by Fabric; emitted as is. | `event_id`, `scope_id`, `exchange_id`, `manifest_id` |
+| Generated | Random (uuid4) minted by Fabric; emitted as is. | `event_id`, `attempt_id`, `scope_id`, `exchange_id`, `manifest_id` |
 | Keyed pseudonym | `prefix-` + 32 hex of HMAC (section 2.9). Clear value only in content (`actor.identity`). | run, session, user, actor, conversation, target, host, provider ids |
 | Label | Operator or provider name, pattern-validated, exposure rules apply. | model, tool, MCP server, step label |
 
-**Step identity.** A projection entry is one physical record of work,
-identified by `attempt_id` (unique in the document). `step_id` is the
-logical node it belongs to, stable across retries, with the meaning the
-existing `fabric.step.id` key already has. Source ids are kept as
-namespaced aliases and never reinterpreted.
+**Attempt identity.** A projection entry is one physical execution,
+identified by `attempt_id` (`X19`):
+
+1. `attempt_id` is always a Fabric-minted uuid4: wire `exchange_id`,
+   explicit `call_id` (normalised to the dashed form), and on the records
+   path a uuid4 minted per record call and emitted as
+   `fabric.attempt.uid`.
+2. It is never defaulted from `step_id` and never taken from the caller.
+   Two retries that carry the same caller ids are two attempts.
+3. Caller-supplied or imported ids (explicit `attempt_id` and
+   `operation_id`, host `fabric.step.id` and `fabric.step.attempt_id`,
+   `decision_id`, `request_id`, `execution_id`, ids from another runtime)
+   are kept as **aliases** (`X38`), each keyed `<path>.<name>` with value
+   `<source_id>/<id>`. An alias joins records; it never identifies one.
+4. `step_id` (`X17`) is the logical node, stable across retries. It is the
+   Fabric-minted uuid4 of the first attempt when no logical id is supplied,
+   or the caller's logical id qualified as `<path>:<source_id>:<value>`.
 
 | Source record | `step_id` | `attempt_id` | Aliases kept | `parent_step_id` |
 |---|---|---|---|---|
-| Wire exchange | reported operation id when a retry/fallback link is reported (`S13`), else `exchange_id` | `exchange_id` | `exchange_id`, `span_id` | innermost open Fabric step in the context (explicit call, decision record context), else the run-scope step |
-| Explicit call (`CallRecorder`, adapters) | `operation_id` | `attempt_id` | `call_id`, `operation_id`, `parent_call_id` | the step of `parent_call_id` |
-| Decision record (`record_*`, `tool_call()`, `llm_call()`) | host `fabric.step.id`, else a minted uuid4 | host `fabric.step.attempt_id`, else `= step_id` | `decision_id`, `span_id` | the decision's step |
-| Decision span | `decision_id` | execution attempt id, else `= step_id` | `request_id`, `execution_id` | delegating parent decision when propagated |
-| Run scope | `run:` + `scope_id` | `= step_id` | `scope_id` | enclosing scope |
+| Wire exchange | the reported logical id of the enclosing explicit or `llm_call()` step when it reports a retry/fallback relation (`S13`), else `exchange_id` | `exchange_id` | `wire.span_id` | innermost open Fabric step in the context, else the run-scope step |
+| Explicit call | `explicit:<source_id>:<operation_id>` | `call_id` | `explicit.operation_id`, `explicit.attempt_id`, `explicit.parent_call_id` | the step of `parent_call_id` |
+| Decision record (`record_*`, `tool_call()`, `llm_call()`) | `records:<source_id>:<fabric.step.id>` when supplied, else the minted attempt id | minted `fabric.attempt.uid` | `records.step_id`, `records.step_attempt_id`, `records.decision_id`, `records.span_id` | the decision's step |
+| Decision span | `records:<source_id>:<decision_id>` | minted `fabric.attempt.uid` | `records.request_id`, `records.execution_id` | delegating parent decision when propagated |
+| Run scope | `run:` + `scope_id` | `scope_id` | — | enclosing scope |
+| Inferred step (`input`, `context_change`) | minted by the verifier | minted by the verifier (deterministic: uuid5 of the evidence locator) | — | the step whose evidence it was derived from |
 | Loss, heartbeat, marker, manifest | not steps | — | — | — |
+
+A reported `S13` reaches a wire exchange only through its enclosing
+explicit or `llm_call()` step, because the caller never sees `exchange_id`.
 
 **Step kinds** (`S01`, telemetry `fabric.step.kind`). `fabric.step.type`
 stays a free host label (`S02`).
 
+<!-- generated:vocab:step_kind:begin -->
 | Value | Meaning |
 |---|---|
 | `run` | Root of a run or of one `fabric.wire.run()` scope. |
@@ -260,9 +310,11 @@ stays a free host label (`S02`).
 | `skill` | An existing `record_skill` record. |
 | `interaction` | An existing generic `record_interaction` record. |
 | `extension` | A registered `x-<namespace>.<name>` kind; older readers keep it opaque. |
+<!-- generated:vocab:step_kind:end -->
 
 **Actor types** (`S03`):
 
+<!-- generated:vocab:actor_type:begin -->
 | Value | Meaning |
 |---|---|
 | `user` | The end user the agent serves. |
@@ -275,10 +327,12 @@ stays a free host label (`S02`).
 | `external_service` | An external service, including MCP servers. |
 | `provider` | A model provider (assertion origin of provider-reported facts). |
 | `unknown` | Not established. |
+<!-- generated:vocab:actor_type:end -->
 
 **Lifecycle and outcome** are separate fields. A missing end never becomes
 an outcome.
 
+<!-- generated:vocab:lifecycle_state:begin -->
 | Value | Meaning |
 |---|---|
 | `queued` | Accepted, not started. |
@@ -288,7 +342,9 @@ an outcome.
 | `completed` | Ended (see `result_status`). |
 | `cancelled` | Ended by cancellation. |
 | `unknown` | No lifecycle evidence. |
+<!-- generated:vocab:lifecycle_state:end -->
 
+<!-- generated:vocab:result_status:begin -->
 | Value | Meaning |
 |---|---|
 | `ok` | The operation finished and reported success. |
@@ -296,6 +352,7 @@ an outcome.
 | `cancelled` | The operation was cancelled. |
 | `timeout` | A deadline expired. |
 | `unknown` | No outcome was observed or reported. Never inferred as `ok`. |
+<!-- generated:vocab:result_status:end -->
 
 Legacy mappings: explicit `result_status: deferred` → lifecycle `deferred`,
 result `unknown`; wire `response_state` `complete` + HTTP 2xx → `ok`;
@@ -309,38 +366,111 @@ result `unknown`; wire `response_state` `complete` + HTTP 2xx → `ok`;
 | Record schema | `schema_version` on every record (`X01`) | a record shape changes (minor: additive) |
 | Content descriptor and role table | content-v2 `schema_version` + `role_table_version` in the manifest | a role, media type or cap is added |
 | Projection and parser | `fabric.step-projection/v1` `projection_revision` + `parser.version` | a parser learns a new API or item; source bytes never change |
-| Capture point | `capture_point` = `id@version` (`X26`) and manifest rows | a hook's behaviour or qualification changes |
+| Capture point | `capture_point` = `id@version` (`X26`) and manifest rows | a capture point's behaviour or qualification changes |
 
 Coverage profile (`profile_id@revision`, section 6.1) is a fifth,
 declaration-side axis. A profile revision never weakens an earlier
 revision's requirements retroactively.
 
-### 2.4 Event identity
+### 2.4 Event identity, sources and manifest sequencing
 
-`fabric.event_id` (`X02`) is fixed as follows:
+**Event identity.** `fabric.event_id` (`X02`):
 
 1. Every record Fabric emits carries one: wire exchange spans, loss and
-   heartbeat records, run markers, manifest records, decision records and
-   decision spans, explicit-line records.
+   heartbeat records, run markers, manifests, decision records and decision
+   spans, explicit-line records.
 2. It is a lowercase uuid4, minted once by the emitter **before** the
-   record is spooled or exported, stored with the record, and identical on
-   every retry and re-export. Receivers deduplicate on it.
+   record is spooled or exported, stored with the record, identical on every
+   retry and re-export. Receivers deduplicate on it.
 3. On the explicit line the existing `record_id` (uuid4 hex) is the event
-   id; the projection normalises it to the dashed form and keeps
-   `record_id` as an alias. The explicit line does not mint a second id.
-4. It identifies a record, never a logical step: a step with a start and
-   an outcome record has two event ids and one `attempt_id`.
+   id; the projection normalises it to the dashed form. No second id is
+   minted.
+4. It identifies a record, never a step: a step with start and outcome
+   records has two event ids and one `attempt_id`.
 5. A correction is a new record with `fabric.event.supersedes` (`X03`);
    originals are never rewritten.
 
-**Ordering.** Each delivery path is its own source with its own allocator
-(`X06`): the wire source (exchanges, markers, manifest), the explicit
-journal source, and — from P1 — a decision-record source when decision
-records are spooled. Sources are never merged into one sequence space,
-because a shared sequence across paths with different delivery guarantees
-would turn host-provider sampling into false wire gaps or hide real ones.
-Cross-source order comes only from causal links and, as a display aid,
-timestamps with their `clock_domain` (`X25`).
+**Sources: one allocator per delivery path.** Each path has its own
+`(source_id, epoch, sequence)` space (`X06`, `fabric.capture.path`):
+
+<!-- generated:vocab:source_path:begin -->
+| Value | Meaning |
+|---|---|
+| `wire` | Zero-code wire capture: exchanges, run markers, manifests (allocator `wire`). |
+| `explicit` | Explicit evidence line: `CallRecorder` journal (its own source). |
+| `records` | SDK reporting APIs: decision records and spans (allocator `records`, from P1). |
+<!-- generated:vocab:source_path:end -->
+
+Sources are never merged into one sequence space: a shared sequence across
+paths with different delivery guarantees would turn host-provider sampling
+into false wire gaps or hide real ones. Cross-source order comes only from
+causal links and, as a display aid, timestamps with their `clock_domain`
+(`X25`). The projection qualifies every source as `<path>:<source_id>`.
+
+**The `records` source (P1).** It closes the gap that SDK reporting APIs
+are unsequenced today:
+
+- `SourceAllocator` accepts component `records` (default label `records-`
+  + 16 hex, `s-` pseudonym like wire); one allocator per process; new epoch
+  after fork; `sequence_unit: record`.
+- Every decision record and decision span allocates one sequence at
+  emission and carries `fabric.capture.path=records`, `fabric.source_id`,
+  `fabric.source.epoch`, `fabric.source.sequence`, `fabric.attempt.uid`
+  and `fabric.event_id`.
+- In spool mode a metadata-only copy of each record is spooled as kind
+  `record` and sent through Fabric's private provider, so completeness is
+  provable regardless of host sampling; the host-provider span is a second
+  copy with the same `event_id`. Without a spool, records go only through
+  the host provider and a sampled-out record is a visible gap (honest
+  `partial`).
+- The records source has its own heartbeats (`periodic`, `final`) and loss
+  records. To stay invisible to 047/048 verifiers they use
+  **records-specific keys and span names** — `fabric.records_heartbeat`
+  with `fabric.records.last_sequence` and `fabric.records.heartbeat.kind`,
+  `fabric.records_loss` with `fabric.records.loss.*` — never
+  `fabric.heartbeat.*` or `fabric.loss.*`, which the existing verifier
+  would attribute to a source with no exchanges.
+- Its manifest is emitted like every other source's (below).
+
+**Manifest sequencing.** Manifests do **not** consume source sequences, on
+any path, exactly as heartbeats and loss records do not (047 §6). They have
+their own counting rule:
+
+1. **Own counter.** `manifest_seq` (`X39`) is 0, 1, 2, … per
+   `(path, source_id, epoch)`, contiguous, allocated under the source's
+   allocator lock.
+2. **Effective position.** `after_source_sequence` is the last sequence
+   allocated on that source when the manifest was emitted (−1 before the
+   first). A manifest governs sequences `after_source_sequence + 1` up to
+   the next manifest's `after_source_sequence`. Manifest 0 is emitted at
+   epoch start, before any sequence is allocated.
+3. **Chaining and digest.** A manifest's digest is SHA-256 of its spec-029
+   canonical JSON. Every manifest with `manifest_seq > 0` carries
+   `previous_manifest_sha256`. Run markers carry
+   `fabric.capture.manifest_id` and `fabric.capture.manifest_sha256` of the
+   manifest in force; heartbeats (wire and records) carry
+   `fabric.capture.manifest_seq` of the latest manifest, so a lost trailing
+   manifest is detectable. Projection inputs name manifests by id **and**
+   digest.
+4. **Gaps.** A missing `manifest_seq`, a broken chain or a heartbeat that
+   names a manifest the verifier lacks makes the governed sequence window
+   `unknown` for every field the manifest would have declared (section 6.2
+   rule R1).
+5. **What changes a manifest.** Within one epoch, only capture-point state
+   (`active`, `installed_inactive`, `disabled`, `failed`) may change; each
+   change emits the next manifest. **Capture policy, id key, identity mode,
+   profile and limits are fixed per epoch**: changing any of them requires
+   re-install, which seals the epoch (`final` heartbeat) and starts a new
+   epoch whose manifest 0 states the new values. So the policy and key that
+   applied to a sequence are always the ones of its epoch's manifests, and
+   every content descriptor additionally carries the `policy_id`,
+   `policy_version` and `policy_digest` it was protected under.
+6. **Backward compatibility.** A manifest is a `fabric.capture_manifest`
+   span with none of `fabric.wire.exchange_id`, `fabric.heartbeat.last_sequence`
+   or `fabric.loss.reason`, so the 047/048 verifier ignores it, and the new
+   `fabric.capture.manifest_seq` attribute on heartbeats is ignored by it
+   too. Records without manifests (047/048 captures) are verified as today
+   for integrity; their layer verdicts are `unverified` (rule R1).
 
 ### 2.5 Typed causal links
 
@@ -360,6 +490,7 @@ Link = {
 }
 ```
 
+<!-- generated:vocab:link_type:begin -->
 | Value | Meaning |
 |---|---|
 | `parent` | Nesting: the target step contains this step. Exactly one per step at most; distinct from causal links. |
@@ -382,30 +513,47 @@ Link = {
 | `part_of` | An extracted content part of the target object. |
 | `corroborated_by` | An independent sensor or feed record about the same fact. |
 | `same_as` | An explicit alias: both ids name the same thing. |
+<!-- generated:vocab:link_type:end -->
 
+<!-- generated:vocab:link_state:begin -->
 | Value | Meaning |
 |---|---|
 | `resolved` | The target is in the record. |
 | `unresolved` | The target id is known but not in the record. |
 | `ambiguous` | More than one candidate target; all are listed. |
 | `conflict` | Assertions about this link disagree. |
+<!-- generated:vocab:link_state:end -->
 
 Rules: no parent or link is ever invented from timestamps or PIDs; a
 PID/time join with a host sensor is `inferred`, `tentative`; ambiguous
 candidates are all listed; payload-hash similarity never deduplicates
 records.
 
-Inference methods allowed in v1 (closed list): `tool_call_id` (certain),
-`previous_response_id` (certain), `prefix_digest` (certain, `continues`),
-`identical_request_after_error` (tentative, `retries` only),
-`new_user_message` (tentative, `input`), `excerpt_digest` (tentative,
-retrieval `consumes`), `pid_time_join` (tentative, `corroborated_by`).
+**Inference methods** (closed; the only values of `method` on links and
+field wrappers, each with its fixed confidence):
+
+<!-- generated:vocab:inference_method:begin -->
+| Value | Meaning |
+|---|---|
+| `tool_call_id` | Tool-call id emitted in a response and consumed in a later request. Confidence `certain`. |
+| `previous_response_id` | Request names an earlier response. Confidence `certain`. |
+| `prefix_digest` | Request history continues an earlier exchange's messages (`continues`). Confidence `certain`. |
+| `prefix_break` | History of a continuing thread was rewritten (`context.history_rewritten`, D17). Confidence `tentative`. |
+| `identical_request_after_error` | Same request digest after an error (`retries`, S13). Confidence `tentative`. |
+| `new_user_message` | A user message in request N+1 absent from response N (inferred `input` step, C08). Confidence `tentative`. |
+| `excerpt_digest` | A retrieval excerpt digest appears in a later request (retrieval `consumes`, N29). Confidence `tentative`. |
+| `tools_digest_change` | Tools digest differs from the previous call in the thread (C23). Confidence `certain`. |
+| `diff_algorithm` | Diff derived from stored before/after bytes (N48). Confidence `certain`. |
+| `media_decoder` | Media metadata decoded from stored bytes (N52). Confidence `certain`. |
+| `pid_time_join` | Host-sensor record joined by PID and time (`corroborated_by`). Confidence `tentative`. |
+<!-- generated:vocab:inference_method:end -->
 
 ### 2.6 Per-field coverage status
 
 Every field of a step is reported as a **field wrapper**. A missing field
 never looks like an empty one.
 
+<!-- generated:vocab:coverage_status:begin -->
 | Value | Meaning |
 |---|---|
 | `captured` | The value, or an exact locator to it, was recorded from the named capture point. Says nothing about whether the asserted fact is true or whether the record was delivered. |
@@ -417,6 +565,7 @@ never looks like an empty one.
 | `unsupported` | The capture point or parser for this runtime, API or version cannot provide the field, as declared in the capture manifest. |
 | `unknown` | The evidence cannot establish whether the field applies or what it holds (for example no capture manifest for the source epoch). |
 | `conflict` | Two or more assertions disagree. All are kept in the field evidence; none is chosen. |
+<!-- generated:vocab:coverage_status:end -->
 
 Empty string, empty list, zero and zero-byte content are `captured`
 values, never `absent`.
@@ -425,6 +574,7 @@ values, never `absent`.
 revision, never a new status). A reason is required for `not_captured`,
 `redacted`, `truncated` and `unsupported`.
 
+<!-- generated:vocab:reason:begin -->
 | Value | Meaning |
 |---|---|
 | `not_instrumented` | The capture point that observes this field was not installed or not active for this source epoch. |
@@ -462,16 +612,32 @@ revision, never a new status). A reason is required for `not_captured`,
 | `sampling` | A sampler dropped the record. |
 | `retention_expired` | The object existed and was removed by retention. |
 | `deleted` | The object existed and was deleted on request. |
+<!-- generated:vocab:reason:end -->
+
+**Field classes.** For verdicts (section 6.2) every wrapper falls in
+exactly one class:
+
+<!-- generated:vocab:field_class:begin -->
+| Value | Meaning |
+|---|---|
+| `ok` | `captured` (not inferred, or inferred with `confidence: certain`), `absent`, `not_applicable`. |
+| `withheld` | `redacted` with reason `privacy_policy`, `provider_redacted` or `provider_encrypted`; `not_captured` with reason `privacy_policy`, `provider_summarised`, `provider_not_returned` or `explicit_withheld`. |
+| `gap` | `not_captured` with any other reason (including `provider_held`, `not_instrumented`, `caller_omitted`, `missing_capture_policy`, `missing_id_key`); `truncated` with any reason; `conflict`. |
+| `unsupported` | `unsupported` with any reason. |
+| `uncertain` | `unknown`; `captured` with `confidence: tentative`. |
+<!-- generated:vocab:field_class:end -->
 
 **Field wrapper** (`fabric.step-projection/v1` `$defs/field`):
 
 ```text
 Field = {
-  status, reason?, provenance, capture_point, assertion_origin?,
+  status, reason?, original_status?, provenance, capture_point,
+  assertion_origin?,
   value?        (META, ID, LABEL, DIGEST classes only),
   ref? | refs?  (locator {object_id, role, pointer?, byte_range?, sha256?}
                  for CONTENT; values are inlined only with --inline-content),
   parse?        not_attempted | parsed | partial | unsupported | invalid,
+  method?, confidence?   (required when provenance = inferred),
   collection?   {completeness: complete | partial | unknown,
                  observed_count, expected_count?},
   items?        [Field-sets] for lists,
@@ -481,9 +647,9 @@ Field = {
 
 The wrapper is not recursively wrapped. Status dimensions that are
 **not** coverage stay separate and keep their own vocabularies: parse
-status (above), content representation, protection status and storage
-status (content-v2), delivery stages (delivery/v1) and proof verification.
-Original statuses are always preserved next to the mapped coverage status.
+status, content representation, protection status and storage status
+(content-v2), delivery stages (delivery/v1) and proof verification.
+Original statuses are always preserved in `original_status`.
 
 Mapping from existing statuses:
 
@@ -502,23 +668,22 @@ Mapping from existing statuses:
 | wire `store_status` | `stored` | `captured` |
 | | `partial` | per side |
 | | `failed` | `not_captured(store_failed)` |
-| | `disabled` | `not_captured(missing_capture_policy)` or `(not_configured)` |
+| | `disabled` | `not_captured` with the reason in `fabric.wire.store_reason` (`X40`) |
 | wire loss reason | `queue_full`, `internal_error`, `shutdown`, `span_dropped` | `not_captured` with the same reason |
 | explicit `deferred` | — | lifecycle `deferred`, result `unknown` |
 
-**When a capture point is absent** (the "If hook absent" column in
-section 3):
+**When a capture point is absent** (the "If hook absent" column):
 
-- capture point declared not installed or inactive in the manifest for the
-  source epoch → `not_captured(not_instrumented)`;
-- capture point does not exist for this runtime or version →
+- declared not installed or inactive in the manifest for the governing
+  window → `not_captured(not_instrumented)`;
+- does not exist for this runtime or version →
   `unsupported(unsupported_runtime | unsupported_version)`;
-- no manifest covers the source epoch → `unknown`;
+- no manifest governs the window → `unknown`;
 - the field depends on an optional reporting argument →
   `not_captured(caller_omitted)`.
 
 Fabric emits field statuses only for steps it knows exist. Steps that were
-never seen are accounted for at run level by the manifest and the integrity
+never seen are accounted for at run level by manifests and the integrity
 verdict (section 6), never by a field status.
 
 ### 2.7 Capture policy
@@ -527,26 +692,39 @@ Two policies are never confused:
 
 - **Capture policy** (`X31`): how Fabric records and protects —
   `contracts/deployment-policy/v1` (role → privacy mode, storage,
-  retention, `deployment.profile`). It governs every content role.
+  retention, `deployment.profile`, `deployment.encrypted_store_required`).
+  It governs every content role.
 - **Execution policy** (`C30`–`C33`): the customer's rules for the agent —
   recorded as declared facts only, never enforced or evaluated.
 
-Default policy per field (`metadata`, `content`, `off`):
+Default policy per field:
 
+<!-- generated:vocab:policy:begin -->
 | Value | Meaning |
 |---|---|
 | `metadata` | Captured whenever its capture point is active. |
 | `content` | Captured only when content capture is enabled and the capture policy maps the role to a retaining mode. |
 | `off` | Captured only when explicitly enabled for this field or role, even with content capture on. |
+<!-- generated:vocab:policy:end -->
 
-Content capture of a role happens only when (a) content capture is enabled
-(section 7.3), (b) the capture policy maps the role to a retaining mode
-(`retain_original`, `redact`, `tokenize` produce bytes; `metadata_only`
-and `omit` do not), and (c) the field's default is not `off` or the field
-is switched on. A role absent from the policy is `omit`.
+**Precedence** (first matching rule decides a role's privacy mode):
+
+1. Content capture is disabled (section 7.3) → no bytes for any role.
+2. The capture policy names the role → that mode.
+3. The policy is the implicit **`fabric.local-default`** (`local` profile,
+   no policy configured): roles whose default policy is `content` →
+   `retain_original`; roles whose default is `off` → `omit`.
+4. A configured policy does not name the role → `omit`.
+5. A field whose default is `off` is captured only when the policy names its
+   role explicitly (rule 2), never by rule 3.
+
+Modes `retain_original`, `redact` and `tokenize` store bytes;
+`metadata_only` stores a descriptor without bytes; `omit` stores nothing.
+How modes compose with extraction is section 7.5.
 
 Privacy classes:
 
+<!-- generated:vocab:privacy_class:begin -->
 | Value | Meaning |
 |---|---|
 | `ID` | Identifier. Generated random ids go as is; externally meaningful ids go only as keyed pseudonyms (section 2.9). Clear values only in content. |
@@ -554,62 +732,72 @@ Privacy classes:
 | `LABEL` | Operator- or provider-chosen name (model, tool, server, step label). Pattern-validated; may still carry sensitive text; exposure rules apply. |
 | `DIGEST` | SHA-256 of content. Emitted only where the capture policy permits digests; a digest of a low-entropy value is not anonymisation. |
 | `CONTENT` | Customer content. Only in content objects; never on telemetry, logs or diagnostics. |
+<!-- generated:vocab:privacy_class:end -->
 
-### 2.8 Capability manifest
+### 2.8 Capability manifest and capture points
 
 Two existing documents stay as they are: `fabric.capture-sdk-capabilities/v1`
 (what the repository supports, per language) and
 `fabric.integration-coverage/v1` (integration registration). Neither says
-which capture points were **active** for a source epoch, which is what an
-evaluator needs to tell "nothing happened" from "nothing was instrumented".
+which capture points were **active** for a source epoch, which an evaluator
+needs to tell "nothing happened" from "nothing was instrumented".
 
 **New record: `fabric.capture-manifest/v1`**
-(`contracts/coverage/v1/schema/capture-manifest-v1.schema.json`).
+(`contracts/coverage/v1/schema/capture-manifest-v1.schema.json`):
 
-- Emitted by each source at epoch start and whenever a capture point's
-  state changes; sequenced on that source like any record; referenced from
-  `run_start` markers by `fabric.capture.manifest_id` (`X34`).
-- Travels as one `fabric.capture_manifest` span with closed attributes
-  (arrays of `id@version:state` strings, enums, integers), like
-  heartbeats. It carries no content and no endpoint hostnames (only the
-  digest of the endpoint set).
-- Contents: profile (`local`/`production`), identity mode, pseudonym mode
-  and key id, capture policy reference, content-capture state and reason,
-  role table version, limits (`max_body_bytes`, `max_retain_bytes`,
-  `max_inflight_bytes`, `queue_max_items`, `part_min_bytes`), sequence unit,
-  clock domain, coverage profile, every capture point with state
-  (`active`, `installed_inactive`, `disabled`, `unsupported`, `failed`),
-  the field ids it can supply, and the declared `uncaptured_classes`
-  (for example `requests`, `boto3`, `grpc`, `websocket`, `node_below_24`,
-  `direct_pipe_reads`).
+- emitted per source and sequenced by the rules of section 2.4
+  (`manifest_seq`, `after_source_sequence`, `previous_manifest_sha256`);
+- travels as one `fabric.capture_manifest` span with closed attributes
+  (arrays of `id@version:state` strings, enums, integers); no content, no
+  endpoint hostnames (only the digest of the endpoint set);
+- contents: path, profile (`local`/`production`), identity mode,
+  pseudonym mode and key id, capture policy reference (including
+  `encrypted_store_required` from `deployment.encrypted_store_required`),
+  content-capture state and reason, role table version, limits
+  (`max_body_bytes`, `max_retain_bytes`, `max_inflight_bytes`,
+  `queue_max_items`, `part_min_bytes`), sequence unit, clock domain,
+  `chunk_boundaries_retained` (`S31`), coverage profile, D2 state, every
+  capture point with state and the field ids it supplies, and the declared
+  `uncaptured_classes`.
 
 **TypeScript** (decision 9): until `wire.ts.undici` passes TS-1, the
 TypeScript SDK's manifest reports `wire.ts.undici` as `unsupported` and
 every field it would supply as `unsupported(unsupported_runtime)`.
 
-**Capture points** (registry `contracts/coverage/v1/registry/capture-points-v1.json`):
+**Capture points** (registry `contracts/coverage/v1/registry/capture-points-v1.json`).
+`supplies` is derived from the fields that name the capture point; the
+validator fails if they disagree, if any field names an unknown capture
+point, or if an in-scope field names none:
 
-| Capture point | Kind | Runtime | Process-global | Activation | State | Observes | Cannot observe | Passivity gate |
-|---|---|---|---|---|---|---|---|---|
-| `wire.py.httpx` | W | Python 3.11+ | yes (patches httpx/httpx2 transports) | opt-in: `install()` or `FABRIC_WIRE_AUTOLOAD=1` | built (047/048) | matched POST model exchanges: request/response body bytes, timing, response state, HTTP status, error class, scope | headers; GET, files, batch, images, audio, realtime endpoints; unmatched hosts or paths; `requests`, `urllib3`/`boto3`, `aiohttp`, gRPC; TLS; provider-side receipt | `sdk/python/tests/test_wire_passivity.py` (047 §4.10) |
-| `wire.ts.undici` | W | Node.js 24+, qualified undici versions only | yes (diagnostics_channel subscription) | opt-in | TS track; manifest reports `unsupported` until built | global `fetch` model exchanges: request/response body chunks | axios, `node:http`, custom fetch, Node.js below 24, unqualified undici versions | TS-1 (section 8.2) |
-| `explicit.call_recorder` | R | Python | no | explicit API | built (043) | model/tool/database/agent call bytes and lifecycle as handed to `CallRecorder` | anything not passed through the recorder | 043 acceptance |
-| `explicit.byte_boundary` | R | Python | no | explicit API | built (043/044) | bytes at a caller-declared boundary | anything outside the declared boundary | 043/044 acceptance |
-| `explicit.final_http` | R | Python | no | explicit API | built (043) | final HTTP request/response bodies routed through `FinalHTTPAdapter` | hosts not routed through it | 043 acceptance |
-| `sdk.records` | R | Python, TypeScript | no | explicit API | built (metadata); content roles P0-A/P2 | `fabric.decision` records: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill; new P2/P3 reporting APIs | anything the application does not report | P2/P3 recording-failure tests |
-| `run.scope` | R | Python | no | `fabric.wire.run()` | built (048 §6); P1 adds arguments | run id, scope, block exit status, session/parent/resume links passed as arguments | work started outside a block (047 run-id fallback applies) | 048 acceptance |
-| `mcp.wrapper` | R | Python | no | explicit wrapper | built (hash-only); content P2 | `tools/list` inventory, `tools/call` arguments and results through the wrapper | other MCP methods, notifications, server-to-client requests, unwrapped sessions | P2 |
-| `mcp.client` | H | Python (`mcp` client) | yes | opt-in | P4 | every JSON-RPC message a wrapped client session sends and receives, stdio and Streamable HTTP | server internals, other client libraries | P4-MCP |
-| `exec.subprocess` | H | Python | yes | opt-in | P4 | argv, cwd, pid, exit code/signal; stdout/stderr only as returned by `communicate()` / `run(capture_output=True)` | bytes the caller reads directly from pipes; descendants; PTYs; environment values | P4-EXEC |
-| `exec.audit` | H | Python 3.8+ (PEP 578) | yes, irremovable | opt-in, installed once | P4 | exec-family audit events (`subprocess.Popen`, `os.system`, `os.exec*`, `os.posix_spawn`): executable, argv, cwd | output, exit, environment values | P4-AUDIT |
-| `db.dbapi` | H | Python, named drivers | yes | opt-in per driver | P4 | statement, parameters, rows the caller fetched, rows affected, commit/rollback calls | rows not fetched, server-side effects, other drivers, console access | P4-DB |
-| `http.nonmodel` | W | Python httpx/httpx2 | yes (same patch as wire.py.httpx) | opt-in per host allowlist | P4 | method, status, host; path, query and bodies only for allowlisted hosts with a retaining role policy | headers, non-httpx clients, hosts not allowlisted | P4-HTTP |
-| `file.audit` | H | Python 3.8+ (PEP 578) | yes, irremovable | opt-in | P4 | `open`, `os.rename`, `os.remove` audit events: path, mode, operation | bytes read or written (reported only), memory-mapped I/O, other processes | P4-FILE |
-| `ui.automation` | H | Python (Playwright, Selenium) | yes | opt-in | P5 | automation actions and their results, screenshots the automation already produced | human browser tabs, pages not driven by the library | P5-UI |
-| `rt.websocket` | W | Python (`websockets`, `aiohttp` client WS) | yes | opt-in | P5 | frames in both directions with timestamps on qualified realtime endpoints | WebRTC media, other clients | P5-RT |
-| `reconstruct.parse` | P/I | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); projection P1 | literal fields from stored bytes; stitching; inferred links | anything not in stored bytes | verifier tests |
-| `host.ebpf / host.auditd` | S | Linux nodes | n/a (separate component) | customer-deployed | built (030/031) | exec and connect records | in-process content; used only as `corroborated_by` | 030/031 |
-| `feed.independent` | S | customer services | n/a | customer-deployed | built (045) | service-side records and receipts | used only as `corroborated_by` | 045 |
+<!-- generated:points:begin -->
+| Capture point | Kind | Runtime | Process-global | Activation | State | Observes | Cannot observe | Passivity gate | Supplies |
+|---|---|---|---|---|---|---|---|---|---|
+| `fabric.self` | F | every Fabric emitter | n/a | always (part of every capture point) | built (ids, sequences, loss, heartbeats); P1 (event ids, manifests) | Fabric's own records: ids, sequences, manifests, loss, heartbeats, modes | anything outside Fabric | C1-1, C1-2 | X01–X03, X06–X07, X17–X20, X23, X25–X27, X29, X32–X36, X38–X39, C16, S01, S03, S31, D11, D24, D34 |
+| `install.config` | R | Python, TypeScript | no | install-time environment and configuration | built (tenant, labels); P0-A (policy), P1-P2 (identity block) | tenant, deployment identity block, capture policy, build digest, framework identity as configured | anything not configured | C0A-3 | X04–X05, X31, C12, C15 |
+| `wire.py.httpx` | W | Python 3.11+ | yes (patches httpx/httpx2 transports) | opt-in: `install()` or `FABRIC_WIRE_AUTOLOAD=1` | built (047/048) | matched POST model exchanges: request/response body bytes, timing, response state, HTTP status, error class, scope | headers; non-chat endpoints (images, audio, moderations, rerank, fine-tuning, files, batch); GET; realtime; unmatched hosts or paths; `requests`, `urllib3`/`boto3`, `aiohttp`, gRPC; TLS; provider-side receipt | `sdk/python/tests/test_wire_passivity.py` (047 §4.10) | X08, X22, X24, X40, C34–C35, C37, C40, S07–S11, S29–S30, S32, N01–N02, N07, D31 |
+| `wire.ts.undici` | W | Node.js 24+, qualified undici versions only | yes (diagnostics_channel subscription) | opt-in | TS track; manifest reports `unsupported` until built | global `fetch` model exchanges: request/response body chunks | axios, `node:http`, custom fetch, Node.js below 24, unqualified undici versions | TS-1 (section 8.2) | N01 |
+| `explicit.call_recorder` | R | Python | no | explicit API | built (043) | model/tool/database/agent call bytes and lifecycle as handed to `CallRecorder` | anything not passed through the recorder | 043 acceptance | X18, X22, X24, C19, C21, S07–S08, S10, N01, N03–N04, N09, N17, N39 |
+| `explicit.byte_boundary` | R | Python | no | explicit API | built (043/044) | bytes at a caller-declared boundary | anything outside the declared boundary | 043/044 acceptance | X32, N01, N32–N34, N47 |
+| `explicit.final_http` | R | Python | no | explicit API | built (043) | final HTTP request/response bodies routed through `FinalHTTPAdapter` | hosts not routed through it | 043 acceptance | N43–N44 |
+| `sdk.records` | R | Python, TypeScript | no | explicit API | built (metadata, unsequenced); records source P1; content roles P0-A/P2 | `fabric.decision` records and spans: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill, `tool_call()`, `llm_call()`; new P2/P3 reporting APIs; sequenced on the records source from P1 | anything the application does not report | P2/P3 recording-failure tests | X13–X16, X21–X22, X24, X28, C01–C11, C13–C15, C17–C18, C24, C30–C33, C41–C42, S02–S10, S12–S28, S32–S33, N13–N14, N17–N18, N26–N28, N30–N31, N38, N45–N46, N48–N51, N54–N55, N57–N59, D01–D10, D12–D16, D18–D23, D25–D30 |
+| `run.scope` | R | Python | no | `fabric.wire.run()` | built (048 §6); P1 adds arguments | run id, scope, block exit status, session/parent/resume links passed as arguments | work started outside a block (047 run-id fallback applies) | 048 acceptance | X08–X14, X21, S34 |
+| `mcp.wrapper` | R | Python | no | explicit wrapper | built (hash-only); content P2 | `tools/list` inventory, `tools/call` arguments and results through the wrapper | other MCP methods, notifications, server-to-client requests, unwrapped sessions | P2 | C24–C29, N22, N24–N25 |
+| `mcp.client` | H | Python (`mcp` client) | yes | opt-in | P4 | every JSON-RPC message a wrapped client session sends and receives, stdio and Streamable HTTP | server internals, other client libraries | P4-MCP | C25–C29, N22–N25 |
+| `exec.subprocess` | H | Python | yes | opt-in | P4 | argv, cwd, pid, exit code/signal; stdout/stderr only as returned by `communicate()` / `run(capture_output=True)` | bytes the caller reads directly from pipes; descendants; PTYs; environment values | P4-EXEC | N32–N35 |
+| `exec.audit` | H | Python 3.8+ (PEP 578) | yes, irremovable | opt-in, installed once | P4 | exec-family audit events (`subprocess.Popen`, `os.system`, `os.exec*`, `os.posix_spawn`): executable, argv, cwd | output, exit, environment values | P4-AUDIT | N32 |
+| `db.dbapi` | H | Python, named drivers | yes | opt-in per driver | P4 | statement, parameters, rows the caller fetched, rows affected, commit/rollback calls | rows not fetched, server-side effects, other drivers, console access | P4-DB | N30, N38–N42, D23 |
+| `http.nonmodel` | W | Python httpx/httpx2 | yes (same patch as wire.py.httpx) | opt-in per host allowlist | P4 | method, status, host; path, query and bodies only for allowlisted hosts with a retaining role policy | headers, non-httpx clients, hosts not allowlisted | P4-HTTP | N26, N28, N30, N43–N44 |
+| `file.audit` | H | Python 3.8+ (PEP 578) | yes, irremovable | opt-in | P4 | `open`, `os.rename`, `os.remove` audit events: path, mode, operation | bytes read or written (reported only), memory-mapped I/O, other processes | P4-FILE | N45–N46, N49 |
+| `remote.ssh_wrapper` | R | Python | no | explicit client wrapper (spec 041) | P4 | target, host-key verification result, command, channel bytes, exit status | direct `ssh`/`scp`, remote side, agent forwarding | P4-SSH | N36–N37 |
+| `ui.automation` | H | Python (Playwright, Selenium) | yes | opt-in | P5 | automation actions and their results, screenshots the automation already produced | human browser tabs, pages not driven by the library | P5-UI | N54–N55 |
+| `rt.websocket` | W | Python (`websockets`, `aiohttp` client WS) | yes | opt-in | P5 | frames in both directions with timestamps on qualified realtime endpoints | WebRTC media, other clients | P5-RT | N56–N57 |
+| `reconstruct.parse` | P | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); projection P1 | literal fields parsed from stored bytes (provenance inherited from the bytes) | anything not in stored bytes | verifier tests | X27–X28, X30, C11, C19–C22, C36–C39, S01, S03, S11–S12, N03–N15, N18–N21, N51, N53, N55, N60, D31–D33 |
+| `reconstruct.infer` | I | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); P1 (projection) | inferred links and events by the closed methods of section 2.5 | anything without a listed method | C1-5 | X21, C08, C23, C39, S13, S15, N16, N29, N48, N52, D17 |
+| `host.ebpf` | S | Linux nodes | n/a (separate component) | customer-deployed | built (031) | exec and connect records; used only as `corroborated_by` | in-process content | 031 | C41 |
+| `host.auditd` | S | Linux nodes | n/a (separate component) | customer-deployed | built (030) | exec and connect records; used only as `corroborated_by` | in-process content | 030 | C41 |
+| `feed.independent` | S | customer services | n/a | customer-deployed | built (045) | service-side records and receipts | used only as `corroborated_by` | 045 | D23, D25, D28–D29 |
+| `delivery.receipts` | S | destination | n/a | destination-provided | contract only (delivery/v1) | spooled, accepted and durable delivery stages | not obtained automatically by recorder v1 | delivery/v1 | X37 |
+<!-- generated:points:end -->
 
 ### 2.9 Pseudonymisation
 
@@ -617,21 +805,21 @@ every field it would supply as `unsupported(unsupported_runtime)`.
 
 1. **All externally meaningful ids are keyed pseudonyms by default**:
    run, source, service, session, user, actor, conversation, turn,
-   trigger ref, dispatch id, delegation target, outcome target, host,
-   sandbox, MCP session and JSON-RPC ids, database namespace and
-   transaction, provider ids (response, previous response, tool call,
-   request id).
+   trigger ref, dispatch id, delegation target, outcome and interaction
+   target, memory key, host, sandbox, MCP session and JSON-RPC ids,
+   database namespace and transaction, memory store, provider ids
+   (response, previous response, tool call, request id).
 2. **Function v2** for every id type added by this spec:
    `prefix-` + first 32 hex of `HMAC-SHA256(k_type, value)`, where
    `k_type = HMAC-SHA256(FABRIC_WIRE_ID_KEY, "fabric-id/v2/" + type)`.
-   Per-type keys give domain separation, so equal values of different types
-   never correlate. The tenant boundary is the key itself (one key per
-   tenant deployment). Prefixes: `sess-`, `usr-`, `act-`, `conv-`, `turn-`,
-   `trg-`, `dsp-`, `agt-`, `tgt-`, `hst-`, `sbx-`, `mcps-`, `rpc-`, `dbn-`,
-   `txn-`, `mst-`, and `p-` for provider ids.
+   Per-type keys give domain separation. The tenant boundary is the key
+   itself. Prefixes: `sess-`, `usr-`, `act-`, `conv-`, `turn-`, `trg-`,
+   `dsp-`, `agt-`, `tgt-`, `hst-`, `sbx-`, `mcps-`, `rpc-`, `dbn-`, `txn-`,
+   `mst-`, `mkey-`, and `p-` for provider ids.
 3. **Function v1** stays for `r-`, `s-`, `svc-` (pinned by
    `contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json`), so
-   existing records keep correlating.
+   existing records keep correlating. The `records` source label uses v1
+   `s-`.
 4. **Provider ids** become keyed: `p-` + 32 hex (v2, type `provider`).
    The legacy unkeyed form `p-` + 16 hex remains readable; the length tells
    them apart; the report states `pseudonym_mode`.
@@ -639,269 +827,280 @@ every field it would supply as `unsupported(unsupported_runtime)`.
    Without `FABRIC_WIRE_ID_KEY`: in the `production` profile, content
    capture is disabled and no value derived from a caller- or host-supplied
    id leaves the process: v2 ids are omitted (`not_captured(missing_id_key)`),
-   the run id uses its generated trace/source fallback, and the source id is
-   a random value per process (continuity across restarts is lost and the
-   manifest says so); in the `local` profile, v1 labels keep their unkeyed
-   fallback and v2 ids are omitted.
+   the run id uses its generated trace/source fallback, and source ids are
+   random per process (continuity across restarts is lost; the manifest
+   says so); in the `local` profile, v1 labels keep their unkeyed fallback
+   and v2 ids are omitted.
 6. **Key id and rotation.** `key_id` = `kid-` + 8 hex of
-   `HMAC-SHA256(key, "fabric-id/v2/kid")`, recorded in the manifest. A new
-   key produces new pseudonyms; continuity across rotation is the
-   customer's mapping, never Fabric's.
+   `HMAC-SHA256(key, "fabric-id/v2/kid")`, in the manifest. A key change
+   starts a new epoch (section 2.4 rule 5). Continuity across rotation is
+   the customer's mapping, never Fabric's.
 7. **Versioned flag.** `FABRIC_IDENTITY_MODE=pseudonymous` (default) or
    `clear`; `FABRIC_WIRE_LABELS=clear` remains an alias for labels. Clear
-   mode is recorded in the manifest, and a Node configured for
-   pseudonymous identity rejects clear values (fabricguard validates the
-   prefix form). `clear` reproduces today's `decision()` behaviour.
+   mode is recorded in the manifest, and a Node configured for pseudonymous
+   identity rejects clear values (fabricguard validates the prefix form).
+   `clear` reproduces today's `decision()` behaviour.
 8. The verifier needs the key to compute or match pseudonyms; it never logs
    or reports it.
 
----
-
 ## 3. Field inventory
 
-Columns: **Observed by** names a capture point (section 2.8) or kind
-(W, H, R, P, I, S). **Policy**: default capture policy (2.7). **Privacy**:
-class (2.7). **Req**: `R` = always present as a field wrapper on every
-applicable step (in parentheses: the step kinds or condition) and counted
-in the layer verdict; `O` = present when supplied, omitted means `unknown`,
-not counted. **If hook absent**: status when the observing capture point
-is absent (2.6); `always` = Fabric always has it. **Phase**: phase that
-delivers it (`built` = exists at `c3f1e51`). **Lives in**: `T` telemetry
-key (exact, fabricguard-validated), `C` content role, `P` projection only,
-`M` capture manifest (section 4).
+Columns: **Observed by** lists capture-point ids (section 2.8) only.
+**Policy**: default capture policy (2.7). **Privacy**: class (2.7).
+**Req**: `R` = always present as a field wrapper on every applicable step
+(in parentheses: the step kinds or condition) and counted in the layer
+verdict; `O` = present when supplied, omitted means `unknown`, not counted.
+**If hook absent**: status when the observing capture point is absent
+(2.6); `always` = Fabric always has it. **Phase**: phase that delivers it
+(`built` = exists at `c3f1e51`). **Lives in**: `T` telemetry key (exact,
+fabricguard-validated), `C` content role, `P` projection only, `M` capture
+manifest (section 4).
 
 ### 3.1 Cross-cutting
 
+<!-- generated:fields:X:begin -->
 | # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
 |---|---|---|---|---|---|---|---|---|---|---|
-| X01 | `schema_version` | string | self | metadata | META | R | always | built | T `fabric.schema_version`; P | Schema id of the record or document. |
-| X02 | `event_id` | uuid4 | self (every emitter) | metadata | ID | R | always | P1 | T `fabric.event_id`; explicit line `record_id` | Identity of one emitted record. Minted once, persisted with the record before first export, unchanged on every retry. Never a logical id. |
-| X03 | `supersedes_event_id` | uuid4 | self (correction) | metadata | ID | O | not_applicable | P1 | T `fabric.event.supersedes` | A correction is a new record naming the one it supersedes; originals are never rewritten. |
-| X04 | `tenant_id` | label | install; Node authentication binding | metadata | LABEL | R | not_captured(not_configured) | P1 (wire spans) | T `fabric.tenant_id` | Tenant the record belongs to. A self-reported value is a claim until the Node binds it to the authenticated sender. |
-| X05 | agent_id, system_id, deployment_id, release_id, environment, workload_id | label | install (`FABRIC_*` env), explicit config | metadata | LABEL | O | not_captured(not_configured) | P1 | T existing keys, newly on wire spans and markers | Deployment identity block, validated like `service.name`. |
-| X06 | source_id, source_epoch, source_sequence | s-pseudonym, int, int | self | metadata | ID/META | R | always | built | T `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence` | Order within one producer epoch. Sequences are per source; there is no global order. |
-| X07 | `sequence_unit` | enum exchange/record | self (manifest) | metadata | META | R | always | P1 | M | What one sequence number counts on this source. |
-| X08 | `run_id` | r-pseudonym or generated fallback | run.scope; trace fallback (047 §6) | metadata | ID | R | always (fallback) | built | T `fabric.run.id` | Logical run. |
-| X09 | `scope_id` | uuid4 | run.scope | metadata | ID | O | not_applicable | built | T `fabric.run.scope_id` | One `fabric.wire.run()` block entry. |
-| X10 | `parent_run_id` | r-pseudonym | run.scope argument | metadata | ID | O | not_captured(caller_omitted) | P1 | T `fabric.run.parent_id` | Run that started this run (sub-agent, worker). |
-| X11 | `resumed_from_run_id` | r-pseudonym | run.scope argument | metadata | ID | O | not_captured(caller_omitted) | P1 | T `fabric.run.resumed_from` | Run this run resumes, when the resumed work uses a new run id. Reusing the same run id across processes is the primary mechanism. |
-| X12 | `run_links` | list of r-pseudonym (max 16) | run.scope argument | metadata | ID | O | not_captured(caller_omitted) | P1 | T `fabric.run.links` | Other related runs (fan-in, batch parent). |
-| X13 | `session_id` | sess-pseudonym | run.scope / `decision()` argument | metadata | ID | O | not_captured(caller_omitted) | P0-A (pseudonymise), P1 (wire) | T `fabric.session_id` | Application session across runs. Keyed pseudonym by default (decision 7). |
-| X14 | `user_id` | usr-pseudonym | run.scope / `decision()` argument | metadata | ID | O | not_captured(caller_omitted) | P0-A | T `fabric.user_id`; clear only in C `actor.identity` | End user. Keyed pseudonym by default (decision 7). |
-| X15 | `conversation_id` | conv-pseudonym | R | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.conversation_id` | Application conversation. Distinct from provider conversation ids (C39) and inferred threads. |
-| X16 | `turn_id` | turn-pseudonym | R | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.turn_id` | One user turn inside a conversation. |
-| X17 | `step_id` | opaque id | self (mapping rule, section 2.3) | metadata | ID | R | always | P1 | T `fabric.step.id` | Logical node, stable across retries (existing `fabric.step.id` meaning). With `attempt_id` it names one physical record. |
-| X18 | `parent_step_id` | opaque id | ambient Fabric context; explicit `parent_call_id` | metadata | ID | O | absent (root) | P1 | T `fabric.step.parent_id` | Nesting parent only. Causal edges use `links`. |
-| X19 | attempt_id; aliases operation_id, call_id, exchange_id, decision_id | opaque ids | explicit line; wire; decision span | metadata | ID | R (attempt_id) | always (attempt_id) | built (sources), P1 (projection) | T `fabric.step.attempt_id`; existing source keys; P `aliases` | Physical attempt, unique in a projection. Source ids are kept as namespaced aliases and never reinterpreted as each other. |
-| X20 | trace_id, span_id, parent_span_id | OTel ids | ambient OTel context | metadata | ID | O | absent | built | OTLP | Native trace position. Never synthesised from host metadata. |
-| X21 | `links` | list of Link | per link (H, R, I, S) | metadata | ID | O | absent | P0 (contract), P1 (projection) | P; T only for nesting parent | Typed causal links (section 2.5). |
-| X22 | started_at, ended_at | unix ns | W, H, R | metadata | META | R (timed steps) | not_captured(caller_omitted); never zero-length | P1 (wire), P2 (reported) | span start/end | Operation interval. |
-| X23 | `timing_basis` | enum measured/reported/not_captured | self | metadata | META | R (timed steps) | always | P1 | P | How the interval was obtained. |
-| X24 | observed_at, recorded_at | unix ns | W, H, R | metadata | META | O | absent | P1 | P; content-v2 `observed_at` | When the capture point saw it, when Fabric recorded it. |
-| X25 | clock_domain, clock_uncertainty_ns | enum, int | self (manifest) | metadata | META | R | always | P1 | M | Clock the times use; cross-source ordering never relies on wall clocks alone. |
-| X26 | `capture_point` | id@version | self | metadata | META | R | always | P1 | T `fabric.capture.point` | Named capture point (section 2.8) that produced the record. |
-| X27 | `provenance` | enum | self / parser | metadata | META | R | always | P1 | T `fabric.capture.source`; P | observed / reported / inferred. |
-| X28 | `assertion_origin` | enum | parser / reporter | metadata | META | O | unknown | P1 | P | Who asserted the fact (section 2.2). |
-| X29 | `boundary` | content-v2 enum | self | metadata | META | R (content) | always | built | C descriptor | Where the bytes were observed. |
-| X30 | `field evidence` | Field wrapper | reconstruct.parse | metadata | META | R | always | P1 | P | Per-field status, reason, provenance, locator and parser version (section 2.6). |
-| X31 | `capture_policy_ref` | policy_id, policy_version, policy_digest | install (deployment-policy/v1 document) | metadata | LABEL/META/DIGEST | R (content capture) | not_captured(missing_capture_policy) | P0-A | M; C descriptor `policy_*` | Recorder capture policy in force. Distinct from the agent's execution policy (C30-C33). |
-| X32 | privacy_mode, protection_status | content-v2 enums | self / explicit line | metadata | META | R (content) | always | built (explicit), P0-A (wire) | C descriptor | Per-object privacy treatment. |
-| X33 | identity_mode, pseudonym_mode, key_id | enum, enum, kid | self (manifest) | metadata | META | R | always | P0-A | M | Whether ids are pseudonymous or clear, keyed or unkeyed, and which key. |
-| X34 | `manifest_id` | uuid4 | self | metadata | ID | R | always | P1 | T `fabric.capture.manifest_id` on markers | Capture manifest in force (section 2.8). |
-| X35 | loss, heartbeat | loss-record/v1 | self | metadata | META | R | always | built | T existing | Known loss ranges and proven ends. |
-| X36 | sdk_version, runtime | label | self | metadata | META | R | always | built / P1 | T `fabric.sdk.version`; M | Producer versions. |
-| X37 | `delivery receipts` | delivery/v1 | destination / verifier | metadata | ID/DIGEST | O | unknown | existing contract, not automatic | delivery/v1 | Spooled, accepted and durable stages. Recorder v1 does not obtain them automatically. |
+| X01 | `schema_version` | string | `fabric.self` | metadata | META | R | always | built | T `fabric.schema_version`; P | Schema id of the record or document. |
+| X02 | `event_id` | uuid4 | `fabric.self` | metadata | ID | R | always | P1 | T `fabric.event_id`; explicit line `record_id` | Identity of one emitted record. Minted once, persisted with the record before first export, unchanged on every retry. Never a logical id. |
+| X03 | `supersedes_event_id` | uuid4 | `fabric.self` | metadata | ID | O | not_applicable | P1 | T `fabric.event.supersedes` | A correction is a new record naming the one it supersedes; originals are never rewritten. |
+| X04 | `tenant_id` | label | `install.config` | metadata | LABEL | R | not_captured(not_configured) | P1 (wire spans) | T `fabric.tenant_id` | Tenant the record belongs to. A self-reported value is a claim until the Node binds it to the authenticated sender. |
+| X05 | agent_id, system_id, deployment_id, release_id, environment, workload_id | label | `install.config` | metadata | LABEL | O | not_captured(not_configured) | P1 | T existing keys, newly on wire spans and markers | Deployment identity block, validated like `service.name`. Via `FABRIC_*` environment or explicit config. |
+| X06 | source_path, source_id, source_epoch, source_sequence | enum wire/explicit/records; opaque id; int; int | `fabric.self` | metadata | ID/META | R | always | built (wire, explicit), P1 (records) | T `fabric.capture.path`, `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence` | Order within one producer epoch of one delivery path (section 2.4). The projection qualifies every source as `<path>:<source_id>`, so a wire, an explicit and a records source never collide. |
+| X07 | `sequence_unit` | enum exchange/record | `fabric.self` | metadata | META | R | always | P1 | M | What one sequence number counts: `exchange` on wire sources, `record` on explicit and records sources. Manifests, heartbeats and loss records never consume a sequence (section 2.4). |
+| X08 | `run_id` | r-pseudonym or generated fallback | `run.scope`, `wire.py.httpx` | metadata | ID | R | always (fallback) | built | T `fabric.run.id` | Logical run. |
+| X09 | `scope_id` | uuid4 | `run.scope` | metadata | ID | O | not_applicable | built | T `fabric.run.scope_id` | One `fabric.wire.run()` block entry. |
+| X10 | `parent_run_id` | r-pseudonym | `run.scope` | metadata | ID | O | not_captured(caller_omitted) | P1 | T `fabric.run.parent_id` | Run that started this run (sub-agent, worker). |
+| X11 | `resumed_from_run_id` | r-pseudonym | `run.scope` | metadata | ID | O | not_captured(caller_omitted) | P1 | T `fabric.run.resumed_from` | Run this run resumes, when the resumed work uses a new run id. Reusing the same run id across processes is the primary mechanism. |
+| X12 | `run_links` | list of r-pseudonym (max 16) | `run.scope` | metadata | ID | O | not_captured(caller_omitted) | P1 | T `fabric.run.links` | Other related runs (fan-in, batch parent). |
+| X13 | `session_id` | sess-pseudonym | `run.scope`, `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P0-A (pseudonymise), P1 (wire) | T `fabric.session_id` | Application session across runs. Keyed pseudonym by default (decision 7). Via `fabric.wire.run(session_id=)` or `decision(session_id=)`. |
+| X14 | `user_id` | usr-pseudonym | `run.scope`, `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P0-A | T `fabric.user_id` (admitted in `usr-` form, P0-A); clear only in C `actor.identity` | End user. Keyed pseudonym by default (decision 7). Via `fabric.wire.run(user_id=)` or `decision(user_id=)`. |
+| X15 | `conversation_id` | conv-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.conversation_id` | Application conversation. Distinct from provider conversation ids (C39) and inferred threads. |
+| X16 | `turn_id` | turn-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.turn_id` | One user turn inside a conversation. |
+| X17 | `step_id` | opaque id | `fabric.self` | metadata | ID | R | always | P1 | T `fabric.step.id` | Logical node, stable across retries. Fabric-minted (uuid4) when no logical id is supplied; a caller-supplied logical id (host `fabric.step.id`, explicit `operation_id`) is qualified `<path>:<source_id>:<value>`. |
+| X18 | `parent_step_id` | opaque id | `fabric.self`, `explicit.call_recorder` | metadata | ID | O | absent (root) | P1 | T `fabric.step.parent_id` | Nesting parent only. Causal edges use `links`. Via ambient Fabric context or explicit `parent_call_id`. |
+| X19 | `attempt_id` | uuid4 | `fabric.self` | metadata | ID | R | always | built (wire, explicit), P1 (records) | T `fabric.wire.exchange_id` (wire), explicit `call_id`, T `fabric.attempt.uid` (records); P | Fabric-minted id of one physical execution, unique in a projection: wire `exchange_id`, explicit `call_id`, a uuid4 minted per record call on the records path. Never defaulted from `step_id` and never taken from the caller. |
+| X20 | trace_id, span_id, parent_span_id | OTel ids | `fabric.self` | metadata | ID | O | absent | built | OTLP | Native trace position. Never synthesised from host metadata. |
+| X21 | `links` | list of Link | `sdk.records`, `run.scope`, `reconstruct.infer` | metadata | ID | O | absent | P0 (contract), P1 (projection) | P; T only for nesting parent | Typed causal links (section 2.5). |
+| X22 | started_at, ended_at | unix ns | `wire.py.httpx`, `sdk.records`, `explicit.call_recorder` | metadata | META | R (timed steps) | not_captured(caller_omitted); never zero-length | P1 (wire), P2 (reported) | span start/end | Operation interval. |
+| X23 | `timing_basis` | enum measured/reported/not_captured | `fabric.self` | metadata | META | R (timed steps) | always | P1 | P | How the interval was obtained. |
+| X24 | observed_at, recorded_at | unix ns | `wire.py.httpx`, `sdk.records`, `explicit.call_recorder` | metadata | META | O | absent | P1 | P; content-v2 `observed_at` | When the capture point saw it, when Fabric recorded it. |
+| X25 | clock_domain, clock_uncertainty_ns | enum, int | `fabric.self` | metadata | META | R | always | P1 | M | Clock the times use; cross-source ordering never relies on wall clocks alone. |
+| X26 | `capture_point` | id@version | `fabric.self` | metadata | META | R | always | P1 | T `fabric.capture.point` | Named capture point (section 2.8) that produced the record. |
+| X27 | `provenance` | enum | `fabric.self`, `reconstruct.parse` | metadata | META | R | always | P1 | T `fabric.capture.source`; P | observed / reported / inferred. |
+| X28 | `assertion_origin` | enum | `reconstruct.parse`, `sdk.records` | metadata | META | O | unknown | P1 | P | Who asserted the fact (section 2.2). |
+| X29 | `boundary` | content-v2 enum | `fabric.self` | metadata | META | R (content) | always | built | C descriptor | Where the bytes were observed. |
+| X30 | `field evidence` | Field wrapper | `reconstruct.parse` | metadata | META | R | always | P1 | P | Per-field status, reason, provenance, locator and parser version (section 2.6). |
+| X31 | `capture_policy_ref` | policy_id, policy_version, policy_digest | `install.config` | metadata | LABEL/META/DIGEST | R (content capture) | not_captured(missing_capture_policy) | P0-A | M; C descriptor `policy_*` | Recorder capture policy in force (`fabric.local-default` when none is configured in the `local` profile, section 7.3). Distinct from the agent's execution policy (C30-C33). |
+| X32 | privacy_mode, protection_status | content-v2 enums | `fabric.self`, `explicit.byte_boundary` | metadata | META | R (content) | always | built (explicit), P0-A (wire) | C descriptor | Per-object privacy treatment. |
+| X33 | identity_mode, pseudonym_mode, key_id | enum, enum, kid | `fabric.self` | metadata | META | R | always | P0-A | M | Whether ids are pseudonymous or clear, keyed or unkeyed, and which key. |
+| X34 | `manifest_id` | uuid4 | `fabric.self` | metadata | ID | R | always | P1 | T `fabric.capture.manifest_id`, `fabric.capture.manifest_sha256` on run markers; M | Capture manifest in force (section 2.8), named by id and SHA-256. |
+| X35 | loss, heartbeat | loss-record/v1 | `fabric.self` | metadata | META | R | always | built (wire), P1 (records) | T existing wire keys; T `fabric.records.*` keys on the records source | Known loss ranges and proven ends per source. The records source uses its own span names and keys so 047/048 verifiers ignore it (section 2.4). |
+| X36 | sdk_version, runtime | label | `fabric.self` | metadata | META | R | always | built / P1 | T `fabric.sdk.version`; M | Producer versions. |
+| X37 | `delivery receipts` | delivery/v1 | `delivery.receipts` | metadata | ID/DIGEST | O | unknown | existing contract, not automatic | delivery/v1 | Spooled, accepted and durable stages. Recorder v1 does not obtain them automatically. |
+| X38 | `aliases` | map | `fabric.self` | metadata | ID | O | absent | P1 | P | Source and caller ids kept for joins, each keyed `<path>.<name>` with value `<source_id>/<id>`: `operation_id`, caller `attempt_id`, `call_id`, `parent_call_id`, `decision_id`, `request_id`, `execution_id`, host `fabric.step.id`, host `fabric.step.attempt_id`, `span_id`. An alias never becomes an attempt or step identity. |
+| X39 | manifest_seq, after_source_sequence | int, int | `fabric.self` | metadata | META | R | always | P1 | M; T `fabric.capture.manifest_seq` on heartbeats | Manifest marker counter (0, 1, 2 … per epoch, contiguous) and the last source sequence allocated when the manifest took effect. A manifest governs sequences above `after_source_sequence` until the next manifest (section 2.4). |
+| X40 | `store_reason` | enum (section 4.2) | `wire.py.httpx` | metadata | META | R (when store_status is not stored) | always | P0-A | T `fabric.wire.store_reason` | Why an exchange's content is absent or partial, on the exchange span itself, so telemetry (not only the manifest) shows it. |
+<!-- generated:fields:X:end -->
 
 ### 3.2 Layer 1 — Context
 
+<!-- generated:fields:C:begin -->
 | # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
 |---|---|---|---|---|---|---|---|---|---|---|
-| C01 | `trigger.kind` | enum user_message/ticket/cron/alert/channel/webhook/queue/api/parent_agent/resume/other/unknown | R `record_trigger` | metadata | META | R (run root) | not_captured(not_instrumented) | P2 | T `fabric.run.trigger.kind` | What started the run. |
-| C02 | `trigger.ref` | trg-pseudonym | R | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.run.trigger.ref` | Id of the ticket, message, job or alert. |
-| C03 | `trigger.received_at` | unix ns | R | metadata | META | O | not_captured(caller_omitted) | P2 | P | When the application received it. |
-| C04 | `trigger.actor` | actor ref | R | metadata | ID | O | unknown | P2 | P link `caused_by` | Who or what initiated it. |
-| C05 | `trigger.payload` | bytes | R | content | CONTENT | R (when trigger recorded) | not_captured(caller_omitted) | P2 | C `run.trigger` | Exact trigger payload. |
-| C06 | `goal` | text | R (never inferred from prompts or outcome) | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `run.goal` | Stated objective. |
-| C07 | `constraints` | text/json | R | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `run.goal` | User or application constraints on the task. |
-| C08 | `input.kind` | enum human_reply/webhook/queue_message/interrupt_resume/channel_message/api_call/other | R `record_input`; I (new user message, tentative) | metadata | META | R (input step) | not_captured(not_instrumented) | P1 (I), P2 (R) | T `fabric.input.kind` | Kind of mid-run input. |
-| C09 | `input.state` | enum received/consumed/rejected/withdrawn/unknown | R | metadata | META | O | unknown | P2 | T `fabric.input.state` | Received is not consumed. |
-| C10 | `input.target` | step ref | R | metadata | ID | O | unknown | P2 | P link | Run or step the input was addressed to. |
-| C11 | `input.payload` | bytes | R; P (user message in next request) | content | CONTENT | R (input step) | not_captured(caller_omitted) | P1 (P), P2 (R) | C `run.input`; P ref | Exact input bytes. |
-| C12 | `build.digest` | digest | install (`FABRIC_BUILD_DIGEST`) | metadata | DIGEST | O | not_captured(not_configured) | P2 | T `fabric.build.digest` | Code or image digest of the running agent. |
-| C13 | `config.digest` | digest | R | metadata | DIGEST | O | not_captured(caller_omitted) | P2 | T `fabric.config.digest` | Digest of the agent configuration in force. |
-| C14 | `configuration` | json | R | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `run.configuration` | Configuration as supplied. Never an automatic environment or repository scan. |
-| C15 | framework.name, framework.version | label | R; install (imported distribution versions) | metadata | LABEL | O | not_captured(not_configured) | P2 | T `fabric.framework.name`, `fabric.framework.version` | Agent framework in use. |
-| C16 | runtime.name, runtime.version | label | self | metadata | META | R | always | P1 | M | Language runtime and version. |
-| C17 | prompt.name, prompt.version | label | R | metadata | LABEL | O | not_captured(caller_omitted) | P2 | T `gen_ai.prompt.name`, `gen_ai.prompt.version` | Template identity as the application names it. |
-| C18 | `prompt.template` | text | R | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `run.configuration` | Unrendered template. |
-| C19 | `instructions` | list of locator | P (wire bytes); R (explicit) | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref into `model.exchange.request`; C `model.request.instructions` | System and developer instructions actually sent, per call. |
-| C20 | `instructions.digest` | digest | P | metadata | DIGEST | R (model_call) | not_captured(not_instrumented) | P1 | P | Stable digest for drift and A/B comparison. |
-| C21 | `tools_offered` | list {name, type, description, input_schema} | P (wire bytes); R | content | CONTENT (names LABEL) | R (model_call) | not_captured(not_instrumented) | P1 | P ref; C `model.request.tool_definitions` | Tools offered to the model on this call. `type`: function, custom, provider_hosted, mcp, computer, other. |
-| C22 | tools_offered.digest, tools_offered.count | digest, int | P | metadata | DIGEST/META | R (model_call) | not_captured(not_instrumented) | P1 | P | Inventory digest and size. |
-| C23 | `tools_changed` | bool + link | I (digest differs from the previous call in the thread) | metadata | META | O | unknown | P1 | P | Tool definition drift inside a run. |
-| C24 | `tool_inventory` | list | R `record_tool_inventory`; `record_mcp_inventory` (built, hash-only) | content | CONTENT | O | not_captured(not_instrumented) | P2 | C `tool.inventory`; T `fabric.mcp.tool_count` | Tools available to the executor (not the same as offered to a model). |
-| C25 | `mcp.server.name` | label | mcp.wrapper; mcp.client | metadata | LABEL | R (mcp_call) | not_captured(not_instrumented) | built (R), P4 (H) | T `fabric.mcp.server` | Server name. |
-| C26 | `mcp.server.version` | label | mcp.wrapper; mcp.client | metadata | LABEL | O | not_captured(not_instrumented) | P2 | T `fabric.mcp.server_version` | Server version from initialization. |
-| C27 | `mcp.protocol_version` | label YYYY-MM-DD | mcp.wrapper; mcp.client | metadata | META | R (mcp_call) | not_captured(not_instrumented) | P2 | T `fabric.mcp.protocol_version` | Negotiated protocol version. |
-| C28 | `mcp.transport` | enum stdio/streamable_http/sse/other | mcp.wrapper; mcp.client | metadata | META | R (mcp_call) | not_captured(not_instrumented) | built | T `fabric.mcp.transport` | Transport. |
-| C29 | `mcp.server.metadata` | json | mcp.wrapper; mcp.client | content | CONTENT | O | not_captured(not_instrumented) | P2 | C `mcp.server` | Capabilities and instructions exchanged at initialization. |
-| C30 | `execution_mode` | enum autonomous/supervised/approval_required/read_only/unknown | R `record_run_context` | metadata | META | O | not_captured(not_instrumented) | P2 | T `fabric.run.execution_mode` | Customer's execution mode. Declared, not proof of enforcement. |
-| C31 | `approval_policy` | enum none/per_tool/per_side_effect/all/unknown | R | metadata | META | O | not_captured(caller_omitted) | P2 | T `fabric.run.approval_policy` | When approval is required. |
-| C32 | `permissions` | json | R | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `run.permissions`; T `fabric.run.permissions.count` | Allowed and denied tools, paths, hosts and scopes. Lists never on telemetry. |
-| C33 | agent_policy.id, agent_policy.version, agent_policy.digest | label, int, digest | R | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | P2 | T `fabric.run.agent_policy_id`, `.agent_policy_version`, `.agent_policy_digest` | The customer's agent policy identity. Not the recorder capture policy (X31). |
-| C34 | model.provider, model.api | label, enum | wire.py.httpx matcher | metadata | LABEL/META | R (model_call) | not_captured(not_instrumented) | built | T `gen_ai.provider.name`, `fabric.wire.api` | Provider and API dialect. |
-| C35 | `model.endpoint_id` | label | wire matcher | metadata | LABEL | R (model_call) | not_captured(not_instrumented) | P1 | P; M endpoint set digest | Which configured endpoint matched. |
-| C36 | `model.requested` | label | P | metadata | LABEL | R (model_call) | not_captured(not_instrumented) | P1 | P (048 §7 exposure rule) | `model` in the request. |
-| C37 | `model.served` | label | wire.py.httpx (response) | metadata | LABEL | R (model_call) | not_captured(provider_not_returned) | built | T `gen_ai.response.model` | Model the provider says served the call. Provider assertion. |
-| C38 | `model.parameters` | json | P | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref | temperature, top_p, max tokens, stop, seed, n, stream, tool_choice, parallel tool calls, response format / output schema, reasoning effort, cache settings, as present. |
-| C39 | `context_dependencies` | list {kind, provider_id, resolution} | P; I (resolution) | metadata | ID | R (model_call) | not_captured(not_instrumented) | P1 | P | previous_response_id, conversation, thread, cached content and file ids. `resolution`: resolved, unresolved, expired, inaccessible, unknown. Never fetched from the provider. |
-| C40 | `provider_request_id` | p-pseudonym | wire.py.httpx (one named response header) | off | ID | O | not_captured(hook_disabled) | P1 | P | Provider request id for disputes. The only header value Fabric may read; never the header block. |
-| C41 | execution.host_id, execution.sandbox_id, execution.image_digest | hst-/sbx-pseudonym, digest | R; S (corroboration) | metadata | ID/DIGEST | O | not_captured(caller_omitted) | P2 | T `fabric.execution.host_id`, `.sandbox_id`, `.image_digest` | Where tools ran. |
-| C42 | `environment_snapshot` | json (allowlisted keys) | R allowlist only | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `run.environment` | cwd, locale, time zone, allowlisted variables. Values of other variables never. |
+| C01 | `trigger.kind` | enum user_message/ticket/cron/alert/channel/webhook/queue/api/parent_agent/resume/other/unknown | `sdk.records` | metadata | META | R (run root) | not_captured(not_instrumented) | P2 | T `fabric.run.trigger.kind` | What started the run. Via `record_trigger`. |
+| C02 | `trigger.ref` | trg-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P2 | T `fabric.run.trigger.ref` | Id of the ticket, message, job or alert. |
+| C03 | `trigger.received_at` | unix ns | `sdk.records` | metadata | META | O | not_captured(caller_omitted) | P2 | P | When the application received it. |
+| C04 | `trigger.actor` | actor ref | `sdk.records` | metadata | ID | O | unknown | P2 | P link `caused_by` | Who or what initiated it. |
+| C05 | `trigger.payload` | bytes | `sdk.records` | content | CONTENT | R (when trigger recorded) | not_captured(caller_omitted) | P2 | C `run.trigger` | Exact trigger payload. |
+| C06 | `goal` | text | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `run.goal` | Stated objective. |
+| C07 | `constraints` | text/json | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `run.goal` | User or application constraints on the task. |
+| C08 | `input.kind` | enum human_reply/webhook/queue_message/interrupt_resume/channel_message/api_call/other | `sdk.records`, `reconstruct.infer` | metadata | META | R (reported input step); O (inferred input step) | not_captured(not_instrumented) | P1 (I), P2 (R) | T `fabric.input.kind` | Kind of mid-run input. On an inferred input step `C08`-`C10` are optional and `C11` is required, so an inferred step whose evidence is complete is complete (section 6.2). Via `record_input`. |
+| C09 | `input.state` | enum received/consumed/rejected/withdrawn/unknown | `sdk.records` | metadata | META | O | unknown | P2 | T `fabric.input.state` | Received is not consumed. |
+| C10 | `input.target` | step ref | `sdk.records` | metadata | ID | O | unknown | P2 | P link | Run or step the input was addressed to. |
+| C11 | `input.payload` | bytes | `sdk.records`, `reconstruct.parse` | content | CONTENT | R (input step) | not_captured(caller_omitted) | P1 (P), P2 (R) | C `run.input`; P ref | Exact input bytes. |
+| C12 | `build.digest` | digest | `install.config` | metadata | DIGEST | O | not_captured(not_configured) | P2 | T `fabric.build.digest` | Code or image digest of the running agent. Via `FABRIC_BUILD_DIGEST`. |
+| C13 | `config.digest` | digest | `sdk.records` | metadata | DIGEST | O | not_captured(caller_omitted) | P2 | T `fabric.config.digest` | Digest of the agent configuration in force. |
+| C14 | `configuration` | json | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `run.configuration` | Configuration as supplied. Never an automatic environment or repository scan. |
+| C15 | framework.name, framework.version | label | `install.config`, `sdk.records` | metadata | LABEL | O | not_captured(not_configured) | P2 | T `fabric.framework.name`, `fabric.framework.version` | Agent framework in use. |
+| C16 | runtime.name, runtime.version | label | `fabric.self` | metadata | META | R | always | P1 | M | Language runtime and version. |
+| C17 | prompt.name, prompt.version | label | `sdk.records` | metadata | LABEL | O | not_captured(caller_omitted) | P2 | T `gen_ai.prompt.name`, `gen_ai.prompt.version` | Template identity as the application names it. |
+| C18 | `prompt.template` | text | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `run.configuration` | Unrendered template. |
+| C19 | `instructions` | list of locator | `reconstruct.parse`, `explicit.call_recorder` | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref into `model.exchange.request`; C `model.request.instructions` | System and developer instructions actually sent, per call. |
+| C20 | `instructions.digest` | digest | `reconstruct.parse` | metadata | DIGEST | R (model_call) | not_captured(not_instrumented) | P1 | P | Stable digest for drift and A/B comparison. |
+| C21 | `tools_offered` | list {name, type, description, input_schema} | `reconstruct.parse`, `explicit.call_recorder` | content | CONTENT (names LABEL) | R (model_call) | not_captured(not_instrumented) | P1 | P ref; C `model.request.tool_definitions` | Tools offered to the model on this call. `type`: function, custom, provider_hosted, mcp, computer, other. |
+| C22 | tools_offered.digest, tools_offered.count | digest, int | `reconstruct.parse` | metadata | DIGEST/META | R (model_call) | not_captured(not_instrumented) | P1 | P | Inventory digest and size. |
+| C23 | `tools_changed` | bool + link | `reconstruct.infer` | metadata | META | O | unknown | P1 | P | Tool definition drift inside a run. |
+| C24 | `tool_inventory` | list | `sdk.records`, `mcp.wrapper` | content | CONTENT | O | not_captured(not_instrumented) | P2 | C `tool.inventory`; T `fabric.mcp.tool_count` | Tools available to the executor (not the same as offered to a model). Via `record_tool_inventory` (new) and `record_mcp_inventory` (built, hash-only). |
+| C25 | `mcp.server.name` | label | `mcp.wrapper`, `mcp.client` | metadata | LABEL | R (mcp_call) | not_captured(not_instrumented) | built (R), P4 (H) | T `fabric.mcp.server` | Server name. |
+| C26 | `mcp.server.version` | label | `mcp.wrapper`, `mcp.client` | metadata | LABEL | O | not_captured(not_instrumented) | P2 | T `fabric.mcp.server_version` | Server version from initialization. |
+| C27 | `mcp.protocol_version` | label YYYY-MM-DD | `mcp.wrapper`, `mcp.client` | metadata | META | R (mcp_call) | not_captured(not_instrumented) | P2 | T `fabric.mcp.protocol_version` | Negotiated protocol version. |
+| C28 | `mcp.transport` | enum stdio/streamable_http/sse/other | `mcp.wrapper`, `mcp.client` | metadata | META | R (mcp_call) | not_captured(not_instrumented) | built | T `fabric.mcp.transport` | Transport. |
+| C29 | `mcp.server.metadata` | json | `mcp.wrapper`, `mcp.client` | content | CONTENT | O | not_captured(not_instrumented) | P2 | C `mcp.server` | Capabilities and instructions exchanged at initialization. |
+| C30 | `execution_mode` | enum autonomous/supervised/approval_required/read_only/unknown | `sdk.records` | metadata | META | O | not_captured(not_instrumented) | P2 | T `fabric.run.execution_mode` | Customer's execution mode. Declared, not proof of enforcement. Via `record_run_context`. |
+| C31 | `approval_policy` | enum none/per_tool/per_side_effect/all/unknown | `sdk.records` | metadata | META | O | not_captured(caller_omitted) | P2 | T `fabric.run.approval_policy` | When approval is required. |
+| C32 | `permissions` | json | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `run.permissions`; T `fabric.run.permissions.count` | Allowed and denied tools, paths, hosts and scopes. Lists never on telemetry. |
+| C33 | agent_policy.id, agent_policy.version, agent_policy.digest | label, int, digest | `sdk.records` | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | P2 | T `fabric.run.agent_policy_id`, `.agent_policy_version`, `.agent_policy_digest` | The customer's agent policy identity. Not the recorder capture policy (X31). |
+| C34 | model.provider, model.api | label, enum | `wire.py.httpx` | metadata | LABEL/META | R (model_call) | not_captured(not_instrumented) | built | T `gen_ai.provider.name`, `fabric.wire.api` | Provider and API dialect. |
+| C35 | `model.endpoint_id` | label | `wire.py.httpx` | metadata | LABEL | R (model_call) | not_captured(not_instrumented) | P1 | P; M endpoint set digest | Which configured endpoint matched. |
+| C36 | `model.requested` | label | `reconstruct.parse` | metadata | LABEL | R (model_call) | not_captured(not_instrumented) | P1 | P (048 §7 exposure rule) | `model` in the request. |
+| C37 | `model.served` | label | `wire.py.httpx`, `reconstruct.parse` | metadata | LABEL | R (model_call) | not_captured(provider_not_returned) | built | T `gen_ai.response.model` | Model the provider says served the call. Provider assertion. |
+| C38 | `model.parameters` | json | `reconstruct.parse` | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref | temperature, top_p, max tokens, stop, seed, n, stream, tool_choice, parallel tool calls, response format / output schema, reasoning effort, cache settings, as present. |
+| C39 | `context_dependencies` | list {kind, provider_id, resolution} | `reconstruct.parse`, `reconstruct.infer` | metadata | ID | R (model_call) | not_captured(not_instrumented) | P1 | P | previous_response_id, conversation, thread, cached content and file ids. `resolution`: resolved, unresolved, expired, inaccessible, unknown. Never fetched from the provider. |
+| C40 | `provider_request_id` | p-pseudonym | `wire.py.httpx` | off | ID | O | not_captured(hook_disabled) | P1 | P | Provider request id for disputes. The only header value Fabric may read; never the header block. |
+| C41 | execution.host_id, execution.sandbox_id, execution.image_digest | hst-/sbx-pseudonym, digest | `sdk.records`, `host.ebpf`, `host.auditd` | metadata | ID/DIGEST | O | not_captured(caller_omitted) | P2 | T `fabric.execution.host_id`, `.sandbox_id`, `.image_digest` | Where tools ran. |
+| C42 | `environment_snapshot` | json (allowlisted keys) | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `run.environment` | cwd, locale, time zone, allowlisted variables. Values of other variables never. |
+<!-- generated:fields:C:end -->
 
 ### 3.3 Layer 2 — Structure
 
+<!-- generated:fields:S:begin -->
 | # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
 |---|---|---|---|---|---|---|---|---|---|---|
-| S01 | `step.kind` | enum (section 2.3) | self / parser | metadata | META | R | always | P1 | T `fabric.step.kind` | Closed kind of the step. |
-| S02 | `step.label` | label | R (existing host label) | metadata | LABEL | O | absent | built | T `fabric.step.type` | Host label such as `plan` or `act`; free text, not the kind. |
-| S03 | `actor.type` | enum (section 2.3) | self (agent default); R; P | metadata | META | R | unknown | P1 | T `fabric.actor.type` | Who acted. |
-| S04 | `actor.id` | act-pseudonym | R | metadata | ID | O | not_captured(caller_omitted or missing_id_key) | P1 | T `fabric.actor.id` | Actor id, keyed. |
-| S05 | `actor.identity` | text | R | off | CONTENT | O | not_captured(hook_disabled) | P0-A | C `actor.identity` | Clear identity behind the pseudonym. |
-| S06 | `actor.on_behalf_of` | actor ref | R | metadata | ID | O | unknown | P2 | P | Represented principal. An agent role is not proof of user identity. |
-| S07 | `lifecycle.state` | enum (section 2.3) | W; R | metadata | META | R | unknown | P1 | T `fabric.step.lifecycle_state` | State without inventing an outcome. |
-| S08 | `result_status` | enum ok/error/cancelled/timeout/unknown | W (response state, HTTP status); R | metadata | META | R | unknown | P1 | T `fabric.step.status` | Outcome of the operation. Transport success is not task success. Legacy `deferred` maps to lifecycle `deferred` + `unknown`. |
-| S09 | `error.domain` | enum application/transport/provider/tool/recorder | W; R | metadata | META | R (on error) | unknown | P1 | T `fabric.error.domain` | Where the failure arose. Recorder faults are never application errors. |
-| S10 | `error.type` | label (class name) | W; R | metadata | LABEL | R (on error) | unknown | built | T `error.type` | Exception class or bounded error type. |
-| S11 | `error.code` | label/int | W (HTTP status); P (provider error code) | metadata | META | O | absent | built (HTTP), P1 (provider) | T `http.response.status_code`, `fabric.error.code` | Bounded code, pattern-validated. |
-| S12 | error.message, stack, cause | text | R; P (provider error body) | content | CONTENT | O | not_captured(caller_omitted) | P1 (P), P2 (R) | C `step.error`; P ref | Message and stack; never on telemetry. |
-| S13 | `attempt.kind` | enum initial/retry/fallback/hedge/resume | R; I (retry only) | metadata | META | O | unknown | P1 (I), P2 (R) | T `fabric.step.attempt_kind` | Relation to other attempts. Inference only for `retry` (identical request digest after an error, `tentative`); fallback and hedge are never inferred. |
-| S14 | `attempt.ordinal` | int | R | metadata | META | O | unknown | built | T `fabric.step.attempt` | Attempt number. |
-| S15 | retry.previous_attempt, retry.reason | link, label | R; I | metadata | ID/LABEL | O | unknown | built (R), P1 (I) | T `fabric.step.retry.previous_attempt_id`, `fabric.step.retry.reason` | Prior attempt and reason. |
-| S16 | `attempt.selected` | bool | R | metadata | META | O | unknown | P2 | T `fabric.step.attempt_selected` | Which attempt's result the application used. |
-| S17 | `workflow.id` | label | R | metadata | LABEL | O | absent | built | T `fabric.workflow_id` | Workflow instance. |
-| S18 | workflow.node, workflow.iteration | label, int | R | metadata | LABEL/META | R (workflow_node) | not_captured(caller_omitted) | P2 | T `fabric.workflow.node`, `fabric.workflow.iteration` | Node and loop iteration. Branches and joins use `depends_on` links. |
-| S19 | `workflow.definition` | json | R | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `workflow.definition` | Graph or plan definition. |
-| S20 | dispatch.kind, dispatch.id, dispatch.state | enum, dsp-pseudonym, enum | R | metadata | META/ID | O | not_captured(caller_omitted) | P2 | T `fabric.dispatch.kind`, `.id`, `.state` | Queue, task, job, invocation, provider batch or webhook delivery; state produced, received, acknowledged, requeued, dead_lettered, unknown. Acknowledged is not processed. |
-| S21 | `batch.item_index` | int | R | metadata | META | O | not_applicable | P2 | T `fabric.batch.item_index` | Item position inside a batch. |
-| S22 | `delegation.target` | agt-pseudonym | R (`delegate()`) | metadata | ID | R (delegation) | not_captured(caller_omitted) | built (clear) / P0-A (keyed) | T `fabric.delegation.to_agent` | Agent, run or service delegated to. |
-| S23 | delegation.protocol, delegation.depth | enum in_process/http/a2a/mcp/queue/framework/other, int | R | metadata | META | O | unknown | built | T `fabric.delegation.protocol`, `.depth` | How and how deep. |
-| S24 | `delegation.state` | enum requested/accepted/running/returned/failed/unknown | R | metadata | META | O | unknown | P2 | T `fabric.delegation.state` | Hand-off state. |
-| S25 | `delegation.payload` | bytes | R | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `agent.handoff` | What was handed over. |
-| S26 | checkpoint.id, checkpoint.state_hash | label, digest | R (`checkpoint()`) | metadata | ID/DIGEST | R (checkpoint) | not_captured(caller_omitted) | built | T `fabric.checkpoint.checkpoint_id`, `.state_hash` | Checkpoint identity. |
-| S27 | `checkpoint.action` | enum save/load/resume | R | metadata | META | R (checkpoint) | unknown | P2 | T `fabric.checkpoint.action` | What happened to the checkpoint. |
-| S28 | `checkpoint.state` | bytes | R | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `checkpoint.state` | State, when exposed. Fabric never forces a checkpoint or flush. |
-| S29 | `stream.state` | enum complete/closed_early/error/abandoned | wire.py.httpx | metadata | META | R (streamed) | not_captured(not_instrumented) | built | T `fabric.wire.response_state` | How the stream ended. |
-| S30 | `stream.first_chunk_offset_ns` | int | wire.py.httpx (one clock read) | metadata | META | O | absent | P1 | T `fabric.wire.first_chunk_offset_ns` | Time from request start to first response chunk. |
-| S31 | `stream.chunk_boundaries_retained` | bool | self (manifest) | metadata | META | R | always | P1 | M | Wire capture concatenates bodies: `false`. Chunk timing is not part of the record. |
-| S32 | cancellation.state, cancellation.requested_by | enum requested/acknowledged/expired/unknown, actor ref | R; W (closed_early/abandoned) | metadata | META/ID | O | unknown | P2 | T `fabric.cancel.state`; P | Cancellation requested versus observed. |
-| S33 | `deadline` | unix ns | R | metadata | META | O | absent | P2 | P | Deadline the operation ran under. |
-| S34 | `scope.exit_status` | enum ok/error/cancelled | run.scope (block exit) | metadata | META | R (scope) | not_captured(not_instrumented) | P1 | T `fabric.run.scope_status` on `run_end` | How the `fabric.wire.run()` block exited. Not the run outcome (D30). |
+| S01 | `step.kind` | enum (section 2.3) | `fabric.self`, `reconstruct.parse` | metadata | META | R | always | P1 | T `fabric.step.kind` | Closed kind of the step. |
+| S02 | `step.label` | label | `sdk.records` | metadata | LABEL | O | absent | built | T `fabric.step.type` | Host label such as `plan` or `act`; free text, not the kind. |
+| S03 | `actor.type` | enum (section 2.3) | `fabric.self`, `sdk.records`, `reconstruct.parse` | metadata | META | R | unknown | P1 | T `fabric.actor.type` | Who acted. |
+| S04 | `actor.id` | act-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted or missing_id_key) | P1 | T `fabric.actor.id` | Actor id, keyed. |
+| S05 | `actor.identity` | text | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P0-A | C `actor.identity` | Clear identity behind the pseudonym. |
+| S06 | `actor.on_behalf_of` | actor ref | `sdk.records` | metadata | ID | O | unknown | P2 | P | Represented principal. An agent role is not proof of user identity. |
+| S07 | `lifecycle.state` | enum (section 2.3) | `wire.py.httpx`, `sdk.records`, `explicit.call_recorder` | metadata | META | R | unknown | P1 | T `fabric.step.lifecycle_state` | State without inventing an outcome. |
+| S08 | `result_status` | enum ok/error/cancelled/timeout/unknown | `wire.py.httpx`, `sdk.records`, `explicit.call_recorder` | metadata | META | R | unknown | P1 | T `fabric.step.status` | Outcome of the operation. Transport success is not task success. Legacy `deferred` maps to lifecycle `deferred` + `unknown`. |
+| S09 | `error.domain` | enum application/transport/provider/tool/recorder | `wire.py.httpx`, `sdk.records` | metadata | META | R (on error) | unknown | P1 | T `fabric.error.domain` | Where the failure arose. Recorder faults are never application errors. |
+| S10 | `error.type` | label (class name) | `wire.py.httpx`, `sdk.records`, `explicit.call_recorder` | metadata | LABEL | R (on error) | unknown | built | T `error.type` | Exception class or bounded error type. |
+| S11 | `error.code` | label/int | `wire.py.httpx`, `reconstruct.parse` | metadata | META | O | absent | built (HTTP), P1 (provider) | T `http.response.status_code`, `fabric.error.code` | Bounded code, pattern-validated. |
+| S12 | error.message, stack, cause | text | `sdk.records`, `reconstruct.parse` | content | CONTENT | O | not_captured(caller_omitted) | P1 (P), P2 (R) | C `step.error`; P ref | Message and stack; never on telemetry. |
+| S13 | `attempt.kind` | enum initial/retry/fallback/hedge/resume | `sdk.records`, `reconstruct.infer` | metadata | META | O | unknown | P1 (I), P2 (R) | T `fabric.step.attempt_kind` | Relation to other attempts. Inference is allowed only for `retry` (method `identical_request_after_error`); such a value is reported with `confidence: tentative` and never counts as captured. Fallback and hedge are never inferred. A reported value reaches a wire exchange through its enclosing explicit or `llm_call()` step (the caller never sees `exchange_id`). |
+| S14 | `attempt.ordinal` | int | `sdk.records` | metadata | META | O | unknown | built | T `fabric.step.attempt` | Attempt number. |
+| S15 | retry.previous_attempt, retry.reason | link, label | `sdk.records`, `reconstruct.infer` | metadata | ID/LABEL | O | unknown | built (R), P1 (I) | T `fabric.step.retry.previous_attempt_id`, `fabric.step.retry.reason` | Prior attempt and reason. |
+| S16 | `attempt.selected` | bool | `sdk.records` | metadata | META | O | unknown | P2 | T `fabric.step.attempt_selected` | Which attempt's result the application used. |
+| S17 | `workflow.id` | label | `sdk.records` | metadata | LABEL | O | absent | built | T `fabric.workflow_id` | Workflow instance. |
+| S18 | workflow.node, workflow.iteration | label, int | `sdk.records` | metadata | LABEL/META | R (workflow_node) | not_captured(caller_omitted) | P2 | T `fabric.workflow.node`, `fabric.workflow.iteration` | Node and loop iteration. Branches and joins use `depends_on` links. |
+| S19 | `workflow.definition` | json | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `workflow.definition` | Graph or plan definition. |
+| S20 | dispatch.kind, dispatch.id, dispatch.state | enum, dsp-pseudonym, enum | `sdk.records` | metadata | META/ID | O | not_captured(caller_omitted) | P2 | T `fabric.dispatch.kind`, `.id`, `.state` | Queue, task, job, invocation, provider batch or webhook delivery; state produced, received, acknowledged, requeued, dead_lettered, unknown. Acknowledged is not processed. |
+| S21 | `batch.item_index` | int | `sdk.records` | metadata | META | O | not_applicable | P2 | T `fabric.batch.item_index` | Item position inside a batch. |
+| S22 | `delegation.target` | agt-pseudonym | `sdk.records` | metadata | ID | R (delegation) | not_captured(caller_omitted) | built (clear), P0-A (`agt-` keyed) | T `fabric.delegation.to_agent` | Agent, run or service delegated to. Via `delegate()`. |
+| S23 | delegation.protocol, delegation.depth | enum in_process/http/a2a/mcp/queue/framework/other, int | `sdk.records` | metadata | META | O | unknown | built | T `fabric.delegation.protocol`, `.depth` | How and how deep. |
+| S24 | `delegation.state` | enum requested/accepted/running/returned/failed/unknown | `sdk.records` | metadata | META | O | unknown | P2 | T `fabric.delegation.state` | Hand-off state. |
+| S25 | `delegation.payload` | bytes | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `agent.handoff` | What was handed over. |
+| S26 | checkpoint.id, checkpoint.state_hash | label, digest | `sdk.records` | metadata | ID/DIGEST | R (checkpoint) | not_captured(caller_omitted) | built | T `fabric.checkpoint.checkpoint_id`, `.state_hash` | Checkpoint identity. Via `checkpoint()`. |
+| S27 | `checkpoint.action` | enum save/load/resume | `sdk.records` | metadata | META | R (checkpoint) | unknown | P2 | T `fabric.checkpoint.action` | What happened to the checkpoint. |
+| S28 | `checkpoint.state` | bytes | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `checkpoint.state` | State, when exposed. Fabric never forces a checkpoint or flush. |
+| S29 | `stream.state` | enum complete/closed_early/error/abandoned | `wire.py.httpx` | metadata | META | R (streamed) | not_captured(not_instrumented) | built | T `fabric.wire.response_state` | How the stream ended. |
+| S30 | `stream.first_chunk_offset_ns` | int | `wire.py.httpx` | metadata | META | O | absent | P1 | T `fabric.wire.first_chunk_offset_ns` | Time from request start to first response chunk. |
+| S31 | `stream.chunk_boundaries_retained` | bool | `fabric.self` | metadata | META | R | always | P1 | M `chunk_boundaries_retained` | Wire capture concatenates bodies: `false`. Chunk timing is not part of the record. |
+| S32 | cancellation.state, cancellation.requested_by | enum requested/acknowledged/expired/unknown, actor ref | `sdk.records`, `wire.py.httpx` | metadata | META/ID | O | unknown | P2 | T `fabric.cancel.state`; P | Cancellation requested versus observed. |
+| S33 | `deadline` | unix ns | `sdk.records` | metadata | META | O | absent | P2 | P | Deadline the operation ran under. |
+| S34 | `scope.exit_status` | enum ok/error/cancelled | `run.scope` | metadata | META | R (scope) | not_captured(not_instrumented) | P1 | T `fabric.run.scope_status` on `run_end` | How the `fabric.wire.run()` block exited. Not the run outcome (D30). |
+<!-- generated:fields:S:end -->
 
 ### 3.4 Layer 3 — Content
 
+<!-- generated:fields:N:begin -->
 | # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
 |---|---|---|---|---|---|---|---|---|---|---|
-| N01 | model.exchange.request, model.exchange.response | bytes | wire.py.httpx; explicit.call_recorder | content | CONTENT | R (model_call) | not_captured(not_instrumented) | built | C `model.exchange.request`, `model.exchange.response` | Body bytes at the declared boundary. Not headers, TLS frames or provider receipt. |
-| N02 | `model.exchange.parts` | list of object | wire.py.httpx (worker extraction) | content | CONTENT | R (split side) | not_applicable | P1 | C `model.exchange.part` | Inline media and binary parts extracted so text is never lost to one large part (section 7.4). |
-| N03 | `input.messages` | list {index, role, parts, digest, locator} | P; R | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref; C `model.request.messages` | Messages sent to the model. role: system, developer, user, assistant, tool, other. Model-bound history, not application messages. |
-| N04 | `output.messages` | list | P; R | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref; C `model.output.messages` | Messages and items the model returned. |
-| N05 | `content.parts` | list {type, media_type, sha256, byte_length, mode, locator} | P | metadata (refs) | META/DIGEST | R (model_call) | not_captured(not_instrumented) | P1 | P | type: text, image, audio, video, document, file_ref, tool_use, tool_result, reasoning, refusal, other. mode: embedded or reference_only. URLs and provider file ids are never dereferenced. |
-| N06 | `refusal` | text | P | content | CONTENT | O | absent | P1 | P ref | Provider refusal content. |
-| N07 | `finish_reasons` | closed enum | wire.py.httpx; P (streams) | metadata | META | R (model_call) | not_captured(not_instrumented) | built (non-stream), P1 (stream) | T `gen_ai.response.finish_reasons` | Closed vocabulary; anything else is `other`. |
-| N08 | `reasoning.format` | enum text/summary/encrypted/redacted_marker/none | P | metadata | META | R (reasoning-capable API) | not_applicable | P1 | P | Form in which the provider returned reasoning. |
-| N09 | `reasoning.text` | text | P; R | content | CONTENT | R (reasoning-capable API) | not_applicable | P1 | P ref; C `model.output.reasoning` | `captured` only for returned plaintext; otherwise `redacted(provider_encrypted / provider_redacted)` or `not_captured(provider_summarised / provider_not_returned)`. Never a claim to hidden reasoning. |
-| N10 | `reasoning.summary` | text | P | content | CONTENT | O | absent | P1 | P ref | Provider summary of reasoning. |
-| N11 | `reasoning.object` | locator | P | content | CONTENT | O | absent | P1 | P ref | Opaque or encrypted reasoning blob, kept because it is part of the exact bytes. |
-| N12 | `tool_call.id` | p-pseudonym | P | metadata | ID | R (tool call at model boundary) | not_captured(not_instrumented) | P1 | P | Provider tool-call id, keyed (decision 8). |
-| N13 | tool_call.name, tool_call.type | label, enum | P; R | metadata | LABEL/META | R | not_captured(not_instrumented) | P1 | P; T `fabric.tool.name` (explicit) | Tool requested by the model. |
-| N14 | `tool_call.arguments` | json | P; R | content | CONTENT | R | not_captured(not_instrumented) | P1 | P ref; C `tool.call.arguments` | Arguments the model emitted. |
-| N15 | `tool_call.result_as_fed` | content | P (next request) | content | CONTENT | R (when consumed) | not_captured(not_exposed) if never sent back | P1 | P ref | Result as the agent told the model (boundary `provider_bound`). |
-| N16 | `tool_call.links` | emits / consumes links | I (tool-call id match, `certain`) | metadata | ID | R | unknown | P1 | P | Model call to tool call to the call that consumed the result. Unmatched ids stay `unresolved`. |
-| N17 | tool.execution.arguments, tool.execution.result | bytes | R (`tool_call()`, explicit line); H (P4 channels) | content | CONTENT | R (tool_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | C `tool.call.arguments`, `tool.call.result` (boundary `tool`) | What the tool actually received and returned. |
-| N18 | `tool.execution_side` | enum agent/provider/mcp_server/remote/sandbox | P (provider items); R | metadata | META | R (tool_call, provider_tool_call) | unknown | P1 | T `fabric.tool.execution_side` | Where the tool ran. |
-| N19 | `provider_tool.kind` | enum web_search/file_search/code_interpreter/computer/image_generation/mcp/other | P | metadata | META | R (provider_tool_call) | not_captured(not_instrumented) | P1 | P | Hosted tool items in Responses and Anthropic server tools. |
-| N20 | `provider_tool.status` | enum requested/in_progress/reported_completed/reported_failed/unknown | P | metadata | META | R (provider_tool_call) | unknown | P1 | P | Provider assertion; execution inside the provider is not observed. |
-| N21 | provider_tool.inputs, outputs, citations, files | locators | P | content | CONTENT | O | absent | P1 | P ref | Queries, results, citations, generated file references. |
-| N22 | mcp.method, mcp.direction | label (closed list + other), enum client_to_server/server_to_client | mcp.wrapper (tools/call, tools/list); mcp.client | metadata | META | R (mcp_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | T `fabric.mcp.method`, `fabric.mcp.direction` | JSON-RPC method and direction. |
-| N23 | mcp.session_id, mcp.jsonrpc_id | keyed pseudonyms | mcp.client | metadata | ID | O | not_captured(not_instrumented) | P4 | P | Session and request ids, for progress and cancel pairing. |
-| N24 | mcp.request, mcp.response, mcp.notification | bytes | mcp.wrapper; mcp.client | content | CONTENT | R (mcp_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | C `mcp.request`, `mcp.response`, `mcp.notification` | Exact JSON-RPC bytes where observed. Resources, prompts, sampling and elicitation included in P4. |
-| N25 | `mcp.error.kind` | enum protocol/tool | mcp.wrapper; mcp.client | metadata | META | R (on error) | unknown | P2 | T `fabric.mcp.error_kind` | Protocol error versus tool error result. |
-| N26 | retrieval.query, retrieval.filters | bytes/json | R (`record_retrieval`, built); H (P4 vector stores) | content | CONTENT | R (retrieval) | not_captured(not_instrumented) | built (query), P2 (filters) | C `retrieval.query` | Query text or vector and filters. |
-| N27 | retrieval.top_k, retrieval.index_id, retrieval.result_count | int, label, int | R | metadata | META/LABEL | O | not_captured(caller_omitted) | built | T `gen_ai.retrieval.top_k`, `gen_ai.data_source.id`, `fabric.retrieval.result_count` | Search shape. |
-| N28 | `retrieval.results` | list {doc_id, chunk_id, version, title, excerpt, score, score_kind, rank, source} | R; H (P4) | content | CONTENT | R (retrieval) | not_captured(caller_omitted) | P2 (fixed schema) | C `retrieval.results` | Results returned, in order. Collection completeness is declared. |
-| N29 | `retrieval.used_in` | consumes link | I (excerpt digest appears in a later request, `tentative`) | metadata | ID | O | unknown | P2 | P | Fetched versus used. |
-| N30 | memory.op, memory.store, memory.version, memory.ttl | enum read/write/delete/search/compare_and_swap, keyed id, int, int | R (`remember`/`recall`/`forget`, built); H (P4) | metadata | META/ID | R (memory) | not_captured(not_instrumented) | P2 | T `fabric.memory.op`, `fabric.memory.store_id`; existing `fabric.memory.*` keys kept | Memory operation. |
-| N31 | memory.key, memory.value | bytes | R | content | CONTENT (key hashed on T) | R (memory) | not_captured(caller_omitted) | built | C `memory.read.content`, `memory.write.content` | Key and value read or written. |
-| N32 | terminal.argv, terminal.context | bytes | exec.subprocess; exec.audit; R adapters (spec 040) | content | CONTENT | R (terminal) | not_captured(not_instrumented) | P4 | C `terminal.argv`, `terminal.context` | argv versus shell command, executable, cwd. Environment variable names only, never values. |
-| N33 | `terminal.stdin` | bytes | R; exec.subprocess (`communicate(input=)`) | off | CONTENT | O | not_captured(hook_disabled) | P4 | C `terminal.stdin` | Input bytes the caller passed. |
-| N34 | terminal.stdout, terminal.stderr | bytes | exec.subprocess (return values only); R | content | CONTENT | R (terminal) | not_captured(not_exposed) when the caller reads pipes directly | P4 | C `terminal.stdout`, `terminal.stderr` | Output the caller received. Fabric never adds a pipe consumer. |
-| N35 | terminal.exit_code, terminal.signal, terminal.pid | int | exec.subprocess | metadata | META | R (terminal) | not_captured(not_instrumented) | P4 | T `fabric.process.exit_code`, `.signal`, `.pid` | Exit status and process id (joins host sensors). |
-| N36 | remote.target, remote.host_key_verified | hst-pseudonym, bool | R wrapper (spec 041) | metadata | ID/META | R (remote_exec) | not_captured(not_instrumented) | P4 | T `fabric.remote.target_id`, `fabric.remote.host_key_verified` | Target and the client's host-key assertion. |
-| N37 | remote.request, remote.result, remote.stream | bytes | R wrapper | content | CONTENT | R (remote_exec) | not_captured(not_instrumented) | P4 | C `remote.*` | Command and channel bytes, client side. Remote side out of scope. |
-| N38 | db.system, db.namespace | label, keyed id | db.dbapi; R | metadata | LABEL/ID | R (database) | not_captured(not_instrumented) | P4 | T `db.system.name`, `fabric.db.namespace_id` | Engine and database. |
-| N39 | db.statement, db.parameters | bytes | db.dbapi; R | content | CONTENT | R (database) | not_captured(not_instrumented) | P4 | C `database.query`, `database.parameters` | Statement and bound parameters. |
-| N40 | `db.rows` | bytes | db.dbapi (`fetch*` return values) | content | CONTENT | O | not_captured(not_exposed) for rows not fetched | P4 | C `database.rows` | Rows the caller actually fetched. |
-| N41 | db.rows_fetched, db.rows_affected | int (-1 = unknown) | db.dbapi | metadata | META | R (database) | unknown | P4 | T `fabric.db.rows_fetched`, `fabric.db.rows_affected` | Unknown is distinct from zero. |
-| N42 | `db.transaction_id` | keyed id | db.dbapi | metadata | ID | O | unknown | P4 | T `fabric.db.transaction_id` | Transaction the statement ran in. |
-| N43 | http.method, http.status, http.host | enum, int, hst-pseudonym | http.nonmodel; explicit.final_http | metadata | META/ID | R (network) | not_captured(not_instrumented) | P4 | T `http.request.method`, `http.response.status_code`, `fabric.network.host_id` | Request shape. |
-| N44 | http.target, http.request_body, http.response_body, http.redirects | bytes | http.nonmodel (allowlisted hosts); explicit.final_http | off | CONTENT | O | not_captured(hook_disabled) | P4 | C `network.request`, `network.response`, `network.stream` | Path, query and bodies. Raw headers never. |
-| N45 | file.operation, file.path_hash, file.byte_range | enum open/read/write/append/truncate/rename/delete/stat/create, digest, range | R (`record_file_access`, built); file.audit (P4) | metadata | META/DIGEST | R (file) | not_captured(not_instrumented) | built (R), P4 (H) | T `fabric.file.operation`, `fabric.file.path_hash` | An open is not a read. |
-| N46 | `file.path` | text | R; file.audit | content | CONTENT | O | not_captured(hook_disabled) | built | C `artifact.before`/`after` descriptor; never clear on T by default | Path. |
-| N47 | file.before, file.after | bytes | R adapters (spec 040); P4 adapters | content | CONTENT | O | not_captured(not_exposed) | built (R), P4 | C `artifact.before`, `artifact.after` | Bytes actually observed; a write buffer is not a full after-image. |
-| N48 | `file.diff` | bytes | I (offline from before/after); R | content | CONTENT | O | absent | P4 | C `artifact.diff` | Derived diff with algorithm and version. |
-| N49 | file.existence_before, file.existence_after | enum exists/absent/unknown | R; file.audit | metadata | META | O | unknown | P4 | P | Creation and deletion evidence. |
-| N50 | `asset` | object {media_type, sha256, byte_length, mode} | R; H (P5) | content | CONTENT | O | not_captured(not_instrumented) | P5 | C `asset.bytes` | Files seen or produced that are not otherwise a role; or `not_captured` with digest when a cap is hit. |
-| N51 | `asset.reference` | locator | P (URLs, provider file ids in model bytes); R | content | CONTENT | O | absent | P1 | P ref | Reference only; never dereferenced. |
-| N52 | `asset.media_metadata` | dimensions, pages, duration, codec | I (decoder on stored bytes) | metadata | META | O | absent | P5 | P | Only when decoded, never guessed. |
-| N53 | `computer.requested_action` | json | P (provider computer-use items) | content | CONTENT | R (ui_action from provider) | not_captured(not_instrumented) | P1 | P ref | Action the model asked for. Requested is not executed. |
-| N54 | `computer.executed_action` | json | R `record_ui_action` (P2); ui.automation (P5) | content | CONTENT | R (ui_action executed) | not_captured(not_instrumented) | P2 (R), P5 (H) | C `computer.action` | Action, target, frame, coordinate system, typed text, navigation URL. |
-| N55 | `computer.snapshot` | bytes | P (screenshots sent back to the model); R; ui.automation | content | CONTENT | O | not_captured(not_exposed) | P1 (P), P2 (R), P5 (H) | C `computer.snapshot`; `model.exchange.part` | Screenshots, DOM or accessibility snapshots that already exist. Fabric never takes one. |
-| N56 | `media.track` | id, direction, codec, sample_rate | rt.websocket | metadata | META | R (media_stream) | unsupported until P5 | P5 | T `fabric.media.*` | Track description. |
-| N57 | media.frames, media.events, media.transcript | bytes | rt.websocket; R | off (frames), content (events, transcript) | CONTENT | R (media_stream) | unsupported until P5 | P5 | C `media.*` | Frames, turn and interruption events, gaps, playback acknowledgments, transcripts. |
-| N58 | `application_message` | bytes | R (`record_interaction`, built metadata) | content | CONTENT | R (message) | not_captured(caller_omitted) | P2 | C `interaction.payload` | Agent-to-agent or app-to-user message that is not a model exchange. |
-| N59 | `output.payload` | bytes | R `record_outcome` | content | CONTENT | R (outcome) | not_captured(not_instrumented) | P2 | C `run.outcome` | What the application emitted, after any post-processing. |
-| N60 | embedding.input, embedding.dimensions | locator, int | P | content (input), metadata (dims) | CONTENT/META | R (embedding) | not_captured(not_instrumented) | P1 | P | Embedded input; vectors are not copied into the projection. |
+| N01 | model.exchange.request, model.exchange.response | bytes | `wire.py.httpx`, `wire.ts.undici`, `explicit.call_recorder`, `explicit.byte_boundary` | content | CONTENT | R (model_call) | not_captured(not_instrumented) | built | C `model.exchange.request`, `model.exchange.response` | Body bytes at the declared boundary. Not headers, TLS frames or provider receipt. |
+| N02 | `model.exchange.parts` | list of object | `wire.py.httpx` | content | CONTENT | R (split side) | not_applicable | P1 | C `model.exchange.part` | Inline media and binary parts extracted so text is never lost to one large part (section 7.4). |
+| N03 | `input.messages` | list {index, role, parts, digest, locator} | `reconstruct.parse`, `explicit.call_recorder` | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref; C `model.request.messages` | Messages sent to the model. role: system, developer, user, assistant, tool, other. Model-bound history, not application messages. |
+| N04 | `output.messages` | list | `reconstruct.parse`, `explicit.call_recorder` | content | CONTENT | R (model_call) | not_captured(not_instrumented) | P1 | P ref; C `model.output.messages` | Messages and items the model returned. |
+| N05 | `content.parts` | list {type, media_type, sha256, byte_length, mode, locator} | `reconstruct.parse` | metadata | META/DIGEST | R (model_call) | not_captured(not_instrumented) | P1 | P | type: text, image, audio, video, document, file_ref, tool_use, tool_result, reasoning, refusal, other. mode: embedded or reference_only. URLs and provider file ids are never dereferenced. |
+| N06 | `refusal` | text | `reconstruct.parse` | content | CONTENT | O | absent | P1 | P ref | Provider refusal content. |
+| N07 | `finish_reasons` | closed enum | `wire.py.httpx`, `reconstruct.parse` | metadata | META | R (model_call) | not_captured(not_instrumented) | built (non-stream), P1 (stream) | T `gen_ai.response.finish_reasons` | Closed vocabulary; anything else is `other`. |
+| N08 | `reasoning.format` | enum text/summary/encrypted/redacted_marker/none | `reconstruct.parse` | metadata | META | R (reasoning-capable API) | not_applicable | P1 | P | Form in which the provider returned reasoning. |
+| N09 | `reasoning.text` | text | `reconstruct.parse`, `explicit.call_recorder` | content | CONTENT | R (reasoning-capable API) | not_applicable | P1 | P ref; C `model.output.reasoning` | `captured` only for returned plaintext; otherwise `redacted(provider_encrypted / provider_redacted)` or `not_captured(provider_summarised / provider_not_returned)`. Never a claim to hidden reasoning. |
+| N10 | `reasoning.summary` | text | `reconstruct.parse` | content | CONTENT | O | absent | P1 | P ref | Provider summary of reasoning. |
+| N11 | `reasoning.object` | locator | `reconstruct.parse` | content | CONTENT | O | absent | P1 | P ref | Opaque or encrypted reasoning blob, kept because it is part of the exact bytes. |
+| N12 | `tool_call.id` | p-pseudonym | `reconstruct.parse` | metadata | ID | R (tool call at model boundary) | not_captured(not_instrumented) | P1 | P | Provider tool-call id, keyed (decision 8). |
+| N13 | tool_call.name, tool_call.type | label, enum | `reconstruct.parse`, `sdk.records` | metadata | LABEL/META | R | not_captured(not_instrumented) | P1 | P; T `fabric.tool.name` (explicit) | Tool requested by the model. |
+| N14 | `tool_call.arguments` | json | `reconstruct.parse`, `sdk.records` | content | CONTENT | R | not_captured(not_instrumented) | P1 | P ref; C `tool.call.arguments` | Arguments the model emitted. |
+| N15 | `tool_call.result_as_fed` | content | `reconstruct.parse` | content | CONTENT | R (when consumed) | not_captured(not_exposed) if never sent back | P1 | P ref | Result as the agent told the model (boundary `provider_bound`). |
+| N16 | `tool_call.links` | emits / consumes links | `reconstruct.infer` | metadata | ID | R | unknown | P1 | P | Model call to tool call to the call that consumed the result. Unmatched ids stay `unresolved`. |
+| N17 | tool.execution.arguments, tool.execution.result | bytes | `sdk.records`, `explicit.call_recorder` | content | CONTENT | R (tool_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | C `tool.call.arguments`, `tool.call.result` (boundary `tool`) | What the tool actually received and returned. Via `tool_call()` and the explicit line; P4 channels have their own fields. |
+| N18 | `tool.execution_side` | enum agent/provider/mcp_server/remote/sandbox | `reconstruct.parse`, `sdk.records` | metadata | META | R (tool_call, provider_tool_call) | unknown | P1 | T `fabric.tool.execution_side` | Where the tool ran. |
+| N19 | `provider_tool.kind` | enum web_search/file_search/code_interpreter/computer/image_generation/mcp/other | `reconstruct.parse` | metadata | META | R (provider_tool_call) | not_captured(not_instrumented) | P1 | P | Hosted tool items in Responses and Anthropic server tools. |
+| N20 | `provider_tool.status` | enum requested/in_progress/reported_completed/reported_failed/unknown | `reconstruct.parse` | metadata | META | R (provider_tool_call) | unknown | P1 | P | Provider assertion; execution inside the provider is not observed. |
+| N21 | provider_tool.inputs, outputs, citations, files | locators | `reconstruct.parse` | content | CONTENT | O | absent | P1 | P ref | Queries, results, citations, generated file references. |
+| N22 | mcp.method, mcp.direction | label (closed list + other), enum client_to_server/server_to_client | `mcp.wrapper`, `mcp.client` | metadata | META | R (mcp_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | T `fabric.mcp.method`, `fabric.mcp.direction` | JSON-RPC method and direction. |
+| N23 | mcp.session_id, mcp.jsonrpc_id | keyed pseudonyms | `mcp.client` | metadata | ID | O | not_captured(not_instrumented) | P4 | P | Session and request ids, for progress and cancel pairing. |
+| N24 | mcp.request, mcp.response, mcp.notification | bytes | `mcp.wrapper`, `mcp.client` | content | CONTENT | R (mcp_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | C `mcp.request`, `mcp.response`, `mcp.notification` | Exact JSON-RPC bytes where observed. Resources, prompts, sampling and elicitation included in P4. |
+| N25 | `mcp.error.kind` | enum protocol/tool | `mcp.wrapper`, `mcp.client` | metadata | META | R (on error) | unknown | P2 | T `fabric.mcp.error_kind` | Protocol error versus tool error result. |
+| N26 | retrieval.query, retrieval.filters | bytes/json | `sdk.records`, `http.nonmodel` | content | CONTENT | R (retrieval) | not_captured(not_instrumented) | built (query), P2 (filters) | C `retrieval.query` | Query text or vector and filters. Via `record_retrieval` (built). |
+| N27 | retrieval.top_k, retrieval.index_id, retrieval.result_count | int, label, int | `sdk.records` | metadata | META/LABEL | O | not_captured(caller_omitted) | built | T `gen_ai.retrieval.top_k`, `gen_ai.data_source.id`, `fabric.retrieval.result_count` | Search shape. |
+| N28 | `retrieval.results` | list {doc_id, chunk_id, version, title, excerpt, score, score_kind, rank, source} | `sdk.records`, `http.nonmodel` | content | CONTENT | R (retrieval) | not_captured(caller_omitted) | P2 (fixed schema) | C `retrieval.results` | Results returned, in order. Collection completeness is declared. |
+| N29 | `retrieval.used_in` | consumes link | `reconstruct.infer` | metadata | ID | O | unknown | P2 | P | Fetched versus used. |
+| N30 | memory.op, memory.store, memory.version, memory.ttl | enum read/write/delete/search/compare_and_swap, keyed id, int, int | `sdk.records`, `http.nonmodel`, `db.dbapi` | metadata | META/ID | R (memory) | not_captured(not_instrumented) | P2 | T `fabric.memory.op`, `fabric.memory.store_id`; existing `fabric.memory.*` keys kept | Memory operation. Via `remember`/`recall`/`forget` (built). |
+| N31 | memory.key, memory.value | bytes | `sdk.records` | content | CONTENT (key as `mkey-` pseudonym on T) | R (memory) | not_captured(caller_omitted) | built (content), P0-A (key pseudonym) | C `memory.read.content`, `memory.write.content`; T `fabric.memory.key` in `mkey-` form (P0-A) | Key and value read or written. |
+| N32 | terminal.argv, terminal.context | bytes | `exec.subprocess`, `exec.audit`, `explicit.byte_boundary` | content | CONTENT | R (terminal) | not_captured(not_instrumented) | P4 | C `terminal.argv`, `terminal.context` | argv versus shell command, executable, cwd. Environment variable names only, never values. |
+| N33 | `terminal.stdin` | bytes | `exec.subprocess`, `explicit.byte_boundary` | off | CONTENT | O | not_captured(hook_disabled) | P4 | C `terminal.stdin` | Input bytes the caller passed. Via `communicate(input=)`. |
+| N34 | terminal.stdout, terminal.stderr | bytes | `exec.subprocess`, `explicit.byte_boundary` | content | CONTENT | R (terminal) | not_captured(not_exposed) when the caller reads pipes directly | P4 | C `terminal.stdout`, `terminal.stderr` | Output the caller received. Fabric never adds a pipe consumer. |
+| N35 | terminal.exit_code, terminal.signal, terminal.pid | int | `exec.subprocess` | metadata | META | R (terminal) | not_captured(not_instrumented) | P4 | T `fabric.process.exit_code`, `.signal`, `.pid` | Exit status and process id (joins host sensors). |
+| N36 | remote.target, remote.host_key_verified | hst-pseudonym, bool | `remote.ssh_wrapper` | metadata | ID/META | R (remote_exec) | not_captured(not_instrumented) | P4 | T `fabric.remote.target_id`, `fabric.remote.host_key_verified` | Target and the client's host-key assertion. |
+| N37 | remote.request, remote.result, remote.stream | bytes | `remote.ssh_wrapper` | content | CONTENT | R (remote_exec) | not_captured(not_instrumented) | P4 | C `remote.*` | Command and channel bytes, client side. Remote side out of scope. |
+| N38 | db.system, db.namespace | label, keyed id | `db.dbapi`, `sdk.records` | metadata | LABEL/ID | R (database) | not_captured(not_instrumented) | P4 | T `db.system.name`, `fabric.db.namespace_id` | Engine and database. |
+| N39 | db.statement, db.parameters | bytes | `db.dbapi`, `explicit.call_recorder` | content | CONTENT | R (database) | not_captured(not_instrumented) | P4 | C `database.query`, `database.parameters` | Statement and bound parameters. |
+| N40 | `db.rows` | bytes | `db.dbapi` | content | CONTENT | O | not_captured(not_exposed) for rows not fetched | P4 | C `database.rows` | Rows the caller actually fetched. Via `fetch*` return values. |
+| N41 | db.rows_fetched, db.rows_affected | int (-1 = unknown) | `db.dbapi` | metadata | META | R (database) | unknown | P4 | T `fabric.db.rows_fetched`, `fabric.db.rows_affected` | Unknown is distinct from zero. |
+| N42 | `db.transaction_id` | keyed id | `db.dbapi` | metadata | ID | O | unknown | P4 | T `fabric.db.transaction_id` | Transaction the statement ran in. |
+| N43 | http.method, http.status, http.host | enum, int, hst-pseudonym | `http.nonmodel`, `explicit.final_http` | metadata | META/ID | R (network) | not_captured(not_instrumented) | P4 | T `http.request.method`, `http.response.status_code`, `fabric.network.host_id` | Request shape. |
+| N44 | http.target, http.request_body, http.response_body, http.redirects | bytes | `http.nonmodel`, `explicit.final_http` | off | CONTENT | O | not_captured(hook_disabled) | P4 | C `network.request`, `network.response`, `network.stream` | Path, query and bodies. Raw headers never. |
+| N45 | file.operation, file.path_hash, file.byte_range | enum open/read/write/append/truncate/rename/delete/stat/create, digest, range | `sdk.records`, `file.audit` | metadata | META/DIGEST | R (file) | not_captured(not_instrumented) | built (R), P4 (H) | T `fabric.file.operation`, `fabric.file.path_hash` | An open is not a read. Via `record_file_access` (built). |
+| N46 | `file.path` | text | `sdk.records`, `file.audit` | content | CONTENT | O | not_captured(hook_disabled) | built (R, clear on T), P0-A (role) | C `artifact.locator` | Path and, for renames, the target path. Telemetry carries only `fabric.file.path_hash`; the clear path moves to the `artifact.locator` role (P0-A). |
+| N47 | file.before, file.after | bytes | `explicit.byte_boundary` | content | CONTENT | O | not_captured(not_exposed) | built (R), P4 | C `artifact.before`, `artifact.after` | Bytes actually observed; a write buffer is not a full after-image. |
+| N48 | `file.diff` | bytes | `reconstruct.infer`, `sdk.records` | content | CONTENT | O | absent | P4 | C `artifact.diff` | Derived diff with algorithm and version. |
+| N49 | file.existence_before, file.existence_after | enum exists/absent/unknown | `sdk.records`, `file.audit` | metadata | META | O | unknown | P4 | P | Creation and deletion evidence. |
+| N50 | `asset` | object {media_type, sha256, byte_length, mode} | `sdk.records` | content | CONTENT | O | not_captured(not_instrumented) | P5 | C `asset.bytes` | Files seen or produced that are not otherwise a role; or `not_captured` with digest when a cap is hit. |
+| N51 | `asset.reference` | locator | `reconstruct.parse`, `sdk.records` | content | CONTENT | O | absent | P1 | P ref | Reference only; never dereferenced. |
+| N52 | `asset.media_metadata` | dimensions, pages, duration, codec | `reconstruct.infer` | metadata | META | O | absent | P5 | P | Only when decoded, never guessed. |
+| N53 | `computer.requested_action` | json | `reconstruct.parse` | content | CONTENT | R (ui_action from provider) | not_captured(not_instrumented) | P1 | P ref | Action the model asked for. Requested is not executed. |
+| N54 | `computer.executed_action` | json | `sdk.records`, `ui.automation` | content | CONTENT | R (ui_action executed) | not_captured(not_instrumented) | P2 (R), P5 (H) | C `computer.action` | Action, target, frame, coordinate system, typed text, navigation URL. Via `record_ui_action` (new, P2). |
+| N55 | `computer.snapshot` | bytes | `reconstruct.parse`, `sdk.records`, `ui.automation` | content | CONTENT | O | not_captured(not_exposed) | P1 (P), P2 (R), P5 (H) | C `computer.snapshot`; `model.exchange.part` | Screenshots, DOM or accessibility snapshots that already exist. Fabric never takes one. |
+| N56 | `media.track` | id, direction, codec, sample_rate | `rt.websocket` | metadata | META | R (media_stream) | unsupported until P5 | P5 | T `fabric.media.*` | Track description. |
+| N57 | media.frames, media.events, media.transcript | bytes | `rt.websocket`, `sdk.records` | content | CONTENT | R (media_stream) | unsupported until P5 | P5 | C `media.*` | Frames, turn and interruption events, gaps, playback acknowledgments, transcripts. Frames follow the `media.frames` role default `off`; events and transcripts default to `content`. |
+| N58 | `application_message` | bytes | `sdk.records` | content | CONTENT | R (message) | not_captured(caller_omitted) | P2 | C `interaction.payload`; T `fabric.interaction.target` in `tgt-` form (P0-A) | Agent-to-agent or app-to-user message that is not a model exchange. Via `record_interaction` (built, metadata). |
+| N59 | `output.payload` | bytes | `sdk.records` | content | CONTENT | R (outcome) | not_captured(not_instrumented) | P2 | C `run.outcome` | What the application emitted, after any post-processing. Via `record_outcome`. |
+| N60 | embedding.input, embedding.dimensions | locator, int | `reconstruct.parse` | content | CONTENT/META | R (embedding) | not_captured(not_instrumented) | P1 | P | Embedded input; vectors are not copied into the projection. The dimension count is metadata. |
+<!-- generated:fields:N:end -->
 
 ### 3.5 Layer 4 — Decisions and effects
 
+<!-- generated:fields:D:begin -->
 | # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
 |---|---|---|---|---|---|---|---|---|---|---|
-| D01 | `control.id` | opaque id | R `record_control` | metadata | ID | R (control) | not_captured(not_instrumented) | P3 | T `fabric.control.id` | One control observation. |
-| D02 | `control.kind` | enum guardrail/policy/permission_request/approval/rate_limit/budget/other | R | metadata | META | R (control) | not_captured(not_instrumented) | P3 | T `fabric.control.kind` | What kind of external control. |
-| D03 | `control.phase` | enum request/resolution/revocation/observation | R | metadata | META | R (control) | unknown | P3 | T `fabric.control.phase` | Approvals are a request and a later resolution, linked by `resolves`. |
-| D04 | `control.decision` | enum allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown | R | metadata | META | R (control) | unknown | P3 | T `fabric.control.decision` | Decision the external control made. Legacy `requires_review` maps to `escalate`. Unknown is never mapped to allow. |
-| D05 | `control.resolves` | link | R | metadata | ID | R (resolution) | unresolved | P3 | T `fabric.control.resolves` | Request this resolution answers. |
-| D06 | control.gated_step, control.action_id | step ref, opaque id | R | metadata | ID | O | unknown | P3 | T `fabric.control.gated_step_id`, `fabric.control.action_id` | Step or action it applied to. A denied action may have no executed step. |
-| D07 | `control.decided_by` | actor ref | R | metadata | ID | O | unknown | P3 | T `fabric.actor.type`, `fabric.actor.id` on the event | human_approver, system or external_service. |
-| D08 | control.policy_id, policy_version, policy_digest | label, int, digest | R | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | P3 | T `fabric.control.policy_id`, `.policy_version`, `.policy_digest` | Policy the control applied. |
-| D09 | `control.proof_ref` | opaque id | R | metadata | ID | O | absent | P3 | T `fabric.control.proof_ref` | Reference to the external system's own record. Fabric does not verify it. |
-| D10 | control.checked, control.reason, control.approval | bytes | R | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `control.checked`, `control.reason`, `control.approval` | What was checked, why, and the scope and duration of a grant. |
-| D11 | control.authentication, control.enforced_by_fabric | const unverified_caller_report, const false | self | metadata | META | R (control) | always | P3 | T `fabric.control.authentication`, `fabric.control.enforced_by_fabric` | Invariants on every control event. |
-| D12 | selection.kind, selection.reason | enum model_route/tool_choice/agent_route/branch/fallback/other; enum error/cost/latency/policy/capability/quality/availability/other/unknown | R (never inferred) | metadata | META | R (selection) | not_captured(not_instrumented) | P3 | T `fabric.selection.kind`, `fabric.selection.reason` | An exposed routing choice and its category. |
-| D13 | `selection.decision` | json | R | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `selection.decision` | Candidates, selected option, reason text. |
-| D14 | context_change.kind, context_change.trigger | enum append/remove/replace/truncate/compact/summarise/reset/switch; enum token_limit/turn_limit/time/manual/policy/other/unknown | R `record_context_change` | metadata | META | R (context_change) | not_captured(not_instrumented) | P3 | T `fabric.context.change_kind`, `fabric.context.trigger` | Explicit context change. |
-| D15 | context_change.tokens_before, tokens_after, token_basis | int, int, enum measured/estimated | R | metadata | META | O | not_captured(caller_omitted) | P3 | T `fabric.context.tokens_before`, `.tokens_after`, `.token_basis` | Token counts name their basis. |
-| D16 | `context_change.affected` | bytes | R | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `context.change` | Dropped items and summary. |
-| D17 | `context.history_rewritten` | inferred event | I (method `prefix_break`) | metadata | META | O | unknown | P1 | P | Inferred only. Never labelled compaction: shared prefixes also arise from forks and parallel calls. |
-| D18 | effect.id, type, operation, target_system, target, idempotency_key | existing side-effect fields | R (`record_side_effect`) | metadata | ID/LABEL/DIGEST | R (side_effect) | not_captured(not_instrumented) | built | T existing `fabric.side_effect.*` | The effect and its target. |
-| D19 | `effect.state` | enum requested/accepted/applied/failed/unknown | R | metadata | META | R (side_effect) | unknown | P2 | T `fabric.side_effect.state` | Intent is not acceptance; acceptance is not application. |
-| D20 | `effect.timing` | interval | R (`with d.side_effect(...)` measures; `record_*` takes `started_at`/`ended_at`) | metadata | META | R (side_effect) | not_captured(caller_omitted); never zero-length | P2 | span timing | Duration of the effect. |
-| D21 | effect.request, effect.result | bytes | R | content | CONTENT | O | not_captured(caller_omitted) | built | C `side_effect.request`, `side_effect.result` | Request and result. |
-| D22 | `effect.caused_by` | link to tool call | R (`parent_tool_call_id`, built) | metadata | ID | O | unknown | built | T `fabric.side_effect.parent_tool_call_id` | Tool call that produced the effect. |
-| D23 | `commit.state` | enum unknown/not_committed/committed/rolled_back/partially_committed | R (default `unknown`); db.dbapi (P4); S receipt | metadata | META | R (side_effect) | unknown | P3 (R), P4 (H) | T `fabric.side_effect.commit_state` | HTTP 200, SQL success or a tool's text is not durable commit. |
-| D24 | `commit.basis` | enum caller_assertion/client_observed/service_receipt/legacy_default | self | metadata | META | R (when commit.state set) | always | P3 | T `fabric.side_effect.commit_basis` | Legacy `committed=True` without an explicit value maps to `legacy_default`. |
-| D25 | `commit.receipt` | bytes | R; S | content | CONTENT | O | absent | P3 | C `service.receipt` | Service acknowledgment or authoritative state. |
-| D26 | `compensation.state` | enum requested/completed/failed/unknown + `compensates` link | R | metadata | META | O | absent | P3 | T `fabric.side_effect.compensation_state` | Reversal recorded; Fabric never executes one. |
-| D27 | outcome.channel_kind, outcome.target | enum chat_ui/email/ticket/api_response/webhook/file/voice/other, tgt-pseudonym | R `record_outcome` | metadata | META/ID | R (outcome) | not_captured(not_instrumented) | P2 | T `fabric.outcome.channel_kind`, `fabric.outcome.target_id` | Where the output went. |
-| D28 | `outcome.delivery_state` | enum prepared/sent/accepted/delivered/read/played/failed/unknown | R; S receipt | metadata | META | R (outcome) | unknown | P2 | T `fabric.outcome.delivery_state` | Stages are never inferred from each other. |
-| D29 | `outcome.delivery_evidence` | bytes | R; S | content | CONTENT | O | absent | P2 | C `outcome.delivery` | Recipient, channel and receipt detail. |
-| D30 | run.outcome, run.stop_reason | enum completed/failed/cancelled/suspended/unknown; enum goal_reached/max_steps/max_tokens/error/cancelled/handoff/awaiting_input/other/unknown | R | metadata | META | R (run root) | unknown | P2 | T `fabric.run.outcome`, `fabric.run.stop_reason` on `run_end` | Application-declared disposition. Integrity verdicts are not outcomes. |
-| D31 | usage.input_tokens, usage.output_tokens | int | wire.py.httpx (non-stream); P (stream) | metadata | META | R (model_call) | not_captured(provider_not_returned) | built / P1 | T `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | Provider-reported usage. |
-| D32 | usage.cache_read, cache_creation, reasoning tokens | int | P | metadata | META | O | absent | P1 | T existing `gen_ai.usage.*` keys; P | Overlap between counters is declared to prevent double counting. |
-| D33 | usage.media_units, usage.hosted_tool_calls | int | P | metadata | META | O | absent | P1 | P | Non-token units. |
-| D34 | `usage.basis` | enum provider_reported/estimated/unknown | self | metadata | META | R (model_call) | always | P1 | P | Fabric never estimates in v1: `provider_reported` or `unknown`. |
-| D35 | `cost` | - | - | - | - | - | out of scope | out of scope | - | Pricing and billing are downstream (decision 11). Provider-returned cost fields stay in the stored bytes, unprojected. |
+| D01 | `control.id` | opaque id | `sdk.records` | metadata | ID | R (control) | not_captured(not_instrumented) | P3 | T `fabric.control.id` | One control observation. Via `record_control`. |
+| D02 | `control.kind` | enum guardrail/policy/permission_request/approval/rate_limit/budget/other | `sdk.records` | metadata | META | R (control) | not_captured(not_instrumented) | P3 | T `fabric.control.kind` | What kind of external control. |
+| D03 | `control.phase` | enum request/resolution/revocation/observation | `sdk.records` | metadata | META | R (control) | unknown | P3 | T `fabric.control.phase` | Approvals are a request and a later resolution, linked by `resolves`. |
+| D04 | `control.decision` | enum allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown | `sdk.records` | metadata | META | R (control) | unknown | P3 | T `fabric.control.decision` | Decision the external control made. Legacy `requires_review` maps to `escalate`. Unknown is never mapped to allow. |
+| D05 | `control.resolves` | link | `sdk.records` | metadata | ID | R (resolution) | unresolved | P3 | T `fabric.control.resolves` | Request this resolution answers. |
+| D06 | control.gated_step, control.action_id | step ref, opaque id | `sdk.records` | metadata | ID | O | unknown | P3 | T `fabric.control.gated_step_id`, `fabric.control.action_id` | Step or action it applied to. A denied action may have no executed step. |
+| D07 | `control.decided_by` | actor ref | `sdk.records` | metadata | ID | O | unknown | P3 | T `fabric.actor.type`, `fabric.actor.id` on the event | human_approver, system or external_service. |
+| D08 | control.policy_id, policy_version, policy_digest | label, int, digest | `sdk.records` | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | P3 | T `fabric.control.policy_id`, `.policy_version`, `.policy_digest` | Policy the control applied. |
+| D09 | `control.proof_ref` | opaque id | `sdk.records` | metadata | ID | O | absent | P3 | T `fabric.control.proof_ref` | Reference to the external system's own record. Fabric does not verify it. |
+| D10 | control.checked, control.reason, control.approval | bytes | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `control.checked`, `control.reason`, `control.approval` | What was checked, why, and the scope and duration of a grant. |
+| D11 | control.authentication, control.enforced_by_fabric | const `unverified_caller_report`; const `false` | `fabric.self` | metadata | META | R (control) | always | P3 | T `fabric.control.authentication`, `fabric.control.enforced_by_fabric` | Invariants on every control event. |
+| D12 | selection.kind, selection.reason | enum model_route/tool_choice/agent_route/branch/fallback/other; enum error/cost/latency/policy/capability/quality/availability/other/unknown | `sdk.records` | metadata | META | R (selection) | not_captured(not_instrumented) | P3 | T `fabric.selection.kind`, `fabric.selection.reason` | An exposed routing choice and its category. Via `record_selection`. |
+| D13 | `selection.decision` | json | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `selection.decision` | Candidates, selected option, reason text. |
+| D14 | context_change.kind, context_change.trigger | enum append/remove/replace/truncate/compact/summarise/reset/switch; enum token_limit/turn_limit/time/manual/policy/other/unknown | `sdk.records` | metadata | META | R (context_change) | not_captured(not_instrumented) | P3 | T `fabric.context.change_kind`, `fabric.context.trigger` | Explicit context change. Via `record_context_change`. |
+| D15 | context_change.tokens_before, tokens_after, token_basis | int, int, enum measured/estimated | `sdk.records` | metadata | META | O | not_captured(caller_omitted) | P3 | T `fabric.context.tokens_before`, `.tokens_after`, `.token_basis` | Token counts name their basis. |
+| D16 | `context_change.affected` | bytes | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `context.change` | Dropped items and summary. |
+| D17 | `context.history_rewritten` | inferred event | `reconstruct.infer` | metadata | META | O | unknown | P1 | P | Inferred only, method `prefix_break`, `confidence: tentative`. Never labelled compaction: shared prefixes also arise from forks and parallel calls. |
+| D18 | effect.id, type, operation, target_system, target, idempotency_key | existing side-effect fields | `sdk.records` | metadata | ID/LABEL/DIGEST | R (side_effect) | not_captured(not_instrumented) | built | T existing `fabric.side_effect.*` | The effect and its target. Via `record_side_effect`. |
+| D19 | `effect.state` | enum requested/accepted/applied/failed/unknown | `sdk.records` | metadata | META | R (side_effect) | unknown | P2 | T `fabric.side_effect.state` | Intent is not acceptance; acceptance is not application. |
+| D20 | `effect.timing` | interval | `sdk.records` | metadata | META | R (side_effect) | not_captured(caller_omitted); never zero-length | P2 | span timing | Duration of the effect. `with d.side_effect(...)` is a new P2 API (today only `delegate()`/`adelegate()` are context managers); `record_side_effect` gains `started_at`/`ended_at`. |
+| D21 | effect.request, effect.result | bytes | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | built | C `side_effect.request`, `side_effect.result` | Request and result. |
+| D22 | `effect.caused_by` | link to tool call | `sdk.records` | metadata | ID | O | unknown | built | T `fabric.side_effect.parent_tool_call_id` | Tool call that produced the effect. Via `parent_tool_call_id` (built). |
+| D23 | `commit.state` | enum unknown/not_committed/committed/rolled_back/partially_committed | `sdk.records`, `db.dbapi`, `feed.independent` | metadata | META | R (side_effect) | unknown | P3 (R), P4 (H) | T `fabric.side_effect.commit_state` | HTTP 200, SQL success or a tool's text is not durable commit. New API default is `unknown`. |
+| D24 | `commit.basis` | enum caller_assertion/client_observed/service_receipt/legacy_unspecified | `fabric.self` | metadata | META | R (when commit.state set) | always | P3 | T `fabric.side_effect.commit_basis` | Legacy records carry only the boolean, so an omitted and an explicit `committed=True` cannot be told apart: legacy `true` maps to `committed` + `legacy_unspecified`; legacy `false` (never the default) maps to `not_committed` + `caller_assertion`. |
+| D25 | `commit.receipt` | bytes | `sdk.records`, `feed.independent` | content | CONTENT | O | absent | P3 | C `service.receipt` | Service acknowledgment or authoritative state. |
+| D26 | `compensation.state` | enum requested/completed/failed/unknown + `compensates` link | `sdk.records` | metadata | META | O | absent | P3 | T `fabric.side_effect.compensation_state` | Reversal recorded; Fabric never executes one. |
+| D27 | outcome.channel_kind, outcome.target | enum chat_ui/email/ticket/api_response/webhook/file/voice/other, tgt-pseudonym | `sdk.records` | metadata | META/ID | R (outcome) | not_captured(not_instrumented) | P2 | T `fabric.outcome.channel_kind`, `fabric.outcome.target_id` | Where the output went. Via `record_outcome`. |
+| D28 | `outcome.delivery_state` | enum prepared/sent/accepted/delivered/read/played/failed/unknown | `sdk.records`, `feed.independent` | metadata | META | R (outcome) | unknown | P2 | T `fabric.outcome.delivery_state` | Stages are never inferred from each other. |
+| D29 | `outcome.delivery_evidence` | bytes | `sdk.records`, `feed.independent` | content | CONTENT | O | absent | P2 | C `outcome.delivery` | Recipient, channel and receipt detail. |
+| D30 | run.outcome, run.stop_reason | enum completed/failed/cancelled/suspended/unknown; enum goal_reached/max_steps/max_tokens/error/cancelled/handoff/awaiting_input/other/unknown | `sdk.records` | metadata | META | R (run root) | unknown | P2 | T `fabric.run.outcome`, `fabric.run.stop_reason` on `run_end` | Application-declared disposition. Integrity verdicts are not outcomes. |
+| D31 | usage.input_tokens, usage.output_tokens | int | `wire.py.httpx`, `reconstruct.parse` | metadata | META | R (model_call) | not_captured(provider_not_returned) | built / P1 | T `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | Provider-reported usage. |
+| D32 | usage.cache_read, cache_creation, reasoning tokens | int | `reconstruct.parse` | metadata | META | O | absent | P1 | T existing `gen_ai.usage.*` keys; P | Overlap between counters is declared to prevent double counting. |
+| D33 | usage.media_units, usage.hosted_tool_calls | int | `reconstruct.parse` | metadata | META | O | absent | P1 | P | Non-token units. |
+| D34 | `usage.basis` | enum provider_reported/estimated/unknown | `fabric.self` | metadata | META | R (model_call) | always | P1 | P | Fabric never estimates in v1: `provider_reported` or `unknown`. |
+| D35 | `cost` | - | — | - | - | - | out of scope | out of scope | - | Pricing and billing are downstream (decision 11). Provider-returned cost fields stay in the stored bytes, unprojected. |
+<!-- generated:fields:D:end -->
 
 ### 3.6 Activity map: every architecture to fields
 
@@ -958,17 +1157,17 @@ the listed reporting or hook phase.
 
 | Item | Why | What the record says instead |
 |---|---|---|
+| Non-chat model endpoints: images, audio speech and transcription, moderations, rerank, fine-tuning, files, provider batch, realtime | Not matched by `wire.py.httpx` (POST to unmatched paths produces no step); outside the first-release claim | manifest `uncaptured_classes: unmatched_endpoints`, `provider_batch_files`, `websocket`; files and batch in P5, realtime in P5 (`rt.websocket`); images, audio, moderations, rerank and fine-tuning in P5 as additional matcher dialects, each with its own fixtures |
 | Hidden or latent reasoning, private local state | Never crosses a boundary | `reasoning.text` statuses (`N09`); `checkpoint.state` only if reported |
 | Provider-held context content | Not in observed bytes; Fabric never fetches it | `C39` with `provider_held`, `unresolved` |
 | Provider-internal execution of hosted tools | Assertion only | `N20` = `reported_*`, origin `provider` |
 | MCP server internals, remote SSH side, server-side DB effects, full DB state | Not observable client-side | `commit.state` (`D23`) with `basis`; `corroborated_by` when a feed exists |
+| Semantic-cache hits that skip a model call; application backoff between retries | Application-internal | only if reported: `N30` (memory read) or `D12` (selection); `S13`, `S33` |
 | Cost, price, invoices | Downstream (decision 11) | `D31`–`D34` usage |
 | Raw headers, env values, credentials | Privacy rule | `C40` (one opt-in header value), env names only (`N32`) |
 | Network-frame and stream-chunk timing | Wire tee concatenates bodies | `S30`, `S31` |
 | Human browser tabs, direct sockets, other runtimes without a capture point | No capture point | manifest `uncaptured_classes`; fields `unsupported` |
 | Evaluation results, policy outcomes computed by Fabric | Not Fabric OSS | — |
-
----
 
 ## 4. Where it lives
 
@@ -987,178 +1186,272 @@ telemetry exporters, diagnostics or the telemetry destination.
 
 ### 4.2 Telemetry keys
 
-Every `T` key in section 3 is an exact key. A key whose phase is not
-`built` is new: it is admitted by fabricguard in its phase, with a closed
-validator for its privacy class (enum set, integer range, pseudonym
-pattern, uuid4, bare 64-hex digest, or label pattern), in the same change
-as its golden and its emitter. No wildcard is ever admitted. New keys:
+Every `T` key in section 3 is an exact key. A new key is admitted by
+fabricguard in its phase, with a closed validator for its privacy class, in
+the same change as its golden and its emitter. No wildcard is ever
+admitted. The registry `contracts/coverage/v1/registry/telemetry-keys-v1.json`
+lists every new key and every **changed validator** of an existing key;
+changed rows are listed first. Decisions recorded here: `fabric.memory.key`
+and `fabric.interaction.target` are pseudonymised (not hashed, not
+dropped); `fabric.user_id` is newly admitted in `usr-` form;
+`fabric.control.enforced_by_fabric` admits only `false`.
 
-| Key | Field | Validator | Phase |
-|---|---|---|---|
-| `db.system.name` | N38 | LABEL: pattern, exposure rule | P4 |
-| `fabric.actor.id` | S04 | ID: `act-` + 32 hex | P1 |
-| `fabric.actor.type` | S03 | META: closed enum (section 3 type) | P1 |
-| `fabric.batch.item_index` | S21 | META: integer range | P2 |
-| `fabric.build.digest` | C12 | DIGEST: bare 64 hex | P2 |
-| `fabric.cancel.state` | S32 | META: closed enum (section 3 type) | P2 |
-| `fabric.capture.manifest_id` | X34 | ID: uuid4 | P1 |
-| `fabric.capture.point` | X26 | LABEL: pattern, exposure rule | P1 |
-| `fabric.checkpoint.action` | S27 | META: closed enum (section 3 type) | P2 |
-| `fabric.config.digest` | C13 | DIGEST: bare 64 hex | P2 |
-| `fabric.context.change_kind` | D14 | META: closed enum (section 3 type) | P3 |
-| `fabric.context.token_basis` | D15 | META: closed enum (section 3 type) | P3 |
-| `fabric.context.tokens_after` | D15 | META: integer range | P3 |
-| `fabric.context.tokens_before` | D15 | META: integer range | P3 |
-| `fabric.context.trigger` | D14 | META: closed enum (section 3 type) | P3 |
-| `fabric.control.action_id` | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |
-| `fabric.control.authentication` | D11 | META: const `unverified_caller_report` | P3 |
-| `fabric.control.decision` | D04 | META: closed enum (section 3 type) | P3 |
-| `fabric.control.enforced_by_fabric` | D11 | META: boolean | P3 |
-| `fabric.control.gated_step_id` | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |
-| `fabric.control.id` | D01 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |
-| `fabric.control.kind` | D02 | META: closed enum (section 3 type) | P3 |
-| `fabric.control.phase` | D03 | META: closed enum (section 3 type) | P3 |
-| `fabric.control.policy_digest` | D08 | DIGEST: bare 64 hex | P3 |
-| `fabric.control.policy_id` | D08 | LABEL: pattern, exposure rule | P3 |
-| `fabric.control.policy_version` | D08 | META: integer range | P3 |
-| `fabric.control.proof_ref` | D09 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |
-| `fabric.control.resolves` | D05 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |
-| `fabric.conversation_id` | X15 | ID: `conv-` + 32 hex | P2 |
-| `fabric.db.namespace_id` | N38 | ID: `dbn-` + 32 hex | P4 |
-| `fabric.db.rows_affected` | N41 | META: integer range | P4 |
-| `fabric.db.rows_fetched` | N41 | META: integer range | P4 |
-| `fabric.db.transaction_id` | N42 | ID: `txn-` + 32 hex | P4 |
-| `fabric.delegation.state` | S24 | META: closed enum (section 3 type) | P2 |
-| `fabric.dispatch.id` | S20 | ID: `dsp-` + 32 hex | P2 |
-| `fabric.dispatch.kind` | S20 | META: closed enum (section 3 type) | P2 |
-| `fabric.dispatch.state` | S20 | META: closed enum (section 3 type) | P2 |
-| `fabric.error.code` | S11 | META: `^[A-Za-z0-9_.-]{1,64}$` | P1 (provider) |
-| `fabric.error.domain` | S09 | META: closed enum (section 3 type) | P1 |
-| `fabric.event.supersedes` | X03 | ID: uuid4 | P1 |
-| `fabric.execution.host_id` | C41 | ID: `hst-` + 32 hex | P2 |
-| `fabric.execution.image_digest` | C41 | DIGEST: bare 64 hex | P2 |
-| `fabric.execution.sandbox_id` | C41 | ID: `sbx-` + 32 hex | P2 |
-| `fabric.framework.name` | C15 | LABEL: pattern, exposure rule | P2 |
-| `fabric.framework.version` | C15 | LABEL: pattern, exposure rule | P2 |
-| `fabric.input.kind` | C08 | META: closed enum (section 3 type) | P1 (I), P2 (R) |
-| `fabric.input.state` | C09 | META: closed enum (section 3 type) | P2 |
-| `fabric.mcp.direction` | N22 | META: closed enum (section 3 type) | P2 (R), P4 (H) |
-| `fabric.mcp.error_kind` | N25 | META: closed enum (section 3 type) | P2 |
-| `fabric.mcp.method` | N22 | META: closed enum (section 3 type) | P2 (R), P4 (H) |
-| `fabric.mcp.protocol_version` | C27 | META: `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | P2 |
-| `fabric.mcp.server_version` | C26 | LABEL: pattern, exposure rule | P2 |
-| `fabric.memory.op` | N30 | META: closed enum (section 3 type) | P2 |
-| `fabric.memory.store_id` | N30 | ID: `mst-` + 32 hex | P2 |
-| `fabric.network.host_id` | N43 | ID: `hst-` + 32 hex | P4 |
-| `fabric.outcome.channel_kind` | D27 | META: closed enum (section 3 type) | P2 |
-| `fabric.outcome.delivery_state` | D28 | META: closed enum (section 3 type) | P2 |
-| `fabric.outcome.target_id` | D27 | ID: `tgt-` + 32 hex | P2 |
-| `fabric.process.exit_code` | N35 | META: integer range | P4 |
-| `fabric.process.pid` | N35 | META: integer range | P4 |
-| `fabric.process.signal` | N35 | META: integer range | P4 |
-| `fabric.remote.host_key_verified` | N36 | META: boolean | P4 |
-| `fabric.remote.target_id` | N36 | ID: `hst-` + 32 hex | P4 |
-| `fabric.run.agent_policy_digest` | C33 | DIGEST: bare 64 hex | P2 |
-| `fabric.run.agent_policy_id` | C33 | LABEL: pattern, exposure rule | P2 |
-| `fabric.run.agent_policy_version` | C33 | META: integer range | P2 |
-| `fabric.run.approval_policy` | C31 | META: closed enum (section 3 type) | P2 |
-| `fabric.run.execution_mode` | C30 | META: closed enum (section 3 type) | P2 |
-| `fabric.run.links` | X12 | ID: `r-` + 32 hex (array, max 16) | P1 |
-| `fabric.run.outcome` | D30 | META: closed enum (section 3 type) | P2 |
-| `fabric.run.parent_id` | X10 | ID: `r-` + 32 hex | P1 |
-| `fabric.run.permissions.count` | C32 | META: integer range | P2 |
-| `fabric.run.resumed_from` | X11 | ID: `r-` + 32 hex | P1 |
-| `fabric.run.scope_status` | S34 | META: closed enum (section 3 type) | P1 |
-| `fabric.run.stop_reason` | D30 | META: closed enum (section 3 type) | P2 |
-| `fabric.run.trigger.kind` | C01 | META: closed enum (section 3 type) | P2 |
-| `fabric.run.trigger.ref` | C02 | ID: `trg-` + 32 hex | P2 |
-| `fabric.selection.kind` | D12 | META: closed enum (section 3 type) | P3 |
-| `fabric.selection.reason` | D12 | META: closed enum (section 3 type) | P3 |
-| `fabric.side_effect.commit_basis` | D24 | META: closed enum (section 3 type) | P3 |
-| `fabric.side_effect.commit_state` | D23 | META: closed enum (section 3 type) | P3 (R), P4 (H) |
-| `fabric.side_effect.compensation_state` | D26 | META: closed enum (section 3 type) | P3 |
-| `fabric.side_effect.state` | D19 | META: closed enum (section 3 type) | P2 |
-| `fabric.step.attempt_kind` | S13 | META: closed enum (section 3 type) | P1 (I), P2 (R) |
-| `fabric.step.attempt_selected` | S16 | META: boolean | P2 |
-| `fabric.step.kind` | S01 | META: closed enum (section 3 type) | P1 |
-| `fabric.step.lifecycle_state` | S07 | META: closed enum (section 3 type) | P1 |
-| `fabric.step.parent_id` | X18 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P1 |
-| `fabric.step.status` | S08 | META: closed enum (section 3 type) | P1 |
-| `fabric.tool.execution_side` | N18 | META: closed enum (section 3 type) | P1 |
-| `fabric.turn_id` | X16 | ID: `turn-` + 32 hex | P2 |
-| `fabric.wire.first_chunk_offset_ns` | S30 | META: integer range | P1 |
-| `fabric.workflow.iteration` | S18 | META: integer range | P2 |
-| `fabric.workflow.node` | S18 | LABEL: pattern, exposure rule | P2 |
+<!-- generated:keys:begin -->
+| Key | Change | Field | Validator | Phase | Note |
+|---|---|---|---|---|---|
+| `fabric.delegation.to_agent` | changed | S22 | ID: `agt-` + 32 hex | P0-A | Admitted clear today. |
+| `fabric.file.path` | changed | N46 | never admitted; the SDK stops emitting it in pseudonymous mode | P0-A | Clear path moves to the `artifact.locator` role. |
+| `fabric.interaction.target` | changed | N58 | ID: `tgt-` + 32 hex (newly admitted) | P0-A | Decided: pseudonymise. Emitted clear today when not hashed and dropped by the Node; `fabric.interaction.target_hash` stays. |
+| `fabric.memory.key` | changed | N31 | ID: `mkey-` + 32 hex (newly admitted) | P0-A | Decided: pseudonymise. Emitted clear today and dropped by the Node; the clear key stays in the memory content roles. |
+| `fabric.session_id` | changed | X13 | ID: `sess-` + 32 hex under a pseudonymous Node; clear only when the Node is configured `identity_mode: clear` | P0-A | Admitted clear today. |
+| `fabric.user_id` | changed | X14 | ID: `usr-` + 32 hex (newly admitted; clear values rejected) | P0-A | Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted). |
+| `db.system.name` | new | N38 | LABEL: pattern, exposure rule | P4 |  |
+| `fabric.actor.id` | new | S04 | ID: `act-` + 32 hex | P1 |  |
+| `fabric.actor.type` | new | S03 | META: closed enum (field type) | P1 |  |
+| `fabric.attempt.uid` | new | X19 | ID: uuid4 | P1 (records) |  |
+| `fabric.batch.item_index` | new | S21 | META: integer range | P2 |  |
+| `fabric.build.digest` | new | C12 | DIGEST: bare 64 hex | P2 |  |
+| `fabric.cancel.state` | new | S32 | META: closed enum (field type) | P2 |  |
+| `fabric.capture.manifest_id` | new | X34 | ID: uuid4 | P1 |  |
+| `fabric.capture.manifest_seq` | new | X39 | META: integer range | P1 |  |
+| `fabric.capture.manifest_sha256` | new | X34 | DIGEST: bare 64 hex | P1 |  |
+| `fabric.capture.path` | new | X06 | META: closed enum (source_path vocabulary) | P1 (records) |  |
+| `fabric.capture.point` | new | X26 | LABEL: pattern, exposure rule | P1 |  |
+| `fabric.checkpoint.action` | new | S27 | META: closed enum (field type) | P2 |  |
+| `fabric.config.digest` | new | C13 | DIGEST: bare 64 hex | P2 |  |
+| `fabric.context.change_kind` | new | D14 | META: closed enum (field type) | P3 |  |
+| `fabric.context.token_basis` | new | D15 | META: closed enum (field type) | P3 |  |
+| `fabric.context.tokens_after` | new | D15 | META: integer range | P3 |  |
+| `fabric.context.tokens_before` | new | D15 | META: integer range | P3 |  |
+| `fabric.context.trigger` | new | D14 | META: closed enum (field type) | P3 |  |
+| `fabric.control.action_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
+| `fabric.control.authentication` | new | D11 | META: const `unverified_caller_report` | P3 |  |
+| `fabric.control.decision` | new | D04 | META: closed enum (field type) | P3 |  |
+| `fabric.control.enforced_by_fabric` | new | D11 | META: const `false` | P3 | A boolean validator would admit `true`. |
+| `fabric.control.gated_step_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
+| `fabric.control.id` | new | D01 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
+| `fabric.control.kind` | new | D02 | META: closed enum (field type) | P3 |  |
+| `fabric.control.phase` | new | D03 | META: closed enum (field type) | P3 |  |
+| `fabric.control.policy_digest` | new | D08 | DIGEST: bare 64 hex | P3 |  |
+| `fabric.control.policy_id` | new | D08 | LABEL: pattern, exposure rule | P3 |  |
+| `fabric.control.policy_version` | new | D08 | META: integer range | P3 |  |
+| `fabric.control.proof_ref` | new | D09 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
+| `fabric.control.resolves` | new | D05 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |
+| `fabric.conversation_id` | new | X15 | ID: `conv-` + 32 hex | P2 |  |
+| `fabric.db.namespace_id` | new | N38 | ID: `dbn-` + 32 hex | P4 |  |
+| `fabric.db.rows_affected` | new | N41 | META: integer range | P4 |  |
+| `fabric.db.rows_fetched` | new | N41 | META: integer range | P4 |  |
+| `fabric.db.transaction_id` | new | N42 | ID: `txn-` + 32 hex | P4 |  |
+| `fabric.delegation.state` | new | S24 | META: closed enum (field type) | P2 |  |
+| `fabric.dispatch.id` | new | S20 | ID: `dsp-` + 32 hex | P2 |  |
+| `fabric.dispatch.kind` | new | S20 | META: closed enum (field type) | P2 |  |
+| `fabric.dispatch.state` | new | S20 | META: closed enum (field type) | P2 |  |
+| `fabric.error.code` | new | S11 | META: `^[A-Za-z0-9_.-]{1,64}$` | P1 (provider) |  |
+| `fabric.error.domain` | new | S09 | META: closed enum (field type) | P1 |  |
+| `fabric.event.supersedes` | new | X03 | ID: uuid4 | P1 |  |
+| `fabric.execution.host_id` | new | C41 | ID: `hst-` + 32 hex | P2 |  |
+| `fabric.execution.image_digest` | new | C41 | DIGEST: bare 64 hex | P2 |  |
+| `fabric.execution.sandbox_id` | new | C41 | ID: `sbx-` + 32 hex | P2 |  |
+| `fabric.framework.name` | new | C15 | LABEL: pattern, exposure rule | P2 |  |
+| `fabric.framework.version` | new | C15 | LABEL: pattern, exposure rule | P2 |  |
+| `fabric.input.kind` | new | C08 | META: closed enum (field type) | P1 (I), P2 (R) |  |
+| `fabric.input.state` | new | C09 | META: closed enum (field type) | P2 |  |
+| `fabric.mcp.direction` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |
+| `fabric.mcp.error_kind` | new | N25 | META: closed enum (field type) | P2 |  |
+| `fabric.mcp.method` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |
+| `fabric.mcp.protocol_version` | new | C27 | META: `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | P2 |  |
+| `fabric.mcp.server_version` | new | C26 | LABEL: pattern, exposure rule | P2 |  |
+| `fabric.memory.op` | new | N30 | META: closed enum (field type) | P2 |  |
+| `fabric.memory.store_id` | new | N30 | ID: `mst-` + 32 hex | P2 |  |
+| `fabric.network.host_id` | new | N43 | ID: `hst-` + 32 hex | P4 |  |
+| `fabric.outcome.channel_kind` | new | D27 | META: closed enum (field type) | P2 |  |
+| `fabric.outcome.delivery_state` | new | D28 | META: closed enum (field type) | P2 |  |
+| `fabric.outcome.target_id` | new | D27 | ID: `tgt-` + 32 hex | P2 |  |
+| `fabric.process.exit_code` | new | N35 | META: integer range | P4 |  |
+| `fabric.process.pid` | new | N35 | META: integer range | P4 |  |
+| `fabric.process.signal` | new | N35 | META: integer range | P4 |  |
+| `fabric.records.heartbeat.kind` | new | X35 | META: closed enum (`periodic`, `final`) | P1 |  |
+| `fabric.records.last_sequence` | new | X35 | META: integer range | P1 |  |
+| `fabric.records.loss.count` | new | X35 | META: integer range | P1 |  |
+| `fabric.records.loss.first_sequence` | new | X35 | META: integer range | P1 |  |
+| `fabric.records.loss.last_sequence` | new | X35 | META: integer range | P1 |  |
+| `fabric.records.loss.reason` | new | X35 | META: closed enum (loss reasons (047)) | P1 |  |
+| `fabric.remote.host_key_verified` | new | N36 | META: boolean | P4 |  |
+| `fabric.remote.target_id` | new | N36 | ID: `hst-` + 32 hex | P4 |  |
+| `fabric.run.agent_policy_digest` | new | C33 | DIGEST: bare 64 hex | P2 |  |
+| `fabric.run.agent_policy_id` | new | C33 | LABEL: pattern, exposure rule | P2 |  |
+| `fabric.run.agent_policy_version` | new | C33 | META: integer range | P2 |  |
+| `fabric.run.approval_policy` | new | C31 | META: closed enum (field type) | P2 |  |
+| `fabric.run.execution_mode` | new | C30 | META: closed enum (field type) | P2 |  |
+| `fabric.run.links` | new | X12 | ID: `r-` + 32 hex (array, max 16) | P1 |  |
+| `fabric.run.outcome` | new | D30 | META: closed enum (field type) | P2 |  |
+| `fabric.run.parent_id` | new | X10 | ID: `r-` + 32 hex | P1 |  |
+| `fabric.run.permissions.count` | new | C32 | META: integer range | P2 |  |
+| `fabric.run.resumed_from` | new | X11 | ID: `r-` + 32 hex | P1 |  |
+| `fabric.run.scope_status` | new | S34 | META: closed enum (field type) | P1 |  |
+| `fabric.run.stop_reason` | new | D30 | META: closed enum (field type) | P2 |  |
+| `fabric.run.trigger.kind` | new | C01 | META: closed enum (field type) | P2 |  |
+| `fabric.run.trigger.ref` | new | C02 | ID: `trg-` + 32 hex | P2 |  |
+| `fabric.selection.kind` | new | D12 | META: closed enum (field type) | P3 |  |
+| `fabric.selection.reason` | new | D12 | META: closed enum (field type) | P3 |  |
+| `fabric.side_effect.commit_basis` | new | D24 | META: closed enum (commit_basis vocabulary) | P3 |  |
+| `fabric.side_effect.commit_state` | new | D23 | META: closed enum (field type) | P3 (R), P4 (H) |  |
+| `fabric.side_effect.compensation_state` | new | D26 | META: closed enum (field type) | P3 |  |
+| `fabric.side_effect.state` | new | D19 | META: closed enum (field type) | P2 |  |
+| `fabric.step.attempt_kind` | new | S13 | META: closed enum (field type) | P1 (I), P2 (R) |  |
+| `fabric.step.attempt_selected` | new | S16 | META: boolean | P2 |  |
+| `fabric.step.kind` | new | S01 | META: closed enum (field type) | P1 |  |
+| `fabric.step.lifecycle_state` | new | S07 | META: closed enum (field type) | P1 |  |
+| `fabric.step.parent_id` | new | X18 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P1 |  |
+| `fabric.step.status` | new | S08 | META: closed enum (field type) | P1 |  |
+| `fabric.tool.execution_side` | new | N18 | META: closed enum (field type) | P1 |  |
+| `fabric.turn_id` | new | X16 | ID: `turn-` + 32 hex | P2 |  |
+| `fabric.wire.first_chunk_offset_ns` | new | S30 | META: integer range | P1 |  |
+| `fabric.wire.store_reason` | new | X40 | META: closed enum (store_reason vocabulary) | P0-A |  |
+| `fabric.workflow.iteration` | new | S18 | META: integer range | P2 |  |
+| `fabric.workflow.node` | new | S18 | LABEL: pattern, exposure rule | P2 |  |
+<!-- generated:keys:end -->
+
+`fabric.wire.store_reason` values:
+
+<!-- generated:vocab:store_reason:begin -->
+| Value | Meaning |
+|---|---|
+| `no_store` | Metadata-only mode: no content destination configured. |
+| `missing_capture_policy` | Production profile without a capture policy (section 7.3). |
+| `missing_id_key` | Production profile without `FABRIC_WIRE_ID_KEY`. |
+| `privacy_policy` | The role's privacy mode retains no bytes. |
+| `explicit_withheld` | The explicit recorder withheld this exchange (sticky across `adopt()`). |
+| `store_failed` | The store did not accept the object. |
+| `body_cap` | A side exceeded `max_retain_bytes` or could not be split. |
+| `inflight_budget` | `max_inflight_bytes` was exhausted. |
+| `transport_incomplete` | The transport did not read the whole request body. |
+<!-- generated:vocab:store_reason:end -->
+
+`fabric.side_effect.commit_basis` values:
+
+<!-- generated:vocab:commit_basis:begin -->
+| Value | Meaning |
+|---|---|
+| `caller_assertion` | The application stated the commit state. |
+| `client_observed` | A hook observed the client-side commit or rollback call. |
+| `service_receipt` | An authoritative service receipt or feed states it. |
+| `legacy_unspecified` | A legacy record's `committed=true`, which may have been the default. |
+<!-- generated:vocab:commit_basis:end -->
 
 ### 4.3 Content roles and the Node content path (role widening)
 
 **Recommended — pending owner confirmation (decision 6).** Role widening
-is part of this spec; nothing is deferred to a "spec 050". The role table
+is part of this spec. The role table
 `contracts/coverage/v1/registry/content-roles-v1.json` is the single source
 for Python, TypeScript and the `fabriccontent` exporter (loaded like
-`model-exposure-v1.json`). Adding a role is a table row plus goldens; no
-exporter code change.
+`model-exposure-v1.json`). It lists **every** role, existing and new, with
+layer, permitted boundaries, permitted provenance, permitted media types,
+default policy, cap and phase. Adding a role is a table row plus goldens;
+no exporter code change.
 
-Changes, all in P0 (contract) and P0-A (runtime):
+Exporter semantics (P0-A), applied per record:
 
-1. Content-v2 `role` enum gains the roles below (manifest `2.0.0` →
-   `2.1.0`; content-v2 is a draft, not a public contract).
-2. Content-v2 gains: `representation: split`, `transformations:
-   extract_parts`, `links.relation: part_of`, and an optional
-   `byte_range` on `part_of` links (section 7.4).
-3. `fabriccontent` validates `role`, `boundary`, `provenance` and media
-   type per row instead of constants; admits `status` `redacted` and
-   descriptor-only `not_captured` (empty body, `status_reason` required);
-   admits the content-v2 privacy fields (`privacy_mode`, `policy_id`,
-   `policy_version`, `policy_digest`, `protection_status`, `workload_id`,
-   `transformation_id`, `transformation_version`), `attempt_id`,
-   `stream_id`, `chunk_index`, `observed_at`, `links`.
-4. The agent spool and sender carry any role in the table; a role the Node
-   refuses is a counted loss surfaced as `not_captured(destination_rejected)`.
-5. The explicit line's `byte_spool` / governed store stays supported.
-   Converging it onto `otlp/content` is optional later work and needs no
-   change to this contract.
+1. **Unknown role** → rejected (`destination_rejected`).
+2. **Boundary and provenance** must each be in the row's lists.
+3. **Media type** must match an entry of the row: an exact `type/subtype`,
+   a `type/*` wildcard, or `*` (any value passing the 047 §7 media rule).
+   `model.exchange.part` objects match on the media type of the decoded
+   part (`content_encoding: base64` records the stored form).
+4. **Size**: `stored_byte_length` ≤ the row's cap, where `max_body_bytes`
+   means the deployment's configured value (default 32 MiB, never above
+   63 MiB in node mode).
+5. **Status**: `stored`, `truncated`, `redacted` (body = transformed
+   bytes) and descriptor-only `not_captured` (empty body, `status_reason`
+   required) are admitted; any other status is rejected.
+6. **Descriptor fields** admitted in addition to today's 16: `privacy_mode`,
+   `policy_id`, `policy_version`, `policy_digest`, `protection_status`,
+   `workload_id`, `transformation_id`, `transformation_version`,
+   `attempt_id`, `stream_id`, `chunk_index`, `observed_at`, `links`.
+7. Content-v2 gains: the new roles, `representation: split`,
+   `transformations: extract_parts`, `links.relation: part_of` and an
+   optional `byte_range` on `part_of` links (section 7.4). Manifest
+   `2.0.0` → `2.1.0`; content-v2 is a draft, not a public contract.
 
-The 37 existing roles stay. New roles:
+The agent spool and sender carry any role in the table; a refused record
+is a counted loss surfaced as `not_captured(destination_rejected)`. The
+explicit line's `byte_spool` / governed store stays supported.
 
-| Role | Layer | Boundary | Provenance | Default policy | Cap | Phase | Holds |
-|---|---|---|---|---|---|---|---|
-| `model.exchange.part` | content | provider_bound | protocol, caller_reported | content | max_body_bytes | P1 | One inline media/binary part extracted from a model request or response (section 7.4). |
-| `model.output.reasoning` | content | provider_bound | caller_reported | content | 1 MiB | P1 | Reasoning as handed to an explicit recorder. Wire capture uses locators into the response instead. |
-| `actor.identity` | structure | caller | caller_reported | off | 64 KiB | P0-A | Clear identity of a user, approver or operator behind a pseudonym. |
-| `run.trigger` | context | caller | caller_reported | content | 4 MiB | P2 | Trigger payload. |
-| `run.goal` | context | caller | caller_reported | content | 1 MiB | P2 | Stated goal and constraints, as supplied. |
-| `run.input` | context | caller | caller_reported | content | 4 MiB | P2 | A mid-run input payload. |
-| `run.permissions` | context | caller | caller_reported | content | 1 MiB | P2 | Execution policy detail: allowed and denied tools, paths, hosts, scopes. |
-| `run.configuration` | context | caller | caller_reported | off | 4 MiB | P2 | Agent configuration and prompt templates, as supplied. |
-| `run.environment` | context | caller | caller_reported | off | 256 KiB | P2 | Allowlisted environment snapshot; values of non-allowlisted variables never. |
-| `run.outcome` | content | caller | caller_reported | content | max_body_bytes | P2 | The application's final output. |
-| `outcome.delivery` | decisions_effects | service | caller_reported | content | 1 MiB | P2 | Recipient, channel and delivery evidence. |
-| `step.error` | structure | caller | caller_reported, protocol | content | 256 KiB | P2 | Error message, stack and cause chain. |
-| `tool.inventory` | context | caller | caller_reported | content | 4 MiB | P2 | Tools available to an executor (set, with schemas). |
-| `agent.handoff` | structure | caller | caller_reported | content | 4 MiB | P2 | Delegation request payload. |
-| `checkpoint.state` | structure | caller | caller_reported | off | max_body_bytes | P2 | Checkpoint state, when exposed. |
-| `workflow.definition` | structure | caller | caller_reported | off | 4 MiB | P2 | Workflow or graph definition. |
-| `mcp.request` | content | tool | caller_reported, protocol | content | max_body_bytes | P2 | MCP JSON-RPC request bytes. |
-| `mcp.response` | content | tool | caller_reported, protocol | content | max_body_bytes | P2 | MCP JSON-RPC response bytes. |
-| `mcp.notification` | content | tool | protocol | content | 1 MiB | P4 | MCP notifications and server-to-client requests. |
-| `mcp.server` | context | tool | caller_reported, protocol | content | 1 MiB | P2 | Server info, capabilities and instructions from initialization. |
-| `computer.action` | content | caller | caller_reported, protocol | content | 256 KiB | P2 | An executed UI action: action, target, coordinates, typed text, navigation. |
-| `computer.snapshot` | content | caller | caller_reported, protocol | content | max_body_bytes | P2 | Screenshot, DOM or accessibility snapshot that already existed. |
-| `control.checked` | decisions_effects | service | caller_reported | content | 1 MiB | P3 | What an external control checked. |
-| `control.reason` | decisions_effects | service | caller_reported | content | 256 KiB | P3 | Reason text for a control decision. |
-| `control.approval` | decisions_effects | service | caller_reported | content | 256 KiB | P3 | Scope and duration of an approval or denial. |
-| `selection.decision` | decisions_effects | caller | caller_reported | content | 256 KiB | P3 | Candidates, selection and reason for a routing decision. |
-| `context.change` | decisions_effects | caller | caller_reported | content | max_body_bytes | P3 | Dropped items and summary of a context change. |
-| `terminal.context` | content | terminal | protocol, caller_reported | content | 64 KiB | P4 | Executable, cwd, shell flag; environment variable names only. |
-| `artifact.diff` | content | host | inferred, caller_reported | content | max_body_bytes | P4 | A diff derived from `artifact.before`/`artifact.after`. |
-| `asset.bytes` | content | caller | caller_reported, protocol | content | max_body_bytes | P5 | A file the agent saw or produced that is not otherwise a role. |
-| `media.frames` | content | provider_bound | protocol | off | max_body_bytes | P5 | Realtime frames (audio, video, events). |
-| `media.events` | content | provider_bound | protocol | content | 4 MiB | P5 | Realtime turn, interruption, gap and playback events. |
-| `media.transcript` | content | provider_bound | protocol, caller_reported | content | 4 MiB | P5 | Transcripts returned by the provider or reported. |
-
-`max_body_bytes` caps resolve to the configured value (default 32 MiB,
-section 7.4). Fixed caps above are defaults; a deployment may lower them.
+<!-- generated:roles:begin -->
+| Role | Status | Layer | Boundary | Provenance | Media types | Default policy | Cap | Phase | Holds |
+|---|---|---|---|---|---|---|---|---|---|
+| `model.request.instructions` | existing | context | caller | caller_reported | `text/plain`, `application/json` | content | max_body_bytes | built |  |
+| `model.request.messages` | existing | content | caller | caller_reported | `application/json` | content | max_body_bytes | built |  |
+| `model.request.tool_definitions` | existing | context | caller | caller_reported | `application/json` | content | 4 MiB | built |  |
+| `model.request.parameters` | existing | context | caller | caller_reported | `application/json` | content | 1 MiB | built |  |
+| `model.output.messages` | existing | content | caller | caller_reported | `application/json` | content | max_body_bytes | built |  |
+| `model.exchange.request` | existing | content | provider_bound | protocol, caller_reported | `*` | content | max_body_bytes | built |  |
+| `model.exchange.response` | existing | content | provider_bound | protocol, caller_reported | `*` | content | max_body_bytes | built |  |
+| `tool.definition` | existing | context | tool, caller | caller_reported, protocol | `application/json` | content | 1 MiB | built |  |
+| `tool.call.arguments` | existing | content | provider_bound, tool | caller_reported, protocol | `text/plain`, `application/json` | content | 4 MiB | built |  |
+| `tool.call.result` | existing | content | provider_bound, tool | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `retrieval.query` | existing | content | caller, service | caller_reported, protocol | `text/plain`, `application/json` | content | 1 MiB | built |  |
+| `retrieval.results` | existing | content | caller, service | caller_reported, protocol | `application/json` | content | max_body_bytes | built |  |
+| `memory.write.content` | existing | content | caller, service | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `memory.read.content` | existing | content | caller, service | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `side_effect.request` | existing | decisions_effects | service, caller | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `side_effect.result` | existing | decisions_effects | service, caller | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `context.file` | existing | context | host, caller | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `interaction.payload` | existing | content | caller | caller_reported | `*` | content | max_body_bytes | built |  |
+| `terminal.argv` | existing | content | terminal | protocol, caller_reported | `application/json` | content | 256 KiB | built |  |
+| `terminal.stdin` | existing | content | terminal | protocol, caller_reported | `application/octet-stream`, `text/plain` | off | max_body_bytes | built |  |
+| `terminal.stdout` | existing | content | terminal | protocol, caller_reported | `application/octet-stream`, `text/plain` | content | max_body_bytes | built |  |
+| `terminal.stderr` | existing | content | terminal | protocol, caller_reported | `application/octet-stream`, `text/plain` | content | max_body_bytes | built |  |
+| `remote.request` | existing | content | remote | caller_reported, protocol | `*` | content | 4 MiB | built |  |
+| `remote.result` | existing | content | remote | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `remote.stream` | existing | content | remote | caller_reported, protocol | `application/octet-stream`, `text/plain` | content | max_body_bytes | built |  |
+| `database.query` | existing | content | service | protocol, caller_reported | `application/sql`, `text/plain` | content | 1 MiB | built |  |
+| `database.parameters` | existing | content | service | protocol, caller_reported | `application/json` | content | 1 MiB | built |  |
+| `database.rows` | existing | content | service | protocol, caller_reported | `application/json`, `application/x-ndjson` | content | max_body_bytes | built |  |
+| `database.mutation` | existing | decisions_effects | service | protocol, caller_reported | `application/json` | content | 1 MiB | built |  |
+| `network.request` | existing | content | service | protocol, caller_reported | `*` | off | max_body_bytes | built |  |
+| `network.response` | existing | content | service | protocol, caller_reported | `*` | off | max_body_bytes | built |  |
+| `network.stream` | existing | content | service | protocol, caller_reported | `*` | off | max_body_bytes | built |  |
+| `sandbox.config` | existing | context | sandbox | caller_reported | `application/json` | content | 1 MiB | built |  |
+| `sandbox.output` | existing | content | sandbox | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `artifact.before` | existing | content | host, caller | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `artifact.after` | existing | content | host, caller | caller_reported, protocol | `*` | content | max_body_bytes | built |  |
+| `service.receipt` | existing | decisions_effects | service | native, caller_reported | `application/json` | content | 1 MiB | built |  |
+| `model.exchange.part` | new | content | provider_bound | protocol, caller_reported | `image/*`, `audio/*`, `video/*`, `application/pdf`, `application/octet-stream` | content | max_body_bytes | P1 | One inline media/binary part extracted from a model request or response (section 7.4). |
+| `model.output.reasoning` | new | content | provider_bound | caller_reported | `text/plain`, `application/json` | content | 1 MiB | P1 | Reasoning as handed to an explicit recorder. Wire capture uses locators into the response instead. |
+| `actor.identity` | new | structure | caller | caller_reported | `application/json` | off | 64 KiB | P0-A | Clear identity of a user, approver or operator behind a pseudonym. |
+| `run.trigger` | new | context | caller | caller_reported | `*` | content | 4 MiB | P2 | Trigger payload. |
+| `run.goal` | new | context | caller | caller_reported | `text/plain`, `application/json` | content | 1 MiB | P2 | Stated goal and constraints, as supplied. |
+| `run.input` | new | context | caller | caller_reported | `*` | content | 4 MiB | P2 | A mid-run input payload. |
+| `run.permissions` | new | context | caller | caller_reported | `application/json` | content | 1 MiB | P2 | Execution policy detail: allowed and denied tools, paths, hosts, scopes. |
+| `run.configuration` | new | context | caller | caller_reported | `application/json`, `text/plain`, `application/yaml` | off | 4 MiB | P2 | Agent configuration and prompt templates, as supplied. |
+| `run.environment` | new | context | caller | caller_reported | `application/json` | off | 256 KiB | P2 | Allowlisted environment snapshot; values of non-allowlisted variables never. |
+| `run.outcome` | new | content | caller | caller_reported | `*` | content | max_body_bytes | P2 | The application's final output. |
+| `outcome.delivery` | new | decisions_effects | service | caller_reported | `application/json` | content | 1 MiB | P2 | Recipient, channel and delivery evidence. |
+| `step.error` | new | structure | caller | caller_reported, protocol | `text/plain`, `application/json` | content | 256 KiB | P2 | Error message, stack and cause chain. |
+| `tool.inventory` | new | context | caller | caller_reported | `application/json` | content | 4 MiB | P2 | Tools available to an executor (set, with schemas). |
+| `agent.handoff` | new | structure | caller | caller_reported | `*` | content | 4 MiB | P2 | Delegation request payload. |
+| `checkpoint.state` | new | structure | caller | caller_reported | `*` | off | max_body_bytes | P2 | Checkpoint state, when exposed. |
+| `workflow.definition` | new | structure | caller | caller_reported | `application/json`, `application/yaml` | off | 4 MiB | P2 | Workflow or graph definition. |
+| `mcp.request` | new | content | tool | caller_reported, protocol | `application/json` | content | max_body_bytes | P2 | MCP JSON-RPC request bytes. |
+| `mcp.response` | new | content | tool | caller_reported, protocol | `application/json` | content | max_body_bytes | P2 | MCP JSON-RPC response bytes. |
+| `mcp.notification` | new | content | tool | protocol | `application/json` | content | 1 MiB | P4 | MCP notifications and server-to-client requests. |
+| `mcp.server` | new | context | tool | caller_reported, protocol | `application/json` | content | 1 MiB | P2 | Server info, capabilities and instructions from initialization. |
+| `computer.action` | new | content | caller | caller_reported, protocol | `application/json` | content | 256 KiB | P2 | An executed UI action: action, target, coordinates, typed text, navigation. |
+| `computer.snapshot` | new | content | caller | caller_reported, protocol | `image/png`, `image/jpeg`, `image/webp`, `text/html`, `application/json` | content | max_body_bytes | P2 | Screenshot, DOM or accessibility snapshot that already existed. |
+| `control.checked` | new | decisions_effects | service | caller_reported | `*` | content | 1 MiB | P3 | What an external control checked. |
+| `control.reason` | new | decisions_effects | service | caller_reported | `text/plain`, `application/json` | content | 256 KiB | P3 | Reason text for a control decision. |
+| `control.approval` | new | decisions_effects | service | caller_reported | `application/json` | content | 256 KiB | P3 | Scope and duration of an approval or denial. |
+| `selection.decision` | new | decisions_effects | caller | caller_reported | `application/json` | content | 256 KiB | P3 | Candidates, selection and reason for a routing decision. |
+| `context.change` | new | decisions_effects | caller | caller_reported | `application/json` | content | max_body_bytes | P3 | Dropped items and summary of a context change. |
+| `terminal.context` | new | content | terminal | protocol, caller_reported | `application/json` | content | 64 KiB | P4 | Executable, cwd, shell flag; environment variable names only. |
+| `artifact.diff` | new | content | host | inferred, caller_reported | `text/x-diff`, `application/json` | content | max_body_bytes | P4 | A diff derived from `artifact.before`/`artifact.after`. |
+| `asset.bytes` | new | content | caller | caller_reported, protocol | `*` | content | max_body_bytes | P5 | A file the agent saw or produced that is not otherwise a role. |
+| `media.frames` | new | content | provider_bound | protocol | `audio/*`, `video/*`, `application/octet-stream` | off | max_body_bytes | P5 | Realtime frames (audio, video, events). |
+| `media.events` | new | content | provider_bound | protocol | `application/json` | content | 4 MiB | P5 | Realtime turn, interruption, gap and playback events. |
+| `media.transcript` | new | content | provider_bound | protocol, caller_reported | `text/plain`, `application/json` | content | 4 MiB | P5 | Transcripts returned by the provider or reported. |
+| `artifact.locator` | new | content | host | caller_reported, protocol | `application/json` | content | 64 KiB | P0-A | File path and rename target behind `fabric.file.path_hash`. |
+<!-- generated:roles:end -->
 
 ### 4.4 `fabric.step-projection/v1`
 
@@ -1170,20 +1463,18 @@ projection is a verifier output, not an interchange envelope:
   application process;
 - one document per invocation: `runs[]` (run-level fields and layer
   verdicts) and `steps[]` (one entry per `attempt_id`, with `step_id`,
-  `step_kind`, aliases, source position, event ids, capture point,
-  provenance, actor, timing, lifecycle, result, links, the four layer
-  field sets and per-step layer verdicts);
-- names its inputs by digest (reconstruction report, manifests), its
-  parser version, `projection_revision`, `pseudonym_mode`, `key_id`,
-  coverage profile and `content_inline`;
+  `step_kind`, aliases, qualified source position, event ids, capture
+  point, provenance, actor, timing, lifecycle, result, links, the four
+  layer field sets and per-step layer verdicts with their reasons); an
+  inferred step has no source position and carries `derived_from` links;
+- names its inputs by digest: the reconstruction report and every manifest
+  as `{manifest_id, sha256}`; its parser version, `projection_revision`,
+  `pseudonym_mode`, `key_id`, coverage profile and `content_inline`;
 - regeneration with a newer parser produces a new revision; it never
   edits source bytes or earlier revisions.
 
 **Activity Envelope v2 stays untouched.** Its readers, fixtures and
-exports do not change. A future envelope revision may be derived from the
-projection; that is out of scope here.
-
----
+exports do not change.
 
 ## 5. Contract and extension rules
 
@@ -1195,9 +1486,11 @@ without revising this spec.
    fixed. Which fields a runtime supplies is stated by capture points and
    manifests, not by changing the contract.
 2. **Field ids are permanent.** New fields take the next free id in their
-   layer through a registry row (id, name, type, observed by, policy,
-   privacy class, req, absent status, phase, lives in, definition), a
-   golden, and — for `T` keys — a fabricguard validator in the same change.
+   layer through a registry row (id, name, type, observed by — capture-point
+   ids only —, policy, privacy class, req, absent status, phase, lives in,
+   definition), a golden, the regenerated spec blocks (`--write`), and — for
+   `T` keys — a telemetry-key row and a fabricguard validator in the same
+   change.
    A field is never renamed or reused; it is deprecated with a pointer to
    its successor.
 3. **Closed vocabularies grow by minor revision.** Statuses never grow.
@@ -1211,7 +1504,8 @@ without revising this spec.
    are never required, never satisfy a required field, and older readers
    keep them opaque. Telemetry never takes extension keys.
 5. **Adding a capture point** = a registry row (kind, runtime, versions,
-   process-global or not, activation, fields it supplies, declared
+   process-global or not, activation, `supplies` derived from the fields
+   that name it, declared
    `cannot_observe`, passivity gate id), a passivity test with a measured
    budget (section 7.1), a bypass fixture, manifest support. No layer
    field changes.
@@ -1274,60 +1568,87 @@ verdict. Profiles (registry `profiles`):
 
 ### 6.2 Layer verdicts
 
+<!-- generated:vocab:layer_verdict:begin -->
 | Value | Meaning |
 |---|---|
-| `captured_for_declared_fields` | Every required applicable field of the layer is `captured`, `absent` or `not_applicable`; the underlying bytes have an intact integrity verdict; a capture manifest covers the source epoch. |
-| `captured_with_policy_withholding` | As above, except that some required fields are `redacted` or `not_captured` with reason `privacy_policy` only. |
-| `partial` | At least one required applicable field is `not_captured` (any other reason), `truncated` or `conflict`, or the run integrity verdict is `partial`. |
-| `unverified` | A required field is `unknown`, the manifest is missing, or the run integrity verdict is `unverified`. |
-| `unsupported` | The manifest declares the capture points for this layer unsupported on this source. |
+| `captured_for_declared_fields` | Every required applicable field is in class `ok` (section 6.2). |
+| `captured_with_withholding` | Every required applicable field is `ok` or `withheld` (privacy policy, provider redaction or encryption, explicit withholding) and at least one is `withheld`. The verdict lists the withholding reasons. |
+| `partial` | At least one required applicable field is in class `gap`, or supported and unsupported required fields are mixed, or the integrity verdict is `partial`. |
+| `unsupported` | Every required applicable field is `unsupported`. |
+| `unverified` | A required field is in class `uncertain`, no manifest covers the source epoch, or the integrity verdict is `unverified`. |
+| `none_observed` | Run level only: no step of a kind the profile requires was observed (section 6.2 rule RR3). |
+<!-- generated:vocab:layer_verdict:end -->
 
-Rules (all normative; none may produce a false complete):
+The algorithm is deterministic. Inputs: the step's kind, the profile's
+`R` fields applicable to that kind (`F`), each field's class (section 2.6),
+the manifest that governs the step's sequence, and the run integrity
+verdict.
 
-1. **Per step and layer**: compute over the profile's `R` fields that are
-   applicable to the step kind.
-2. **Per run and layer**: the worst step verdict, and never better than
-   the run's integrity verdict mapping: `complete_for_declared_scope` or
-   `complete_for_observed_scopes` → no cap; `partial` → at best
-   `partial`; `unverified` → `unverified`.
-3. **Manifest required.** A source epoch without a manifest makes every
-   field it supplies `unknown` and the run `unverified`.
-4. **Absence of steps is not completeness.** If no step of a profile kind
-   was observed, the run reports that kind as `none_observed` with the
-   manifest state of its capture point. `none_observed` while the capture
-   point was `active` for the whole run window is reported as such and is
-   still never "complete": unobserved activity through an uncaptured client
-   stays possible and is named by `uncaptured_classes`.
-5. **Scopes.** A scope lost entirely before persistence leaves no trace;
-   a run with scopes is at best `complete_for_observed_scopes` (048 §6),
-   and layer verdicts inherit that bound.
-6. **Integrity versus semantics.** Intact bytes with an unsupported parser
-   pass integrity and leave fields `unsupported`; the layer verdict is
-   `unsupported` or `partial`, never complete.
-7. **Inferred values** count as `captured` for the layer verdict only when
-   `confidence: certain`; `tentative` inferences never satisfy a required
-   field.
-8. **Effects.** `D23` `committed` with basis `caller_assertion` or
-   `legacy_default` satisfies the field as *reported*; the projection
-   never upgrades it to observed or verified.
-9. **Policy withholding** is reported as
-   `captured_with_policy_withholding`, so privacy choices are never
-   confused with failures.
+**Per step and layer — decision table** (first matching row wins):
+
+| # | Condition | Verdict | Reasons reported |
+|---|---|---|---|
+| R1 | No manifest governs the step's window (missing, chain broken, or the source has none); for an inferred step, the window of the step its evidence came from | `unverified` | `source_lost` |
+| R2 | Any field in `F` is class `uncertain` | `unverified` | the fields' reasons, if any |
+| R3 | `F` is non-empty and every field in `F` is `unsupported` | `unsupported` | the unsupported reasons |
+| R4 | Any field in `F` is class `gap`, or `F` mixes `unsupported` with any other class | `partial` | the gap and unsupported reasons |
+| R5 | Any field in `F` is class `withheld` | `captured_with_withholding` | the withholding reasons |
+| R6 | Otherwise (every field `ok`, including `F` empty) | `captured_for_declared_fields` | — |
+
+Example: a required `N09` that is `redacted(provider_encrypted)` with
+every other content field `ok` gives `captured_with_withholding` with
+reason `provider_encrypted` (row R5).
+
+**Inferred steps.** A step whose existence is inferred is evaluated over
+the fields its evidence can supply: on an inferred `input` step `C08`–`C10`
+are optional and `C11` (the user message, a literal locator) is required.
+A tentative step existence is reported in the step's `provenance`,
+`method` and `confidence` and never counts toward the run's step count of
+that kind for rule RR3; its fields are classified normally, so an inferred
+step whose evidence is complete is `captured_for_declared_fields`.
+
+**Per run and layer** (first matching row wins):
+
+| # | Condition | Verdict |
+|---|---|---|
+| RR1 | Integrity verdict `unverified`, or any step verdict `unverified` | `unverified` |
+| RR2 | Run-level fields of the profile (`run_fields`) evaluated as one pseudo-step give `unverified` | `unverified` |
+| RR3 | No step and no run-level field of the profile in this layer | `none_observed` (with the manifest states of the supplying capture points) |
+| RR4 | All step verdicts and the run-level verdict are `unsupported` | `unsupported` |
+| RR5 | Integrity verdict `partial`, any verdict `partial`, or `unsupported` mixed with other verdicts | `partial` |
+| RR6 | Any verdict `captured_with_withholding` | `captured_with_withholding` |
+| RR7 | Otherwise | `captured_for_declared_fields` |
+
+Precedence, worst first: `unverified` > `partial` > `unsupported` >
+`captured_with_withholding` > `captured_for_declared_fields`;
+`none_observed` is reported alongside, never as completeness.
+
+Further rules:
+
+1. `none_observed` while the supplying capture point was `active` for the
+   whole window is still never "complete": activity through an uncaptured
+   client stays possible and is named by `uncaptured_classes`.
+2. A run with scopes is at best `complete_for_observed_scopes` for
+   integrity (048 §6), and layer verdicts inherit that bound through RR5.
+3. Intact bytes with an unsupported parser pass integrity and leave fields
+   `unsupported` (R3 or R4), never complete.
+4. `D23` `committed` with basis `caller_assertion` or `legacy_unspecified`
+   satisfies the field as *reported*; the projection never upgrades it.
+5. Policy and provider withholding are reported as
+   `captured_with_withholding`, never confused with failures.
 
 ### 6.3 Per-layer specifics
 
 | Layer | Additional rule |
 |---|---|
-| 1 Context | Model-call context (`C19`–`C22`, `C36`–`C39`) comes from the exact request; if the request side is `truncated`, these fields are `truncated(body_cap)` or `not_captured(parse_failed)`, never `absent`. `C39` `unresolved` dependencies make the step's Layer 1 verdict `partial` with reason `provider_held`. |
-| 2 Structure | `S07`/`S08` `unknown` when no end is observed; a step with start and no end is never `ok`. Inferred retries (`tentative`) never set `S13`. |
-| 3 Content | A `split` side counts as `captured` only if the skeleton and every part reassemble to `source_sha256`; a part at `part_cap` makes that part `not_captured(part_cap)` and the layer `partial`. |
+| 1 Context | Model-call context (`C19`–`C22`, `C36`–`C39`) comes from the exact request; if the request side is `truncated`, these fields are `truncated(body_cap)` or `not_captured(parse_failed)`, never `absent`. `C39` `unresolved` dependencies are class `gap` with reason `provider_held`. |
+| 2 Structure | `S07`/`S08` are `unknown` when no end is observed; a step with start and no end is never `ok`. A tentative inferred `S13` is reported (`provenance: inferred`, `confidence: tentative`) and is class `uncertain`; since `S13` is optional it never lowers a verdict. |
+| 3 Content | A `split` side counts as `captured` only if the skeleton and every part reassemble to `source_sha256` (only possible under `retain_original`, section 7.5); a part at `part_cap` is `not_captured(part_cap)`, class `gap`. |
 | 4 Decisions and effects | A control `request` without a `resolution` is reported `pending` at run end, never inferred as `allow` or `deny`. `outcome.delivery_state` stages are never inferred from each other. |
 
 The report (`fabric.run-reconstruction/v1`) keeps its integrity verdicts
 unchanged; the projection adds layer verdicts. Neither ever emits
 `verified_complete_for_declared_scope`.
-
----
 
 ## 7. Passivity and privacy rules
 
@@ -1384,16 +1705,35 @@ point marked process-global in section 2.8 is:
 
 | Profile | When | Content capture requires | If missing |
 |---|---|---|---|
-| `production` | node mode, an S3/Node destination, or `deployment.profile: production` in the capture policy | a capture policy (`FABRIC_CAPTURE_POLICY`, deployment-policy/v1) **and** `FABRIC_WIRE_ID_KEY` (≥ 16 bytes) | content capture disabled; metadata capture continues; caller-supplied ids omitted (`missing_id_key`); manifest `content_capture: disabled` + reason; one class-only warning |
-| `local` | `file://` store with no production marker | nothing; a missing key keeps v1 unkeyed labels and omits v2 ids | records and projection are marked `profile: local` and are never production-qualified |
+| `production` | node mode, or `deployment.profile: production` in the capture policy | a capture policy (`FABRIC_CAPTURE_POLICY`, deployment-policy/v1) **and** `FABRIC_WIRE_ID_KEY` (≥ 16 bytes) | content capture disabled; metadata capture continues; caller-supplied ids omitted (`missing_id_key`); manifest `content_capture: disabled` + reason; every exchange span carries `fabric.wire.store_reason` |
+| `local` | `file://` store with no production marker | nothing; the implicit `fabric.local-default` policy applies (section 2.7); a missing key keeps v1 unkeyed labels and omits v2 ids | records and projection are marked `profile: local` and are never production-qualified |
 
-The application is never blocked: neither autoload nor `install()` raises
+**Never blocked, but not silent.** Neither autoload nor `install()` raises
 for missing protection; `install()` returns a handle whose status reports
-the disabled state. Protection is applied before persistence: a
-masked-only role never reaches the spool in original form; a failed
-transformation withholds the content (`not_captured(privacy_policy)`).
-Whether the agent spool may rely on host-disk encryption is recorded in
-the capture policy (`storage.encrypted_store_required`) and the manifest.
+the disabled state. The SDK logs the disabled state (class-only text, no
+values) at **every** `install()` and again at the first matched exchange of
+each epoch. Protection is applied before persistence: a masked-only role
+never reaches the spool in original form; a failed transformation
+withholds the content (`not_captured(privacy_policy)`). Whether the store
+must be encrypted is `deployment.encrypted_store_required` in the capture
+policy, copied into the manifest.
+
+**Malformed configuration still fails at install.** Missing protection
+(no policy, no key) is not a configuration error. A malformed
+configuration is: an unreadable or schema-invalid capture policy, a key
+under 16 bytes, an invalid endpoint, node mode without tenant or spool
+directory, and every other `ValueError` that `WireConfig` raises today
+(`wire/_config.py:101,144-148`). These keep raising at explicit `install()`
+(autoload catches and logs, 047 §3). An implementer must not turn them into
+silent disablement.
+
+**Supersession of 048 §1 (node mode).** Spec 048 makes node mode depend on
+tenant, spool directory, content endpoint and traces endpoint, and only
+recommends the id key. From P0-A, node mode is the `production` profile:
+an existing node-mode deployment without a capture policy and an id key
+**stops recording content** on upgrade (metadata continues). The P0-A
+release notes, the compose preflight (048 §9) and the Helm chart must state
+this and fail their own preflight checks, never the application.
 
 ### 7.4 Body limits and typed extraction
 
@@ -1414,32 +1754,53 @@ as today.
 
 On the worker thread (never the hot path):
 
-1. Side ≤ `max_body_bytes`: stored exact, as today.
+1. Side ≤ `max_body_bytes`: stored whole, as today.
 2. Side > `max_body_bytes`, ≤ `max_retain_bytes`, parseable JSON: **typed
    extraction**. Each inline base64 part ≥ `part_min_bytes` (OpenAI
    `image_url` data URLs, `input_audio`, `file`/`input_file` data;
    Anthropic `source.data` for image and document; Responses
    `input_image`/`input_file`; generated images `b64_json`; audio output
-   `data`) is stored as its own `model.exchange.part` object holding the
-   **exact source byte range** (the base64 text), with `media_type` of the
-   decoded content, `content_encoding: base64`, a `part_of` link to the
-   side's object with `byte_range`, and its own digest. The side is stored
-   as a **skeleton**: the original bytes with those ranges removed,
-   `representation: split`, `transformations: [extract_parts]`, and the
-   full `source_sha256`. Reassembly by byte ranges reproduces the exact
-   original; the verifier checks it.
+   `data`) becomes its own `model.exchange.part` object holding the exact
+   source byte range (the base64 text), with `media_type` of the decoded
+   content and `content_encoding: base64`. The remainder is the
+   **skeleton**: the original bytes with those ranges removed. How each
+   object is then protected, digested and linked is section 7.5.
 3. A part larger than `max_body_bytes` is a descriptor-only object
-   `not_captured(part_cap)` with its digest and length; the rest of the
-   request, including all text, is still stored.
-4. A skeleton still larger than `max_body_bytes`, non-JSON bodies
-   (multipart uploads before P5) and sides above `max_retain_bytes` are
+   `not_captured(part_cap)`; the rest of the request is still stored.
+4. A skeleton still larger than `max_body_bytes`, a non-JSON body
+   (multipart uploads before P5) and a side above `max_retain_bytes` are
    `truncated(body_cap)` as today.
 
-Text is therefore never lost because of one large image. The explicit
-line's `byte_object_max_bytes` (16 MiB, `coverage_manifest.py:77`) is a
-separate limit and unchanged by this section.
+**What is promised, exactly.** The text of a request survives one or more
+large inline parts when (a) the side is at most `max_retain_bytes`
+(64 MiB), (b) the skeleton is at most `max_body_bytes` (32 MiB default),
+and (c) the side is JSON. A part above `max_body_bytes` is withheld with
+its length (and digest where 7.5 allows). A side above 64 MiB is truncated
+by whole chunks and its text may be lost. The P1 gate tests a 63 MiB
+skeleton plus descriptor against the Node's 64 MiB request cap. The
+explicit line's `byte_object_max_bytes` (16 MiB, `coverage_manifest.py:77`)
+is a separate limit and unchanged.
 
-### 7.5 Privacy rules on every path
+### 7.5 Protection and extraction compose
+
+Order on the worker: **capture → extract (split) → protect each object →
+digest per mode → link**. Protection always applies to the objects that
+are actually stored, never to a reassembled original.
+
+| Role mode | Side ≤ `max_body_bytes` | Split side (skeleton + parts) |
+|---|---|---|
+| `retain_original` | stored as is; `source_sha256` of the original | every object stored as is; skeleton `representation: split`, `transformations: [extract_parts]`, `source_sha256` of the **original body**; parts carry `part_of` links with `byte_range`; the verifier reassembles and checks `source_sha256` |
+| `redact`, `tokenize` | transformed; no `source_sha256` (content-v2 forbids it); `stored_sha256` of the transformed bytes | each object transformed independently with the role's transformation; binary parts a text transformation cannot handle are withheld (`not_captured(privacy_policy)`, descriptor only); **no original-body digest** and no `byte_range`; no reassembly claim; the side is `redacted(privacy_policy)` |
+| `metadata_only` | descriptor only; no digest of the original | descriptor per object, no bytes, no digests, no `byte_range` |
+| `omit` | nothing | nothing; no extraction is attempted |
+
+Rules: the original-body digest is computed only when the mode is
+`retain_original`; extraction never runs for `omit`; a part inherits the
+privacy mode of `model.exchange.part` in the policy, and when that role is
+absent from a configured policy the part is `omit` while the skeleton
+follows its own role (precedence, section 2.7).
+
+### 7.6 Privacy rules on every path
 
 - No content, path, URL, query, schema, prompt, argument, error message,
   header or environment value on telemetry, in logs, diagnostics, stats,
@@ -1450,8 +1811,6 @@ separate limit and unchanged by this section.
 - Credentials cannot be detected infallibly in arbitrary bodies; body
   roles are governed by the capture policy, and raw header and
   environment capture is prohibited.
-
----
 
 ## 8. Build order
 
@@ -1486,14 +1845,17 @@ fields that need no new role.
   marker keys; pseudonym v2 vectors; fabricguard validators for every new
   `T` key (admission only); retire the legacy activity v1 goldens outside
   the OSS scope (`policy_*`, `guardrail_*`, `tool_authorization_*`,
-  `escalation`, `eval_record`, `queue_judge`) to history; correct the D2
-  wording in 047.
+  `escalation`, `eval_record`, `queue_judge`) to history. (047 already
+  describes D2 as the code implements it; nothing to correct there.) The
+  registry↔spec validator and its test ship with this revision.
 - Exit: validator passes on every pinned artifact; fixtures cover unknown
   identity, empty versus absent, conflict, unsupported, extension kinds,
   tentative links, `split` reassembly, manifest states; fabricguard admits
   each new key with its validator and rejects free text; Activity v2
   fixtures and the release-boundary test unchanged.
-- Conformance: C0-1 registry ↔ schema consistency; C0-2 vocabulary
+- Conformance: C0-1 registry ↔ schema ↔ spec consistency
+  (`validate_coverage_contracts.py`: every field resolves to at least one
+  capture point, `supplies` matches, roles complete, enums equal); C0-2 vocabulary
   closure; C0-3 pseudonym vectors (v1 unchanged, v2 domain separation);
   C0-4 allowlist key-by-key; C0-5 contract tree release-qualifiable.
 
@@ -1504,15 +1866,24 @@ fields that need no new role.
   4.3); descriptor-only and `redacted` records; privacy fields; production
   profile gate (7.3); pseudonym v2 and `identity_mode` in Python
   `decision()` and TypeScript `decision.ts`; keyed `p-` ids in the
-  verifier; `actor.identity` role; audit of existing explicit-line clear
-  labels (`fabric.memory.key`, `fabric.delegation.to_agent`,
-  `fabric.interaction.target`) against the privacy classes.
+  verifier; `actor.identity` and `artifact.locator` roles; the changed
+  validators of section 4.2 (`fabric.user_id` admitted as `usr-`,
+  `fabric.session_id` as `sess-`, `fabric.delegation.to_agent` as `agt-`,
+  `fabric.memory.key` as `mkey-`, `fabric.interaction.target` as `tgt-`,
+  `fabric.file.path` no longer emitted); `fabric.wire.store_reason` on
+  exchange spans; implicit `fabric.local-default` policy; protection and
+  extraction composition (7.5); disabled-state logging at every install and
+  first exchange; 048 §1 supersession in release notes, compose preflight
+  and Helm.
 - Exit: agent → Node → customer store → resolver for each role family;
   masked-only never persists the original; failed transformation
   withholds; unknown role, cross-tenant, redirect, corrupt object,
   queue-full and store-unavailable cases leak nothing and never affect the
   application; production without policy or key disables content and
-  reports why; `identity_mode=clear` reproduces today's output.
+  reports why on every exchange span (`store_reason`); malformed
+  configuration still raises at `install()`; `identity_mode=clear`
+  reproduces today's output; a 63 MiB skeleton plus descriptor fits the
+  Node's 64 MiB request cap.
 - Conformance: C0A-1 per-role e2e; C0A-2 privacy canaries on telemetry,
   spool, logs, reports; C0A-3 profile gate matrix; C0A-4 fabricguard
   rejects clear ids under pseudonymous Node config.
@@ -1520,8 +1891,15 @@ fields that need no new role.
 **P1 — Emitters and model-call projection**
 
 - Entry: P0 exit; P0-A for `model.exchange.part`.
-- Work: `event_id` on every record class (2.4); identity block on wire
-  spans and markers; manifest record per epoch; `fabric.wire.run(run_id,
+- Work: `event_id` on every record class (2.4); **the `records` source**
+  (2.4): `SourceAllocator(component="records")`, spool kind `record`,
+  records heartbeats (`periodic`, `final`) and loss records under their
+  own keys, `fabric.capture.path`/`fabric.source.*`/`fabric.attempt.uid`
+  on every decision record and span, its manifest; minted attempt ids and
+  qualified aliases (2.3); identity block on wire spans and markers;
+  manifests on every path (wire, explicit journal, records) with `manifest_seq`, `after_source_sequence`, chain digests and
+  the per-epoch policy/key rule (2.4); `fabric.capture.manifest_seq` on
+  heartbeats; `fabric.wire.run(run_id,
   *, session_id, user_id, parent_run_id, resumed_from, links)`; scope exit
   status; `step.kind`/`actor.type`/lifecycle/status on wire spans;
   first-chunk offset; 32 MiB default, retain-by-reference and typed
@@ -1536,19 +1914,27 @@ fields that need no new role.
   70 MiB side is `truncated(body_cap)`; malformed, compressed, SSE,
   early-close, cancellation, unknown-item and unresolved-dependency
   fixtures; 047 §4.10 budgets still pass with retain-by-reference.
+- Exit (records and manifests): a run mixing wire, explicit and records
+  sources verifies per source; a sampled-out host span with a spooled copy
+  is not a gap; a dropped records spool entry is a gap; a lost trailing
+  manifest is detected from the heartbeat; the 047/048 verifier output on
+  the same inputs is unchanged (manifests and records markers ignored);
+  two retries with identical caller ids are two attempts.
 - Conformance: C1-1 event id stable across retry and re-export; C1-2
-  manifest per epoch; C1-3 projection schema; C1-4 split reassembly; C1-5
+  manifest sequencing and chain; C1-3 projection schema; C1-4 split reassembly; C1-5
   no false complete (fixtures for every rule in 6.2).
 
 **P1-A — Mixed capture and passivity qualification**
 
 - Entry: P1 exit.
 - Work: D2 ownership visible in the projection (`deferred_to_explicit`,
-  `explicit_withheld`); qualification matrix per client and version
+  `explicit_withheld`); sticky withholding (`ExplicitScope.withheld`, read
+  at `adopt()`, section 1.3); qualification matrix per client and version
   (httpx, httpx2, openai, anthropic SDKs) in the capture-point registry;
   shared passivity harness for later hooks.
 - Exit: nested and concurrent calls, explicit failure and withholding,
-  response outliving its scope, executor duplicates (both kept, linked
+  response outliving its scope (and outliving a withholding scope: sequence
+  allocated, no bytes, `store_reason=explicit_withheld`), executor duplicates (both kept, linked
   only by explicit `same_as`), fork and restart, recorder fault
   injection; results, exceptions and chunk behaviour unchanged; latency
   and memory budgets pass.
@@ -1558,7 +1944,7 @@ fields that need no new role.
 - Entry: P0-A exit; P1-A exit.
 - Work: `record_trigger`, `record_input`, `record_run_context`,
   `record_outcome`, `record_tool_inventory`, `record_ui_action`;
-  `with d.side_effect(...)` with state and timing; delegation state and
+  the new `with d.side_effect(...)` context manager and `started_at`/`ended_at` on `record_side_effect`, with state and timing; delegation state and
   payload; checkpoint action and state; workflow node and iteration;
   dispatch identity; attempt kind and selection; `step.error`;
   conversation and turn ids; MCP wrapper content roles, server version and
@@ -1664,7 +2050,7 @@ Each is applied in this spec as its recommended default.
 |---|---|---|---|
 | 1 | First-release claim | Bounded Python + TypeScript model-call capture with four-layer coverage reporting; never "all agent activity". **Recommended — pending owner confirmation.** | 1.1, 6.1, 8.2 release gate |
 | 2 | Passivity | Never waits, never alters, bounded measured overhead (047 §4.10 method). Literal zero added latency is not achievable in-process. **Recommended — pending owner confirmation.** | 7.1 |
-| 3 | Production privacy default | Production content capture requires an explicit capture policy and an id key; missing protection disables recording of content; the application is never blocked. **Recommended — pending owner confirmation.** | 2.9, 7.3 |
+| 3 | Production privacy default | Production content capture requires an explicit capture policy and an id key; missing protection disables content recording while safe metadata continues; the application is never blocked; malformed configuration still fails at install; supersedes 048 §1 for node mode. **Recommended — pending owner confirmation.** | 2.7, 2.9, 7.3 |
 | 4 | P3 control observations | In OSS, record-only, with invariants `unverified_caller_report` and `enforced_by_fabric=false`. **Recommended — pending owner confirmation.** | 1.4, 3.5, 8.2 P3 |
 | 5 | Process-global hooks | Opt-in, each with its own passivity test. **Recommended — pending owner confirmation.** | 2.8, 7.2 |
 | 6 | Content role widening | In this spec (no spec 050 dependency). **Recommended — pending owner confirmation.** | 4.3, P0/P0-A |
@@ -1673,7 +2059,7 @@ Each is applied in this spec as its recommended default.
 | 9 | TypeScript | Parallel track; manifest says `unsupported` until each TS gate passes. **Recommended — pending owner confirmation.** | 2.8, 8.2 TS track |
 | 10 | Projection home | New `fabric.step-projection/v1`; Activity Envelope v2 exports untouched. **Recommended — pending owner confirmation.** | 4.4 |
 | 11 | Cost | Downstream; Fabric records usage only. **Recommended — pending owner confirmation.** | 1.4, `D35` |
-| 12 | Body size | `max_body_bytes` 32 MiB default (Node 64 MiB request cap, 63 MiB per object in node mode) with typed extraction of image and binary parts. **Recommended — pending owner confirmation.** | 7.4 |
+| 12 | Body size | `max_body_bytes` 32 MiB default per stored object (63 MiB ceiling in node mode, Node 64 MiB request cap) and `max_retain_bytes` 64 MiB per side, with typed extraction of image and binary parts. Text survives large parts only within those bounds (7.4). **Recommended — pending owner confirmation.** | 7.4, 7.5 |
 
 ---
 
@@ -1741,7 +2127,7 @@ Each is applied in this spec as its recommended default.
 | A-P18 | 'Text and JSON only' stale | Accepted (verified) | 2.1, `N50` |
 | A-P19 | Keyed identity not guaranteed (unkeyed fallback) | Accepted | 2.9 rule 5 |
 | A-P20 | D2 described wrongly; deferral can suppress evidence | Accepted | 1.3, P1-A |
-| A-P21 | 'Headers never stored' / 'credentials never stored' imprecise | Accepted | 1.4, 7.5, `C40` |
+| A-P21 | 'Headers never stored' / 'credentials never stored' imprecise | Accepted | 1.4, 7.6, `C40` |
 | A-P22 | Frozen v1 goldens both kept and deleted; release packaging missing from gates | Accepted: retire out-of-scope v1 goldens to history (v1 not public); release gate added | P0, 8.2 release gate |
 | A-R1 | Freeze semantics, not adapter coverage | Adopted | 5.1 |
 | A-R2 | Do not mutate v2; introduce v3 | Adopted in part: v2 untouched; projection instead of v3 | 4.4, Appendix C |
@@ -1766,7 +2152,7 @@ Each is applied in this spec as its recommended default.
 | A-B9 | Release gate on exact artifacts and claims | Adopted | 8.2 release gate |
 | A-G1 | Gate: integrity versus semantic completeness | Adopted | 6.2 rule 6 |
 | A-G2 | Gate: effects not inferred from HTTP 200 / SQL success / ack | Adopted | 6.2 rule 8, `D23`, `S20` |
-| A-G3 | Gate: privacy canaries everywhere | Adopted | 7.5, C0A-2 |
+| A-G3 | Gate: privacy canaries everywhere | Adopted | 7.6, C0A-2 |
 | A-G4 | Gate: known gaps and unknown tails | Adopted | 6.2 rule 5, `X35` |
 | A-G5 | Gate: no aggregate 046 qualification | Adopted | 5.12 |
 | A-M1 | Coverage matrix incl. LangGraph, Agents SDK, CrewAI, AutoGen, A2A, serverless rows | Adopted in part: framework rows folded into architecture rows (framework adapters are optional extensions, 5.5); serverless folded into resumable/batch rows with the 6.2 rule 5 limit | 8.3 |
@@ -1872,3 +2258,43 @@ Each is applied in this spec as its recommended default.
 | Route decision phase | P3 | P2 | P3 with other decision records. |
 | Pseudonym function | domain-separated by type | one function, `FABRIC_WIRE_ID_KEY` | v2 per-type derived keys for new ids; v1 kept for `r-`/`s-`/`svc-` compatibility. |
 | TypeScript gate | qualify per Node/undici version | parallel, not a gate | both: parallel track, qualified per version. |
+
+## Appendix D — Traceability: rev-2 confirmation reviews
+
+| # | Review | Finding | Resolution | Section |
+|---|---|---|---|---|
+| R2A-B1 | Astra | Attempt identity merges retries (attempt defaulted to step_id); caller ids not namespaced | Resolved: attempt_id always Fabric-minted per physical execution; caller/imported ids become qualified aliases `<path>.<name>` = `<source_id>/<id>` | 2.3, `X17`, `X19`, `X38` |
+| R2A-B2 | Astra | Manifest sequencing unfinished; schema lacks a position; verifier would read consumed positions as gaps | Resolved: manifests never consume sequences; own `manifest_seq` counter, `after_source_sequence`, chain digest; policy/key fixed per epoch; 047/048 verifier unaffected | 2.4, `X39`, manifest schema |
+| R2A-B3 | Astra | Layer verdicts undefined for `redacted(provider_encrypted)`, mixed unsupported, precedence | Resolved: field classes + decision tables R1-R6 and RR1-RR7, explicit precedence; provider withholding is `captured_with_withholding` | 2.6, 6.2 |
+| R2A-B4 | Astra | Role table cannot drive the exporter: existing roles are names only, no media types | Resolved: every role (37 existing + 34 new) has layer, boundary, provenance, media types, default policy, cap, phase; exporter semantics specified; validator enforces completeness | 4.3, `content-roles-v1.json` |
+| R2A-B5 | Astra | Protection precedence contradictory: local needs nothing vs missing role = omit; split needs original digest vs redaction forbids it | Resolved: precedence rules with implicit `fabric.local-default`; composition table: original-body digest and reassembly only under `retain_original`, per-part protection otherwise | 2.7, 7.3, 7.5 |
+| R2A-R1 | Astra | A-V1 / A-P3 identity incomplete | Resolved with R2A-B1 | 2.3 |
+| R2A-R2 | Astra | A-O1 / A-O9 manifest sequencing and policy/key change applicability | Resolved: policy, key, identity mode, profile and limits fixed per epoch; change = new epoch | 2.4 rule 5 |
+| R2A-R3 | Astra | A-V3 / A-B2 role-table semantics missing | Resolved with R2A-B4 | 4.3 |
+| R2A-R4 | Astra | A-V6 / A-G1 coverage algorithm incomplete | Resolved with R2A-B3 | 6.2 |
+| R2A-R5 | Astra | A-O10 / A-P20 explicit withholding persistence across scope exit | Resolved: sticky `ExplicitScope.withheld` read at `adopt()`; sequence allocated, no bytes, `store_reason=explicit_withheld` | 1.3, P1-A |
+| R2A-R6 | Astra | A-P16 legacy commit attribution unrecoverable | Resolved: `legacy_unspecified` basis for legacy `true`; legacy `false` is a caller assertion | `D24`, 4.2 |
+| R2A-I1 | Astra | D2 claim too strong: `adopt()` does not consult withholding | Resolved: stated as current gap, fixed by sticky withholding | 1.3, 2.1 |
+| R2A-I2 | Astra | Legacy commit basis | Resolved | `D24` |
+| R2A-I3 | Astra | `file.path` has no storage slot | Resolved: new role `artifact.locator` | `N46`, 4.3 |
+| R2A-I4 | Astra | `prefix_break` not in method list; S13 inference contradicts 6.3 | Resolved: closed `inference_method` vocabulary includes `prefix_break`; tentative S13 is reported, class `uncertain`, optional field | 2.5, 6.3, `S13` |
+| R2A-I5 | Astra | Projection inputs lack manifest digests | Resolved: `inputs.manifests[] = {manifest_id, sha256}` | 4.4, projection schema |
+| R2A-I6 | Astra | Wrong path `storage.encrypted_store_required` | Resolved: `deployment.encrypted_store_required` | 2.7, 7.3, manifest schema |
+| R2A-D12 | Astra | Decision 12 promise false without bounds | Resolved: promise qualified by 64 MiB per side, 32 MiB per part/skeleton, JSON only | 7.4, 9 #12 |
+| R2A-C1 | Astra | Node mode = production needs explicit compatibility note | Resolved: 048 §1 supersession note | front matter, 7.3 |
+| R2F-B1 | Fable | `sdk.records` has no sequenced source | Resolved, option (a): `records` source with its own allocator, spool kind, heartbeats/final, loss records, manifest; `fabric.source.*` on decision spans; keys distinct from wire markers for 047/048 compatibility; P1 work item | 2.4, `X06`, P1 |
+| R2F-M2 | Fable | Capture points lack `supplies`; `observed_by` free text | Resolved: `observed_by` lists capture-point ids only; `supplies` derived and checked; added `fabric.self`, `install.config`, `reconstruct.infer`, `remote.ssh_wrapper`, `host.ebpf`, `host.auditd`, `delivery.receipts` | 2.8, 3, validator |
+| R2F-M3 | Fable | `fabric.user_id` missing from §4.2; validator changes untabulated; memory.key and interaction.target undecided | Resolved: changed-validator rows; memory.key and interaction.target pseudonymised (`mkey-`, `tgt-`) | 4.2, 2.9 |
+| R2F-M4 | Fable | `S31` not in manifest schema | Resolved: `chunk_boundaries_retained` added | `S31`, manifest schema |
+| R2F-M5 | Fable | Inference methods only on links; `field.method` free | Resolved: `inference_method` vocabulary; `field.method` and `link.method` use it | 2.5, schemas |
+| R2F-M6 | Fable | Non-chat model endpoints unmapped | Resolved: excluded from first-release claim; §3.7 row with P5 | 1.1, 3.7 |
+| R2F-M7 | Fable | Stale P0 item (047 D2 wording); `with d.side_effect` presented as existing | Resolved: item dropped; D20 and P2 say it is new | 8.2 P0, `D20`, P2 |
+| R2F-M8 | Fable | `source_id` not namespaced per delivery path | Resolved: projection source `<path>:<source_id>` with `path` enum | 2.4, `X06`, projection schema |
+| R2F-M9 | Fable | Inferred input steps can never be complete | Resolved: on inferred input steps C08-C10 optional, C11 required; inferred steps classified normally | 6.2, `C08` |
+| R2F-M10 | Fable | `enforced_by_fabric` validator boolean | Resolved: const `false` | 4.2, `D11` |
+| R2F-S13 | Fable | How a reported S13 reaches a wire exchange | Resolved: through the enclosing explicit or `llm_call()` step | 2.3, `S13` |
+| R2F-O1 | Fable | Node-mode behaviour change needs supersession note and louder logging | Resolved: 048 §1 supersession; disabled state logged at every install and first exchange per epoch | 7.3 |
+| R2F-O2 | Fable | No per-exchange reason for absent content | Resolved: `fabric.wire.store_reason` | `X40`, 4.2 |
+| R2F-O3 | Fable | Malformed config must still raise | Resolved: stated explicitly | 7.3 |
+| R2F-O4 | Fable | Test 63 MiB skeleton against 64 MiB Node cap | Resolved: P0-A/P1 gate | 7.4, 8.2 |
+| R2F-O5 | Fable | Semantic-cache hits and backoff unmapped (borderline) | Resolved: §3.7 row (reported only) | 3.7 |

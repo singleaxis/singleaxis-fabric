@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/schemas/fabric/coverage/v1/capture-manifest-v1.schema.json",
-  "title": "fabric.capture-manifest/v1 (draft, spec 049 rev 2)",
-  "description": "JSON form of the per-source-epoch capture manifest record (a fabric.capture_manifest span with closed attributes). Metadata only: no content, hostnames, keys or paths.",
+  "title": "fabric.capture-manifest/v1 (draft, spec 049 rev 3)",
+  "description": "JSON form of the per-source-epoch capture manifest (a fabric.capture_manifest span with closed attributes). Manifests never consume source sequences: manifest_seq is their own contiguous counter and after_source_sequence their effective position (spec 049 §2.4). The manifest digest is SHA-256 of its spec-029 canonical JSON. Metadata only.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -24,7 +24,11 @@
     "sequence_unit",
     "clock",
     "capture_points",
-    "uncaptured_classes"
+    "uncaptured_classes",
+    "path",
+    "manifest_seq",
+    "after_source_sequence",
+    "chunk_boundaries_retained"
   ],
   "properties": {
     "schema_version": {
@@ -134,7 +138,7 @@
           "properties": {
             "policy_id": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
             },
             "policy_version": {
               "type": "integer",
@@ -147,7 +151,8 @@
             "encrypted_store_required": {
               "type": "boolean"
             }
-          }
+          },
+          "description": "`encrypted_store_required` is copied from deployment-policy/v1 `deployment.encrypted_store_required`; `fabric.local-default` is the implicit local policy."
         }
       ]
     },
@@ -264,6 +269,7 @@
           },
           "kind": {
             "enum": [
+              "F",
               "W",
               "H",
               "R",
@@ -361,6 +367,44 @@
           "other_runtime"
         ]
       }
+    },
+    "path": {
+      "enum": [
+        "wire",
+        "explicit",
+        "records"
+      ]
+    },
+    "manifest_seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "after_source_sequence": {
+      "type": "integer",
+      "minimum": -1
+    },
+    "previous_manifest_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "chunk_boundaries_retained": {
+      "type": "boolean"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "manifest_seq": {
+            "minimum": 1
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "previous_manifest_sha256"
+        ]
+      }
+    }
+  ]
 }

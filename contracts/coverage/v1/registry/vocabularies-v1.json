@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 1,
+  "registry_revision": 2,
   "coverage_status": [
     {
       "value": "captured",
@@ -197,27 +197,45 @@
   ],
   "capture_point_kind": [
     {
+      "value": "F",
+      "name": "fabric",
+      "provenance": "observed",
+      "meaning": "Fabric's own records about itself (ids, sequences, manifests, loss, heartbeats); assertion origin `fabric`."
+    },
+    {
       "value": "W",
+      "name": "wire",
+      "provenance": "observed",
       "meaning": "Copies bytes already passing a qualified transport boundary."
     },
     {
       "value": "H",
+      "name": "hook",
+      "provenance": "observed",
       "meaning": "Observes an operation the application already performs (driver, protocol, process API) and values it already returns."
     },
     {
       "value": "R",
+      "name": "reported",
+      "provenance": "reported",
       "meaning": "Records facts or bytes the application passes to a Fabric API."
     },
     {
       "value": "P",
+      "name": "provider_assertion",
+      "provenance": "inherited",
       "meaning": "A literal value parsed offline from captured bytes. Inherits the provenance of the bytes (observed for W, reported for R); the provider is the assertion origin."
     },
     {
       "value": "I",
+      "name": "inference",
+      "provenance": "inferred",
       "meaning": "A deterministic offline derivation with input locators, method and parser version."
     },
     {
       "value": "S",
+      "name": "sensor",
+      "provenance": "(own record)",
       "meaning": "Host sensor or independent feed record; linked as `corroborated_by`, never upgrades the provenance of another record."
     }
   ],
@@ -562,23 +580,27 @@
   "layer_verdict": [
     {
       "value": "captured_for_declared_fields",
-      "meaning": "Every required applicable field of the layer is `captured`, `absent` or `not_applicable`; the underlying bytes have an intact integrity verdict; a capture manifest covers the source epoch."
+      "meaning": "Every required applicable field is in class `ok` (section 6.2)."
     },
     {
-      "value": "captured_with_policy_withholding",
-      "meaning": "As above, except that some required fields are `redacted` or `not_captured` with reason `privacy_policy` only."
+      "value": "captured_with_withholding",
+      "meaning": "Every required applicable field is `ok` or `withheld` (privacy policy, provider redaction or encryption, explicit withholding) and at least one is `withheld`. The verdict lists the withholding reasons."
     },
     {
       "value": "partial",
-      "meaning": "At least one required applicable field is `not_captured` (any other reason), `truncated` or `conflict`, or the run integrity verdict is `partial`."
-    },
-    {
-      "value": "unverified",
-      "meaning": "A required field is `unknown`, the manifest is missing, or the run integrity verdict is `unverified`."
+      "meaning": "At least one required applicable field is in class `gap`, or supported and unsupported required fields are mixed, or the integrity verdict is `partial`."
     },
     {
       "value": "unsupported",
-      "meaning": "The manifest declares the capture points for this layer unsupported on this source."
+      "meaning": "Every required applicable field is `unsupported`."
+    },
+    {
+      "value": "unverified",
+      "meaning": "A required field is in class `uncertain`, no manifest covers the source epoch, or the integrity verdict is `unverified`."
+    },
+    {
+      "value": "none_observed",
+      "meaning": "Run level only: no step of a kind the profile requires was observed (section 6.2 rule RR3)."
     }
   ],
   "privacy_class": [
@@ -615,6 +637,144 @@
     {
       "value": "off",
       "meaning": "Captured only when explicitly enabled for this field or role, even with content capture on."
+    }
+  ],
+  "inference_method": [
+    {
+      "value": "tool_call_id",
+      "meaning": "Tool-call id emitted in a response and consumed in a later request. Confidence `certain`."
+    },
+    {
+      "value": "previous_response_id",
+      "meaning": "Request names an earlier response. Confidence `certain`."
+    },
+    {
+      "value": "prefix_digest",
+      "meaning": "Request history continues an earlier exchange's messages (`continues`). Confidence `certain`."
+    },
+    {
+      "value": "prefix_break",
+      "meaning": "History of a continuing thread was rewritten (`context.history_rewritten`, D17). Confidence `tentative`."
+    },
+    {
+      "value": "identical_request_after_error",
+      "meaning": "Same request digest after an error (`retries`, S13). Confidence `tentative`."
+    },
+    {
+      "value": "new_user_message",
+      "meaning": "A user message in request N+1 absent from response N (inferred `input` step, C08). Confidence `tentative`."
+    },
+    {
+      "value": "excerpt_digest",
+      "meaning": "A retrieval excerpt digest appears in a later request (retrieval `consumes`, N29). Confidence `tentative`."
+    },
+    {
+      "value": "tools_digest_change",
+      "meaning": "Tools digest differs from the previous call in the thread (C23). Confidence `certain`."
+    },
+    {
+      "value": "diff_algorithm",
+      "meaning": "Diff derived from stored before/after bytes (N48). Confidence `certain`."
+    },
+    {
+      "value": "media_decoder",
+      "meaning": "Media metadata decoded from stored bytes (N52). Confidence `certain`."
+    },
+    {
+      "value": "pid_time_join",
+      "meaning": "Host-sensor record joined by PID and time (`corroborated_by`). Confidence `tentative`."
+    }
+  ],
+  "field_class": [
+    {
+      "value": "ok",
+      "meaning": "`captured` (not inferred, or inferred with `confidence: certain`), `absent`, `not_applicable`."
+    },
+    {
+      "value": "withheld",
+      "meaning": "`redacted` with reason `privacy_policy`, `provider_redacted` or `provider_encrypted`; `not_captured` with reason `privacy_policy`, `provider_summarised`, `provider_not_returned` or `explicit_withheld`."
+    },
+    {
+      "value": "gap",
+      "meaning": "`not_captured` with any other reason (including `provider_held`, `not_instrumented`, `caller_omitted`, `missing_capture_policy`, `missing_id_key`); `truncated` with any reason; `conflict`."
+    },
+    {
+      "value": "unsupported",
+      "meaning": "`unsupported` with any reason."
+    },
+    {
+      "value": "uncertain",
+      "meaning": "`unknown`; `captured` with `confidence: tentative`."
+    }
+  ],
+  "store_reason": [
+    {
+      "value": "no_store",
+      "meaning": "Metadata-only mode: no content destination configured."
+    },
+    {
+      "value": "missing_capture_policy",
+      "meaning": "Production profile without a capture policy (section 7.3)."
+    },
+    {
+      "value": "missing_id_key",
+      "meaning": "Production profile without `FABRIC_WIRE_ID_KEY`."
+    },
+    {
+      "value": "privacy_policy",
+      "meaning": "The role's privacy mode retains no bytes."
+    },
+    {
+      "value": "explicit_withheld",
+      "meaning": "The explicit recorder withheld this exchange (sticky across `adopt()`)."
+    },
+    {
+      "value": "store_failed",
+      "meaning": "The store did not accept the object."
+    },
+    {
+      "value": "body_cap",
+      "meaning": "A side exceeded `max_retain_bytes` or could not be split."
+    },
+    {
+      "value": "inflight_budget",
+      "meaning": "`max_inflight_bytes` was exhausted."
+    },
+    {
+      "value": "transport_incomplete",
+      "meaning": "The transport did not read the whole request body."
+    }
+  ],
+  "commit_basis": [
+    {
+      "value": "caller_assertion",
+      "meaning": "The application stated the commit state."
+    },
+    {
+      "value": "client_observed",
+      "meaning": "A hook observed the client-side commit or rollback call."
+    },
+    {
+      "value": "service_receipt",
+      "meaning": "An authoritative service receipt or feed states it."
+    },
+    {
+      "value": "legacy_unspecified",
+      "meaning": "A legacy record's `committed=true`, which may have been the default."
+    }
+  ],
+  "source_path": [
+    {
+      "value": "wire",
+      "meaning": "Zero-code wire capture: exchanges, run markers, manifests (allocator `wire`)."
+    },
+    {
+      "value": "explicit",
+      "meaning": "Explicit evidence line: `CallRecorder` journal (its own source)."
+    },
+    {
+      "value": "records",
+      "meaning": "SDK reporting APIs: decision records and spans (allocator `records`, from P1)."
     }
   ]
 }

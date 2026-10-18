@@ -1,8 +1,8 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 1,
+  "registry_revision": 2,
   "status": "draft",
-  "spec": "specs/049-four-layer-capture-coverage.md (revision 2)",
+  "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
     {
       "id": "fabric.profile.model-calls/v1",
@@ -93,7 +93,9 @@
       "layer": "cross_cutting",
       "name": "schema_version",
       "type": "string",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -107,7 +109,9 @@
       "layer": "cross_cutting",
       "name": "event_id",
       "type": "uuid4",
-      "observed_by": "self (every emitter)",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R",
@@ -121,7 +125,9 @@
       "layer": "cross_cutting",
       "name": "supersedes_event_id",
       "type": "uuid4",
-      "observed_by": "self (correction)",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -135,7 +141,9 @@
       "layer": "cross_cutting",
       "name": "tenant_id",
       "type": "label",
-      "observed_by": "install; Node authentication binding",
+      "observed_by": [
+        "install.config"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "R",
@@ -149,49 +157,58 @@
       "layer": "cross_cutting",
       "name": "agent_id, system_id, deployment_id, release_id, environment, workload_id",
       "type": "label",
-      "observed_by": "install (`FABRIC_*` env), explicit config",
+      "observed_by": [
+        "install.config"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "O",
       "status_if_hook_absent": "not_captured(not_configured)",
       "phase": "P1",
       "lives_in": "T existing keys, newly on wire spans and markers",
-      "definition": "Deployment identity block, validated like `service.name`."
+      "definition": "Deployment identity block, validated like `service.name`. Via `FABRIC_*` environment or explicit config."
     },
     {
       "id": "X06",
       "layer": "cross_cutting",
-      "name": "source_id, source_epoch, source_sequence",
-      "type": "s-pseudonym, int, int",
-      "observed_by": "self",
+      "name": "source_path, source_id, source_epoch, source_sequence",
+      "type": "enum wire/explicit/records; opaque id; int; int",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID/META",
       "required": "R",
       "status_if_hook_absent": "always",
-      "phase": "built",
-      "lives_in": "T `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`",
-      "definition": "Order within one producer epoch. Sequences are per source; there is no global order."
+      "phase": "built (wire, explicit), P1 (records)",
+      "lives_in": "T `fabric.capture.path`, `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`",
+      "definition": "Order within one producer epoch of one delivery path (section 2.4). The projection qualifies every source as `<path>:<source_id>`, so a wire, an explicit and a records source never collide."
     },
     {
       "id": "X07",
       "layer": "cross_cutting",
       "name": "sequence_unit",
       "type": "enum exchange/record",
-      "observed_by": "self (manifest)",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
       "status_if_hook_absent": "always",
       "phase": "P1",
       "lives_in": "M",
-      "definition": "What one sequence number counts on this source."
+      "definition": "What one sequence number counts: `exchange` on wire sources, `record` on explicit and records sources. Manifests, heartbeats and loss records never consume a sequence (section 2.4)."
     },
     {
       "id": "X08",
       "layer": "cross_cutting",
       "name": "run_id",
       "type": "r-pseudonym or generated fallback",
-      "observed_by": "run.scope; trace fallback (047 §6)",
+      "observed_by": [
+        "run.scope",
+        "wire.py.httpx"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R",
@@ -205,7 +222,9 @@
       "layer": "cross_cutting",
       "name": "scope_id",
       "type": "uuid4",
-      "observed_by": "run.scope",
+      "observed_by": [
+        "run.scope"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -219,7 +238,9 @@
       "layer": "cross_cutting",
       "name": "parent_run_id",
       "type": "r-pseudonym",
-      "observed_by": "run.scope argument",
+      "observed_by": [
+        "run.scope"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -233,7 +254,9 @@
       "layer": "cross_cutting",
       "name": "resumed_from_run_id",
       "type": "r-pseudonym",
-      "observed_by": "run.scope argument",
+      "observed_by": [
+        "run.scope"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -247,7 +270,9 @@
       "layer": "cross_cutting",
       "name": "run_links",
       "type": "list of r-pseudonym (max 16)",
-      "observed_by": "run.scope argument",
+      "observed_by": [
+        "run.scope"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -261,35 +286,43 @@
       "layer": "cross_cutting",
       "name": "session_id",
       "type": "sess-pseudonym",
-      "observed_by": "run.scope / `decision()` argument",
+      "observed_by": [
+        "run.scope",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
       "phase": "P0-A (pseudonymise), P1 (wire)",
       "lives_in": "T `fabric.session_id`",
-      "definition": "Application session across runs. Keyed pseudonym by default (decision 7)."
+      "definition": "Application session across runs. Keyed pseudonym by default (decision 7). Via `fabric.wire.run(session_id=)` or `decision(session_id=)`."
     },
     {
       "id": "X14",
       "layer": "cross_cutting",
       "name": "user_id",
       "type": "usr-pseudonym",
-      "observed_by": "run.scope / `decision()` argument",
+      "observed_by": [
+        "run.scope",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
       "phase": "P0-A",
-      "lives_in": "T `fabric.user_id`; clear only in C `actor.identity`",
-      "definition": "End user. Keyed pseudonym by default (decision 7)."
+      "lives_in": "T `fabric.user_id` (admitted in `usr-` form, P0-A); clear only in C `actor.identity`",
+      "definition": "End user. Keyed pseudonym by default (decision 7). Via `fabric.wire.run(user_id=)` or `decision(user_id=)`."
     },
     {
       "id": "X15",
       "layer": "cross_cutting",
       "name": "conversation_id",
       "type": "conv-pseudonym",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -303,7 +336,9 @@
       "layer": "cross_cutting",
       "name": "turn_id",
       "type": "turn-pseudonym",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -317,49 +352,58 @@
       "layer": "cross_cutting",
       "name": "step_id",
       "type": "opaque id",
-      "observed_by": "self (mapping rule, section 2.3)",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R",
       "status_if_hook_absent": "always",
       "phase": "P1",
       "lives_in": "T `fabric.step.id`",
-      "definition": "Logical node, stable across retries (existing `fabric.step.id` meaning). With `attempt_id` it names one physical record."
+      "definition": "Logical node, stable across retries. Fabric-minted (uuid4) when no logical id is supplied; a caller-supplied logical id (host `fabric.step.id`, explicit `operation_id`) is qualified `<path>:<source_id>:<value>`."
     },
     {
       "id": "X18",
       "layer": "cross_cutting",
       "name": "parent_step_id",
       "type": "opaque id",
-      "observed_by": "ambient Fabric context; explicit `parent_call_id`",
+      "observed_by": [
+        "fabric.self",
+        "explicit.call_recorder"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "absent (root)",
       "phase": "P1",
       "lives_in": "T `fabric.step.parent_id`",
-      "definition": "Nesting parent only. Causal edges use `links`."
+      "definition": "Nesting parent only. Causal edges use `links`. Via ambient Fabric context or explicit `parent_call_id`."
     },
     {
       "id": "X19",
       "layer": "cross_cutting",
-      "name": "attempt_id; aliases operation_id, call_id, exchange_id, decision_id",
-      "type": "opaque ids",
-      "observed_by": "explicit line; wire; decision span",
+      "name": "attempt_id",
+      "type": "uuid4",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
-      "required": "R (attempt_id)",
-      "status_if_hook_absent": "always (attempt_id)",
-      "phase": "built (sources), P1 (projection)",
-      "lives_in": "T `fabric.step.attempt_id`; existing source keys; P `aliases`",
-      "definition": "Physical attempt, unique in a projection. Source ids are kept as namespaced aliases and never reinterpreted as each other."
+      "required": "R",
+      "status_if_hook_absent": "always",
+      "phase": "built (wire, explicit), P1 (records)",
+      "lives_in": "T `fabric.wire.exchange_id` (wire), explicit `call_id`, T `fabric.attempt.uid` (records); P",
+      "definition": "Fabric-minted id of one physical execution, unique in a projection: wire `exchange_id`, explicit `call_id`, a uuid4 minted per record call on the records path. Never defaulted from `step_id` and never taken from the caller."
     },
     {
       "id": "X20",
       "layer": "cross_cutting",
       "name": "trace_id, span_id, parent_span_id",
       "type": "OTel ids",
-      "observed_by": "ambient OTel context",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -373,7 +417,11 @@
       "layer": "cross_cutting",
       "name": "links",
       "type": "list of Link",
-      "observed_by": "per link (H, R, I, S)",
+      "observed_by": [
+        "sdk.records",
+        "run.scope",
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -387,7 +435,11 @@
       "layer": "cross_cutting",
       "name": "started_at, ended_at",
       "type": "unix ns",
-      "observed_by": "W, H, R",
+      "observed_by": [
+        "wire.py.httpx",
+        "sdk.records",
+        "explicit.call_recorder"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (timed steps)",
@@ -401,7 +453,9 @@
       "layer": "cross_cutting",
       "name": "timing_basis",
       "type": "enum measured/reported/not_captured",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (timed steps)",
@@ -415,7 +469,11 @@
       "layer": "cross_cutting",
       "name": "observed_at, recorded_at",
       "type": "unix ns",
-      "observed_by": "W, H, R",
+      "observed_by": [
+        "wire.py.httpx",
+        "sdk.records",
+        "explicit.call_recorder"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -429,7 +487,9 @@
       "layer": "cross_cutting",
       "name": "clock_domain, clock_uncertainty_ns",
       "type": "enum, int",
-      "observed_by": "self (manifest)",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -443,7 +503,9 @@
       "layer": "cross_cutting",
       "name": "capture_point",
       "type": "id@version",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -457,7 +519,10 @@
       "layer": "cross_cutting",
       "name": "provenance",
       "type": "enum",
-      "observed_by": "self / parser",
+      "observed_by": [
+        "fabric.self",
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -471,7 +536,10 @@
       "layer": "cross_cutting",
       "name": "assertion_origin",
       "type": "enum",
-      "observed_by": "parser / reporter",
+      "observed_by": [
+        "reconstruct.parse",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -485,7 +553,9 @@
       "layer": "cross_cutting",
       "name": "boundary",
       "type": "content-v2 enum",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (content)",
@@ -499,7 +569,9 @@
       "layer": "cross_cutting",
       "name": "field evidence",
       "type": "Field wrapper",
-      "observed_by": "reconstruct.parse",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -513,21 +585,26 @@
       "layer": "cross_cutting",
       "name": "capture_policy_ref",
       "type": "policy_id, policy_version, policy_digest",
-      "observed_by": "install (deployment-policy/v1 document)",
+      "observed_by": [
+        "install.config"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META/DIGEST",
       "required": "R (content capture)",
       "status_if_hook_absent": "not_captured(missing_capture_policy)",
       "phase": "P0-A",
       "lives_in": "M; C descriptor `policy_*`",
-      "definition": "Recorder capture policy in force. Distinct from the agent's execution policy (C30-C33)."
+      "definition": "Recorder capture policy in force (`fabric.local-default` when none is configured in the `local` profile, section 7.3). Distinct from the agent's execution policy (C30-C33)."
     },
     {
       "id": "X32",
       "layer": "cross_cutting",
       "name": "privacy_mode, protection_status",
       "type": "content-v2 enums",
-      "observed_by": "self / explicit line",
+      "observed_by": [
+        "fabric.self",
+        "explicit.byte_boundary"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (content)",
@@ -541,7 +618,9 @@
       "layer": "cross_cutting",
       "name": "identity_mode, pseudonym_mode, key_id",
       "type": "enum, enum, kid",
-      "observed_by": "self (manifest)",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -555,35 +634,41 @@
       "layer": "cross_cutting",
       "name": "manifest_id",
       "type": "uuid4",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R",
       "status_if_hook_absent": "always",
       "phase": "P1",
-      "lives_in": "T `fabric.capture.manifest_id` on markers",
-      "definition": "Capture manifest in force (section 2.8)."
+      "lives_in": "T `fabric.capture.manifest_id`, `fabric.capture.manifest_sha256` on run markers; M",
+      "definition": "Capture manifest in force (section 2.8), named by id and SHA-256."
     },
     {
       "id": "X35",
       "layer": "cross_cutting",
       "name": "loss, heartbeat",
       "type": "loss-record/v1",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
       "status_if_hook_absent": "always",
-      "phase": "built",
-      "lives_in": "T existing",
-      "definition": "Known loss ranges and proven ends."
+      "phase": "built (wire), P1 (records)",
+      "lives_in": "T existing wire keys; T `fabric.records.*` keys on the records source",
+      "definition": "Known loss ranges and proven ends per source. The records source uses its own span names and keys so 047/048 verifiers ignore it (section 2.4)."
     },
     {
       "id": "X36",
       "layer": "cross_cutting",
       "name": "sdk_version, runtime",
       "type": "label",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -597,7 +682,9 @@
       "layer": "cross_cutting",
       "name": "delivery receipts",
       "type": "delivery/v1",
-      "observed_by": "destination / verifier",
+      "observed_by": [
+        "delivery.receipts"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID/DIGEST",
       "required": "O",
@@ -607,25 +694,77 @@
       "definition": "Spooled, accepted and durable stages. Recorder v1 does not obtain them automatically."
     },
     {
+      "id": "X38",
+      "layer": "cross_cutting",
+      "name": "aliases",
+      "type": "map",
+      "observed_by": [
+        "fabric.self"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "absent",
+      "phase": "P1",
+      "lives_in": "P",
+      "definition": "Source and caller ids kept for joins, each keyed `<path>.<name>` with value `<source_id>/<id>`: `operation_id`, caller `attempt_id`, `call_id`, `parent_call_id`, `decision_id`, `request_id`, `execution_id`, host `fabric.step.id`, host `fabric.step.attempt_id`, `span_id`. An alias never becomes an attempt or step identity."
+    },
+    {
+      "id": "X39",
+      "layer": "cross_cutting",
+      "name": "manifest_seq, after_source_sequence",
+      "type": "int, int",
+      "observed_by": [
+        "fabric.self"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R",
+      "status_if_hook_absent": "always",
+      "phase": "P1",
+      "lives_in": "M; T `fabric.capture.manifest_seq` on heartbeats",
+      "definition": "Manifest marker counter (0, 1, 2 … per epoch, contiguous) and the last source sequence allocated when the manifest took effect. A manifest governs sequences above `after_source_sequence` until the next manifest (section 2.4)."
+    },
+    {
+      "id": "X40",
+      "layer": "cross_cutting",
+      "name": "store_reason",
+      "type": "enum (section 4.2)",
+      "observed_by": [
+        "wire.py.httpx"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (when store_status is not stored)",
+      "status_if_hook_absent": "always",
+      "phase": "P0-A",
+      "lives_in": "T `fabric.wire.store_reason`",
+      "definition": "Why an exchange's content is absent or partial, on the exchange span itself, so telemetry (not only the manifest) shows it."
+    },
+    {
       "id": "C01",
       "layer": "context",
       "name": "trigger.kind",
       "type": "enum user_message/ticket/cron/alert/channel/webhook/queue/api/parent_agent/resume/other/unknown",
-      "observed_by": "R `record_trigger`",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (run root)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2",
       "lives_in": "T `fabric.run.trigger.kind`",
-      "definition": "What started the run."
+      "definition": "What started the run. Via `record_trigger`."
     },
     {
       "id": "C02",
       "layer": "context",
       "name": "trigger.ref",
       "type": "trg-pseudonym",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -639,7 +778,9 @@
       "layer": "context",
       "name": "trigger.received_at",
       "type": "unix ns",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -653,7 +794,9 @@
       "layer": "context",
       "name": "trigger.actor",
       "type": "actor ref",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -667,7 +810,9 @@
       "layer": "context",
       "name": "trigger.payload",
       "type": "bytes",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (when trigger recorded)",
@@ -681,7 +826,9 @@
       "layer": "context",
       "name": "goal",
       "type": "text",
-      "observed_by": "R (never inferred from prompts or outcome)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -695,7 +842,9 @@
       "layer": "context",
       "name": "constraints",
       "type": "text/json",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -709,21 +858,26 @@
       "layer": "context",
       "name": "input.kind",
       "type": "enum human_reply/webhook/queue_message/interrupt_resume/channel_message/api_call/other",
-      "observed_by": "R `record_input`; I (new user message, tentative)",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
-      "required": "R (input step)",
+      "required": "R (reported input step); O (inferred input step)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P1 (I), P2 (R)",
       "lives_in": "T `fabric.input.kind`",
-      "definition": "Kind of mid-run input."
+      "definition": "Kind of mid-run input. On an inferred input step `C08`-`C10` are optional and `C11` is required, so an inferred step whose evidence is complete is complete (section 6.2). Via `record_input`."
     },
     {
       "id": "C09",
       "layer": "context",
       "name": "input.state",
       "type": "enum received/consumed/rejected/withdrawn/unknown",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -737,7 +891,9 @@
       "layer": "context",
       "name": "input.target",
       "type": "step ref",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -751,7 +907,10 @@
       "layer": "context",
       "name": "input.payload",
       "type": "bytes",
-      "observed_by": "R; P (user message in next request)",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (input step)",
@@ -765,21 +924,25 @@
       "layer": "context",
       "name": "build.digest",
       "type": "digest",
-      "observed_by": "install (`FABRIC_BUILD_DIGEST`)",
+      "observed_by": [
+        "install.config"
+      ],
       "default_policy": "metadata",
       "privacy_class": "DIGEST",
       "required": "O",
       "status_if_hook_absent": "not_captured(not_configured)",
       "phase": "P2",
       "lives_in": "T `fabric.build.digest`",
-      "definition": "Code or image digest of the running agent."
+      "definition": "Code or image digest of the running agent. Via `FABRIC_BUILD_DIGEST`."
     },
     {
       "id": "C13",
       "layer": "context",
       "name": "config.digest",
       "type": "digest",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "DIGEST",
       "required": "O",
@@ -793,7 +956,9 @@
       "layer": "context",
       "name": "configuration",
       "type": "json",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -807,7 +972,10 @@
       "layer": "context",
       "name": "framework.name, framework.version",
       "type": "label",
-      "observed_by": "R; install (imported distribution versions)",
+      "observed_by": [
+        "install.config",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "O",
@@ -821,7 +989,9 @@
       "layer": "context",
       "name": "runtime.name, runtime.version",
       "type": "label",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -835,7 +1005,9 @@
       "layer": "context",
       "name": "prompt.name, prompt.version",
       "type": "label",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "O",
@@ -849,7 +1021,9 @@
       "layer": "context",
       "name": "prompt.template",
       "type": "text",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -863,7 +1037,10 @@
       "layer": "context",
       "name": "instructions",
       "type": "list of locator",
-      "observed_by": "P (wire bytes); R (explicit)",
+      "observed_by": [
+        "reconstruct.parse",
+        "explicit.call_recorder"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (model_call)",
@@ -877,7 +1054,9 @@
       "layer": "context",
       "name": "instructions.digest",
       "type": "digest",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "DIGEST",
       "required": "R (model_call)",
@@ -891,7 +1070,10 @@
       "layer": "context",
       "name": "tools_offered",
       "type": "list {name, type, description, input_schema}",
-      "observed_by": "P (wire bytes); R",
+      "observed_by": [
+        "reconstruct.parse",
+        "explicit.call_recorder"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT (names LABEL)",
       "required": "R (model_call)",
@@ -905,7 +1087,9 @@
       "layer": "context",
       "name": "tools_offered.digest, tools_offered.count",
       "type": "digest, int",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "DIGEST/META",
       "required": "R (model_call)",
@@ -919,7 +1103,9 @@
       "layer": "context",
       "name": "tools_changed",
       "type": "bool + link",
-      "observed_by": "I (digest differs from the previous call in the thread)",
+      "observed_by": [
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -933,21 +1119,27 @@
       "layer": "context",
       "name": "tool_inventory",
       "type": "list",
-      "observed_by": "R `record_tool_inventory`; `record_mcp_inventory` (built, hash-only)",
+      "observed_by": [
+        "sdk.records",
+        "mcp.wrapper"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2",
       "lives_in": "C `tool.inventory`; T `fabric.mcp.tool_count`",
-      "definition": "Tools available to the executor (not the same as offered to a model)."
+      "definition": "Tools available to the executor (not the same as offered to a model). Via `record_tool_inventory` (new) and `record_mcp_inventory` (built, hash-only)."
     },
     {
       "id": "C25",
       "layer": "context",
       "name": "mcp.server.name",
       "type": "label",
-      "observed_by": "mcp.wrapper; mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "R (mcp_call)",
@@ -961,7 +1153,10 @@
       "layer": "context",
       "name": "mcp.server.version",
       "type": "label",
-      "observed_by": "mcp.wrapper; mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "O",
@@ -975,7 +1170,10 @@
       "layer": "context",
       "name": "mcp.protocol_version",
       "type": "label YYYY-MM-DD",
-      "observed_by": "mcp.wrapper; mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (mcp_call)",
@@ -989,7 +1187,10 @@
       "layer": "context",
       "name": "mcp.transport",
       "type": "enum stdio/streamable_http/sse/other",
-      "observed_by": "mcp.wrapper; mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (mcp_call)",
@@ -1003,7 +1204,10 @@
       "layer": "context",
       "name": "mcp.server.metadata",
       "type": "json",
-      "observed_by": "mcp.wrapper; mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1017,21 +1221,25 @@
       "layer": "context",
       "name": "execution_mode",
       "type": "enum autonomous/supervised/approval_required/read_only/unknown",
-      "observed_by": "R `record_run_context`",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2",
       "lives_in": "T `fabric.run.execution_mode`",
-      "definition": "Customer's execution mode. Declared, not proof of enforcement."
+      "definition": "Customer's execution mode. Declared, not proof of enforcement. Via `record_run_context`."
     },
     {
       "id": "C31",
       "layer": "context",
       "name": "approval_policy",
       "type": "enum none/per_tool/per_side_effect/all/unknown",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1045,7 +1253,9 @@
       "layer": "context",
       "name": "permissions",
       "type": "json",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1059,7 +1269,9 @@
       "layer": "context",
       "name": "agent_policy.id, agent_policy.version, agent_policy.digest",
       "type": "label, int, digest",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META/DIGEST",
       "required": "O",
@@ -1073,7 +1285,9 @@
       "layer": "context",
       "name": "model.provider, model.api",
       "type": "label, enum",
-      "observed_by": "wire.py.httpx matcher",
+      "observed_by": [
+        "wire.py.httpx"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META",
       "required": "R (model_call)",
@@ -1087,7 +1301,9 @@
       "layer": "context",
       "name": "model.endpoint_id",
       "type": "label",
-      "observed_by": "wire matcher",
+      "observed_by": [
+        "wire.py.httpx"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "R (model_call)",
@@ -1101,7 +1317,9 @@
       "layer": "context",
       "name": "model.requested",
       "type": "label",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "R (model_call)",
@@ -1115,7 +1333,10 @@
       "layer": "context",
       "name": "model.served",
       "type": "label",
-      "observed_by": "wire.py.httpx (response)",
+      "observed_by": [
+        "wire.py.httpx",
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "R (model_call)",
@@ -1129,7 +1350,9 @@
       "layer": "context",
       "name": "model.parameters",
       "type": "json",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (model_call)",
@@ -1143,7 +1366,10 @@
       "layer": "context",
       "name": "context_dependencies",
       "type": "list {kind, provider_id, resolution}",
-      "observed_by": "P; I (resolution)",
+      "observed_by": [
+        "reconstruct.parse",
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R (model_call)",
@@ -1157,7 +1383,9 @@
       "layer": "context",
       "name": "provider_request_id",
       "type": "p-pseudonym",
-      "observed_by": "wire.py.httpx (one named response header)",
+      "observed_by": [
+        "wire.py.httpx"
+      ],
       "default_policy": "off",
       "privacy_class": "ID",
       "required": "O",
@@ -1171,7 +1399,11 @@
       "layer": "context",
       "name": "execution.host_id, execution.sandbox_id, execution.image_digest",
       "type": "hst-/sbx-pseudonym, digest",
-      "observed_by": "R; S (corroboration)",
+      "observed_by": [
+        "sdk.records",
+        "host.ebpf",
+        "host.auditd"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID/DIGEST",
       "required": "O",
@@ -1185,7 +1417,9 @@
       "layer": "context",
       "name": "environment_snapshot",
       "type": "json (allowlisted keys)",
-      "observed_by": "R allowlist only",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1199,7 +1433,10 @@
       "layer": "structure",
       "name": "step.kind",
       "type": "enum (section 2.3)",
-      "observed_by": "self / parser",
+      "observed_by": [
+        "fabric.self",
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -1213,7 +1450,9 @@
       "layer": "structure",
       "name": "step.label",
       "type": "label",
-      "observed_by": "R (existing host label)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "O",
@@ -1227,7 +1466,11 @@
       "layer": "structure",
       "name": "actor.type",
       "type": "enum (section 2.3)",
-      "observed_by": "self (agent default); R; P",
+      "observed_by": [
+        "fabric.self",
+        "sdk.records",
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -1241,7 +1484,9 @@
       "layer": "structure",
       "name": "actor.id",
       "type": "act-pseudonym",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -1255,7 +1500,9 @@
       "layer": "structure",
       "name": "actor.identity",
       "type": "text",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1269,7 +1516,9 @@
       "layer": "structure",
       "name": "actor.on_behalf_of",
       "type": "actor ref",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -1283,7 +1532,11 @@
       "layer": "structure",
       "name": "lifecycle.state",
       "type": "enum (section 2.3)",
-      "observed_by": "W; R",
+      "observed_by": [
+        "wire.py.httpx",
+        "sdk.records",
+        "explicit.call_recorder"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -1297,7 +1550,11 @@
       "layer": "structure",
       "name": "result_status",
       "type": "enum ok/error/cancelled/timeout/unknown",
-      "observed_by": "W (response state, HTTP status); R",
+      "observed_by": [
+        "wire.py.httpx",
+        "sdk.records",
+        "explicit.call_recorder"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
@@ -1311,7 +1568,10 @@
       "layer": "structure",
       "name": "error.domain",
       "type": "enum application/transport/provider/tool/recorder",
-      "observed_by": "W; R",
+      "observed_by": [
+        "wire.py.httpx",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (on error)",
@@ -1325,7 +1585,11 @@
       "layer": "structure",
       "name": "error.type",
       "type": "label (class name)",
-      "observed_by": "W; R",
+      "observed_by": [
+        "wire.py.httpx",
+        "sdk.records",
+        "explicit.call_recorder"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "R (on error)",
@@ -1339,7 +1603,10 @@
       "layer": "structure",
       "name": "error.code",
       "type": "label/int",
-      "observed_by": "W (HTTP status); P (provider error code)",
+      "observed_by": [
+        "wire.py.httpx",
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1353,7 +1620,10 @@
       "layer": "structure",
       "name": "error.message, stack, cause",
       "type": "text",
-      "observed_by": "R; P (provider error body)",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1367,21 +1637,26 @@
       "layer": "structure",
       "name": "attempt.kind",
       "type": "enum initial/retry/fallback/hedge/resume",
-      "observed_by": "R; I (retry only)",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
       "status_if_hook_absent": "unknown",
       "phase": "P1 (I), P2 (R)",
       "lives_in": "T `fabric.step.attempt_kind`",
-      "definition": "Relation to other attempts. Inference only for `retry` (identical request digest after an error, `tentative`); fallback and hedge are never inferred."
+      "definition": "Relation to other attempts. Inference is allowed only for `retry` (method `identical_request_after_error`); such a value is reported with `confidence: tentative` and never counts as captured. Fallback and hedge are never inferred. A reported value reaches a wire exchange through its enclosing explicit or `llm_call()` step (the caller never sees `exchange_id`)."
     },
     {
       "id": "S14",
       "layer": "structure",
       "name": "attempt.ordinal",
       "type": "int",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1395,7 +1670,10 @@
       "layer": "structure",
       "name": "retry.previous_attempt, retry.reason",
       "type": "link, label",
-      "observed_by": "R; I",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID/LABEL",
       "required": "O",
@@ -1409,7 +1687,9 @@
       "layer": "structure",
       "name": "attempt.selected",
       "type": "bool",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1423,7 +1703,9 @@
       "layer": "structure",
       "name": "workflow.id",
       "type": "label",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
       "required": "O",
@@ -1437,7 +1719,9 @@
       "layer": "structure",
       "name": "workflow.node, workflow.iteration",
       "type": "label, int",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META",
       "required": "R (workflow_node)",
@@ -1451,7 +1735,9 @@
       "layer": "structure",
       "name": "workflow.definition",
       "type": "json",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1465,7 +1751,9 @@
       "layer": "structure",
       "name": "dispatch.kind, dispatch.id, dispatch.state",
       "type": "enum, dsp-pseudonym, enum",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META/ID",
       "required": "O",
@@ -1479,7 +1767,9 @@
       "layer": "structure",
       "name": "batch.item_index",
       "type": "int",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1493,21 +1783,25 @@
       "layer": "structure",
       "name": "delegation.target",
       "type": "agt-pseudonym",
-      "observed_by": "R (`delegate()`)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R (delegation)",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "built (clear) / P0-A (keyed)",
+      "phase": "built (clear), P0-A (`agt-` keyed)",
       "lives_in": "T `fabric.delegation.to_agent`",
-      "definition": "Agent, run or service delegated to."
+      "definition": "Agent, run or service delegated to. Via `delegate()`."
     },
     {
       "id": "S23",
       "layer": "structure",
       "name": "delegation.protocol, delegation.depth",
       "type": "enum in_process/http/a2a/mcp/queue/framework/other, int",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1521,7 +1815,9 @@
       "layer": "structure",
       "name": "delegation.state",
       "type": "enum requested/accepted/running/returned/failed/unknown",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1535,7 +1831,9 @@
       "layer": "structure",
       "name": "delegation.payload",
       "type": "bytes",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1549,21 +1847,25 @@
       "layer": "structure",
       "name": "checkpoint.id, checkpoint.state_hash",
       "type": "label, digest",
-      "observed_by": "R (`checkpoint()`)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID/DIGEST",
       "required": "R (checkpoint)",
       "status_if_hook_absent": "not_captured(caller_omitted)",
       "phase": "built",
       "lives_in": "T `fabric.checkpoint.checkpoint_id`, `.state_hash`",
-      "definition": "Checkpoint identity."
+      "definition": "Checkpoint identity. Via `checkpoint()`."
     },
     {
       "id": "S27",
       "layer": "structure",
       "name": "checkpoint.action",
       "type": "enum save/load/resume",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (checkpoint)",
@@ -1577,7 +1879,9 @@
       "layer": "structure",
       "name": "checkpoint.state",
       "type": "bytes",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1591,7 +1895,9 @@
       "layer": "structure",
       "name": "stream.state",
       "type": "enum complete/closed_early/error/abandoned",
-      "observed_by": "wire.py.httpx",
+      "observed_by": [
+        "wire.py.httpx"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (streamed)",
@@ -1605,7 +1911,9 @@
       "layer": "structure",
       "name": "stream.first_chunk_offset_ns",
       "type": "int",
-      "observed_by": "wire.py.httpx (one clock read)",
+      "observed_by": [
+        "wire.py.httpx"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1619,13 +1927,15 @@
       "layer": "structure",
       "name": "stream.chunk_boundaries_retained",
       "type": "bool",
-      "observed_by": "self (manifest)",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R",
       "status_if_hook_absent": "always",
       "phase": "P1",
-      "lives_in": "M",
+      "lives_in": "M `chunk_boundaries_retained`",
       "definition": "Wire capture concatenates bodies: `false`. Chunk timing is not part of the record."
     },
     {
@@ -1633,7 +1943,10 @@
       "layer": "structure",
       "name": "cancellation.state, cancellation.requested_by",
       "type": "enum requested/acknowledged/expired/unknown, actor ref",
-      "observed_by": "R; W (closed_early/abandoned)",
+      "observed_by": [
+        "sdk.records",
+        "wire.py.httpx"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META/ID",
       "required": "O",
@@ -1647,7 +1960,9 @@
       "layer": "structure",
       "name": "deadline",
       "type": "unix ns",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -1661,7 +1976,9 @@
       "layer": "structure",
       "name": "scope.exit_status",
       "type": "enum ok/error/cancelled",
-      "observed_by": "run.scope (block exit)",
+      "observed_by": [
+        "run.scope"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (scope)",
@@ -1675,7 +1992,12 @@
       "layer": "content",
       "name": "model.exchange.request, model.exchange.response",
       "type": "bytes",
-      "observed_by": "wire.py.httpx; explicit.call_recorder",
+      "observed_by": [
+        "wire.py.httpx",
+        "wire.ts.undici",
+        "explicit.call_recorder",
+        "explicit.byte_boundary"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (model_call)",
@@ -1689,7 +2011,9 @@
       "layer": "content",
       "name": "model.exchange.parts",
       "type": "list of object",
-      "observed_by": "wire.py.httpx (worker extraction)",
+      "observed_by": [
+        "wire.py.httpx"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (split side)",
@@ -1703,7 +2027,10 @@
       "layer": "content",
       "name": "input.messages",
       "type": "list {index, role, parts, digest, locator}",
-      "observed_by": "P; R",
+      "observed_by": [
+        "reconstruct.parse",
+        "explicit.call_recorder"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (model_call)",
@@ -1717,7 +2044,10 @@
       "layer": "content",
       "name": "output.messages",
       "type": "list",
-      "observed_by": "P; R",
+      "observed_by": [
+        "reconstruct.parse",
+        "explicit.call_recorder"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (model_call)",
@@ -1731,8 +2061,10 @@
       "layer": "content",
       "name": "content.parts",
       "type": "list {type, media_type, sha256, byte_length, mode, locator}",
-      "observed_by": "P",
-      "default_policy": "metadata (refs)",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
       "privacy_class": "META/DIGEST",
       "required": "R (model_call)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
@@ -1745,7 +2077,9 @@
       "layer": "content",
       "name": "refusal",
       "type": "text",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1759,7 +2093,10 @@
       "layer": "content",
       "name": "finish_reasons",
       "type": "closed enum",
-      "observed_by": "wire.py.httpx; P (streams)",
+      "observed_by": [
+        "wire.py.httpx",
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (model_call)",
@@ -1773,7 +2110,9 @@
       "layer": "content",
       "name": "reasoning.format",
       "type": "enum text/summary/encrypted/redacted_marker/none",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (reasoning-capable API)",
@@ -1787,7 +2126,10 @@
       "layer": "content",
       "name": "reasoning.text",
       "type": "text",
-      "observed_by": "P; R",
+      "observed_by": [
+        "reconstruct.parse",
+        "explicit.call_recorder"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (reasoning-capable API)",
@@ -1801,7 +2143,9 @@
       "layer": "content",
       "name": "reasoning.summary",
       "type": "text",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1815,7 +2159,9 @@
       "layer": "content",
       "name": "reasoning.object",
       "type": "locator",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1829,7 +2175,9 @@
       "layer": "content",
       "name": "tool_call.id",
       "type": "p-pseudonym",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R (tool call at model boundary)",
@@ -1843,7 +2191,10 @@
       "layer": "content",
       "name": "tool_call.name, tool_call.type",
       "type": "label, enum",
-      "observed_by": "P; R",
+      "observed_by": [
+        "reconstruct.parse",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META",
       "required": "R",
@@ -1857,7 +2208,10 @@
       "layer": "content",
       "name": "tool_call.arguments",
       "type": "json",
-      "observed_by": "P; R",
+      "observed_by": [
+        "reconstruct.parse",
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R",
@@ -1871,7 +2225,9 @@
       "layer": "content",
       "name": "tool_call.result_as_fed",
       "type": "content",
-      "observed_by": "P (next request)",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (when consumed)",
@@ -1885,7 +2241,9 @@
       "layer": "content",
       "name": "tool_call.links",
       "type": "emits / consumes links",
-      "observed_by": "I (tool-call id match, `certain`)",
+      "observed_by": [
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R",
@@ -1899,21 +2257,27 @@
       "layer": "content",
       "name": "tool.execution.arguments, tool.execution.result",
       "type": "bytes",
-      "observed_by": "R (`tool_call()`, explicit line); H (P4 channels)",
+      "observed_by": [
+        "sdk.records",
+        "explicit.call_recorder"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (tool_call)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2 (R), P4 (H)",
       "lives_in": "C `tool.call.arguments`, `tool.call.result` (boundary `tool`)",
-      "definition": "What the tool actually received and returned."
+      "definition": "What the tool actually received and returned. Via `tool_call()` and the explicit line; P4 channels have their own fields."
     },
     {
       "id": "N18",
       "layer": "content",
       "name": "tool.execution_side",
       "type": "enum agent/provider/mcp_server/remote/sandbox",
-      "observed_by": "P (provider items); R",
+      "observed_by": [
+        "reconstruct.parse",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (tool_call, provider_tool_call)",
@@ -1927,7 +2291,9 @@
       "layer": "content",
       "name": "provider_tool.kind",
       "type": "enum web_search/file_search/code_interpreter/computer/image_generation/mcp/other",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (provider_tool_call)",
@@ -1941,7 +2307,9 @@
       "layer": "content",
       "name": "provider_tool.status",
       "type": "enum requested/in_progress/reported_completed/reported_failed/unknown",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (provider_tool_call)",
@@ -1955,7 +2323,9 @@
       "layer": "content",
       "name": "provider_tool.inputs, outputs, citations, files",
       "type": "locators",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -1969,7 +2339,10 @@
       "layer": "content",
       "name": "mcp.method, mcp.direction",
       "type": "label (closed list + other), enum client_to_server/server_to_client",
-      "observed_by": "mcp.wrapper (tools/call, tools/list); mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (mcp_call)",
@@ -1983,7 +2356,9 @@
       "layer": "content",
       "name": "mcp.session_id, mcp.jsonrpc_id",
       "type": "keyed pseudonyms",
-      "observed_by": "mcp.client",
+      "observed_by": [
+        "mcp.client"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -1997,7 +2372,10 @@
       "layer": "content",
       "name": "mcp.request, mcp.response, mcp.notification",
       "type": "bytes",
-      "observed_by": "mcp.wrapper; mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (mcp_call)",
@@ -2011,7 +2389,10 @@
       "layer": "content",
       "name": "mcp.error.kind",
       "type": "enum protocol/tool",
-      "observed_by": "mcp.wrapper; mcp.client",
+      "observed_by": [
+        "mcp.wrapper",
+        "mcp.client"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (on error)",
@@ -2025,21 +2406,26 @@
       "layer": "content",
       "name": "retrieval.query, retrieval.filters",
       "type": "bytes/json",
-      "observed_by": "R (`record_retrieval`, built); H (P4 vector stores)",
+      "observed_by": [
+        "sdk.records",
+        "http.nonmodel"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (retrieval)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "built (query), P2 (filters)",
       "lives_in": "C `retrieval.query`",
-      "definition": "Query text or vector and filters."
+      "definition": "Query text or vector and filters. Via `record_retrieval` (built)."
     },
     {
       "id": "N27",
       "layer": "content",
       "name": "retrieval.top_k, retrieval.index_id, retrieval.result_count",
       "type": "int, label, int",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META/LABEL",
       "required": "O",
@@ -2053,7 +2439,10 @@
       "layer": "content",
       "name": "retrieval.results",
       "type": "list {doc_id, chunk_id, version, title, excerpt, score, score_kind, rank, source}",
-      "observed_by": "R; H (P4)",
+      "observed_by": [
+        "sdk.records",
+        "http.nonmodel"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (retrieval)",
@@ -2067,7 +2456,9 @@
       "layer": "content",
       "name": "retrieval.used_in",
       "type": "consumes link",
-      "observed_by": "I (excerpt digest appears in a later request, `tentative`)",
+      "observed_by": [
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -2081,27 +2472,33 @@
       "layer": "content",
       "name": "memory.op, memory.store, memory.version, memory.ttl",
       "type": "enum read/write/delete/search/compare_and_swap, keyed id, int, int",
-      "observed_by": "R (`remember`/`recall`/`forget`, built); H (P4)",
+      "observed_by": [
+        "sdk.records",
+        "http.nonmodel",
+        "db.dbapi"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META/ID",
       "required": "R (memory)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2",
       "lives_in": "T `fabric.memory.op`, `fabric.memory.store_id`; existing `fabric.memory.*` keys kept",
-      "definition": "Memory operation."
+      "definition": "Memory operation. Via `remember`/`recall`/`forget` (built)."
     },
     {
       "id": "N31",
       "layer": "content",
       "name": "memory.key, memory.value",
       "type": "bytes",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
-      "privacy_class": "CONTENT (key hashed on T)",
+      "privacy_class": "CONTENT (key as `mkey-` pseudonym on T)",
       "required": "R (memory)",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "built",
-      "lives_in": "C `memory.read.content`, `memory.write.content`",
+      "phase": "built (content), P0-A (key pseudonym)",
+      "lives_in": "C `memory.read.content`, `memory.write.content`; T `fabric.memory.key` in `mkey-` form (P0-A)",
       "definition": "Key and value read or written."
     },
     {
@@ -2109,7 +2506,11 @@
       "layer": "content",
       "name": "terminal.argv, terminal.context",
       "type": "bytes",
-      "observed_by": "exec.subprocess; exec.audit; R adapters (spec 040)",
+      "observed_by": [
+        "exec.subprocess",
+        "exec.audit",
+        "explicit.byte_boundary"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (terminal)",
@@ -2123,21 +2524,27 @@
       "layer": "content",
       "name": "terminal.stdin",
       "type": "bytes",
-      "observed_by": "R; exec.subprocess (`communicate(input=)`)",
+      "observed_by": [
+        "exec.subprocess",
+        "explicit.byte_boundary"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(hook_disabled)",
       "phase": "P4",
       "lives_in": "C `terminal.stdin`",
-      "definition": "Input bytes the caller passed."
+      "definition": "Input bytes the caller passed. Via `communicate(input=)`."
     },
     {
       "id": "N34",
       "layer": "content",
       "name": "terminal.stdout, terminal.stderr",
       "type": "bytes",
-      "observed_by": "exec.subprocess (return values only); R",
+      "observed_by": [
+        "exec.subprocess",
+        "explicit.byte_boundary"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (terminal)",
@@ -2151,7 +2558,9 @@
       "layer": "content",
       "name": "terminal.exit_code, terminal.signal, terminal.pid",
       "type": "int",
-      "observed_by": "exec.subprocess",
+      "observed_by": [
+        "exec.subprocess"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (terminal)",
@@ -2165,7 +2574,9 @@
       "layer": "content",
       "name": "remote.target, remote.host_key_verified",
       "type": "hst-pseudonym, bool",
-      "observed_by": "R wrapper (spec 041)",
+      "observed_by": [
+        "remote.ssh_wrapper"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID/META",
       "required": "R (remote_exec)",
@@ -2179,7 +2590,9 @@
       "layer": "content",
       "name": "remote.request, remote.result, remote.stream",
       "type": "bytes",
-      "observed_by": "R wrapper",
+      "observed_by": [
+        "remote.ssh_wrapper"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (remote_exec)",
@@ -2193,7 +2606,10 @@
       "layer": "content",
       "name": "db.system, db.namespace",
       "type": "label, keyed id",
-      "observed_by": "db.dbapi; R",
+      "observed_by": [
+        "db.dbapi",
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/ID",
       "required": "R (database)",
@@ -2207,7 +2623,10 @@
       "layer": "content",
       "name": "db.statement, db.parameters",
       "type": "bytes",
-      "observed_by": "db.dbapi; R",
+      "observed_by": [
+        "db.dbapi",
+        "explicit.call_recorder"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (database)",
@@ -2221,21 +2640,25 @@
       "layer": "content",
       "name": "db.rows",
       "type": "bytes",
-      "observed_by": "db.dbapi (`fetch*` return values)",
+      "observed_by": [
+        "db.dbapi"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(not_exposed) for rows not fetched",
       "phase": "P4",
       "lives_in": "C `database.rows`",
-      "definition": "Rows the caller actually fetched."
+      "definition": "Rows the caller actually fetched. Via `fetch*` return values."
     },
     {
       "id": "N41",
       "layer": "content",
       "name": "db.rows_fetched, db.rows_affected",
       "type": "int (-1 = unknown)",
-      "observed_by": "db.dbapi",
+      "observed_by": [
+        "db.dbapi"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (database)",
@@ -2249,7 +2672,9 @@
       "layer": "content",
       "name": "db.transaction_id",
       "type": "keyed id",
-      "observed_by": "db.dbapi",
+      "observed_by": [
+        "db.dbapi"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -2263,7 +2688,10 @@
       "layer": "content",
       "name": "http.method, http.status, http.host",
       "type": "enum, int, hst-pseudonym",
-      "observed_by": "http.nonmodel; explicit.final_http",
+      "observed_by": [
+        "http.nonmodel",
+        "explicit.final_http"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META/ID",
       "required": "R (network)",
@@ -2277,7 +2705,10 @@
       "layer": "content",
       "name": "http.target, http.request_body, http.response_body, http.redirects",
       "type": "bytes",
-      "observed_by": "http.nonmodel (allowlisted hosts); explicit.final_http",
+      "observed_by": [
+        "http.nonmodel",
+        "explicit.final_http"
+      ],
       "default_policy": "off",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2291,35 +2722,43 @@
       "layer": "content",
       "name": "file.operation, file.path_hash, file.byte_range",
       "type": "enum open/read/write/append/truncate/rename/delete/stat/create, digest, range",
-      "observed_by": "R (`record_file_access`, built); file.audit (P4)",
+      "observed_by": [
+        "sdk.records",
+        "file.audit"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META/DIGEST",
       "required": "R (file)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "built (R), P4 (H)",
       "lives_in": "T `fabric.file.operation`, `fabric.file.path_hash`",
-      "definition": "An open is not a read."
+      "definition": "An open is not a read. Via `record_file_access` (built)."
     },
     {
       "id": "N46",
       "layer": "content",
       "name": "file.path",
       "type": "text",
-      "observed_by": "R; file.audit",
+      "observed_by": [
+        "sdk.records",
+        "file.audit"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(hook_disabled)",
-      "phase": "built",
-      "lives_in": "C `artifact.before`/`after` descriptor; never clear on T by default",
-      "definition": "Path."
+      "phase": "built (R, clear on T), P0-A (role)",
+      "lives_in": "C `artifact.locator`",
+      "definition": "Path and, for renames, the target path. Telemetry carries only `fabric.file.path_hash`; the clear path moves to the `artifact.locator` role (P0-A)."
     },
     {
       "id": "N47",
       "layer": "content",
       "name": "file.before, file.after",
       "type": "bytes",
-      "observed_by": "R adapters (spec 040); P4 adapters",
+      "observed_by": [
+        "explicit.byte_boundary"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2333,7 +2772,10 @@
       "layer": "content",
       "name": "file.diff",
       "type": "bytes",
-      "observed_by": "I (offline from before/after); R",
+      "observed_by": [
+        "reconstruct.infer",
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2347,7 +2789,10 @@
       "layer": "content",
       "name": "file.existence_before, file.existence_after",
       "type": "enum exists/absent/unknown",
-      "observed_by": "R; file.audit",
+      "observed_by": [
+        "sdk.records",
+        "file.audit"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -2361,7 +2806,9 @@
       "layer": "content",
       "name": "asset",
       "type": "object {media_type, sha256, byte_length, mode}",
-      "observed_by": "R; H (P5)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2375,7 +2822,10 @@
       "layer": "content",
       "name": "asset.reference",
       "type": "locator",
-      "observed_by": "P (URLs, provider file ids in model bytes); R",
+      "observed_by": [
+        "reconstruct.parse",
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2389,7 +2839,9 @@
       "layer": "content",
       "name": "asset.media_metadata",
       "type": "dimensions, pages, duration, codec",
-      "observed_by": "I (decoder on stored bytes)",
+      "observed_by": [
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -2403,7 +2855,9 @@
       "layer": "content",
       "name": "computer.requested_action",
       "type": "json",
-      "observed_by": "P (provider computer-use items)",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (ui_action from provider)",
@@ -2417,21 +2871,28 @@
       "layer": "content",
       "name": "computer.executed_action",
       "type": "json",
-      "observed_by": "R `record_ui_action` (P2); ui.automation (P5)",
+      "observed_by": [
+        "sdk.records",
+        "ui.automation"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (ui_action executed)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2 (R), P5 (H)",
       "lives_in": "C `computer.action`",
-      "definition": "Action, target, frame, coordinate system, typed text, navigation URL."
+      "definition": "Action, target, frame, coordinate system, typed text, navigation URL. Via `record_ui_action` (new, P2)."
     },
     {
       "id": "N55",
       "layer": "content",
       "name": "computer.snapshot",
       "type": "bytes",
-      "observed_by": "P (screenshots sent back to the model); R; ui.automation",
+      "observed_by": [
+        "reconstruct.parse",
+        "sdk.records",
+        "ui.automation"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2445,7 +2906,9 @@
       "layer": "content",
       "name": "media.track",
       "type": "id, direction, codec, sample_rate",
-      "observed_by": "rt.websocket",
+      "observed_by": [
+        "rt.websocket"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (media_stream)",
@@ -2459,77 +2922,90 @@
       "layer": "content",
       "name": "media.frames, media.events, media.transcript",
       "type": "bytes",
-      "observed_by": "rt.websocket; R",
-      "default_policy": "off (frames), content (events, transcript)",
+      "observed_by": [
+        "rt.websocket",
+        "sdk.records"
+      ],
+      "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (media_stream)",
       "status_if_hook_absent": "unsupported until P5",
       "phase": "P5",
       "lives_in": "C `media.*`",
-      "definition": "Frames, turn and interruption events, gaps, playback acknowledgments, transcripts."
+      "definition": "Frames, turn and interruption events, gaps, playback acknowledgments, transcripts. Frames follow the `media.frames` role default `off`; events and transcripts default to `content`."
     },
     {
       "id": "N58",
       "layer": "content",
       "name": "application_message",
       "type": "bytes",
-      "observed_by": "R (`record_interaction`, built metadata)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (message)",
       "status_if_hook_absent": "not_captured(caller_omitted)",
       "phase": "P2",
-      "lives_in": "C `interaction.payload`",
-      "definition": "Agent-to-agent or app-to-user message that is not a model exchange."
+      "lives_in": "C `interaction.payload`; T `fabric.interaction.target` in `tgt-` form (P0-A)",
+      "definition": "Agent-to-agent or app-to-user message that is not a model exchange. Via `record_interaction` (built, metadata)."
     },
     {
       "id": "N59",
       "layer": "content",
       "name": "output.payload",
       "type": "bytes",
-      "observed_by": "R `record_outcome`",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "R (outcome)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2",
       "lives_in": "C `run.outcome`",
-      "definition": "What the application emitted, after any post-processing."
+      "definition": "What the application emitted, after any post-processing. Via `record_outcome`."
     },
     {
       "id": "N60",
       "layer": "content",
       "name": "embedding.input, embedding.dimensions",
       "type": "locator, int",
-      "observed_by": "P",
-      "default_policy": "content (input), metadata (dims)",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "content",
       "privacy_class": "CONTENT/META",
       "required": "R (embedding)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P1",
       "lives_in": "P",
-      "definition": "Embedded input; vectors are not copied into the projection."
+      "definition": "Embedded input; vectors are not copied into the projection. The dimension count is metadata."
     },
     {
       "id": "D01",
       "layer": "decisions_effects",
       "name": "control.id",
       "type": "opaque id",
-      "observed_by": "R `record_control`",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R (control)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P3",
       "lives_in": "T `fabric.control.id`",
-      "definition": "One control observation."
+      "definition": "One control observation. Via `record_control`."
     },
     {
       "id": "D02",
       "layer": "decisions_effects",
       "name": "control.kind",
       "type": "enum guardrail/policy/permission_request/approval/rate_limit/budget/other",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (control)",
@@ -2543,7 +3019,9 @@
       "layer": "decisions_effects",
       "name": "control.phase",
       "type": "enum request/resolution/revocation/observation",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (control)",
@@ -2557,7 +3035,9 @@
       "layer": "decisions_effects",
       "name": "control.decision",
       "type": "enum allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (control)",
@@ -2571,7 +3051,9 @@
       "layer": "decisions_effects",
       "name": "control.resolves",
       "type": "link",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "R (resolution)",
@@ -2585,7 +3067,9 @@
       "layer": "decisions_effects",
       "name": "control.gated_step, control.action_id",
       "type": "step ref, opaque id",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -2599,7 +3083,9 @@
       "layer": "decisions_effects",
       "name": "control.decided_by",
       "type": "actor ref",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -2613,7 +3099,9 @@
       "layer": "decisions_effects",
       "name": "control.policy_id, policy_version, policy_digest",
       "type": "label, int, digest",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META/DIGEST",
       "required": "O",
@@ -2627,7 +3115,9 @@
       "layer": "decisions_effects",
       "name": "control.proof_ref",
       "type": "opaque id",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
@@ -2641,7 +3131,9 @@
       "layer": "decisions_effects",
       "name": "control.checked, control.reason, control.approval",
       "type": "bytes",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2654,8 +3146,10 @@
       "id": "D11",
       "layer": "decisions_effects",
       "name": "control.authentication, control.enforced_by_fabric",
-      "type": "const unverified_caller_report, const false",
-      "observed_by": "self",
+      "type": "const `unverified_caller_report`; const `false`",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (control)",
@@ -2669,21 +3163,25 @@
       "layer": "decisions_effects",
       "name": "selection.kind, selection.reason",
       "type": "enum model_route/tool_choice/agent_route/branch/fallback/other; enum error/cost/latency/policy/capability/quality/availability/other/unknown",
-      "observed_by": "R (never inferred)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (selection)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P3",
       "lives_in": "T `fabric.selection.kind`, `fabric.selection.reason`",
-      "definition": "An exposed routing choice and its category."
+      "definition": "An exposed routing choice and its category. Via `record_selection`."
     },
     {
       "id": "D13",
       "layer": "decisions_effects",
       "name": "selection.decision",
       "type": "json",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2697,21 +3195,25 @@
       "layer": "decisions_effects",
       "name": "context_change.kind, context_change.trigger",
       "type": "enum append/remove/replace/truncate/compact/summarise/reset/switch; enum token_limit/turn_limit/time/manual/policy/other/unknown",
-      "observed_by": "R `record_context_change`",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (context_change)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P3",
       "lives_in": "T `fabric.context.change_kind`, `fabric.context.trigger`",
-      "definition": "Explicit context change."
+      "definition": "Explicit context change. Via `record_context_change`."
     },
     {
       "id": "D15",
       "layer": "decisions_effects",
       "name": "context_change.tokens_before, tokens_after, token_basis",
       "type": "int, int, enum measured/estimated",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -2725,7 +3227,9 @@
       "layer": "decisions_effects",
       "name": "context_change.affected",
       "type": "bytes",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2739,35 +3243,41 @@
       "layer": "decisions_effects",
       "name": "context.history_rewritten",
       "type": "inferred event",
-      "observed_by": "I (method `prefix_break`)",
+      "observed_by": [
+        "reconstruct.infer"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
       "status_if_hook_absent": "unknown",
       "phase": "P1",
       "lives_in": "P",
-      "definition": "Inferred only. Never labelled compaction: shared prefixes also arise from forks and parallel calls."
+      "definition": "Inferred only, method `prefix_break`, `confidence: tentative`. Never labelled compaction: shared prefixes also arise from forks and parallel calls."
     },
     {
       "id": "D18",
       "layer": "decisions_effects",
       "name": "effect.id, type, operation, target_system, target, idempotency_key",
       "type": "existing side-effect fields",
-      "observed_by": "R (`record_side_effect`)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID/LABEL/DIGEST",
       "required": "R (side_effect)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "built",
       "lives_in": "T existing `fabric.side_effect.*`",
-      "definition": "The effect and its target."
+      "definition": "The effect and its target. Via `record_side_effect`."
     },
     {
       "id": "D19",
       "layer": "decisions_effects",
       "name": "effect.state",
       "type": "enum requested/accepted/applied/failed/unknown",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (side_effect)",
@@ -2781,21 +3291,25 @@
       "layer": "decisions_effects",
       "name": "effect.timing",
       "type": "interval",
-      "observed_by": "R (`with d.side_effect(...)` measures; `record_*` takes `started_at`/`ended_at`)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (side_effect)",
       "status_if_hook_absent": "not_captured(caller_omitted); never zero-length",
       "phase": "P2",
       "lives_in": "span timing",
-      "definition": "Duration of the effect."
+      "definition": "Duration of the effect. `with d.side_effect(...)` is a new P2 API (today only `delegate()`/`adelegate()` are context managers); `record_side_effect` gains `started_at`/`ended_at`."
     },
     {
       "id": "D21",
       "layer": "decisions_effects",
       "name": "effect.request, effect.result",
       "type": "bytes",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2809,49 +3323,60 @@
       "layer": "decisions_effects",
       "name": "effect.caused_by",
       "type": "link to tool call",
-      "observed_by": "R (`parent_tool_call_id`, built)",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "unknown",
       "phase": "built",
       "lives_in": "T `fabric.side_effect.parent_tool_call_id`",
-      "definition": "Tool call that produced the effect."
+      "definition": "Tool call that produced the effect. Via `parent_tool_call_id` (built)."
     },
     {
       "id": "D23",
       "layer": "decisions_effects",
       "name": "commit.state",
       "type": "enum unknown/not_committed/committed/rolled_back/partially_committed",
-      "observed_by": "R (default `unknown`); db.dbapi (P4); S receipt",
+      "observed_by": [
+        "sdk.records",
+        "db.dbapi",
+        "feed.independent"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (side_effect)",
       "status_if_hook_absent": "unknown",
       "phase": "P3 (R), P4 (H)",
       "lives_in": "T `fabric.side_effect.commit_state`",
-      "definition": "HTTP 200, SQL success or a tool's text is not durable commit."
+      "definition": "HTTP 200, SQL success or a tool's text is not durable commit. New API default is `unknown`."
     },
     {
       "id": "D24",
       "layer": "decisions_effects",
       "name": "commit.basis",
-      "type": "enum caller_assertion/client_observed/service_receipt/legacy_default",
-      "observed_by": "self",
+      "type": "enum caller_assertion/client_observed/service_receipt/legacy_unspecified",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (when commit.state set)",
       "status_if_hook_absent": "always",
       "phase": "P3",
       "lives_in": "T `fabric.side_effect.commit_basis`",
-      "definition": "Legacy `committed=True` without an explicit value maps to `legacy_default`."
+      "definition": "Legacy records carry only the boolean, so an omitted and an explicit `committed=True` cannot be told apart: legacy `true` maps to `committed` + `legacy_unspecified`; legacy `false` (never the default) maps to `not_committed` + `caller_assertion`."
     },
     {
       "id": "D25",
       "layer": "decisions_effects",
       "name": "commit.receipt",
       "type": "bytes",
-      "observed_by": "R; S",
+      "observed_by": [
+        "sdk.records",
+        "feed.independent"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2865,7 +3390,9 @@
       "layer": "decisions_effects",
       "name": "compensation.state",
       "type": "enum requested/completed/failed/unknown + `compensates` link",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -2879,21 +3406,26 @@
       "layer": "decisions_effects",
       "name": "outcome.channel_kind, outcome.target",
       "type": "enum chat_ui/email/ticket/api_response/webhook/file/voice/other, tgt-pseudonym",
-      "observed_by": "R `record_outcome`",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META/ID",
       "required": "R (outcome)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P2",
       "lives_in": "T `fabric.outcome.channel_kind`, `fabric.outcome.target_id`",
-      "definition": "Where the output went."
+      "definition": "Where the output went. Via `record_outcome`."
     },
     {
       "id": "D28",
       "layer": "decisions_effects",
       "name": "outcome.delivery_state",
       "type": "enum prepared/sent/accepted/delivered/read/played/failed/unknown",
-      "observed_by": "R; S receipt",
+      "observed_by": [
+        "sdk.records",
+        "feed.independent"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (outcome)",
@@ -2907,7 +3439,10 @@
       "layer": "decisions_effects",
       "name": "outcome.delivery_evidence",
       "type": "bytes",
-      "observed_by": "R; S",
+      "observed_by": [
+        "sdk.records",
+        "feed.independent"
+      ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
       "required": "O",
@@ -2921,7 +3456,9 @@
       "layer": "decisions_effects",
       "name": "run.outcome, run.stop_reason",
       "type": "enum completed/failed/cancelled/suspended/unknown; enum goal_reached/max_steps/max_tokens/error/cancelled/handoff/awaiting_input/other/unknown",
-      "observed_by": "R",
+      "observed_by": [
+        "sdk.records"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (run root)",
@@ -2935,7 +3472,10 @@
       "layer": "decisions_effects",
       "name": "usage.input_tokens, usage.output_tokens",
       "type": "int",
-      "observed_by": "wire.py.httpx (non-stream); P (stream)",
+      "observed_by": [
+        "wire.py.httpx",
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (model_call)",
@@ -2949,7 +3489,9 @@
       "layer": "decisions_effects",
       "name": "usage.cache_read, cache_creation, reasoning tokens",
       "type": "int",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -2963,7 +3505,9 @@
       "layer": "decisions_effects",
       "name": "usage.media_units, usage.hosted_tool_calls",
       "type": "int",
-      "observed_by": "P",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "O",
@@ -2977,7 +3521,9 @@
       "layer": "decisions_effects",
       "name": "usage.basis",
       "type": "enum provider_reported/estimated/unknown",
-      "observed_by": "self",
+      "observed_by": [
+        "fabric.self"
+      ],
       "default_policy": "metadata",
       "privacy_class": "META",
       "required": "R (model_call)",
@@ -2991,7 +3537,7 @@
       "layer": "decisions_effects",
       "name": "cost",
       "type": "-",
-      "observed_by": "-",
+      "observed_by": [],
       "default_policy": "-",
       "privacy_class": "-",
       "required": "-",

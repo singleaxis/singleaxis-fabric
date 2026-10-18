@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/schemas/fabric/coverage/v1/step-projection-v1.schema.json",
-  "title": "fabric.step-projection/v1 (draft, spec 049 rev 2)",
+  "title": "fabric.step-projection/v1 (draft, spec 049 rev 3)",
   "description": "Customer-side verifier output: per-step four-layer field wrappers with coverage status, provenance and locators. Never produced by the Node or the application process. CONTENT-class values are locators unless content_inline is true.",
   "type": "object",
   "additionalProperties": false,
@@ -73,20 +73,34 @@
       "additionalProperties": false,
       "required": [
         "reconstruction_sha256",
-        "manifest_ids"
+        "manifests"
       ],
       "properties": {
         "reconstruction_sha256": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "manifest_ids": {
+        "manifests": {
           "type": "array",
+          "maxItems": 4096,
           "items": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-          },
-          "maxItems": 4096
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "manifest_id",
+              "sha256"
+            ],
+            "properties": {
+              "manifest_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          }
         }
       }
     },
@@ -247,9 +261,13 @@
             "tool_call_id",
             "previous_response_id",
             "prefix_digest",
+            "prefix_break",
             "identical_request_after_error",
             "new_user_message",
             "excerpt_digest",
+            "tools_digest_change",
+            "diff_algorithm",
+            "media_decoder",
             "pid_time_join"
           ]
         },
@@ -423,8 +441,19 @@
           ]
         },
         "method": {
-          "type": "string",
-          "maxLength": 64
+          "enum": [
+            "tool_call_id",
+            "previous_response_id",
+            "prefix_digest",
+            "prefix_break",
+            "identical_request_after_error",
+            "new_user_message",
+            "excerpt_digest",
+            "tools_digest_change",
+            "diff_algorithm",
+            "media_decoder",
+            "pid_time_join"
+          ]
         },
         "confidence": {
           "enum": [
@@ -606,44 +635,16 @@
       ],
       "properties": {
         "context": {
-          "enum": [
-            "captured_for_declared_fields",
-            "captured_with_policy_withholding",
-            "partial",
-            "unverified",
-            "unsupported",
-            "none_observed"
-          ]
+          "$ref": "#/$defs/verdict"
         },
         "structure": {
-          "enum": [
-            "captured_for_declared_fields",
-            "captured_with_policy_withholding",
-            "partial",
-            "unverified",
-            "unsupported",
-            "none_observed"
-          ]
+          "$ref": "#/$defs/verdict"
         },
         "content": {
-          "enum": [
-            "captured_for_declared_fields",
-            "captured_with_policy_withholding",
-            "partial",
-            "unverified",
-            "unsupported",
-            "none_observed"
-          ]
+          "$ref": "#/$defs/verdict"
         },
         "decisions_effects": {
-          "enum": [
-            "captured_for_declared_fields",
-            "captured_with_policy_withholding",
-            "partial",
-            "unverified",
-            "unsupported",
-            "none_observed"
-          ]
+          "$ref": "#/$defs/verdict"
         }
       }
     },
@@ -728,7 +729,6 @@
         "step_id",
         "step_kind",
         "run_id",
-        "source",
         "event_ids",
         "capture_point",
         "provenance",
@@ -740,8 +740,7 @@
       "properties": {
         "attempt_id": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 160
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
         },
         "step_id": {
           "type": "string",
@@ -816,14 +815,23 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
+            "path",
             "source_id",
             "source_epoch",
+            "source_sequence",
             "sequence_unit"
           ],
           "properties": {
+            "path": {
+              "enum": [
+                "wire",
+                "explicit",
+                "records"
+              ]
+            },
             "source_id": {
               "type": "string",
-              "maxLength": 160
+              "pattern": "^(wire|explicit|records):[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
             },
             "source_epoch": {
               "type": "integer",
@@ -842,6 +850,10 @@
             "subindex": {
               "type": "integer",
               "minimum": 0
+            },
+            "manifest_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
             }
           }
         },
@@ -954,6 +966,27 @@
         },
         "layer_verdicts": {
           "$ref": "#/$defs/layer_verdicts"
+        },
+        "method": {
+          "enum": [
+            "tool_call_id",
+            "previous_response_id",
+            "prefix_digest",
+            "prefix_break",
+            "identical_request_after_error",
+            "new_user_message",
+            "excerpt_digest",
+            "tools_digest_change",
+            "diff_algorithm",
+            "media_decoder",
+            "pid_time_join"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "certain",
+            "tentative"
+          ]
         }
       },
       "allOf": [
@@ -970,8 +1003,91 @@
               "step_kind_extension"
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "provenance": {
+                "const": "inferred"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "method",
+              "confidence",
+              "links"
+            ]
+          },
+          "else": {
+            "required": [
+              "source"
+            ]
+          }
         }
       ]
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": [
+            "captured_for_declared_fields",
+            "captured_with_withholding",
+            "partial",
+            "unsupported",
+            "unverified",
+            "none_observed"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "not_instrumented",
+              "hook_disabled",
+              "not_configured",
+              "unsupported_api",
+              "unsupported_runtime",
+              "unsupported_version",
+              "parse_failed",
+              "body_cap",
+              "part_cap",
+              "inflight_budget",
+              "queue_full",
+              "shutdown",
+              "internal_error",
+              "span_dropped",
+              "store_failed",
+              "destination_rejected",
+              "transport_incomplete",
+              "stream_closed_early",
+              "privacy_policy",
+              "missing_capture_policy",
+              "missing_id_key",
+              "provider_redacted",
+              "provider_encrypted",
+              "provider_summarised",
+              "provider_not_returned",
+              "provider_held",
+              "caller_omitted",
+              "deferred_to_explicit",
+              "explicit_withheld",
+              "not_exposed",
+              "source_lost",
+              "uninstrumented_client",
+              "sampling",
+              "retention_expired",
+              "deleted"
+            ]
+          }
+        }
+      }
     }
   }
 }
