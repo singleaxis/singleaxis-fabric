@@ -150,6 +150,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   those attributes. The module is now a forbidden wheel/sdist member in the
   release policy and wheel qualifier, and the Python SDK connector manifest
   declares `framework_lifecycle` as `caller_reported`.
+- Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
+  it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
+  same check.
 
 ### Known limitations
 
