@@ -191,6 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `qualification/synthetic-slice/kind-production-*.yaml` files that
   `e2e-production-profile.yml` installs remain. The qualification-status
   links now point at commit `4a5c945`.
+- Removed the remaining doc references to `PolicyCaptureSession` and
+  `test_auto_instrument.py` outside the SDK, which the SDK cleanup removes.
 
 ### Known limitations
 

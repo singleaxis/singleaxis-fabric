@@ -85,7 +85,7 @@ Focused verification:
 ```sh
 sdk/python/.venv/bin/python -m pytest sdk/python/tests/test_call_privacy.py \
   sdk/python/tests/test_byte_evidence.py sdk/python/tests/test_calls.py \
-  sdk/python/tests/test_governed_content.py sdk/python/tests/test_auto_instrument.py \
+  sdk/python/tests/test_governed_content.py \
   -q --no-cov -p no:cacheprovider
 ```
 

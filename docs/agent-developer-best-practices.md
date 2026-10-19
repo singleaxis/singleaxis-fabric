@@ -24,9 +24,8 @@ a large reference deployment into the application.
 
 1. **Centralize final dispatch.** Keep shared model/tool execution functions.
    Hook the final serialized request and response, after application transforms.
-   The example's `AppCapture.dispatch` delegates to the real
-   `PolicyCaptureSession.calls.call`; `FinalHTTPAdapter` owns a finite HTTP/1.1
-   transport boundary. Do not wrap every helper or double-count one attempt.
+   Route that one function through `CallRecorder.call`; `FinalHTTPAdapter`
+   owns a finite HTTP/1.1 transport boundary. Do not wrap every helper or double-count one attempt.
 
 2. **Keep stable logical identity, distinct attempts.** Reuse `run_id` for the
    logical run and `operation_id` for one logical action; create a new
