@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -401,7 +402,22 @@ def test_a_split_request_reassembles_to_its_original_digest(tmp_path: Path) -> N
         rig.close()
 
 
-@pytest.mark.parametrize("fault", ["missing", "corrupt", "shifted", "foreign", "unlisted"])
+def test_split_part_ids_derive_from_the_skeleton(tmp_path: Path) -> None:
+    """Spec 049 §7.5: a GetObject-only reader finds every part from the skeleton's id."""
+    from fabric._roles import part_object_id  # noqa: PLC0415
+
+    rig, _, skeleton, parts = _split_capture(tmp_path)
+    try:
+        ordered = sorted(parts, key=lambda d: d["links"][0]["byte_range"][0])
+        expected = [part_object_id(skeleton["object_id"], i) for i in range(len(parts))]
+        assert [d["object_id"] for d in ordered] == expected
+        uuid4 = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+        assert all(re.fullmatch(uuid4, d["object_id"]) for d in ordered)
+    finally:
+        rig.close()
+
+
+@pytest.mark.parametrize("fault", ["missing", "corrupt", "shifted", "foreign", "relinked"])
 def test_a_split_request_that_does_not_reassemble_is_a_gap(tmp_path: Path, fault: str) -> None:
     rig, spans, _, parts = _split_capture(tmp_path)
     try:
@@ -419,23 +435,16 @@ def test_a_split_request_that_does_not_reassemble_is_a_gap(tmp_path: Path, fault
             meta.write_text(json.dumps(part))
         elif fault == "foreign":  # a part bound to another exchange
             meta.write_text(json.dumps({**part, "operation_id": "another-exchange"}))
-        store: Any = rig.store
-        if fault == "unlisted":  # a store that cannot list its objects cannot reassemble
-
-            class Unlisted:
-                tenant_id = "tenant-a"
-                evidence_ref_for = rig.store.evidence_ref_for
-                read = rig.store.read
-                read_descriptor = rig.store.read_descriptor
-
-            store = Unlisted()
-        report = reconstruct([spans], store=store)
+        elif fault == "relinked":  # a part that names another skeleton
+            link = {**part["links"][0], "object_id": part["object_id"]}
+            meta.write_text(json.dumps({**part, "links": [link]}))
+        report = reconstruct([spans], store=rig.store)
         expected = {
             "missing": ("missing_object", "part_missing"),
             "corrupt": ("digest_mismatch", "part_digest"),
             "shifted": ("digest_mismatch", "split_reassembly"),
             "foreign": ("digest_mismatch", "part_binding_mismatch"),
-            "unlisted": ("missing_object", "parts_unlisted"),
+            "relinked": ("digest_mismatch", "part_binding_mismatch"),
         }[fault]
         assert _request_gaps(report) == {expected}
         assert report["runs"][0]["verdict"] == "partial"

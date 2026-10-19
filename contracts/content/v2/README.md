@@ -84,7 +84,12 @@ Version 2.2.0 (spec 049 P0-A) adds:
   `not_captured`, `protection_status: withheld`, `status_reason:
   protection_failed`, no original-body digest (§7.7);
 - `fixtures/node-envelope-v1.json`: the Node directory backend's AES-256-GCM
-  customer-key envelope (§7.8), pinned for every reader.
+  customer-key envelope (§7.8), pinned for every reader;
+- derived part ids: the wire producer names the `index`-th part of a split
+  side (0-based, ascending `byte_range` start) with the uuid4 layout (version
+  and variant bits set) of the first 16 bytes of SHA-256(`"fabric.part/v1"`
+  NUL skeleton `object_id` NUL decimal `index`), so a reader holding only
+  GetObject finds every part from the skeleton (`fabric._roles.part_object_id`).
 
 The `fabriccontent` exporter enforces the role table and these rules on the
 content path (capture/v1 `content-log-record-v1`); nothing in this directory

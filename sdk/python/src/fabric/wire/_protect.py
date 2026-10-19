@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from .._roles import ROLES, admits
+from .._roles import ROLES, admits, part_object_id
 from .._sequence import OPAQUE_ID_RE
 from ..deployment_policy import TOKEN_TRANSFORMATION, token_bytes
 from ._policy import CapturePolicy
@@ -283,8 +283,8 @@ class Protector:
         primary = self._stored(base, role, mode, stored, representation, transformations,
                                status, "retained", source)  # fmt: skip
         self._admit(result, primary, primary=True)
-        for part in parts or ():
-            self._part(result, base, data, part, primary.object_id, retain_skeleton=True)
+        for index, part in enumerate(parts or ()):
+            self._part(result, base, data, part, primary.object_id, index, retain_skeleton=True)
 
     def _transformed(
         self, result: SideResult, base: Mapping[str, Any], role: str, mode: str, data: bytes,
@@ -297,14 +297,15 @@ class Protector:
         stored = data if parts is None else skeleton_of(data, parts)
         obj = self._protect(base, role, mode, stored, split=parts is not None)
         self._admit(result, obj, primary=True)
-        for part in parts or ():
-            self._part(result, base, data, part, obj.object_id, retain_skeleton=False)
+        for index, part in enumerate(parts or ()):
+            self._part(result, base, data, part, obj.object_id, index, retain_skeleton=False)
 
     def _part(
         self, result: SideResult, base: Mapping[str, Any], data: bytes, part: _Part,
-        skeleton_id: str, *, retain_skeleton: bool,
+        skeleton_id: str, index: int, *, retain_skeleton: bool,
     ) -> None:  # fmt: skip
-        """One extracted part, under the part role's own mode (§7.5)."""
+        """One extracted part, under the part role's own mode (§7.5); its object id is
+        derived from the skeleton's and its position (:func:`part_object_id`)."""
         mode = self.policy.mode(PART_ROLE)
         if mode == "omit":
             return
@@ -334,6 +335,7 @@ class Protector:
             obj = self._protect(part_base, PART_ROLE, mode, data[part.start : part.end],
                                 split=False)  # fmt: skip
         obj.descriptor["links"] = [link]
+        obj.descriptor["object_id"] = part_object_id(skeleton_id, index)
         self._admit(result, obj, primary=False)
 
     def _review_copy(

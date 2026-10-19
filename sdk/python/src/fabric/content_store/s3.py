@@ -28,7 +28,6 @@ from fabric.content_store.base import (
 
 _IMPORT_HINT = 'S3ContentStore requires boto3; install with `pip install "singleaxis-fabric[s3]"`'
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
-_EVIDENCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 _ADDRESSING_STYLES = frozenset({None, "auto", "virtual", "path"})
 
@@ -316,22 +315,6 @@ class S3ContentStore:
         if not isinstance(value, dict):
             raise ValueError(f"manifest is not a JSON object: {uri!r}")
         return value
-
-    def list_evidence_object_ids(self) -> list[str]:
-        """Object ids of the tenant's content-v2 objects, by their descriptor keys
-        (``evidence/meta/<id>.json``); for the parts of a split side (spec 049 §7.5)."""
-        if self.tenant_id is None:
-            return []
-        prefix = f"{self.prefix}{self.tenant_id}/evidence/meta/"
-        paginator = self._get_client().get_paginator("list_objects_v2")
-        ids: list[str] = []
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
-            for entry in page.get("Contents", []):
-                name = entry["Key"][len(prefix) :]
-                object_id = name[: -len(".json")]
-                if name.endswith(".json") and _EVIDENCE_ID_RE.fullmatch(object_id):
-                    ids.append(object_id)
-        return sorted(ids)
 
     def list_object_uris(self) -> list[str]:
         if self.tenant_id is None:

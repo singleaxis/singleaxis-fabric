@@ -10,7 +10,9 @@ A record the table refuses never reaches the spool: it is a counted loss, never 
 
 from __future__ import annotations
 
+import hashlib
 import re
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -581,3 +583,17 @@ def admits(
         row is not None and boundary in row.boundary and provenance in row.provenance
         and row.admits_media(media_type) and stored_byte_length <= row.cap_bytes(max_body_bytes)
     )  # fmt: skip
+
+
+def part_object_id(skeleton_id: str, index: int) -> str:
+    """The object id of the ``index``-th extracted part of a split side (spec 049 §7.4-
+    §7.5; 0-based, in ascending ``byte_range`` order), derived from its skeleton's id so a
+    reader holding only GetObject finds every part without listing the store: the uuid4
+    layout (version and variant bits set) of the first 16 bytes of
+    SHA-256(``"fabric.part/v1" NUL skeleton_id NUL decimal index``). The skeleton's id is
+    random, so a part id is as unguessable as any other object id."""
+    material = f"fabric.part/v1\0{skeleton_id}\0{index}".encode()
+    raw = bytearray(hashlib.sha256(material).digest()[:16])
+    raw[6] = (raw[6] & 0x0F) | 0x40
+    raw[8] = (raw[8] & 0x3F) | 0x80
+    return str(uuid.UUID(bytes=bytes(raw)))

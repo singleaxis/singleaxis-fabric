@@ -832,10 +832,11 @@ counted stamp adds a `source_unauthenticated` gap and the run is
 
 *Split requests (spec 049 §7.4-§7.5).* A side above `max_body_bytes` with
 inline base64 parts is stored as a skeleton plus `model.exchange.part`
-objects. Under `retain_original` the verifier finds the parts by their
-`part_of` link (it lists the tenant's objects, so the reader needs list
-access), reassembles the original and checks the skeleton's
-`source_sha256`; a missing, corrupt, misplaced or foreign part is a gap.
+objects. A part's object id is derived from its skeleton's id and its
+position, so the verifier reads every part with GetObject alone (no list
+permission). Under `retain_original` it reassembles the original and checks
+the skeleton's `source_sha256`; a missing, corrupt, misplaced or foreign
+part is a gap.
 
 *Looking up a run or a source by its clear id.* The report, the spans in
 your OTLP destination and the Node's logs carry only pseudonyms, so you map

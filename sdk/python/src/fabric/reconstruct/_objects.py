@@ -40,6 +40,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from fabric._roles import part_object_id
 from fabric.reconstruct._ids import report_run_id, report_source_id
 from fabric.reconstruct._inputs import ReconstructInputError, opaque_id
 
@@ -79,7 +80,6 @@ _MODES = {
     "masked_only": ("redacted", ("redacted",)),
     "tokenize": ("tokenized", ("tokenized",)),
 }
-PART_ROLE = "model.exchange.part"
 BINDING_KEYS = ("source_id", "source_epoch", "source_sequence", "run_id", "operation_id")
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
@@ -280,8 +280,6 @@ class StoreReader:
                 raise ReconstructInputError(f"store does not provide {method}()")
         self._store = store
         self.tenant_id: str = str(tenant)
-        # skeleton object id -> its parts' (object id, descriptor), built on first need.
-        self._parts: dict[str, list[tuple[str, Mapping[str, Any]]]] | None = None
         try:
             probe = str(store.evidence_ref_for("probe"))
         except Exception:
@@ -412,10 +410,11 @@ class StoreReader:
         id_key: bytes | None = None,
     ) -> Reassembly:
         """Rebuild a ``retain_original`` split side from its skeleton and parts and check it
-        against the skeleton's ``source_sha256`` (§7.5). Parts are found by their
-        ``part_of`` link; each must bind to the same exchange, hold exactly its
-        ``byte_range`` and match its stored digest. A part the store does not hold yet is
-        re-listed, with backoff, until the reader's ``wait_for_objects_s`` deadline."""
+        against the skeleton's ``source_sha256`` (§7.5). Parts are read by the ids derived
+        from the skeleton's (GetObject only, no listing); each must link ``part_of`` the
+        skeleton, bind to the same exchange, hold exactly its ``byte_range`` and match its
+        stored digest. A part the store does not hold yet is re-read, with backoff, until
+        the reader's ``wait_for_objects_s`` deadline."""
 
         delay = _RETRY_FIRST_S
         while True:
@@ -425,40 +424,6 @@ class StoreReader:
                 return outcome
             time.sleep(min(delay, remaining))
             delay = min(delay * 2, _RETRY_MAX_S)
-            self._parts = None  # re-list: a part may still be in flight
-
-    def _part_index(self) -> dict[str, list[tuple[str, Mapping[str, Any]]]] | None:
-        lister = getattr(self._store, "list_evidence_object_ids", None)
-        if not callable(lister):
-            return None
-        if self._parts is not None:
-            return self._parts
-        index: dict[str, list[tuple[str, Mapping[str, Any]]]] = {}
-        for object_id in lister():
-            descriptor = self._index_descriptor(object_id)
-            if descriptor is None or descriptor.get("role") != PART_ROLE:
-                continue
-            links = descriptor.get("links")
-            for link in links if isinstance(links, list) else ():
-                if (
-                    isinstance(link, Mapping)
-                    and link.get("relation") == "part_of"
-                    and isinstance(link.get("object_id"), str)
-                ):
-                    index.setdefault(link["object_id"], []).append((object_id, descriptor))
-        self._parts = index
-        return index
-
-    def _index_descriptor(self, object_id: str) -> Mapping[str, Any] | None:
-        """A listed object's descriptor; ``None`` when unreadable (then it is no part this
-        side can use: a missing part shows as ``part_missing``)."""
-        try:
-            descriptor = self._store.read_descriptor(self._store.evidence_ref_for(object_id))
-        except ImportError:
-            raise
-        except Exception:
-            return None
-        return descriptor if isinstance(descriptor, Mapping) else None
 
     def _reassemble_once(
         self,
@@ -468,25 +433,28 @@ class StoreReader:
         binding: Mapping[str, Any],
         id_key: bytes | None,
     ) -> Reassembly:
-        try:
-            index = self._part_index()
-        except ImportError:
-            raise
-        except Exception:
-            index = None
-        if index is None:
-            return Reassembly(None, "missing_object", "parts_unlisted")
+        """Read the parts by their derived ids (:func:`fabric._roles.part_object_id`), in
+        order, until they account for every byte the skeleton lacks."""
+        needed = split[1] - len(skeleton)
         ranges: list[tuple[int, int, bytes]] = []
-        withheld: Reassembly | None = None
-        for object_id, descriptor in index.get(skeleton_id, []):
+        for index in range(_MAX_PARTS):
+            if sum(end - start for start, end, _ in ranges) >= needed:
+                return _splice(skeleton, ranges, split)
+            object_id = part_object_id(skeleton_id, index)
+            try:
+                descriptor = self._store.read_descriptor(self._store.evidence_ref_for(object_id))
+            except ImportError:
+                raise
+            except Exception as exc:
+                reason = "part_missing" if _is_absent(exc) else "part_read_error"
+                return Reassembly(None, "missing_object", reason)
+            if not isinstance(descriptor, Mapping):
+                return Reassembly(None, "digest_mismatch", "part_binding_mismatch")
             part = self._part(object_id, descriptor, skeleton_id, binding, id_key, split[1])
-            if isinstance(part, tuple):
-                ranges.append(part)
-            elif part.gap_type in ("truncated", "missing_object") and part.reason in _WITHHELD:
-                withheld = withheld or part
-            else:
+            if not isinstance(part, tuple):
                 return part
-        return withheld or _splice(skeleton, ranges, split)
+            ranges.append(part)
+        return Reassembly(None, "missing_object", "part_missing")
 
     def _part(  # noqa: PLR0911 - closed refusal states
         self,
@@ -498,9 +466,10 @@ class StoreReader:
         source_length: int,
     ) -> tuple[int, int, bytes] | Reassembly:
         """One part's ``(start, end, bytes)``, or why it cannot take part."""
+        found = descriptor.get("links")
         links = [
             link
-            for link in descriptor.get("links", [])
+            for link in (found if isinstance(found, list) else [])
             if isinstance(link, Mapping)
             and link.get("relation") == "part_of"
             and link.get("object_id") == skeleton_id
@@ -508,6 +477,7 @@ class StoreReader:
         if (
             descriptor.get("tenant_id") != self.tenant_id
             or descriptor.get("object_id") != object_id
+            or descriptor.get("role") != "model.exchange.part"
             or len(links) != 1
             or not _bound(descriptor, binding, id_key)
         ):
@@ -566,7 +536,8 @@ def _splice(
     return Reassembly(bytes(body))
 
 
-_WITHHELD = frozenset({"part_cap", "part_withheld"})
+# More parts than a side can hold at part_min_bytes 64 KiB within 64 MiB, with margin.
+_MAX_PARTS = 4096
 
 
 @dataclass(frozen=True, slots=True)
