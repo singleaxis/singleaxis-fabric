@@ -294,7 +294,25 @@ def test_production_policy_and_keys_come_from_the_environment(
 # --- C0A-2: privacy canaries ---------------------------------------------------------------
 
 
-PROTECTING = ["redact", "masked_only", "tokenize", "metadata_only", "omit", "failure"]
+PROTECTING = [
+    "redact",
+    "masked_only",
+    "tokenize",
+    "metadata_only",
+    "omit",
+    "failure",
+    "masked_copy_failure",
+]
+
+
+def _settings(mode: str) -> dict[str, Any]:
+    """``failure``: an injected redact failure; ``masked_copy_failure``: the review copy of
+    ``original_plus_masked`` fails, which withholds the original too (049 §7.7 rule 4)."""
+    if mode == "failure":
+        return _protection("redact", _failing)
+    if mode == "masked_copy_failure":
+        return _protection("original_plus_masked", _failing)
+    return _protection(mode)
 
 
 def _scan(text: str, where: str) -> None:
@@ -307,7 +325,7 @@ def test_canaries_direct_store(tmp_path: Path, caplog: pytest.LogCaptureFixture,
     """Telemetry, the store, logs and the report hold no original bytes and no digest of
     the original under every protecting mode (an injected transformation failure too)."""
     caplog.set_level(logging.DEBUG)
-    settings = _protection("redact", _failing) if mode == "failure" else _protection(mode)
+    settings = _settings(mode)
     rig = make_rig(tmp_path, tenant_id="tenant-a", **settings)
     try:
         with rig.client(_reply) as client:
@@ -318,8 +336,9 @@ def test_canaries_direct_store(tmp_path: Path, caplog: pytest.LogCaptureFixture,
         (span,) = rig.spans()
         attrs = dict(span.attributes or {})
         _scan(json.dumps(attrs), "telemetry")
-        expected = {"failure": "protection_failed", "metadata_only": "privacy_policy",
-                    "omit": "privacy_policy"}.get(mode)  # fmt: skip
+        failed, policy = "protection_failed", "privacy_policy"
+        expected = {"failure": failed, "masked_copy_failure": failed, "metadata_only": policy,
+                    "omit": policy}.get(mode)  # fmt: skip
         assert attrs.get("fabric.wire.store_reason") == expected
         stored = [p for p in (tmp_path / "store").rglob("*") if p.is_file()]
         for path in stored:
@@ -350,7 +369,7 @@ def test_canaries_node_spool(node: FakeNode, tmp_path: Path, mode: str) -> None:
     hold no original bytes and no digest of the original."""
     node.mode = "down"
     spool = tmp_path / "spool"
-    settings = _protection("redact", _failing) if mode == "failure" else _protection(mode)
+    settings = _settings(mode)
     handle = install_node(node, spool, **settings)
     _call(handle)
     assert handle._tee.flush(5.0)
@@ -368,9 +387,13 @@ def test_canaries_node_spool(node: FakeNode, tmp_path: Path, mode: str) -> None:
     _scan(json.dumps(node.spans), "telemetry")
     if mode in ("omit",):
         assert node.content == []
-    if mode in ("metadata_only", "failure"):
+    if mode in ("metadata_only", "failure", "masked_copy_failure"):
         assert node.content and all(data == b"" for _, data in node.content)
         assert {a["status"] for a, _ in node.content} == {"not_captured"}
+    if mode == "masked_copy_failure":  # both objects withheld: no digest, no length
+        assert {a["status_reason"] for a, _ in node.content} == {"protection_failed"}
+        assert not any("source_byte_length" in a or "source_sha256" in a
+                       for a, _ in node.content)  # fmt: skip
 
 
 def test_retain_original_digests_are_the_stored_objects(node: FakeNode, tmp_path: Path) -> None:

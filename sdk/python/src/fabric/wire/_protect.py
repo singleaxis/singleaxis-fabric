@@ -250,10 +250,11 @@ class Protector:
             whole = whole_chunk_prefix(chunks, self.max_body) if prefix is None else None
             data = data[:prefix] if prefix is not None else (whole or b"")
         result = SideResult(truncated=cut_reason is not None)
-        if mode in ("retain_original", "original_plus_masked"):
+        if mode == "original_plus_masked":
+            self._with_review_copy(result, base, role, data, parts, observed, cut_reason,
+                                   partial)  # fmt: skip
+        elif mode == "retain_original":
             self._original(result, base, role, mode, data, parts, observed, cut_reason, partial)
-            if mode == "original_plus_masked":
-                self._review_copy(result, base, role, data, cut_reason)
         else:
             self._transformed(result, base, role, mode, data, parts, cut_reason)
         if result.reason is None and cut_reason is not None:
@@ -338,23 +339,45 @@ class Protector:
         obj.descriptor["object_id"] = part_object_id(skeleton_id, index)
         self._admit(result, obj, primary=False)
 
-    def _review_copy(
+    def _with_review_copy(
         self, result: SideResult, base: Mapping[str, Any], role: str, data: bytes,
-        cut_reason: str | None,
+        parts: list[_Part] | None, observed: int, cut_reason: str | None, partial: bool,
     ) -> None:  # fmt: skip
+        """``original_plus_masked``: every object of the side is produced before any is
+        admitted, so a failed masked copy withholds the original too (049 §7.7 rule 4:
+        never raw bytes on failure)."""
+        mode = "original_plus_masked"
+        review = self._withheld(base, role, mode, cut_reason) if cut_reason else (
+            self._redacted(base, role, mode, data, split=False))  # fmt: skip
+        if cut_reason is None and not (review.stored and self._admissible(review)):
+            self._withhold_pair(result, base, role, mode)
+            return
+        self._original(result, base, role, mode, data, parts, observed, cut_reason, partial)
+        self._review_copy(result, review)
+
+    def _review_copy(self, result: SideResult, review: Obj) -> None:
         """``original_plus_masked``: one masked review copy per side (of the whole original,
         split or not), linked ``derived_from`` the original; it never satisfies a
-        requirement for the original."""
+        requirement for the original. ``review`` was produced before the original was
+        admitted (a cut side's copy is withheld with the cut's reason)."""
         if result.primary is None:
             return
-        mode = "original_plus_masked"
-        if cut_reason is not None:
-            obj = self._withheld(base, role, mode, cut_reason)
-        else:
-            obj = self._redacted(base, role, mode, data, split=False)
-        obj.descriptor["links"] = [{"relation": "derived_from",
-                                    "object_id": result.primary.object_id}]  # fmt: skip
-        self._admit(result, obj, primary=False)
+        review.descriptor["links"] = [{"relation": "derived_from",
+                                       "object_id": result.primary.object_id}]  # fmt: skip
+        self._admit(result, review, primary=False)
+
+    def _withhold_pair(
+        self, result: SideResult, base: Mapping[str, Any], role: str, mode: str
+    ) -> None:
+        """``original_plus_masked`` whose masked copy could not be produced: both objects
+        are descriptor-only ``not_captured(protection_failed)``, with no digest and no
+        length of the original (049 §7.7 rule 4)."""
+        original = self._withheld(base, role, mode, "protection_failed")
+        review = self._withheld(base, role, mode, "protection_failed")
+        review.descriptor["links"] = [{"relation": "derived_from",
+                                       "object_id": original.object_id}]  # fmt: skip
+        self._admit(result, original, primary=True)
+        self._admit(result, review, primary=False)
 
     # -- transformations --------------------------------------------------------
 
@@ -445,15 +468,20 @@ class Protector:
             descriptor |= {k: v for k, v in sizes.items() if k == "source_sha256"}
         return Obj(descriptor)
 
+    def _admissible(self, obj: Obj) -> bool:
+        """Whether the role table admits ``obj`` (§4.3 rules 1-4)."""
+        d = obj.descriptor
+        return admits(d["role"], boundary=d["boundary"], provenance=d["provenance"],
+                      media_type=d["media_type"], stored_byte_length=len(obj.data),
+                      max_body_bytes=self.max_body)  # fmt: skip
+
     def _admit(
         self, result: SideResult, obj: Obj, *, primary: bool, reason: str | None = None
     ) -> None:
         """Keep ``obj`` when the role table admits it (§4.3 rules 1-4); a refused object is
         never sent (the side's reason then says so)."""
         d = obj.descriptor
-        if not admits(d["role"], boundary=d["boundary"], provenance=d["provenance"],
-                      media_type=d["media_type"], stored_byte_length=len(obj.data),
-                      max_body_bytes=self.max_body):  # fmt: skip
+        if not self._admissible(obj):
             result.reason = result.reason or "store_failed"
             return
         result.objects.append(obj)

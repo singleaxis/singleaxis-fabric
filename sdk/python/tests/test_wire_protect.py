@@ -225,6 +225,33 @@ def test_a_failed_transformation_withholds_never_raw(transform: Transformation |
     _canary_free(result, data)
 
 
+@pytest.mark.parametrize("transform", [
+    None,
+    Transformation("x", "1", _raises),
+    Transformation("x", "1", lambda data: "not bytes"),  # type: ignore[arg-type, return-value]
+    Transformation("x", "1", _slow, timeout_s=0.01),
+])  # fmt: skip
+def test_a_failed_review_copy_withholds_the_original_too(transform: Transformation | None) -> None:
+    """Sol P0-A #1: ``original_plus_masked`` admits nothing until both objects exist; a
+    failed masked copy withholds the original as well, with no digest and no length."""
+    data = b'{"q":"' + SECRET + b'"}'
+    transforms = {REQUEST: transform} if transform is not None else {}
+    result = _side(_protector(_policy(model_exchange_request="original_plus_masked"),
+                              max_body=4096, transformations=transforms), data)  # fmt: skip
+    original, review = result.objects
+    assert result.primary is None and result.reason == "protection_failed"
+    for obj in (original, review):
+        d = obj.descriptor
+        assert obj.data == b"" and (d["status"], d["status_reason"]) == (
+            "not_captured", "protection_failed")  # fmt: skip
+        assert d["protection_status"] == "withheld"
+        assert "source_byte_length" not in d and "source_sha256" not in d
+    assert review.descriptor["links"] == [{"relation": "derived_from",
+                                           "object_id": original.object_id}]  # fmt: skip
+    _valid(result)
+    _canary_free(result, data)
+
+
 def test_tokenize_without_a_key_withholds() -> None:
     result = _side(_protector(_policy(model_exchange_request="tokenize")), b"{}")
     assert result.reason == "protection_failed" and result.primary is None
