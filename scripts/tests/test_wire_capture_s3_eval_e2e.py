@@ -94,9 +94,11 @@ from _wire_capture_common import (
     Sink,
     autoload_path,
     build_image,
+    capture_protection,
     compose_available,
     free_port,
     content_config_with_tls,
+    open_spool_record,
     production_config_with_tls,
     pseudonym,
     spool_header,
@@ -293,6 +295,10 @@ class Stack:
         key_file = root / "secrets" / "content.key"
         key_file.write_bytes(base64.b64encode(os.urandom(32)) + b"\n")
         key_file.chmod(0o640)
+        # Spec 049 §7.3/§7.8: a production agent records content only with a capture
+        # policy, the id key and the spool key (its spool is sealed at rest).
+        self.spool_key = os.urandom(32)
+        self.protection = capture_protection(root, TENANT, self.spool_key)
         write_tls(self.tls)
         self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
         self.config = root / "collector-production.yaml"
@@ -573,6 +579,7 @@ class Stack:
             "FABRIC_WIRE_SPOOL_DIR": str(spool),
             "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
             "FABRIC_WIRE_ID_KEY": ID_KEY,
+            **self.protection,
             # Default labels (no FABRIC_WIRE_LABELS): leave only as s-/svc- (J1).
             "FABRIC_SOURCE_ID": source_of(service),
             "OTEL_SERVICE_NAME": service,
@@ -631,7 +638,8 @@ class Stack:
             sys.executable, "-m", "fabric.reconstruct", "--spans", str(self.sink.records),
             "--store-uri", f"s3://{BUCKET}/{PREFIX}", "--tenant", TENANT,
             "--s3-endpoint-url", self.store_url, "--s3-region", REGION, "--s3-path-style",
-            "--out", str(out),
+            # The sink is the Node's destination: trusted readback (spec 049 §7.9).
+            "--trusted-source", "--profile", "production", "--out", str(out),
         ]  # fmt: skip
         for run in runs:
             command += ["--run", run]
@@ -643,6 +651,7 @@ class Stack:
         text = out.read_text("utf-8")
         self.reports.append(text + result.stdout + result.stderr)
         report: dict[str, Any] = json.loads(text)
+        assert report["inputs"]["telemetry_origin"] == "trusted_readback"
         # J1: the tenant only as t-, every source only as s-.
         assert report["inputs"]["store"]["tenant_id"] == pseudonym("t-", TENANT, ID_KEY)
         sources = set(_values_of(report, "source_id"))
@@ -892,7 +901,7 @@ def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -
         # The host is unaffected: it finished its work and exited normally,
         # within the bounded exit handler, while nothing could be delivered.
         assert time.monotonic() - started < 60
-        headers = [spool_header(path) for path in spool_records(spool)]
+        headers = [spool_header(path, stack.spool_key) for path in spool_records(spool)]
         kinds = sorted(h["record_kind"] for h in headers)
         assert kinds.count("exchange") == 3, kinds
         assert sorted(
@@ -939,7 +948,7 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
     started = time.monotonic()
     bad = stack.run_agent("s3-eval-e2e-wrong-token", token=WRONG_TOKEN)
     assert time.monotonic() - started < 60
-    headers = [spool_header(path) for path in spool_records(bad.spool)]
+    headers = [spool_header(path, stack.spool_key) for path in spool_records(bad.spool)]
     rejected_ids = {
         h["span"]["attributes"]["fabric.wire.exchange_id"]
         for h in headers if h["record_kind"] == "exchange"
@@ -1080,18 +1089,26 @@ def test_content_exists_only_in_the_store_and_the_agent_spool(stack: Stack) -> N
     assert put["sse"] is None, put
     assert stack.stored_bytes(control_bucket, "control") == control_body
     # The wrong-token agent's undelivered records still hold its content.
-    spooled = b"".join(
-        path.read_bytes()
-        for path in spool_records(stack.root / "spool" / "s3-eval-e2e-wrong-token")
-    )
+    undelivered = spool_records(stack.root / "spool" / "s3-eval-e2e-wrong-token")
+    # Spec 049 §7.8: sealed at rest; opened with the agent's key they hold the content.
+    sealed = b"".join(path.read_bytes() for path in undelivered)
+    for marker in CONTENT_MARKERS:
+        assert marker.encode() not in sealed, f"{marker} is in clear in the agent spool"
+    spooled = b"".join(open_spool_record(path, stack.spool_key) for path in undelivered)
     for marker in CONTENT_MARKERS:
         assert marker.encode() in spooled, f"{marker} is not in the undelivered spool"
     for secret in SECRET_MARKERS:
         assert secret.encode() not in spooled, f"{secret} was written to the spool"
     # No spool this session wrote (records, quarantine, leftovers) names a
     # clear run id or the key.
+    def opened(path: Path) -> bytes:  # a record opened where it can be, else as is
+        try:
+            return open_spool_record(path, stack.spool_key)
+        except Exception:  # noqa: BLE001 - a quarantined or partial file: its raw bytes
+            return path.read_bytes()
+
     every_spool = b"".join(
-        path.read_bytes()
+        path.read_bytes() + opened(path)
         for path in (stack.root / "spool").rglob("*")
         if path.is_file()
     )

@@ -16,6 +16,7 @@ evaluation store) drive real processes and real sockets with:
 
 from __future__ import annotations
 
+import base64
 import datetime
 import hashlib
 import hmac
@@ -45,6 +46,7 @@ AGENT = Path(__file__).with_name("_wire_capture_agent.py")
 SINK = Path(__file__).with_name("_wire_capture_sink.py")
 DEFAULT_NODE_IMAGE = "fabric/node:wire-capture-e2e"
 SPOOL_MAGIC = b"FWSPOOL1"
+SPOOL_ENVELOPE_MAGIC = b"FWSPENC1"
 
 
 def pseudonym(prefix: str, value: str, key: str | None) -> str:
@@ -438,9 +440,52 @@ def spool_records(spool: Path) -> list[Path]:
     return sorted(spool.glob("*.rec")) if spool.is_dir() else []
 
 
-def spool_header(path: Path) -> dict[str, Any]:
-    """The JSON header of one spool record (framing checked, blob ignored)."""
+def capture_protection(directory: Path, tenant: str, spool_key: bytes) -> dict[str, str]:
+    """The agent variables a production (node-mode) agent needs to record content (spec
+    049 §7.3, §7.8): a deployment-policy/v1 capture policy retaining the wire roles, and
+    the spool envelope key. ``FABRIC_WIRE_ID_KEY`` is set by the caller."""
+    policy = {
+        "schema_version": "fabric.deployment-policy/v1", "policy_id": "wire-e2e-capture",
+        "policy_version": 1, "tenant_id": tenant, "workload_id": "wire-e2e",
+        "privacy": {
+            "model.exchange.request": "retain_original",
+            "model.exchange.response": "retain_original",
+            "model.exchange.part": "retain_original",
+        },
+        "storage": {"backend": "local", "region": "local", "key_id": "wire-e2e-key"},
+        "retention": {"days": 1}, "required_integrations": [],
+        "deployment": {
+            "profile": "production", "image_digest": "sha256:" + "0" * 64,
+            "tls_required": True, "encrypted_store_required": True,
+        },
+    }  # fmt: skip
+    path = directory / f"capture-policy-{tenant}.json"
+    path.write_text(json.dumps(policy), "utf-8")
+    return {
+        "FABRIC_CAPTURE_POLICY": str(path),
+        "FABRIC_WIRE_SPOOL_KEY": base64.b64encode(spool_key).decode(),
+    }
+
+
+def open_spool_record(path: Path, key: bytes | None = None) -> bytes:
+    """One spool record's frame: opened from its AES-256-GCM envelope (spec 049 §7.8,
+    ``FWSPENC1 | key id (12) | nonce (12) | sealed frame``, the record name bound as AAD),
+    computed here independently of Fabric. A sealed record needs ``key``."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+
     data = path.read_bytes()
+    if not data.startswith(SPOOL_ENVELOPE_MAGIC):
+        return data
+    assert key is not None, f"{path.name} is sealed: the spool key is needed"
+    head = len(SPOOL_ENVELOPE_MAGIC)
+    kid, nonce = data[head : head + 12], data[head + 12 : head + 24]
+    aad = SPOOL_ENVELOPE_MAGIC + kid + path.name.encode("ascii")
+    return AESGCM(key).decrypt(nonce, data[head + 24 :], aad)
+
+
+def spool_header(path: Path, key: bytes | None = None) -> dict[str, Any]:
+    """The JSON header of one spool record (framing checked, blob ignored)."""
+    data = open_spool_record(path, key)
     assert data.startswith(SPOOL_MAGIC), path.name
     (length,) = struct.unpack(">I", data[8:12])
     header: dict[str, Any] = json.loads(data[12 : 12 + length])

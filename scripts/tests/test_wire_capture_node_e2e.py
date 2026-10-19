@@ -75,9 +75,11 @@ from _wire_capture_common import (
     Sink,
     autoload_path,
     build_image,
+    capture_protection,
     compose_available,
     free_port,
     content_config_with_tls,
+    open_spool_record,
     production_config_with_tls,
     pseudonym,
     spool_header,
@@ -121,8 +123,10 @@ def source_of(service: str) -> str:
     return f"{MARK}-src-agent"
 
 
-# Spec 049 §7.8: the Node-side content key (base64 of 32 random bytes).
+# Spec 049 §7.8: the Node-side content key (base64 of 32 random bytes) and the
+# agents' spool key (production agents seal their spool).
 CONTENT_KEY = os.urandom(32)
+SPOOL_KEY = os.urandom(32)
 NODE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
 
 
@@ -254,6 +258,12 @@ class Stack:
         key_file = root / "secrets" / "content.key"
         key_file.write_bytes(base64.b64encode(CONTENT_KEY) + b"\n")
         key_file.chmod(0o640)
+        self.content_key_file = key_file
+        # Spec 049 §7.3: a production agent records content only with a capture
+        # policy, the id key and (with a spool) the spool key.
+        self.protection = capture_protection(root, TENANT, SPOOL_KEY)
+        # Each opened snapshot -> the sealed copy it came from (what the reader reads).
+        self.sealed: dict[Path, Path] = {}
         write_tls(self.tls)
         self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
         # Clear labels the agents were given, and every report: the J1 leak scan.
@@ -396,6 +406,7 @@ class Stack:
         target = self.root / f"content-{uuid.uuid4().hex[:8]}"
         target.mkdir()
         unseal_store(sealed, target)
+        self.sealed[target] = sealed
         return target
 
     def wait_content(self, object_ids: set[str], timeout_s: float = 60.0) -> Path:
@@ -439,6 +450,7 @@ class Stack:
             "FABRIC_WIRE_SPOOL_DIR": str(spool),
             "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
             "FABRIC_WIRE_ID_KEY": ID_KEY,
+            **self.protection,
             # Default labels (no FABRIC_WIRE_LABELS): leave only as s-/svc- (J1).
             "FABRIC_SOURCE_ID": source_of(service),
             "OTEL_SERVICE_NAME": service,
@@ -488,10 +500,14 @@ class Stack:
     # -- verification --------------------------------------------------------
 
     def reconstruct(self, store: Path) -> tuple[int, dict[str, Any]]:
+        """The reader on the Node's sealed directory (its own key, spec 049 §7.8), with
+        the sink as trusted readback of the Node's telemetry (§7.9, production)."""
         out = self.root / f"report-{uuid.uuid4().hex[:8]}.json"
         result = subprocess.run(
             [sys.executable, "-m", "fabric.reconstruct", "--spans", str(self.records),
-             "--store-root", str(store), "--tenant", TENANT, "--out", str(out)],
+             "--store-root", str(self.sealed[store]), "--content-key-file",
+             str(self.content_key_file), "--tenant", TENANT, "--trusted-source",
+             "--profile", "production", "--out", str(out)],
             env={**os.environ, "FABRIC_WIRE_ID_KEY": ID_KEY},
             capture_output=True, text=True, timeout=300, check=False,
         )  # fmt: skip
@@ -500,6 +516,8 @@ class Stack:
         self.reports.append(text + result.stdout + result.stderr)
         report: dict[str, Any] = json.loads(text)
         _assert_report_labels(report, text)
+        assert report["inputs"]["telemetry_origin"] == "trusted_readback"
+        assert report["inputs"]["profile"] == "production"
         return result.returncode, report
 
 
@@ -766,6 +784,10 @@ def _assert_store_holds_content(run: AgentRun, exchanges: list[dict[str, Any]]) 
             f"file://{NODE_CONTENT_DIR}/{TENANT}/evidence/"
         )
         assert descriptor["tenant_id"] == TENANT
+        # Spec 049 §7.9: persisted by fabriccontent at the bound ingress.
+        assert descriptor.get("source_authenticated") is True
+        assert descriptor["privacy_mode"] == "retain_original"
+        assert descriptor["policy_id"] == "wire-e2e-capture"
 
 
 def test_wire_capture_streams_through_production_node_and_reconstructs(
@@ -863,14 +885,18 @@ def test_wrong_ingress_token_is_rejected_and_agent_is_unaffected(stack: Stack) -
     # though nothing could be delivered.
     assert time.monotonic() - started < 60
     # Capture itself still worked: every record waits on disk for replay.
-    headers = [spool_header(path) for path in spool_records(bad.spool)]
+    headers = [spool_header(path, SPOOL_KEY) for path in spool_records(bad.spool)]
     rejected_ids = {
         h["span"]["attributes"]["fabric.wire.exchange_id"]
         for h in headers if h["record_kind"] == "exchange"
     }  # fmt: skip
     assert len(rejected_ids) == 3, [h["record_kind"] for h in headers]
     # J1: undelivered records carry the source only as its pseudonym.
-    spooled = b"".join(path.read_bytes() for path in spool_records(bad.spool))
+    # Spec 049 §7.8: sealed at rest; opened, they name the source only by pseudonym.
+    sealed = b"".join(path.read_bytes() for path in spool_records(bad.spool))
+    for marker in CONTENT_MARKERS:
+        assert marker.encode() not in sealed, f"{marker} is in clear in the agent spool"
+    spooled = b"".join(open_spool_record(path, SPOOL_KEY) for path in spool_records(bad.spool))
     assert pseudonym("s-", source_of(bad.service), ID_KEY).encode() in spooled
     for label in (bad.service, source_of(bad.service)):
         assert label.encode() not in spooled, f"clear label {label} was spooled"
