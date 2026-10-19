@@ -118,13 +118,13 @@ content joins and two historical pending statuses.
 
 ## Composed functional evidence
 
-The [runnable journey](../scripts/qualification/run_composed_collector_journey.py)
+The [runnable journey](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/scripts/qualification/run_composed_collector_journey.py)
 uses owner-only stable key files, the existing governed encrypted store, the
 source journal and sender, the built Fabric Collector, a fsynced loopback
 destination and a separate authorized consumer process. The independent SQLite
 fixture records one business effect. Recovery never invokes that effect again.
 
-The [capture matrix](../qualification/composed-collector-capture-matrix.json)
+The [capture matrix](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/composed-collector-capture-matrix.json)
 records eight received metadata records, four unique identities and two
 verified content objects. The first destination ACK is lost; the Collector is
 killed while delivery remains outstanding, then reopens its durable queue.

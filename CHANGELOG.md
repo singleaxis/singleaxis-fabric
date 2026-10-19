@@ -164,6 +164,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `qualification/sol-local-stage` and `qualification/local-go-simulation`
   records. Nothing invoked them. The qualification-status links now point
   at commit `4a5c945`.
+- Removed `scripts/qualification/run_composed_collector_journey.py` and its
+  `qualification/composed-collector-capture-matrix.json` record. Only docs
+  referred to it; the spec 048 Compose content path and the wire-capture Node
+  E2E tests in `scripts/tests` exercise a real Collector instead.
 
 ### Known limitations
 

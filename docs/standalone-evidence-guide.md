@@ -53,9 +53,8 @@ implemented Python customer-local backend, or qualify your own adapter. Supply
 stable customer-held authority and encryption keys, private directories, grants
 and the original policy snapshot. Separate write, original-read, derivative-read
 and lifecycle permissions. Opaque references are not bearer grants. The original `integrate.py` demo
-uses ephemeral keys; its encrypted output cannot be reopened after exit. The
-composed Collector journey below instead saves stable owner-only local keys
-for fresh-process readback; those fixture key files are not a production KMS.
+uses ephemeral keys; its encrypted output cannot be reopened after exit.
+Fixture key files are not a production KMS.
 
 The local backend verifies envelopes, decrypts and checks lengths/digests. Its
 fsync and signed audit chain do not provide cloud IAM/KMS, anti-rollback, backup
@@ -137,29 +136,6 @@ not invoke a live model. Read the per-run failures and unknowns and preserve the
 artifact hashes. Production remains `NO_GO` until the declared customer scope,
 independent truth, storage controls and exact artifacts are qualified.
 
-The composed journey uses a built real Fabric Collector, a loopback fsyncing
-sink, a SQLite physical-effect witness and a fresh authorized consumer process:
-
-```sh
-PYTHONPATH=sdk/python/src python scripts/qualification/run_composed_collector_journey.py \
-  --collector-binary components/otel-collector-fabric/dist/otelcol-fabric \
-  --evidence-dir /tmp/fabric-composed-UNIQUE
-```
-
-Its `capture-matrix.json` and `consumer.json` export results. The October 2 local
-run recorded in the [sanitized composed journey matrix](../qualification/composed-collector-capture-matrix.json)
-observed 8 received records, 4 unique records, 2 resolved objects and exactly 1
-independently read SQLite effect after a deliberately lost acknowledgement and
-Collector SIGKILL/restart. Wrong tenant/policy/key, missing object and truncated
-envelope yielded explicit refusals. This is local functional evidence, not
-production authentication, external destination durability or source closure.
-The follow-up also ran this journey from a freshly installed Python wheel in a
-separate virtual environment with `PYTHONPATH` unset. The harness records the
-imported package location, verifies its Python file hashes against the reviewed
-checkout and checks the fresh consumer loaded that same installation. Use the
-wheel environment's Python and omit the `PYTHONPATH=...` prefix to reproduce
-that mode. This proves the tested artifact's local path, not customer deployment
-readiness.
 The output contains fixture keys and authorized synthetic content; keep it
 private. For the separate Compose path, use the [quickstart](quickstart.md) and
 `make qualify`. Consult the
