@@ -15,6 +15,10 @@ import {
 } from "../src/index.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../../..");
+const FIXTURES = path.join(import.meta.dirname, "fixtures/redactors");
+/** A customer redactor module (run in a worker thread): replaces the object. */
+const MASK = { module: path.join(FIXTURES, "mask.mjs") };
+const redactorModule = (name: string) => ({ module: path.join(FIXTURES, name) });
 const SECRET = Buffer.from("sensitive-value");
 const DIGEST = "sha256:777dda0c14d100c2c6728b2e3858f53c55cd62fdf3c1c3ced5decee0a5f36ea6";
 const TOKEN = "fabric.token.v1:a603512146debdb7ec03d124e146fbd4ae088f64c32642b950877829a632a31d";
@@ -120,7 +124,7 @@ describe("ContentProtector", () => {
     expect(unknown.mode).toBe("omit");
     expect(unknown.metadata.source_byte_length).toBeUndefined();
   });
-  it("separates original and derivative bytes and never serializes payloads", () => {
+  it("separates original and derivative bytes and never serializes payloads", async () => {
     const original = new ContentProtector(policyFor("retain_original")).protect(
       "terminal.stdout",
       SECRET,
@@ -131,9 +135,9 @@ describe("ContentProtector", () => {
       "sha256:" + createHash("sha256").update(SECRET).digest("hex"),
     );
     expect(JSON.stringify(original)).not.toContain("sensitive-value");
-    const redacted = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": () => Buffer.from("[redacted]") },
-    }).protect("terminal.stdout", SECRET);
+    const redacted = await new ContentProtector(policyFor("redact"), {
+      redactors: { "terminal.stdout": MASK },
+    }).protectAsync("terminal.stdout", SECRET);
     expect(redacted.status).toBe("redacted");
     expect(redacted.originalDigest).toBeNull();
     expect(redacted.metadata.source_byte_length).toBeUndefined();
@@ -142,21 +146,27 @@ describe("ContentProtector", () => {
     copy[0] = 0;
     expect(Buffer.from(original.protectedBytes!)).toEqual(SECRET);
   });
-  it("stores only the masked copy for masked_only and withholds original_plus_masked", () => {
+  it("stores only the masked copy for masked_only and withholds original_plus_masked", async () => {
     // Spec 049 §7.5/§7.7, parity with Python test_deployment_policy.py.
-    const masked = new ContentProtector(policyFor("masked_only"), {
-      redactors: { "terminal.stdout": () => Buffer.from("[masked]") },
-    }).protect("terminal.stdout", SECRET);
+    const protector = new ContentProtector(policyFor("masked_only"), {
+      redactors: { "terminal.stdout": MASK },
+    });
+    const masked = await protector.protectAsync("terminal.stdout", SECRET);
     expect(masked.status).toBe("redacted");
     expect(masked.mode).toBe("masked_only");
-    expect(Buffer.from(masked.protectedBytes!).toString()).toBe("[masked]");
+    expect(Buffer.from(masked.protectedBytes!).toString()).toBe("[redacted]");
+    // The customer redactor never runs on the caller's thread: protect() fails closed.
+    const sync = protector.protect("terminal.stdout", SECRET);
+    expect(sync.status).toBe("unsupported");
+    expect(sync.metadata.reason).toBe("redaction_requires_protect_async");
+    expect(sync.protectedBytes).toBeNull();
     expect(masked.originalDigest).toBeNull();
     expect(masked.metadata.source_byte_length).toBeUndefined();
     expect(() => new ContentProtector(policyFor("masked_only"))).toThrow("redactor");
     expect(
       () =>
         new ContentProtector(policyFor("original_plus_masked"), {
-          redactors: { "terminal.stdout": () => Buffer.from("[masked]") },
+          redactors: { "terminal.stdout": MASK },
         }),
     ).toThrow("redactors must match");
     const both = new ContentProtector(policyFor("original_plus_masked")).protect(
@@ -176,7 +186,7 @@ describe("ContentProtector", () => {
     expect(
       () =>
         new ContentProtector(policyFor("omit"), {
-          redactors: { "terminal.stdout": (data) => data },
+          redactors: { "terminal.stdout": MASK },
         }),
     ).toThrow("explicitly");
   });
@@ -210,34 +220,33 @@ describe("ContentProtector", () => {
       ).toString(),
     ).not.toBe(TOKEN);
   });
-  it("makes failed, unsupported and oversized transformations explicit without error text", () => {
+  it("makes failed, unsupported and oversized transformations explicit without error text", async () => {
     const protector = new ContentProtector(policyFor("redact"), {
-      redactors: {
-        "terminal.stdout": () => {
-          throw new Error("sensitive-value");
-        },
-      },
+      redactors: { "terminal.stdout": redactorModule("throws.mjs") },
     });
-    const result = protector.protect("terminal.stdout", SECRET);
+    const result = await protector.protectAsync("terminal.stdout", SECRET);
     expect(result.status).toBe("lost");
     expect(result.metadata.reason).toBe("protection_failed");
     expect(JSON.stringify(result)).not.toContain("sensitive-value");
     expect(result.protectedBytes).toBeNull();
     const bad = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": () => "bad" as unknown as Uint8Array },
+      redactors: { "terminal.stdout": redactorModule("not-bytes.mjs") },
     });
-    expect(bad.protect("terminal.stdout", SECRET).status).toBe("unsupported");
+    expect((await bad.protectAsync("terminal.stdout", SECRET)).status).toBe("unsupported");
     const oversized = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": () => Buffer.from("abc") },
+      redactors: { "terminal.stdout": MASK },
       payloadMaxBytes: 2,
     });
-    expect(oversized.protect("terminal.stdout", Buffer.from("x")).metadata.reason).toBe(
-      "protected_payload_too_large",
+    expect(
+      (await oversized.protectAsync("terminal.stdout", Buffer.from("x"))).metadata.reason,
+    ).toBe("protected_payload_too_large");
+    expect((await oversized.protectAsync("terminal.stdout", SECRET)).metadata.reason).toBe(
+      "payload_too_large",
     );
-    expect(oversized.protect("terminal.stdout", SECRET).metadata.reason).toBe("payload_too_large");
-    expect(oversized.protect("terminal.stdout", "bad" as unknown as Uint8Array).status).toBe(
-      "unsupported",
-    );
+    expect(
+      (await oversized.protectAsync("terminal.stdout", "bad" as unknown as Uint8Array)).status,
+    ).toBe("unsupported");
+    for (const used of [protector, bad, oversized]) await used.close();
   });
 });
 
@@ -285,7 +294,7 @@ describe("Deployment-protected byte recorder", () => {
     const derivative = store(policy.tenant_id);
     const masking = mode === "redact" || mode === "masked_only";
     const contentProtector = new ContentProtector(policy, {
-      redactors: masking ? { "terminal.stdout": () => Buffer.from("[redacted]") } : undefined,
+      redactors: masking ? { "terminal.stdout": MASK } : undefined,
       tokenizationKey: Buffer.alloc(32, "k"),
     });
     const recorder = new ByteEvidenceRecorder({
@@ -363,7 +372,7 @@ describe("Deployment-protected byte recorder", () => {
     const policy = policyFor("redact");
     const original = store(policy.tenant_id);
     const contentProtector = new ContentProtector(policy, {
-      redactors: { "terminal.stdout": () => Buffer.from("safe") },
+      redactors: { "terminal.stdout": MASK },
     });
     expect(
       () =>
@@ -402,7 +411,7 @@ describe("Deployment-protected byte recorder", () => {
       policy.tenant_id,
     );
     const contentProtector = new ContentProtector(policy, {
-      redactors: { "terminal.stdout": () => Buffer.from("safe") },
+      redactors: { "terminal.stdout": MASK },
     });
     expect(
       () =>
@@ -428,11 +437,7 @@ it("bounds token output and keeps failing redactors from ever storing input", as
   const original = store(policy.tenant_id);
   const derivative = store(policy.tenant_id);
   const contentProtector = new ContentProtector(policy, {
-    redactors: {
-      "terminal.stdout": () => {
-        throw new Error("sensitive-value");
-      },
-    },
+    redactors: { "terminal.stdout": redactorModule("throws.mjs") },
   });
   const recorder = new ByteEvidenceRecorder({
     store: original,
@@ -440,15 +445,19 @@ it("bounds token output and keeps failing redactors from ever storing input", as
     roles: new Set(["terminal.stdout"]),
     contentProtector,
   });
-  const item = recorder.capture(SECRET, {
+  const initial = recorder.capture(SECRET, {
     role: "terminal.stdout",
     boundary: "terminal",
     sourceId: "sdk",
     sourceEpoch: 0,
     sourceSequence: 1,
   });
-  expect(item.status).toBe("failed");
-  expect(item.protection_status).toBe("lost");
+  // The redactor runs in a Worker behind the handoff (Sol P0-A #5); its failure withholds.
+  expect(initial.status).toBe("pending");
+  await recorder.flush();
+  const item = recorder.get(initial.object_id)!;
+  expect(item.status).toBe("not_captured");
+  expect(item.protection_status).toBe("withheld");
   expect(item.status_reason).toBe("protection_failed");
   expect(item.source_sha256).toBeUndefined();
   expect(item.source_byte_length).toBeUndefined();

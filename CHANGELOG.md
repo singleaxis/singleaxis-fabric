@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking, TypeScript explicit line)
+
+- `ContentProtector` redactors for `redact` and `masked_only` are now customer
+  **modules** run in a `worker_threads` Worker, not functions:
+  `redactors: { role: { module: "/abs/path/redactor.mjs", exportName?: "redact" } }`.
+  Passing a function now throws at construction ("in-process redactor functions are
+  not supported"). A redactor never runs on the application's event loop; each call
+  is bounded by `transformTimeoutMs` (default 5000 ms, the Worker is terminated), and
+  an error or timeout withholds the object as `not_captured(protection_failed)`.
+  `ByteEvidenceRecorder.capture()` returns `pending` for masking roles and settles
+  after the Worker ran; `ContentProtector.protect()` fails closed for masking roles
+  (use `protectAsync()`). Spec 049 §7.1, §7.7 (Sol P0-A review #5).
+- The TypeScript `ByteEvidenceRecorder` applies the spec 049 §7.3 production gate:
+  a production-profile policy needs the id key (`idKey` or `FABRIC_WIRE_ID_KEY`);
+  without it content capture is disabled with the reason (Sol P0-A review #4).
+
 ### Added
 
 - Added the Python capture reference build with protected metadata export,

@@ -158,6 +158,7 @@ export {
   PRIVACY_MODES,
   type DeploymentPolicyData,
   type ContentProtectorOptions,
+  type RedactorModule,
   type PrivacyMode,
   type ProtectionStatus,
 } from "./deployment-policy.js";

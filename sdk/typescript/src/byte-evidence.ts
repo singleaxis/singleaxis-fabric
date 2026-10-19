@@ -199,6 +199,8 @@ interface WorkItem {
   descriptor: ByteEvidenceDescriptor;
   bytes: Uint8Array;
   store: GovernedStore;
+  /** A customer redaction deferred from capture(): runs in drain(), in a Worker. */
+  redactRole?: string;
 }
 
 export class ByteEvidenceRecorder {
@@ -422,7 +424,21 @@ export class ByteEvidenceRecorder {
       this.counts.not_captured += 1;
       return descriptor;
     }
-    const protectedContent = this.protector?.protect(options.role, data);
+    // Customer redaction never runs on the caller's path (spec 049 §7.1, §7.7): it is
+    // deferred behind the handoff, to a Worker, before persistence; failure withholds.
+    const deferred = this.protector?.runsCustomerCode(options.role) === true;
+    const protectedContent = deferred ? undefined : this.protector?.protect(options.role, data);
+    if (deferred) {
+      const policy = this.protector!.policy;
+      Object.assign(descriptor, {
+        privacy_mode: policy.privacy[options.role],
+        protection_status: "redacted",
+        policy_digest: policy.digest,
+        policy_id: policy.policy_id,
+        policy_version: policy.policy_version,
+        workload_id: policy.workload_id,
+      });
+    }
     if (protectedContent !== undefined) {
       const policy = this.protector!.policy;
       Object.assign(descriptor, {
@@ -466,7 +482,14 @@ export class ByteEvidenceRecorder {
     }
     const bytes = new Uint8Array(data); // immutable capture snapshot
     let targetStore = this.store;
-    if (protectedContent?.status === "redacted" || protectedContent?.status === "tokenized") {
+    if (deferred) {
+      descriptor.representation = "redacted"; // pending the Worker's redaction
+      descriptor.transformations = ["redact"];
+      targetStore = this.reviewStore!;
+    } else if (
+      protectedContent?.status === "redacted" ||
+      protectedContent?.status === "tokenized"
+    ) {
       descriptor.representation = protectedContent.status;
       descriptor.transformations = [protectedContent.status === "redacted" ? "redact" : "tokenize"];
       targetStore = this.reviewStore!;
@@ -476,7 +499,12 @@ export class ByteEvidenceRecorder {
       descriptor.source_sha256 = protectedContent?.original_digest ?? digest(bytes);
     }
     descriptor.status = "pending";
-    this.queue.push({ descriptor, bytes, store: targetStore });
+    this.queue.push({
+      descriptor,
+      bytes,
+      store: targetStore,
+      ...(deferred ? { redactRole: options.role } : {}),
+    });
     this.counts.pending += 1;
     this.schedule();
     return descriptor;
@@ -535,6 +563,22 @@ export class ByteEvidenceRecorder {
       while (this.queue.length > 0) {
         const item = this.queue.shift() as WorkItem;
         const d = item.descriptor;
+        if (item.redactRole !== undefined) {
+          const redacted = await this.protector!.protectAsync(item.redactRole, item.bytes);
+          const bytes = redacted.status === "redacted" ? redacted.protected_bytes : null;
+          if (bytes === null) {
+            // Spec 049 §7.7 rule 4: withheld, never raw bytes, no error text.
+            d.status = "not_captured";
+            d.status_reason = "protection_failed";
+            d.protection_status = "withheld";
+            d.representation = "unavailable";
+            delete d.transformations;
+            this.counts.pending -= 1;
+            this.counts.not_captured += 1;
+            continue;
+          }
+          item.bytes = bytes;
+        }
         let succeeded = false;
         let stored: ByteEvidenceDescriptor | undefined;
         for (let attempt = 0; attempt < this.retryMaxAttempts; attempt += 1) {

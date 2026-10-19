@@ -3,6 +3,9 @@
 /** Local capture configuration, never regulatory certification or an execution gate. */
 import { createHmac } from "node:crypto";
 import { sha256BytesPrefixed } from "./hash.js";
+import { WorkerTransformRunner, redactorHref, type RedactorModule } from "./redactor-worker.js";
+
+export type { RedactorModule } from "./redactor-worker.js";
 
 export const POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1";
 // masked_only and original_plus_masked: spec 049 §7.7 rule 2 (minor, P0-A).
@@ -266,16 +269,31 @@ export class ProtectedContent {
   }
 }
 export interface ContentProtectorOptions {
-  redactors?: Readonly<Record<string, (data: Uint8Array) => Uint8Array>>;
+  /**
+   * The customer redactor of each `redact` / `masked_only` role: a module run in a
+   * worker thread (spec 049 §7.1, §7.7), never a function on the application's thread.
+   */
+  redactors?: Readonly<Record<string, RedactorModule>>;
   tokenizationKey?: Uint8Array;
   payloadMaxBytes?: number;
+  /** Hard timeout of one redactor call, in ms (default 5000, at most 300000). */
+  transformTimeoutMs?: number;
 }
-/** Caller-supplied redaction and irreversible whole-object HMAC pseudonyms. */
+/**
+ * Customer redaction and irreversible whole-object HMAC pseudonyms.
+ *
+ * A redactor runs in a `worker_threads` Worker loaded from a customer module, bounded by
+ * `transformTimeoutMs` (the Worker is terminated); an error, a timeout or a saturated
+ * bound loses the content (`protection_failed`), never raw bytes. Masking roles are
+ * protected with {@link ContentProtector.protectAsync}; the byte recorder runs it behind
+ * the handoff, never on the caller's path.
+ */
 export class ContentProtector {
-  readonly #redactors: Readonly<Record<string, (data: Uint8Array) => Uint8Array>>;
+  readonly #runners: Readonly<Record<string, WorkerTransformRunner>>;
   readonly #key?: Uint8Array;
   readonly #modes: Readonly<Record<string, PrivacyMode>>;
   readonly payloadMaxBytes: number;
+  readonly transformTimeoutMs: number;
   constructor(
     readonly policy: DeploymentPolicy,
     options: ContentProtectorOptions = {},
@@ -284,19 +302,30 @@ export class ContentProtector {
       throw new Error("content protection requires a DeploymentPolicy");
     this.payloadMaxBytes = positive(options.payloadMaxBytes ?? 1024 * 1024, 64 * 1024 * 1024);
     this.#modes = policy.privacy;
-    this.#redactors = Object.freeze({ ...options.redactors });
+    const timeout = options.transformTimeoutMs ?? 5_000;
     if (
-      Object.entries(this.#redactors).some(
-        ([role, fn]) => !MASKING.has(this.#modes[role] ?? "") || typeof fn !== "function",
-      )
+      typeof timeout !== "number" ||
+      !Number.isFinite(timeout) ||
+      timeout <= 0 ||
+      timeout > 300_000
     )
+      throw new Error("transformTimeoutMs must be in (0, 300000]");
+    this.transformTimeoutMs = timeout;
+    const redactors = { ...options.redactors };
+    if (Object.keys(redactors).some((role) => !MASKING.has(this.#modes[role] ?? "")))
       throw new Error("redactors must match explicitly redacted roles");
+    for (const spec of Object.values(redactors)) redactorHref(spec); // fixed-text errors
     if (
       Object.entries(this.#modes).some(
-        ([role, mode]) => MASKING.has(mode) && !Object.hasOwn(this.#redactors, role),
+        ([role, mode]) => MASKING.has(mode) && !Object.hasOwn(redactors, role),
       )
     )
       throw new Error("redact mode requires an explicit customer redactor for each role");
+    this.#runners = Object.freeze(
+      Object.fromEntries(
+        Object.entries(redactors).map(([role, spec]) => [role, new WorkerTransformRunner(spec)]),
+      ),
+    );
     if (
       options.tokenizationKey !== undefined &&
       (!(options.tokenizationKey instanceof Uint8Array) || options.tokenizationKey.byteLength < 32)
@@ -307,6 +336,59 @@ export class ContentProtector {
     this.#key =
       options.tokenizationKey === undefined ? undefined : new Uint8Array(options.tokenizationKey);
   }
+  /** Whether protecting `role` runs a customer redactor (`redact`, `masked_only`). */
+  runsCustomerCode(role: string): boolean {
+    return typeof role === "string" && MASKING.has(this.#modes[role] ?? "");
+  }
+
+  /** Counters of the redactor Workers, summed over roles (never a value). */
+  stats(): {
+    transform_timeouts: number;
+    transform_saturated: number;
+    transform_abandoned: number;
+  } {
+    const totals = { transform_timeouts: 0, transform_saturated: 0, transform_abandoned: 0 };
+    for (const runner of Object.values(this.#runners)) {
+      const counts = runner.stats();
+      totals.transform_timeouts += counts.transform_timeouts;
+      totals.transform_saturated += counts.transform_saturated;
+      totals.transform_abandoned += counts.transform_abandoned;
+    }
+    return totals;
+  }
+
+  /** Terminate idle redactor Workers; later redactions are lost (`protection_failed`). */
+  async close(): Promise<void> {
+    await Promise.all(Object.values(this.#runners).map((runner) => runner.close()));
+  }
+
+  /**
+   * Protect one object. Masking roles run their redactor module in a Worker, bounded by
+   * `transformTimeoutMs`; every other mode is {@link ContentProtector.protect}.
+   */
+  async protectAsync(role: string, data: Uint8Array): Promise<ProtectedContent> {
+    if (!this.runsCustomerCode(role) || !(data instanceof Uint8Array))
+      return this.protect(role, data);
+    const mode = this.#modes[role]!;
+    const metadata: Record<string, string | number> = { policy_digest: this.policy.digest };
+    const result = (status: ProtectionStatus, reason: string, bytes: Uint8Array | null = null) =>
+      new ProtectedContent(status, mode, null, Object.freeze({ ...metadata, reason }), bytes);
+    if (data.byteLength > this.payloadMaxBytes) return result("lost", "payload_too_large");
+    const outcome = await this.#runners[role]!.run(data, this.transformTimeoutMs);
+    if (outcome.outcome === "invalid_output")
+      return result("unsupported", "unsupported_transform_output");
+    if (outcome.outcome !== "ok") return result("lost", "protection_failed");
+    if (outcome.data.byteLength > this.payloadMaxBytes)
+      return result("lost", "protected_payload_too_large");
+    metadata.transform = "customer_redactor";
+    return result("redacted", "redacted_by_customer", outcome.data);
+  }
+
+  /**
+   * Protect one object synchronously: every mode but `redact` and `masked_only`, whose
+   * customer redactor runs only in a Worker ({@link ContentProtector.protectAsync}); for
+   * those this fails closed (`unsupported`, `redaction_requires_protect_async`).
+   */
   protect(role: string, data: Uint8Array): ProtectedContent {
     const mode = Object.hasOwn(this.#modes, role) ? this.#modes[role]! : "omit";
     const metadata: Record<string, string | number> = { policy_digest: this.policy.digest };
@@ -330,18 +412,8 @@ export class ContentProtector {
         return result("retained", "original_retained", data, sha256BytesPrefixed(data));
       }
       if (MASKING.has(mode)) {
-        // masked_only: only the masked copy is stored, never the original's digest (§7.5).
-        const bytes = this.#redactors[role]!(new Uint8Array(data));
-        if (!(bytes instanceof Uint8Array)) {
-          // A mistakenly async callback must not cause an unhandled rejection.
-          if ((bytes as unknown) instanceof Promise)
-            void (bytes as unknown as Promise<unknown>).catch(() => undefined);
-          return result("unsupported", "unsupported_transform_output");
-        }
-        if (bytes.byteLength > this.payloadMaxBytes)
-          return result("lost", "protected_payload_too_large");
-        metadata.transform = "customer_redactor";
-        return result("redacted", "redacted_by_customer", bytes);
+        // Customer code never runs on the caller's thread (spec 049 §7.1): protectAsync.
+        return result("unsupported", "redaction_requires_protect_async");
       }
       if (mode === "tokenize" && this.#key !== undefined) {
         const scope = Buffer.from(

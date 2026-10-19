@@ -175,14 +175,16 @@ This limitation differs from the Python local store's directory-handle checks.
 
 Pass a validated `DeploymentPolicy` as `deploymentPolicy`, or a
 `ContentProtector` as `contentProtector`, to `ByteEvidenceRecorder`. The policy
-tenant must match the store. Protection runs before bytes enter the delivery
-queue; roles absent from the policy are omitted. These options apply only to
+tenant must match the store. Fabric's own protection runs before bytes enter the
+delivery queue; a customer redaction runs behind it, in a worker thread, before
+anything is stored (below). Roles absent from the policy are omitted. These options apply only to
 this explicit byte-capture interface, not automatically to every SDK content
 path or third-party integration.
 
 - `omit` records no original bytes, digest, or length
 - `metadata_only` records the original length without bytes or an original digest
-- `redact` requires a synchronous customer-supplied redactor for each selected role
+- `redact` and `masked_only` require a customer redactor module for each selected
+  role (below)
 - `tokenize` produces an irreversible, whole-object HMAC pseudonym using a
   customer-supplied key of at least 32 bytes; it is scoped to policy, tenant,
   workload, and role
@@ -196,8 +198,25 @@ original digest or length. Policy ID, version, digest, and workload bind the loc
 descriptor to its configured capture policy; they do not prove independent
 authorization, encryption, residency, delivery, or completeness.
 
-Transforms execute synchronously on a bounded payload, so customers must keep
-redactors fast and test their correctness. Storage delivery remains asynchronous.
+A redactor is a customer **module**, never a function: `redactors: {"terminal.stdout":
+{ module: "/abs/path/redactor.mjs", exportName: "redact" }}` (an absolute path or
+`file:` URL; `exportName` defaults to `redact`). Its export maps the object's bytes
+(`Uint8Array`) to their masked replacement (`Uint8Array`, or a promise of one). It is
+loaded in a `worker_threads` Worker, so it never runs on, or blocks, the application's
+event loop: `capture()` returns a `pending` descriptor at once. Each call is bounded by
+`transformTimeoutMs` (default 5000): on timeout the Worker is terminated. An error, a
+timeout, a non-bytes or oversized result withholds the object (`not_captured`,
+`protection_status: withheld`, `status_reason: protection_failed`). At most two calls
+per redactor run at once and at most two timed-out Workers may still be terminating;
+beyond either bound content is withheld at once (`ContentProtector.stats()` counts
+timeouts and saturation). In-process redactor functions are rejected at construction.
+`ContentProtector.protect()` is synchronous and fails closed for masking roles; use
+`protectAsync()`. Call `ContentProtector.close()` to stop idle Workers.
+
+In the production profile (`deployment.profile: production` in the policy) content
+capture also needs the id key (`idKey` or `FABRIC_WIRE_ID_KEY`, at least 16 bytes);
+without it every capture is `not_captured` with `status_reason: missing_id_key` and
+`ByteEvidenceRecorder.status()` says so.
 Configuration errors are reported during setup; capture outcomes never authorize
 or reject the monitored action. This Node interface does not implement the Python
 authenticated local store, capability authority, or deployment-state registry.
