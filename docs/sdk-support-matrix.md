@@ -28,20 +28,11 @@ build's qualification results.
 | Action enforcement | Not implemented | Not implemented |
 | Production IAM/KMS, residency, network or native BPF attestation | External target qualification required | External target qualification required |
 
-Machine-readable equivalent:
-
-```python
-from fabric.capture_capabilities import sdk_capabilities
-
-python_support = sdk_capabilities("python")
-typescript_support = sdk_capabilities("typescript")
-```
-
-The v1 documents explicitly identify support as `implemented`, `reference_only`,
-`contract_only`, `not_implemented` or `external_qualification_required`. Their
-`evidence_scope=source_support_declaration`, `active_hook_attestation=false`, and
-`production_qualified=false` are intentional. Do not use this static matrix as
-a workload readback or infer that installed features are enabled.
+The connector capability manifests in
+[`contracts/connect/v1/manifests`](../contracts/connect/v1/manifests) are the
+machine-readable declarations for each released SDK and connector. Do not use
+this static matrix as a workload readback or infer that installed features are
+enabled.
 
 ## Durability and privacy limits
 

@@ -26,7 +26,6 @@ The Python imports are explicit optional submodules; none installs global hooks.
 | `CapturePolicyRegistry` | Local authenticated read/propose/approve/observe-applied; optimistic revisions; atomic durable state and bounded hash history | Single host; local administrators trusted; history is not independent signed audit anchoring |
 | `IdentityBoundAuthority` / `PrincipalBinding` | Intersects a verified grant with an explicit issuer/subject/tenant/workload/role/permission binding | Customer supplies credential verification; this is not an SSO or workload-attestation service |
 | `CaptureReadback` / registry `readback` | Authenticated report comparison, exact scope, digest, required capabilities and freshness | An authorized caller report, not proof of remote execution or loaded hooks |
-| `sdk_capabilities` | Versioned Python/TypeScript source support declaration | Does not attest a running workload or qualification result |
 
 ### Authenticated operator and workload adapters
 
@@ -136,8 +135,7 @@ that silently changes passive capture into blocking execution.
 
 See [SDK support matrix](sdk-support-matrix.md) for the exact Python/TypeScript
 boundary. The focused tests are `test_capture_identity.py`,
-`test_capture_readback.py`, `test_capture_capabilities.py`,
-`test_control_protocol.py`, `test_deployment_state.py` and
+`test_capture_readback.py`, `test_control_protocol.py`, `test_deployment_state.py` and
 `test_control_evidence.py`. They exercise authenticated role separation,
 cross-scope/revision denial, unknown/stale readback, all final-boundary bindings,
 retry mismatch, deny-followed-by-success and the absence of execution permission.

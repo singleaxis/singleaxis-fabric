@@ -64,6 +64,7 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/adapters/agent_framework.py",
     "/src/fabric/adapters/crewai.py",
     "/src/fabric/adapters/langgraph.py",
+    "/src/fabric/capture_capabilities.py",
     "/src/fabric/cli.py",
     "/src/fabric/deployment.py",
     "/src/fabric/escalation.py",

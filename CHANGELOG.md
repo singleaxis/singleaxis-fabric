@@ -150,6 +150,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   those attributes. The module is now a forbidden wheel/sdist member in the
   release policy and wheel qualifier, and the Python SDK connector manifest
   declares `framework_lifecycle` as `caller_reported`.
+- **Breaking: removed `fabric.capture_capabilities`** (`sdk_capabilities`).
+  The static `fabric.capture-sdk-capabilities/v1` matrix duplicated the
+  connector capability manifests in `contracts/connect/v1/manifests`, which
+  stay the machine-readable declaration. The module is now a forbidden
+  wheel/sdist member.
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.
