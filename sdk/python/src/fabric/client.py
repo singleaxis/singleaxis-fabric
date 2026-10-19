@@ -18,6 +18,8 @@ from ._attributes import check_attribute_keys
 from ._content import CONTENT_ROLES
 from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._id_validators import check_identifier, warn_if_pii_shaped
+from ._identity import IdentityPolicy
+from ._sequence import IDENTITY_MODE_ENV, IdentityMode, id_key_from_env, identity_mode_from_env
 from .tracing import get_meter, get_tracer
 
 if TYPE_CHECKING:
@@ -75,6 +77,9 @@ class FabricConfig:
     # client opens (per-call ``attributes=`` wins on key collision).
     # Reserved ``fabric.*`` / ``gen_ai.*`` keys are rejected at build time.
     extra: dict[str, str] = field(default_factory=dict)
+    # 049 §2.9: ``pseudonymous`` (keyed ``sess-``/``usr-``/... ids, omitted without
+    # ``FABRIC_WIRE_ID_KEY``) or ``clear``; ``None`` = ``FABRIC_IDENTITY_MODE`` at client build.
+    identity_mode: IdentityMode | None = None
 
     def __post_init__(self) -> None:
         # Strip whitespace so a stray newline or trailing space in a
@@ -105,6 +110,7 @@ class FabricConfig:
                 raise ValueError(f"{attr} must be non-empty when set")
             object.__setattr__(self, attr, stripped)
         self._validate_execution_attempt()
+        self._validate_identity_mode()
         if not self.tenant_id:
             raise ValueError("tenant_id is required (empty or whitespace only)")
         if not self.agent_id:
@@ -138,6 +144,12 @@ class FabricConfig:
         # deployment-level extra silently clobber SDK-owned identity.
         check_attribute_keys(self.extra)
 
+    def _validate_identity_mode(self) -> None:
+        if self.identity_mode not in (None, "pseudonymous", "clear"):
+            raise ValueError(
+                f"identity_mode must be 'pseudonymous' or 'clear' ({IDENTITY_MODE_ENV})"
+            )
+
     def _validate_execution_attempt(self) -> None:
         """Validate the optional ``execution_attempt`` (>=1 int when set)."""
         if self.execution_attempt is None:
@@ -165,8 +177,11 @@ class Fabric:
         meter: Meter | None = None,
         content_store: ContentStore | None = None,
         content_capture: ContentCaptureConfig | None = None,
+        id_key: bytes | None = None,
     ) -> None:
+        """``id_key``: the pseudonym key (default ``FABRIC_WIRE_ID_KEY``); a secret."""
         self._config = config
+        self._identity = IdentityPolicy.resolve(config.identity_mode, id_key, os.environ)
         self._tracer = tracer or get_tracer()
         self._meter = meter or get_meter()
         # Dual-pipeline content store — governed references vs trace metadata.
@@ -218,7 +233,8 @@ class Fabric:
         Optional:
           ``FABRIC_PROFILE`` (default ``shadow``),
           ``FABRIC_AGENT_NAME``, ``FABRIC_AGENT_VERSION``,
-          ``FABRIC_WORKFLOW_ID``, ``FABRIC_EXECUTION_ID``
+          ``FABRIC_WORKFLOW_ID``, ``FABRIC_EXECUTION_ID``,
+          ``FABRIC_IDENTITY_MODE`` (default ``pseudonymous``), ``FABRIC_WIRE_ID_KEY``
 
         Missing required vars raise :class:`ValueError` with the
         variable name, so a misconfigured deployment fails on startup
@@ -242,8 +258,9 @@ class Fabric:
             profile=profile,
             workflow_id=source.get(ENV_WORKFLOW_ID),
             execution_id=source.get(ENV_EXECUTION_ID),
+            identity_mode=identity_mode_from_env(source),
         )
-        return cls(config)
+        return cls(config, id_key=id_key_from_env(source))
 
     @property
     def config(self) -> FabricConfig:
@@ -272,6 +289,11 @@ class Fabric:
     @property
     def profile(self) -> str:
         return self._config.profile
+
+    @property
+    def identity(self) -> IdentityPolicy:
+        """How this client emits caller-supplied ids (049 §2.9)."""
+        return self._identity
 
     def decision(
         self,

@@ -27,6 +27,15 @@ SOURCE_PSEUDONYM_RE = re.compile(r"^s-[0-9a-f]{32}$")
 ID_KEY_ENV = "FABRIC_WIRE_ID_KEY"
 LABELS_ENV = "FABRIC_WIRE_LABELS"  # "clear": operator labels exported unchanged (opt-in)
 Labels = Literal["pseudonymous", "clear"]
+IDENTITY_MODE_ENV = "FABRIC_IDENTITY_MODE"  # 049 §2.9 rule 7: ids pseudonymous or clear
+IdentityMode = Literal["pseudonymous", "clear"]
+# Function v2 prefix -> type string (049 §2.9 rule 2), pinned by pseudonym-v2.json.
+V2_TYPES: Mapping[str, str] = {
+    "sess": "session", "usr": "user", "act": "actor", "conv": "conversation", "turn": "turn",
+    "trg": "trigger", "dsp": "dispatch", "agt": "agent", "tgt": "target", "hst": "host",
+    "sbx": "sandbox", "mcps": "mcp_session", "rpc": "jsonrpc", "dbn": "db_namespace",
+    "txn": "db_transaction", "mst": "memory_store", "mkey": "memory_key", "p": "provider",
+}  # fmt: skip
 MIN_ID_KEY_BYTES = 16
 Component = Literal["wire"]
 _LIVE: weakref.WeakSet[SourceAllocator] = weakref.WeakSet()
@@ -84,6 +93,37 @@ def source_label(source_id: str, key: bytes | None = None, *, clear: bool = Fals
     if clear or SOURCE_PSEUDONYM_RE.fullmatch(source_id):
         return source_id
     return label_pseudonym("s-", source_id, key)
+
+
+def operator_label(value: str, key: bytes | None = None, *, clear: bool = False) -> str:
+    """An operator label (049 §4.2: policy ids, workflow nodes) as emitted: ``lbl-`` +
+    :func:`label_pseudonym` (keyed when ``key`` is set), unchanged only when ``clear``."""
+    return value if clear else label_pseudonym("lbl-", value, key)
+
+
+def pseudonym_v2(prefix: str, value: str, key: bytes | None) -> str | None:
+    """Function v2 (049 §2.9): ``prefix-`` + the first 32 hex of HMAC-SHA256(k_type, value),
+    k_type = HMAC-SHA256(key, ``"fabric-id/v2/" + type``). ``None`` without a key: an
+    unkeyed hash of a low-entropy id is not a pseudonym, so the id is omitted."""
+    if key is None:
+        return None
+    k_type = hmac.new(key, f"fabric-id/v2/{V2_TYPES[prefix]}".encode(), hashlib.sha256).digest()
+    data = value.encode("utf-8", "surrogatepass")
+    return f"{prefix}-" + hmac.new(k_type, data, hashlib.sha256).hexdigest()[:32]
+
+
+def key_id(key: bytes) -> str:
+    """The id key's public id (049 §2.9 rule 6): ``kid-`` + 8 hex; never the key."""
+    return "kid-" + hmac.new(key, b"fabric-id/v2/kid", hashlib.sha256).hexdigest()[:8]
+
+
+def identity_mode_from_env(environ: Mapping[str, str]) -> IdentityMode:
+    """``FABRIC_IDENTITY_MODE``: unset/``pseudonymous`` (default) or ``clear``; else
+    ``ValueError`` (fixed text, never the value)."""
+    value = (environ.get(IDENTITY_MODE_ENV) or "pseudonymous").strip()
+    if value not in ("pseudonymous", "clear"):
+        raise ValueError(f"{IDENTITY_MODE_ENV} must be 'pseudonymous' or 'clear'")
+    return cast("IdentityMode", value)
 
 
 def labels_from_env(environ: Mapping[str, str]) -> Labels:

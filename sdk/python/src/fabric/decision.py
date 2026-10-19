@@ -47,6 +47,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import threading
 from contextlib import (
     AbstractContextManager,
@@ -130,6 +131,7 @@ from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
+from ._identity import IdentityPolicy
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
 from .memory import MemoryKind, MemoryRecord
@@ -218,6 +220,9 @@ class _ClientLike(Protocol):
 
     @property
     def content_roles(self) -> frozenset[str]: ...
+
+    @property
+    def identity(self) -> IdentityPolicy: ...
 
 
 # Explicitly re-export the shared leaf constants pulled in from
@@ -415,9 +420,17 @@ class Decision(AbstractContextManager["Decision"]):
         # PII shape warnings on per-turn identifiers. These attach to
         # every emitted span; flagging email/phone shapes once per
         # process keeps a quiet leak loud.
-        warn_if_pii_shaped("session_id", session_id)
+        # 049 §2.9: how ids leave the process (pseudonymous by default, omitted without a
+        # key; ``clear`` reproduces the pre-049 output).
+        identity = getattr(client, "identity", None)
+        self._identity = identity if isinstance(identity, IdentityPolicy) else (
+            IdentityPolicy.resolve(None, None, os.environ)
+        )  # fmt: skip
+        if self._identity.clear:  # pseudonymous: the values never reach a span
+            warn_if_pii_shaped("session_id", session_id)
         warn_if_pii_shaped("request_id", request_id)
-        warn_if_pii_shaped("user_id", user_id)
+        if self._identity.clear:
+            warn_if_pii_shaped("user_id", user_id)
         self._client = client
         self._session_id = session_id
         self._request_id = request_id
@@ -620,7 +633,8 @@ class Decision(AbstractContextManager["Decision"]):
         self._span.set_attribute("gen_ai.operation.name", "invoke_agent")
         self._span.set_attribute("gen_ai.agent.name", self._client.agent_name)
         self._span.set_attribute("gen_ai.agent.id", self._client.agent_id)
-        self._span.set_attribute("gen_ai.conversation.id", self._session_id)
+        if (session := self._identity.id("sess", self._session_id)) is not None:
+            self._span.set_attribute("gen_ai.conversation.id", session)
         if self._client.agent_version is not None:
             self._span.set_attribute("gen_ai.agent.version", self._client.agent_version)
         if self._client.agent_description is not None:
@@ -660,10 +674,11 @@ class Decision(AbstractContextManager["Decision"]):
                 ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
                 self._resolved_execution_retry_previous_attempt_id,
             )
-        self._span.set_attribute(ATTR_SESSION, self._session_id)
+        if session is not None:
+            self._span.set_attribute(ATTR_SESSION, session)
         self._span.set_attribute(ATTR_REQUEST, self._request_id)
-        if self._user_id is not None:
-            self._span.set_attribute(ATTR_USER, self._user_id)
+        if self._user_id is not None and (user := self._identity.id("usr", self._user_id)):
+            self._span.set_attribute(ATTR_USER, user)
         # Delegation lineage from a propagated context. ``parent_agent_id``
         # names the delegating agent when the upstream carried one (a
         # ``delegate`` carrier); for a plain hand-off the upstream's own
@@ -1205,14 +1220,16 @@ class Decision(AbstractContextManager["Decision"]):
             # from_content always populates content_hash (write side).
             if record.content_hash is not None:
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
-            if record.key is not None:
-                event_attrs["fabric.memory.key"] = record.key
+            if record.key is not None and (memory_key := self._identity.id("mkey", record.key)):
+                event_attrs["fabric.memory.key"] = memory_key
             if record.tags:
                 event_attrs["fabric.memory.tags"] = record.tags
             if record.ttl_seconds is not None:
                 event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
-            if record.invalidates is not None:
-                event_attrs["fabric.memory.invalidates"] = record.invalidates
+            if record.invalidates is not None and (
+                invalidates := self._identity.id("mkey", record.invalidates)
+            ):
+                event_attrs["fabric.memory.invalidates"] = invalidates
             if content_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = content_ref
             span.add_event("fabric.memory", attributes=event_attrs)
@@ -1223,8 +1240,8 @@ class Decision(AbstractContextManager["Decision"]):
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
                 if store_id is not None:
                     memory_span.set_attribute("gen_ai.memory.store.id", store_id)
-                if key is not None:
-                    memory_span.set_attribute("gen_ai.memory.record.id", key)
+                if key is not None and (record_id := self._identity.id("mkey", key)):
+                    memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 if provider is not None:
                     memory_span.set_attribute("gen_ai.provider.name", provider)
                 if capture_content:
@@ -1292,8 +1309,10 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.memory.direction": record.direction,
                 "fabric.memory.kind": record.kind.value,
-                "fabric.memory.key": record.key if record.key is not None else key,
             }
+            recalled = record.key if record.key is not None else key
+            if memory_key := self._identity.id("mkey", recalled):
+                event_attrs["fabric.memory.key"] = memory_key
             # from_recall always populates content_hash (read side).
             if record.content_hash is not None:
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
@@ -1306,7 +1325,8 @@ class Decision(AbstractContextManager["Decision"]):
                 "search_memory", kind=SpanKind.CLIENT
             ) as memory_span:
                 memory_span.set_attribute("gen_ai.operation.name", "search_memory")
-                memory_span.set_attribute("gen_ai.memory.record.id", key)
+                if record_id := self._identity.id("mkey", key):
+                    memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
                 if store_id is not None:
                     memory_span.set_attribute("gen_ai.memory.store.id", store_id)
@@ -1370,8 +1390,9 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.memory.direction": record.direction,
                 "fabric.memory.kind": record.kind.value,
-                "fabric.memory.key": key,
             }
+            if memory_key := self._identity.id("mkey", key):
+                event_attrs["fabric.memory.key"] = memory_key
             if record.tenant_scope:
                 event_attrs["fabric.memory.tenant_scope"] = True
             span.add_event("fabric.memory", attributes=event_attrs)
@@ -1379,7 +1400,8 @@ class Decision(AbstractContextManager["Decision"]):
                 "delete_memory", kind=SpanKind.CLIENT
             ) as memory_span:
                 memory_span.set_attribute("gen_ai.operation.name", "delete_memory")
-                memory_span.set_attribute("gen_ai.memory.record.id", key)
+                if record_id := self._identity.id("mkey", key):
+                    memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
                 if store_id is not None:
                     memory_span.set_attribute("gen_ai.memory.store.id", store_id)
@@ -1757,8 +1779,8 @@ class Decision(AbstractContextManager["Decision"]):
             }
             if redact_target:
                 event_attrs[ATTR_INTERACTION_TARGET_HASH] = _sha256_hex(target)
-            else:
-                event_attrs[ATTR_INTERACTION_TARGET] = target
+            elif (emitted := self._identity.id("tgt", target)) is not None:
+                event_attrs[ATTR_INTERACTION_TARGET] = emitted
             if direction is not None:
                 event_attrs[ATTR_INTERACTION_DIRECTION] = direction
             if payload_hash is not None:
@@ -1965,10 +1987,11 @@ class Decision(AbstractContextManager["Decision"]):
             depth = self._delegation_depth + 1
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
-                ATTR_DELEGATION_TO_AGENT: to_agent,
-                ATTR_DELEGATION_PROTOCOL: protocol,
-                ATTR_DELEGATION_DEPTH: depth,
             }
+            if (agent := self._identity.id("agt", to_agent)) is not None:
+                event_attrs[ATTR_DELEGATION_TO_AGENT] = agent
+            event_attrs[ATTR_DELEGATION_PROTOCOL] = protocol
+            event_attrs[ATTR_DELEGATION_DEPTH] = depth
             apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
             self._delegation_count += 1
             self._delegation_depth += 1
@@ -2164,6 +2187,8 @@ class Decision(AbstractContextManager["Decision"]):
             span = self.span
             self._file_access_count += 1
             span.set_attribute(ATTR_FILE_ACCESS_COUNT, self._file_access_count)
+            # 049 N46: telemetry carries only the path hash unless identity mode is clear.
+            redact_path = redact_path or not self._identity.clear
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
@@ -2273,7 +2298,10 @@ class Decision(AbstractContextManager["Decision"]):
             previous_response_id=previous_response_id,
             encoding_formats=encoding_formats,
             output_type=output_type,
-            conversation_id=conversation_id or self._session_id,
+            # 049 §2.9: the session's ``sess-`` or a caller conversation's ``conv-`` form.
+            conversation_id=self._identity.id("conv", conversation_id)
+            if conversation_id
+            else self._identity.id("sess", self._session_id),
             conversation_compacted=(
                 self._conversation_compacted
                 if conversation_compacted is None
