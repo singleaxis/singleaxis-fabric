@@ -123,10 +123,10 @@ not a deployment mutation.
   [recorder-v1 release gates](../specs/027-recorder-v1.md).
 
 
-### Python optional auto capture
+### Python managed span export
 
-For a minimal upstream-SDK hook with a protected Fabric-managed export route,
-follow [Python auto capture: protected setup and limits](python-auto-capture-privacy.md).
-Install the provider before registration, inspect its current-process protection
-status and test the actual route. Upstream content flags alone do not remove raw
-provider exception text. Existing host exporters remain host-owned.
+For a protected Fabric-managed span export route, follow
+[Python managed span export: protection and limits](python-span-export-protection.md).
+Install the provider before other instrumentation, inspect its current-process
+protection status and test the actual route. Upstream content flags alone do not
+remove raw provider exception text. Existing host exporters remain host-owned.
