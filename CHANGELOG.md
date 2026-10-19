@@ -166,6 +166,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   is gone too (`GovernedLocalContentStore` still rejects a write whose
   descriptor carries another policy binding). Both modules are now forbidden
   wheel/sdist members.
+- **Breaking: removed the local capture-policy registry and principal
+  binding** (`fabric.deployment_state`: `CapturePolicyRegistry`,
+  `validate_policy`, `RevisionConflictError`; `fabric.capture_identity`:
+  `IdentityBoundAuthority`, `PrincipalBinding`; `fabric.capture_readback`:
+  `CaptureReadback`, `assess_readback`). Policy rollout, approval and
+  readback are management scope, outside the recorder. `DeploymentPolicy`
+  (`fabric.deployment_policy`) still validates and digests the capture
+  configuration. The three modules are now forbidden wheel/sdist members.
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.

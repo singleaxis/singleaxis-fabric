@@ -17,9 +17,6 @@ build's qualification results.
 | Encrypted durable byte spool/replay | Implemented, `byte_spool.DurableByteSpool`, `ByteEvidenceConfig.durable_spool` | Not implemented |
 | Restartable metadata delivery/ack ledger | Implemented, `metadata_delivery.JournalMetadataSender`, `HTTPMetadataTransport` | Not implemented |
 | Authenticated AES-GCM local governed store | Implemented, `GovernedLocalContentStore` | Not implemented; ordinary stores are not an equivalent |
-| Local desired/approved/applied lifecycle | Implemented, `CapturePolicyRegistry` | Not implemented |
-| Verified principal-to-workload/operator bindings | Adapter implemented, `IdentityBoundAuthority`; verifier supplied by customer | Not implemented |
-| Authenticated configuration readback/drift | Implemented, `CaptureReadback`, registry `readback` | Not implemented |
 | External control observations | Metadata only, `ControlObservation` | Not implemented |
 | Final-boundary external control exchange | Contract only, `control_protocol`; no controller invocation or gate | Not implemented |
 | Independently persisted receipt service | Local reference, `reference_receipts.ReferenceReceiptService` | Not implemented |
@@ -46,8 +43,8 @@ enabled.
 - Deployment policy protects the explicit ByteEvidenceRecorder path. It does
   not retrofit arbitrary OTel exporters, provider logs, diagnostics or traffic
   that was never submitted to Fabric.
-- A configured policy, bound identity or static capability declaration does not
-  prove live hooks, encryption custody, retention deletion, destination readback
+- A configured policy or static capability declaration does not prove live
+  hooks, encryption custody, retention deletion, destination readback
   or complete coverage of physical attempts.
 
 See [capture/control compatibility](capture-control-compatibility.md) and

@@ -22,73 +22,6 @@ The Python imports are explicit optional submodules; none installs global hooks.
 | Interface | Implemented behavior | Boundary |
 | --- | --- | --- |
 | `DeploymentPolicy`, `fabric.deployment-policy/v1` | Closed validation, immutable snapshot and canonical digest; privacy/storage/retention/integration requirements | Configuration cannot prove encryption, region, hook installation or production readiness |
-| `validate_policy` | Pure dry-run validation and digest | No persistence, credential generation, rollout or dispatch |
-| `CapturePolicyRegistry` | Local authenticated read/propose/approve/observe-applied; optimistic revisions; atomic durable state and bounded hash history | Single host; local administrators trusted; history is not independent signed audit anchoring |
-| `IdentityBoundAuthority` / `PrincipalBinding` | Intersects a verified grant with an explicit issuer/subject/tenant/workload/role/permission binding | Customer supplies credential verification; this is not an SSO or workload-attestation service |
-| `CaptureReadback` / registry `readback` | Authenticated report comparison, exact scope, digest, required capabilities and freshness | An authorized caller report, not proof of remote execution or loaded hooks |
-
-### Authenticated operator and workload adapters
-
-`PolicyAuthority.authorize` is the verification seam. An implementation must
-validate credentials and authorization on every call, including issuer,
-audience, expiry, revocation and exact tenant/workload/policy scope as applicable.
-Never implement it by trusting telemetry attributes or an unsigned subject label.
-
-The existing `LocalCapabilityAuthority` is a real HMAC bearer-grant verifier for
-a trusted local administrator; it does not provide federated SSO, audience-bound
-service tokens, hardware identity or cloud IAM. `IdentityBoundAuthority` can wrap
-it or a customer-supplied verifying authority. Bindings are trusted local
-configuration and cannot be supplied by the report being authorized. Unknown,
-wrong-issuer, wrong-subject, cross-tenant, cross-workload or insufficient grants
-fail before any configuration operation. Returned identity metadata is closed;
-unknown claims and credential material are not forwarded.
-
-This adapter implements the configuration `PolicyAuthority` interface.
-`GovernedLocalContentStore` still uses its existing `LocalCapabilityAuthority`
-interface for envelope signing and store operations; the configuration wrapper
-is not a drop-in replacement for that store's authority object.
-
-- Workloads may receive explicitly selected data read/write, `policy_read`, and
-  `policy_observe` permissions. They cannot receive `policy_admin`, lifecycle or
-  audit authority through this adapter.
-- Operators can receive explicitly selected permissions, including `policy_admin`.
-  Being an operator alone does not grant any operation.
-- `policy_observe` reports configuration readback. It does not approve or apply
-  policy. An observer must use a fresh grant bound to the current desired policy
-  even when reporting that its loaded policy is old.
-- Transport authentication, principal provisioning, key custody, revocation and
-  support-access workflows remain the deployment owner's responsibilities.
-
-### Desired, approved, applied and observed
-
-`read` returns the versioned persisted state plus `configuration_lifecycle`:
-`desired`, `approved`, or `applied_observed`. A proposal must increase the version
-and preserve tenant/workload/policy identity. It clears approval and preserves the
-older applied observation. Approval binds the exact desired digest.
-`observe_applied` requires the approved desired digest and an operator grant; it
-is explicitly an authorized caller report. It does not install configuration.
-The existing `drift` field compares the stored desired/applied digests.
-
-`readback(reader_capability, observation=CaptureReadback(...),
-observer_capability=..., max_age_seconds=300)` is a separate read-only assessment:
-
-- The reader requires `policy_read`; the reporter independently requires
-  `policy_observe`. Both grants are checked against the same locked revision.
-- Reported tenant/workload must match. `source_id` is correlation metadata, not
-  independent source attestation. The returned reporter is the authenticated
-  principal, separately from that source label.
-- The report includes its loaded digest, capability inventory and epoch-seconds
-  observation time. `None` means unobserved; an empty inventory means observed empty.
-- Old/future readback or missing digest/inventory yields `status=unknown` and
-  `drift=null`, never healthy. Fresh mismatches, missing required integrations or
-  an unapproved desired policy yield `status=drifted`. A fresh approved match yields
-  `status=matched`, while `runtime_attestation=unverified` remains explicit.
-- Matching readback does not write state, advance revisions, approve policy or
-  turn an absent applied observation into a rollout. Assessment results contain
-  desired, approved, stored applied and freshly reported digests separately.
-
-No JSON report constitutes proof that customer transforms, keys, storage,
-network controls or hooks are effective. Validate those boundaries independently.
 
 ## Optional final-boundary exchange contract
 
@@ -134,9 +67,8 @@ that silently changes passive capture into blocking execution.
 ## Verification and support
 
 See [SDK support matrix](sdk-support-matrix.md) for the exact Python/TypeScript
-boundary. The focused tests are `test_capture_identity.py`,
-`test_capture_readback.py`, `test_control_protocol.py`, `test_deployment_state.py` and
-`test_control_evidence.py`. They exercise authenticated role separation,
-cross-scope/revision denial, unknown/stale readback, all final-boundary bindings,
-retry mismatch, deny-followed-by-success and the absence of execution permission.
-They are local contract tests, not portal or production-control qualification.
+boundary. The focused tests are `test_deployment_policy.py`,
+`test_control_protocol.py` and `test_control_evidence.py`. They exercise closed
+policy validation, all final-boundary bindings, retry mismatch,
+deny-followed-by-success and the absence of execution permission. They are
+local contract tests, not portal or production-control qualification.

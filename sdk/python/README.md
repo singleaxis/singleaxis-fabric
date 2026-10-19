@@ -252,6 +252,5 @@ and route-coverage qualification before relying on complete capture.
 
 See the [Python/TypeScript support matrix](../../docs/sdk-support-matrix.md) and
 [capture/control compatibility contracts](../../docs/capture-control-compatibility.md).
-Optional Python submodules expose authenticated local configuration lifecycle,
-workload/operator bindings, readback/drift and metadata-only final-boundary
-correlation. They do not install a portal, controller client or execution gate.
+An optional Python submodule exposes metadata-only final-boundary correlation.
+It does not install a portal, controller client or execution gate.
