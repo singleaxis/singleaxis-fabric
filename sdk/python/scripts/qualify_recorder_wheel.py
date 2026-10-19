@@ -35,6 +35,7 @@ FORBIDDEN_MEMBERS = {
     "fabric/presidio.py",
     "fabric/stream.py",
     "fabric/tool_auth.py",
+    "fabric/distributed_closure.py",
     "fabric/reference_receipts.py",
     "fabric/control_protocol.py",
     "fabric/deployment_state.py",

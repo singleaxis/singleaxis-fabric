@@ -190,6 +190,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `evidence_attestation` and `qualified_run` still verify the delivery v1
   receipt sets and attestations offline. The module is now a forbidden
   wheel/sdist member.
+- **Breaking: removed `fabric.distributed_closure`** (`ClosureEvidenceStore`,
+  `verify_distributed_closure`, `authenticate_propagated_context` and the
+  signed closure documents). The multi-source closure verifier was used only
+  by the enterprise reference example and is not part of qualified-run mode,
+  whose single-epoch route closure in `qualified_run` is unchanged. The
+  module is now a forbidden wheel/sdist member, and
+  `docs/enterprise-distributed-closure.md` is removed.
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.

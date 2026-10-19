@@ -32,8 +32,7 @@ the application result is preserved.
 The Python `CallRecorder` supports synchronous/asynchronous calls and streams.
 Explicitly close an interrupted stream. A returned root result, successful flush,
 or empty queue cannot establish that all producers stopped. Independently track
-expected producers, their final epochs and joins; see
-[distributed closure](enterprise-distributed-closure.md). The optional host
+expected producers, their final epochs and joins. The optional host
 sensors observe scoped process/network metadata, not TLS plaintext or universal
 shell/PTY sessions. [TypeScript support](sdk-support-matrix.md) is narrower: its
 byte recorder does not have Python's call recorder, durable source journal,

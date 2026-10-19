@@ -71,6 +71,7 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/control_protocol.py",
     "/src/fabric/deployment.py",
     "/src/fabric/deployment_state.py",
+    "/src/fabric/distributed_closure.py",
     "/src/fabric/enterprise.py",
     "/src/fabric/enterprise_preflight.py",
     "/src/fabric/escalation.py",
