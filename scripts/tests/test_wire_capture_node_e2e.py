@@ -49,6 +49,7 @@ Opt-in by environment: the module skips when Docker Compose is unavailable.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -111,8 +112,43 @@ SECRET_MARKERS = [
 
 
 def source_of(service: str) -> str:
-    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1)."""
-    return f"{MARK}-src-{service}"
+    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1).
+
+    Spec 049 §7.9 (P0-A): a production Node binds one source, so every agent
+    of this stack runs as the same source (distinct service names); the Node
+    is bound to its s- pseudonym."""
+    del service
+    return f"{MARK}-src-agent"
+
+
+# Spec 049 §7.8: the Node-side content key (base64 of 32 random bytes).
+CONTENT_KEY = os.urandom(32)
+NODE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
+
+
+def unseal_store(sealed: Path, plain: Path) -> None:
+    """Open every Node envelope below ``sealed`` into ``plain`` (spec 049 §7.8).
+
+    Asserts each stored file IS an envelope (never plaintext at rest) and that
+    it authenticates for its own path."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+
+    for path in sealed.rglob("*"):
+        rel = path.relative_to(sealed).as_posix()
+        target = plain / rel
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if path.name.startswith(".fabric-root-barrier"):
+            continue
+        data = path.read_bytes()
+        assert data.startswith(NODE_MAGIC), f"{rel} is not sealed at rest"
+        aad = json.dumps(["fabric.node-content-envelope/v1", rel], separators=(",", ":")).encode()
+        body = AESGCM(CONTENT_KEY).decrypt(
+            data[len(NODE_MAGIC) : len(NODE_MAGIC) + 12], data[len(NODE_MAGIC) + 12 :], aad
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
 
 
 # Spec 047 §8: the fifteen capture keys, plus spec 048's run scope id, plus
@@ -138,6 +174,8 @@ REUSED_KEYS = frozenset(
     }
 )  # fmt: skip
 assert len(CAPTURE_KEYS) == 16
+# Receiver-owned keys the Node itself writes (spec 049 §7.9).
+NODE_STAMPS = frozenset({"fabric.source.authenticated"})
 HEARTBEAT_KINDS = frozenset({"periodic", "run_start", "run_end", "final"})
 # Content refs on spans are bare uuid4 object ids (spec 047 §8, decision D2).
 OBJECT_ID = re.compile(
@@ -208,7 +246,14 @@ class Stack:
         # No trailing newline (fabric-gate rule); nonroot in the container
         # reads it through a bind mount.
         token_file.write_text(INGRESS_TOKEN, "utf-8")
-        token_file.chmod(0o644)
+        # Spec 049 §7.9: the production Node supervises the token as its
+        # bound source's credential, which must be closed to other users. The
+        # container reads it through the host group (override below).
+        token_file.chmod(0o640)
+        # Spec 049 §7.8: the Node content key, a Compose secret like the token.
+        key_file = root / "secrets" / "content.key"
+        key_file.write_bytes(base64.b64encode(CONTENT_KEY) + b"\n")
+        key_file.chmod(0o640)
         write_tls(self.tls)
         self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
         # Clear labels the agents were given, and every report: the J1 leak scan.
@@ -223,6 +268,9 @@ class Stack:
             "services:\n"
             "  fabric-node:\n"
             "    pull_policy: never\n"
+            # The nonroot user in the test runner's group, so the 0640
+            # secrets are readable through the group and closed to others.
+            f'    user: "65532:{os.getgid()}"\n'
             "    volumes:\n"
             f"      - {self.config}:/etc/fabric-node/collector-production.yaml:ro\n"
             f"      - {self.content_config}:/etc/fabric-node/collector-content.yaml:ro\n"
@@ -246,6 +294,10 @@ class Stack:
             "FABRIC_EXPORT_AUTH_HEADER": EGRESS_AUTH,
             # The only tenant the Node's fabriccontent exporter writes.
             "FABRIC_TENANT_ID": TENANT,
+            # Spec 049 §7.9: the production Node binds every batch to the
+            # agents' source as it travels (its s- pseudonym).
+            "FABRIC_SOURCE_ID": pseudonym("s-", source_of(""), ID_KEY),
+            "FABRIC_CONTENT_KEY_FILE": str(key_file),
         }
         self._autoload = autoload_path()
 
@@ -335,9 +387,15 @@ class Stack:
     # -- Node-written content --------------------------------------------------
 
     def content_snapshot(self) -> Path:
-        """A host copy of the Node's content volume (file backend)."""
+        """A host copy of the Node's content volume (file backend), opened.
+
+        Spec 049 §7.8: the volume holds only envelopes; the copy the
+        reconstruct reader gets is opened with the Node key."""
+        sealed = self.root / f"sealed-{uuid.uuid4().hex[:8]}"
+        self.compose("cp", f"fabric-node:{NODE_CONTENT_DIR}", str(sealed))
         target = self.root / f"content-{uuid.uuid4().hex[:8]}"
-        self.compose("cp", f"fabric-node:{NODE_CONTENT_DIR}", str(target))
+        target.mkdir()
+        unseal_store(sealed, target)
         return target
 
     def wait_content(self, object_ids: set[str], timeout_s: float = 60.0) -> Path:
@@ -529,11 +587,13 @@ def _assert_no_leak(stack: Stack) -> None:
     assert volume_grep(f"{stack.project}_fabric-queue", MARK) == "", (
         "a marker persisted in the Node's telemetry queue volume"
     )
-    # The content queue carries bodies by design, never a credential.
-    for secret in SECRET_MARKERS:
-        assert volume_grep(f"{stack.project}_fabric-content-queue", secret) == "", (
-            f"{secret} persisted in the Node's content queue volume"
-        )
+    # Spec 049 §7.8: the content queue and the file store are sealed with the
+    # Node key, so neither holds a body or a credential in clear.
+    for marker in CONTENT_MARKERS + SECRET_MARKERS:
+        for volume in ("fabric-content-queue", "fabric-content"):
+            assert volume_grep(f"{stack.project}_{volume}", marker) == "", (
+                f"{marker} persisted in clear in the Node's {volume} volume"
+            )
 
 
 def _delivered(
@@ -568,7 +628,9 @@ def _assert_capture_spans(
     store = run.store
     assert {s["name"] for s in spans} <= CAPTURE_SPAN_NAMES, {s["name"] for s in spans}
     for span in spans:
-        extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS
+        # Spec 049 §7.9: the bound production Node stamps every span it admits.
+        assert span["attributes"].get("fabric.source.authenticated") is True, span["name"]
+        extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS - NODE_STAMPS
         assert not extra, f"{span['name']} carries non-allowlisted keys {extra}"
         assert span["scope"] == "", (
             "fabricguard must clear the instrumentation scope name"

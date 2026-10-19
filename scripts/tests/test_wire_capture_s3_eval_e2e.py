@@ -152,8 +152,17 @@ RUN_MARKERS = [RUN_REACT, RUN_OUTAGE, RUN_BEFORE, RUN_AFTER, RUN_BARRIER]
 
 
 def source_of(service: str) -> str:
-    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1)."""
-    return f"{MARK}-src-{service}"
+    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1).
+
+    Spec 049 §7.9 (P0-A): a production Node binds one source, so every agent
+    of this stack runs as the same source (distinct service names)."""
+    del service
+    return f"{MARK}-src-agent"
+
+
+def node_source() -> str:
+    """The bound source as it travels: the s- pseudonym (spec 048 J1)."""
+    return pseudonym("s-", source_of(""), ID_KEY)
 
 
 def emitted(run_id: str) -> str:
@@ -276,7 +285,14 @@ class Stack:
         token_file = root / "secrets" / "ingress.token"
         token_file.parent.mkdir()
         token_file.write_text(INGRESS_TOKEN, "utf-8")  # no trailing newline
-        token_file.chmod(0o644)  # nonroot in the container reads the bind mount
+        # Spec 049 §7.9: the bound source's credential is closed to other
+        # users; the container reads it (and the key) through the runner's
+        # group (override below).
+        token_file.chmod(0o640)
+        # Spec 049 §7.8: the Node key that seals the content queue.
+        key_file = root / "secrets" / "content.key"
+        key_file.write_bytes(base64.b64encode(os.urandom(32)) + b"\n")
+        key_file.chmod(0o640)
         write_tls(self.tls)
         self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
         self.config = root / "collector-production.yaml"
@@ -290,11 +306,16 @@ class Stack:
             "services:\n"
             "  fabric-node:\n"
             "    pull_policy: never\n"
+            f'    user: "65532:{os.getgid()}"\n'
             "    command:\n"
             "      - --config=/etc/fabric-node/collector-production.yaml\n"
             "      - --config=/etc/fabric-node/collector-content.yaml\n"
             "      - --config=/etc/fabric-node/collector-content-s3.yaml\n"
+            # Spec 049 P0-A: the production fields of the S3 exporter.
+            "      - --config=/etc/fabric-node/collector-content-s3-production.yaml\n"
             "    volumes:\n"
+            f"      - {COMPOSE_DIR / 'collector-config' / 'collector-content-s3-production.yaml'}"
+            ":/etc/fabric-node/collector-content-s3-production.yaml:ro\n"
             f"      - {self.config}:/etc/fabric-node/collector-production.yaml:ro\n"
             f"      - {self.content_config}:/etc/fabric-node/collector-content.yaml:ro\n"
             "    extra_hosts:\n"
@@ -321,6 +342,8 @@ class Stack:
             "FABRIC_EXPORT_ENDPOINT": self.sink.endpoint,
             "FABRIC_EXPORT_AUTH_HEADER": EGRESS_AUTH,
             "FABRIC_TENANT_ID": TENANT,
+            "FABRIC_SOURCE_ID": node_source(),
+            "FABRIC_CONTENT_KEY_FILE": str(key_file),
             "FABRIC_S3_EVAL_BUCKET": BUCKET,
             "FABRIC_S3_EVAL_ROOT_ACCESS_KEY": ROOT_USER,
             "FABRIC_S3_EVAL_ROOT_SECRET_KEY": ROOT_PASSWORD,
