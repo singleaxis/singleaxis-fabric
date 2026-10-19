@@ -134,9 +134,12 @@ export {
   BYTE_EVIDENCE_BOUNDARIES,
   BYTE_EVIDENCE_ROLES,
   ByteEvidenceRecorder,
+  contentGate,
+  idKeyFromEnv,
   type ByteEvidenceCapture,
   type ByteEvidenceConfig,
   type ByteEvidenceDescriptor,
+  type ByteEvidenceStatus,
 } from "./byte-evidence.js";
 export {
   ContentResolver,

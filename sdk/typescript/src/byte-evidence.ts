@@ -71,6 +71,48 @@ const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MEDIA_TYPE = /^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/;
 const HARD_MAX_BYTES = 64 * 1024 * 1024;
 const HARD_MAX_ITEMS = 1 << 20;
+const MIN_ID_KEY_BYTES = 16;
+export const ID_KEY_ENV = "FABRIC_WIRE_ID_KEY";
+
+function checkIdKey(key: Uint8Array | undefined): Uint8Array | undefined {
+  if (key !== undefined && (!(key instanceof Uint8Array) || key.byteLength < MIN_ID_KEY_BYTES))
+    throw new Error(`${ID_KEY_ENV} must be at least ${MIN_ID_KEY_BYTES} bytes`);
+  return key;
+}
+
+/** The id key named by `FABRIC_WIRE_ID_KEY` (unset or empty: undefined); a secret. */
+export function idKeyFromEnv(
+  env: Record<string, string | undefined> = typeof process !== "undefined" ? process.env : {},
+): Uint8Array | undefined {
+  const value = env[ID_KEY_ENV] ?? "";
+  return value === "" ? undefined : checkIdKey(Buffer.from(value, "utf8"));
+}
+
+function productionMarked(policy: unknown): boolean {
+  return policy instanceof DeploymentPolicy && policy.deployment.profile === "production";
+}
+
+/**
+ * Spec 049 §7.3 on the explicit (records) input, as on the wire (§7.7 "both inputs"),
+ * in parity with Python `fabric.byte_evidence.content_gate`. The production profile
+ * (the deployment policy, or a store's own policy, is marked production) needs the
+ * capture policy and the id key; a missing one disables content capture with that
+ * reason (metadata continues). The local profile needs nothing.
+ */
+export function contentGate(
+  deploymentPolicy: DeploymentPolicy | undefined,
+  idKey: Uint8Array | undefined,
+  ...stores: (GovernedStore | undefined)[]
+): { profile: "local" | "production"; reason: string | null } {
+  const marked =
+    productionMarked(deploymentPolicy) ||
+    stores.some((store) => productionMarked((store as { policy?: unknown } | undefined)?.policy));
+  if (!marked) return { profile: "local", reason: null };
+  if (deploymentPolicy === undefined)
+    return { profile: "production", reason: "missing_capture_policy" };
+  if (idKey === undefined) return { profile: "production", reason: "missing_id_key" };
+  return { profile: "production", reason: null };
+}
 
 export interface ByteEvidenceDescriptor {
   schema_version: "fabric.content-object/v2";
@@ -139,6 +181,18 @@ export interface ByteEvidenceConfig {
   payloadMaxBytes?: number;
   /** Best-effort delivery attempts; no source spool or durable receipt. */
   retryMaxAttempts?: number;
+  /**
+   * The id key (spec 049 §7.3; `FABRIC_WIRE_ID_KEY` when unset, at least 16 bytes): the
+   * production profile needs it before any content is captured. A secret.
+   */
+  idKey?: Uint8Array;
+}
+
+/** The content state of an explicit-line recorder (spec 049 §7.3). Values only. */
+export interface ByteEvidenceStatus {
+  profile: "local" | "production";
+  content_capture: "enabled" | "disabled";
+  content_capture_reason: string | null;
 }
 
 interface WorkItem {
@@ -163,6 +217,8 @@ export class ByteEvidenceRecorder {
   private running = false;
   private closed = false;
   private lostRecordCount = 0;
+  private readonly profile: "local" | "production";
+  private readonly gateReason: string | null;
   private readonly counts = {
     stored: 0,
     redacted: 0,
@@ -250,6 +306,25 @@ export class ByteEvidenceRecorder {
     this.reviewStore = config.reviewStore;
     this.store = config.store;
     this.roles = new Set(config.roles);
+    // Spec 049 §7.3: never blocked, but not silent; a malformed id key still throws.
+    const idKey = checkIdKey(config.idKey) ?? idKeyFromEnv();
+    const gate = contentGate(policy, idKey, config.store, config.reviewStore);
+    this.profile = gate.profile;
+    this.gateReason = gate.reason;
+    if (gate.reason !== null)
+      console.warn(
+        `fabric.byteEvidence: content capture disabled (${gate.reason}, ${gate.profile} ` +
+          "profile); metadata capture continues",
+      );
+  }
+
+  /** The content state (spec 049 §7.3): profile, content capture and its reason. */
+  status(): ByteEvidenceStatus {
+    return {
+      profile: this.profile,
+      content_capture: this.gateReason === null ? "enabled" : "disabled",
+      content_capture_reason: this.gateReason,
+    };
   }
 
   /** Snapshot of terminal and pending counts. A pending remainder is a gap. */
@@ -336,6 +411,12 @@ export class ByteEvidenceRecorder {
       return descriptor;
     }
     this.records.set(descriptor.object_id, descriptor);
+    if (this.gateReason !== null) {
+      // Spec 049 §7.3: content disabled; nothing stored, digested or queued.
+      descriptor.status_reason = this.gateReason;
+      this.counts.not_captured += 1;
+      return { ...descriptor };
+    }
     if (!this.roles.has(options.role)) {
       descriptor.status_reason = "outside_capture_policy";
       this.counts.not_captured += 1;
