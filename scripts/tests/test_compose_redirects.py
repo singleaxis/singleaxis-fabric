@@ -35,6 +35,7 @@ MERGES = [
         "collector-production.yaml",
         "collector-content.yaml",
         "collector-content-s3.yaml",
+        "collector-content-s3-production.yaml",
     ),
 ]
 

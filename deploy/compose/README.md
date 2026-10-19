@@ -143,11 +143,16 @@ cp .env.example .env && chmod 0600 .env
 #   FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>
 #   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
 #   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
+#   FABRIC_TENANT_ID          = <tenant id your agents send>
+#   FABRIC_SOURCE_ID          = <the agents' source id as it travels: s-<32 hex>>
 # Optional content path (spec 048):
 #   FABRIC_CONTENT_BACKEND    = s3 (or file with FABRIC_CONTENT_REQUIRE_SSE=false)
-#   FABRIC_TENANT_ID          = <tenant id your agents send>
+#   FABRIC_CONTENT_KEY_FILE   = ./secrets/content.key
 printf %s "$(openssl rand -hex 32)" > secrets/ingress.token
 sudo chown "$(id -u)":65532 secrets/ingress.token && chmod 0440 secrets/ingress.token
+# With the content path:
+openssl rand -base64 32 > secrets/content.key
+sudo chown "$(id -u)":65532 secrets/content.key && chmod 0440 secrets/content.key
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml [content overlays] up -d --wait
 make verify-prod    # proves health, 401 unauthenticated (spans, and content when enabled), 200 authenticated spans (queue metrics warn-only)
@@ -182,6 +187,35 @@ rejected on every port; there is no unauthenticated fallback. With the
 content path, set `FABRIC_TENANT_ID` in `.env` to the tenant id your agents
 send (required; the content exporter writes no other tenant, and the shipped
 configs allow exactly one: run one Node per tenant).
+
+**Production profile (spec 049 P0-A).** The production configuration is a
+production-profile Node. Every agent batch is bound to one tenant and one
+source, `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID`, and the ingress token is
+that source's single credential. `fabricguard` refuses a span batch that
+names another tenant or source with `INVALID_ARGUMENT` and stamps
+`fabric.source.authenticated=true` on every span it admits.
+`fabriccontent` drops a content record of another tenant or source and writes
+`source_authenticated: true` into every descriptor it stores.
+
+`FABRIC_SOURCE_ID` is the source id as the agents send it. Under their
+default pseudonymous labels that is `s-` plus the first 32 hex of
+HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, agent `FABRIC_SOURCE_ID`), the `s-`
+value on their capture spans. Run one Node per agent source.
+
+With the content path, the persistent content queue and the file store are
+sealed with the Node key `FABRIC_CONTENT_KEY_FILE`: 32 bytes or their
+base64, mounted as a Compose secret, AES-256-GCM. S3 keeps its server-side
+encryption.
+
+The Compose stack refuses to start without these settings, and preflight
+and `fabric-gate` fail on them too. **Upgrading a Node configured before
+P0-A therefore stops at preflight until they are set; the agents are never
+affected.**
+
+Agents in node mode now need a capture policy (`FABRIC_CAPTURE_POLICY`) and
+`FABRIC_WIRE_ID_KEY` to record content (spec 049 §7.3, superseding spec 048
+§1). Without them they record metadata only and report why on every exchange
+span.
 
 **Content store.** The production content path is S3 with server-side
 encryption: set `FABRIC_CONTENT_BACKEND=s3`, `FABRIC_CONTENT_S3_BUCKET`,

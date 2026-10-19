@@ -95,10 +95,20 @@ func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) erro
 				return fmt.Errorf("dedicated evidence ingress requires the fabricguard processor")
 			}
 			identity, ok := processor["evidence_source_binding"].(map[string]any)
-			if !ok || !safeEvidenceIdentity(identity["tenant_id"]) || !safeEvidenceIdentity(identity["source_id"]) {
+			if !ok {
 				return fmt.Errorf("dedicated evidence ingress requires valid tenant and source identities")
 			}
-			bound, binding = true, identity
+			// Identities may come from the environment (compose sets them from
+			// .env); the gate checks the values the collector will resolve.
+			resolved := map[string]any{}
+			for _, key := range []string{"tenant_id", "source_id"} {
+				value, _ := identity[key].(string)
+				resolved[key] = expandEnvRefs(value)
+				if !safeEvidenceIdentity(resolved[key]) {
+					return fmt.Errorf("dedicated evidence ingress requires valid tenant and source identities")
+				}
+			}
+			bound, binding = true, resolved
 		}
 	}
 	production, err := declaredProduction(cfg)
@@ -289,7 +299,9 @@ func checkProductionContent(cfg map[string]any, binding map[string]any) error {
 		}
 		exporter, _ := exporters[id].(map[string]any)
 		own, _ := exporter["source_binding"].(map[string]any)
-		if own == nil || own["tenant_id"] != binding["tenant_id"] || own["source_id"] != binding["source_id"] {
+		tenant, _ := own["tenant_id"].(string)
+		source, _ := own["source_id"].(string)
+		if own == nil || expandEnvRefs(tenant) != binding["tenant_id"] || expandEnvRefs(source) != binding["source_id"] {
 			return fmt.Errorf("exporter %q must carry fabricguard's source_binding in the production profile (spec 049 §7.9)", id)
 		}
 		if tenants := tenantList(exporter["allowed_tenants"]); len(tenants) != 1 || tenants[0] != binding["tenant_id"] || configTrue(exporter["allow_multiple_tenants"]) {

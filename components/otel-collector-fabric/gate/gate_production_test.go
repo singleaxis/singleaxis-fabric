@@ -187,3 +187,92 @@ func TestProductionProfileRefusesUnboundOrUnencryptedNodes(t *testing.T) {
 		t.Fatal("production Node with an extra receiver accepted")
 	}
 }
+
+// Compose resolves the binding from .env: the gate checks the values the
+// collector will resolve, and refuses an unset or unsafe one.
+func TestProductionBindingFromTheEnvironment(t *testing.T) {
+	f := newProductionFixture(t)
+	cfg := strings.ReplaceAll(f.config(), "{tenant_id: tenant-a, source_id: s-c5aedfd8a3ee415e277e335bf1517ff4}", `{tenant_id: "${env:FABRIC_TENANT_ID}", source_id: "${env:FABRIC_SOURCE_ID}"}`)
+	cfg = strings.Replace(cfg, "allowed_tenants: [tenant-a]", `allowed_tenants: ["${env:FABRIC_TENANT_ID}"]`, 1)
+	path := writeConfig(t, cfg)
+	t.Setenv("FABRIC_TENANT_ID", "tenant-a")
+	t.Setenv("FABRIC_SOURCE_ID", "s-c5aedfd8a3ee415e277e335bf1517ff4")
+	if _, err := validateArgs([]string{"--config=" + path}); err != nil {
+		t.Fatalf("env-resolved binding refused: %v", err)
+	}
+	for _, source := range []string{"", "source with spaces", "../x"} {
+		t.Setenv("FABRIC_SOURCE_ID", source)
+		if _, err := validateArgs([]string{"--config=" + path}); err == nil {
+			t.Fatalf("unsafe source %q accepted", source)
+		}
+	}
+}
+
+// The shipped Compose production configurations, merged as `make up-prod`
+// merges them, pass the whole gate as a production Node (spec 049 P0-A):
+// bound, and for content, encrypted at rest. Secret paths are pointed at
+// fixture files; everything else is the shipped text.
+func TestShippedComposeProductionProfilePassesTheGate(t *testing.T) {
+	f := newProductionFixture(t)
+	t.Setenv("FABRIC_TENANT_ID", "tenant-a")
+	t.Setenv("FABRIC_SOURCE_ID", "s-c5aedfd8a3ee415e277e335bf1517ff4")
+	t.Setenv("FABRIC_EXPORT_ENDPOINT", "https://destination.example/v1")
+	t.Setenv("FABRIC_EXPORT_AUTH_HEADER", "Bearer fixture")
+	t.Setenv("FABRIC_CONTENT_S3_BUCKET", "customer-evidence")
+	for _, files := range [][]string{
+		{"collector-production.yaml"},
+		{"collector-production.yaml", "collector-content.yaml"},
+		{"collector-production.yaml", "collector-content.yaml", "collector-content-s3.yaml", "collector-content-s3-production.yaml"},
+	} {
+		t.Run(strings.Join(files, "+"), func(t *testing.T) {
+			var text strings.Builder
+			args := []string{}
+			for _, name := range files {
+				raw, err := os.ReadFile(composeConfigDir + name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				text.Reset()
+				text.WriteString(strings.NewReplacer(
+					"/run/secrets/fabric_ingress_token", f.token,
+					"/run/secrets/fabric_content_key", f.key,
+				).Replace(string(raw)))
+				args = append(args, "--config="+writeConfig(t, text.String()))
+			}
+			watched, err := validateArgs(args)
+			if err != nil {
+				t.Fatalf("shipped production config refused: %v", err)
+			}
+			dedicated := false
+			for _, w := range watched {
+				dedicated = dedicated || w.dedicated
+			}
+			if !dedicated {
+				t.Fatal("the bound ingress token is not supervised as dedicated")
+			}
+			production, err := declaredProduction(mergedFiles(t, args))
+			if err != nil || !production {
+				t.Fatalf("shipped production config does not declare the production profile: %v", err)
+			}
+		})
+	}
+	// Without the binding the shipped production Node is refused.
+	t.Setenv("FABRIC_SOURCE_ID", "")
+	raw, err := os.ReadFile(composeConfigDir + "collector-production.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := strings.ReplaceAll(string(raw), "/run/secrets/fabric_ingress_token", f.token)
+	if _, err := validateArgs([]string{"--config=" + writeConfig(t, cfg)}); err == nil {
+		t.Fatal("production Node without FABRIC_SOURCE_ID accepted")
+	}
+}
+
+func mergedFiles(t *testing.T, args []string) map[string]any {
+	t.Helper()
+	merged := map[string]any{}
+	for _, arg := range args {
+		deepMerge(merged, loadYAML(t, strings.TrimPrefix(arg, "--config=")))
+	}
+	return merged
+}
