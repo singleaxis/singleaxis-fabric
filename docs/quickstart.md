@@ -9,11 +9,10 @@ your OTLP trace -> Fabric Node -> metadata protection -> fsync test sink
 It does not run guardrails, judges, red teams, policy enforcement, or a
 SingleAxis management service.
 
-For an existing Python codebase or a Docker-free local start, use the
-[smallest-integration quickstart](enterprise-testing-quickstart.md). It offers
-existing OTel reuse or one initialization plus a shared final-dispatch wrapper.
-The [durable reference campaign](../examples/enterprise-reference/README.md) is
-a separate, stronger qualification exercise rather than a mandatory app rewrite.
+For an existing Python codebase or a Docker-free local start, run the
+[wire-capture example](../examples/wire-capture/README.md). It records each
+model call's exact bytes at the HTTP client, without a framework adapter, and
+verifies the run offline with `python -m fabric.reconstruct`.
 
 See [agent developer best practices](agent-developer-best-practices.md) for
 retry/context/privacy/shutdown conventions using the same runnable example.

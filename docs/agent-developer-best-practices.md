@@ -2,9 +2,9 @@
 
 Start with the smallest useful integration. Existing supported framework or
 OpenTelemetry spans can provide application context without a Fabric-specific
-wrapper everywhere. Use the [runnable onboarding example](../examples/enterprise-reference/integrate.py)
-and [installation/doctor commands](enterprise-testing-quickstart.md), rather than
-copying a large reference deployment into the application.
+wrapper everywhere. Start from the runnable
+[wire-capture example](../examples/wire-capture/README.md) rather than copying
+a large reference deployment into the application.
 
 ## Choose the evidence level
 
@@ -104,13 +104,12 @@ copying a large reference deployment into the application.
 
 1. Reuse existing tracing, or add one initialization and one shared dispatch hook.
 2. Select and validate privacy policy; verify the actual protected exporter path.
-3. Run the existing onboarding example and its doctor, then one real workload
-   canary through the application's declared route.
+3. Run the wire-capture example, then one real workload canary through the
+   application's declared route.
 4. Add context at existing background/sandbox handoffs and join expected work.
 5. Enable stronger durability/receipts only where the required evidence warrants it.
-6. Run the [fault campaign](enterprise-reference-validation.md) for the selected
-   tier and production target before making a stronger completeness claim.
+6. Exercise the faults in step 10 against the selected tier and production
+   target before making a stronger completeness claim.
 
-The local doctor intentionally distinguishes `LOCAL_READY` from production
-`NO_GO`. These practices improve an integration; they are not evidence of
-market superiority or a substitute for a matched workload benchmark.
+These practices improve an integration; they are not evidence of market
+superiority or a substitute for a matched workload benchmark.

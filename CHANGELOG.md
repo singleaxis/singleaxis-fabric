@@ -168,6 +168,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `qualification/composed-collector-capture-matrix.json` record. Only docs
   referred to it; the spec 048 Compose content path and the wire-capture Node
   E2E tests in `scripts/tests` exercise a real Collector instead.
+- Removed the enterprise examples (`examples/enterprise-orchestration`,
+  `examples/enterprise-reference`, `examples/enterprise/scope.local.json`),
+  the enterprise journeys (`scripts/qualification/run_enterprise_local.py`,
+  `scripts/qualification/enterprise_preflight.py`), their repository tests,
+  and the docs that only described them (`enterprise-testing-quickstart.md`,
+  `enterprise-reference-validation.md`, `enterprise-release-traceability.md`,
+  `specs/enterprise-capture-build.md`). The README and quickstart now point
+  at `examples/wire-capture`. `examples/enterprise/policy.local.json` stays
+  as the deployment-policy test fixture.
 
 ### Known limitations
 

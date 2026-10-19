@@ -20,11 +20,11 @@ metadata readback. The default product is passive CAPTURE -> PROTECT -> DELIVER.
 
 ## Start with the existing application boundary
 
-Follow the runnable [small integration](enterprise-testing-quickstart.md). Its
-`examples/enterprise-reference/integrate.py` supplies `initialize_capture` and
-`AppCapture.dispatch`: initialize once, wrap the existing shared final model/tool
-dispatch, propagate parent context at background handoffs, join producers, then
-close capture. No framework rewrite is required. An outer provider wrapper
+Initialize capture once, wrap the existing shared final model/tool dispatch,
+propagate parent context at background handoffs, join producers, then close
+capture. No framework rewrite is required. For model calls made through httpx,
+the [wire-capture example](../examples/wire-capture/README.md) records the exact
+bytes with no wrapper at all. An outer provider wrapper
 cannot expose retries hidden inside a provider SDK. Supply the actual serialized
 request/response bytes; unsupported objects remain unsupported evidence while
 the application result is preserved.
@@ -52,9 +52,9 @@ Use [authenticated local governed storage](governed-local-storage.md) for the
 implemented Python customer-local backend, or qualify your own adapter. Supply
 stable customer-held authority and encryption keys, private directories, grants
 and the original policy snapshot. Separate write, original-read, derivative-read
-and lifecycle permissions. Opaque references are not bearer grants. The original `integrate.py` demo
-uses ephemeral keys; its encrypted output cannot be reopened after exit.
-Fixture key files are not a production KMS.
+and lifecycle permissions. Opaque references are not bearer grants. Output
+encrypted with ephemeral demo keys cannot be reopened after exit, and fixture
+key files are not a production KMS.
 
 The local backend verifies envelopes, decrypts and checks lengths/digests. Its
 fsync and signed audit chain do not provide cloud IAM/KMS, anti-rollback, backup
@@ -120,27 +120,13 @@ with their observers. Fabric does not grant permission or enforce those decision
 
 ## Demonstrate the bounded local path
 
-From an environment with the source SDK and its `signing,otlp` extras installed,
-use fresh output directories:
-
-```sh
-python examples/enterprise-reference/integrate.py --output /tmp/fabric-integration-UNIQUE
-python scripts/qualification/run_enterprise_local.py --output /tmp/fabric-storage-UNIQUE
-python examples/enterprise-reference/closure_campaign.py --output /tmp/fabric-closure-UNIQUE
-```
-
-Review `integration-report.json`, the storage runner's `report.json`, and closure
-campaign outputs. The commands are reproduction instructions, not evidence that
-they ran in this review. The integration fixture makes local HTTP calls; it does
-not invoke a live model. Read the per-run failures and unknowns and preserve the
-artifact hashes. Production remains `NO_GO` until the declared customer scope,
-independent truth, storage controls and exact artifacts are qualified.
-
-The output contains fixture keys and authorized synthetic content; keep it
-private. For the separate Compose path, use the [quickstart](quickstart.md) and
-`make qualify`. Consult the
-[qualification map](evidence-qualification-map.md) for omissions before describing
-a demonstration as complete.
+Run the [wire-capture example](../examples/wire-capture/README.md) for an
+offline capture and `python -m fabric.reconstruct` verdict, and the
+[qualified call-run tests](qualified-call-run-testing.md) for the explicit
+evidence line. For the Compose path, use the [quickstart](quickstart.md) and
+`make qualify`. These are local fixtures: production remains `NO_GO` until the
+declared customer scope, independent truth, storage controls and exact
+artifacts are qualified.
 
 An empty legacy transcript accumulator means no content observations were
 recorded. Both SDKs leave its URI absent and publish no transcript; attempting
