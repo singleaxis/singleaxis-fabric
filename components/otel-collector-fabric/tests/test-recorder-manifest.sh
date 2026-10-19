@@ -19,7 +19,8 @@ fail() {
 # Every `gomod:` entry in the manifest must appear in this list and nothing
 # else may be listed. The list is the recorder's release promise:
 #   extensions: health_check, file_storage, bearertokenauth,
-#               noredirect (local path — spec 048 H1)
+#               noredirect (local path — spec 048 H1),
+#               fabricenvelope (local path — spec 049 §7.8)
 #   receivers:  otlp, audit (local path — spec 030)
 #   processors: memory_limiter, batch, fabricguard (local path)
 #   exporters:  debug, otlphttp, fabriccontent (local path — spec 048)
@@ -28,6 +29,7 @@ expected_gomods='github.com/open-telemetry/opentelemetry-collector-contrib/exten
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
 github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter v0.1.0
+github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/fabricenvelopeextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver v0.1.0
@@ -54,11 +56,12 @@ fi
 
 # Local path references (`path:` keys and `replaces:` targets) may resolve
 # only to the in-repo component source trees (fabricguard, auditreceiver,
-# fabriccontent, noredirect).
+# fabriccontent, noredirect, fabricenvelope).
 actual_paths="$( { grep -E '(^|[[:space:]])path:[[:space:]]*\./' "${manifest}" | sed -E 's/^[[:space:]-]*path:[[:space:]]*//';
                  grep -E '=>[[:space:]]*\./' "${manifest}" | sed -E 's/.*=>[[:space:]]*//'; } \
                | sed -E 's/[[:space:]]+$//' | sort -u )"
 expected_paths='./exporter/fabriccontentexporter
+./extension/fabricenvelopeextension
 ./extension/noredirectextension
 ./processor/fabricguardprocessor
 ./receiver/auditreceiver'
@@ -72,6 +75,7 @@ expected_paths='./exporter/fabriccontentexporter
 copy_local="$(grep -E '^[[:space:]]*COPY([[:space:]]|$)' "${dockerfile}" \
               | grep -oE '(processor|receiver|exporter|extension)/[A-Za-z0-9_.-]+' | sort -u)" || true
 expected_copy='exporter/fabriccontentexporter
+extension/fabricenvelopeextension
 extension/noredirectextension
 processor/fabricguardprocessor
 receiver/auditreceiver'
@@ -97,7 +101,7 @@ train_stable="$(grep -E 'gomod:.*opentelemetry' "${manifest}" | grep -oE 'v1\.[0
 [ "$(printf '%s\n' "${train_stable}" | grep -c .)" -eq 1 ] \
   || fail "manifest has divergent v1.x collector trains: ${train_stable}"
 
-local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod ${root}/extension/noredirectextension/go.mod"
+local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod ${root}/extension/noredirectextension/go.mod ${root}/extension/fabricenvelopeextension/go.mod"
 for gomod in ${local_gomods}; do
   for req in $(grep -oE 'go\.opentelemetry\.io/collector/[A-Za-z0-9/._-]+ v[0-9]+\.[0-9]+\.[0-9]+' "${gomod}" | tr ' ' ':'); do
     mod="${req%%:*}"

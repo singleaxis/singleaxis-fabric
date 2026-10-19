@@ -8,7 +8,7 @@
 
 OCB ?= $(shell command -v ocb || command -v builder)
 DIST_DIR := dist
-RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor receiver/auditreceiver exporter/fabriccontentexporter extension/noredirectextension gate
+RECORDER_PROCESSOR_DIRS := processor/fabricguardprocessor receiver/auditreceiver exporter/fabriccontentexporter extension/noredirectextension extension/fabricenvelopeextension gate
 
 .PHONY: all build test lint qualify-config qualify-image qualify-content clean tidy
 
