@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import queue
 import re
 import threading
@@ -77,6 +78,12 @@ _MEDIA_TYPE_MAX_LENGTH = 128
 # Deployment modes whose stored object is a derivative (to the review store).
 _DERIVED = frozenset({"redact", "masked_only", "tokenize"})
 _OPAQUE_ID_MAX_LENGTH = 128
+# Spec 049 §7.7 rule 3 / content-v2 2.2.0: every object stored under a masked mode records
+# the policy id, version and digest. Caller-supplied ``role_policies`` have no deployment
+# policy, so they are bound by an implicit one (like ``fabric.local-default``) whose digest
+# binds each role's mode and transformation identity and version.
+ROLE_POLICIES_ID = "fabric.role-policies"
+_MASKED_MODES = frozenset({"masked_only", "original_plus_masked"})
 
 
 def _validate_capture_args(
@@ -170,6 +177,25 @@ class BytePrivacyPolicy:
             for value in (self.transform, self.transformation_id, self.transformation_version)
         ):
             raise ValueError("transformation settings require a masked mode")
+
+
+def _role_policies_block(policies: Mapping[str, BytePrivacyPolicy]) -> dict[str, Any]:
+    """The implicit ``fabric.role-policies`` identity (version 1) of a role-policy table."""
+    privacy = {
+        role: {
+            "mode": policy.mode,
+            "transformation_id": policy.transformation_id,
+            "transformation_version": policy.transformation_version,
+        }
+        for role, policy in sorted(policies.items())
+    }
+    doc = {"policy_id": ROLE_POLICIES_ID, "policy_version": 1, "privacy": privacy}
+    canonical = json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "policy_id": ROLE_POLICIES_ID,
+        "policy_version": 1,
+        "policy_digest": "sha256:" + hashlib.sha256(canonical).hexdigest(),
+    }
 
 
 def _validate_store_separation(original: ByteEvidenceStore, review: ByteEvidenceStore) -> None:
@@ -282,6 +308,7 @@ class ByteEvidenceRecorder:
         self._pending = 0
         self._unretained_drops = 0
         self._spool = config.durable_spool
+        self._policy_block = _role_policies_block(config.role_policies or {})
         if self._spool is not None:
             recovered_ids = self._spool.object_ids()
             if len(recovered_ids) > config.max_records:
@@ -373,7 +400,13 @@ class ByteEvidenceRecorder:
         }
         if role in (self._config.role_policies or {}):
             descriptor["privacy_mode"] = policy.mode
-        if enabled and protected is None:
+        if enabled and policy.mode in _MASKED_MODES:
+            descriptor.update(
+                self._policy_block,
+                protection_status="redacted" if policy.mode == "masked_only" else "retained",
+            )
+        if enabled and protected is None and policy.mode != "masked_only":
+            # masked_only keeps no digest or length of the original (content-v2 2.2.0).
             descriptor["source_byte_length"] = len(data)
         if enabled and policy.mode == "masked_only":
             descriptor.update(
@@ -493,9 +526,12 @@ class ByteEvidenceRecorder:
                 "transformations": ["redact"],
                 "transformation_id": policy.transformation_id,
                 "transformation_version": policy.transformation_version,
+                "protection_status": "redacted",
                 "links": [{"relation": "derived_from", "object_id": object_id}],
             }
+            # The review copy keeps no digest or length of the original (§7.5).
             derivative.pop("source_sha256", None)
+            derivative.pop("source_byte_length", None)
             self._records[derivative_id] = derivative
         try:
             self._queue.put_nowait((object_id, data, derivative_id))
@@ -654,9 +690,7 @@ class ByteEvidenceRecorder:
             role = self._records[object_id]["role"]
         if self._config.deployment_policy is not None:
             mode = self._config.deployment_policy.privacy.get(role, "omit")
-            store = (
-                self._config.review_store if mode in _DERIVED else self._config.store
-            )
+            store = self._config.review_store if mode in _DERIVED else self._config.store
             if store is None:
                 raise ValueError("missing deployment content store")
             self._write_record(object_id, data, store)
@@ -671,10 +705,11 @@ class ByteEvidenceRecorder:
                 if len(transformed) > self._config.payload_max_bytes:
                     raise ValueError("transformed payload too large")
             except Exception:
+                # Spec 049 §7.7 rule 4: a failed transformation withholds; never raw bytes.
                 with self._condition:
-                    self._fail_record(object_id, "privacy_transform_failed")
-                    if derivative_id is not None:
-                        self._fail_record(derivative_id, "privacy_transform_failed")
+                    for record_id in (object_id, derivative_id):
+                        if record_id is not None:
+                            self._withhold(record_id)
                 return
         payload = transformed if policy.mode == "masked_only" else data
         if payload is None:
@@ -690,6 +725,22 @@ class ByteEvidenceRecorder:
         for key in ("ref", "stored_byte_length", "stored_sha256"):
             descriptor.pop(key, None)
         descriptor.update(status=status, status_reason=reason, representation="unavailable")
+
+    def _withhold(self, object_id: str) -> None:
+        """A descriptor-only ``not_captured(protection_failed)``: no bytes, no digest or
+        length of the original, protection outcome ``withheld``."""
+        descriptor = self._records[object_id]
+        for key in ("ref", "stored_byte_length", "stored_sha256"):
+            descriptor.pop(key, None)
+        for key in ("source_sha256", "source_byte_length"):
+            descriptor.pop(key, None)
+        descriptor.update(
+            status="not_captured",
+            status_reason="protection_failed",
+            representation="unavailable",
+            transformations=[],
+            protection_status="withheld",
+        )
 
     def _write_record(self, object_id: str, data: bytes, store: ByteEvidenceStore) -> None:
         with self._condition:

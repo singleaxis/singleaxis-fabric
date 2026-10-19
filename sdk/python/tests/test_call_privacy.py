@@ -84,7 +84,11 @@ def test_masked_only_never_persists_original_or_fingerprint(tmp_path: Path) -> N
     assert settled is not None
     assert settled["status"] == "redacted"
     assert settled["representation"] == "redacted"
-    assert settled["source_byte_length"] == len(SECRET)
+    # Spec 049 §7.5/§7.7, content-v2 2.2.0: no digest or length of the original, and the
+    # object is bound to the implicit role-policy identity.
+    assert "source_byte_length" not in settled and "source_sha256" not in settled
+    assert settled["protection_status"] == "redacted"
+    assert settled["policy_id"] == "fabric.role-policies" and settled["policy_version"] == 1
     assert settled["stored_byte_length"] == len(b"[masked]")
     assert settled["stored_sha256"] == "sha256:" + hashlib.sha256(b"[masked]").hexdigest()
     assert settled["transformation_version"] == "v1"
@@ -118,7 +122,10 @@ def test_original_and_review_are_separate_linked_objects(tmp_path: Path) -> None
     assert review.read(derivative["ref"]) == b"[masked]"
     assert derivative["links"] == [{"relation": "derived_from", "object_id": settled["object_id"]}]
     assert derivative["attempt_id"] == settled["attempt_id"] == "attempt-a"
-    assert "source_sha256" not in derivative
+    assert "source_sha256" not in derivative and "source_byte_length" not in derivative
+    assert settled["protection_status"] == "retained"
+    assert derivative["protection_status"] == "redacted"
+    assert derivative["policy_digest"] == settled["policy_digest"]
     assert not review.owns_uri(settled["ref"])
     assert not original.owns_uri(derivative["ref"])
     _validate_descriptor(settled)
@@ -203,9 +210,12 @@ def test_failed_transform_never_falls_back_to_raw(
     records = recorder.drain_settled()
     assert len(records) == (2 if mode == "original_plus_masked" else 1)
     for record in records:
-        assert record["status"] == "failed"
-        assert record["status_reason"] == "privacy_transform_failed"
+        # Spec 049 §7.7 rule 4: a failed transformation withholds, never raw bytes.
+        assert record["status"] == "not_captured"
+        assert record["status_reason"] == "protection_failed"
+        assert record["protection_status"] == "withheld"
         assert "ref" not in record
+        assert "source_sha256" not in record and "source_byte_length" not in record
         _validate_descriptor(record)
     assert SECRET.decode() not in caplog.text + json.dumps(records) + json.dumps(initial)
     assert not list(tmp_path.rglob("*.json"))

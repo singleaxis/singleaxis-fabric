@@ -57,8 +57,16 @@ _FIELDS = frozenset(
         "privacy_mode",
         "transformation_id",
         "transformation_version",
+        # content-v2 2.2.0 privacy block (spec 049 §7.7 rule 3), all or none.
+        "policy_id",
+        "policy_version",
+        "policy_digest",
+        "protection_status",
     }
 )
+_POLICY_FIELDS = frozenset({"policy_id", "policy_version", "policy_digest", "protection_status"})
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_PROTECTION = frozenset({"withheld", "redacted", "tokenized", "retained", "unsupported", "lost"})
 _MAX_DESCRIPTOR_BYTES = 64 * 1024
 _DEFAULT_MAX_OBJECT_BYTES = 16 * 1024 * 1024
 
@@ -215,6 +223,18 @@ class ByteEvidenceResolver:
         for field in ("source_epoch", "source_sequence"):
             if not _counter(descriptor.get(field)):
                 return False
+        present = _POLICY_FIELDS.intersection(descriptor)
+        if present and (
+            present != _POLICY_FIELDS
+            or not _opaque(descriptor["policy_id"])
+            or not _counter(descriptor["policy_version"])
+            or descriptor["policy_version"] < 1
+            or not isinstance(descriptor["policy_digest"], str)
+            or not _DIGEST.fullmatch(descriptor["policy_digest"])
+            or not isinstance(descriptor["protection_status"], str)
+            or descriptor["protection_status"] not in _PROTECTION
+        ):
+            return False
         return "chunk_index" not in descriptor or (
             _counter(descriptor["chunk_index"]) and "stream_id" in descriptor
         )
@@ -229,7 +249,12 @@ class ByteEvidenceResolver:
             or not _opaque(descriptor.get("transformation_id"))
             or not _opaque(descriptor.get("transformation_version"))
             or "source_sha256" in descriptor
-            or not _counter(descriptor.get("source_byte_length"))
+            # content-v2 2.2.0: a masked object bound to a policy keeps no original length;
+            # an older (2.1.0) review descriptor may still carry one.
+            or (
+                "source_byte_length" in descriptor
+                and not _counter(descriptor["source_byte_length"])
+            )
         ):
             return False
         links = descriptor.get("links", [])
