@@ -740,7 +740,7 @@ The first two are engineering fixes in the next PR revision. Security must
 classify the intentional test alert; no passing analysis job overrides an
 unresolved alert check.
 
-The [local GO simulation](../qualification/local-go-simulation/README.md)
+The [local GO simulation](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/local-go-simulation/README.md)
 now has a reproducible laptop-kind runner and a fail-closed, unsigned
 decision summary. Its first live local attempt exposed a missing sink
 ingress allowance: the Node accepted/queued the synthetic record, but the
@@ -757,7 +757,7 @@ the clean fixture reconciled 10 operations, 25 required byte objects and
 provider 15, terminal 25 and artifact 6. Direct provider bypass produced
 four discrepancies and `partial`; deletion of one required content object
 produced `partial`. The local deny-then-allow policy probe recovered queued
-delivery after the sink allowance. Its [observed-run report](../qualification/local-go-simulation/observed-run-20260928.md)
+delivery after the sink allowance. Its [observed-run report](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/local-go-simulation/observed-run-20260928.md)
 retains exact artifact IDs and limitations. This is an unsigned simulation
 with `unverified` clean verdict and production `NO_GO`, not a customer pilot.
 The local simulation unit tests and broader installed-wheel repository suite
@@ -1130,10 +1130,10 @@ passed. No owner sign-off or production GO is inferred from CI.
 
 ## GPT-6 Sol subscription-backed laptop stage — NO-GO
 
-The [bounded synthetic Sol stage](../qualification/sol-local-stage/README.md)
+The [bounded synthetic Sol stage](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/sol-local-stage/README.md)
 ran a real `gpt-6-sol` Codex CLI agent through a synthetic policy →
 calculation → local telemetry/DB → Git/file artifact → ticket workflow on the
-laptop. The [observed results](../qualification/sol-local-stage/local-results.md)
+laptop. The [observed results](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/sol-local-stage/local-results.md)
 give exact source/artifact hashes, private evidence locations and commands.
 The completed live run reconciled three independently fsynced service
 operations and the two output artifacts with zero local discrepancies; its

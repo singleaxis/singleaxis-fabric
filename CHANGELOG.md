@@ -157,6 +157,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and its frozen evidence (45,189 lines). No workflow, test or Make target ran
   it, and its evidence was pinned to `18ec69a`, whose SDK hashes had already
   drifted. History stays in git.
+- Removed the Codex/Sol laptop-stage rehearsal (`run_sol_local_stage.py`,
+  `project_sol_stage_to_fabric.py`, `verify_sol_sink_readback.py`) and the
+  laptop "local GO" simulation (`run_local_go_simulation.sh`,
+  `summarize_local_go_simulation.py`) with their tests and
+  `qualification/sol-local-stage` and `qualification/local-go-simulation`
+  records. Nothing invoked them. The qualification-status links now point
+  at commit `4a5c945`.
 
 ### Known limitations
 
