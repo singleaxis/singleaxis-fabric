@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 7,
+  "registry_revision": 8,
   "coverage_status": [
     {
       "value": "captured",
@@ -682,55 +682,68 @@
   "inference_method": [
     {
       "value": "tool_call_id",
-      "meaning": "Tool-call id emitted in a response and consumed in a later request. Confidence `certain`."
+      "meaning": "Tool-call id emitted in a response and consumed in a later request. Confidence `certain`.",
+      "confidence": "certain"
     },
     {
       "value": "previous_response_id",
-      "meaning": "Request names an earlier response. Confidence `certain`."
+      "meaning": "Request names an earlier response. Confidence `certain`.",
+      "confidence": "certain"
     },
     {
       "value": "prefix_digest",
-      "meaning": "Request history continues an earlier exchange's messages (`continues`). Confidence `certain`."
+      "meaning": "Request history continues an earlier exchange's messages (`continues`). Confidence `certain`.",
+      "confidence": "certain"
     },
     {
       "value": "prefix_break",
-      "meaning": "History of a continuing thread was rewritten (`context.history_rewritten`, D17). Confidence `tentative`."
+      "meaning": "History of a continuing thread was rewritten (`context.history_rewritten`, D17). Confidence `tentative`.",
+      "confidence": "tentative"
     },
     {
       "value": "identical_request_after_error",
-      "meaning": "Same request digest after an error (`retries`, S13). Confidence `tentative`."
+      "meaning": "Same request digest after an error (`retries`, S13). Confidence `tentative`.",
+      "confidence": "tentative"
     },
     {
       "value": "new_user_message",
-      "meaning": "A user message in request N+1 absent from response N (inferred `input` step, C08). Confidence `tentative`."
+      "meaning": "A user message in request N+1 absent from response N (inferred `input` step, C08). Confidence `tentative`.",
+      "confidence": "tentative"
     },
     {
       "value": "excerpt_digest",
-      "meaning": "A retrieval excerpt digest appears in a later request (retrieval `consumes`, N29). Confidence `tentative`."
+      "meaning": "A retrieval excerpt digest appears in a later request (retrieval `consumes`, N29). Confidence `tentative`.",
+      "confidence": "tentative"
     },
     {
       "value": "tools_digest_change",
-      "meaning": "Tools digest differs from the previous call in the thread (C23). Confidence `certain`."
+      "meaning": "Tools digest differs from the previous call in the thread (C23). Confidence `certain`.",
+      "confidence": "certain"
     },
     {
       "value": "diff_algorithm",
-      "meaning": "Diff derived from stored before/after bytes (N48). Confidence `certain`."
+      "meaning": "Diff derived from stored before/after bytes (N48). Confidence `certain`.",
+      "confidence": "certain"
     },
     {
       "value": "media_decoder",
-      "meaning": "Media metadata decoded from stored bytes (N52). Confidence `certain`."
+      "meaning": "Media metadata decoded from stored bytes (N52). Confidence `certain`.",
+      "confidence": "certain"
     },
     {
       "value": "pid_time_join",
-      "meaning": "Host-sensor record joined by PID and time (`corroborated_by`). Confidence `tentative`."
+      "meaning": "Host-sensor record joined by PID and time (`corroborated_by`). Confidence `tentative`.",
+      "confidence": "tentative"
     },
     {
       "value": "trace_id_match",
-      "meaning": "Two runs whose root steps share a W3C trace id (`same_as` between runs). Confidence `tentative`."
+      "meaning": "Two runs whose root steps share a W3C trace id (`same_as` between runs). Confidence `tentative`.",
+      "confidence": "tentative"
     },
     {
       "value": "cross_run_previous_response",
-      "meaning": "An exchange in one run names a response captured in another run (`same_as` between runs). Confidence `tentative`."
+      "meaning": "An exchange in one run names a response captured in another run (`same_as` between runs). Confidence `tentative`.",
+      "confidence": "tentative"
     }
   ],
   "field_class": [

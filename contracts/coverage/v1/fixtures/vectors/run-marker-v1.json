@@ -1,0 +1,205 @@
+{
+  "schema_version": "fabric.run-marker-vectors/v1",
+  "rule": "Spec 049 §2.10, §2.12 rule 4 and X41-X46: run_start carries the segment's predecessors (none for the root), resumable and open_deadline_s on the root, declared fork branches and the branch ids it consumes; segment_seal (a fabric.capture_heartbeat span with fabric.heartbeat.kind=segment_seal) carries fabric.segment.* and fabric.run.terminal, plus fabric.run.resumable when it issued a token; run_end carries the block exit status; run markers name the manifest in force by id and digest, every heartbeat the latest manifest_seq. 'admitted' attribute sets pass fabricguard intact under the stated capture_labels mode; each 'stripped' value is removed.",
+  "admitted": [
+    {
+      "name": "root run_start",
+      "capture_labels": "pseudonymous",
+      "attributes": {
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.capture.manifest_seq": 0,
+        "fabric.heartbeat.kind": "run_start",
+        "fabric.heartbeat.last_sequence": -1,
+        "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.run.predecessors": [
+          "none"
+        ],
+        "fabric.run.resumable": true,
+        "fabric.run.open_deadline_s": 259200,
+        "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      }
+    },
+    {
+      "name": "token-issuing segment_seal",
+      "capture_labels": "pseudonymous",
+      "attributes": {
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.capture.manifest_seq": 0,
+        "fabric.heartbeat.kind": "segment_seal",
+        "fabric.heartbeat.last_sequence": 41,
+        "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.segment.last_sequence": 41,
+        "fabric.segment.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+        "fabric.segment.seal_digest": "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.segment.branch_ids": [
+          "br-064e57314e3f26e664ffcbc1526ac062",
+          "br-b1b9158d0d5d266bdd6f53758fce2fbf"
+        ],
+        "fabric.run.terminal": false,
+        "fabric.run.resumable": true
+      }
+    },
+    {
+      "name": "branch consumer run_start",
+      "capture_labels": "pseudonymous",
+      "attributes": {
+        "fabric.source_id": "s-f0b46814e5833e0aeceb03bd9f9b9eb4",
+        "fabric.source.epoch": 7140025193451802113,
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.capture.manifest_seq": 0,
+        "fabric.heartbeat.kind": "run_start",
+        "fabric.heartbeat.last_sequence": 6,
+        "fabric.run.scope_id": "d3195887-04f7-4628-a1d1-c00adf9b7e3b",
+        "fabric.run.segment_id": "seg-a8639869696e1abb8d4af8e7cac6f0e0",
+        "fabric.run.predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "fabric.run.branch_ids": [
+          "br-064e57314e3f26e664ffcbc1526ac062"
+        ],
+        "fabric.run.declared_branches": [
+          "seg-9b5d77c2bd0ee9da3edce8d75bd99f45"
+        ],
+        "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      }
+    },
+    {
+      "name": "terminal segment_seal",
+      "capture_labels": "pseudonymous",
+      "attributes": {
+        "fabric.source_id": "s-f0b46814e5833e0aeceb03bd9f9b9eb4",
+        "fabric.source.epoch": 7140025193451802113,
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.capture.manifest_seq": 0,
+        "fabric.heartbeat.kind": "segment_seal",
+        "fabric.heartbeat.last_sequence": 9,
+        "fabric.run.scope_id": "d3195887-04f7-4628-a1d1-c00adf9b7e3b",
+        "fabric.run.segment_id": "seg-a8639869696e1abb8d4af8e7cac6f0e0",
+        "fabric.segment.last_sequence": 9,
+        "fabric.segment.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+        "fabric.segment.seal_digest": "sha256:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+        "fabric.run.terminal": true
+      }
+    },
+    {
+      "name": "run_end",
+      "capture_labels": "pseudonymous",
+      "attributes": {
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.capture.manifest_seq": 0,
+        "fabric.heartbeat.kind": "run_end",
+        "fabric.heartbeat.last_sequence": 41,
+        "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.run.scope_status": "ok",
+        "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      }
+    },
+    {
+      "name": "clear labels",
+      "capture_labels": "clear",
+      "attributes": {
+        "fabric.source_id": "billing-agent.prod",
+        "fabric.source.epoch": 7140025193451802113,
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.capture.manifest_seq": 0,
+        "fabric.heartbeat.kind": "run_start",
+        "fabric.heartbeat.last_sequence": 6,
+        "fabric.run.scope_id": "d3195887-04f7-4628-a1d1-c00adf9b7e3b",
+        "fabric.run.segment_id": "seg-a8639869696e1abb8d4af8e7cac6f0e0",
+        "fabric.run.predecessors": [
+          "seg-5456742e692c0b6e5b9590fd8b321b53/billing-agent.prod/4611686018427387905/3/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "fabric.run.branch_ids": [
+          "br-064e57314e3f26e664ffcbc1526ac062"
+        ],
+        "fabric.run.declared_branches": [
+          "seg-9b5d77c2bd0ee9da3edce8d75bd99f45"
+        ],
+        "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      }
+    }
+  ],
+  "stripped": [
+    {
+      "name": "clear source inside a predecessor, pseudonymous Node",
+      "capture_labels": "pseudonymous",
+      "key": "fabric.run.predecessors",
+      "value": [
+        "seg-5456742e692c0b6e5b9590fd8b321b53/billing-agent.prod/4611686018427387905/3/sha256:abababababababababababababababababababababababababababababababab"
+      ]
+    },
+    {
+      "name": "predecessor epoch 0",
+      "capture_labels": "clear",
+      "key": "fabric.run.predecessors",
+      "value": [
+        "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab"
+      ]
+    },
+    {
+      "name": "predecessor with a resume-token prefix",
+      "capture_labels": "clear",
+      "key": "fabric.run.predecessors",
+      "value": [
+        "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+      ]
+    },
+    {
+      "name": "terminal as text",
+      "capture_labels": "clear",
+      "key": "fabric.run.terminal",
+      "value": "true"
+    },
+    {
+      "name": "seal below -1",
+      "capture_labels": "clear",
+      "key": "fabric.segment.last_sequence",
+      "value": -2
+    },
+    {
+      "name": "bare seal digest",
+      "capture_labels": "clear",
+      "key": "fabric.segment.seal_digest",
+      "value": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+    },
+    {
+      "name": "deadline under a minute",
+      "capture_labels": "clear",
+      "key": "fabric.run.open_deadline_s",
+      "value": 59
+    },
+    {
+      "name": "short branch id",
+      "capture_labels": "clear",
+      "key": "fabric.segment.branch_ids",
+      "value": [
+        "br-064e57314e3f26e664ffcbc1526ac06"
+      ]
+    },
+    {
+      "name": "unknown heartbeat kind",
+      "capture_labels": "clear",
+      "key": "fabric.heartbeat.kind",
+      "value": "checkpoint"
+    },
+    {
+      "name": "scope status outside the block exit enum",
+      "capture_labels": "clear",
+      "key": "fabric.run.scope_status",
+      "value": "timeout"
+    }
+  ]
+}

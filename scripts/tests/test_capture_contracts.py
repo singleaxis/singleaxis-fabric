@@ -45,7 +45,7 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 33
+    assert len(validated) == 34
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 

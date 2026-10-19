@@ -1,0 +1,112 @@
+{
+  "schema_version": "fabric.pseudonym-vectors/v2",
+  "rule": "Spec 049 §2.9: function v2 is prefix- + the first 32 lowercase hex of HMAC-SHA256(k_type, value) with k_type = HMAC-SHA256(FABRIC_WIRE_ID_KEY, 'fabric-id/v2/' + type); values and keys are UTF-8; without a key a v2 id is omitted (null). Provider ids use type 'provider' and prefix p-; the legacy unkeyed form p- + 16 hex of SHA-256 stays readable and the length tells them apart. Function v1 (r-, s-, svc-) is unchanged and pinned by contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json, which this family re-verifies. key_id = 'kid-' + 8 hex of HMAC-SHA256(key, 'fabric-id/v2/kid'). Each 'distinct' pair must differ in its hex: v2 is domain-separated from v1 and between keys.",
+  "pending_types": {
+    "prefixes": [
+      "sess",
+      "usr",
+      "act",
+      "conv",
+      "turn",
+      "trg",
+      "dsp",
+      "agt",
+      "tgt",
+      "hst",
+      "sbx",
+      "mcps",
+      "rpc",
+      "dbn",
+      "txn",
+      "mst",
+      "mkey"
+    ],
+    "reason": "spec 049 §2.9 rule 2 names these prefixes but not the type strings that enter 'fabric-id/v2/' + type (only 'provider' is named); their vectors wait for the owner to fix the type strings"
+  },
+  "cases": [
+    {
+      "name": "provider id, key 1",
+      "function": "v2",
+      "prefix": "p",
+      "type": "provider",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "p-46c753d96c8744369a1800c04ba4ef0b"
+    },
+    {
+      "name": "provider id, key 2",
+      "function": "v2",
+      "prefix": "p",
+      "type": "provider",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": "another-test-key",
+      "pseudonym": "p-68958a201fea104672969e5909acbbef"
+    },
+    {
+      "name": "provider id, non-ASCII key",
+      "function": "v2",
+      "prefix": "p",
+      "type": "provider",
+      "value": "resp_68af3e2b1c",
+      "key": "clé-de-test-fabric",
+      "pseudonym": "p-1f0e5e0a6442c601565dffb7caf1d69a"
+    },
+    {
+      "name": "provider id without a key is omitted",
+      "function": "v2",
+      "prefix": "p",
+      "type": "provider",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": null,
+      "pseudonym": null
+    },
+    {
+      "name": "v1 run pseudonym of the same value and key",
+      "function": "v1",
+      "prefix": "r",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "r-3e841cd275e900778bf62828d06e637c"
+    },
+    {
+      "name": "v1 source label of the same value and key",
+      "function": "v1",
+      "prefix": "s",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "s-3e841cd275e900778bf62828d06e637c"
+    },
+    {
+      "name": "legacy unkeyed provider id",
+      "function": "legacy_provider",
+      "prefix": "p",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": null,
+      "pseudonym": "p-2ae804b614b4110c"
+    }
+  ],
+  "key_ids": [
+    {
+      "key": "fabric-test-id-key-not-a-secret",
+      "key_id": "kid-b2a0080c"
+    },
+    {
+      "key": "another-test-key",
+      "key_id": "kid-d5e3fcd2"
+    },
+    {
+      "key": "clé-de-test-fabric",
+      "key_id": "kid-bc7230c9"
+    }
+  ],
+  "distinct": [
+    [
+      "provider id, key 1",
+      "provider id, key 2"
+    ],
+    [
+      "provider id, key 1",
+      "v1 run pseudonym of the same value and key"
+    ]
+  ]
+}

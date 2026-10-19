@@ -23,4 +23,22 @@ spec differs from its rendering; `--write` regenerates the blocks.
 | `schema/step-projection-v1.schema.json` | `fabric.step-projection/v1` — per-step four-layer field wrappers and verdicts |
 | `schema/capture-manifest-v1.schema.json` | `fabric.capture-manifest/v1` — JSON form of the per-source-epoch manifest record |
 
+Fixtures and vectors (spec 049 P0, section 8.2; each pinned with its
+expectation, and each invalid fixture with the error code it must raise):
+
+| Path | Pins |
+|---|---|
+| `valid/projection-*.json`, `invalid/projection-*.json` | field wrappers: empty versus absent (an empty value is `captured`; `absent` carries no value and needs a parsed carrier), conflict (every assertion kept, none chosen), unsupported, unknown identity (`not_captured(missing_id_key)`, `unknown`, no clear id), extension step kinds and `x-` fields, tentative links and the fixed confidence of each inference method, `same_as` only by `trace_id_match` / `cross_run_previous_response`; run states `open`, `unterminated` and `conflicted` with `segment_missing`, `segment_conflict` (a replayed branch id) and `post_terminal_activity`; branch ids; predecessor entries |
+| `valid/manifest-*.json`, `invalid/manifest-*.json` | manifest states: capture points `active`, `installed_inactive`, `disabled`, `unsupported` (TypeScript `wire.ts.undici`), `failed`; content capture enabled/disabled/metadata-only with its reason and policy; keyed/unkeyed with `key_id`; manifest 0 at position −1; unsealed prior epochs beyond the 64-entry list; capture points and fields agree with the registry |
+| `fixtures/vectors/manifest-chain-v1.json` | `manifest_seq` chaining by canonical digest; only capture-point state changes within an epoch |
+| `fixtures/vectors/manifest-span-v1.json` | the `fabric.capture_manifest` span form: every attribute passes its key check and `contracts/capture/v1/schema/capture-manifest-record-v1.schema.json` (generated from this family by `--write`), and rebuilds the manifest exactly |
+| `fixtures/vectors/resume-token-v1.json` | `fr2/` resume tokens, branch tokens, predecessor entries, environment and percent-encoded `baggage` joins |
+| `fixtures/vectors/run-marker-v1.json` | `run_start`, `segment_seal` and `run_end` attribute sets fabricguard admits intact, and values it strips |
+| `fixtures/vectors/pseudonym-v2.json` | function v2 for provider ids, `kid-` key ids, domain separation from v1 and between keys, the legacy `p-` + 16 hex form; capture/v1's v1 vectors are re-verified unchanged |
+
+Each telemetry-key row carries `check`, the machine-readable form of its
+validator that fabricguard applies key by key (the Go test reads this file),
+or `check_pending` naming why the key is not admitted yet. Keys with
+`owner: receiver` are stripped from agent-supplied records.
+
 Every document is metadata only.

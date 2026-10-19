@@ -1,0 +1,114 @@
+{
+  "schema_version": "fabric.step-projection/v1",
+  "projection_revision": 1,
+  "generated_at": "2026-10-19T10:00:00Z",
+  "parser": {
+    "name": "fabric.reconstruct",
+    "version": "0.9.0"
+  },
+  "field_registry": {
+    "schema_version": "fabric.field-registry/v1",
+    "registry_revision": 8
+  },
+  "coverage_profile": "fabric.profile.model-calls/v1",
+  "inputs": {
+    "reconstruction_sha256": "sha256:c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "manifests": [
+      {
+        "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "sha256": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      }
+    ],
+    "telemetry_origin": "trusted_readback"
+  },
+  "pseudonym_mode": "keyed",
+  "key_id": "kid-b2a0080c",
+  "content_inline": false,
+  "runs": [
+    {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "integrity_verdict": "complete_for_observed_scopes",
+      "layer_verdicts": {
+        "context": {
+          "verdict": "open"
+        },
+        "structure": {
+          "verdict": "open"
+        },
+        "content": {
+          "verdict": "open"
+        },
+        "decisions_effects": {
+          "verdict": "open"
+        }
+      },
+      "fields": {
+        "cross_cutting": {
+          "run_id": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "run.scope@0.9.0",
+            "value": "r-93347307304ecb0a9bb1b51ae90ac326"
+          }
+        }
+      },
+      "run_state": "open",
+      "segments": [
+        {
+          "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "source_epoch": 4611686018427387905,
+          "last_sequence": 41,
+          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "terminal": false,
+          "predecessors": [
+            "none"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:cdd4be7ebf85fe5f3a31e4b4b12bdc2192f3aff98065808657f55c6eed415815",
+          "resumable": true,
+          "branch_ids": [
+            "br-064e57314e3f26e664ffcbc1526ac062",
+            "br-b1b9158d0d5d266bdd6f53758fce2fbf"
+          ]
+        },
+        {
+          "segment_id": "seg-a8639869696e1abb8d4af8e7cac6f0e0",
+          "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "source_epoch": 4611686018427387905,
+          "last_sequence": 41,
+          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "terminal": false,
+          "predecessors": [
+            "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:d739a278d59b7be3008e2d6332a3e25fa806e4119d63f37d76a65085fd4206c4",
+          "consumes_branch_ids": [
+            "br-064e57314e3f26e664ffcbc1526ac062"
+          ]
+        },
+        {
+          "segment_id": "seg-9b5d77c2bd0ee9da3edce8d75bd99f45",
+          "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "source_epoch": 4611686018427387905,
+          "last_sequence": 41,
+          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "terminal": false,
+          "predecessors": [
+            "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:89435b839ef936e48423acf37b6d0ca884069c66fa98c2d1a703b4fa95a32847",
+          "consumes_branch_ids": [
+            "br-b1b9158d0d5d266bdd6f53758fce2fbf"
+          ]
+        }
+      ],
+      "resumable": true,
+      "open_run_deadline_s": 259200
+    }
+  ],
+  "steps": [],
+  "evaluated_at": "2026-10-19T10:00:00Z"
+}

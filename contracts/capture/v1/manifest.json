@@ -35,6 +35,7 @@
     {"path": "fixtures/invalid/run-reconstruction-scope-verdict-stronger.json", "sha256": "6075c1931e4c415500861e494317659de4b8bc3a72b773722d17e21e69ef12af", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
     {"path": "fixtures/invalid/run-reconstruction-scope-without-verdict.json", "sha256": "6d9fb7c6b9463c1f8bd6fe803264496f31fdf0a9229fedfc515c776aa7d27d38", "expectation": "invalid", "expected_error": "capture.reconstruction.scope"},
     {"path": "fixtures/model-names/model-exposure-v1.json", "sha256": "1126576c0d7d814fc0018ed33454c583c9edc08863294152ee276484b37e75ca", "expectation": "vectors", "expected_error": null},
-    {"path": "fixtures/run-ids/run-id-pseudonym-v1.json", "sha256": "5d606abfae8566c98bb0f858a2c05fafea6faf0126b4241164a7ae5a043528e5", "expectation": "vectors", "expected_error": null}
+    {"path": "fixtures/run-ids/run-id-pseudonym-v1.json", "sha256": "5d606abfae8566c98bb0f858a2c05fafea6faf0126b4241164a7ae5a043528e5", "expectation": "vectors", "expected_error": null},
+    {"path": "schema/capture-manifest-record-v1.schema.json", "sha256": "5f04193d0e32da8c240732ac013cf00387a54e79649b40c93dfab8a230bcd9a0", "expectation": "schema", "expected_error": null}
   ]
 }

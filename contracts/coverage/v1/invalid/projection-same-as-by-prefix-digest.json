@@ -1,0 +1,189 @@
+{
+  "schema_version": "fabric.step-projection/v1",
+  "projection_revision": 1,
+  "generated_at": "2026-10-19T10:00:00Z",
+  "parser": {
+    "name": "fabric.reconstruct",
+    "version": "0.9.0"
+  },
+  "field_registry": {
+    "schema_version": "fabric.field-registry/v1",
+    "registry_revision": 8
+  },
+  "coverage_profile": "fabric.profile.model-calls/v1",
+  "inputs": {
+    "reconstruction_sha256": "sha256:c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "manifests": [
+      {
+        "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "sha256": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      }
+    ],
+    "telemetry_origin": "trusted_readback"
+  },
+  "pseudonym_mode": "keyed",
+  "key_id": "kid-b2a0080c",
+  "content_inline": false,
+  "runs": [
+    {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "integrity_verdict": "complete_for_observed_scopes",
+      "layer_verdicts": {
+        "context": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "structure": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "content": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      },
+      "fields": {
+        "cross_cutting": {
+          "run_id": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "run.scope@0.9.0",
+            "value": "r-93347307304ecb0a9bb1b51ae90ac326"
+          }
+        }
+      },
+      "run_state": "terminated",
+      "segments": [
+        {
+          "segment_id": "seg-4d6e82f79f66eef1b6e44ff0f0f2ad6b",
+          "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "source_epoch": 4611686018427387905,
+          "last_sequence": 41,
+          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "terminal": true,
+          "predecessors": [
+            "none"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:482394bc565a9511acfc2ebf2fe32a1af191aaaf769e048bb55cb72e6be11764"
+        }
+      ],
+      "resumable": false
+    },
+    {
+      "run_id": "r-67adfc3cf363de9d736ed87fd8245c85",
+      "integrity_verdict": "complete_for_observed_scopes",
+      "layer_verdicts": {
+        "context": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "structure": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "content": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      },
+      "fields": {
+        "cross_cutting": {
+          "run_id": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "run.scope@0.9.0",
+            "value": "r-93347307304ecb0a9bb1b51ae90ac326"
+          }
+        }
+      },
+      "run_state": "terminated",
+      "segments": [
+        {
+          "segment_id": "seg-1d194c2ce857d91455f64109b167741c",
+          "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "source_epoch": 4611686018427387905,
+          "last_sequence": 41,
+          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "terminal": true,
+          "predecessors": [
+            "none"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:70bc4b7e908e56b10d8748e3094b872d62d6e91255b4dcf1e4e1a2141158fee9"
+        }
+      ],
+      "resumable": false
+    }
+  ],
+  "steps": [
+    {
+      "attempt_id": "396a18b1-3f9c-4314-a381-2bfd78e71716",
+      "step_id": "396a18b1-3f9c-4314-a381-2bfd78e71716",
+      "step_kind": "input",
+      "run_id": "r-67adfc3cf363de9d736ed87fd8245c85",
+      "event_ids": [
+        "6a0e75c8-62da-425e-a2b9-fa87628bd1ac"
+      ],
+      "capture_point": "reconstruct.infer@0.9.0",
+      "provenance": "inferred",
+      "method": "new_user_message",
+      "confidence": "tentative",
+      "lifecycle_state": "completed",
+      "result_status": "unknown",
+      "links": [
+        {
+          "type": "same_as",
+          "target": {
+            "namespace": "run",
+            "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+          },
+          "provenance": "inferred",
+          "method": "prefix_digest",
+          "confidence": "certain",
+          "state": "resolved"
+        },
+        {
+          "type": "derived_from",
+          "target": {
+            "namespace": "exchange",
+            "id": "ceeefe14-2b07-40a2-ace6-38df710bf60a"
+          },
+          "provenance": "inferred",
+          "method": "new_user_message",
+          "confidence": "tentative",
+          "state": "resolved"
+        }
+      ],
+      "layers": {
+        "context": {
+          "input.payload": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "ref": {
+              "object_id": "a4d7485c-422d-40be-abea-ce2bcdac6e33",
+              "role": "model.exchange.request",
+              "pointer": "/messages/3"
+            }
+          }
+        }
+      },
+      "layer_verdicts": {
+        "context": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "structure": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "content": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      }
+    }
+  ],
+  "evaluated_at": "2026-10-19T10:00:00Z"
+}
