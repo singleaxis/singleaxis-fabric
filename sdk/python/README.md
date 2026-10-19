@@ -21,10 +21,10 @@ content capture is disabled by default.
 pip install singleaxis-fabric
 ```
 
-Add OTLP export and only the integrations you use:
+Add OTLP export:
 
 ```bash
-pip install "singleaxis-fabric[otlp,openai]"
+pip install "singleaxis-fabric[otlp]"
 ```
 
 ## Capture one agent decision
@@ -54,11 +54,10 @@ installed and an OTLP exporter is constructed from the environment. Calling it
 with neither produces spans that go nowhere (the SDK warns loudly rather than
 dropping them silently).
 
-For optional Python auto capture, configure the protected managed provider before
-registering the upstream hook. Its default span exporter suppresses raw content,
-hashes free-form metadata strings and preserves typed numeric usage and trace
+The managed provider's default span exporter suppresses raw content, hashes
+free-form metadata strings and preserves typed numeric usage and trace
 identity. Existing host exporters are not modified. See
-[protected auto-capture setup, verified dependencies and limits](../../docs/python-auto-capture-privacy.md).
+[managed span export: protection and limits](../../docs/python-span-export-protection.md).
 
 `gen_ai.client.*` metrics (token usage, operation duration, time-to-first-token,
 time-per-chunk, tool duration) are recorded on the global OpenTelemetry metrics

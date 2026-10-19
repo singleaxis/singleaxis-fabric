@@ -197,6 +197,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   whose single-epoch route closure in `qualified_run` is unchanged. The
   module is now a forbidden wheel/sdist member, and
   `docs/enterprise-distributed-closure.md` is removed.
+- **Breaking: removed Python auto-instrumentation**
+  (`fabric.auto_instrument`, `Fabric.enable_auto_instrumentation`,
+  `enable_auto_instrumentation_with_manifest`) together with
+  `fabric.coverage_manifest`, `fabric._coverage_canary` and
+  `fabric._instrumentation_registry`, and the `openai`, `anthropic`,
+  `bedrock`, `otel-langchain` and `cohere` extras that pulled the upstream
+  `opentelemetry-instrumentation-*` hooks. Fabric captures model calls at
+  the LLM wire (`fabric.wire`) and through app-reported records
+  (`llm_call`, `tool_call`); the upstream hooks also coupled the SDK to a
+  framework (langchain). `install_default_provider` and
+  `trace_export_protection_status` (the protected managed span export) are
+  unchanged; `docs/python-auto-capture-privacy.md` is now
+  `docs/python-span-export-protection.md`. The modules are forbidden
+  wheel/sdist members and the five extras are forbidden extras; the license
+  scan no longer inventories them.
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.

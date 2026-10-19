@@ -57,7 +57,7 @@ copying a large reference deployment into the application.
    traces or request/response bodies in application logs or span names. In
    metadata-only mode raw exception text is not allowed. Upstream
    `capture_content=False` flags alone are not a privacy boundary: use the
-   protected [Fabric-managed provider/export path](python-auto-capture-privacy.md).
+   protected [Fabric-managed provider/export path](python-span-export-protection.md).
    Inspect `fabric.tracing.trace_export_protection_status()` inside the application;
    its hashed string metadata remains correlatable, and content-ref hashes are
    no longer resolver pointers.

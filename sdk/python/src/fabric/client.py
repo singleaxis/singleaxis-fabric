@@ -18,7 +18,6 @@ from ._attributes import check_attribute_keys
 from ._content import CONTENT_ROLES
 from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._id_validators import check_identifier, warn_if_pii_shaped
-from .auto_instrument import enable_auto_instrumentation as _enable_auto_instrumentation
 from .tracing import get_meter, get_tracer
 
 if TYPE_CHECKING:
@@ -445,41 +444,3 @@ class Fabric:
         stop the writer. Idempotent; a no-op in metadata-only mode."""
         if self._content_writer is not None:
             self._content_writer.close()
-
-    def enable_auto_instrumentation(
-        self,
-        *,
-        only: tuple[str, ...] | list[str] | None = None,
-        capture_content: bool | None = None,
-    ) -> tuple[str, ...]:
-        """Enable installed OTel auto-instrumentation packages.
-
-        Lazy-detects which ``opentelemetry-instrumentation-<lib>``
-        packages are present (installed via Fabric extras such as
-        ``singleaxis-fabric[openai,anthropic]``) and instruments each.
-        Once enabled, every call into the matching SDK (openai /
-        anthropic / bedrock / langchain / cohere) emits a child span
-        under the current Fabric decision span — no manual
-        :meth:`Decision.llm_call` wrapping required.
-
-        Content posture: prompt/completion content is NOT captured by
-        default (raw text never lands on spans). Override with the
-        ``capture_content=True`` argument or by setting
-        ``FABRIC_CAPTURE_LLM_CONTENT=true`` in the environment.
-
-        Returns the names of instrumentors that were successfully
-        enabled. Packages that aren't installed are skipped silently.
-        """
-        if self.content_capture is not None:
-            unsafe_environment = any(
-                os.environ.get(name, "false").strip().lower() not in ("", "0", "false", "no", "off")
-                for name in (
-                    "FABRIC_CAPTURE_LLM_CONTENT",
-                    "TRACELOOP_TRACE_CONTENT",
-                    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
-                )
-            )
-            if capture_content or unsafe_environment:
-                raise ValueError("raw span capture is incompatible with protected content capture")
-            capture_content = False
-        return _enable_auto_instrumentation(only=only, capture_content=capture_content)
