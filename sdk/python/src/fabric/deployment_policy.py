@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
+from ._transform_runner import TransformRunner
+
 POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1"
 # masked_only and original_plus_masked: spec 049 §7.7 rule 2 (minor, P0-A).
 PRIVACY_MODES = frozenset({
@@ -246,12 +248,18 @@ class ProtectedContent:
 
 
 class ContentProtector:
-    """Bounded synchronous protection; transform errors become content loss.
+    """Bounded protection; transform errors become content loss.
 
     Unknown roles are omitted. No transform, hash or payload length is produced
     for omissions. Redaction needs an explicit per-role customer function; no
     generic detector or silent fallback is supplied. Token keys remain in memory
     and must be independently generated with >=32 bytes of entropy.
+
+    A customer redactor runs on a dedicated, bounded thread, never the calling one,
+    and is abandoned after ``transform_timeout_s`` (spec 049 §7.7 rule 4: the content
+    is lost, ``protection_failed``); while two abandoned calls are still running,
+    every further redaction fails at once. :meth:`runs_customer_code` names the roles
+    whose protection the byte recorder defers to its worker (never the caller's thread).
     """
 
     def __init__(
@@ -261,10 +269,18 @@ class ContentProtector:
         redactors: Mapping[str, Callable[[bytes], bytes]] | None = None,
         tokenization_key: bytes | None = None,
         payload_max_bytes: int = 1024 * 1024,
+        transform_timeout_s: float = 5.0,
     ) -> None:
         if not isinstance(policy, DeploymentPolicy):
             raise ValueError("content protection requires a DeploymentPolicy")
         _positive(payload_max_bytes, _MAX_PAYLOAD)
+        if (
+            isinstance(transform_timeout_s, bool)
+            or not isinstance(transform_timeout_s, int | float)
+            or not 0 < transform_timeout_s <= 300  # noqa: PLR2004
+        ):
+            raise ValueError("transform_timeout_s must be in (0, 300]")
+        self.transform_timeout_s = float(transform_timeout_s)
         self.policy = policy
         self.payload_max_bytes = payload_max_bytes
         self._redactors = dict(redactors or {})
@@ -284,6 +300,9 @@ class ContentProtector:
             raise ValueError("tokenize mode requires a caller-supplied key")
         self._key = tokenization_key
         self._modes = dict(roles)
+        self._runners = {
+            role: TransformRunner("fabric-content-redactor") for role in self._redactors
+        }
         self._scope = {
             "schema_version": "fabric.token/v1",
             "policy_digest": policy.digest,
@@ -291,7 +310,12 @@ class ContentProtector:
             "workload_id": policy.workload_id,
         }
 
-    def protect(self, role: str, data: bytes) -> ProtectedContent:  # noqa: PLR0911
+    def runs_customer_code(self, role: str) -> bool:
+        """Whether protecting ``role`` calls a customer redactor (``redact``,
+        ``masked_only``): the byte recorder then protects it on its worker thread."""
+        return isinstance(role, str) and self._modes.get(role) in _MASKING
+
+    def protect(self, role: str, data: bytes) -> ProtectedContent:  # noqa: PLR0911, PLR0912
         """No exception text or rejected bytes are retained on failure."""
         mode = self._modes.get(role, "omit") if isinstance(role, str) else "omit"
         metadata: dict[str, Any] = {"policy_digest": self.policy.digest}
@@ -329,7 +353,11 @@ class ContentProtector:
                     "sha256:" + hashlib.sha256(data).hexdigest(),
                 )
             if mode in _MASKING:  # masked_only: only the masked copy is stored (049 §7.5)
-                payload = self._redactors[role](data)
+                outcome, payload = self._runners[role].run(
+                    self._redactors[role], data, self.transform_timeout_s
+                )
+                if outcome != "ok":  # raised, timed out, or the abandoned bound is reached
+                    return result("lost", "protection_failed")
                 if not isinstance(payload, bytes):
                     if inspect.iscoroutine(payload):
                         payload.close()

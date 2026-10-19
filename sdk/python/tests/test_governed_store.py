@@ -770,8 +770,9 @@ def test_policy_capture_preserves_delegate_and_keeps_withheld_secrets_out_of_evi
         first = snapshot["events"][0]["descriptor"]
         assert "source_sha256" not in first
         assert ("source_byte_length" in first) == (mode == "metadata_only")
-        if mode == "redact":
-            assert first["status"] == "failed" and first["protection_status"] == "lost"
+        if mode == "redact":  # the redactor runs on the writer thread (Sol P0-A #5)
+            assert first["status"] == "not_captured" and first["protection_status"] == "withheld"
+            assert first["status_reason"] == "protection_failed"
         evidence = [json.dumps(snapshot).encode()]
         evidence.extend(payload for payload, _ in project_call_snapshot_batches(snapshot))
         evidence.extend(path.read_bytes() for path in root.parent.rglob("*") if path.is_file())

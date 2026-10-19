@@ -434,14 +434,18 @@ class ByteEvidenceRecorder:
             self._gate_logged = True
             self._log_gate()
         protected = None
-        if self._config.content_protector is not None and not gated:
-            # Protection runs before the handoff. Only permitted bytes enter the queue.
-            protected = self._config.content_protector.protect(role if enabled else "", data)
+        protector = self._config.content_protector
+        # Customer redaction never runs on the caller's thread (spec 049 §7.1, §7.7): it
+        # is deferred to the worker, before persistence; failure there withholds.
+        deferred = protector is not None and enabled and protector.runs_customer_code(role)
+        if protector is not None and not gated and not deferred:
+            # Fabric's own protection runs before the handoff: only permitted bytes queue.
+            protected = protector.protect(role if enabled else "", data)
             enabled = enabled and protected.protected_bytes is not None
         # Neither omitted nor masked-only content exposes the original fingerprint.
         digest = (
             "sha256:" + hashlib.sha256(data).hexdigest()
-            if protected is None and enabled and policy.mode != "masked_only"
+            if protected is None and enabled and policy.mode != "masked_only" and not deferred
             else None
         )
         descriptor: dict[str, Any] = {
@@ -470,7 +474,7 @@ class ByteEvidenceRecorder:
                 self._policy_block,
                 protection_status="redacted" if policy.mode == "masked_only" else "retained",
             )
-        if enabled and protected is None and policy.mode != "masked_only":
+        if enabled and protected is None and policy.mode != "masked_only" and not deferred:
             # masked_only keeps no digest or length of the original (content-v2 2.2.0).
             descriptor["source_byte_length"] = len(data)
         if enabled and policy.mode == "masked_only":
@@ -483,6 +487,20 @@ class ByteEvidenceRecorder:
         if digest is not None:
             descriptor["source_byte_length"] = len(data)
             descriptor["source_sha256"] = digest
+        if deferred:  # pending the worker's redaction: no digest or length of the original
+            deployment = self._config.deployment_policy
+            if deployment is None:  # validated configuration
+                raise ValueError("missing deployment policy")
+            descriptor.update(
+                workload_id=deployment.workload_id,
+                policy_digest=deployment.digest,
+                policy_id=deployment.policy_id,
+                policy_version=deployment.policy_version,
+                privacy_mode=deployment.privacy[role],
+                protection_status="redacted",
+                representation="redacted",
+                transformations=["redact"],
+            )
         if protected is not None:
             deployment = self._config.deployment_policy
             if deployment is None:  # validated configuration
@@ -764,7 +782,9 @@ class ByteEvidenceRecorder:
             store = self._config.review_store if mode in _DERIVED else self._config.store
             if store is None:
                 raise ValueError("missing deployment content store")
-            self._write_record(object_id, data, store)
+            payload = self._deferred_protection(object_id, role, data)
+            if payload is not None:
+                self._write_record(object_id, payload, store)
             return
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
         transformed = None
@@ -790,6 +810,20 @@ class ByteEvidenceRecorder:
             if transformed is None or self._config.review_store is None:
                 raise ValueError("missing transformed content or review store")
             self._write_record(derivative_id, transformed, self._config.review_store)
+
+    def _deferred_protection(self, object_id: str, role: str, data: bytes) -> bytes | None:
+        """The bytes to persist under a deployment policy. A customer redaction deferred
+        from :meth:`capture` runs here (bounded, on its own thread), before persistence;
+        any failure withholds the object (spec 049 §7.7 rule 4) and returns ``None``."""
+        protector = self._config.content_protector
+        if protector is None or not protector.runs_customer_code(role):
+            return data  # already protected before the handoff
+        protected = protector.protect(role, data)
+        if protected.status != "redacted" or protected.protected_bytes is None:
+            with self._condition:
+                self._withhold(object_id)
+            return None
+        return protected.protected_bytes
 
     def _fail_record(self, object_id: str, reason: str, *, status: str = "failed") -> None:
         descriptor = self._records[object_id]

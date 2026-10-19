@@ -254,7 +254,9 @@ def test_real_recorder_routes_only_protected_bytes(
             assert settled["status"] == "stored"
             assert store.read(settled["ref"]) == SECRET
         elif mode in {"redact", "tokenize"}:
-            assert queued == [b"[redacted]" if mode == "redact" else GOLDEN_TOKEN]
+            # A customer redactor runs on the worker, never the caller's thread (Sol P0-A
+            # #5): the in-memory handoff carries its input; only its output is persisted.
+            assert queued == [SECRET if mode == "redact" else GOLDEN_TOKEN]
             assert settled["status"] == "redacted"
             assert settled["representation"] == ("redacted" if mode == "redact" else "tokenized")
             assert "source_sha256" not in settled
@@ -338,9 +340,7 @@ def test_token_output_respects_configured_bound() -> None:
     assert result.protected_bytes is None
 
 
-def test_transform_failure_in_recorder_never_stores_input(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_transform_failure_in_recorder_never_stores_input(tmp_path: Path) -> None:
     def fail(_: bytes) -> bytes:
         raise RuntimeError("sensitive-value")
 
@@ -356,11 +356,8 @@ def test_transform_failure_in_recorder_never_stores_input(
             content_protector=protector,
         )
     )
-    monkeypatch.setattr(
-        recorder._queue, "put_nowait", lambda _: pytest.fail("failed content entered queue")
-    )
     try:
-        item = recorder.capture(
+        initial = recorder.capture(
             SECRET,
             role="terminal.stdout",
             boundary="terminal",
@@ -368,12 +365,17 @@ def test_transform_failure_in_recorder_never_stores_input(
             source_epoch=0,
             source_sequence=1,
         )
-        assert item["status"] == "failed"
-        assert item["protection_status"] == "lost"
+        # The redactor runs on the worker (Sol P0-A #5); its failure withholds there.
+        assert recorder.flush()
+        item = recorder.get(initial["object_id"])
+        assert item is not None
+        assert item["status"] == "not_captured"
+        assert item["protection_status"] == "withheld"
         assert item["status_reason"] == "protection_failed"
-        assert "source_sha256" not in item
-        assert "source_byte_length" not in item
-        assert "sensitive-value" not in json.dumps(item)
+        for descriptor in (initial, item):
+            assert "source_sha256" not in descriptor
+            assert "source_byte_length" not in descriptor
+            assert "sensitive-value" not in json.dumps(descriptor)
         assert not any(p.is_file() for p in tmp_path.rglob("*"))
     finally:
         _assert_result_378 = recorder.close()
@@ -492,3 +494,69 @@ def test_the_explicit_gate_reads_the_id_key_from_the_environment(
     monkeypatch.setenv("FABRIC_WIRE_ID_KEY", "short")
     with pytest.raises(ValueError, match="FABRIC_WIRE_ID_KEY"):  # malformed: still raises
         ByteEvidenceRecorder(config)
+
+
+# --- Sol P0-A #5: customer masking never runs on the caller's thread ---------------------
+
+
+@pytest.mark.parametrize("mode", ["redact", "masked_only"])
+def test_explicit_masking_runs_off_the_caller_thread(tmp_path: Path, mode: str) -> None:
+    """A slow (or hung) customer redactor never delays ``capture()``: protection runs
+    behind the handoff, before persistence; a redactor that does not return within its
+    timeout withholds the object (``protection_failed``), never raw bytes."""
+    import threading  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    release, threads = threading.Event(), []
+
+    def slow(data: bytes) -> bytes:
+        threads.append(threading.current_thread())
+        time.sleep(0.1)
+        return b"[redacted]"
+
+    def hung(data: bytes) -> bytes:
+        release.wait(30.0)
+        return b"[late]"
+
+    for redactor, expected in ((slow, "redacted"), (hung, "not_captured")):
+        policy = policy_for(mode)
+        root = tmp_path / f"{mode}-{redactor.__name__}"
+        store = LocalFilesystemContentStore(str(root / "original"), tenant_id=policy.tenant_id)
+        review = LocalFilesystemContentStore(str(root / "review"), tenant_id=policy.tenant_id)
+        protector = ContentProtector(policy, redactors={"terminal.stdout": redactor},
+                                     transform_timeout_s=0.2)  # fmt: skip
+        recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
+            store=store, review_store=review, roles=frozenset({"terminal.stdout"}),
+            deployment_policy=policy, content_protector=protector,
+        ))  # fmt: skip
+        try:
+            started = time.monotonic()
+            initial = recorder.capture(
+                SECRET, role="terminal.stdout", boundary="terminal", source_id="sdk",
+                source_epoch=0, source_sequence=1,
+            )  # fmt: skip
+            assert time.monotonic() - started < 0.05  # the caller never waits on the redactor
+            assert initial["status"] == "pending" and "source_sha256" not in initial
+            assert recorder.flush(5.0)
+            settled = recorder.get(initial["object_id"])
+            assert settled is not None and settled["status"] == expected
+            if expected == "redacted":
+                assert review.read(settled["ref"]) == b"[redacted]"
+                assert threading.main_thread() not in threads
+            else:
+                assert settled["status_reason"] == "protection_failed"
+                assert settled["protection_status"] == "withheld" and "ref" not in settled
+            for path in root.rglob("*"):
+                if path.is_file():
+                    assert SECRET not in path.read_bytes()
+        finally:
+            release.set()
+            assert recorder.close()
+        release.clear()
+
+
+def test_the_redactor_timeout_is_validated() -> None:
+    for bad in (0, -1, 301, True, "5"):
+        with pytest.raises(ValueError, match="transform_timeout_s"):
+            ContentProtector(policy_for("redact"), redactors={"terminal.stdout": lambda d: d},
+                             transform_timeout_s=bad)  # type: ignore[arg-type]  # fmt: skip
