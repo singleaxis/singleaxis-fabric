@@ -46,9 +46,22 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 77
+    assert len(validated) == 78
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
+
+
+def test_report_records_telemetry_origin_and_source_authentication() -> None:
+    """Spec 049 §7.9, decision 20: the report says where its telemetry came from and
+    names an unauthenticated production record as its own gap type."""
+    schema = _json("schema/run-reconstruction-v1.schema.json")
+    inputs = schema["properties"]["inputs"]["properties"]
+    assert inputs["telemetry_origin"]["enum"] == ["trusted_readback", "imported"]
+    assert inputs["profile"]["enum"] == ["local", "production"]
+    assert "source_unauthenticated" in schema["$defs"]["gapType"]["enum"]
+    report = _json("fixtures/valid/run-reconstruction-production-imported.json")
+    (gap,) = [g for g in report["runs"][0]["gaps"] if g["gap_type"] == "source_unauthenticated"]
+    assert gap["effect"] == "unverified" and gap["reason"] == "imported_telemetry"
 
 
 def test_exchange_record_carries_no_content_or_stitching_keys() -> None:

@@ -57,6 +57,7 @@ from fabric.reconstruct._stitch_check import StitchView, stitch_run
 
 SourceKey = tuple[str, int]
 Segment = tuple[int, int, str | None]
+Profile = Literal["local", "production"]
 Side = Literal["request", "response"]
 
 _ROLES: dict[Side, str] = {
@@ -246,6 +247,8 @@ def reconstruct(
     model_allowlist: Sequence[str] = (),
     id_key: bytes | None = None,
     wait_for_objects_s: float = 0.0,
+    profile: Profile | None = None,
+    trusted_source: bool = False,
 ) -> dict[str, Any]:
     """Reconstruct runs from span files and an optional customer store.
 
@@ -260,6 +263,16 @@ def reconstruct(
     pseudonymous form (decision J1); ``run_ids`` (clear, pseudonym or fallback ids)
     are matched through the same projection (:func:`report_run_id`). Returns a
     ``fabric.run-reconstruction/v1`` document.
+
+    Source authentication (spec 049 §7.9, decision 20): in the ``production``
+    ``profile`` every record must carry the Node's ``fabric.source.authenticated``
+    stamp, and a stamp counts only on trusted readback. ``trusted_source`` says the
+    span files are the Node's own telemetry export or destination, read from a location
+    the operator trusts; otherwise they are imported and none of their records is
+    authenticated, whatever it carries. Content objects are always read back from the
+    configured store. ``profile`` ``None`` means ``production`` when any span carries
+    the stamp (only a bound Node writes it), else ``local``. A failed check is a
+    ``source_unauthenticated`` gap with effect ``unverified``.
     Raises :class:`ReconstructInputError` for unusable input or options.
     """
 
@@ -272,6 +285,8 @@ def reconstruct(
         if store is not None
         else None
     )
+    if profile not in (None, "local", "production"):
+        raise ReconstructInputError("profile must be local or production")
     span_files: list[dict[str, Any]] = []
     verifier = _Verifier(reader, allowlist, id_key)
     for index, path in enumerate(paths, start=1):
@@ -286,7 +301,15 @@ def reconstruct(
                 ) from None
             verifier.add(observation)
     verifier.finalize()
-    inputs: dict[str, Any] = {"span_files": span_files}
+    verifier.trusted_source = trusted_source
+    verifier.production = (
+        profile == "production" if profile is not None else verifier.stamp_observed
+    )
+    inputs: dict[str, Any] = {
+        "span_files": span_files,
+        "telemetry_origin": "trusted_readback" if trusted_source else "imported",
+        "profile": "production" if verifier.production else "local",
+    }
     if reader is not None:
         tenant = report_tenant_id(reader.tenant_id, id_key)
         inputs["store"] = {"kind": reader.kind, "tenant_id": tenant}
@@ -365,6 +388,14 @@ class _Verifier:
         self._heartbeats: set[HeartbeatObs] = set()
         # Scopes named by a run marker with malformed fields: never closed (sol2 #5).
         self.malformed_scopes: set[str] = set()
+        # 049 §7.9: the Node's source stamp. Sources with an unstamped loss or heartbeat
+        # record, exchange ids with an unstamped observation, and whether any span is
+        # stamped. ``production``/``trusted_source`` are set before runs are built.
+        self.unstamped_sources: set[SourceKey] = set()
+        self.unstamped_exchanges: set[str] = set()
+        self.stamp_observed = False
+        self.production = False
+        self.trusted_source = False
 
     def _scope(self, scope_id: str, run_id: str) -> _Scope:
         self.run_scopes[run_id].add(scope_id)
@@ -393,8 +424,20 @@ class _Verifier:
             changes["run_id"] = report_run_id(run_id, self.key)
         return dataclasses.replace(obs, **changes)
 
+    def _stamp(self, obs: ExchangeObs | LossObs | HeartbeatObs) -> None:
+        """Note whether ``obs`` carries the Node's stamp (049 §7.9); any unstamped copy of a
+        record counts, whichever copy the accounting keeps."""
+        if obs.authenticated:
+            self.stamp_observed = True
+        elif isinstance(obs, ExchangeObs):
+            self.unstamped_exchanges.add(obs.exchange_id)
+        else:
+            self.unstamped_sources.add((obs.source_id, obs.source_epoch))
+
     def add(self, obs: ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs | None) -> None:
         obs = self._labels(obs)
+        if obs is not None and not isinstance(obs, MalformedMarkerObs):
+            self._stamp(obs)
         if isinstance(obs, MalformedMarkerObs):
             self.malformed_scopes.add(obs.scope_id)
             self.add(obs.heartbeat)
@@ -752,6 +795,8 @@ class _Run:
         stitched = stitch_run(views)
         for gap in stitched.gaps:
             self._add(gap, self._scopes_of(gap.exchange_id))
+        if self.verifier.production:
+            self._authentication(bodies)
         for entry in exchanges:
             entry["thread_id"] = stitched.thread_of[entry["exchange_id"]]
             continued = stitched.continues.get(entry["exchange_id"])
@@ -802,6 +847,58 @@ class _Run:
             }
         )
         return out, scope_reports
+
+    def _authentication(self, bodies: dict[str, _Bodies]) -> None:
+        """049 §7.9 (G6, RR1a; decision 20): in the production profile every record of the
+        run carries the Node's stamp, read back from a trusted location. Imported span
+        files authenticate nothing; a stored object's stamp is its persisted descriptor's,
+        read from the configured store. Each failure is ``unverified``."""
+        verifier = self.verifier
+        for key in sorted({window.key for window in self.windows}):
+            unstamped = key in verifier.unstamped_sources or any(
+                exchange.source == key and exchange.exchange_id in verifier.unstamped_exchanges
+                for exchange in self.observed
+            )
+            if verifier.trusted_source and not unstamped:
+                continue
+            scopes = {window.scope_id for window in self.windows if window.key == key}
+            scopes |= {
+                scope
+                for exchange in self.observed
+                if exchange.source == key
+                for scope in self._scopes_of(exchange.exchange_id)
+            }
+            self._add(
+                Gap(
+                    "source_unauthenticated",
+                    "unverified",
+                    source_id=key[0],
+                    source_epoch=key[1],
+                    reason="unstamped_record" if verifier.trusted_source else "imported_telemetry",
+                ),
+                sorted(scope for scope in scopes if scope is not None),
+            )
+        for exchange in self.members:
+            body = bodies[exchange.exchange_id]
+            sides: list[tuple[Side, ObjectResult | None]] = [
+                ("request", body.request), ("response", body.response),
+            ]  # fmt: skip
+            for side, result in sides:
+                if (
+                    result is not None
+                    and result.verification == "verified"
+                    and not result.source_authenticated
+                ):
+                    self._add(
+                        Gap(
+                            "source_unauthenticated",
+                            "unverified",
+                            exchange_id=exchange.exchange_id,
+                            object_role=side,
+                            reason="unstamped_object",
+                        ),
+                        self._scopes_of(exchange.exchange_id),
+                    )
 
     def _scopes_of(self, exchange_id: str | None) -> tuple[str, ...]:
         if exchange_id is None:
@@ -887,6 +984,26 @@ class _Run:
             self._gap(exchange, "missing_object", side=side, reason=result.reason)
         elif result.verification == "digest_mismatch":
             self._gap(exchange, "digest_mismatch", side=side, reason=result.reason)
+        elif result.split is not None and result.data is not None:
+            # 049 §7.5: a retain_original split side reassembles to its original digest;
+            # the reassembled original is what the side's parse reads.
+            rebuilt = reader.reassemble(
+                object_id,
+                result.data,
+                result.split,
+                binding={
+                    "source_id": exchange.source_id,
+                    "source_epoch": exchange.source_epoch,
+                    "source_sequence": exchange.source_sequence,
+                    "run_id": exchange.run_id,
+                    "operation_id": exchange.exchange_id,
+                },
+                id_key=self.verifier.key,
+            )
+            if rebuilt.gap_type is not None:
+                self._gap(exchange, rebuilt.gap_type, side=side, reason=rebuilt.reason)
+            else:
+                result = dataclasses.replace(result, data=rebuilt.data)
         return result, False
 
     def _gap(

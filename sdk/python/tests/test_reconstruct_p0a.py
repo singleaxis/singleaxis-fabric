@@ -221,3 +221,224 @@ def test_cli_content_key_file_errors(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert code != 0
     err = capsys.readouterr().err
     assert "content-key-file" in err and "short-secret" not in err
+
+
+# --- source authentication on trusted readback (049 §7.9, decision 20) and split
+# reassembly (§7.5) ----------------------------------------------------------------
+
+STAMP = "fabric.source.authenticated"
+
+
+def _rows(rig: Any, path: Path, *, stamp: Any = None, skip: str | None = None) -> Path:
+    """Every span the rig exported, as sink JSONL rows; ``stamp`` (when not ``None``) is
+    written as the Node's source stamp on every row except those named ``skip``."""
+    rows = []
+    for span in rig.exporter.get_finished_spans():
+        attrs = dict(span.attributes or {})
+        if stamp is not None and span.name != skip:
+            attrs[STAMP] = stamp
+        rows.append(json.dumps({
+            "kind": "span", "name": span.name, "trace_id": f"{span.context.trace_id:032x}",
+            "span_id": f"{span.context.span_id:016x}", "start_ns": span.start_time,
+            "end_ns": span.end_time, "attributes": attrs,
+            "resource": dict(span.resource.attributes),
+        }))  # fmt: skip
+    path.write_text("\n".join(rows) + "\n")
+    return path
+
+
+def _stamp_descriptors(store: Any) -> None:
+    """What the Node's fabriccontent exporter persists at a bound ingress."""
+    meta = Path(store.root) / store.tenant_id / "evidence" / "meta"
+    for path in meta.glob("*.json"):
+        path.write_text(json.dumps({**json.loads(path.read_text()), "source_authenticated": True}))
+
+
+def _captured(tmp_path: Path, **config: Any) -> Any:
+    rig = make_rig(tmp_path, tenant_id="tenant-a", **config)
+    reply = {"id": "chatcmpl-1", "model": "gpt-4o", "choices": []}
+    with rig.client(lambda r: __import__("httpx").Response(200, json=reply)) as client:
+        client.post(
+            OPENAI_CHAT, json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
+        )
+    rig.flush()
+    assert rig.loss.flush(5.0)
+    return rig
+
+
+def _auth_gaps(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return [g for run in report["runs"] for g in run["gaps"]
+            if g["gap_type"] == "source_unauthenticated"]  # fmt: skip
+
+
+def _valid(report: dict[str, Any]) -> None:
+    from .test_wire_helpers import capture_schemas, load_validator  # noqa: PLC0415
+
+    load_validator().validate_document(report, capture_schemas())
+
+
+def test_local_profile_ignores_the_stamp_and_records_the_origin(tmp_path: Path) -> None:
+    rig = _captured(tmp_path)
+    try:
+        report = reconstruct([_rows(rig, tmp_path / "s.jsonl")], store=rig.store)
+        assert report["inputs"]["telemetry_origin"] == "imported"
+        assert report["inputs"]["profile"] == "local"
+        assert _auth_gaps(report) == []
+        _valid(report)
+        trusted = reconstruct([tmp_path / "s.jsonl"], store=rig.store, trusted_source=True)
+        assert trusted["inputs"]["telemetry_origin"] == "trusted_readback"
+        assert trusted["runs"][0]["verdict"] == report["runs"][0]["verdict"]
+    finally:
+        rig.close()
+
+
+def test_production_imported_spans_are_unverified_whatever_they_carry(tmp_path: Path) -> None:
+    rig = _captured(tmp_path)
+    try:
+        _stamp_descriptors(rig.store)
+        spans = _rows(rig, tmp_path / "s.jsonl", stamp=True)
+        for profile in ("production", None):  # None: the stamp says a bound Node (production)
+            report = reconstruct([spans], store=rig.store, profile=profile)
+            assert report["inputs"]["profile"] == "production"
+            (gap,) = _auth_gaps(report)
+            assert gap["effect"] == "unverified" and gap["reason"] == "imported_telemetry"
+            assert report["runs"][0]["verdict"] == "unverified"
+            _valid(report)
+    finally:
+        rig.close()
+
+
+def test_production_trusted_readback_counts_only_stamped_records(tmp_path: Path) -> None:
+    rig = _captured(tmp_path)
+    try:
+        stamped = _rows(rig, tmp_path / "stamped.jsonl", stamp=True)
+        # The telemetry is stamped and trusted, the stored objects are not.
+        report = reconstruct([stamped], store=rig.store, profile="production",
+                             trusted_source=True)  # fmt: skip
+        assert {(g.get("object_role"), g["reason"]) for g in _auth_gaps(report)} == {
+            ("request", "unstamped_object"), ("response", "unstamped_object")}  # fmt: skip
+        assert report["runs"][0]["verdict"] == "unverified"
+        _valid(report)
+        _stamp_descriptors(rig.store)
+        clean = reconstruct([stamped], store=rig.store, profile="production",
+                            trusted_source=True)  # fmt: skip
+        local = reconstruct([stamped], store=rig.store, profile="local", trusted_source=True)
+        assert _auth_gaps(clean) == []
+        assert clean["runs"][0]["verdict"] == local["runs"][0]["verdict"]
+        _valid(clean)
+        # One unstamped marker, or a forged (non-boolean) stamp, is no authentication.
+        for rows in (
+            _rows(rig, tmp_path / "marker.jsonl", stamp=True, skip="fabric.capture_heartbeat"),
+            _rows(rig, tmp_path / "forged.jsonl", stamp="true"),
+        ):
+            report = reconstruct([rows], store=rig.store, profile="production",
+                                 trusted_source=True)  # fmt: skip
+            assert {g["reason"] for g in _auth_gaps(report)} == {"unstamped_record"}
+            assert report["runs"][0]["verdict"] == "unverified"
+    finally:
+        rig.close()
+
+
+def test_cli_trusted_source_and_profile(tmp_path: Path) -> None:
+    from fabric.reconstruct.__main__ import main  # noqa: PLC0415
+
+    rig = _captured(tmp_path)
+    try:
+        _stamp_descriptors(rig.store)
+        spans = _rows(rig, tmp_path / "s.jsonl", stamp=True)
+        out = tmp_path / "report.json"
+        base = ["--spans", str(spans), "--store-root", str(rig.store.root), "--tenant",
+                "tenant-a", "--out", str(out)]  # fmt: skip
+        main([*base, "--profile", "production"])
+        assert {g["reason"] for g in _auth_gaps(json.loads(out.read_text()))} == {
+            "imported_telemetry"}  # fmt: skip
+        main([*base, "--profile", "production", "--trusted-source"])
+        report = json.loads(out.read_text())
+        assert report["inputs"]["telemetry_origin"] == "trusted_readback"
+        assert _auth_gaps(report) == []
+    finally:
+        rig.close()
+
+
+def _split_capture(tmp_path: Path) -> tuple[Any, Path, dict[str, Any], list[dict[str, Any]]]:
+    """One chat request with two inline images, split under retain_original."""
+    import base64  # noqa: PLC0415
+
+    image = "data:image/png;base64," + base64.b64encode(bytes(range(256)) * 8).decode()
+    content = [{"type": "text", "text": "keep this text"}] + [
+        {"type": "image_url", "image_url": {"url": image}} for _ in range(2)]  # fmt: skip
+    rig = make_rig(tmp_path, tenant_id="tenant-a", max_body_bytes=4096, part_min_bytes=1024)
+    reply = {"id": "chatcmpl-1", "model": "gpt-4o", "choices": []}
+    with rig.client(lambda r: __import__("httpx").Response(200, json=reply)) as client:
+        client.post(
+            OPENAI_CHAT,
+            json={"model": "gpt-4o", "messages": [{"role": "user", "content": content}]},
+        )
+    rig.flush()
+    descriptors = rig.descriptors()
+    (skeleton,) = [d for d in descriptors if d["representation"] == "split"]
+    parts = [d for d in descriptors if d["role"] == "model.exchange.part"]
+    assert len(parts) == 2 and all("byte_range" in d["links"][0] for d in parts)
+    return rig, _rows(rig, tmp_path / "s.jsonl"), skeleton, parts
+
+
+def _request_gaps(report: dict[str, Any]) -> set[tuple[str, str]]:
+    return {(g["gap_type"], g.get("reason", "")) for g in report["runs"][0]["gaps"]
+            if g.get("object_role") == "request"}  # fmt: skip
+
+
+def test_a_split_request_reassembles_to_its_original_digest(tmp_path: Path) -> None:
+    rig, spans, skeleton, _ = _split_capture(tmp_path)
+    try:
+        report = reconstruct([spans], store=rig.store)
+        assert _request_gaps(report) == set()
+        (exchange,) = report["runs"][0]["exchanges"]
+        assert exchange["objects"]["request"]["verification"] == "verified"
+        assert exchange["parse_status"] == "ok"  # parsed from the reassembled original
+        assert skeleton["source_byte_length"] > skeleton["stored_byte_length"]
+        _valid(report)
+    finally:
+        rig.close()
+
+
+@pytest.mark.parametrize("fault", ["missing", "corrupt", "shifted", "foreign", "unlisted"])
+def test_a_split_request_that_does_not_reassemble_is_a_gap(tmp_path: Path, fault: str) -> None:
+    rig, spans, _, parts = _split_capture(tmp_path)
+    try:
+        root = Path(rig.store.root) / "tenant-a" / "evidence"
+        part = parts[0]
+        meta = root / "meta" / f"{part['object_id']}.json"
+        if fault == "missing":
+            (root / part["object_id"]).unlink()
+            meta.unlink()
+        elif fault == "corrupt":
+            (root / part["object_id"]).write_bytes(b"A" * part["stored_byte_length"])
+        elif fault == "shifted":
+            start, end = part["links"][0]["byte_range"]
+            part["links"][0]["byte_range"] = [start + 1, end + 1]
+            meta.write_text(json.dumps(part))
+        elif fault == "foreign":  # a part bound to another exchange
+            meta.write_text(json.dumps({**part, "operation_id": "another-exchange"}))
+        store: Any = rig.store
+        if fault == "unlisted":  # a store that cannot list its objects cannot reassemble
+
+            class Unlisted:
+                tenant_id = "tenant-a"
+                evidence_ref_for = rig.store.evidence_ref_for
+                read = rig.store.read
+                read_descriptor = rig.store.read_descriptor
+
+            store = Unlisted()
+        report = reconstruct([spans], store=store)
+        expected = {
+            "missing": ("missing_object", "part_missing"),
+            "corrupt": ("digest_mismatch", "part_digest"),
+            "shifted": ("digest_mismatch", "split_reassembly"),
+            "foreign": ("digest_mismatch", "part_binding_mismatch"),
+            "unlisted": ("missing_object", "parts_unlisted"),
+        }[fault]
+        assert _request_gaps(report) == {expected}
+        assert report["runs"][0]["verdict"] == "partial"
+        _valid(report)
+    finally:
+        rig.close()

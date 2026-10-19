@@ -79,6 +79,7 @@ _MODES = {
     "masked_only": ("redacted", ("redacted",)),
     "tokenize": ("tokenized", ("tokenized",)),
 }
+PART_ROLE = "model.exchange.part"
 BINDING_KEYS = ("source_id", "source_epoch", "source_sequence", "run_id", "operation_id")
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
@@ -231,6 +232,9 @@ class ObjectResult:
     # 049 §7.9: the Node stamped the persisted descriptor (a bound ingress); read back,
     # never reported here (counted as authentication only from trusted readback).
     source_authenticated: bool = False
+    # 049 §7.5: a split skeleton's (source_sha256, source_byte_length), the original body
+    # its parts must reassemble to; None for every other object.
+    split: tuple[str, int] | None = None
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -276,6 +280,8 @@ class StoreReader:
                 raise ReconstructInputError(f"store does not provide {method}()")
         self._store = store
         self.tenant_id: str = str(tenant)
+        # skeleton object id -> its parts' (object id, descriptor), built on first need.
+        self._parts: dict[str, list[tuple[str, Mapping[str, Any]]]] | None = None
         try:
             probe = str(store.evidence_ref_for("probe"))
         except Exception:
@@ -367,6 +373,9 @@ class StoreReader:
                 truncated="truncated"
                 in (descriptor.get("representation"), descriptor.get("status")),
                 source_authenticated=descriptor.get("source_authenticated") is True,
+                split=(descriptor["source_sha256"], descriptor["source_byte_length"])
+                if descriptor.get("representation") == "split"
+                else None,
             )
         return ObjectResult("digest_mismatch", object_id, expected_sha256, len(data), reason=reason)
 
@@ -390,3 +399,180 @@ class StoreReader:
             )
         except Exception:  # an unexpected shape is a mismatch, never a crash
             return False
+
+    # -- split sides (spec 049 §7.4-§7.5) -------------------------------------------
+
+    def reassemble(
+        self,
+        skeleton_id: str,
+        skeleton: bytes,
+        split: tuple[str, int],
+        *,
+        binding: Mapping[str, Any],
+        id_key: bytes | None = None,
+    ) -> Reassembly:
+        """Rebuild a ``retain_original`` split side from its skeleton and parts and check it
+        against the skeleton's ``source_sha256`` (§7.5). Parts are found by their
+        ``part_of`` link; each must bind to the same exchange, hold exactly its
+        ``byte_range`` and match its stored digest. A part the store does not hold yet is
+        re-listed, with backoff, until the reader's ``wait_for_objects_s`` deadline."""
+
+        delay = _RETRY_FIRST_S
+        while True:
+            outcome = self._reassemble_once(skeleton_id, skeleton, split, binding, id_key)
+            remaining = self._deadline - time.monotonic()
+            if outcome.reason != "part_missing" or remaining <= 0:
+                return outcome
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 2, _RETRY_MAX_S)
+            self._parts = None  # re-list: a part may still be in flight
+
+    def _part_index(self) -> dict[str, list[tuple[str, Mapping[str, Any]]]] | None:
+        lister = getattr(self._store, "list_evidence_object_ids", None)
+        if not callable(lister):
+            return None
+        if self._parts is not None:
+            return self._parts
+        index: dict[str, list[tuple[str, Mapping[str, Any]]]] = {}
+        for object_id in lister():
+            descriptor = self._index_descriptor(object_id)
+            if descriptor is None or descriptor.get("role") != PART_ROLE:
+                continue
+            links = descriptor.get("links")
+            for link in links if isinstance(links, list) else ():
+                if (
+                    isinstance(link, Mapping)
+                    and link.get("relation") == "part_of"
+                    and isinstance(link.get("object_id"), str)
+                ):
+                    index.setdefault(link["object_id"], []).append((object_id, descriptor))
+        self._parts = index
+        return index
+
+    def _index_descriptor(self, object_id: str) -> Mapping[str, Any] | None:
+        """A listed object's descriptor; ``None`` when unreadable (then it is no part this
+        side can use: a missing part shows as ``part_missing``)."""
+        try:
+            descriptor = self._store.read_descriptor(self._store.evidence_ref_for(object_id))
+        except ImportError:
+            raise
+        except Exception:
+            return None
+        return descriptor if isinstance(descriptor, Mapping) else None
+
+    def _reassemble_once(
+        self,
+        skeleton_id: str,
+        skeleton: bytes,
+        split: tuple[str, int],
+        binding: Mapping[str, Any],
+        id_key: bytes | None,
+    ) -> Reassembly:
+        try:
+            index = self._part_index()
+        except ImportError:
+            raise
+        except Exception:
+            index = None
+        if index is None:
+            return Reassembly(None, "missing_object", "parts_unlisted")
+        ranges: list[tuple[int, int, bytes]] = []
+        withheld: Reassembly | None = None
+        for object_id, descriptor in index.get(skeleton_id, []):
+            part = self._part(object_id, descriptor, skeleton_id, binding, id_key, split[1])
+            if isinstance(part, tuple):
+                ranges.append(part)
+            elif part.gap_type in ("truncated", "missing_object") and part.reason in _WITHHELD:
+                withheld = withheld or part
+            else:
+                return part
+        return withheld or _splice(skeleton, ranges, split)
+
+    def _part(  # noqa: PLR0911 - closed refusal states
+        self,
+        object_id: str,
+        descriptor: Mapping[str, Any],
+        skeleton_id: str,
+        binding: Mapping[str, Any],
+        id_key: bytes | None,
+        source_length: int,
+    ) -> tuple[int, int, bytes] | Reassembly:
+        """One part's ``(start, end, bytes)``, or why it cannot take part."""
+        links = [
+            link
+            for link in descriptor.get("links", [])
+            if isinstance(link, Mapping)
+            and link.get("relation") == "part_of"
+            and link.get("object_id") == skeleton_id
+        ]
+        if (
+            descriptor.get("tenant_id") != self.tenant_id
+            or descriptor.get("object_id") != object_id
+            or len(links) != 1
+            or not _bound(descriptor, binding, id_key)
+        ):
+            return Reassembly(None, "digest_mismatch", "part_binding_mismatch")
+        span = links[0].get("byte_range")
+        if descriptor.get("status") != "stored" or span is None:
+            # Withheld by its cap or by its role's privacy mode: the original body is not
+            # wholly held, so its digest cannot be checked.
+            if descriptor.get("status_reason") == "part_cap":
+                return Reassembly(None, "truncated", "part_cap")
+            return Reassembly(None, "missing_object", "part_withheld")
+        if (
+            not isinstance(span, list)
+            or len(span) != 2  # noqa: PLR2004 - a half-open [start, end) pair
+            or not all(_int(value) for value in span)
+            or not span[0] < span[1] <= source_length
+        ):
+            return Reassembly(None, "digest_mismatch", "part_range")
+        try:
+            data = bytes(self._store.read(self._store.evidence_ref_for(object_id)))
+        except ImportError:
+            raise
+        except Exception as exc:
+            reason = "part_missing" if _is_absent(exc) else "part_read_error"
+            return Reassembly(None, "missing_object", reason)
+        digest = sha256_digest(data)
+        if (
+            descriptor.get("stored_sha256") != digest
+            or descriptor.get("stored_byte_length") != len(data)
+            or descriptor.get("source_sha256") != digest
+            or descriptor.get("representation") != "exact"
+            or span[1] - span[0] != len(data)
+        ):
+            return Reassembly(None, "digest_mismatch", "part_digest")
+        return span[0], span[1], data
+
+
+def _splice(
+    skeleton: bytes, ranges: list[tuple[int, int, bytes]], split: tuple[str, int]
+) -> Reassembly:
+    """Insert every part at its range, in ascending order (the contract's reference rule,
+    ``validate_evidence_contracts.py``); the result must be the original body."""
+    source_sha256, source_length = split
+    if len(skeleton) + sum(end - start for start, end, _ in ranges) != source_length:
+        return Reassembly(None, "missing_object", "part_missing")
+    body, cursor, offset = bytearray(), 0, 0
+    for start, end, data in sorted(ranges):
+        if start < offset:
+            return Reassembly(None, "digest_mismatch", "split_reassembly")
+        take = start - offset
+        body += skeleton[cursor : cursor + take] + data
+        cursor, offset = cursor + take, end
+    body += skeleton[cursor:]
+    if len(body) != source_length or sha256_digest(bytes(body)) != source_sha256:
+        return Reassembly(None, "digest_mismatch", "split_reassembly")
+    return Reassembly(bytes(body))
+
+
+_WITHHELD = frozenset({"part_cap", "part_withheld"})
+
+
+@dataclass(frozen=True, slots=True)
+class Reassembly:
+    """A split side's reassembled original, or the gap that prevents it."""
+
+    data: bytes | None
+    gap_type: Literal["missing_object", "digest_mismatch", "truncated"] | None = None
+    reason: str | None = None

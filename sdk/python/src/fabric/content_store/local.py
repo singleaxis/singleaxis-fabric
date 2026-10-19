@@ -25,6 +25,7 @@ from fabric.content_store.base import (
 )
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_EVIDENCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 # The Fabric Node's directory-backend envelope (spec 049 §7.8; contracts/content/v2/
 # fixtures/node-envelope-v1.json): magic | 12-byte nonce | AES-256-GCM(plaintext), with the
 # object's location below the content root bound as AAD.
@@ -351,6 +352,27 @@ class LocalFilesystemContentStore:
         if not isinstance(value, dict):
             raise ValueError(f"manifest is not a JSON object: {uri!r}")
         return value
+
+    def list_evidence_object_ids(self) -> list[str]:
+        """Object ids of the tenant's content-v2 objects, by their descriptor sidecars
+        (``evidence/meta/<id>.json``; the layout the Node's directory backend shares). The
+        verifier uses it to find the parts of a split side (spec 049 §7.5)."""
+        if self.tenant_id is None:
+            return []
+        meta = self._tenant_root() / "evidence" / "meta"
+        ids = []
+        try:
+            with _directory(meta) as directory:
+                for name in sorted(os.listdir(directory)):
+                    object_id = name[: -len(".json")]
+                    if not name.endswith(".json") or not _EVIDENCE_ID_RE.fullmatch(object_id):
+                        continue
+                    info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                    if stat.S_ISREG(info.st_mode):
+                        ids.append(object_id)
+        except FileNotFoundError:
+            return []
+        return ids
 
     def list_object_uris(self) -> list[str]:
         if self.tenant_id is None:

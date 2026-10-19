@@ -818,6 +818,25 @@ then the second command above with `--spans <dir>`.
 `--tenant` takes the clear tenant id (it names the store prefix); the
 report shows it only as its `t-` pseudonym.
 
+*Source authentication (production profile, spec 049 §7.9).* A Node with a
+source binding stamps every record it admits (`fabric.source.authenticated`)
+and every stored object's descriptor. The stamp counts only on trusted
+readback: pass `--trusted-source` when `--spans` is the Node's own telemetry
+export or destination read from a location you trust; without it the spans
+are imported and authenticate nothing, whatever they carry. Content objects
+are always read back from the configured store. With `--profile production`
+(the default when any span carries the stamp) any record of a run without a
+counted stamp adds a `source_unauthenticated` gap and the run is
+`unverified`. The report records `inputs.telemetry_origin`
+(`trusted_readback` or `imported`) and `inputs.profile`.
+
+*Split requests (spec 049 §7.4-§7.5).* A side above `max_body_bytes` with
+inline base64 parts is stored as a skeleton plus `model.exchange.part`
+objects. Under `retain_original` the verifier finds the parts by their
+`part_of` link (it lists the tenant's objects, so the reader needs list
+access), reassembles the original and checks the skeleton's
+`source_sha256`; a missing, corrupt, misplaced or foreign part is a gap.
+
 *Looking up a run or a source by its clear id.* The report, the spans in
 your OTLP destination and the Node's logs carry only pseudonyms, so you map
 a clear id to its pseudonym, never the other way round. To check particular

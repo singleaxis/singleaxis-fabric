@@ -138,6 +138,22 @@ def _parser() -> argparse.ArgumentParser:
         "flight to the store just after a run (default 0: no wait)",
     )
     parser.add_argument(
+        "--trusted-source",
+        dest="trusted_source",
+        action="store_true",
+        help="the --spans files are the Node's own telemetry export or destination, read "
+        "from a location you trust (spec 049 §7.9): only then does a record's "
+        "fabric.source.authenticated stamp count; otherwise the spans are imported and "
+        "authenticate nothing",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=("local", "production"),
+        help="the deployment profile (spec 049 §7.3); production requires every record to "
+        "be authenticated (default: production when any span carries the Node's stamp, "
+        "else local)",
+    )
+    parser.add_argument(
         "--out",
         metavar="FILE",
         help="write the report here (atomically, mode 0600) instead of stdout",
@@ -338,6 +354,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             model_allowlist=allowlist,
             id_key=key,
             wait_for_objects_s=wait,
+            profile=args.profile,
+            trusted_source=args.trusted_source,
         )
     except ReconstructInputError as exc:
         _fail(str(exc))

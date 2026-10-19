@@ -45,6 +45,14 @@
             "kind": {"enum": ["local", "s3"]},
             "tenant_id": {"$ref": "#/$defs/opaqueId"}
           }
+        },
+        "telemetry_origin": {
+          "description": "Spec 049 \u00a77.9, decision 20: trusted_readback when the span files are the Node's own telemetry export or destination read from a trusted location; imported otherwise (no record of them is authenticated).",
+          "enum": ["trusted_readback", "imported"]
+        },
+        "profile": {
+          "description": "Spec 049 \u00a77.3: the deployment profile the verifier evaluated; production requires every record to carry the Node's source stamp.",
+          "enum": ["local", "production"]
         }
       }
     },
@@ -122,7 +130,8 @@
       "enum": [
         "sequence_gap", "loss", "tail_unverified", "missing_object", "digest_mismatch",
         "truncated", "unparsed_exchange", "prefix_break", "unmatched_tool_call",
-        "unresolved_previous_response"
+        "unresolved_previous_response",
+        "source_unauthenticated"
       ]
     },
     "check": {"enum": ["passed", "failed", "skipped", "not_applicable"]},

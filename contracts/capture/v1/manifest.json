@@ -6,7 +6,7 @@
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "23528f9c6d334bdae7bbf8c4569f0c3eb8831f6bb5a65b3011a54981488cfd72", "expectation": "schema", "expected_error": null},
     {"path": "schema/llm-exchange-v1.schema.json", "sha256": "93c96c072b2239d094b5574035476ee9888a7b62d90c6df9dc4c13ea081dec74", "expectation": "schema", "expected_error": null},
     {"path": "schema/loss-record-v1.schema.json", "sha256": "626c3fa70d6b4a9b3976f99e1f15792fb2e323ce11321d61065ebffc8173caaf", "expectation": "schema", "expected_error": null},
-    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "aef4515022af8d8c80119b05cffd763ad0f9036a737038c423899cd3f6317209", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "134a093fb5d35d840be092c3c02173a994685c0602d59e87ea58297c2e8a2af9", "expectation": "schema", "expected_error": null},
     {"path": "schema/spool-record-v1.schema.json", "sha256": "46972cb277167bbe7b01f1a0449ffccb894e6904aae419d5cb489edca4c441b9", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-request.json", "sha256": "aca0284cba0d0b41d9fa98200400ac46711878fda2bc9f69e1e74b2eb67a19cd", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-truncated.json", "sha256": "a105468714387effbd1ee6609103885f2d52f9cd93c0af54b01f63de45adaae8", "expectation": "valid", "expected_error": null},
@@ -79,6 +79,7 @@
     {"path": "fixtures/invalid/spool-record-part-links-another-record.json", "sha256": "651e5ae1f44a09c96d41ddb54caa87eaf66f374f80557f7a7f7e2da414c90e8c", "expectation": "invalid", "expected_error": "capture.spool.consistency"},
     {"path": "fixtures/valid/spool-record-exchange-content-disabled.json", "sha256": "497c065903907b343e5a12898b8ed06d19047cc5eff8ae372707f05410ebb7f8", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/spool-record-exchange-split.json", "sha256": "ef2eb607751d77984436770a778b1d5900e0e8831239674d6fb0a1ccae89ffb6", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/llm-exchange-content-disabled.json", "sha256": "7a67402a81b269d68d8237d6632070b4258daa1fb8e417964464cabaf3650460", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/valid/llm-exchange-content-disabled.json", "sha256": "7a67402a81b269d68d8237d6632070b4258daa1fb8e417964464cabaf3650460", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/run-reconstruction-production-imported.json", "sha256": "bd7356cdf718fd38b4e723b99e0ea0df1302f3c52400cd6040278ae747b66b30", "expectation": "valid", "expected_error": null}
   ]
 }

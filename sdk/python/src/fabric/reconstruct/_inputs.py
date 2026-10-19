@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import dataclasses
 import hashlib
 import json
 import os
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -90,6 +91,8 @@ L_FIRST = "fabric.loss.first_sequence"
 L_LAST = "fabric.loss.last_sequence"
 H_LAST = "fabric.heartbeat.last_sequence"
 H_KIND = "fabric.heartbeat.kind"
+# 049 §7.9: stamped by fabricguard at a bound Node ingress (receiver-owned, const true).
+A_SOURCE_AUTHENTICATED = "fabric.source.authenticated"
 
 
 class ReconstructInputError(ValueError):
@@ -447,6 +450,9 @@ class ExchangeObs:
     # A valid identity with malformed payload fields: its claims count, its payload
     # (placeholders) is never used, and it is a ``malformed_record`` gap (partial).
     malformed: bool = False
+    # 049 §7.9: the record carries the Node's fabric.source.authenticated stamp. Not part
+    # of the record's identity: a retry with and without it is one record.
+    authenticated: bool = field(default=False, compare=False)
 
     @property
     def source(self) -> tuple[str, int]:
@@ -463,6 +469,7 @@ class LossObs:
     count: int
     first_sequence: int
     last_sequence: int
+    authenticated: bool = field(default=False, compare=False)  # 049 §7.9 stamp
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,6 +492,7 @@ class HeartbeatObs:
     run_id: str | None
     last_sequence: int
     scope_id: str | None = None
+    authenticated: bool = field(default=False, compare=False)  # 049 §7.9 stamp
 
 
 @dataclass(frozen=True, slots=True)
@@ -516,11 +524,28 @@ def observe(span: SpanRecord) -> Observation | None:
         return _exchange(span, source_id, epoch, ambiguous=markers > 0)
     if markers > 1:
         raise ReconstructInputError("a span claims both the loss and the heartbeat record class")
+    marker: HeartbeatObs | MalformedMarkerObs | LossObs | None
     if H_LAST in attrs:
-        return _heartbeat(attrs, source_id, epoch)
-    if L_REASON in attrs:
-        return _loss(attrs, source_id, epoch)
-    return None
+        marker = _heartbeat(attrs, source_id, epoch)
+    elif L_REASON in attrs:
+        marker = _loss(attrs, source_id, epoch)
+    else:
+        return None
+    if not authenticated(attrs):
+        return marker
+    if isinstance(marker, MalformedMarkerObs):
+        heartbeat = marker.heartbeat
+        return MalformedMarkerObs(
+            marker.scope_id,
+            None if heartbeat is None else dataclasses.replace(heartbeat, authenticated=True),
+        )
+    return None if marker is None else dataclasses.replace(marker, authenticated=True)
+
+
+def authenticated(attrs: Mapping[str, Any]) -> bool:
+    """Whether the record carries the Node's stamp (049 §7.9: a boolean ``true``; any
+    other value, as an agent could forge it, is no stamp)."""
+    return attrs.get(A_SOURCE_AUTHENTICATED) is True
 
 
 def _heartbeat(
@@ -592,6 +617,7 @@ def _exchange(
         "end_ns": max(span.end_ns, span.start_ns),
         "trace_id": _trace_id(span.trace_id),
         "span_id": _span_id(span.span_id),
+        "authenticated": authenticated(attrs),
     }
     api = enum_value(attrs.get(A_API), APIS)
     state = enum_value(attrs.get(A_RESPONSE_STATE), RESPONSE_STATES)
