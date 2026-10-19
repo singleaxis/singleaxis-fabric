@@ -129,6 +129,10 @@
       "meaning": "A keyed pseudonym was required and `FABRIC_WIRE_ID_KEY` was not set."
     },
     {
+      "value": "missing_spool_key",
+      "meaning": "The production profile requires spool encryption and no spool key was configured; content capture is disabled and metadata continues (sections 7.3, 7.8)."
+    },
+    {
       "value": "provider_redacted",
       "meaning": "The provider returned a redaction marker instead of the content."
     },
@@ -780,6 +784,10 @@
     {
       "value": "missing_id_key",
       "meaning": "Production profile without `FABRIC_WIRE_ID_KEY`."
+    },
+    {
+      "value": "missing_spool_key",
+      "meaning": "Production profile without a spool encryption key (section 7.8)."
     },
     {
       "value": "privacy_policy",

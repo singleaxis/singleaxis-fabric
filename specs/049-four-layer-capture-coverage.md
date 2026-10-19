@@ -710,6 +710,7 @@ revision, never a new status). A reason is required for `not_captured`,
 | `protection_failed` | The PROTECT stage could not apply the role's privacy mode (transformation error, timeout, unsupported media, no configured transformation); the content is withheld, never stored raw (section 7.7). |
 | `missing_capture_policy` | Content capture needs a capture policy and none was configured. |
 | `missing_id_key` | A keyed pseudonym was required and `FABRIC_WIRE_ID_KEY` was not set. |
+| `missing_spool_key` | The production profile requires spool encryption and no spool key was configured; content capture is disabled and metadata continues (sections 7.3, 7.8). |
 | `provider_redacted` | The provider returned a redaction marker instead of the content. |
 | `provider_encrypted` | The provider returned the content only as an encrypted or opaque object. |
 | `provider_summarised` | The provider returned a summary instead of the original. |
@@ -1822,6 +1823,7 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `no_store` | Metadata-only mode: no content destination configured. Coverage reason `not_configured`. |
 | `missing_capture_policy` | Production profile without a capture policy (section 7.3). |
 | `missing_id_key` | Production profile without `FABRIC_WIRE_ID_KEY`. |
+| `missing_spool_key` | Production profile without a spool encryption key (section 7.8). |
 | `privacy_policy` | The role's privacy mode retains no bytes. |
 | `protection_failed` | The PROTECT stage failed; content withheld (coverage reason `protection_failed`). |
 | `explicit_withheld` | The explicit recorder withheld this exchange (sticky across `adopt()`). |
@@ -2412,6 +2414,9 @@ the content writer or the network before it has run.
   would be a self-asserted flag — whereas the envelope is enforced by
   Fabric and recorded in the manifest. Missing key in production: content
   capture disabled, metadata continues (section 7.3).
+- **Missing spool key** (R64-1). A production agent without a spool
+  encryption key reports `missing_spool_key`: `fabric.wire.store_reason`,
+  manifest `content_capture_reason` and the same-name coverage reason.
 
 ### 7.9 Source authentication (P0-A)
 
@@ -3089,3 +3094,4 @@ Each is applied in this spec as its recommended default.
 | R63-12 | Integer key ranges | Counts and offsets ≥0, versions ≥1, `db.rows_*` ≥−1, `process.exit_code` int32, `process.signal` ≥1, `process.pid` ≥1 | keys registry |
 | R63-13 | Schema versioning rule vs practice | Minor = edit in place + manifest minor bump + repin (content/v2, capture/v1 precedent) | 5 rule 8 |
 | R63-14 | Stale code citations | `capture_capabilities.py`, `coverage_manifest.py` and `adapters/crewai.py` marked as removed by the owner-approved cleanup (chore/recorder-cleanup); `control_protocol.py` and `enterprise.py` are not cited in the rev 6.2 text | 2.1, 2.8, 2.11, 7.4 |
+| R64-1 | `missing_spool_key` (P0-A build finding) | A production agent without a spool encryption key disables content capture and continues metadata (7.8 → 7.3); the case gets its own closed value in `fabric.wire.store_reason`, manifest `content_capture_reason` and the coverage reason vocabulary (mapped to the same-name reason). Owner-delegated decision | 7.8, 2.6, 4.2 |

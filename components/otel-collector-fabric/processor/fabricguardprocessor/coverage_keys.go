@@ -94,7 +94,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.manifest.clock.domain":                            constStr("wall_utc"),
 	"fabric.manifest.clock.uncertainty_ns":                    intAtLeast(0),
 	"fabric.manifest.content_capture":                         oneOf(toSet("enabled", "disabled", "metadata_only")),
-	"fabric.manifest.content_capture_reason":                  oneOf(toSet("missing_capture_policy", "missing_id_key", "not_configured", "hook_disabled")),
+	"fabric.manifest.content_capture_reason":                  oneOf(toSet("missing_capture_policy", "missing_id_key", "missing_spool_key", "not_configured", "hook_disabled")),
 	"fabric.manifest.coverage_profile":                        matches(coverageProfilePattern),
 	"fabric.manifest.emitted_at":                              isRFC3339,
 	"fabric.manifest.endpoint_set_digest":                     matches(coverageDigestPattern),
@@ -180,7 +180,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.tool.execution_side":                              oneOf(toSet("agent", "provider", "mcp_server", "remote", "sandbox")),
 	"fabric.turn_id":                                          matches(pseudonymPattern("turn")),
 	"fabric.wire.first_chunk_offset_ns":                       intAtLeast(0),
-	"fabric.wire.store_reason":                                oneOf(toSet("no_store", "missing_capture_policy", "missing_id_key", "privacy_policy", "protection_failed", "explicit_withheld", "store_failed", "body_cap", "inflight_budget", "transport_incomplete")),
+	"fabric.wire.store_reason":                                oneOf(toSet("no_store", "missing_capture_policy", "missing_id_key", "missing_spool_key", "privacy_policy", "protection_failed", "explicit_withheld", "store_failed", "body_cap", "inflight_budget", "transport_incomplete")),
 	"fabric.workflow.iteration":                               intAtLeast(0),
 	"fabric.workflow.node":                                    matches(operatorLabelPattern),
 	"fabric.event_id":                                         matches(captureObjectIDPattern),
@@ -255,7 +255,7 @@ var (
 	frameworkNamePattern       = regexp.MustCompile(`^@?[a-z0-9][a-z0-9._/-]{0,127}$`)
 	softwareVersionPattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`)
 	manifestPointFieldsPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}=([XCSND][0-9]{2}(,[XCSND][0-9]{2}){0,255})?$`)
-	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|-)$`)
+	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|-)$`)
 	coverageProfilePattern     = regexp.MustCompile(`^fabric\.profile\.[a-z0-9-]+/v[0-9]+$`)
 	keyIDPattern               = regexp.MustCompile(`^kid-[0-9a-f]{8}$`)
 	roleTableVersionPattern    = regexp.MustCompile(`^fabric\.content-role-table/v[0-9]+@[0-9]+$`)

@@ -654,3 +654,26 @@ func TestCaptureManifestSpanPassesIntact(t *testing.T) {
 		t.Error("fabric.schema_version dropped from a decision span")
 	}
 }
+
+// TestMissingSpoolKeyIsAdmitted pins R64-1: a production agent without a
+// spool encryption key reports missing_spool_key on exchange spans and in the
+// manifest; near-misses stay closed.
+func TestMissingSpoolKeyIsAdmitted(t *testing.T) {
+	g := newTestGuard(t, nil)
+	value := valueOf(t, "missing_spool_key")
+	if !keptAs(t, g, captureCarrier(onExchange, "fabric.wire.store_reason", value), "fabric.wire.store_reason", value) {
+		t.Fatal("exchange span dropped store_reason missing_spool_key")
+	}
+	if !keptAs(t, g, decisionSpan("fabric.manifest.content_capture_reason", value), "fabric.manifest.content_capture_reason", value) {
+		t.Fatal("content_capture_reason missing_spool_key dropped")
+	}
+	for _, near := range []string{"missing_spool_keys", "Missing_spool_key", "missing-spool-key", "missing_spool_key ", "missing_key"} {
+		bad := valueOf(t, near)
+		if keptAs(t, g, captureCarrier(onExchange, "fabric.wire.store_reason", bad), "fabric.wire.store_reason", bad) {
+			t.Errorf("store_reason %q admitted", near)
+		}
+		if keptAs(t, g, decisionSpan("fabric.manifest.content_capture_reason", bad), "fabric.manifest.content_capture_reason", bad) {
+			t.Errorf("content_capture_reason %q admitted", near)
+		}
+	}
+}

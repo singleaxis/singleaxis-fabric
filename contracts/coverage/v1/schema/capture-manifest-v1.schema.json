@@ -172,6 +172,7 @@
       "enum": [
         "missing_capture_policy",
         "missing_id_key",
+        "missing_spool_key",
         "not_configured",
         "hook_disabled"
       ]
@@ -344,6 +345,7 @@
               "protection_failed",
               "missing_capture_policy",
               "missing_id_key",
+              "missing_spool_key",
               "provider_redacted",
               "provider_encrypted",
               "provider_summarised",
