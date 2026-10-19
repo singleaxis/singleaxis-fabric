@@ -440,18 +440,17 @@ def spool_records(spool: Path) -> list[Path]:
     return sorted(spool.glob("*.rec")) if spool.is_dir() else []
 
 
-def capture_protection(directory: Path, tenant: str, spool_key: bytes) -> dict[str, str]:
+def capture_protection(
+    directory: Path, tenant: str, spool_key: bytes, mode: str = "retain_original"
+) -> dict[str, str]:
     """The agent variables a production (node-mode) agent needs to record content (spec
-    049 §7.3, §7.8): a deployment-policy/v1 capture policy retaining the wire roles, and
-    the spool envelope key. ``FABRIC_WIRE_ID_KEY`` is set by the caller."""
+    049 §7.3, §7.8): a deployment-policy/v1 capture policy mapping the wire roles to
+    ``mode``, and the spool envelope key. ``FABRIC_WIRE_ID_KEY`` is set by the caller."""
+    roles = ("model.exchange.request", "model.exchange.response", "model.exchange.part")
     policy = {
         "schema_version": "fabric.deployment-policy/v1", "policy_id": "wire-e2e-capture",
         "policy_version": 1, "tenant_id": tenant, "workload_id": "wire-e2e",
-        "privacy": {
-            "model.exchange.request": "retain_original",
-            "model.exchange.response": "retain_original",
-            "model.exchange.part": "retain_original",
-        },
+        "privacy": dict.fromkeys(roles, mode),
         "storage": {"backend": "local", "region": "local", "key_id": "wire-e2e-key"},
         "retention": {"days": 1}, "required_integrations": [],
         "deployment": {
@@ -459,7 +458,7 @@ def capture_protection(directory: Path, tenant: str, spool_key: bytes) -> dict[s
             "tls_required": True, "encrypted_store_required": True,
         },
     }  # fmt: skip
-    path = directory / f"capture-policy-{tenant}.json"
+    path = directory / f"capture-policy-{tenant}-{mode}.json"
     path.write_text(json.dumps(policy), "utf-8")
     return {
         "FABRIC_CAPTURE_POLICY": str(path),
