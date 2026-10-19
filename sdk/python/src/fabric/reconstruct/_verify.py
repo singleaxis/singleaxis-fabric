@@ -884,21 +884,26 @@ class _Run:
                 ("request", body.request), ("response", body.response),
             ]  # fmt: skip
             for side, result in sides:
-                if (
-                    result is not None
-                    and result.verification == "verified"
-                    and not result.source_authenticated
-                ):
-                    self._add(
-                        Gap(
-                            "source_unauthenticated",
-                            "unverified",
-                            exchange_id=exchange.exchange_id,
-                            object_role=side,
-                            reason="unstamped_object",
-                        ),
-                        self._scopes_of(exchange.exchange_id),
-                    )
+                if result is None or result.verification != "verified":
+                    continue
+                # Every object the verdict consumes: the side's object and, for a split
+                # side, each part it was reassembled from (Sol P0-A #3).
+                if not result.source_authenticated:
+                    reason = "unstamped_object"
+                elif not result.parts_authenticated:
+                    reason = "unstamped_part"
+                else:
+                    continue
+                self._add(
+                    Gap(
+                        "source_unauthenticated",
+                        "unverified",
+                        exchange_id=exchange.exchange_id,
+                        object_role=side,
+                        reason=reason,
+                    ),
+                    self._scopes_of(exchange.exchange_id),
+                )
 
     def _scopes_of(self, exchange_id: str | None) -> tuple[str, ...]:
         if exchange_id is None:
@@ -1003,7 +1008,9 @@ class _Run:
             if rebuilt.gap_type is not None:
                 self._gap(exchange, rebuilt.gap_type, side=side, reason=rebuilt.reason)
             else:
-                result = dataclasses.replace(result, data=rebuilt.data)
+                result = dataclasses.replace(
+                    result, data=rebuilt.data, parts_authenticated=rebuilt.authenticated
+                )
         return result, False
 
     def _gap(

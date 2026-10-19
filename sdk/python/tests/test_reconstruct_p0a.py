@@ -451,3 +451,34 @@ def test_a_split_request_that_does_not_reassemble_is_a_gap(tmp_path: Path, fault
         _valid(report)
     finally:
         rig.close()
+
+
+def test_production_split_parts_must_carry_the_stamp(tmp_path: Path) -> None:
+    """Sol P0-A #3: authentication covers every object a verdict consumes. With stamped,
+    trusted telemetry and a stamped skeleton but unstamped parts, the run is
+    ``unverified(source_unauthenticated)``, never complete."""
+    rig, _, _, parts = _split_capture(tmp_path)
+    try:
+        stamped = _rows(rig, tmp_path / "stamped.jsonl", stamp=True)
+        _stamp_descriptors(rig.store)
+        meta = Path(rig.store.root) / "tenant-a" / "evidence" / "meta"
+        for part in parts:  # the Node never stamped the parts
+            path = meta / f"{part['object_id']}.json"
+            unstamped = json.loads(path.read_text())
+            unstamped.pop("source_authenticated")
+            path.write_text(json.dumps(unstamped))
+        report = reconstruct([stamped], store=rig.store, profile="production",
+                             trusted_source=True)  # fmt: skip
+        assert {(g.get("object_role"), g["reason"]) for g in _auth_gaps(report)} == {
+            ("request", "unstamped_part")}  # fmt: skip
+        assert report["runs"][0]["verdict"] == "unverified"
+        _valid(report)
+        _stamp_descriptors(rig.store)  # every part stamped: authenticated
+        clean = reconstruct([stamped], store=rig.store, profile="production",
+                            trusted_source=True)  # fmt: skip
+        local = reconstruct([stamped], store=rig.store, profile="local", trusted_source=True)
+        assert _auth_gaps(clean) == []
+        assert clean["runs"][0]["verdict"] == local["runs"][0]["verdict"]
+        assert clean["runs"][0]["gaps"] == local["runs"][0]["gaps"]  # nothing but the tail
+    finally:
+        rig.close()

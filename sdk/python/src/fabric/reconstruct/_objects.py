@@ -37,7 +37,7 @@ import hashlib
 import re
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from fabric._roles import part_object_id
@@ -235,6 +235,9 @@ class ObjectResult:
     # 049 §7.5: a split skeleton's (source_sha256, source_byte_length), the original body
     # its parts must reassemble to; None for every other object.
     split: tuple[str, int] | None = None
+    # 049 §7.9: whether every part a split side was reassembled from carries the Node's
+    # stamp (True when nothing was reassembled); a verdict consumes the parts too.
+    parts_authenticated: bool = True
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -437,9 +440,11 @@ class StoreReader:
         order, until they account for every byte the skeleton lacks."""
         needed = split[1] - len(skeleton)
         ranges: list[tuple[int, int, bytes]] = []
+        authenticated = True
         for index in range(_MAX_PARTS):
             if sum(end - start for start, end, _ in ranges) >= needed:
-                return _splice(skeleton, ranges, split)
+                rebuilt = _splice(skeleton, ranges, split)
+                return replace(rebuilt, authenticated=authenticated)
             object_id = part_object_id(skeleton_id, index)
             try:
                 descriptor = self._store.read_descriptor(self._store.evidence_ref_for(object_id))
@@ -454,6 +459,8 @@ class StoreReader:
             if not isinstance(part, tuple):
                 return part
             ranges.append(part)
+            # 049 §7.9: the receiver-owned stamp of the part's persisted descriptor
+            authenticated = authenticated and descriptor.get("source_authenticated") is True
         return Reassembly(None, "missing_object", "part_missing")
 
     def _part(  # noqa: PLR0911 - closed refusal states
@@ -547,3 +554,5 @@ class Reassembly:
     data: bytes | None
     gap_type: Literal["missing_object", "digest_mismatch", "truncated"] | None = None
     reason: str | None = None
+    # Every part read carries the Node's source stamp (049 §7.9).
+    authenticated: bool = True
