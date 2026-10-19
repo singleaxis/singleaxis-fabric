@@ -177,6 +177,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `specs/enterprise-capture-build.md`). The README and quickstart now point
   at `examples/wire-capture`. `examples/enterprise/policy.local.json` stays
   as the deployment-policy test fixture.
+- Removed the C8 network journey (`run_c8_network_journey.py`), the C0–C10
+  acceptance runner (`run_capture_acceptance.py`) and its
+  `capture_measurements.py` helper, with their tests, the
+  `qualification/c8-network-capture-matrix.json` and
+  `capture-level-matrix.json` records, and `docs/evidence-qualification-map.md`.
+  Only their own tests ran them.
 
 ### Known limitations
 

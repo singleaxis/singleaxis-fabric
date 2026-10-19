@@ -14,8 +14,6 @@ that specification, 027 controls the recorder release.
 
 - [Standalone evidence guide](standalone-evidence-guide.md) — application setup,
   customer storage, fresh readback and a bounded local demonstration.
-- [C0–C10 qualification map](evidence-qualification-map.md) — supported boundaries,
-  scenario evidence requirements and explicit unexecuted target gates.
 
 - [Quickstart](quickstart.md) — record one agent operation and send it through
   a local Fabric Node.

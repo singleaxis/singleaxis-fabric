@@ -74,7 +74,7 @@ the hosted source gate. The benchmark canary remains byte-identical. The
 TypeScript adapter still requires a customer-controlled ancestor namespace;
 native directory-relative operations are outside its current portable API.
 
-The [C8 matrix](../qualification/c8-network-capture-matrix.json) now records three
+The [C8 matrix](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/c8-network-capture-matrix.json) now records three
 executed application-network scenarios. Four physical HTTP requests cover a
 503/200 retry, a 400 response, and a lost response after an independent SQLite
 commit. Seven prequeue-redacted content observations can be reopened by a fresh
@@ -146,7 +146,7 @@ policy/privacy bindings remain unverified by strict governed reconstruction.
 
 See the [onboarding and readback guide](standalone-evidence-guide.md) for
 integration, storage ownership and demonstration commands, and the
-[qualification map](evidence-qualification-map.md) for C0–C10 boundaries.
+[qualification map](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/docs/evidence-qualification-map.md) for C0–C10 boundaries.
 
 ## Executed cloud checks
 
