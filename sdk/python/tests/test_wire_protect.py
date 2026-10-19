@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema import Draft202012Validator
 
 from fabric._roles import ROLES
 from fabric.deployment_policy import DeploymentPolicy
@@ -28,7 +28,7 @@ from fabric.wire._protect import (
     sniff_media_type,
 )
 
-from .test_wire_helpers import P0A_CAPTURE_CONTRACT, p0a_content_schema, production_policy
+from .test_wire_helpers import content_validator, production_policy
 
 REPO = Path(__file__).resolve().parents[3]
 SPLIT_VECTOR = REPO / "contracts/content/v2/valid/split-reassembly-retain-original.json"
@@ -37,7 +37,7 @@ PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 3)  # 1036 byt
 WAV = base64.b64encode(b"RIFF\x00\x00\x00\x00WAVEfmt " + bytes(1024))  # 1388 bytes
 SECRET = b"canary-ssn-078-05-1120"
 KEY = b"t" * 32
-CONTENT = Draft202012Validator(p0a_content_schema(), format_checker=FormatChecker())
+CONTENT = content_validator()
 BASE = {
     "schema_version": "fabric.content-object/v2", "tenant_id": "tenant-a",
     "media_type": "application/json", "content_encoding": "identity", "provenance": "protocol",
@@ -422,10 +422,7 @@ def test_property_retained_splits_reassemble_and_protected_splits_never_leak(see
 
 
 def test_the_node_contract_admits_these_descriptors() -> None:
-    """Once contracts/capture/v1 carries the P0-A widening, the spool descriptor $defs
-    admit every object the PROTECT stage builds (else: checked above by content-v2)."""
-    if not P0A_CAPTURE_CONTRACT:
-        pytest.skip("awaits the capture/v1 P0-A widening from the contract owner")
+    """The capture/v1 spool descriptor $defs admit every object the PROTECT stage builds."""
     schema = json.loads((REPO / "contracts/capture/v1/schema/spool-record-v1.schema.json")
                         .read_text())  # fmt: skip
     descriptor = Draft202012Validator({**schema["$defs"]["descriptor"],

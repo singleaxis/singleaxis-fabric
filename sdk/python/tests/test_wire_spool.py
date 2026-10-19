@@ -37,7 +37,6 @@ from fabric.wire._spool import Spool, unframe
 from .test_wire_helpers import (
     CAPTURE,
     OPENAI_CHAT,
-    P0A_CAPTURE_CONTRACT,
     PRODUCTION_ID_KEY,
     capture_schemas,
     chat_response,
@@ -204,8 +203,6 @@ def headers_of(spool: Path) -> list[dict[str, Any]]:
 
 
 def validate_header(doc: dict[str, Any]) -> None:
-    if doc["record_kind"] == "exchange" and not P0A_CAPTURE_CONTRACT:
-        return  # P0-A descriptors: awaiting the contract owner's capture/v1 widening
     VALIDATOR.validate_document(doc, SCHEMAS)
 
 
@@ -228,7 +225,7 @@ def test_node_mode_delivers_content_then_span_and_empties_the_spool(
     assert span["fabric.wire.store_status"] == "stored"
     expected_run = run_pseudonym("run-a", PRODUCTION_ID_KEY)
     assert span["fabric.run.id"] == expected_run and "fabric.run.scope_id" in span
-    for attrs, data in node.content if P0A_CAPTURE_CONTRACT else ():
+    for attrs, data in node.content:
         VALIDATOR.validate_document({
             "schema_version": "fabric.content-log-record/v1", "attributes": attrs,
             "body": {"byte_length": len(data),

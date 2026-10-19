@@ -163,7 +163,7 @@ def load_validator() -> Any:
 
 
 def capture_schemas() -> dict[str, Any]:
-    schemas = {
+    return {
         rel: json.loads((CAPTURE / rel).read_text("utf-8"))
         for rel in (
             "schema/llm-exchange-v1.schema.json",
@@ -171,15 +171,6 @@ def capture_schemas() -> dict[str, Any]:
             "schema/run-reconstruction-v1.schema.json",
         )
     }
-    # 049 §2.9 rule 4 (requested from the contract owner): keyed p- provider ids (32 hex)
-    # beside the legacy unkeyed form; a no-op once contracts/capture/v1 admits them.
-    rel = "schema/run-reconstruction-v1.schema.json"
-    schemas[rel] = json.loads(
-        json.dumps(schemas[rel]).replace(
-            '"^p-[0-9a-f]{16}$"', '"^p-(?:[0-9a-f]{16}|[0-9a-f]{32})$"'
-        )
-    )
-    return schemas
 
 
 def sse(*events: Any, done: bool = False) -> list[bytes]:
@@ -304,35 +295,19 @@ STORE_REASONS = (
 )  # fmt: skip
 
 
-def p0a_exchange_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """llm-exchange-v1 with the 049 P0-A changes requested from the contract owner
-    (``request`` optional, ``store_reason`` added); a no-op once contracts/ has them."""
-    patched = json.loads(json.dumps(schema))
-    patched["required"] = [k for k in patched["required"] if k != "request"]
-    patched["allOf"] = [  # a complete response's digest is absent too when nothing is stored
-        rule for rule in patched.get("allOf", []) if rule["then"].get("required") != ["response"]
-    ]
-    patched["properties"].setdefault("store_reason", {"enum": list(STORE_REASONS)})
-    return patched
-
-
-def p0a_content_schema() -> dict[str, Any]:
-    """content-object-v2 with masked_only / original_plus_masked admitted in its policy
-    block (049 §7.7 rule 2, requested from the contract owner); else unchanged."""
-    schema = json.loads(CONTENT_SCHEMA.read_text())
-    for rule in schema["allOf"]:
-        enum = rule.get("then", {}).get("properties", {}).get("privacy_mode", {}).get("enum")
-        if enum is not None and "masked_only" not in enum:
-            enum.extend(["masked_only", "original_plus_masked"])
-    return schema
+def content_validator() -> Draft202012Validator:
+    """content-object-v2, as pinned in contracts/content/v2."""
+    return Draft202012Validator(
+        json.loads(CONTENT_SCHEMA.read_text()), format_checker=FormatChecker()
+    )
 
 
 def validate_exchange_document(document: dict[str, Any]) -> None:
-    """Schema (P0-A shape) plus the store_status consistency rule, with a request body
-    that may be absent (nothing stored)."""
+    """Schema plus the store_status consistency rule, with a request body that may be
+    absent (nothing stored)."""
     validator, schemas = load_validator(), capture_schemas()
     rel = "schema/llm-exchange-v1.schema.json"
-    errors = list(Draft202012Validator(p0a_exchange_schema(schemas[rel])).iter_errors(document))
+    errors = list(Draft202012Validator(schemas[rel]).iter_errors(document))
     assert not errors, errors[0].message
     bodies = [document.get("request", {})] + (
         [document["response"]] if "response" in document else []
@@ -362,7 +337,7 @@ def validate_capture(rig: Rig) -> None:
         for span in rig.spans(name):
             validator.validate_document(loss_document(span), schemas)
     if rig.store is not None and hasattr(rig.store, "root"):
-        content = Draft202012Validator(p0a_content_schema(), format_checker=FormatChecker())
+        content = content_validator()
         for descriptor in rig.descriptors():
             errors = list(content.iter_errors(descriptor))
             assert not errors, errors[0].message
@@ -433,14 +408,3 @@ def open_record(path: Path) -> bytes:
 
     key = PRODUCTION_SPOOL_KEY
     return unseal(path.read_bytes(), path.name, AESGCM(key), envelope_key_id(key))
-
-
-def _capture_contract_has_p0a() -> bool:
-    """Whether contracts/capture/v1 already carries the 049 P0-A widening (requested from
-    the contract owner): until it does, P0-A records are checked by this suite's own rules
-    and the frozen v1 schemas are not asked to admit them."""
-    schema = json.loads((CAPTURE / "schema" / "spool-record-v1.schema.json").read_text())
-    return "model.exchange.part" in json.dumps(schema["$defs"]["descriptor"])
-
-
-P0A_CAPTURE_CONTRACT = _capture_contract_has_p0a()

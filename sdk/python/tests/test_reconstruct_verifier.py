@@ -69,12 +69,7 @@ def _load_validator() -> types.ModuleType:
 
 VALIDATOR = _load_validator()
 SCHEMAS = {
-    relative: json.loads(
-        # 049 §2.9 rule 4 (requested from the contract owner): keyed p- provider ids too
-        (CAPTURE_ROOT / relative)
-        .read_text(encoding="utf-8")
-        .replace('"^p-[0-9a-f]{16}$"', '"^p-(?:[0-9a-f]{16}|[0-9a-f]{32})$"')
-    )
+    relative: json.loads((CAPTURE_ROOT / relative).read_text(encoding="utf-8"))
     for relative in VALIDATOR.SCHEMAS.values()
 }
 
