@@ -115,7 +115,7 @@ def test_redacted_capture_verifies_and_the_report_uses_keyed_ids(tmp_path: Path)
         rig.flush()
         (span,) = rig.spans()
         attrs = dict(span.attributes or {})
-        stored = rig.read_ref(attrs["fabric.content.request_ref"])
+        stored = rig.read_ref(str(attrs["fabric.content.request_ref"]))
         assert b"Lisbon" not in stored
         assert hashlib.sha256(stored).hexdigest() == attrs["fabric.wire.request_sha256"]
         rows = tmp_path / "spans.jsonl"

@@ -168,6 +168,7 @@ def test_profile_gate_matrix(
     if state == "disabled":
         warnings = [r.getMessage() for r in caplog.records if "content capture disabled" in
                     r.getMessage()]  # fmt: skip
+        assert reason is not None  # a disabled gate always names its reason
         assert len(warnings) == 2 and all(reason in w for w in warnings)  # install + 1st exchange
     assert SECRET not in caplog.text and str(tmp_path) not in caplog.text
 
@@ -327,7 +328,7 @@ def test_canaries_direct_store(tmp_path: Path, caplog: pytest.LogCaptureFixture,
             if key in attrs:  # the stored, protected object's digest
                 ref = attrs["fabric.content.request_ref" if "request" in key
                             else "fabric.content.result_ref"]  # fmt: skip
-                assert hashlib.sha256(rig.read_ref(ref)).hexdigest() == attrs[key]
+                assert hashlib.sha256(rig.read_ref(str(ref))).hexdigest() == attrs[key]
         validate_capture(rig)
         rows = tmp_path / "spans.jsonl"
         rows.write_text(json.dumps({

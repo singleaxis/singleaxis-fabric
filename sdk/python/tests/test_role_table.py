@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from fabric import _roles
 
@@ -37,7 +38,8 @@ def test_role_table_pinned_to_the_registry() -> None:
 
 
 def test_admission_rules() -> None:
-    ok = {"boundary": "provider_bound", "provenance": "protocol", "max_body_bytes": 100}
+    ok: dict[str, Any] = {"boundary": "provider_bound", "provenance": "protocol",
+                          "max_body_bytes": 100}  # fmt: skip
     assert _roles.admits("model.exchange.part", media_type="image/png", stored_byte_length=100,
                          **ok)  # fmt: skip
     assert not _roles.admits("model.exchange.part", media_type="text/plain",
@@ -49,7 +51,8 @@ def test_admission_rules() -> None:
                              **ok)  # fmt: skip
     assert _roles.admits("model.exchange.request", media_type="application/json",
                          stored_byte_length=1, **ok)  # fmt: skip
-    host = {"boundary": "host", "provenance": "caller_reported", "max_body_bytes": 1 << 30}
+    host: dict[str, Any] = {"boundary": "host", "provenance": "caller_reported",
+                            "max_body_bytes": 1 << 30}  # fmt: skip
     assert _roles.admits("artifact.locator", media_type="application/json",
                          stored_byte_length=64 << 10, **host)  # fmt: skip
     assert not _roles.admits("artifact.locator", media_type="application/json",
