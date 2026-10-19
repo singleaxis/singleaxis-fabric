@@ -163,7 +163,7 @@ def load_validator() -> Any:
 
 
 def capture_schemas() -> dict[str, Any]:
-    return {
+    schemas = {
         rel: json.loads((CAPTURE / rel).read_text("utf-8"))
         for rel in (
             "schema/llm-exchange-v1.schema.json",
@@ -171,6 +171,15 @@ def capture_schemas() -> dict[str, Any]:
             "schema/run-reconstruction-v1.schema.json",
         )
     }
+    # 049 §2.9 rule 4 (requested from the contract owner): keyed p- provider ids (32 hex)
+    # beside the legacy unkeyed form; a no-op once contracts/capture/v1 admits them.
+    rel = "schema/run-reconstruction-v1.schema.json"
+    schemas[rel] = json.loads(
+        json.dumps(schemas[rel]).replace(
+            '"^p-[0-9a-f]{16}$"', '"^p-(?:[0-9a-f]{16}|[0-9a-f]{32})$"'
+        )
+    )
+    return schemas
 
 
 def sse(*events: Any, done: bool = False) -> list[bytes]:
@@ -226,13 +235,16 @@ def exchange_document(span: ReadableSpan) -> dict[str, Any]:
         **({"scope_id": a["fabric.run.scope_id"]} if "fabric.run.scope_id" in a else {}),
         "started_at": _iso(span.start_time),
         "ended_at": _iso(span.end_time),
-        "request": {"sha256": "sha256:" + a["fabric.wire.request_sha256"]},
         "response_state": a["fabric.wire.response_state"],
         "truncated": a["fabric.wire.truncated"],
         "store_status": a["fabric.wire.store_status"],
     }
+    if "fabric.wire.request_sha256" in a:  # 049 §2.4 rule 8: absent when nothing is stored
+        document["request"] = {"sha256": "sha256:" + a["fabric.wire.request_sha256"]}
     if "fabric.content.request_ref" in a:
         document["request"]["object_id"] = a["fabric.content.request_ref"]
+    if "fabric.wire.store_reason" in a:
+        document["store_reason"] = a["fabric.wire.store_reason"]
     if "fabric.wire.response_sha256" in a:
         document["response"] = {"sha256": "sha256:" + a["fabric.wire.response_sha256"]}
         if "fabric.content.result_ref" in a:
@@ -285,18 +297,72 @@ def loss_document(span: ReadableSpan) -> dict[str, Any]:
     return document
 
 
+STORE_REASONS = (
+    "no_store", "missing_capture_policy", "missing_id_key", "missing_spool_key",
+    "privacy_policy", "protection_failed", "explicit_withheld", "store_failed", "body_cap",
+    "inflight_budget", "transport_incomplete",
+)  # fmt: skip
+
+
+def p0a_exchange_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """llm-exchange-v1 with the 049 P0-A changes requested from the contract owner
+    (``request`` optional, ``store_reason`` added); a no-op once contracts/ has them."""
+    patched = json.loads(json.dumps(schema))
+    patched["required"] = [k for k in patched["required"] if k != "request"]
+    patched["allOf"] = [  # a complete response's digest is absent too when nothing is stored
+        rule for rule in patched.get("allOf", []) if rule["then"].get("required") != ["response"]
+    ]
+    patched["properties"].setdefault("store_reason", {"enum": list(STORE_REASONS)})
+    return patched
+
+
+def p0a_content_schema() -> dict[str, Any]:
+    """content-object-v2 with masked_only / original_plus_masked admitted in its policy
+    block (049 §7.7 rule 2, requested from the contract owner); else unchanged."""
+    schema = json.loads(CONTENT_SCHEMA.read_text())
+    for rule in schema["allOf"]:
+        enum = rule.get("then", {}).get("properties", {}).get("privacy_mode", {}).get("enum")
+        if enum is not None and "masked_only" not in enum:
+            enum.extend(["masked_only", "original_plus_masked"])
+    return schema
+
+
+def validate_exchange_document(document: dict[str, Any]) -> None:
+    """Schema (P0-A shape) plus the store_status consistency rule, with a request body
+    that may be absent (nothing stored)."""
+    validator, schemas = load_validator(), capture_schemas()
+    rel = "schema/llm-exchange-v1.schema.json"
+    errors = list(Draft202012Validator(p0a_exchange_schema(schemas[rel])).iter_errors(document))
+    assert not errors, errors[0].message
+    bodies = [document.get("request", {})] + (
+        [document["response"]] if "response" in document else []
+    )
+    stored = [("object_id" in body) for body in bodies]
+    status = document["store_status"]
+    if status in {"disabled", "failed"}:
+        assert not any(stored)
+    elif status == "stored":
+        assert stored and all(stored)
+    else:
+        assert any(stored) and not all(stored)
+    if status != "stored":
+        assert document.get("store_reason") in STORE_REASONS, "049 X40: reason required"
+    if "request" in document and "store_reason" not in document:
+        validator.validate_document(
+            {k: v for k, v in document.items() if k != "store_reason"}, schemas
+        )
+
+
 def validate_capture(rig: Rig) -> None:
     """Every emitted capture span and stored descriptor matches its contract."""
     validator, schemas = load_validator(), capture_schemas()
     for span in rig.spans():
-        validator.validate_document(exchange_document(span), schemas)
+        validate_exchange_document(exchange_document(span))
     for name in ("fabric.capture_loss", "fabric.capture_heartbeat"):
         for span in rig.spans(name):
             validator.validate_document(loss_document(span), schemas)
     if rig.store is not None and hasattr(rig.store, "root"):
-        content = Draft202012Validator(
-            json.loads(CONTENT_SCHEMA.read_text()), format_checker=FormatChecker()
-        )
+        content = Draft202012Validator(p0a_content_schema(), format_checker=FormatChecker())
         for descriptor in rig.descriptors():
             errors = list(content.iter_errors(descriptor))
             assert not errors, errors[0].message
@@ -305,3 +371,76 @@ def validate_capture(rig: Rig) -> None:
 def test_chunk_stream_yields_given_objects() -> None:
     chunks = [b"a", b"bc"]
     assert list(ChunkStream(chunks)) == chunks
+
+
+# --- 049 P0-A: the production profile (node mode) needs a policy, the id key and the
+# spool envelope key before it records content.
+
+PRODUCTION_ID_KEY = b"fabric-test-id-key-not-a-secret"
+PRODUCTION_SPOOL_KEY = bytes(range(32))
+
+
+def production_policy(
+    tenant_id: str = "tenant-a", privacy: dict[str, str] | None = None, *,
+    profile: str = "production",
+) -> dict[str, Any]:  # fmt: skip
+    """A deployment-policy/v1 document retaining the wire roles (049 §2.7)."""
+    return {
+        "schema_version": "fabric.deployment-policy/v1", "policy_id": "test-capture",
+        "policy_version": 1, "tenant_id": tenant_id, "workload_id": "wire-tests",
+        "privacy": privacy or {
+            "model.exchange.request": "retain_original",
+            "model.exchange.response": "retain_original",
+            "model.exchange.part": "retain_original",
+        },
+        "storage": {"backend": "local", "region": "local", "key_id": "test-key"},
+        "retention": {"days": 1}, "required_integrations": [],
+        "deployment": {
+            "profile": profile, "image_digest": "sha256:" + "0" * 64, "tls_required": True,
+            "encrypted_store_required": True,
+        },
+    }  # fmt: skip
+
+
+def production_overrides(tenant_id: str = "tenant-a", **privacy: str) -> dict[str, Any]:
+    """WireConfig fields that enable content in the production profile."""
+    from fabric.deployment_policy import DeploymentPolicy  # noqa: PLC0415
+
+    policy = production_policy(tenant_id, {k.replace("_", "."): v for k, v in privacy.items()}
+                               or None)  # fmt: skip
+    return {"capture_policy": DeploymentPolicy(policy), "id_key": PRODUCTION_ID_KEY,
+            "spool_key": PRODUCTION_SPOOL_KEY}  # fmt: skip
+
+
+def production_env(directory: Path, tenant_id: str = "tenant-a") -> dict[str, str]:
+    """``FABRIC_*`` variables that enable content in the production profile."""
+    import base64  # noqa: PLC0415
+
+    path = directory / "capture-policy.json"
+    path.write_text(json.dumps(production_policy(tenant_id)), "utf-8")
+    return {
+        "FABRIC_CAPTURE_POLICY": str(path), "FABRIC_WIRE_ID_KEY": PRODUCTION_ID_KEY.decode(),
+        "FABRIC_WIRE_SPOOL_KEY": base64.b64encode(PRODUCTION_SPOOL_KEY).decode(),
+    }  # fmt: skip
+
+
+def open_record(path: Path) -> bytes:
+    """A spool record's framed bytes, opened with the test spool key (049 §7.8)."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+
+    from fabric.wire._keys import envelope_key_id  # noqa: PLC0415
+    from fabric.wire._spool import unseal  # noqa: PLC0415
+
+    key = PRODUCTION_SPOOL_KEY
+    return unseal(path.read_bytes(), path.name, AESGCM(key), envelope_key_id(key))
+
+
+def _capture_contract_has_p0a() -> bool:
+    """Whether contracts/capture/v1 already carries the 049 P0-A widening (requested from
+    the contract owner): until it does, P0-A records are checked by this suite's own rules
+    and the frozen v1 schemas are not asked to admit them."""
+    schema = json.loads((CAPTURE / "schema" / "spool-record-v1.schema.json").read_text())
+    return "model.exchange.part" in json.dumps(schema["$defs"]["descriptor"])
+
+
+P0A_CAPTURE_CONTRACT = _capture_contract_has_p0a()

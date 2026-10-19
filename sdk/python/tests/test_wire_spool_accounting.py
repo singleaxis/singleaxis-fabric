@@ -167,14 +167,19 @@ def _maybe(rng: random.Random, original: Callable[..., Any]) -> Callable[..., An
     return call
 
 
+@pytest.mark.parametrize("sealed", [False, True])
 @pytest.mark.parametrize("seed", range(24))
-def test_interleaved_admissions_retirements_failures_and_rescans(tmp_path: Path, seed: int) -> None:
+def test_interleaved_admissions_retirements_failures_and_rescans(
+    tmp_path: Path, seed: int, sealed: bool
+) -> None:
     """Random admissions (own and another writer's), drains, receipt consumption and
     rescans, with failures injected into every disk step: after each operation the
-    drainer's ledger equals what is on disk and never exceeds the bound."""
+    drainer's ledger equals what is on disk and never exceeds the bound. ``sealed``: the
+    049 §7.8 envelope changes record sizes, never the accounting."""
     rng, root = random.Random(seed), tmp_path / "spool"  # noqa: S311 - a reproducible schedule
-    writer = Spool(str(root), 4000)
-    drainer = Spool(str(root), 4000)
+    key = bytes(range(32)) if sealed else None
+    writer = Spool(str(root), 4000, key=key)
+    drainer = Spool(str(root), 4000, key=key)
     assert drainer.try_lock() and drainer.max_receipts == 3
     sender = Sender(drainer, _Ok(), LossEmitter(), content=None, service_name="svc")
     for counter in range(1, 161):

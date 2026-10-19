@@ -29,12 +29,20 @@ from .._version import __version__
 from ._config import WireConfig
 from ._content import NodeContentClient, content_client_from_env
 from ._model import SPAN_EXCHANGE
-from ._spool import CorruptRecordError, Spool, exchange_doc, loss_doc, marker_doc, unframe
+from ._spool import (
+    CorruptRecordError,
+    Spool,
+    UndecryptableRecordError,
+    exchange_doc,
+    loss_doc,
+    marker_doc,
+    unframe,
+)
 
 _LOG = logging.getLogger("fabric.wire")
 _BATCH, _RESCAN_S, _LOCK_RETRY_S, _BACKOFF_S, _BACKOFF_CAP_S = 64, 5.0, 5.0, 0.5, 30.0
 _STATS = ("spooled", "spool_full_drops", "delivered", "send_retries", "content_rejected",
-          "quarantined", "markers_dropped")  # fmt: skip
+          "quarantined", "markers_dropped", "spool_undecryptable")  # fmt: skip
 _SENDERS: weakref.WeakSet[Sender] = weakref.WeakSet()
 # Delivery objects a forked child replaced: kept referenced, never closed or collected,
 # because closing (or finalizing) them may need a lock a parent thread held at fork.
@@ -81,6 +89,8 @@ class Sender:
         # Delivered records whose retirement failed (ENOSPC, EIO ...): still on disk, never
         # exported again by this drainer; retried before anything new is exported.
         self._retiring: dict[str, None] = {}  # names, in delivery order
+        # Records sealed under another key: left for a process holding it (049 §7.8).
+        self._sealed_elsewhere: set[str] = set()
         # Admission failures (lost exchanges, dropped markers) at start and at the last flush.
         self._failed_at_start = self._failed_at_flush = self._failures()
 
@@ -216,11 +226,18 @@ class Sender:
         """Deliver up to 64 ready records: ``more``, ``idle`` or ``retry``."""
         if not self._retire_delivered():
             return "retry"
-        names, batch, state = self.spool.names()[:_BATCH], [], "idle"
+        skip = self._sealed_elsewhere
+        names, batch, state = [n for n in self.spool.names() if n not in skip][:_BATCH], [], "idle"
         for name in names:
             try:
                 doc, blob = unframe(self.spool.read(name))
             except FileNotFoundError:
+                continue
+            except UndecryptableRecordError:
+                if name not in skip:
+                    skip.add(name)
+                    self._stats["spool_undecryptable"] += 1
+                    _LOG.warning("fabric.wire: spool record sealed under another key left")
                 continue
             except CorruptRecordError as corrupt:
                 self._quarantine(name, corrupt.doc)
@@ -391,7 +408,8 @@ def build_sender(
         content = content_client_from_env(
             os.environ, endpoint=config.content_endpoint, service_name=service)  # fmt: skip
     spool = Spool(config.spool_dir, config.spool_max_bytes, config.spool_max_receipts,
-                  durable_boundary=config.spool_durable_boundary)  # fmt: skip
+                  durable_boundary=config.spool_durable_boundary,
+                  key=config.spool_key)  # fmt: skip
     factory = None if exporter is not None else tracing.build_capture_span_exporter
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
     return Sender(spool, exporter, loss, content=content, service_name=service,

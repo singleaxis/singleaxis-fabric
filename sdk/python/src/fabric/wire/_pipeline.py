@@ -1,19 +1,23 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Capture worker (047 §5-§8, 048): digest, store or stage bodies, then one span or spool
-record per exchange, on a daemon thread. Nothing here parses messages or logs content."""
+"""Capture worker (047 §5-§8, 048, 049 §7): protect, digest, store or stage bodies, then one
+span or spool record per exchange, on a daemon thread. Nothing here logs content.
+
+049 P0-A: the PROTECT stage (:mod:`._protect`) runs here, before anything is stored or
+spooled, and ``fabric.wire.request_sha256``/``response_sha256`` are the digests of the
+stored, protected objects, absent when nothing is stored: no digest of an original body
+is computed unless the role's mode retains the original."""
 
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
+import logging
 import os
 import queue
 import re
 import threading
 import time
-import uuid
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -38,11 +42,14 @@ from .._sequence import OPAQUE_ID_RE
 from .._version import __version__
 from ._match import OPERATION_NAMES
 from ._model import FINISH_REASONS, ROLE_REQUEST, ROLE_RESPONSE, SPAN_EXCHANGE, WireAttr
+from ._policy import LOCAL_DEFAULT, CapturePolicy, ContentGate
+from ._protect import Obj, Protector, SideResult
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import TracerProvider
 
     from ..content_store.base import ByteEvidenceStore
+    from ._config import WireConfig
     from ._model import CapturedBody, CaptureJob, StoreStatus
     from ._sender import Sender
 
@@ -59,6 +66,34 @@ _METADATA_MAX_BYTES = 256 * 1024  # json.loads holds the GIL; larger bodies are 
 _STOP = object()
 _PIPELINES: weakref.WeakSet[CapturePipeline] = weakref.WeakSet()
 _IDS = RandomIdGenerator()
+_LOG = logging.getLogger("fabric.wire")
+DEFAULT_MAX_BODY_BYTES = 32 * 1024 * 1024
+# A side's reason (049 §7.5 status_reason) as the span's store_reason (vocabulary X40).
+_SPAN_REASON = {"part_cap": "body_cap"}
+# When sides disagree, the span names the most consequential reason.
+_REASON_ORDER = (
+    "protection_failed", "store_failed", "privacy_policy", "body_cap", "inflight_budget",
+    "transport_incomplete",
+)  # fmt: skip
+
+
+def protector_for(config: WireConfig, gate: ContentGate | None) -> Protector | None:
+    """The PROTECT stage of an install (``None`` while content is not enabled). Without a
+    gate (a tee built directly) a configured destination gets ``fabric.local-default``."""
+    if gate is None:
+        destination = config.store is not None or config.content_endpoint is not None
+        configured = config.capture_policy
+        policy = (CapturePolicy.from_deployment(configured) if configured is not None
+                  else LOCAL_DEFAULT) if destination else None  # fmt: skip
+    else:
+        policy = gate.policy if gate.enabled else None
+    if policy is None:
+        return None
+    return Protector(
+        policy, max_body_bytes=config.max_body_bytes,
+        max_retain_bytes=config.max_retain_bytes, part_min_bytes=config.part_min_bytes,
+        transformations=config.transformations, tokenization_key=config.tokenization_key,
+    )  # fmt: skip
 
 
 def capture_parent(context: Context | None) -> Context:
@@ -120,11 +155,12 @@ def response_metadata(job: CaptureJob, model_allowlist: Sequence[str] = ()) -> d
 
 
 def exchange_attributes(
-    job: CaptureJob, *, request_sha256: str, response_sha256: str | None,
+    job: CaptureJob, *, request_sha256: str | None, response_sha256: str | None,
     request_ref: str | None, response_ref: str | None, store_status: StoreStatus,
-    truncated: bool, metadata: Mapping[str, Any],
+    truncated: bool, metadata: Mapping[str, Any], store_reason: str | None = None,
 ) -> dict[str, AttributeValue]:  # fmt: skip
-    """The exchange span's attributes (spec 047 §8): ids, digests, object ids and enums only."""
+    """The exchange span's attributes (spec 047 §8): ids, digests, object ids and enums only.
+    The digests are the stored objects' (049 §2.4 rule 8), absent when nothing is stored."""
     error, status = job.error_type, job.http_status_code
     if job.response_state == "error":
         error = error if error and _ERROR_RE.fullmatch(error) else "UnknownError"
@@ -135,7 +171,8 @@ def exchange_attributes(
         WireAttr.SOURCE_SEQUENCE: job.source_sequence, WireAttr.API: job.api,
         WireAttr.REQUEST_SHA256: request_sha256,
         WireAttr.RESPONSE_STATE: job.response_state, WireAttr.TRUNCATED: truncated,
-        WireAttr.STORE_STATUS: store_status, "http.request.method": "POST",
+        WireAttr.STORE_STATUS: store_status, WireAttr.STORE_REASON: store_reason,
+        "http.request.method": "POST",
         "gen_ai.operation.name": OPERATION_NAMES[job.api],
         "gen_ai.provider.name": job.provider_name,
         WireAttr.RESPONSE_SHA256: response_sha256, WireAttr.REQUEST_REF: request_ref,
@@ -158,11 +195,14 @@ class CapturePipeline:
         loss: LossEmitter, queue_max_items: int = 256,
         on_job_done: Callable[[CaptureJob], None] | None = None, sender: Sender | None = None,
         node_tenant_id: str | None = None, model_allowlist: Sequence[str] = (),
-        fallback: PrivateFallback | None = None,
+        fallback: PrivateFallback | None = None, gate: ContentGate | None = None,
+        protector: Protector | None = None, max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     ) -> None:  # fmt: skip
         """``node_tenant_id`` (with ``sender``): bodies go into spool records for the Node.
         ``fallback``: the private provider used when ``tracer_provider`` (or, without one,
-        the global provider) has a Fabric-protected route at emit time."""
+        the global provider) has a Fabric-protected route at emit time. ``gate``: the
+        install's content decision (049 §7.3; default: ``fabric.local-default`` when a
+        destination is given, else metadata-only); ``protector``: its PROTECT stage."""
         if type(queue_max_items) is not int or not 1 <= queue_max_items <= 65536:  # noqa: PLR2004
             raise ValueError("queue_max_items must be an integer between 1 and 65536")
         tenant = getattr(store, "tenant_id", None) if node_tenant_id is None else node_tenant_id
@@ -174,6 +214,17 @@ class CapturePipeline:
         self._sender, self._node, self._models = sender, node_tenant_id is not None, model_allowlist
         self._loss, self._max_items, self._on_job_done = loss, queue_max_items, on_job_done
         self._fallback = fallback
+        if gate is None:  # a pipeline built directly (tests, embedders): no production gate
+            destination = store is not None or node_tenant_id is not None
+            gate = ContentGate("local", "enabled" if destination else "metadata_only",
+                               None if destination else "no_store",
+                               LOCAL_DEFAULT if destination else None)  # fmt: skip
+        self._gate = gate
+        self._protector = protector or (
+            Protector(gate.policy, max_body_bytes=max_body_bytes)
+            if gate.enabled and gate.policy is not None else None
+        )  # fmt: skip
+        self._warned_epochs: set[int] = set()  # disabled state logged once per epoch
         self._backoffs: tuple[float, ...] = _BACKOFFS_S
         self._init_state()
         _PIPELINES.add(self)
@@ -282,27 +333,71 @@ class CapturePipeline:
                     self._cond.notify_all()
 
     def _prepare(self, job: CaptureJob) -> tuple[dict[str, AttributeValue], list[Any]]:
-        """Digest and store (or stage, in node mode) both bodies; the span attributes."""
+        """Protect, then store (or stage, in node mode) both sides; the span attributes."""
         sides = [(job.request, ROLE_REQUEST)]
         sides += [] if job.response is None else [(job.response, ROLE_RESPONSE)]
-        shas: list[str] = []
-        refs: list[str | None] = []
         staged: list[tuple[dict[str, Any], bytes]] = []
+        if (protector := self._protector) is None:  # content not enabled (049 §7.3)
+            self._warn_disabled(job)
+            if truncated := any(body.truncated for body, _ in sides):
+                self._stats["truncated"] += 1
+            return exchange_attributes(
+                job, request_sha256=None, response_sha256=None, request_ref=None,
+                response_ref=None, store_status="disabled", truncated=truncated,
+                metadata=response_metadata(job, self._models), store_reason=self._gate.reason,
+            ), staged  # fmt: skip
+        results: list[SideResult] = []
+        failed = False
         for body, role in sides:
-            data = b"".join(body.chunks)
-            shas.append(sha := hashlib.sha256(data).hexdigest())
-            refs.append(self._store_body(job, body, data, sha, role, staged))
-        if truncated := any(body.truncated for body, _ in sides):
+            partial = role == ROLE_RESPONSE and job.response_state != "complete"
+            result = protector.side(
+                self._base(job, body, role), role, body.chunks,
+                observed=body.observed_byte_length,
+                cut_reason=body.cut_reason or ("body_cap" if body.truncated else None),
+                partial=partial, prefix=body.prefix_length,
+            )  # fmt: skip
+            failed |= not self._admit(result, staged)
+            results.append(result)
+        if truncated := any(result.truncated for result in results):
             self._stats["truncated"] += 1
-        stored = sum(ref is not None for ref in refs)
-        status: StoreStatus = "disabled" if self._store is None and not self._node else (
-            "stored" if stored == len(refs) else "partial" if stored else "failed"
+        stored = sum(result.primary is not None for result in results)
+        status: StoreStatus = "stored" if stored == len(results) else "partial" if stored else (
+            "failed" if failed else "disabled"
         )  # fmt: skip
+        reasons = {_SPAN_REASON.get(r.reason, r.reason) for r in results if r.reason}
+        reason = next((r for r in _REASON_ORDER if r in reasons), None)
+        digests = [r.primary.descriptor["stored_sha256"][7:] if r.primary else None
+                   for r in results]  # fmt: skip
+        refs = [r.primary.object_id if r.primary else None for r in results]
         return exchange_attributes(
-            job, request_sha256=shas[0], response_sha256=[*shas, None][1],
+            job, request_sha256=digests[0], response_sha256=[*digests, None][1],
             request_ref=refs[0], response_ref=[*refs, None][1], store_status=status,
             truncated=truncated, metadata=response_metadata(job, self._models),
+            store_reason=reason,
         ), staged  # fmt: skip
+
+    def _warn_disabled(self, job: CaptureJob) -> None:
+        """049 §7.3: the disabled state is logged at the first exchange of each epoch, by
+        reason only (never a value)."""
+        gate = self._gate
+        if gate.content_capture == "disabled" and job.source_epoch not in self._warned_epochs:
+            self._warned_epochs.add(job.source_epoch)
+            _LOG.warning("fabric.wire: content capture disabled (%s); metadata continues",
+                         gate.reason)  # fmt: skip
+
+    def _admit(self, result: SideResult, staged: list[tuple[dict[str, Any], bytes]]) -> bool:
+        """Stage (node mode) or store a side's objects; ``False`` when a store write failed.
+        A descriptor-only object travels only to the Node (a direct store holds bytes)."""
+        ok = True
+        for obj in result.objects:
+            if self._store is None:
+                staged.append((obj.descriptor, obj.data))
+            elif obj.stored and not self._store_object(obj):
+                ok = False
+                if obj is result.primary:
+                    result.primary = None
+                result.reason = result.reason or "store_failed"
+        return ok
 
     def _spool(self, sender: Sender, job: CaptureJob, attrs: dict[str, Any], bodies: Any) -> None:
         """Committed: write the exchange record; a full spool is a ``queue_full`` loss."""
@@ -355,57 +450,39 @@ class CapturePipeline:
         except Exception:  # committed: never a second outcome for this sequence
             self._stats["internal_errors"] += 1
 
-    def _store_body(
-        self, job: CaptureJob, body: CapturedBody, data: bytes, sha: str, role: str,
-        staged: list[tuple[dict[str, Any], bytes]],
-    ) -> str | None:  # fmt: skip
-        """Write one body with retries (node mode: stage it for the spool record); its
-        object id (never a path or URI), or ``None``."""
-        if ((store := self._store) is None and not self._node) or (body.truncated and not data):
-            return None  # nothing useful to store: no retained prefix
-        object_id = str(uuid.uuid4())
-        if store is None:  # node mode
-            staged.append((self._descriptor(job, body, data, sha, role, object_id), data))
-            return object_id
+    def _store_object(self, obj: Obj) -> bool:
+        """Write one protected object to the direct store, with retries."""
+        store = self._store
+        if store is None:
+            return False
         for delay in (*self._backoffs, None):
             try:
-                ref = store.evidence_ref_for(object_id)
-                descriptor = self._descriptor(job, body, data, sha, role, object_id)
-                descriptor |= {"encoding": "binary", "ref": ref}
-                result = store.put_bytes_object(descriptor, data)
-                if result.uri != ref or result.content_hash != sha:
+                ref = store.evidence_ref_for(obj.object_id)
+                descriptor = {**obj.descriptor, "encoding": "binary", "ref": ref}
+                result = store.put_bytes_object(descriptor, obj.data)
+                if result.uri != ref or "sha256:" + result.content_hash != (
+                    obj.descriptor["stored_sha256"]
+                ):  # fmt: skip
                     raise ValueError("byte store returned a mismatched reference")
-                return object_id  # resolved again through store.evidence_ref_for
+                return True  # resolved again through store.evidence_ref_for
             except Exception:
                 if delay is None or self._closing.wait(delay):
                     break
         self._stats["store_failures"] += 1
-        return None
+        return False
 
-    def _descriptor(
-        self, job: CaptureJob, body: CapturedBody, data: bytes, sha: str, role: str,
-        object_id: str,
-    ) -> dict[str, Any]:  # fmt: skip
-        """Content-v2 descriptor core (047 §7, 048 §3); a writer adds ``encoding`` and ``ref``."""
-        cut = body.truncated
-        partial = role == ROLE_RESPONSE and job.response_state != "complete"
+    def _base(self, job: CaptureJob, body: CapturedBody, role: str) -> dict[str, Any]:
+        """The identity fields every content-v2 descriptor of this side carries (047 §7,
+        048 §3); PROTECT adds the object, representation, status and privacy fields."""
         captured_ns = job.started_ns if role == ROLE_REQUEST else job.ended_ns
-        source = {"source_byte_length": max(body.observed_byte_length, len(data) + 1)} if cut else (
-            {"source_byte_length": len(data), "source_sha256": "sha256:" + sha}
-        )  # fmt: skip
         return {
-            "schema_version": "fabric.content-object/v2", "object_id": object_id,
-            "tenant_id": self._tenant_id, "role": role,
+            "schema_version": "fabric.content-object/v2", "tenant_id": self._tenant_id,
             "media_type": media_type_of(body.media_type),
             "content_encoding": content_encoding_of(body.content_encoding),
-            "representation": "truncated" if cut else "partial" if partial else "exact",
-            "transformations": ["truncate"] if cut else [],
             "provenance": "protocol", "boundary": "provider_bound", "source_id": job.source_id,
             "source_epoch": job.source_epoch, "source_sequence": job.source_sequence,
             "captured_at": datetime.fromtimestamp(captured_ns / 1e9, UTC).isoformat(),
-            "status": "truncated" if cut else "stored", "stored_byte_length": len(data),
-            "stored_sha256": "sha256:" + sha, "run_id": job.run_id,
-            "operation_id": job.exchange_id, **source,
+            "run_id": job.run_id, "operation_id": job.exchange_id,
         }  # fmt: skip
 
 

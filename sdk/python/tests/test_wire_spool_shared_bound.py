@@ -31,6 +31,7 @@ import pytest
 
 from fabric.wire._spool import RESERVE_BYTES, Spool, _accounted, marker_doc, unframe
 
+from .test_wire_helpers import open_record, production_env
 from .test_wire_spool import FakeNode
 
 BODY = 256 * 1024  # max_body_bytes; each exchange record holds two such bodies
@@ -114,10 +115,10 @@ def node() -> Iterator[FakeNode]:
     created.close()
 
 
-def _env() -> dict[str, str]:
+def _env(directory: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "FABRIC_", "AWS_"))}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    return env
+    return env | production_env(directory)  # node mode is production (049 §7.3)
 
 
 def _line(process: subprocess.Popen[str]) -> str:
@@ -147,7 +148,7 @@ def test_processes_sharing_a_spool_stay_within_the_bound_with_the_node_down(
     try:
         for _ in range(writers):
             processes.append(subprocess.Popen(  # noqa: S603 - this interpreter, fixed script
-                argv, env=_env(), text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                argv, env=_env(tmp_path), text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             ))  # fmt: skip
         assert [_line(p) for p in processes] == ["READY"] * writers
@@ -195,7 +196,7 @@ def test_processes_sharing_a_spool_stay_within_the_bound_with_the_node_down(
     assert sum(losses.values()) == writers * EXCHANGES - 2
     # Every exchange and loss record was delivered; only a process's ``final`` marker,
     # written at close after the drainer exited, may wait for the next drainer.
-    left = [unframe(p.read_bytes())[0] for p in root.glob("[0-9]*.rec")]
+    left = [unframe(open_record(p))[0] for p in root.glob("[0-9]*.rec")]
     assert {doc["record_kind"] for doc in left} <= {"marker"}
 
 
@@ -222,7 +223,7 @@ def test_a_crashed_writers_temp_file_counts_against_the_shared_bound(tmp_path: P
     survivor = Spool(str(root), limit)  # its ledger is built before the crash
     crashed = subprocess.run(  # noqa: S603 - this interpreter, fixed script
         [sys.executable, "-c", _CRASH, str(root), str(limit), str(40 * 1024)],
-        env=_env(), capture_output=True, text=True, timeout=60, check=False,
+        env=_env(tmp_path), capture_output=True, text=True, timeout=60, check=False,
     )  # fmt: skip
     assert crashed.returncode == -signal.SIGKILL
     (leftover,) = root.glob(".tmp-*")

@@ -828,11 +828,18 @@ class _Run:
             exchange, "request", exchange.request_sha256, exchange.request_ref
         )
         response: ObjectResult | None = None
-        if exchange.response_sha256 is not None:
+        if exchange.response_sha256 is not None or (
+            # 049 §2.4 rule 8: a side stored nothing (its digest is then absent); with
+            # content disabled the check is skipped, otherwise the side is not stored.
+            exchange.store_status in ("partial", "failed") and exchange.response_ref is None
+            and exchange.response_state in _RESPONSE_EXPECTED
+        ):  # fmt: skip
             response, response_skipped = self._body(
                 exchange, "response", exchange.response_sha256, exchange.response_ref
             )
             skipped = skipped or response_skipped
+        elif exchange.store_status == "disabled":
+            pass  # content not recorded by configuration: no object is expected
         elif exchange.response_state in _RESPONSE_EXPECTED or exchange.http_status is not None:
             # The exchange received a response (its state, or a recorded HTTP status, says
             # so); a record without its digest proves only the request (sol1 #4, sol2 #4).
@@ -848,7 +855,7 @@ class _Run:
         return _Bodies(request, response, skipped)
 
     def _body(
-        self, exchange: ExchangeObs, side: Side, digest: str, ref: str | None
+        self, exchange: ExchangeObs, side: Side, digest: str | None, ref: str | None
     ) -> tuple[ObjectResult, bool]:
         """Fetch and verify one body; the bool says the check was skipped."""
 
@@ -860,7 +867,7 @@ class _Run:
                 self._gap(exchange, "missing_object", side=side, reason="not_stored")
             return ObjectResult("not_stored", sha256=digest), False
         object_id = object_id_from_ref(ref)
-        if object_id is None:
+        if object_id is None or digest is None:  # a ref always comes with its digest
             self._gap(exchange, "missing_object", side=side, reason="invalid_ref")
             return ObjectResult("missing", sha256=digest), False
         result = reader.fetch(
@@ -966,6 +973,7 @@ class _Run:
             response.media_type if response is not None else None,
             response.content_encoding if response is not None else None,
             response.truncated if response is not None else False,
+            id_key=self.verifier.key,
         )
         status = keys.request_parse_status
         response_status = keys.response_parse_status

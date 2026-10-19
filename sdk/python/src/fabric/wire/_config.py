@@ -9,14 +9,24 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import unquote, urlsplit
 
 from .._model_names import parse_model_allowlist
 from .._sequence import OPAQUE_ID_RE, Labels, check_id_key, id_key_from_env, labels_from_env
 from ..content_store.s3 import S3ContentStore  # boto3 stays lazy
+from ..deployment_policy import DeploymentPolicy
 from ..tracing import check_content_endpoint_url
+from ._keys import SPOOL_KEY_BYTES, TOKEN_KEY_MIN_BYTES, key_from_env
 from ._model import EndpointMatcher
+from ._policy import policy_from_env
+from ._protect import (
+    DEFAULT_MAX_RETAIN_BYTES,
+    DEFAULT_PART_MIN_BYTES,
+    Transformation,
+    check_transformations,
+)
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import TracerProvider
@@ -75,7 +85,10 @@ class WireConfig:
     extra_endpoints: tuple[EndpointMatcher, ...] = ()
     tracer_provider: TracerProvider | None = None
     source_id: str | None = None
-    max_body_bytes: int = 8 * 1024 * 1024
+    max_body_bytes: int = 32 * 1024 * 1024  # 049 §7.4 (was 8 MiB)
+    # Most one side may retain for the worker (049 §7.4); beyond it a side is truncated.
+    max_retain_bytes: int = DEFAULT_MAX_RETAIN_BYTES
+    part_min_bytes: int = DEFAULT_PART_MIN_BYTES  # smallest inline part worth extracting
     max_inflight_bytes: int = 256 * 1024 * 1024
     queue_max_items: int = 256
     patch_httpx: bool = True
@@ -96,9 +109,23 @@ class WireConfig:
     # J1: source id and service.name pseudonymous (default) or "clear" (FABRIC_WIRE_LABELS);
     # None = from the environment at install.
     labels: Labels | None = None
+    # 049 §2.7/§7.3: the capture policy (FABRIC_CAPTURE_POLICY, deployment-policy/v1);
+    # None = from the environment at install, else fabric.local-default (local profile).
+    capture_policy: DeploymentPolicy | None = None
+    # 049 §7.7: customer transformations for redact / masked_only / review copies, by role.
+    transformations: Mapping[str, Transformation] = field(
+        default_factory=lambda: MappingProxyType({}), repr=False
+    )
+    # Tenant-scoped tokenization key (FABRIC_TOKENIZATION_KEY[_FILE]); a secret.
+    tokenization_key: bytes | None = field(default=None, repr=False)
+    # AES-256-GCM spool envelope key (049 §7.8; FABRIC_WIRE_SPOOL_KEY[_FILE]); a secret.
+    spool_key: bytes | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         _int("max_body_bytes", self.max_body_bytes, 1, MAX_BODY_BYTES_CAP)
+        _int("max_retain_bytes", self.max_retain_bytes, self.max_body_bytes, MAX_BODY_BYTES_CAP)
+        _int("part_min_bytes", self.part_min_bytes, 1, MAX_BODY_BYTES_CAP)
+        self._check_protection()
         check_id_key(self.id_key)
         if self.labels not in (None, "pseudonymous", "clear"):
             raise ValueError("labels must be 'pseudonymous' or 'clear'")
@@ -114,6 +141,24 @@ class WireConfig:
             validate_endpoint(matcher)
         if len({m.endpoint_id for m in self.all_endpoints}) != len(self.all_endpoints):
             raise ValueError("endpoint_id values must be unique")
+
+    def _check_protection(self) -> None:
+        """049 §7.3/§7.7/§7.8 settings; fixed text, never a value or a key."""
+        policy = self.capture_policy
+        if policy is not None and not isinstance(policy, DeploymentPolicy):
+            raise ValueError("capture_policy must be a validated DeploymentPolicy")
+        if policy is not None and self.tenant_id is not None and (
+            policy.tenant_id != self.tenant_id
+        ):  # fmt: skip
+            raise ValueError("the capture policy belongs to another tenant")
+        check_transformations(self.transformations)
+        key = self.tokenization_key
+        if key is not None and (not isinstance(key, bytes) or len(key) < TOKEN_KEY_MIN_BYTES):
+            raise ValueError(f"tokenization_key must be at least {TOKEN_KEY_MIN_BYTES} bytes")
+        if self.spool_key is not None and (
+            not isinstance(self.spool_key, bytes) or len(self.spool_key) != SPOOL_KEY_BYTES
+        ):  # fmt: skip
+            raise ValueError(f"spool_key must be exactly {SPOOL_KEY_BYTES} bytes")
 
     def _check_delivery(self) -> None:
         """Spec 048 §1: node mode, spool and model-allowlist rules; never echoes a value."""
@@ -219,10 +264,15 @@ def config_from_env(
         "spool_durable_boundary": environ.get("FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY") or None,
         "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
         "id_key": id_key_from_env(environ), "labels": labels_from_env(environ),
+        "capture_policy": policy_from_env(environ),
+        "tokenization_key": key_from_env(environ, "FABRIC_TOKENIZATION_KEY",
+                                         minimum=TOKEN_KEY_MIN_BYTES),
+        "spool_key": key_from_env(environ, "FABRIC_WIRE_SPOOL_KEY", exact=SPOOL_KEY_BYTES),
     }  # fmt: skip
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
-    for name in ("MAX_BODY_BYTES", "QUEUE_MAX_ITEMS", "SPOOL_MAX_BYTES", "SPOOL_MAX_RECEIPTS"):
+    for name in ("MAX_BODY_BYTES", "MAX_RETAIN_BYTES", "PART_MIN_BYTES", "QUEUE_MAX_ITEMS",
+                 "SPOOL_MAX_BYTES", "SPOOL_MAX_RECEIPTS"):  # fmt: skip
         if value := environ.get(f"FABRIC_WIRE_{name}"):
             try:
                 kwargs[name.lower()] = int(value)

@@ -57,12 +57,28 @@ _REQUIRED_KEYS = frozenset(
     {
         "schema_version", "object_id", "tenant_id", "role", "media_type", "content_encoding",
         "representation", "transformations", "provenance", "boundary", "status",
-        "stored_byte_length", "stored_sha256", "source_byte_length", "source_id",
+        "stored_byte_length", "stored_sha256", "source_id",
         "source_epoch", "source_sequence", "run_id", "operation_id", "captured_at",
         "encoding", "ref",
     }
 )  # fmt: skip
-_OPTIONAL_KEYS = frozenset({"source_sha256"})
+# 049 §4.3 rule 6: the privacy fields (all of the policy block, or none of it), and the
+# receiver-owned source_authenticated the Node writes into the persisted descriptor.
+_POLICY_KEYS = frozenset(
+    {"privacy_mode", "policy_id", "policy_version", "policy_digest", "protection_status"}
+)
+_OPTIONAL_KEYS = frozenset(
+    {"source_sha256", "source_byte_length", "workload_id", "transformation_id",
+     "transformation_version", "source_authenticated", "links"}
+) | _POLICY_KEYS  # fmt: skip
+# privacy mode -> (protection status, representations) of a primary stored object
+_MODES = {
+    "retain_original": ("retained", ("exact", "partial", "truncated", "split")),
+    "original_plus_masked": ("retained", ("exact", "partial", "truncated", "split")),
+    "redact": ("redacted", ("redacted",)),
+    "masked_only": ("redacted", ("redacted",)),
+    "tokenize": ("tokenized", ("tokenized",)),
+}
 BINDING_KEYS = ("source_id", "source_epoch", "source_sequence", "run_id", "operation_id")
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
@@ -82,10 +98,27 @@ def _str(value: Any, pattern: re.Pattern[str]) -> bool:
 
 def _consistent(descriptor: Mapping[str, Any]) -> bool:
     """truncated <=> status truncated <=> ["truncate"] <=> no source digest <=> a longer
-    source; otherwise stored, [] and source digest/length equal to the stored ones;
-    ``partial`` only on a response (the Node's ``consistent`` rule)."""
-    stored, source = descriptor["stored_byte_length"], descriptor["source_byte_length"]
+    source; split: stored, ["extract_parts"], the original's digest and a longer source;
+    redacted/tokenized: status redacted, ["redact"]/["tokenize"] (after
+    ``extract_parts``), no source fields; otherwise stored, [] and source digest/length
+    equal to the stored ones; ``partial`` only on a response (the Node's rule)."""
+    stored, source = descriptor["stored_byte_length"], descriptor.get("source_byte_length")
     transformations, has_source_sha = descriptor["transformations"], "source_sha256" in descriptor
+    representation = descriptor["representation"]
+    if representation in ("redacted", "tokenized"):
+        step = "redact" if representation == "redacted" else "tokenize"
+        return (
+            descriptor["status"] == "redacted"
+            and transformations in ([step], ["extract_parts", step])
+            and not has_source_sha and source is None
+        )  # fmt: skip
+    if not isinstance(source, int):
+        return False
+    if representation == "split":
+        return (
+            descriptor["status"] == "stored" and transformations == ["extract_parts"]
+            and has_source_sha and source > stored
+        )  # fmt: skip
     if descriptor["representation"] == "truncated":
         return (
             descriptor["status"] == "truncated"
@@ -112,28 +145,56 @@ def descriptor_contract_ok(descriptor: Mapping[str, Any]) -> bool:
     keys = set(descriptor)
     if not keys >= _REQUIRED_KEYS or keys - _REQUIRED_KEYS - _OPTIONAL_KEYS:
         return False
+    if not _privacy_ok(descriptor, keys):
+        return False
     shapes = (
         descriptor["schema_version"] == "fabric.content-object/v2",
         descriptor["role"] in ("model.exchange.request", "model.exchange.response"),
         _str(descriptor["media_type"], _MEDIA_RE),
         _str(descriptor["content_encoding"], _ENCODING_RE),
-        descriptor["representation"] in ("exact", "partial", "truncated"),
-        descriptor["transformations"] in ([], ["truncate"]),
+        descriptor["representation"]
+        in ("exact", "partial", "truncated", "split", "redacted", "tokenized"),
+        isinstance(descriptor["transformations"], list),
         descriptor["provenance"] == "protocol",
         descriptor["boundary"] == "provider_bound",
-        descriptor["status"] in ("stored", "truncated"),
+        descriptor["status"] in ("stored", "truncated", "redacted"),
         descriptor["encoding"] == "binary",
         isinstance(descriptor["ref"], str) and bool(descriptor["ref"]),
         _str(descriptor["stored_sha256"], _DIGEST_RE),
         "source_sha256" not in descriptor or _str(descriptor["source_sha256"], _DIGEST_RE),
         _str(descriptor["captured_at"], _CAPTURED_AT_RE),
-        all(_int(descriptor[key]) for key in ("stored_byte_length", "source_byte_length")),
+        _int(descriptor["stored_byte_length"]),
+        "source_byte_length" not in descriptor or _int(descriptor["source_byte_length"]),
         all(_int(descriptor[key]) for key in ("source_epoch", "source_sequence")),
         all(opaque_id(descriptor[key]) is not None for key in ("source_id", "run_id")),
         opaque_id(descriptor["operation_id"]) is not None,
         opaque_id(descriptor["object_id"]) is not None,
     )
     return all(shapes) and _consistent(descriptor)
+
+
+def _privacy_ok(descriptor: Mapping[str, Any], keys: set[str]) -> bool:
+    """049 §4.3/§7.5: the policy block is all or nothing; its mode and protection status
+    agree with the representation; an object a span names is never a review copy (a
+    ``derived_from`` copy never satisfies a requirement for the original)."""
+    links = descriptor.get("links", [])
+    if not isinstance(links, list) or any(
+        not isinstance(link, Mapping) or link.get("relation") == "derived_from" for link in links
+    ):
+        return False
+    block = keys & _POLICY_KEYS
+    if not block:
+        return not keys & {"transformation_id", "transformation_version"}
+    if block != _POLICY_KEYS:
+        return False
+    expected = _MODES.get(descriptor["privacy_mode"])
+    return (
+        expected is not None and descriptor["protection_status"] == expected[0]
+        and descriptor["representation"] in expected[1]
+        and _str(descriptor["policy_digest"], _DIGEST_RE)
+        and opaque_id(descriptor["policy_id"]) is not None
+        and type(descriptor["policy_version"]) is int and descriptor["policy_version"] >= 1
+    )  # fmt: skip
 
 
 def _bound(descriptor: Mapping[str, Any], binding: Mapping[str, Any], key: bytes | None) -> bool:

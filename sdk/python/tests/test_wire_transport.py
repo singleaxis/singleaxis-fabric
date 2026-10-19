@@ -310,7 +310,9 @@ def test_extra_endpoint_matching(tmp_path: Path) -> None:
         assert attrs(span)["gen_ai.provider.name"] == "vllm"
         assert attrs(span)["fabric.wire.store_status"] == "disabled"
         assert "fabric.content.request_ref" not in attrs(span)
-        assert "fabric.wire.request_sha256" in attrs(span)
+        # 049 §2.4 rule 8: no digest when nothing is stored, and the reason on the span
+        assert "fabric.wire.request_sha256" not in attrs(span)
+        assert attrs(span)["fabric.wire.store_reason"] == "no_store"
         validate_capture(rig)
     finally:
         rig.close()
@@ -384,7 +386,9 @@ def test_store_failure_never_raises_into_caller(tmp_path: Path) -> None:
         a = attrs(span)
         assert a["fabric.wire.store_status"] == "failed"
         assert "fabric.content.request_ref" not in a and "fabric.content.result_ref" not in a
-        assert "fabric.wire.request_sha256" in a and "fabric.wire.response_sha256" in a
+        # 049 §2.4 rule 8: digests are the stored objects', so absent when none was stored
+        assert "fabric.wire.request_sha256" not in a and "fabric.wire.response_sha256" not in a
+        assert a["fabric.wire.store_reason"] == "store_failed"
         assert store.calls == 2 * 4  # two bodies x (one try + three retries)
         assert rig.tee.stats()["store_failures"] == 2
         assert rig.loss_counts() == {}  # store failure is the span's store_status

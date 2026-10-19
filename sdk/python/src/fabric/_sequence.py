@@ -229,12 +229,16 @@ def get_allocator(component: Component, *, source_id: str | None = None) -> Sour
 
 
 @contextmanager
-def run_scope(run_id: str, key: bytes | None = None) -> Iterator[RunScope]:
+def run_scope(
+    run_id: str, key: bytes | None = None, *, emitted: str | None = None
+) -> Iterator[RunScope]:
     """A new uniquely identified scope for ``run_id``, current for the block (closed after);
-    the scope carries :func:`run_pseudonym` of ``run_id``, never the clear value."""
+    the scope carries :func:`run_pseudonym` of ``run_id``, never the clear value, or
+    ``emitted`` (a generated fallback) when no value derived from ``run_id`` may leave the
+    process (049 §2.9 rule 5)."""
     if not isinstance(run_id, str) or not OPAQUE_ID_RE.fullmatch(run_id):
         raise ValueError("run_id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-    scope = RunScope(run_pseudonym(run_id, key), str(uuid.uuid4()), _SCOPE.get())
+    scope = RunScope(emitted or run_pseudonym(run_id, key), str(uuid.uuid4()), _SCOPE.get())
     token = _SCOPE.set(scope)
     try:
         yield scope

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from fabric._model_names import MODEL_PATTERN
+from fabric._sequence import pseudonym_v2
 
 SpanFormat = Literal["sink_jsonl", "otlp_json", "otlp_proto"]
 OTLP_PROTO_SUFFIX = ".otlp"
@@ -383,9 +384,13 @@ def scope_id_value(value: Any) -> str | None:
     return value if isinstance(value, str) and SCOPE_ID_RE.fullmatch(value) else None
 
 
-def pseudonym(value: str) -> str:
-    """``p-`` + 16 hex of sha256: how the report carries a provider-derived id."""
+def pseudonym(value: str, key: bytes | None = None) -> str:
+    """How the report carries a provider-derived id: with the id key, the keyed v2
+    ``p-`` + 32 hex (spec 049 §2.9 rule 4, type ``provider``); without one, the legacy
+    unkeyed ``p-`` + 16 hex of sha256 (the length tells them apart)."""
 
+    if key is not None and (keyed := pseudonym_v2("p", value, key)) is not None:
+        return keyed
     return "p-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:16]
 
 
@@ -427,7 +432,7 @@ class ExchangeObs:
     response_state: str
     store_status: str
     truncated: bool
-    request_sha256: str
+    request_sha256: str | None  # 049 §2.4 rule 8: absent when no request object is stored
     response_sha256: str | None
     request_ref: str | None
     response_ref: str | None
@@ -600,7 +605,11 @@ def _exchange(
         or api is None
         or state is None
         or store_status is None
-        or request_sha256 is None
+        # 049 §2.4 rule 8: the request digest is required only when the request object is
+        # stored (it is the stored, protected object's digest, absent when none is).
+        or (A_REQUEST_REF in attrs and request_sha256 is None)
+        or (A_REQUEST_SHA256 in attrs and request_sha256 is None)
+        or (A_RESULT_REF in attrs and response_sha256 is None)
         or not isinstance(truncated, bool)
         or (A_RESPONSE_SHA256 in attrs and response_sha256 is None)
         or (A_HTTP_STATUS in attrs and http_status is None)
@@ -625,7 +634,7 @@ def _exchange(
         response_state=cast("str", state),
         store_status=cast("str", store_status),
         truncated=cast("bool", truncated),
-        request_sha256=cast("str", request_sha256),
+        request_sha256=request_sha256,
         response_sha256=response_sha256,
         request_ref=_ref(attrs.get(A_REQUEST_REF)),
         response_ref=_ref(attrs.get(A_RESULT_REF)),

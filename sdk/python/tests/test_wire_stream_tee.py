@@ -181,7 +181,8 @@ def test_request_stream_failure_reaches_the_caller_unchanged(rig: Rig) -> None:
 
 
 def test_response_truncation_keeps_whole_chunks_by_reference(tmp_path: Path) -> None:
-    rig = make_rig(tmp_path, max_body_bytes=12_000)
+    # 049 §7.4: retention is bounded by max_retain_bytes (the worker then cuts or splits).
+    rig = make_rig(tmp_path, max_body_bytes=12_000, max_retain_bytes=12_000)
     chunks = [bytes([n]) * 5000 for n in (1, 2, 3)]
     try:
         client = rig.client(lambda r: httpx.Response(200, stream=ChunkStream(chunks)))
@@ -214,7 +215,8 @@ def test_oversized_in_memory_request_body_is_not_sliced(tmp_path: Path) -> None:
         a = attrs(span)
         assert a["fabric.wire.truncated"] is True
         assert "fabric.content.request_ref" not in a  # no whole chunk fit: nothing stored
-        assert a["fabric.wire.request_sha256"] == hashlib.sha256(b"").hexdigest()
+        assert "fabric.wire.request_sha256" not in a  # 049 §2.4 rule 8: nothing stored
+        assert a["fabric.wire.store_reason"] == "body_cap"
     finally:
         rig.close()
 

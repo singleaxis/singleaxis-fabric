@@ -24,7 +24,7 @@ from .._loss import LossEmitter, LossReason, PrivateFallback
 from .._sequence import SourceAllocator, current_run_scope
 from ._match import EndpointIndex
 from ._model import CaptureJob
-from ._pipeline import CapturePipeline
+from ._pipeline import CapturePipeline, protector_for
 from ._stream import DELEGATION_MARK, FLAVORS, Budget, Exchange, drain_reaper, private_copy
 
 if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_wrapper
@@ -32,6 +32,7 @@ if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_w
     from httpx import BaseTransport as _SyncBase
 
     from ._config import WireConfig
+    from ._policy import ContentGate
     from ._sender import Sender
 else:
     _SyncBase = _AsyncBase = object
@@ -114,10 +115,11 @@ class WireTee:
     def __init__(
         self, config: WireConfig, *, allocator: SourceAllocator, loss: LossEmitter,
         pipeline: CapturePipeline | None = None, sender: Sender | None = None,
-        fallback: PrivateFallback | None = None,
+        fallback: PrivateFallback | None = None, gate: ContentGate | None = None,
     ) -> None:  # fmt: skip
         self.config, self.allocator, self.loss, self.sender = config, allocator, loss, sender
         self.max_body_bytes, self.budget = config.max_body_bytes, Budget(config.max_inflight_bytes)
+        self.max_retain_bytes = config.max_retain_bytes
         self.index = EndpointIndex(config.all_endpoints)
         self.closed, self.matched, self.internal_errors = False, 0, 0
         self.deferred_to_explicit = 0  # local counter only; never telemetry
@@ -126,7 +128,8 @@ class WireTee:
             store=config.store, tracer_provider=config.tracer_provider, loss=loss,
             queue_max_items=config.queue_max_items, on_job_done=self._release, sender=sender,
             node_tenant_id=config.content_endpoint and config.tenant_id,
-            model_allowlist=config.model_allowlist, fallback=fallback,
+            model_allowlist=config.model_allowlist, fallback=fallback, gate=gate,
+            protector=protector_for(config, gate), max_body_bytes=config.max_body_bytes,
         )  # fmt: skip
         _TEES.add(self)
 
