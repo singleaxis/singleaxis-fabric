@@ -99,8 +99,8 @@
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "scopeId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "pseudonym": {
-      "description": "A provider-derived id (response, previous-response or tool-call id) as the report carries it: 'p-' + the first 16 hex of sha256(value). Equal ids map to equal pseudonyms.",
-      "type": "string", "pattern": "^p-[0-9a-f]{16}$"
+      "description": "A provider-derived id (response, previous-response or tool-call id) as the report carries it. Keyed (spec 049 §2.9 rule 4, v2 type 'provider'): 'p-' + the first 32 hex of HMAC-SHA256(k_provider, value) when the verifier has FABRIC_WIRE_ID_KEY. Legacy unkeyed: 'p-' + the first 16 hex of sha256(value), still readable; the length tells them apart. Equal ids map to equal pseudonyms under one key.",
+      "type": "string", "pattern": "^p-(?:[0-9a-f]{16}|[0-9a-f]{32})$"
     },
     "range": {
       "type": "array",

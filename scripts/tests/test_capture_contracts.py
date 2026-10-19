@@ -591,3 +591,21 @@ def test_manifest_is_spooled_as_a_marker_without_a_position() -> None:
     broken = copy.deepcopy(marker)
     broken["marker"]["manifest_seq"] = 0
     _assert_error(broken, "capture.schema")
+
+
+@pytest.mark.parametrize(
+    ("pseudonym", "valid"),
+    [
+        ("p-0123456789abcdef", True),
+        ("p-0123456789abcdef0123456789abcdef", True),
+        ("p-0123456789abcdef0", False),
+        ("p-0123456789ABCDEF", False),
+        ("resp_abc123", False),
+    ],
+)
+def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> None:
+    """Spec 049 §2.9 rule 4: keyed p- + 32 hex, legacy p- + 16 hex stays readable."""
+    import re  # noqa: PLC0415
+
+    pattern = _json("schema/run-reconstruction-v1.schema.json")["$defs"]["pseudonym"]["pattern"]
+    assert (re.fullmatch(pattern, pseudonym) is not None) is valid
