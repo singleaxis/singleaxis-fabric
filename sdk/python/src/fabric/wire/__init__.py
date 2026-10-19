@@ -117,8 +117,13 @@ class WireHandle:
     def status(self) -> dict[str, Any]:
         """The install's content state (049 §7.3): profile, ``content_capture`` and its
         reason, policy reference, pseudonym mode and key id, spool encryption. Values
-        only, never a key, path or content; ``{}`` for a handle built without a gate."""
-        return {} if self.gate is None else self.gate.status()
+        only, never a key, path or content; ``{}`` for a handle built without a gate.
+        ``spool_key_id`` names the key sealing the spool (049 §7.8), never the key."""
+        if self.gate is None:
+            return {}
+        sender = self._tee.sender
+        return {**self.gate.status(),
+                "spool_key_id": sender.spool.key_id if sender is not None else None}  # fmt: skip
 
     @property
     def allocator(self) -> SourceAllocator:

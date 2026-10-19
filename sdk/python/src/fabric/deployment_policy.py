@@ -30,6 +30,9 @@ PrivacyMode = Literal[
     "metadata_only", "omit", "redact", "tokenize", "retain_original", "masked_only",
     "original_plus_masked",
 ]  # fmt: skip
+# Modes whose stored object is a customer-masked copy (049 §7.7 rule 3);
+# original_plus_masked needs two objects and is not a ContentProtector mode (withheld).
+_MASKING = frozenset({"redact", "masked_only"})
 TOKEN_TRANSFORMATION = "hmac_sha256_whole_object_v1"  # noqa: S105 - a transform id
 ProtectionStatus = Literal["withheld", "redacted", "tokenized", "retained", "unsupported", "lost"]
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
@@ -267,11 +270,11 @@ class ContentProtector:
         self._redactors = dict(redactors or {})
         roles = policy.privacy
         if any(
-            roles.get(role) != "redact" or not callable(fn) or inspect.iscoroutinefunction(fn)
+            roles.get(role) not in _MASKING or not callable(fn) or inspect.iscoroutinefunction(fn)
             for role, fn in self._redactors.items()
         ):
             raise ValueError("redactors must match explicitly redacted roles")
-        if any(mode == "redact" and role not in self._redactors for role, mode in roles.items()):
+        if any(mode in _MASKING and role not in self._redactors for role, mode in roles.items()):
             raise ValueError("redact mode requires an explicit customer redactor for each role")
         if tokenization_key is not None and (
             not isinstance(tokenization_key, bytes) or len(tokenization_key) < _MIN_KEY_BYTES
@@ -325,7 +328,7 @@ class ContentProtector:
                     data,
                     "sha256:" + hashlib.sha256(data).hexdigest(),
                 )
-            if mode == "redact":
+            if mode in _MASKING:  # masked_only: only the masked copy is stored (049 §7.5)
                 payload = self._redactors[role](data)
                 if not isinstance(payload, bytes):
                     if inspect.iscoroutine(payload):

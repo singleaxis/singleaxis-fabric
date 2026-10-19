@@ -26,7 +26,7 @@ from fabric.deployment_policy import DeploymentPolicy
 from fabric.reconstruct import reconstruct
 from fabric.wire import Transformation, WireConfig
 from fabric.wire._content import encode_content_request
-from fabric.wire._keys import key_from_env
+from fabric.wire._keys import envelope_key_id, key_from_env
 
 from .test_wire_helpers import (
     OPENAI_CHAT,
@@ -286,6 +286,7 @@ def test_production_policy_and_keys_come_from_the_environment(
     assert status["content_capture"] == "enabled" and status["spool_encrypted"] is True
     assert status["pseudonym_mode"] == "keyed" and re.fullmatch(r"kid-[0-9a-f]{8}",
                                                                 status["key_id"])  # fmt: skip
+    assert status["spool_key_id"] == envelope_key_id(PRODUCTION_SPOOL_KEY)
     assert PRODUCTION_ID_KEY.decode() not in json.dumps(status)
 
 
