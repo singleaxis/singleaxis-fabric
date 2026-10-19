@@ -294,15 +294,17 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
     names = [r["role"] for r in roles]
     if len(set(names)) != len(names):
         _fail("coverage.roles.duplicate", "content-roles", "duplicate role")
-    if [r["role"] for r in roles if r["status"] == "existing"] != existing:
-        _fail("coverage.roles.existing", "content-roles", "existing roles differ from content-v2")
+    # content-v2 2.1.0 carries every role of the table, existing roles first
+    # (spec 049 §4.3 rule 7): a role is a table row plus goldens.
+    if [r["role"] for r in roles] != existing or [r["status"] for r in roles] != sorted(
+        (r["status"] for r in roles), key=lambda status: status != "existing"
+    ):
+        _fail("coverage.roles.existing", "content-roles", "content-v2 roles differ from the role table")
     for r in roles:
         for key in ("layer", "boundary", "provenance", "media_types", "default_policy", "cap",
                     "phase", "telemetry_forbidden"):
             if key not in r or r[key] in (None, "", []):
                 _fail("coverage.roles.incomplete", r["role"], f"missing {key}")
-        if r["status"] == "new" and r["role"] in existing:
-            _fail("coverage.roles.overlap", r["role"], "new role already exists")
         if not set(r["boundary"]) <= boundaries or not set(r["provenance"]) <= provenance:
             _fail("coverage.roles.enum", r["role"], "boundary or provenance not in content-v2")
         if r["default_policy"] not in policies or r["telemetry_forbidden"] is not True:

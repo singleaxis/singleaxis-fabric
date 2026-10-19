@@ -51,7 +51,17 @@
         "database.parameters", "database.rows", "database.mutation",
         "network.request", "network.response", "network.stream",
         "sandbox.config", "sandbox.output", "artifact.before",
-        "artifact.after", "service.receipt"
+        "artifact.after", "service.receipt",
+        "model.exchange.part", "model.output.reasoning", "actor.identity",
+        "run.trigger", "run.goal", "run.input", "run.permissions",
+        "run.configuration", "run.environment", "run.outcome",
+        "outcome.delivery", "step.error", "tool.inventory", "agent.handoff",
+        "checkpoint.state", "workflow.definition", "mcp.request",
+        "mcp.response", "mcp.notification", "mcp.server", "computer.action",
+        "computer.snapshot", "control.checked", "control.reason",
+        "control.approval", "selection.decision", "context.change",
+        "terminal.context", "artifact.diff", "asset.bytes", "media.frames",
+        "media.events", "media.transcript", "artifact.locator"
       ]
     },
     "media_type": {
@@ -65,11 +75,11 @@
       "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$"
     },
     "representation": {
-      "enum": ["exact", "canonicalized", "assembled", "partial", "truncated", "redacted", "tokenized", "unavailable"]
+      "enum": ["exact", "canonicalized", "assembled", "partial", "truncated", "redacted", "tokenized", "unavailable", "split"]
     },
     "transformations": {
       "type": "array",
-      "items": {"enum": ["utf8_encode", "json_canonicalize", "assemble", "truncate", "redact", "tokenize"]},
+      "items": {"enum": ["utf8_encode", "json_canonicalize", "assemble", "truncate", "redact", "tokenize", "extract_parts"]},
       "uniqueItems": true
     },
     "source_byte_length": {"type": "integer", "minimum": 0},
@@ -95,6 +105,10 @@
       "enum": ["pending", "stored", "truncated", "redacted", "not_captured", "unsupported", "dropped", "failed"]
     },
     "status_reason": {"type": "string", "maxLength": 160},
+    "source_authenticated": {
+      "description": "Receiver-owned (spec 049 §4.3 rule 6, §7.9): written as true only by the fabriccontent exporter into the persisted descriptor when the record arrived on an ingress bound to its tenant and source, and returned by content readback. An agent-supplied value is rejected.",
+      "type": "boolean"
+    },
     "links": {
       "type": "array",
       "items": {
@@ -102,9 +116,18 @@
         "additionalProperties": false,
         "required": ["relation", "object_id"],
         "properties": {
-          "relation": {"enum": ["parent", "derived_from", "request_for", "result_of", "before", "after"]},
-          "object_id": {"$ref": "#/$defs/opaqueId"}
-        }
+          "relation": {"enum": ["parent", "derived_from", "request_for", "result_of", "before", "after", "part_of"]},
+          "object_id": {"$ref": "#/$defs/opaqueId"},
+          "byte_range": {
+            "description": "part_of only (spec 049 §7.4-§7.5): the half-open [start, end) byte offsets of this part in the original body, so end - start is the part's stored byte length.",
+            "type": "array",
+            "prefixItems": [{"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "if": {"properties": {"relation": {"const": "part_of"}}},
+        "else": {"not": {"required": ["byte_range"]}}
       }
     }
   },
@@ -132,6 +155,13 @@
     {
       "if": {"required": ["source_sha256"]},
       "then": {"required": ["source_byte_length"]}
+    },
+    {
+      "if": {"properties": {"representation": {"const": "split"}}, "required": ["representation"]},
+      "then": {
+        "required": ["source_byte_length", "source_sha256", "transformations"],
+        "properties": {"transformations": {"contains": {"const": "extract_parts"}}}
+      }
     },
     {
       "if": {"required": ["chunk_index"]},

@@ -53,3 +53,26 @@ wire tee (spec 047/048) sets it to `time_ns` at allocator creation (about
 at 2^53-1. Wire records are not inputs to spec 045 feeds or spec 046
 qualified verification; admitting them there needs a separate 050-series
 spec.
+
+## Role and descriptor widening (spec 049, manifest 2.1.0)
+
+[Spec 049](../../../specs/049-four-layer-capture-coverage.md) §4.3 widens
+this draft contract; `contracts/coverage/v1/registry/content-roles-v1.json`
+is the single role table, and the coverage validator fails unless `role`
+lists every row of it, existing roles first. Version 2.1.0 adds:
+
+- the new roles of the role table (`model.exchange.part`, `actor.identity`,
+  `run.*`, `mcp.*`, `control.*`, `artifact.locator`, ...);
+- `representation: split` and `transformations: extract_parts` for a side
+  stored as a skeleton plus extracted parts (§7.4-§7.5). A split skeleton is
+  stored whole and carries the `source_sha256` of the original body;
+- `links.relation: part_of`, with an optional `byte_range` allowed only on
+  `part_of`: the half-open `[start, end)` offsets of the part in the original
+  body. `valid/split-reassembly-retain-original.json` pins reassembly: every
+  part inserted at its range into the skeleton reproduces `source_sha256`;
+- the receiver-owned `source_authenticated` boolean (§4.3 rule 6, §7.9). Only
+  the `fabriccontent` exporter writes it into the persisted descriptor; an
+  agent-supplied value is rejected by the exporter's closed parser.
+
+Wiring the exporter and the SDK sender to the role table is spec 049 P0-A;
+nothing in this directory changes what recorder v1 emits.

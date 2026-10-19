@@ -181,6 +181,11 @@ func TestParseRecordRejectsBadDescriptors(t *testing.T) {
 		"truncated no transform":    setAttr(truncatedAttrs(body), "transformations", []any{}),
 		"status truncated on exact": setAttr(validAttrs(body), "status", "truncated"),
 		"map value":                 setAttr(validAttrs(body), "role", map[string]any{"a": "b"}),
+		// Spec 049 §4.3 rule 6: source_authenticated is receiver-owned. The
+		// exporter writes it; an agent that supplies it (true or otherwise)
+		// is rejected by the closed parser.
+		"agent source_authenticated": setAttr(validAttrs(body), "source_authenticated", true),
+		"agent source_auth string":   setAttr(validAttrs(body), "source_authenticated", "true"),
 	}
 	for name, attrs := range cases {
 		t.Run(name, func(t *testing.T) {

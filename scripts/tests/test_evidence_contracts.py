@@ -56,7 +56,8 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_evidence_artifacts_validate() -> None:
     paths = validate_contracts(REPO_ROOT)
-    assert len(paths) == 17
+    assert len(paths) == 24
+    assert "content/valid/split-reassembly-retain-original.json" in paths
     assert "content/fixtures/bytes/binary-four-bytes.json" in paths
     assert "evidence/valid/complete-run.json" in paths
 
@@ -590,3 +591,77 @@ def test_manifest_pinning_detects_modified_fixture(tmp_path: Path) -> None:
     with pytest.raises(EvidenceContractError) as caught:
         validate_contracts(tmp_path)
     assert caught.value.code == "evidence.manifest.digest"
+
+
+def _split_vector() -> dict[str, Any]:
+    return _json("contracts/content/v2/valid/split-reassembly-retain-original.json")
+
+
+def test_split_skeleton_and_parts_reassemble_to_the_original_digest() -> None:
+    validate_document(_split_vector(), _schemas())
+
+
+def test_split_reassembly_rejects_a_part_moved_inside_the_original() -> None:
+    vector = _split_vector()
+    part = vector["objects"][2]["descriptor"]["links"][0]
+    part["byte_range"] = [part["byte_range"][0] - 1, part["byte_range"][1] - 1]
+    _assert_error(vector, "evidence.split.reassembly")
+
+
+def test_split_reassembly_rejects_a_dropped_part() -> None:
+    vector = _split_vector()
+    del vector["objects"][1]
+    _assert_error(vector, "evidence.split.reassembly")
+
+
+def test_split_reassembly_rejects_tampered_part_bytes() -> None:
+    vector = _split_vector()
+    vector["objects"][1]["base64"] = vector["objects"][2]["base64"]
+    _assert_error(vector, "evidence.split.bytes")
+
+
+def test_split_skeleton_needs_the_original_body_digest() -> None:
+    skeleton = _split_vector()["objects"][0]["descriptor"]
+    del skeleton["source_sha256"], skeleton["source_byte_length"]
+    _assert_error(skeleton, "evidence.schema")
+
+
+def test_retained_split_skeleton_agrees_with_its_privacy_mode() -> None:
+    skeleton = _split_vector()["objects"][0]["descriptor"]
+    skeleton.update(
+        privacy_mode="retain_original",
+        protection_status="retained",
+        policy_id="policy-a",
+        policy_version=1,
+        policy_digest="sha256:" + "a" * 64,
+    )
+    validate_document(skeleton, _schemas())
+    skeleton["protection_status"] = "redacted"
+    _assert_error(skeleton, "evidence.content.protection")
+
+
+def test_byte_range_is_only_a_part_of_link_and_is_ordered() -> None:
+    part = _split_vector()["objects"][1]["descriptor"]
+    link = part["links"][0]
+    link["byte_range"] = [link["byte_range"][1], link["byte_range"][0]]
+    _assert_error(part, "evidence.content.byte_range")
+    link["relation"] = "derived_from"
+    _assert_error(part, "evidence.schema")
+
+
+def test_new_roles_and_receiver_owned_source_authenticated_are_admitted() -> None:
+    schema = _schemas()["content/schema/content-object-v2.schema.json"]
+    roles = json.loads(
+        (REPO_ROOT / "contracts/coverage/v1/registry/content-roles-v1.json").read_text()
+    )["roles"]
+    assert schema["properties"]["role"]["enum"] == [row["role"] for row in roles]
+    assert schema["properties"]["source_authenticated"] == {
+        "description": schema["properties"]["source_authenticated"]["description"],
+        "type": "boolean",
+    }
+    validate_document(
+        _json(
+            "contracts/content/v2/valid/persisted-descriptor-source-authenticated.json"
+        ),
+        _schemas(),
+    )
