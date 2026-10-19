@@ -300,8 +300,9 @@ class CapturePipeline:
         return drained and not lost and current is None
 
     def stats(self) -> Mapping[str, int]:
+        protect = self._protector.stats() if self._protector is not None else {}
         with self._cond:
-            return {**self._stats, "queue_depth": self._queue.qsize()}
+            return {**self._stats, **protect, "queue_depth": self._queue.qsize()}
 
     def resolved_provider(self) -> trace.TracerProvider | None:
         """The provider exchange spans go through now; ``None`` when they are refused."""

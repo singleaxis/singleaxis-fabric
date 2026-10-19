@@ -474,3 +474,44 @@ def test_defaults_follow_049() -> None:
         WireConfig(max_body_bytes=1 << 20, max_retain_bytes=1 << 19)
     assert "spool_key" not in repr(WireConfig(spool_key=b"x" * 32)) or "xxxx" not in repr(
         WireConfig(spool_key=b"x" * 32))  # fmt: skip
+
+
+def test_a_hung_transformation_never_stalls_the_capture_worker(tmp_path: Path) -> None:
+    """Sol P0-A #6, through the pipeline: a redactor that never returns delays each of the
+    first two exchanges by its timeout only; every later exchange is processed at once
+    (withheld, counted) and the application is never affected."""
+    import threading  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    release = threading.Event()
+
+    def hang(data: bytes) -> bytes:
+        release.wait(60.0)
+        return data
+
+    transform = Transformation("hang", "1", hang, timeout_s=0.05)  # one, for both roles
+    roles = ("model.exchange.request", "model.exchange.response")
+    settings: dict[str, Any] = {"capture_policy": _policy("redact"),
+                                "transformations": dict.fromkeys(roles, transform)}  # fmt: skip
+    rig = make_rig(tmp_path, tenant_id="tenant-a", **settings)
+    try:
+        with rig.client(_reply) as client:
+            for _ in range(4):
+                started = time.monotonic()
+                response = client.post(OPENAI_CHAT, content=REQUEST.encode(),
+                                       headers={"content-type": "application/json"})  # fmt: skip
+                assert response.json() == REPLY and time.monotonic() - started < 1.0
+        assert rig.tee.flush(5.0)  # the worker is not stuck behind the hung callback
+        spans = rig.spans()
+        assert len(spans) == 4
+        for span in spans:
+            attrs = dict(span.attributes or {})
+            assert attrs.get("fabric.wire.store_reason") == "protection_failed"
+            _scan(json.dumps(attrs), "telemetry")
+        stats = rig.handle.stats()
+        assert (stats.transform_timeouts, stats.transform_saturated) == (2, 6)
+        assert not [p for p in (tmp_path / "store").rglob("*") if p.is_file()
+                    and SECRET.encode() in p.read_bytes()]  # fmt: skip
+    finally:
+        release.set()
+        rig.close()

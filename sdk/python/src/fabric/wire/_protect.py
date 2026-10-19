@@ -17,8 +17,8 @@ import binascii
 import contextlib
 import hashlib
 import inspect
+import logging
 import re
-import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -26,6 +26,7 @@ from typing import Any
 
 from .._roles import ROLES, admits, part_object_id
 from .._sequence import OPAQUE_ID_RE
+from .._transform_runner import TransformRunner
 from ..deployment_policy import TOKEN_TRANSFORMATION, token_bytes
 from ._policy import CapturePolicy
 
@@ -34,6 +35,7 @@ MAX_PARTS_PER_SIDE = 64
 DEFAULT_PART_MIN_BYTES = 64 * 1024
 DEFAULT_MAX_RETAIN_BYTES = 64 * 1024 * 1024
 _MIN_TOKEN_KEY_BYTES = 32
+_LOG = logging.getLogger("fabric.wire")
 _PART_KEYS = frozenset({b"url", b"image_url", b"data", b"file_data", b"b64_json"})
 _B64 = re.compile(rb"[A-Za-z0-9+/]*={0,2}")
 _DATA_URL = re.compile(rb"data:([a-z0-9.+-]{1,64}/[a-z0-9.+-]{1,64});base64,")
@@ -54,7 +56,11 @@ class Transformation:
     the review copy of ``original_plus_masked`` (Fabric ships no PII detector). ``apply``
     gets the bytes of one object and returns its replacement; an exception, a non-bytes
     result, an oversized result or a run longer than ``timeout_s`` withholds the object
-    (``protection_failed``). It runs on the capture worker, never on the host's thread."""
+    (``protection_failed``). It runs on a dedicated, bounded thread
+    (:class:`fabric._transform_runner.TransformRunner`), never on the host's thread nor
+    the capture worker: a call past ``timeout_s`` is abandoned (its late result is
+    discarded) and the pipeline continues; while two abandoned calls are still running,
+    content needing this transformation is withheld at once."""
 
     transformation_id: str
     version: str
@@ -217,6 +223,24 @@ class Protector:
         self.policy, self.max_body, self.max_retain = policy, max_body_bytes, max_retain_bytes
         self.part_min, self._transforms = part_min_bytes, dict(transformations or {})
         self._token_key = tokenization_key
+        # One bounded runner per distinct transformation (049 §7.7 rule 4; Sol P0-A #6).
+        runners: dict[int, TransformRunner] = {}
+        for transform in self._transforms.values():
+            if id(transform) not in runners:
+                runners[id(transform)] = TransformRunner("fabric-wire-transform")
+        self._runners = {role: runners[id(t)] for role, t in self._transforms.items()}
+        self._saturated_logged: set[int] = set()
+
+    def stats(self) -> dict[str, int]:
+        """Counters of the transformation runners (never a value): calls abandoned at their
+        timeout, calls withheld while the abandoned bound was reached, and abandoned calls
+        still running."""
+        totals = dict.fromkeys(("transform_timeouts", "transform_saturated",
+                                "transform_abandoned"), 0)  # fmt: skip
+        for runner in {id(r): r for r in self._runners.values()}.values():
+            for key, value in runner.stats().items():
+                totals[key] += value
+        return totals
 
     # -- one side -----------------------------------------------------------
 
@@ -411,16 +435,16 @@ class Protector:
         transform = self._transforms.get(role)
         if transform is None:  # no configured transformation: withheld
             return self._withheld(base, role, mode, "protection_failed")
-        try:
-            started = time.monotonic()
-            out = transform.apply(data)
-            elapsed = time.monotonic() - started
-        except Exception:  # never the exception text: it may echo content
+        runner = self._runners[role]
+        outcome, out = runner.run(transform.apply, data, transform.timeout_s)
+        if outcome == "saturated" and id(runner) not in self._saturated_logged:
+            self._saturated_logged.add(id(runner))  # once per runner, by class only
+            _LOG.warning("fabric.wire: a transformation is not returning; content needing it "
+                         "is withheld (protection_failed)")  # fmt: skip
+        if outcome != "ok":  # error, timeout or saturated: withheld, never raw bytes
             return self._withheld(base, role, mode, "protection_failed")
         cap = ROLES[role].cap_bytes(self.max_body)
-        if not isinstance(out, bytes) or len(out) > min(cap, self.max_body) or (
-            elapsed > transform.timeout_s
-        ):  # fmt: skip
+        if not isinstance(out, bytes) or len(out) > min(cap, self.max_body):
             if inspect.iscoroutine(out):
                 out.close()
             return self._withheld(base, role, mode, "protection_failed")

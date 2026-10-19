@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import random
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -250,6 +251,42 @@ def test_a_failed_review_copy_withholds_the_original_too(transform: Transformati
                                            "object_id": original.object_id}]  # fmt: skip
     _valid(result)
     _canary_free(result, data)
+
+
+def test_a_hung_transformation_is_abandoned_and_the_bound_withholds() -> None:
+    """Sol P0-A #6: the timeout bounds execution. A callback that never returns is
+    abandoned at its timeout (the side is withheld and the caller continues); at most
+    two abandoned callbacks are in flight, after which content needing that
+    transformation is withheld at once (counted); a late result is discarded."""
+    release, threads = threading.Event(), []
+
+    def hang(data: bytes) -> bytes:
+        threads.append(threading.current_thread())
+        release.wait(30.0)
+        return data.replace(SECRET, b"[late]")
+
+    transform = Transformation("hang", "1", hang, timeout_s=0.05)
+    protector = _protector(_policy(model_exchange_request="redact"),
+                           transformations={REQUEST: transform})  # fmt: skip
+    data = b'{"q":"' + SECRET + b'"}'
+    try:
+        started = time.monotonic()
+        results = [_side(protector, data) for _ in range(5)]
+        assert time.monotonic() - started < 2.0  # two timeouts, then no wait at all
+        for result in results:
+            assert result.primary is None and result.reason == "protection_failed"
+            _canary_free(result, data)
+        assert len(threads) == 2 and threading.main_thread() not in threads
+        assert protector.stats() == {"transform_timeouts": 2, "transform_saturated": 3,
+                                     "transform_abandoned": 2}  # fmt: skip
+    finally:
+        release.set()
+    deadline = time.monotonic() + 10.0
+    while protector.stats()["transform_abandoned"] and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert protector.stats()["transform_abandoned"] == 0  # late results were discarded
+    result = _side(protector, data)  # the bound is free again
+    assert result.primary is not None and result.primary.data == b'{"q":"[late]"}'
 
 
 def test_tokenize_without_a_key_withholds() -> None:
