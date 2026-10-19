@@ -153,6 +153,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.
+- Removed the `benchmarks/fabric-comparison` SDK instrumentation comparison
+  and its frozen evidence (45,189 lines). No workflow, test or Make target ran
+  it, and its evidence was pinned to `18ec69a`, whose SDK hashes had already
+  drifted. History stays in git.
 
 ### Known limitations
 
