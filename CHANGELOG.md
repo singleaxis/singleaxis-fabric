@@ -183,6 +183,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `qualification/c8-network-capture-matrix.json` and
   `capture-level-matrix.json` records, and `docs/evidence-qualification-map.md`.
   Only their own tests ran them.
+- Removed the historical `qualification/` records (cloud audits, the
+  2026-10-02 cloud run, Python test-contract snapshots, the production GO
+  packet and the synthetic-slice plans and reports) and
+  `docs/cloud-qualification-2026-10-02.md`. No test or release step read
+  them, and nothing verified their source-hash pins. Only the four
+  `qualification/synthetic-slice/kind-production-*.yaml` files that
+  `e2e-production-profile.yml` installs remain. The qualification-status
+  links now point at commit `4a5c945`.
 
 ### Known limitations
 

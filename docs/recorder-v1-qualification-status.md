@@ -541,7 +541,7 @@ case-colliding files are unavailable on this filesystem. The
 source-checkout synthetic pilot compared twelve byte objects and five outcomes
 with independent fixture/endpoint/filesystem values and found zero local
 discrepancies; its verdict is still `unverified`. See the
-[local discrepancy report](../qualification/synthetic-slice/local-pilot-report.md).
+[local discrepancy report](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/local-pilot-report.md).
 The follow-up fixture projects all twelve reconciled byte events to offline
 AEEP metadata and verifies their IDs, roles, statuses and digests; the
 focused synthetic suite passed 25/25. This does not constitute live delivery.
@@ -554,7 +554,7 @@ project. A later guard fix clears evidence resource/scope attributes and
 passed `go test -race`; its rebuilt image **could not start the persistent
 queue** in the shared Docker daemon (`no space left on device`), so its
 live privacy probe remains unverified. Exact local digests and commands
-are in the [artifact ledger](../qualification/synthetic-slice/local-artifact-ledger.md).
+are in the [artifact ledger](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/local-artifact-ledger.md).
 No privileged BPF run or customer deployment was performed. The dirty
 worktree has no clean tagged artifact identity, and these tests are not
 target-Linux BPF, target-storage or live-customer-destination proofs.
@@ -593,7 +593,7 @@ The later PR head `c5ca90f` also passed Recorder CI, Linux/kind smoke,
 CodeQL and license checks. Recorder security still fails solely on seven
 history-wide secret-scan findings in old commits; the current tree and PR
 range scans found no new leaks. The smoke still did not run the synthetic
-agent. The [installed-artifact pilot plan](../qualification/synthetic-slice/end-to-end-agent-pilot-plan.md)
+agent. The [installed-artifact pilot plan](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/end-to-end-agent-pilot-plan.md)
 now defines that missing CI step. A newly built local wheel installed in a
 disposable Python 3.11 environment ran a deterministic three-model/two-tool
 agent fixture: 25 required byte objects and 10 outcomes reconciled with
@@ -668,7 +668,7 @@ image IDs between these runs means cross-run reproducibility is **not**
 established. Each run did test its own built artifacts. This was still the
 development chart profile; it did not qualify production-profile TLS.
 
-The [production-profile kind plan](../qualification/synthetic-slice/production-profile-kind-plan.md)
+The [production-profile kind plan](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/production-profile-kind-plan.md)
 now has a separate CI implementation that installs the packaged
 `shadow-production` profile with an ephemeral client CA, mTLS ingress,
 authenticated HTTPS export and the same installed-wheel byte/record pilot.
@@ -727,7 +727,7 @@ the synthetic provider response or terminal result; it does **not** prove
 timing non-interference. Local gate `go test -race`, 692 Python SDK tests,
 and 197 repository tests passed (12 repository tests skipped for their
 documented environment prerequisites). The new image/CI result is pending
-at this documentation revision. The [GO decision packet](../qualification/production-go/decision-packet.md)
+at this documentation revision. The [GO decision packet](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/production-go/decision-packet.md)
 lists the exact target evidence and owner approvals still required; neither
 the packet nor a passing CI job grants production approval.
 
