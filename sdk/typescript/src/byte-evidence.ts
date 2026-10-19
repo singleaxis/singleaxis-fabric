@@ -225,7 +225,7 @@ export class ByteEvidenceRecorder {
         throw new Error("content protector must match deployment policy");
       if (
         [...config.roles].some((role) =>
-          ["redact", "tokenize"].includes(policy.privacy[role] ?? "omit"),
+          ["redact", "masked_only", "tokenize"].includes(policy.privacy[role] ?? "omit"),
         )
       ) {
         const review = config.reviewStore;

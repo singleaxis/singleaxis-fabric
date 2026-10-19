@@ -142,6 +142,31 @@ describe("ContentProtector", () => {
     copy[0] = 0;
     expect(Buffer.from(original.protectedBytes!)).toEqual(SECRET);
   });
+  it("stores only the masked copy for masked_only and withholds original_plus_masked", () => {
+    // Spec 049 §7.5/§7.7, parity with Python test_deployment_policy.py.
+    const masked = new ContentProtector(policyFor("masked_only"), {
+      redactors: { "terminal.stdout": () => Buffer.from("[masked]") },
+    }).protect("terminal.stdout", SECRET);
+    expect(masked.status).toBe("redacted");
+    expect(masked.mode).toBe("masked_only");
+    expect(Buffer.from(masked.protectedBytes!).toString()).toBe("[masked]");
+    expect(masked.originalDigest).toBeNull();
+    expect(masked.metadata.source_byte_length).toBeUndefined();
+    expect(() => new ContentProtector(policyFor("masked_only"))).toThrow("redactor");
+    expect(
+      () =>
+        new ContentProtector(policyFor("original_plus_masked"), {
+          redactors: { "terminal.stdout": () => Buffer.from("[masked]") },
+        }),
+    ).toThrow("redactors must match");
+    const both = new ContentProtector(policyFor("original_plus_masked")).protect(
+      "terminal.stdout",
+      SECRET,
+    );
+    expect(both.status).toBe("unsupported");
+    expect(both.protectedBytes).toBeNull();
+    expect(both.originalDigest).toBeNull();
+  });
   it("rejects absent transforms and keys before capture", () => {
     expect(() => new ContentProtector(policyFor("redact"))).toThrow("redactor");
     expect(() => new ContentProtector(policyFor("tokenize"))).toThrow("caller-supplied key");
@@ -246,82 +271,94 @@ describe("Deployment-protected byte recorder", () => {
     await recorder.close();
   });
 
-  it.each(["retain_original", "omit", "metadata_only", "redact", "tokenize"] as const)(
-    "applies %s before queue/store",
-    async (mode) => {
-      const policy = policyFor(mode);
-      const original = store(policy.tenant_id);
-      const derivative = store(policy.tenant_id);
-      const contentProtector = new ContentProtector(policy, {
-        redactors:
-          mode === "redact" ? { "terminal.stdout": () => Buffer.from("[redacted]") } : undefined,
-        tokenizationKey: Buffer.alloc(32, "k"),
-      });
-      const recorder = new ByteEvidenceRecorder({
-        store: original,
-        reviewStore: derivative,
-        roles: new Set(["terminal.stdout"]),
-        deploymentPolicy: policy,
-        contentProtector,
-      });
-      const initial = recorder.capture(SECRET, {
-        role: "terminal.stdout",
-        boundary: "terminal",
-        sourceId: "sdk",
-        sourceEpoch: 0,
-        sourceSequence: 1,
-      });
-      await recorder.flush();
-      const settled = recorder.get(initial.object_id)!;
-      expect(settled.policy_digest).toBe(policy.digest);
-      if (mode === "retain_original") {
-        expect(settled.status).toBe("stored");
-        expect(Buffer.from(original.read(settled.ref!))).toEqual(SECRET);
-      } else if (mode === "redact" || mode === "tokenize") {
-        expect(settled.status).toBe("redacted");
-        expect(settled.representation).toBe(mode === "redact" ? "redacted" : "tokenized");
-        expect(settled.source_sha256).toBeUndefined();
-        expect(settled.source_byte_length).toBeUndefined();
-        expect(Buffer.from(derivative.read(settled.ref!)).toString()).toBe(
-          mode === "redact" ? "[redacted]" : TOKEN,
+  it.each([
+    "retain_original",
+    "omit",
+    "metadata_only",
+    "redact",
+    "tokenize",
+    "masked_only",
+    "original_plus_masked",
+  ] as const)("applies %s before queue/store", async (mode) => {
+    const policy = policyFor(mode);
+    const original = store(policy.tenant_id);
+    const derivative = store(policy.tenant_id);
+    const masking = mode === "redact" || mode === "masked_only";
+    const contentProtector = new ContentProtector(policy, {
+      redactors: masking ? { "terminal.stdout": () => Buffer.from("[redacted]") } : undefined,
+      tokenizationKey: Buffer.alloc(32, "k"),
+    });
+    const recorder = new ByteEvidenceRecorder({
+      store: original,
+      reviewStore: derivative,
+      roles: new Set(["terminal.stdout"]),
+      deploymentPolicy: policy,
+      contentProtector,
+    });
+    const initial = recorder.capture(SECRET, {
+      role: "terminal.stdout",
+      boundary: "terminal",
+      sourceId: "sdk",
+      sourceEpoch: 0,
+      sourceSequence: 1,
+    });
+    await recorder.flush();
+    const settled = recorder.get(initial.object_id)!;
+    expect(settled.policy_digest).toBe(policy.digest);
+    if (mode === "retain_original") {
+      expect(settled.status).toBe("stored");
+      expect(Buffer.from(original.read(settled.ref!))).toEqual(SECRET);
+    } else if (masking || mode === "tokenize") {
+      expect(settled.status).toBe("redacted");
+      expect(settled.privacy_mode).toBe(mode);
+      expect(settled.representation).toBe(masking ? "redacted" : "tokenized");
+      expect(settled.source_sha256).toBeUndefined();
+      expect(settled.source_byte_length).toBeUndefined();
+      expect(Buffer.from(derivative.read(settled.ref!)).toString()).toBe(
+        masking ? "[redacted]" : TOKEN,
+      );
+      const bytes = derivative.read(settled.ref!);
+      const descriptor = derivative.readDescriptor(settled.ref!);
+      for (const change of [
+        { source_byte_length: SECRET.length },
+        { policy_id: undefined },
+        { policy_version: 0 },
+        { protection_status: "retained" },
+      ]) {
+        expect(() => derivative.putBytesObject({ ...descriptor, ...change }, bytes)).toThrow(
+          "invalid content-v2",
         );
-        const bytes = derivative.read(settled.ref!);
-        const descriptor = derivative.readDescriptor(settled.ref!);
-        for (const change of [
-          { source_byte_length: SECRET.length },
-          { policy_id: undefined },
-          { policy_version: 0 },
-          { protection_status: "retained" },
-        ]) {
-          expect(() => derivative.putBytesObject({ ...descriptor, ...change }, bytes)).toThrow(
-            "invalid content-v2",
-          );
-        }
-      } else {
-        expect(settled.status).toBe("not_captured");
-        expect(settled.ref).toBeUndefined();
       }
-      if (mode !== "retain_original") {
-        for (const root of roots)
-          for (const filename of fs.readdirSync(root, { recursive: true })) {
-            const target = path.join(root, String(filename));
-            const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-            try {
-              if (fs.fstatSync(fd).isFile()) {
-                const bytes = fs.readFileSync(fd);
-                expect(bytes.includes(SECRET)).toBe(false);
-                expect(
-                  bytes.includes(Buffer.from(createHash("sha256").update(SECRET).digest("hex"))),
-                ).toBe(false);
-              }
-            } finally {
-              fs.closeSync(fd);
+    } else if (mode === "original_plus_masked") {
+      // Two objects are needed; this single-object protector fails closed.
+      expect(settled.status).toBe("unsupported");
+      expect(settled.protection_status).toBe("unsupported");
+      expect(settled.ref).toBeUndefined();
+      expect(settled.source_sha256).toBeUndefined();
+    } else {
+      expect(settled.status).toBe("not_captured");
+      expect(settled.ref).toBeUndefined();
+    }
+    if (mode !== "retain_original") {
+      for (const root of roots)
+        for (const filename of fs.readdirSync(root, { recursive: true })) {
+          const target = path.join(root, String(filename));
+          const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+          try {
+            if (fs.fstatSync(fd).isFile()) {
+              const bytes = fs.readFileSync(fd);
+              expect(bytes.includes(SECRET)).toBe(false);
+              expect(
+                bytes.includes(Buffer.from(createHash("sha256").update(SECRET).digest("hex"))),
+              ).toBe(false);
             }
+          } finally {
+            fs.closeSync(fd);
           }
-      }
-      await recorder.close();
-    },
-  );
+        }
+    }
+    await recorder.close();
+  });
   it("rejects wrong tenant and overlapping derivative destinations", () => {
     const policy = policyFor("redact");
     const original = store(policy.tenant_id);

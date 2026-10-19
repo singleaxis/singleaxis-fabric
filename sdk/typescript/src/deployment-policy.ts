@@ -5,7 +5,15 @@ import { createHmac } from "node:crypto";
 import { sha256BytesPrefixed } from "./hash.js";
 
 export const POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1";
-export type PrivacyMode = "metadata_only" | "omit" | "redact" | "tokenize" | "retain_original";
+// masked_only and original_plus_masked: spec 049 §7.7 rule 2 (minor, P0-A).
+export type PrivacyMode =
+  | "metadata_only"
+  | "omit"
+  | "redact"
+  | "tokenize"
+  | "retain_original"
+  | "masked_only"
+  | "original_plus_masked";
 export type ProtectionStatus =
   | "withheld"
   | "redacted"
@@ -19,7 +27,15 @@ export const PRIVACY_MODES: ReadonlySet<string> = new Set([
   "redact",
   "tokenize",
   "retain_original",
+  "masked_only",
+  "original_plus_masked",
 ]);
+/**
+ * Modes whose stored object is a customer-masked copy (spec 049 §7.7 rule 3). An
+ * `original_plus_masked` role needs two objects, which this single-object protector
+ * does not make: it reports `unsupported` and stores nothing (fails closed).
+ */
+const MASKING: ReadonlySet<string> = new Set(["redact", "masked_only"]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
@@ -271,13 +287,13 @@ export class ContentProtector {
     this.#redactors = Object.freeze({ ...options.redactors });
     if (
       Object.entries(this.#redactors).some(
-        ([role, fn]) => this.#modes[role] !== "redact" || typeof fn !== "function",
+        ([role, fn]) => !MASKING.has(this.#modes[role] ?? "") || typeof fn !== "function",
       )
     )
       throw new Error("redactors must match explicitly redacted roles");
     if (
       Object.entries(this.#modes).some(
-        ([role, mode]) => mode === "redact" && !Object.hasOwn(this.#redactors, role),
+        ([role, mode]) => MASKING.has(mode) && !Object.hasOwn(this.#redactors, role),
       )
     )
       throw new Error("redact mode requires an explicit customer redactor for each role");
@@ -313,7 +329,8 @@ export class ContentProtector {
         metadata.source_byte_length = data.byteLength;
         return result("retained", "original_retained", data, sha256BytesPrefixed(data));
       }
-      if (mode === "redact") {
+      if (MASKING.has(mode)) {
+        // masked_only: only the masked copy is stored, never the original's digest (§7.5).
         const bytes = this.#redactors[role]!(new Uint8Array(data));
         if (!(bytes instanceof Uint8Array)) {
           // A mistakenly async callback must not cause an unhandled rejection.
