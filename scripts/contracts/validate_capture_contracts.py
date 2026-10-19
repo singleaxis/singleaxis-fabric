@@ -637,6 +637,9 @@ def validate_document(
         _validate_loss(document)
     elif version == "fabric.wire-spool-record/v1":
         _validate_spool(document)
+        marker = document.get("marker", {})
+        if marker.get("kind") == "manifest":
+            _check_manifest_marker(marker, schemas)
     elif version == "fabric.content-log-record/v1":
         _validate_content(document)
     elif version == "fabric.run-reconstruction/v1":
@@ -929,6 +932,33 @@ def _pinned_records(root: Path) -> list[dict[str, Any]]:
             f"unpinned JSON: {sorted(actual ^ seen)}",
         )
     return records
+
+
+def _check_manifest_marker(
+    marker: Mapping[str, Any], schemas: Mapping[str, Mapping[str, Any]]
+) -> None:
+    """A spooled manifest carries a valid manifest span and no position (spec 049 §2.8)."""
+
+    record = {
+        "schema_version": "fabric.capture-manifest-record/v1",
+        "name": "fabric.capture_manifest",
+        "attributes": marker["manifest"],
+    }
+    try:
+        _schema_error(record, schemas[SCHEMAS["fabric.capture-manifest-record/v1"]])
+    except CaptureContractError as exc:
+        raise CaptureContractError(
+            "capture.marker.manifest", "$.marker.manifest", exc.message
+        ) from exc
+    if (
+        marker["last_sequence"]
+        != marker["manifest"]["fabric.manifest.after_source_sequence"]
+    ):
+        raise CaptureContractError(
+            "capture.marker.manifest",
+            "$.marker.last_sequence",
+            "a manifest marker's last_sequence is the manifest's after_source_sequence",
+        )
 
 
 def _check_marker_definitions(schemas: Mapping[str, Mapping[str, Any]]) -> None:

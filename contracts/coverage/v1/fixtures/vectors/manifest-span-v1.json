@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-manifest-span-vectors/v1",
-  "rule": "Spec 049 §2.8: a manifest travels as one fabric.capture_manifest span with closed attributes; every manifest property maps to exactly one telemetry key (registry manifest_property). capture_points become '<id>@<version>:<kind>:<state>:<process_global 0/1>:<opt_in 0/1>:<reason or ->' strings, their field ids '<id>=<field id>,...', unsealed prior epochs decimal strings. The attributes validate against contracts/capture/v1/schema/capture-manifest-record-v1.schema.json, pass every key's registry check (so fabricguard admits them), and rebuild the manifest exactly.",
+  "rule": "Spec 049 §2.8: a manifest travels as one fabric.capture_manifest span with closed attributes; every manifest property maps to exactly one telemetry key (registry manifest_property). capture_points become '<id>@<version>:<kind>:<state>:<process_global 0/1>:<opt_in 0/1>:<reason or ->' strings, their field ids '<id>=<field id>,...', unsealed prior epochs decimal strings. The attributes validate against contracts/capture/v1/schema/capture-manifest-record-v1.schema.json, pass every key's registry check (so fabricguard admits them), and rebuild the manifest exactly. fabric.capture.input is absent (the manifest belongs to both inputs).",
   "cases": [
     {
       "name": "local epoch start",

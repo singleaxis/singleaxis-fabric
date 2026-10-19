@@ -188,7 +188,8 @@
             }
           ],
           "minItems": 2,
-          "maxItems": 2
+          "maxItems": 2,
+          "description": "Half-open [start, end) byte offsets, 0-based, into the original body the object represents (end ≤ source_byte_length)."
         },
         "sha256": {
           "type": "string",
@@ -1045,10 +1046,7 @@
               ]
             },
             "clock_domain": {
-              "enum": [
-                "wall_utc",
-                "monotonic_process"
-              ]
+              "const": "wall_utc"
             }
           }
         },

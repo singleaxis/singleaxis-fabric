@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -36,18 +37,63 @@ var coverageFreeText = []string{
 }
 
 type registryCheck struct {
-	Type       string          `json:"type"`
-	Values     []any           `json:"values"`
-	Value      any             `json:"value"`
-	Min        *int64          `json:"min"`
-	Max        *int64          `json:"max"`
-	Pattern    string          `json:"pattern"`
-	Examples   []any           `json:"examples"`
-	Items      *registryCheck  `json:"items"`
-	MaxItems   int             `json:"max_items"`
-	MinItems   int             `json:"min_items"`
-	Unique     bool            `json:"unique"`
-	CaptureLbl json.RawMessage `json:"capture_labels"`
+	Type          string         `json:"type"`
+	Values        []any          `json:"values"`
+	Value         any            `json:"value"`
+	Min           *int64         `json:"min"`
+	Max           *int64         `json:"max"`
+	Pattern       string         `json:"pattern"`
+	Examples      []any          `json:"examples"`
+	Items         *registryCheck `json:"items"`
+	MaxItems      int            `json:"max_items"`
+	MinItems      int            `json:"min_items"`
+	Unique        bool           `json:"unique"`
+	Admission     string         `json:"admission"`
+	Span          string         `json:"span"`
+	CaptureLabels *struct {
+		Group               string `json:"group"`
+		PseudonymousPattern string `json:"pseudonymous_pattern"`
+	} `json:"capture_labels"`
+}
+
+// admittedNow is the registry's rule for keys coverage_keys.go admits through
+// its generated table (generate_p0_contracts.go_admitted).
+func admittedNow(row registryKey) bool {
+	return row.Check != nil && row.Owner != "receiver" && row.Check.Admission == "" && row.Check.Span == ""
+}
+
+// labelsOK applies a check's capture_labels rule under a pseudonymous Node.
+func labelsOK(t *testing.T, check *registryCheck, value any) bool {
+	t.Helper()
+	if check.Type == "array" {
+		items, ok := value.([]any)
+		if !ok {
+			return false
+		}
+		for _, item := range items {
+			if !labelsOK(t, check.Items, item) {
+				return false
+			}
+		}
+		return true
+	}
+	if check.CaptureLabels == nil {
+		return true
+	}
+	text, _ := value.(string)
+	subject := text
+	if group := check.CaptureLabels.Group; group != "" {
+		pattern := regexp.MustCompile(check.Pattern)
+		match := pattern.FindStringSubmatch(text)
+		if match == nil {
+			return false
+		}
+		subject = match[pattern.SubexpIndex(group)]
+		if subject == "" {
+			return true
+		}
+	}
+	return regexp.MustCompile(check.CaptureLabels.PseudonymousPattern).MatchString(subject)
 }
 
 type registryKey struct {
@@ -240,10 +286,9 @@ func TestCoverageKeysMatchTheRegistryKeyByKey(t *testing.T) {
 	keys := loadCoverageKeys(t)
 	admittedKeys := map[string]struct{}{}
 	for _, row := range keys {
-		if row.Change != "new" || row.Check == nil || row.Owner == "receiver" {
-			continue
+		if admittedNow(row) {
+			admittedKeys[row.Key] = struct{}{}
 		}
-		admittedKeys[row.Key] = struct{}{}
 	}
 	if !reflect.DeepEqual(admittedKeys, coverageKeyNames()) {
 		for key := range admittedKeys {
@@ -253,7 +298,7 @@ func TestCoverageKeysMatchTheRegistryKeyByKey(t *testing.T) {
 		}
 		for key := range coverageKeyValidators {
 			if _, ok := admittedKeys[key]; !ok {
-				t.Errorf("fabricguard admits %q; the registry has no check for it", key)
+				t.Errorf("fabricguard admits %q; the registry does not", key)
 			}
 		}
 	}
@@ -262,9 +307,9 @@ func TestCoverageKeysMatchTheRegistryKeyByKey(t *testing.T) {
 			t.Errorf("capture placement for unvalidated key %q", key)
 		}
 	}
-	g := newTestGuard(t, nil)
+	pseudonymous, clear := newTestGuard(t, nil), newTestGuard(t, clearLabelsConfig(t))
 	for _, row := range keys {
-		if row.Change != "new" || row.Check == nil || row.Owner == "receiver" {
+		if !admittedNow(row) {
 			continue
 		}
 		row := row
@@ -278,12 +323,16 @@ func TestCoverageKeysMatchTheRegistryKeyByKey(t *testing.T) {
 				if !validate(v) {
 					t.Errorf("validator rejects registry value %v", value)
 				}
-				if !keptAs(t, g, decisionSpan(row.Key, v), row.Key, v) {
-					t.Errorf("decision span drops registry value %v", value)
+				if !keptAs(t, clear, decisionSpan(row.Key, v), row.Key, v) {
+					t.Errorf("decision span (clear labels) drops registry value %v", value)
+				}
+				labelled := labelsOK(t, row.Check, raw(t, value))
+				if kept := keptAs(t, pseudonymous, decisionSpan(row.Key, v), row.Key, v); kept != labelled {
+					t.Errorf("decision span (pseudonymous labels): kept=%v, want %v for %v", kept, labelled, value)
 				}
 				classes := coverageCaptureKeys[row.Key]
 				for _, class := range []uint8{onExchange, onLoss, onHeartbeat} {
-					kept := keptAs(t, g, captureCarrier(class, row.Key, v), row.Key, v)
+					kept := keptAs(t, clear, captureCarrier(class, row.Key, v), row.Key, v)
 					if want := classes&class != 0; kept != want {
 						t.Errorf("capture class %d: kept=%v, want %v (value %v)", class, kept, want, value)
 					}
@@ -294,39 +343,80 @@ func TestCoverageKeysMatchTheRegistryKeyByKey(t *testing.T) {
 				if validate(v) {
 					t.Errorf("validator admits %v", value)
 				}
-				if keptAs(t, g, decisionSpan(row.Key, v), row.Key, v) {
-					t.Errorf("decision span keeps %v", value)
-				}
-				if keptAs(t, g, captureCarrier(onHeartbeat, row.Key, v), row.Key, v) {
-					t.Errorf("heartbeat keeps %v", value)
+				for _, g := range []*guard{pseudonymous, clear} {
+					if keptAs(t, g, decisionSpan(row.Key, v), row.Key, v) {
+						t.Errorf("decision span keeps %v", value)
+					}
+					if keptAs(t, g, captureCarrier(onHeartbeat, row.Key, v), row.Key, v) {
+						t.Errorf("heartbeat keeps %v", value)
+					}
 				}
 			}
 		})
 	}
 }
 
-func TestPendingCoverageKeysAreNotAdmitted(t *testing.T) {
+// Every key is admitted in P0 (spec 049 rev 6.3 §4.2); the exceptions are
+// named by the registry and checked here.
+func TestEveryRegistryKeyIsClosedAndItsAdmissionHolds(t *testing.T) {
 	g := newTestGuard(t, nil)
-	pending := 0
+	seen := map[string]bool{}
 	for _, row := range loadCoverageKeys(t) {
-		if row.Change != "new" || row.Check != nil {
+		if row.Pending != "" {
+			t.Errorf("%q is still check_pending", row.Key)
+		}
+		if row.Change != "reused" && row.Check == nil {
+			t.Errorf("%q has no check", row.Key)
+		}
+		if row.Check == nil || admittedNow(row) {
 			continue
 		}
-		pending++
-		if row.Pending == "" {
-			t.Errorf("%q has neither check nor check_pending", row.Key)
+		_, inTable := coverageKeyValidators[row.Key]
+		if inTable {
+			t.Errorf("%q is in the admission table but its row says otherwise", row.Key)
 		}
-		if _, ok := TraceAllowedFields[row.Key]; ok {
-			t.Errorf("pending key %q is allowlisted", row.Key)
-		}
-		for _, value := range []any{"langgraph", "plan", json.Number("1")} {
-			if keptAs(t, g, decisionSpan(row.Key, valueOf(t, value)), row.Key, valueOf(t, value)) {
-				t.Errorf("pending key %q kept %v", row.Key, value)
+		switch {
+		case row.Owner == "receiver":
+			seen["receiver"] = true // TestReceiverOwnedSourceAuthenticatedIsStrippedEverywhere
+		case row.Check.Span != "":
+			seen["span"] = true // TestCaptureManifestSpanPassesIntact
+		case row.Check.Admission == "never":
+			seen["never"] = true
+			if _, ok := TraceAllowedFields[row.Key]; ok {
+				t.Errorf("never-admitted %q is allowlisted", row.Key)
 			}
+			if keptAs(t, g, decisionSpan(row.Key, valueOf(t, "/home/jane/notes.txt")), row.Key, valueOf(t, "/home/jane/notes.txt")) {
+				t.Errorf("%q kept", row.Key)
+			}
+		case row.Check.Admission == "existing":
+			seen["existing"] = true
+			for _, value := range admitted(row.Check) {
+				v := valueOf(t, value)
+				carrier := onExchange
+				if row.Key == "fabric.heartbeat.kind" {
+					carrier = onHeartbeat
+				}
+				if !keptAs(t, g, captureCarrier(carrier, row.Key, v), row.Key, v) {
+					t.Errorf("%q: existing admission drops %v", row.Key, value)
+				}
+			}
+			if keptAs(t, g, captureCarrier(onExchange, row.Key, valueOf(t, "sha256:"+hex64("b"))), row.Key, valueOf(t, "sha256:"+hex64("b"))) {
+				t.Errorf("%q kept a prefixed digest", row.Key)
+			}
+		case row.Check.Admission == "P0-A":
+			seen["P0-A"] = true
+			// Tightening validators switch in P0-A; today's admission is unchanged.
+			if !keptAs(t, g, decisionSpan(row.Key, valueOf(t, "billing-agent")), row.Key, valueOf(t, "billing-agent")) {
+				t.Errorf("%q changed admission before its phase", row.Key)
+			}
+		default:
+			t.Errorf("%q: unknown admission %q", row.Key, row.Check.Admission)
 		}
 	}
-	if pending != 9 {
-		t.Fatalf("pending new keys = %d, want 9", pending)
+	for _, kind := range []string{"receiver", "span", "never", "existing", "P0-A"} {
+		if !seen[kind] {
+			t.Errorf("no registry row exercises admission %q", kind)
+		}
 	}
 }
 
@@ -542,10 +632,25 @@ func TestCaptureManifestSpanPassesIntact(t *testing.T) {
 		if got := span.Attributes().Len(); got != len(attrs) {
 			t.Errorf("%s: kept %d of %d attributes", tc.Name, got, len(attrs))
 		}
-		attrs["fabric.manifest.coverage_profile"] = "Jane Doe's coverage"
-		span = processOne(t, g, "fabric.capture_manifest", attrs)
-		if _, ok := span.Attributes().Get("fabric.manifest.coverage_profile"); ok {
-			t.Errorf("%s: free text kept on the manifest span", tc.Name)
+		for key, value := range map[string]any{
+			"fabric.manifest.coverage_profile": "Jane Doe's coverage",
+			"fabric.schema_version":            "fabric.decision/v1",
+			"fabric.capture.input":             "wire",
+			"fabric.tool.name":                 "search_flights",
+		} {
+			mutated := map[string]any{}
+			for k, v := range attrs {
+				mutated[k] = v
+			}
+			mutated[key] = value
+			span = processOne(t, g, "fabric.capture_manifest", mutated)
+			if _, ok := span.Attributes().Get(key); ok {
+				t.Errorf("%s: manifest span kept %s=%v", tc.Name, key, value)
+			}
 		}
+	}
+	// Outside the manifest span fabric.schema_version keeps its existing admission.
+	if !keptAs(t, g, decisionSpan("fabric.schema_version", valueOf(t, "fabric.decision/v1")), "fabric.schema_version", valueOf(t, "fabric.decision/v1")) {
+		t.Error("fabric.schema_version dropped from a decision span")
 	}
 }

@@ -101,6 +101,21 @@ PROJECTION_ENUMS = {
 }
 
 
+FIELD_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$")
+
+
+def field_set_keys(name: str) -> list[str]:
+    """Projection field-set keys of one registry row (spec 049 section 3, rule R63-10).
+
+    Split on commas; trim; spaces become underscores; a part without a dot
+    takes the namespace (text before the last dot) of the row's first part.
+    """
+    parts = [part.strip().replace(" ", "_") for part in name.split(",")]
+    first = parts[0]
+    namespace = first.rsplit(".", 1)[0] + "." if "." in first else ""
+    return [part if "." in part or not namespace else namespace + part for part in parts]
+
+
 @dataclass(frozen=True)
 class CoverageContractError(ValueError):
     """Stable, automation-safe validation failure."""
@@ -272,6 +287,12 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
     if len(set(ids)) != len(ids):
         _fail("coverage.fields.duplicate", "field-registry", "duplicate field id")
     policies = {r["value"] for r in vocab["policy"]}
+    projection_keys: set[str] = set()
+    for f in fields:
+        for key in field_set_keys(f.get("name", "")):
+            if not FIELD_KEY_RE.fullmatch(key) or key in projection_keys:
+                _fail("coverage.fields.key", f.get("id", "?"), f"projection key {key!r} invalid or duplicate")
+            projection_keys.add(key)
     for f in fields:
         fid = f.get("id", "?")
         if set(f) != FIELD_KEYS:
@@ -374,7 +395,8 @@ def _manifest_leaves(schema: Mapping[str, Any], prefix: str = "") -> list[str]:
 
 
 # ------------------------------------------------------------------ key checks (C0-1, C0-2, C0-4)
-CHECK_TYPES = {"enum", "const", "bool", "int", "string", "datetime", "array"}
+CHECK_TYPES = {"enum", "const", "bool", "int", "string", "datetime", "array", "never"}
+ADMISSIONS = {"existing", "never", "P0-A"}
 
 
 def check_value(check: Mapping[str, Any], value: Any, *, labels: str = "clear") -> bool:
@@ -385,6 +407,8 @@ def check_value(check: Mapping[str, Any], value: Any, *, labels: str = "clear") 
     ``s-`` form, as spec 048 J1 requires of ``fabric.source_id`` itself.
     """
     kind = check["type"]
+    if kind == "never":
+        return False
     if kind == "enum":
         return isinstance(value, str) and value in check["values"]
     if kind == "const":
@@ -407,8 +431,12 @@ def check_value(check: Mapping[str, Any], value: Any, *, labels: str = "clear") 
             if match.group(group) is not None and int(match.group(group)) > INT64_MAX:
                 return False
         rule = check.get("capture_labels")
-        if rule and labels == "pseudonymous" and match.group(rule["group"]) is not None:
-            return re.fullmatch(rule["pseudonymous_pattern"], match.group(rule["group"])) is not None
+        if rule and labels == "pseudonymous":
+            # Without a group the whole value is an operator label (048 J1 rule,
+            # spec 049 §4.2 LABEL exposure); with one, only the embedded source id.
+            subject = match.group(rule["group"]) if "group" in rule else value
+            if subject is not None:
+                return re.fullmatch(rule["pseudonymous_pattern"], subject) is not None
         return True
     if kind == "array":
         return (isinstance(value, list) and check.get("min_items", 0) <= len(value) <= check["max_items"]
@@ -433,13 +461,18 @@ def _check_shape(check: Any, where: str) -> None:
     kind = check["type"]
     allowed = {
         "enum": {"type", "values", "source"},
-        "const": {"type", "value"},
+        "const": {"type", "value", "span"},
         "bool": {"type"},
         "int": {"type", "min", "max"},
         "string": {"type", "pattern", "examples", "int64_groups", "capture_labels", "source"},
         "datetime": {"type", "examples"},
         "array": {"type", "items", "max_items", "min_items", "unique", "examples"},
-    }[kind]
+        "never": {"type"},
+    }[kind] | {"admission"}
+    if "admission" in check and check["admission"] not in ADMISSIONS:
+        _fail("coverage.keys.check", where, f"unknown admission {check['admission']!r}")
+    if (kind == "never") != (check.get("admission") == "never"):
+        _fail("coverage.keys.check", where, "a never check is exactly the never admission")
     if not set(check) <= allowed:
         _fail("coverage.keys.check", where, f"unknown check properties {sorted(set(check) - allowed)}")
     if kind == "enum" and (not check.get("values") or len(set(check["values"])) != len(check["values"])
@@ -465,6 +498,8 @@ def _check_shape(check: Any, where: str) -> None:
 def check_examples(check: Mapping[str, Any]) -> list[Any]:
     """Values that must pass a check: its examples, enum values, bounds, consts."""
     kind = check["type"]
+    if kind == "never":
+        return []
     if kind == "enum":
         return list(check["values"])
     if kind == "const":
@@ -522,6 +557,8 @@ def _enum_source_ok(row: Mapping[str, Any], check: Mapping[str, Any], reg: Mappi
         return all(re.search(rf"\b{re.escape(v)}\b", field["definition"]) for v in values)
     if source == "validator":
         return all(f"`{v}`" in row["validator"] for v in values)
+    if source.startswith("registry:"):
+        return values == list(reg["keys"][source.split(":", 1)[1]])
     if source.startswith("schema:"):
         node = _schema_node(manifest_schema, source.split(":", 1)[1])
         node = node.get("items", node)
@@ -529,20 +566,27 @@ def _enum_source_ok(row: Mapping[str, Any], check: Mapping[str, Any], reg: Mappi
     return False
 
 
+# The reused keys spec 049 rev 6.3 (R63-11) gives a new P0 validator.
+REUSED_CHECKED = {"fabric.event_id", "fabric.schema_version"}
+BACKTICK_REGEX = re.compile(r"`(\^[^`]*\$)`")
+
+
 def check_key_checks(root: Path, reg: Mapping[str, Any]) -> None:
     """Every new or changed key carries a closed check or says why it is pending."""
     manifest_schema = _load(root / FAMILY / SCHEMAS["manifest"])
-    point_ids = [p["id"] for p in reg["points"]["capture_points"]]
     for row in reg["keys"]["keys"]:
         key, where = row["key"], f"telemetry-keys:{row['key']}"
         has_check, pending = "check" in row, "check_pending" in row
         if row["change"] == "reused":
-            if has_check or pending:
-                _fail("coverage.keys.check", where, "reused keys keep their existing validator")
-            continue
-        if has_check == pending or (pending and not str(row["check_pending"]).strip()):
+            if pending or has_check != (key in REUSED_CHECKED):
+                _fail("coverage.keys.check", where, "reused keys keep their validator unless R63-11 adds one")
+            if not has_check:
+                continue
+        elif has_check == pending or (pending and not str(row["check_pending"]).strip()):
             _fail("coverage.keys.check", where, "exactly one of check or check_pending")
         if pending:
+            if row["change"] == "new":
+                _fail("coverage.keys.check", where, "every new key is admitted in P0 (spec 049 §4.2, R63-8)")
             continue
         check = row["check"]
         _check_shape(check, where)
@@ -555,10 +599,13 @@ def check_key_checks(root: Path, reg: Mapping[str, Any]) -> None:
         nested = check["items"] if check["type"] == "array" else check
         if nested["type"] == "enum" and not _enum_source_ok(row, nested, reg, manifest_schema):
             _fail("coverage.keys.enum_source", where, f"enum differs from its source {nested['source']}")
-        if key == "fabric.capture.point":
-            expected = "^(" + "|".join(re.escape(p) for p in point_ids) + ")@[0-9A-Za-z.+-]{1,32}$"
-            if check["pattern"] != expected:
-                _fail("coverage.keys.enum_source", where, "capture.point must list the registry's capture points")
+        # A validator that spells out its regex is the check's pattern, verbatim.
+        spelled = BACKTICK_REGEX.findall(row["validator"])
+        if spelled and check["type"] == "string":
+            labels = check.get("capture_labels", {})
+            used = {check["pattern"]} | ({labels["pseudonymous_pattern"]} if "group" not in labels and labels else set())
+            if not used <= set(spelled):
+                _fail("coverage.keys.pattern", where, "check pattern differs from the regex the validator names")
         prop = row.get("manifest_property")
         if prop and prop not in {"capture_points", "capture_points/fields", "unsealed_prior_epochs"}:
             _check_covers_schema(check, _schema_node(manifest_schema, prop), where)
@@ -773,7 +820,16 @@ def validate_projection(document: Mapping[str, Any], reg: Mapping[str, Any], sch
         if parents > 1:
             _fail("coverage.projection.link", where, "at most one parent link")
 
+    layer_keys: dict[str, set[str]] = {}
+    for row in reg["fields"]["fields"]:
+        layer_keys.setdefault(row["layer"], set()).update(field_set_keys(row["name"]))
+
     def fields_ok(layers: Mapping[str, Any], where: str) -> None:
+        for layer, fieldset in layers.items():
+            for key in fieldset:
+                if not key.startswith("x-") and key not in layer_keys.get(layer, set()):
+                    _fail("coverage.projection.field_key", f"{where}.{layer}.{key}",
+                          "field-set keys are derived from the registry rows of their layer (spec 049 §3)")
         for name, wrapper in _fields_of(layers):
             at = f"{where}.{name}"
             status = wrapper["status"]
@@ -948,12 +1004,26 @@ def pseudonym_v1(prefix: str, value: str, key: str | None) -> str:
     return f"{prefix}-{raw.hexdigest()[:32]}"
 
 
+# Spec 049 §2.9 rule 2 (rev 6.3, R63-3): prefix -> type string of function v2.
+PSEUDONYM_V2_TYPES = {
+    "sess": "session", "usr": "user", "act": "actor", "conv": "conversation", "turn": "turn",
+    "trg": "trigger", "dsp": "dispatch", "agt": "agent", "tgt": "target", "hst": "host",
+    "sbx": "sandbox", "mcps": "mcp_session", "rpc": "jsonrpc", "dbn": "db_namespace",
+    "txn": "db_transaction", "mst": "memory_store", "mkey": "memory_key", "p": "provider",
+}
+
+
 def pseudonym_v2(prefix: str, id_type: str, value: str, key: str | None) -> str | None:
-    """``prefix-`` + 32 hex of HMAC(k_type, value), k_type = HMAC(key, "fabric-id/v2/" + type)."""
+    """``prefix-`` + 32 hex of HMAC(k_type, value), k_type = HMAC(key, "fabric-id/v2/" + type).
+
+    The key is UTF-8; the value is the caller's string exactly as given, UTF-8
+    with ``surrogatepass`` (spec 049 §2.9 rule 2, derivation input).
+    """
     if not key:
         return None  # spec 049 §2.9 rule 5: v2 ids are omitted without a key
     k_type = hmac.new(key.encode("utf-8"), f"fabric-id/v2/{id_type}".encode("utf-8"), hashlib.sha256).digest()
-    return f"{prefix}-{hmac.new(k_type, value.encode('utf-8'), hashlib.sha256).hexdigest()[:32]}"
+    digest = hmac.new(k_type, value.encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()
+    return f"{prefix}-{digest[:32]}"
 
 
 def key_id(key: str) -> str:
@@ -1025,6 +1095,8 @@ def validate_vectors(document: Mapping[str, Any], reg: Mapping[str, Any], root: 
         for index, case in enumerate(document["cases"]):
             where = f"$.cases[{index}]"
             if case["function"] == "v2":
+                if PSEUDONYM_V2_TYPES.get(case["prefix"]) != case["type"]:
+                    _fail("coverage.vectors.pseudonym", where, f"{case['name']}: prefix and type disagree with §2.9")
                 got = pseudonym_v2(case["prefix"], case["type"], case["value"], case["key"])
             elif case["function"] == "legacy_provider":
                 got = "p-" + hashlib.sha256(case["value"].encode("utf-8")).hexdigest()[:16]
@@ -1032,6 +1104,9 @@ def validate_vectors(document: Mapping[str, Any], reg: Mapping[str, Any], root: 
                 got = pseudonym_v1(case["prefix"], case["value"], case["key"])
             if got != case["pseudonym"]:
                 _fail("coverage.vectors.pseudonym", where, f"{case['name']}: pseudonym differs")
+        covered = {c["prefix"] for c in document["cases"] if c["function"] == "v2" and c["pseudonym"]}
+        if covered != set(PSEUDONYM_V2_TYPES):
+            _fail("coverage.vectors.pseudonym", "$.cases", f"no keyed v2 vector for {sorted(set(PSEUDONYM_V2_TYPES) - covered)}")
         for index, case in enumerate(document["key_ids"]):
             if key_id(case["key"]) != case["key_id"]:
                 _fail("coverage.vectors.key_id", f"$.key_ids[{index}]", "key id differs")

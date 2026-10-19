@@ -1,7 +1,7 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 8,
-  "check_rule": "check is the machine-readable form of validator: the closed admission fabricguard applies to the key on every span (C0-4, scripts/tests and the fabricguard key-by-key test read it). check_pending names why a new key is not admitted yet; such a key is stripped. Keys with owner receiver are stripped from every agent-supplied record.",
+  "registry_revision": 9,
+  "check_rule": "check is the machine-readable form of validator: the closed admission fabricguard applies to the key (C0-4; scripts/tests and the fabricguard key-by-key test read it; scripts/contracts/generate_p0_contracts.py derives it). Every key is admitted in P0 (spec 049 §4.2): admission names the exceptions, 'existing' (enforced by fabricguard code that predates spec 049), 'never' (no value is admitted) or 'P0-A' (a tightening validator that switches in its listed phase; today's admission stays until then). Keys with owner receiver are stripped from every agent-supplied record. A check with span applies only on that span.",
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -10,7 +10,14 @@
       "validator": "ID: `agt-` + 32 hex",
       "phase": "P0-A",
       "note": "Admitted clear today.",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "string",
+        "pattern": "^agt-[0-9a-f]{32}$",
+        "examples": [
+          "agt-9f86d081884c7d659a2feaa0c55ad015"
+        ],
+        "admission": "P0-A"
+      }
     },
     {
       "key": "fabric.file.path",
@@ -19,7 +26,10 @@
       "validator": "never admitted; the SDK stops emitting it in pseudonymous mode",
       "phase": "P0-A",
       "note": "Clear path moves to the `artifact.locator` role.",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "never",
+        "admission": "never"
+      }
     },
     {
       "key": "fabric.heartbeat.kind",
@@ -37,7 +47,8 @@
           "final",
           "segment_seal"
         ],
-        "source": "validator"
+        "source": "validator",
+        "admission": "existing"
       }
     },
     {
@@ -47,7 +58,13 @@
       "validator": "ID: `tgt-` + 32 hex (newly admitted)",
       "phase": "P0-A",
       "note": "Decided: pseudonymise. Emitted clear today when not hashed and dropped by the Node; `fabric.interaction.target_hash` stays.",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "string",
+        "pattern": "^tgt-[0-9a-f]{32}$",
+        "examples": [
+          "tgt-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
     },
     {
       "key": "fabric.memory.key",
@@ -56,7 +73,13 @@
       "validator": "ID: `mkey-` + 32 hex (newly admitted)",
       "phase": "P0-A",
       "note": "Decided: pseudonymise. Emitted clear today and dropped by the Node; the clear key stays in the memory content roles.",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "string",
+        "pattern": "^mkey-[0-9a-f]{32}$",
+        "examples": [
+          "mkey-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
     },
     {
       "key": "fabric.session_id",
@@ -65,7 +88,14 @@
       "validator": "ID: `sess-` + 32 hex under a pseudonymous Node; clear only when the Node is configured `identity_mode: clear`",
       "phase": "P0-A",
       "note": "Admitted clear today.",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "string",
+        "pattern": "^sess-[0-9a-f]{32}$",
+        "examples": [
+          "sess-9f86d081884c7d659a2feaa0c55ad015"
+        ],
+        "admission": "P0-A"
+      }
     },
     {
       "key": "fabric.user_id",
@@ -74,7 +104,13 @@
       "validator": "ID: `usr-` + 32 hex (newly admitted; clear values rejected)",
       "phase": "P0-A",
       "note": "Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted).",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "string",
+        "pattern": "^usr-[0-9a-f]{32}$",
+        "examples": [
+          "usr-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
     },
     {
       "key": "fabric.wire.request_sha256",
@@ -83,7 +119,14 @@
       "validator": "DIGEST: bare 64 hex (built form); digest of the stored, protected request object; absent when nothing is stored",
       "phase": "P0-A",
       "note": "Today the digest of the original body (`_pipeline.py:136,293,302`). Never computed over the original under redact, tokenize, masked_only or metadata_only.",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ],
+        "admission": "existing"
+      }
     },
     {
       "key": "fabric.wire.response_sha256",
@@ -92,15 +135,29 @@
       "validator": "DIGEST: bare 64 hex (built form); digest of the stored, protected response object; absent when nothing is stored",
       "phase": "P0-A",
       "note": "Today the digest of the original body (`_pipeline.py:141,293,302`).",
-      "check_pending": "changed validator of an existing key: spec 049 §8.2 schedules it in P0-A"
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ],
+        "admission": "existing"
+      }
     },
     {
       "key": "db.system.name",
       "change": "new",
       "field": "N38",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[a-z][a-z0-9_.]{0,63}$` (OTel `db.system.name` values); emitted as is (public software identifier)",
       "phase": "P4",
-      "check_pending": "spec 049 §4.2 gives this LABEL key the validator 'pattern, exposure rule' without naming the pattern or the exposure rule (spec 048 §7 defines exposure only for model names and the s-/svc- capture labels); not admitted until the owner fixes both"
+      "check": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.]{0,63}$",
+        "examples": [
+          "postgresql",
+          "sqlite"
+        ]
+      }
     },
     {
       "key": "fabric.actor.id",
@@ -157,7 +214,7 @@
       "key": "fabric.batch.item_index",
       "change": "new",
       "field": "S21",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P2",
       "check": {
         "type": "int",
@@ -243,7 +300,7 @@
       "key": "fabric.capture.manifest_seq",
       "change": "new",
       "field": "X39",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "check": {
         "type": "int",
@@ -254,12 +311,11 @@
       "key": "fabric.capture.point",
       "change": "new",
       "field": "X26",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$` (Fabric-defined id@version); emitted as is",
       "phase": "P1",
       "check": {
         "type": "string",
-        "pattern": "^(fabric\\.self|install\\.config|wire\\.py\\.httpx|wire\\.ts\\.undici|explicit\\.call_recorder|explicit\\.byte_boundary|explicit\\.final_http|explicit\\.subprocess_artifact|sdk\\.records|run\\.scope|mcp\\.wrapper|mcp\\.client|exec\\.subprocess|exec\\.audit|db\\.dbapi|http\\.nonmodel|file\\.audit|remote\\.ssh_wrapper|ui\\.automation|rt\\.websocket|reconstruct\\.parse|reconstruct\\.infer|host\\.ebpf|host\\.auditd|feed\\.independent|delivery\\.receipts)@[0-9A-Za-z.+-]{1,32}$",
-        "source": "capture-point registry ids",
+        "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$",
         "examples": [
           "wire.py.httpx@1.2.0",
           "sdk.records@0.9.0+local"
@@ -336,7 +392,7 @@
       "key": "fabric.context.tokens_after",
       "change": "new",
       "field": "D15",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P3",
       "check": {
         "type": "int",
@@ -347,7 +403,7 @@
       "key": "fabric.context.tokens_before",
       "change": "new",
       "field": "D15",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P3",
       "check": {
         "type": "int",
@@ -519,15 +575,26 @@
       "key": "fabric.control.policy_id",
       "change": "new",
       "field": "D08",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P3",
-      "check_pending": "spec 049 §4.2 gives this LABEL key the validator 'pattern, exposure rule' without naming the pattern or the exposure rule (spec 048 §7 defines exposure only for model names and the s-/svc- capture labels); not admitted until the owner fixes both"
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "refund-approvals",
+          "acme/policies:v7",
+          "lbl-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
     },
     {
       "key": "fabric.control.policy_version",
       "change": "new",
       "field": "D08",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P3",
       "check": {
         "type": "int",
@@ -596,7 +663,7 @@
       "key": "fabric.db.rows_affected",
       "change": "new",
       "field": "N41",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ -1 (-1 = unknown)",
       "phase": "P4",
       "check": {
         "type": "int",
@@ -607,7 +674,7 @@
       "key": "fabric.db.rows_fetched",
       "change": "new",
       "field": "N41",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ -1 (-1 = unknown)",
       "phase": "P4",
       "check": {
         "type": "int",
@@ -679,9 +746,20 @@
       "key": "fabric.dispatch.kind",
       "change": "new",
       "field": "S20",
-      "validator": "META: closed enum (field type)",
+      "validator": "META: closed enum `queue`, `task`, `job`, `invocation`, `provider_batch`, `webhook`",
       "phase": "P2",
-      "check_pending": "spec 049 S20 names the dispatch kinds only in prose (queue, task, job, invocation, provider batch, webhook delivery); the closed enum values are not defined, so the key is not admitted until the owner fixes them"
+      "check": {
+        "type": "enum",
+        "values": [
+          "queue",
+          "task",
+          "job",
+          "invocation",
+          "provider_batch",
+          "webhook"
+        ],
+        "source": "field_type"
+      }
     },
     {
       "key": "fabric.dispatch.state",
@@ -699,7 +777,7 @@
           "dead_lettered",
           "unknown"
         ],
-        "source": "field_definition"
+        "source": "field_type"
       }
     },
     {
@@ -795,17 +873,31 @@
       "key": "fabric.framework.name",
       "change": "new",
       "field": "C15",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^@?[a-z0-9][a-z0-9._/-]{0,127}$` (normalised package name); emitted as is (public software identifier)",
       "phase": "P2",
-      "check_pending": "spec 049 §4.2 gives this LABEL key the validator 'pattern, exposure rule' without naming the pattern or the exposure rule (spec 048 §7 defines exposure only for model names and the s-/svc- capture labels); not admitted until the owner fixes both"
+      "check": {
+        "type": "string",
+        "pattern": "^@?[a-z0-9][a-z0-9._/-]{0,127}$",
+        "examples": [
+          "langgraph",
+          "@openai/agents"
+        ]
+      }
     },
     {
       "key": "fabric.framework.version",
       "change": "new",
       "field": "C15",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`; emitted as is (public software identifier)",
       "phase": "P2",
-      "check_pending": "spec 049 §4.2 gives this LABEL key the validator 'pattern, exposure rule' without naming the pattern or the exposure rule (spec 048 §7 defines exposure only for model names and the s-/svc- capture labels); not admitted until the owner fixes both"
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
+        "examples": [
+          "0.2.14",
+          "1.0.0rc1"
+        ]
+      }
     },
     {
       "key": "fabric.input.kind",
@@ -959,7 +1051,7 @@
       "key": "fabric.manifest.capture_policy.policy_version",
       "change": "new",
       "field": "X31",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P0-A",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_policy/policy_version",
@@ -984,24 +1076,20 @@
       "key": "fabric.manifest.clock.domain",
       "change": "new",
       "field": "X25",
-      "validator": "META: closed enum `wall_utc`, `monotonic_process`",
+      "validator": "META: const `wall_utc`",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "clock/domain",
       "check": {
-        "type": "enum",
-        "values": [
-          "wall_utc",
-          "monotonic_process"
-        ],
-        "source": "validator"
+        "type": "const",
+        "value": "wall_utc"
       }
     },
     {
       "key": "fabric.manifest.clock.uncertainty_ns",
       "change": "new",
       "field": "X25",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "clock/uncertainty_ns",
@@ -1189,7 +1277,7 @@
       "key": "fabric.manifest.limits.max_inflight_bytes",
       "change": "new",
       "field": "X34",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "limits/max_inflight_bytes",
@@ -1229,7 +1317,7 @@
       "key": "fabric.manifest.limits.part_min_bytes",
       "change": "new",
       "field": "X34",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "limits/part_min_bytes",
@@ -1269,7 +1357,7 @@
       "key": "fabric.manifest.manifest_seq",
       "change": "new",
       "field": "X39",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "manifest_seq",
@@ -1282,7 +1370,7 @@
       "key": "fabric.manifest.max_clock_uncertainty_ns",
       "change": "new",
       "field": "X25",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "manifest_property": "clock/max_uncertainty_ns",
       "check": {
@@ -1571,9 +1659,40 @@
       "key": "fabric.mcp.method",
       "change": "new",
       "field": "N22",
-      "validator": "META: closed enum (field type)",
+      "validator": "META: closed enum of MCP method names (section 4.2 list) plus `other`",
       "phase": "P2 (R), P4 (H)",
-      "check_pending": "spec 049 N22 types mcp.method as 'label (closed list + other)' without the list; not admitted until the owner fixes the closed list"
+      "check": {
+        "type": "enum",
+        "values": [
+          "initialize",
+          "ping",
+          "tools/list",
+          "tools/call",
+          "resources/list",
+          "resources/templates/list",
+          "resources/read",
+          "resources/subscribe",
+          "resources/unsubscribe",
+          "prompts/list",
+          "prompts/get",
+          "completion/complete",
+          "logging/setLevel",
+          "sampling/createMessage",
+          "elicitation/create",
+          "roots/list",
+          "notifications/initialized",
+          "notifications/cancelled",
+          "notifications/progress",
+          "notifications/message",
+          "notifications/resources/updated",
+          "notifications/resources/list_changed",
+          "notifications/tools/list_changed",
+          "notifications/prompts/list_changed",
+          "notifications/roots/list_changed",
+          "other"
+        ],
+        "source": "registry:mcp_methods"
+      }
     },
     {
       "key": "fabric.mcp.protocol_version",
@@ -1593,9 +1712,16 @@
       "key": "fabric.mcp.server_version",
       "change": "new",
       "field": "C26",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`; emitted as is (public software identifier)",
       "phase": "P2",
-      "check_pending": "spec 049 §4.2 gives this LABEL key the validator 'pattern, exposure rule' without naming the pattern or the exposure rule (spec 048 §7 defines exposure only for model names and the s-/svc- capture labels); not admitted until the owner fixes both"
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
+        "examples": [
+          "1.4.2",
+          "2025.06.0"
+        ]
+      }
     },
     {
       "key": "fabric.memory.op",
@@ -1703,7 +1829,7 @@
       "key": "fabric.process.exit_code",
       "change": "new",
       "field": "N35",
-      "validator": "META: integer range",
+      "validator": "META: integer, signed 32-bit",
       "phase": "P4",
       "check": {
         "type": "int",
@@ -1715,18 +1841,18 @@
       "key": "fabric.process.pid",
       "change": "new",
       "field": "N35",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P4",
       "check": {
         "type": "int",
-        "min": 0
+        "min": 1
       }
     },
     {
       "key": "fabric.process.signal",
       "change": "new",
       "field": "N35",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P4",
       "check": {
         "type": "int",
@@ -1775,15 +1901,25 @@
       "key": "fabric.run.agent_policy_id",
       "change": "new",
       "field": "C33",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P2",
-      "check_pending": "spec 049 §4.2 gives this LABEL key the validator 'pattern, exposure rule' without naming the pattern or the exposure rule (spec 048 §7 defines exposure only for model names and the s-/svc- capture labels); not admitted until the owner fixes both"
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "support-agent-policy",
+          "lbl-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
     },
     {
       "key": "fabric.run.agent_policy_version",
       "change": "new",
       "field": "C33",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P2",
       "check": {
         "type": "int",
@@ -1943,7 +2079,7 @@
       "key": "fabric.run.permissions.count",
       "change": "new",
       "field": "C32",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P2",
       "check": {
         "type": "int",
@@ -2456,7 +2592,7 @@
       "key": "fabric.wire.first_chunk_offset_ns",
       "change": "new",
       "field": "S30",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "check": {
         "type": "int",
@@ -2490,7 +2626,7 @@
       "key": "fabric.workflow.iteration",
       "change": "new",
       "field": "S18",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P2",
       "check": {
         "type": "int",
@@ -2501,27 +2637,50 @@
       "key": "fabric.workflow.node",
       "change": "new",
       "field": "S18",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P2",
-      "check_pending": "spec 049 §4.2 gives this LABEL key the validator 'pattern, exposure rule' without naming the pattern or the exposure rule (spec 048 §7 defines exposure only for model names and the s-/svc- capture labels); not admitted until the owner fixes both"
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "plan",
+          "act",
+          "lbl-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
     },
     {
       "key": "fabric.event_id",
       "change": "reused",
       "field": "X02",
-      "validator": "existing validator (uuid4)",
+      "validator": "ID: uuid4 (lowercase, dashed) — new value validator added in P0; the key is allowlisted today without one",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
-      "manifest_property": "event_id"
+      "manifest_property": "event_id",
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "examples": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
     },
     {
       "key": "fabric.schema_version",
       "change": "reused",
       "field": "X01",
-      "validator": "existing validator (const `fabric.capture-manifest/v1` on this span)",
+      "validator": "existing key; P0 adds the const `fabric.capture-manifest/v1` on the manifest span",
       "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
-      "manifest_property": "schema_version"
+      "manifest_property": "schema_version",
+      "check": {
+        "type": "const",
+        "value": "fabric.capture-manifest/v1",
+        "span": "fabric.capture_manifest"
+      }
     },
     {
       "key": "fabric.sdk.version",
@@ -2552,5 +2711,42 @@
     }
   ],
   "manifest_span": "fabric.capture_manifest",
-  "digest_form": "sha256:<64 lowercase hex> on every new key; keys named `*_digest`. Built keys ending in `_sha256`/`_hash` keep bare hex (Node hash-key rule)."
+  "digest_form": "sha256:<64 lowercase hex> on every new key; keys named `*_digest`. Built keys ending in `_sha256`/`_hash` keep bare hex (Node hash-key rule).",
+  "label_exposure": "Public software identifiers are emitted as is; operator labels follow the 048 J1 rule with prefix `lbl-` (section 4.2).",
+  "mcp_methods": [
+    "initialize",
+    "ping",
+    "tools/list",
+    "tools/call",
+    "resources/list",
+    "resources/templates/list",
+    "resources/read",
+    "resources/subscribe",
+    "resources/unsubscribe",
+    "prompts/list",
+    "prompts/get",
+    "completion/complete",
+    "logging/setLevel",
+    "sampling/createMessage",
+    "elicitation/create",
+    "roots/list",
+    "notifications/initialized",
+    "notifications/cancelled",
+    "notifications/progress",
+    "notifications/message",
+    "notifications/resources/updated",
+    "notifications/resources/list_changed",
+    "notifications/tools/list_changed",
+    "notifications/prompts/list_changed",
+    "notifications/roots/list_changed",
+    "other"
+  ],
+  "dispatch_kinds": [
+    "queue",
+    "task",
+    "job",
+    "invocation",
+    "provider_batch",
+    "webhook"
+  ]
 }

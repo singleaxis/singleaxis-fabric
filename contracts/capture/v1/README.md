@@ -136,7 +136,14 @@ emitters).**
   `fabric.capture.input=records`, `fabric.event_id` and
   `fabric.attempt.uid`; its bodies arrive with the role table in P0-A).
   Exchange spans may carry `fabric.capture.input=wire`, `fabric.event_id`
-  and `fabric.run.segment_id`.
+  and `fabric.run.segment_id`. Loss, heartbeat (every kind) and manifest
+  records never carry `fabric.capture.input`: they belong to the source,
+  i.e. to both inputs.
+- *Manifests on the spool.* A capture manifest is spooled as a `marker` of
+  kind `manifest` whose `manifest` object holds the `fabric.capture_manifest`
+  span attributes (`schema/capture-manifest-record-v1.schema.json`) and whose
+  `last_sequence` is the manifest's `after_source_sequence`; it never
+  occupies a position.
 - *Run segments and markers.* `segment_seal` is a heartbeat kind (spool
   kind `marker`, exported as a `fabric.capture_heartbeat` span) that seals
   one run segment (spec 049 §2.12). The run-marker keys appear only on the

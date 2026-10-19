@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -23,8 +24,10 @@ from contracts.validate_coverage_contracts import (  # noqa: E402
     PSEUDONYM_V1_VECTORS,
     REGISTRY,
     SPEC,
+    PSEUDONYM_V2_TYPES,
     CoverageContractError,
     check_value,
+    field_set_keys,
     load_registries,
     manifest_digest,
     parse_resume_token,
@@ -347,9 +350,24 @@ def test_c0_3_tampered_pseudonym_vector_is_rejected(tmp_path: Path) -> None:
     _rewrite(
         root,
         "fixtures/vectors/pseudonym-v2.json",
-        lambda d: d["cases"][0].update(type="session"),
+        lambda d: d["cases"][0].update(type="user"),
     )
     _assert_code(root, "coverage.vectors.pseudonym")
+
+
+def test_c0_3_v2_vectors_cover_every_prefix_of_the_spec_table() -> None:
+    vectors = json.loads((REPO_ROOT / FAMILY / "fixtures/vectors/pseudonym-v2.json").read_text())
+    keyed = {(c["prefix"], c["type"]) for c in vectors["cases"] if c["function"] == "v2" and c["pseudonym"]}
+    assert keyed == set(PSEUDONYM_V2_TYPES.items())
+    spec = (REPO_ROOT / SPEC).read_text(encoding="utf-8")
+    for prefix, id_type in PSEUDONYM_V2_TYPES.items():
+        assert f"| `{prefix}-` | `{id_type}` |" in spec, prefix
+    for case in vectors["cases"]:
+        if case["function"] == "v2" and case["pseudonym"]:
+            assert case["pseudonym"] == pseudonym_v2(case["prefix"], case["type"], case["value"], case["key"])
+            assert re.fullmatch(rf"{case['prefix']}-[0-9a-f]{{32}}", case["pseudonym"])
+    hexes = [c["pseudonym"].split("-", 1)[1] for c in vectors["cases"] if c["pseudonym"]]
+    assert len(set(hexes)) == len(hexes), "every vector is domain-separated"
 
 
 def test_c0_3_v1_function_drift_is_detected(tmp_path: Path) -> None:
@@ -361,29 +379,66 @@ def test_c0_3_v1_function_drift_is_detected(tmp_path: Path) -> None:
     _assert_code(root, "coverage.vectors.pseudonym")
 
 
-def test_c0_4_every_new_key_is_admitted_with_a_check_or_pending_with_a_reason() -> None:
+def test_c0_4_every_key_is_closed_and_admitted_in_p0() -> None:
     reg = load_registries(REPO_ROOT)
-    for row in reg["keys"]["keys"]:
-        if row["change"] == "reused":
-            assert "check" not in row and "check_pending" not in row
-        else:
-            assert ("check" in row) != ("check_pending" in row), row["key"]
-    pending = {row["key"] for row in reg["keys"]["keys"] if row["change"] == "new" and "check_pending" in row}
-    assert pending == {
-        "db.system.name",
-        "fabric.control.policy_id",
-        "fabric.dispatch.kind",
-        "fabric.framework.name",
-        "fabric.framework.version",
-        "fabric.mcp.method",
-        "fabric.mcp.server_version",
-        "fabric.run.agent_policy_id",
-        "fabric.workflow.node",
+    rows = reg["keys"]["keys"]
+    assert not [row["key"] for row in rows if "check_pending" in row]
+    for row in rows:
+        if row["change"] != "reused" or row["key"] in {"fabric.event_id", "fabric.schema_version"}:
+            assert "check" in row, row["key"]
+    admissions = {row["key"]: row["check"].get("admission") for row in rows if "check" in row}
+    assert {k: v for k, v in admissions.items() if v} == {
+        "fabric.delegation.to_agent": "P0-A",
+        "fabric.session_id": "P0-A",
+        "fabric.file.path": "never",
+        "fabric.heartbeat.kind": "existing",
+        "fabric.wire.request_sha256": "existing",
+        "fabric.wire.response_sha256": "existing",
     }
-    heartbeat = next(row for row in reg["keys"]["keys"] if row["key"] == "fabric.heartbeat.kind")
+    heartbeat = next(row for row in rows if row["key"] == "fabric.heartbeat.kind")
     assert "segment_seal" in heartbeat["check"]["values"]
-    receiver = [row["key"] for row in reg["keys"]["keys"] if row.get("owner") == "receiver"]
+    clock = next(row for row in rows if row["key"] == "fabric.manifest.clock.domain")
+    assert clock["check"] == {"type": "const", "value": "wall_utc"}
+    receiver = [row["key"] for row in rows if row.get("owner") == "receiver"]
     assert receiver == ["fabric.source.authenticated"]
+
+
+def test_c0_4_operator_labels_follow_capture_labels() -> None:
+    reg = load_registries(REPO_ROOT)
+    for key in ("fabric.control.policy_id", "fabric.run.agent_policy_id", "fabric.workflow.node"):
+        check = next(row["check"] for row in reg["keys"]["keys"] if row["key"] == key)
+        assert check_value(check, "refund-approvals")
+        assert not check_value(check, "refund-approvals", labels="pseudonymous")
+        assert check_value(check, "lbl-" + "a" * 32, labels="pseudonymous")
+
+
+def test_c0_4_a_spelled_out_regex_is_the_check_pattern(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+
+    def drift(document: Any) -> None:
+        _key(document, "fabric.framework.name")["check"]["pattern"] = "^@?[a-z0-9][a-z0-9._/-]{0,200}$"
+
+    _edit_registry(root, "keys", drift)
+    _assert_code(root, "coverage.keys.pattern")
+
+
+def test_c0_4_a_new_key_cannot_stay_pending(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+
+    def pend(document: Any) -> None:
+        row = _key(document, "fabric.mcp.method")
+        row["check_pending"] = row.pop("check") and "waiting"
+
+    _edit_registry(root, "keys", pend)
+    _assert_code(root, "coverage.keys.check")
+
+
+def test_projection_field_keys_are_derived_from_the_registry() -> None:
+    assert field_set_keys("usage.cache_read, cache_creation, reasoning tokens") == [
+        "usage.cache_read",
+        "usage.cache_creation",
+        "usage.reasoning_tokens",
+    ]
 
 
 def test_c0_4_predecessor_admission_follows_capture_labels() -> None:

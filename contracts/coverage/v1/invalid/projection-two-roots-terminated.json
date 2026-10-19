@@ -8,7 +8,7 @@
   },
   "field_registry": {
     "schema_version": "fabric.field-registry/v1",
-    "registry_revision": 8
+    "registry_revision": 9
   },
   "coverage_profile": "fabric.profile.model-calls/v1",
   "inputs": {
@@ -284,6 +284,12 @@
             "provenance": "observed",
             "capture_point": "reconstruct.parse@0.9.0",
             "reason": "unsupported_api"
+          },
+          "usage.reasoning_tokens": {
+            "status": "absent",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "parse": "parsed"
           },
           "usage.basis": {
             "status": "captured",

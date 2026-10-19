@@ -46,7 +46,7 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 56
+    assert len(validated) == 61
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -557,3 +557,20 @@ def test_manifest_record_is_the_generated_span_form() -> None:
         broken = copy.deepcopy(record)
         broken["attributes"][marker] = "x"
         _assert_error(broken, "capture.schema")
+
+
+def test_manifest_is_spooled_as_a_marker_without_a_position() -> None:
+    marker = _json("fixtures/valid/spool-record-manifest.json")
+    attributes = marker["marker"]["manifest"]
+    assert marker["marker"]["kind"] == "manifest"
+    assert (
+        marker["marker"]["last_sequence"]
+        == attributes["fabric.manifest.after_source_sequence"]
+    )
+    assert "fabric.capture.input" not in attributes
+    broken = copy.deepcopy(marker)
+    broken["marker"]["manifest"]["fabric.capture.input"] = "wire"
+    _assert_error(broken, "capture.marker.manifest")
+    broken = copy.deepcopy(marker)
+    broken["marker"]["manifest_seq"] = 0
+    _assert_error(broken, "capture.schema")

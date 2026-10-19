@@ -525,6 +525,9 @@ func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool 
 		g.applyCaptureProfile(span)
 	} else {
 		g.filterAttributes(span.Attributes(), allowed, "span")
+		if span.Name() == "fabric.capture_manifest" {
+			g.applyManifestProfile(span.Attributes())
+		}
 	}
 	normalizedName := activityCategory(span.Name(), span.Attributes())
 	if span.Name() != normalizedName {

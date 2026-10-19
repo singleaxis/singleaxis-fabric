@@ -102,18 +102,23 @@ exported unchanged (checked by pattern), and you guarantee they contain no
 personal data. In global-tracer mode the capture spans share the host's
 resource, whose clear `service.name` is dropped by default.
 
-Spec 049 (four-layer capture contract) admits each of its new telemetry keys
-with the closed check declared in
-`contracts/coverage/v1/registry/telemetry-keys-v1.json` (a Go test verifies
-`coverage_keys.go` against that file key by key); free text never passes. A
-key is admitted on capture spans only on the record classes and heartbeat
-kinds the spec places it on: `segment_seal` is a heartbeat kind, and the
-segment, predecessor, termination and branch keys stay on their marker kinds.
-Under `capture_labels: pseudonymous` a predecessor entry must name its source
-in `s-<32 hex>` form. Keys whose validator the spec has not fixed yet
-(`check_pending`) are not admitted. `fabric.source.authenticated` is
-receiver-owned: it is stripped from every agent-supplied record and cannot be
-added through `extra_allowed_*` (stamping at a bound ingress is P0-A).
+Spec 049 (four-layer capture contract, rev 6.3) admits every one of its
+telemetry keys in P0 with the closed check declared in
+`contracts/coverage/v1/registry/telemetry-keys-v1.json`; the validator table in
+`coverage_keys.go` is generated from that file and a Go test verifies it key
+by key; free text never passes. Tightening validators of existing keys
+(`fabric.session_id`, `fabric.delegation.to_agent`) switch in P0-A. A key is
+admitted on capture spans only on the record classes and heartbeat kinds the
+spec places it on: `segment_seal` is a heartbeat kind, and the segment,
+predecessor, termination and branch keys stay on their marker kinds. Under
+`capture_labels: pseudonymous` a predecessor entry must name its source in
+`s-<32 hex>` form and an operator label (`fabric.control.policy_id`,
+`fabric.run.agent_policy_id`, `fabric.workflow.node`) must be `lbl-<32 hex>`.
+The `fabric.capture_manifest` span is closed to the manifest keys, with
+`fabric.schema_version` only as `fabric.capture-manifest/v1`.
+`fabric.source.authenticated` is receiver-owned: it is stripped from every
+agent-supplied record and cannot be added through `extra_allowed_*`
+(stamping at a bound ingress is P0-A).
 
 Content (spec 048) has its own path: an `otlp/content*` receiver (OTLP/HTTP
 only, port 4319) feeds a `logs/content*` pipeline that runs only

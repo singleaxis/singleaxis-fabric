@@ -8,7 +8,7 @@
   },
   "field_registry": {
     "schema_version": "fabric.field-registry/v1",
-    "registry_revision": 8
+    "registry_revision": 9
   },
   "coverage_profile": "fabric.profile.model-calls/v1",
   "inputs": {

@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.run-marker-vectors/v1",
-  "rule": "Spec 049 §2.10, §2.12 rule 4 and X41-X46: run_start carries the segment's predecessors (none for the root), resumable and open_deadline_s on the root, declared fork branches and the branch ids it consumes; segment_seal (a fabric.capture_heartbeat span with fabric.heartbeat.kind=segment_seal) carries fabric.segment.* and fabric.run.terminal, plus fabric.run.resumable when it issued a token; run_end carries the block exit status; run markers name the manifest in force by id and digest, every heartbeat the latest manifest_seq. 'admitted' attribute sets pass fabricguard intact under the stated capture_labels mode; each 'stripped' value is removed.",
+  "rule": "Spec 049 §2.10, §2.12 rule 4 and X41-X46: run_start carries the segment's predecessors (none for the root), resumable and open_deadline_s on the root, declared fork branches and the branch ids it consumes; segment_seal (a fabric.capture_heartbeat span with fabric.heartbeat.kind=segment_seal) carries fabric.segment.* and fabric.run.terminal, plus fabric.run.resumable when it issued a token; run_end carries the block exit status; run markers name the manifest in force by id and digest, every heartbeat the latest manifest_seq. Heartbeats never carry fabric.capture.input. 'admitted' attribute sets pass fabricguard intact under the stated capture_labels mode; each 'stripped' value is removed.",
   "admitted": [
     {
       "name": "root run_start",
