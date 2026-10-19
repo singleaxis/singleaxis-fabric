@@ -1,0 +1,583 @@
+# Copyright 2026 AI5Labs Research OPC Private Limited
+# SPDX-License-Identifier: Apache-2.0
+"""The content role table (spec 049 §4.3), as the agent applies it before spooling.
+
+One row per role: permitted boundaries, provenance and media types, default policy and
+cap. ``contracts/coverage/v1/registry/content-roles-v1.json`` is the source of truth; a
+test pins this copy to it (like ``model-exposure-v1.json`` and :mod:`fabric._model_names`).
+A record the table refuses never reaches the spool: it is a counted loss, never sent.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+ROLE_TABLE_VERSION = "fabric.content-role-table/v1@3"
+DEFAULT_MAX_BODY_BYTES = 33554432  # 32 MiB (§7.4)
+NODE_MAX_OBJECT_BYTES = 66060288  # 63 MiB: the Node's request cap is 64 MiB
+_CAPS = {"64 KiB": 64 << 10, "256 KiB": 256 << 10, "1 MiB": 1 << 20, "4 MiB": 4 << 20}
+_MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
+
+
+@dataclass(frozen=True, slots=True)
+class Role:
+    role: str
+    boundary: tuple[str, ...]
+    provenance: tuple[str, ...]
+    media_types: tuple[str, ...]
+    default_policy: str  # content | off (§2.7)
+    cap: str  # a size, or "max_body_bytes" (the deployment's configured value)
+
+    def cap_bytes(self, max_body_bytes: int) -> int:
+        return max_body_bytes if self.cap == "max_body_bytes" else _CAPS[self.cap]
+
+    def admits_media(self, media_type: str) -> bool:
+        """Exact ``type/subtype``, ``type/*`` or ``*`` (any value passing the 047 §7 rule)."""
+        if not _MEDIA_RE.fullmatch(media_type):
+            return False
+        major = media_type.split("/", 1)[0] + "/*"
+        return any(m in ("*", media_type, major) for m in self.media_types)
+
+
+ROLES: Mapping[str, Role] = {
+    row.role: row
+    for row in (
+        Role(
+            "model.request.instructions",
+            ("caller",),
+            ("caller_reported",),
+            ("text/plain", "application/json"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "model.request.messages",
+            ("caller", "provider_bound"),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "model.request.tool_definitions",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "4 MiB",
+        ),
+        Role(
+            "model.request.parameters",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "model.output.messages",
+            ("caller", "provider_bound"),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "model.exchange.request",
+            ("provider_bound",),
+            ("protocol", "caller_reported"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "model.exchange.response",
+            ("provider_bound",),
+            ("protocol", "caller_reported"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "tool.definition",
+            ("tool", "caller"),
+            ("caller_reported", "protocol"),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "tool.call.arguments",
+            ("provider_bound", "tool", "caller"),
+            ("caller_reported", "protocol"),
+            ("text/plain", "application/json"),
+            "content",
+            "4 MiB",
+        ),
+        Role(
+            "tool.call.result",
+            ("provider_bound", "tool", "caller"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "retrieval.query",
+            ("caller", "service"),
+            ("caller_reported", "protocol"),
+            ("text/plain", "application/json"),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "retrieval.results",
+            ("caller", "service"),
+            ("caller_reported", "protocol"),
+            ("application/json",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "memory.write.content",
+            ("caller", "service"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "memory.read.content",
+            ("caller", "service"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "side_effect.request",
+            ("service", "caller"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "side_effect.result",
+            ("service", "caller"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "context.file",
+            ("host", "caller"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "interaction.payload",
+            ("caller",),
+            ("caller_reported",),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "terminal.argv",
+            ("terminal",),
+            ("protocol", "caller_reported"),
+            ("application/json",),
+            "content",
+            "256 KiB",
+        ),
+        Role(
+            "terminal.stdin",
+            ("terminal",),
+            ("protocol", "caller_reported"),
+            ("application/octet-stream", "text/plain"),
+            "off",
+            "max_body_bytes",
+        ),
+        Role(
+            "terminal.stdout",
+            ("terminal",),
+            ("protocol", "caller_reported"),
+            ("application/octet-stream", "text/plain"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "terminal.stderr",
+            ("terminal",),
+            ("protocol", "caller_reported"),
+            ("application/octet-stream", "text/plain"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "remote.request",
+            ("remote",),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "4 MiB",
+        ),
+        Role(
+            "remote.result",
+            ("remote",),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "remote.stream",
+            ("remote",),
+            ("caller_reported", "protocol"),
+            ("application/octet-stream", "text/plain"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "database.query",
+            ("service",),
+            ("protocol", "caller_reported"),
+            ("application/sql", "text/plain"),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "database.parameters",
+            ("service",),
+            ("protocol", "caller_reported"),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "database.rows",
+            ("service",),
+            ("protocol", "caller_reported"),
+            ("application/json", "application/x-ndjson"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "database.mutation",
+            ("service",),
+            ("protocol", "caller_reported"),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "network.request",
+            ("service",),
+            ("protocol", "caller_reported"),
+            ("*",),
+            "off",
+            "max_body_bytes",
+        ),
+        Role(
+            "network.response",
+            ("service",),
+            ("protocol", "caller_reported"),
+            ("*",),
+            "off",
+            "max_body_bytes",
+        ),
+        Role(
+            "network.stream",
+            ("service",),
+            ("protocol", "caller_reported"),
+            ("*",),
+            "off",
+            "max_body_bytes",
+        ),
+        Role(
+            "sandbox.config",
+            ("sandbox",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "sandbox.output",
+            ("sandbox",),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "artifact.before",
+            ("host", "caller"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "artifact.after",
+            ("host", "caller"),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "service.receipt",
+            ("service",),
+            ("native", "caller_reported"),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "model.exchange.part",
+            ("provider_bound",),
+            ("protocol", "caller_reported"),
+            ("image/*", "audio/*", "video/*", "application/pdf", "application/octet-stream"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "model.output.reasoning",
+            ("provider_bound",),
+            ("caller_reported",),
+            ("text/plain", "application/json"),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "actor.identity",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "off",
+            "64 KiB",
+        ),
+        Role("run.trigger", ("caller",), ("caller_reported",), ("*",), "content", "4 MiB"),
+        Role(
+            "run.goal",
+            ("caller",),
+            ("caller_reported",),
+            ("text/plain", "application/json"),
+            "content",
+            "1 MiB",
+        ),
+        Role("run.input", ("caller",), ("caller_reported",), ("*",), "content", "4 MiB"),
+        Role(
+            "run.permissions",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "run.configuration",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json", "text/plain", "application/yaml"),
+            "off",
+            "4 MiB",
+        ),
+        Role(
+            "run.environment",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "off",
+            "256 KiB",
+        ),
+        Role("run.outcome", ("caller",), ("caller_reported",), ("*",), "content", "max_body_bytes"),
+        Role(
+            "outcome.delivery",
+            ("service",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "step.error",
+            ("caller",),
+            ("caller_reported", "protocol"),
+            ("text/plain", "application/json"),
+            "content",
+            "256 KiB",
+        ),
+        Role(
+            "tool.inventory",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "4 MiB",
+        ),
+        Role("agent.handoff", ("caller",), ("caller_reported",), ("*",), "content", "4 MiB"),
+        Role(
+            "checkpoint.state", ("caller",), ("caller_reported",), ("*",), "off", "max_body_bytes"
+        ),
+        Role(
+            "workflow.definition",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json", "application/yaml"),
+            "off",
+            "4 MiB",
+        ),
+        Role(
+            "mcp.request",
+            ("tool",),
+            ("caller_reported", "protocol"),
+            ("application/json",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "mcp.response",
+            ("tool",),
+            ("caller_reported", "protocol"),
+            ("application/json",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "mcp.notification", ("tool",), ("protocol",), ("application/json",), "content", "1 MiB"
+        ),
+        Role(
+            "mcp.server",
+            ("tool",),
+            ("caller_reported", "protocol"),
+            ("application/json",),
+            "content",
+            "1 MiB",
+        ),
+        Role(
+            "computer.action",
+            ("caller",),
+            ("caller_reported", "protocol"),
+            ("application/json",),
+            "content",
+            "256 KiB",
+        ),
+        Role(
+            "computer.snapshot",
+            ("caller",),
+            ("caller_reported", "protocol"),
+            ("image/png", "image/jpeg", "image/webp", "text/html", "application/json"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role("control.checked", ("service",), ("caller_reported",), ("*",), "content", "1 MiB"),
+        Role(
+            "control.reason",
+            ("service",),
+            ("caller_reported",),
+            ("text/plain", "application/json"),
+            "content",
+            "256 KiB",
+        ),
+        Role(
+            "control.approval",
+            ("service",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "256 KiB",
+        ),
+        Role(
+            "selection.decision",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "256 KiB",
+        ),
+        Role(
+            "context.change",
+            ("caller",),
+            ("caller_reported",),
+            ("application/json",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "terminal.context",
+            ("terminal",),
+            ("protocol", "caller_reported"),
+            ("application/json",),
+            "content",
+            "64 KiB",
+        ),
+        Role(
+            "artifact.diff",
+            ("host",),
+            ("inferred", "caller_reported"),
+            ("text/x-diff", "application/json"),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "asset.bytes",
+            ("caller",),
+            ("caller_reported", "protocol"),
+            ("*",),
+            "content",
+            "max_body_bytes",
+        ),
+        Role(
+            "media.frames",
+            ("provider_bound",),
+            ("protocol",),
+            ("audio/*", "video/*", "application/octet-stream"),
+            "off",
+            "max_body_bytes",
+        ),
+        Role(
+            "media.events",
+            ("provider_bound",),
+            ("protocol",),
+            ("application/json",),
+            "content",
+            "4 MiB",
+        ),
+        Role(
+            "media.transcript",
+            ("provider_bound",),
+            ("protocol", "caller_reported"),
+            ("text/plain", "application/json"),
+            "content",
+            "4 MiB",
+        ),
+        Role(
+            "artifact.locator",
+            ("host",),
+            ("caller_reported", "protocol"),
+            ("application/json",),
+            "content",
+            "64 KiB",
+        ),
+    )
+}
+
+
+def admits(
+    role: str, *, boundary: str, provenance: str, media_type: str, stored_byte_length: int,
+    max_body_bytes: int,
+) -> bool:  # fmt: skip
+    """Whether the Node's role rules (§4.3 rules 1-4) admit a record with these values."""
+    row = ROLES.get(role)
+    return (
+        row is not None and boundary in row.boundary and provenance in row.provenance
+        and row.admits_media(media_type) and stored_byte_length <= row.cap_bytes(max_body_bytes)
+    )  # fmt: skip
