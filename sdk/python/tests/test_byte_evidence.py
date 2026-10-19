@@ -409,3 +409,59 @@ def test_s3_byte_store_uses_conditional_write_and_preserves_descriptor() -> None
     assert all(item["IfNoneMatch"] == "*" for item in fake.writes)
     assert all("tenant-a/evidence/" in item["Key"] for item in fake.writes)
     recorder.close()
+
+
+@pytest.mark.parametrize("mode", ["masked_only", "original_plus_masked"])
+def test_a_hung_role_policy_transform_never_stops_the_recorder_worker(
+    tmp_path: Path, mode: str
+) -> None:
+    """Sol P0-A follow-up: the legacy ``role_policies`` transform runs on a bounded
+    runner, never directly on the recorder worker. A transform that never returns is
+    abandoned at its timeout (the object, and a review copy, withheld as
+    ``protection_failed``); after two abandoned calls the next ones are withheld at
+    once; later captures are still processed, and nothing raw is persisted."""
+    import time  # noqa: PLC0415
+
+    release = threading.Event()
+    secret = b"canary-ssn-078-05-1120"
+
+    def hung(data: bytes) -> bytes:
+        release.wait(60.0)
+        return b"[late]"
+
+    review = LocalFilesystemContentStore(str(tmp_path / "review"), tenant_id="tenant-a")
+    recorder, _ = _recorder(
+        tmp_path,
+        review_store=review,
+        role_policies={
+            "artifact.after": BytePrivacyPolicy(
+                mode=mode, transform=hung, transformation_id="redactor",
+                transformation_version="v1", timeout_s=0.05,
+            )
+        },
+    )  # fmt: skip
+    try:
+        started = time.monotonic()
+        ids = [
+            recorder.capture(secret, role="artifact.after", boundary="sandbox",
+                             source_id="sandbox-1", source_epoch=0,
+                             source_sequence=n)["object_id"]
+            for n in range(4)
+        ]  # fmt: skip
+        assert recorder.flush(5.0)  # the worker is not stuck behind the hung transform
+        assert time.monotonic() - started < 2.0
+        for object_id in ids:
+            settled = recorder.get(object_id)
+            assert settled is not None
+            assert (settled["status"], settled["status_reason"]) == (
+                "not_captured", "protection_failed")  # fmt: skip
+            assert "ref" not in settled and "source_sha256" not in settled
+        stats = recorder.transform_stats()
+        assert (stats["transform_timeouts"], stats["transform_saturated"]) == (2, 2)
+        assert stats["transform_abandoned"] == 2
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                assert secret not in path.read_bytes()
+    finally:
+        release.set()
+        _close(recorder)

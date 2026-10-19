@@ -29,6 +29,7 @@ from types import MappingProxyType
 from typing import Any
 
 from ._sequence import check_id_key, id_key_from_env
+from ._transform_runner import TransformRunner
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
 from .deployment_policy import ContentProtector, DeploymentPolicy
@@ -177,17 +178,22 @@ def _validate_capture_args(
 
 @dataclass(frozen=True, slots=True)
 class BytePrivacyPolicy:
-    """Customer-approved content handling; transformations run on the writer thread.
+    """Customer-approved content handling; transformations run behind the handoff.
 
-    A transform is customer code, not a built-in PII detector. Masked descriptors
-    omit the original digest to avoid revealing low-entropy original values.
-    Raw queued memory stays inside the customer's approved capture boundary.
+    A transform is customer code, not a built-in PII detector. It runs on a bounded
+    thread (:class:`fabric._transform_runner.TransformRunner`), never the caller's nor
+    the recorder's worker: a call past ``timeout_s`` is abandoned and the object (and a
+    review copy) withheld as ``protection_failed``; while two abandoned calls are still
+    running, content needing the transform is withheld at once (spec 049 §7.7 rule 4).
+    Masked descriptors omit the original digest to avoid revealing low-entropy original
+    values. Raw queued memory stays inside the customer's approved capture boundary.
     """
 
     mode: str = "original"
     transform: Callable[[bytes], bytes] | None = None
     transformation_id: str | None = None
     transformation_version: str | None = None
+    timeout_s: float = 5.0
 
     def __post_init__(self) -> None:
         if self.mode not in {"original", "omit", "masked_only", "original_plus_masked"}:
@@ -207,6 +213,13 @@ class BytePrivacyPolicy:
             for value in (self.transform, self.transformation_id, self.transformation_version)
         ):
             raise ValueError("transformation settings require a masked mode")
+        timeout = self.timeout_s
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, int | float)
+            or not 0 < timeout <= 300  # noqa: PLR2004
+        ):
+            raise ValueError("timeout_s must be in (0, 300]")
 
 
 def _role_policies_block(policies: Mapping[str, BytePrivacyPolicy]) -> dict[str, Any]:
@@ -343,6 +356,12 @@ class ByteEvidenceRecorder:
         self._unretained_drops = 0
         self._spool = config.durable_spool
         self._policy_block = _role_policies_block(config.role_policies or {})
+        # One bounded runner per role transform (049 §7.7 rule 4): never on this worker.
+        self._runners = {
+            role: TransformRunner("fabric-byte-transform")
+            for role, policy in (config.role_policies or {}).items()
+            if policy.transform is not None
+        }
         # 049 §7.3: never blocked, but not silent; a malformed id key still raises here.
         id_key = config.id_key if config.id_key is not None else id_key_from_env(os.environ)
         self._profile, self._gate_reason = content_gate(
@@ -380,6 +399,16 @@ class ByteEvidenceRecorder:
             "content_capture_reason": self._gate_reason,
             "spool_encrypted": self._spool is not None,
         }
+
+    def transform_stats(self) -> dict[str, int]:
+        """Counters of the role-policy transform runners (never a value)."""
+        totals = dict.fromkeys(
+            ("transform_timeouts", "transform_saturated", "transform_abandoned"), 0
+        )
+        for runner in self._runners.values():
+            for key, value in runner.stats().items():
+                totals[key] += value
+        return totals
 
     @property
     def tenant_id(self) -> str:
@@ -787,13 +816,8 @@ class ByteEvidenceRecorder:
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
         transformed = None
         if policy.transform is not None:
-            try:
-                transformed = policy.transform(data)
-                if not isinstance(transformed, bytes):
-                    raise TypeError("transform must return bytes")
-                if len(transformed) > self._config.payload_max_bytes:
-                    raise ValueError("transformed payload too large")
-            except Exception:
+            transformed = self._role_transform(role, policy, data)
+            if transformed is None:
                 # Spec 049 §7.7 rule 4: a failed transformation withholds; never raw bytes.
                 with self._condition:
                     for record_id in (object_id, derivative_id):
@@ -808,6 +832,16 @@ class ByteEvidenceRecorder:
             if transformed is None or self._config.review_store is None:
                 raise ValueError("missing transformed content or review store")
             self._write_record(derivative_id, transformed, self._config.review_store)
+
+    def _role_transform(self, role: str, policy: BytePrivacyPolicy, data: bytes) -> bytes | None:
+        """A role policy's transform, on its bounded runner; ``None`` when it raised, timed
+        out, was refused while the abandoned bound is reached, or returned no usable bytes."""
+        if policy.transform is None:
+            return None
+        outcome, out = self._runners[role].run(policy.transform, data, policy.timeout_s)
+        if outcome != "ok" or not isinstance(out, bytes):
+            return None
+        return out if len(out) <= self._config.payload_max_bytes else None
 
     def _deferred_protection(self, object_id: str, role: str, data: bytes) -> bytes | None:
         """The bytes to persist under a deployment policy. A customer redaction deferred
