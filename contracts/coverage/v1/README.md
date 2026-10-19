@@ -34,11 +34,19 @@ expectation, and each invalid fixture with the error code it must raise):
 | `fixtures/vectors/manifest-span-v1.json` | the `fabric.capture_manifest` span form: every attribute passes its key check and `contracts/capture/v1/schema/capture-manifest-record-v1.schema.json` (generated from this family by `--write`), and rebuilds the manifest exactly |
 | `fixtures/vectors/resume-token-v1.json` | `fr2/` resume tokens, branch tokens, predecessor entries, environment and percent-encoded `baggage` joins |
 | `fixtures/vectors/run-marker-v1.json` | `run_start`, `segment_seal` and `run_end` attribute sets fabricguard admits intact, and values it strips |
-| `fixtures/vectors/pseudonym-v2.json` | function v2 for provider ids, `kid-` key ids, domain separation from v1 and between keys, the legacy `p-` + 16 hex form; capture/v1's v1 vectors are re-verified unchanged |
+| `fixtures/vectors/pseudonym-v2.json` | function v2 for all 18 prefixes and their type strings (§2.9), `kid-` key ids, domain separation between types, from v1 and between keys, the legacy `p-` + 16 hex form; capture/v1's v1 vectors are re-verified unchanged |
 
 Each telemetry-key row carries `check`, the machine-readable form of its
-validator that fabricguard applies key by key (the Go test reads this file),
-or `check_pending` naming why the key is not admitted yet. Keys with
+validator that fabricguard applies key by key (the Go test reads this file).
+Every key is admitted in P0 (spec 049 rev 6.3 §4.2); `admission` names the
+exceptions: `existing` (enforced by older fabricguard code), `never`, or
+`P0-A` (a tightening validator that switches in its phase). Keys with
 `owner: receiver` are stripped from agent-supplied records.
+
+The checks, these fixtures and vectors, the family pins and fabricguard's
+generated validator table are derived by
+`scripts/contracts/generate_p0_contracts.py`; `--check` (and
+`scripts/tests/test_contract_generators.py`) fails if regenerating would
+change any of them.
 
 Every document is metadata only.
