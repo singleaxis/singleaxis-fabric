@@ -475,3 +475,82 @@ def test_tampered_sealed_record_is_quarantined_and_another_key_is_left(
     assert (spool / (first.name + ".corrupt")).exists()
     assert handle.stats().quarantined == 1
     assert len(node.named("fabric.model_call")) == 1
+
+
+def _plaintext_spool(node: FakeNode, spool: Path) -> list[Path]:
+    """Records written by an install without the spool key (plaintext), left on disk."""
+    node.mode = "down"
+    handle = install_node(node, spool, spool_key=None)
+    with model_client() as client:
+        client.post(OPENAI_CHAT, json={"messages": []})
+    assert not handle.close(1.0)
+    _stopped(handle)
+    wire.uninstall()
+    plain = records(spool)
+    assert plain and not any(p.read_bytes().startswith(b"FWSPENC1") for p in plain)
+    return plain
+
+
+def test_a_plaintext_record_under_a_key_is_quarantined_never_delivered(
+    node: FakeNode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # fmt: skip
+    """Sol P0-A #2: a keyed spool never delivers a record without the envelope (written
+    before the key, or a forged downgrade); it is quarantined and its exchange is a loss.
+    The migration opt-in never runs in the production profile (node mode), and the
+    status never reports the spool encrypted while plaintext records remain."""
+    spool = tmp_path / "spool"
+    plain = _plaintext_spool(node, spool)
+    exchange = next(p for p in plain if unframe(p.read_bytes())[0]["record_kind"] == "exchange")
+    monkeypatch.setenv("FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT", "1")
+    node.mode = "ok"
+    handle = install_node(node, spool)
+    assert "migration is ignored in the production profile" in caplog.text
+    status = handle.status()
+    assert status["spool_encrypted"] is False and status["spool_plaintext_records"] >= 1
+    assert wait_for(lambda: records(spool) == [], 20.0) and handle.flush(5.0)
+    assert (spool / (exchange.name + ".corrupt")).exists()
+    assert handle.stats().quarantined == len(plain) and handle.stats().spool_migrated == 0
+    assert node.named("fabric.model_call") == [] and node.content == []
+    (loss,) = node.named("fabric.capture_loss")
+    assert loss["fabric.loss.reason"] == "internal_error"
+    assert handle.status()["spool_encrypted"] is False  # quarantined plaintext is at rest
+    for path in spool.glob("*.corrupt"):
+        path.unlink()
+    assert handle.status()["spool_encrypted"] is True
+    assert handle.status()["spool_plaintext_records"] == 0
+
+
+def test_the_local_profile_migrates_plaintext_records_on_explicit_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT=1`` with a key, in the local profile: the
+    drainer seals every plaintext record in place before it reads any, then delivers."""
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: PLC0415
+        InMemorySpanExporter,
+    )
+
+    from .test_wire_helpers import PRODUCTION_SPOOL_KEY  # noqa: PLC0415
+
+    spool = tmp_path / "spool"
+    span = {
+        "name": "fabric.model_call", "kind": "client", "trace_id": "1" * 32,
+        "span_id": "2" * 16, "trace_flags": 1, "start_time_unix_nano": 1,
+        "end_time_unix_nano": 2, "status": "unset",
+        "attributes": {"fabric.source_id": "s-x", "fabric.source.sequence": 0},
+    }  # fmt: skip
+    name = Spool(str(spool), SPOOL_MIN).write(_spool.exchange_doc("s-x", 1, "svc", span, []))
+    assert name is not None
+    monkeypatch.setenv("FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT", "1")
+    exporter = InMemorySpanExporter()
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="tenant-a")
+    handle = wire.install(WireConfig(
+        store=store, tenant_id="tenant-a", spool_dir=str(spool), spool_key=PRODUCTION_SPOOL_KEY,
+        patch_httpx=False, max_body_bytes=SMALL, spool_max_bytes=SPOOL_MIN,
+    ), span_exporter=exporter)  # fmt: skip
+    assert handle.status()["profile"] == "local"
+    assert wait_for(lambda: handle.stats().spool_migrated == 1, 20.0)
+    assert wait_for(lambda: not (spool / name).exists(), 20.0)
+    assert [s.name for s in exporter.get_finished_spans()].count("fabric.model_call") == 1
+    assert handle.stats().quarantined == 0
+    assert handle.status()["spool_encrypted"] is True

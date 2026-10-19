@@ -120,11 +120,17 @@ class WireConfig:
     tokenization_key: bytes | None = field(default=None, repr=False)
     # AES-256-GCM spool envelope key (049 §7.8; FABRIC_WIRE_SPOOL_KEY[_FILE]); a secret.
     spool_key: bytes | None = field(default=None, repr=False)
+    # 049 §7.8: seal plaintext records left from before ``spool_key`` was set, in place
+    # (FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT=1). An explicit opt-in for the local profile;
+    # ignored (and logged) in the production profile, where such records are quarantined.
+    spool_migrate_plaintext: bool = False
 
     def __post_init__(self) -> None:
         _int("max_body_bytes", self.max_body_bytes, 1, MAX_BODY_BYTES_CAP)
         _int("max_retain_bytes", self.max_retain_bytes, self.max_body_bytes, MAX_BODY_BYTES_CAP)
         _int("part_min_bytes", self.part_min_bytes, 1, MAX_BODY_BYTES_CAP)
+        if not isinstance(self.spool_migrate_plaintext, bool):
+            raise ValueError("spool_migrate_plaintext must be a boolean")
         self._check_protection()
         check_id_key(self.id_key)
         if self.labels not in (None, "pseudonymous", "clear"):
@@ -237,6 +243,14 @@ def build_store(uri: str, tenant_id: str | None) -> ByteEvidenceStore:
     return LocalFilesystemContentStore(root=path, tenant_id=tenant_id)
 
 
+MIGRATE_PLAINTEXT_ENV = "FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT"
+
+
+def migrate_plaintext_from_env(environ: Mapping[str, str]) -> bool:
+    """The explicit spool migration opt-in (049 §7.8): ``1``/``true``/``yes``/``on``."""
+    return (environ.get(MIGRATE_PLAINTEXT_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def config_from_env(
     environ: Mapping[str, str],
 ) -> tuple[WireConfig, Literal["private", "global"]]:
@@ -268,6 +282,7 @@ def config_from_env(
         "tokenization_key": key_from_env(environ, "FABRIC_TOKENIZATION_KEY",
                                          minimum=TOKEN_KEY_MIN_BYTES),
         "spool_key": key_from_env(environ, "FABRIC_WIRE_SPOOL_KEY", exact=SPOOL_KEY_BYTES),
+        "spool_migrate_plaintext": migrate_plaintext_from_env(environ),
     }  # fmt: skip
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])

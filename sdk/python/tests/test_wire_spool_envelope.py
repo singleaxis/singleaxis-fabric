@@ -16,6 +16,7 @@ from fabric.wire._spool import (
     Spool,
     UndecryptableRecordError,
     exchange_doc,
+    frame,
     unframe,
 )
 
@@ -30,8 +31,8 @@ SPAN = {
 DESCRIPTOR = {"role": "model.exchange.request", "stored_byte_length": len(CANARY)}
 
 
-def _write(spool: Spool) -> str:
-    doc = exchange_doc("s-x", 7, "svc", SPAN, [(DESCRIPTOR, CANARY)])
+def _write(spool: Spool, epoch: int = 7) -> str:
+    doc = exchange_doc("s-x", epoch, "svc", SPAN, [(DESCRIPTOR, CANARY)])
     name = spool.write(doc, [CANARY])
     assert name is not None
     return name
@@ -73,11 +74,62 @@ def test_tampering_renaming_and_other_keys_never_open(tmp_path: Path) -> None:
         spool.read(short)
 
 
-def test_plaintext_records_written_before_the_envelope_stay_readable(tmp_path: Path) -> None:
-    root = str(tmp_path / "s")
-    name = _write(Spool(root, 1 << 20))
-    _, blob = unframe(Spool(root, 1 << 20, key=KEY).read(name))
-    assert bytes(blob) == CANARY
+def test_a_keyed_spool_never_reads_a_plaintext_record(tmp_path: Path) -> None:
+    """Sol P0-A #2: with a key configured, a record without the envelope is corrupt (a
+    downgrade), whether written before the key or forged with a recomputed, unkeyed
+    checksum by someone able to replace spool files without the AES key."""
+    root = tmp_path / "s"
+    name = _write(Spool(str(root), 1 << 20))  # written before the envelope was configured
+    keyed = Spool(str(root), 1 << 20, key=KEY)
+    with pytest.raises(CorruptRecordError) as raised:
+        keyed.read(name)
+    assert raised.value.doc is not None  # the header parsed: its sequence becomes a loss
+    sealed = _write(keyed, epoch=8)
+    doc, _ = unframe(keyed.read(sealed))
+    forged = b"".join(frame(doc, [b"forged-content"]))  # a valid FWSPOOL1 frame, no key
+    (root / sealed).write_bytes(forged)
+    with pytest.raises(CorruptRecordError):
+        keyed.read(sealed)
+    assert Spool(str(root), 1 << 20).read(name).startswith(b"FWSPOOL1")  # no key: as is
+
+
+def test_plaintext_records_are_counted_until_none_remains(tmp_path: Path) -> None:
+    root = tmp_path / "s"
+    _write(Spool(str(root), 1 << 20))
+    keyed = Spool(str(root), 1 << 20, key=KEY)
+    _write(keyed, epoch=8)  # another name than the plaintext record's
+    assert keyed.plaintext_records() == 1
+    (plain,) = [p for p in root.glob("*.rec") if not p.read_bytes().startswith(b"FWSPENC1")]
+    keyed.quarantine(plain.name)  # still plaintext at rest
+    assert keyed.plaintext_records() == 1
+    (root / (plain.name + ".corrupt")).unlink()
+    assert keyed.plaintext_records() == 0
+
+
+def test_the_migration_seals_plaintext_records_in_place(tmp_path: Path) -> None:
+    """The explicit opt-in path (``FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT``, local profile
+    only): every intact plaintext record is sealed under the key, in place; a corrupt one
+    is left for quarantine."""
+    root = tmp_path / "s"
+    plain = Spool(str(root), 1 << 20)
+    names = [_write(plain), _write(plain)]
+    broken = _write(plain)
+    data = bytearray((root / broken).read_bytes())
+    data[-1] ^= 1
+    (root / broken).write_bytes(bytes(data))
+    keyed = Spool(str(root), 1 << 20, key=KEY, migrate_plaintext=True)
+    assert keyed.migrate and keyed.migrate_plaintext() == 2
+    for name in names:
+        raw = (root / name).read_bytes()
+        assert raw.startswith(b"FWSPENC1") and CANARY not in raw
+        assert bytes(unframe(keyed.read(name))[1]) == CANARY
+    with pytest.raises(CorruptRecordError):
+        keyed.read(broken)
+    assert keyed.plaintext_records() == 1
+    assert not list(root.glob(".tmp-*"))
+    keyed.rescan()
+    assert keyed.bytes == sum(p.stat().st_size for p in root.glob("*.rec"))
+    assert not Spool(str(root), 1 << 20, migrate_plaintext=True).migrate  # needs a key
 
 
 def test_envelope_key_validation(tmp_path: Path) -> None:

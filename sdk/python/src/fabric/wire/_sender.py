@@ -42,7 +42,7 @@ from ._spool import (
 _LOG = logging.getLogger("fabric.wire")
 _BATCH, _RESCAN_S, _LOCK_RETRY_S, _BACKOFF_S, _BACKOFF_CAP_S = 64, 5.0, 5.0, 0.5, 30.0
 _STATS = ("spooled", "spool_full_drops", "delivered", "send_retries", "content_rejected",
-          "quarantined", "markers_dropped", "spool_undecryptable")  # fmt: skip
+          "quarantined", "markers_dropped", "spool_undecryptable", "spool_migrated")  # fmt: skip
 _SENDERS: weakref.WeakSet[Sender] = weakref.WeakSet()
 # Delivery objects a forked child replaced: kept referenced, never closed or collected,
 # because closing (or finalizing) them may need a lock a parent thread held at fork.
@@ -226,6 +226,9 @@ class Sender:
         """Deliver up to 64 ready records: ``more``, ``idle`` or ``retry``."""
         if not self._retire_delivered():
             return "retry"
+        if self.spool.migrate:  # 049 §7.8: the explicit local migration, before any read
+            self._stats["spool_migrated"] += self.spool.migrate_plaintext()
+            self.spool.migrate = False
         skip = self._sealed_elsewhere
         names, batch, state = [n for n in self.spool.names() if n not in skip][:_BATCH], [], "idle"
         for name in names:
@@ -408,8 +411,8 @@ def build_sender(
         content = content_client_from_env(
             os.environ, endpoint=config.content_endpoint, service_name=service)  # fmt: skip
     spool = Spool(config.spool_dir, config.spool_max_bytes, config.spool_max_receipts,
-                  durable_boundary=config.spool_durable_boundary,
-                  key=config.spool_key)  # fmt: skip
+                  durable_boundary=config.spool_durable_boundary, key=config.spool_key,
+                  migrate_plaintext=config.spool_migrate_plaintext)  # fmt: skip
     factory = None if exporter is not None else tracing.build_capture_span_exporter
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
     return Sender(spool, exporter, loss, content=content, service_name=service,

@@ -29,7 +29,7 @@ from .._sequence import (
     run_scope,
     source_label,
 )
-from ._config import DEFAULT_ENDPOINTS, WireConfig
+from ._config import DEFAULT_ENDPOINTS, WireConfig, migrate_plaintext_from_env
 from ._keys import SPOOL_KEY_BYTES, TOKEN_KEY_MIN_BYTES, key_from_env
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
 from ._policy import ContentGate, decide, policy_from_env
@@ -98,6 +98,8 @@ class WireStats:
     spans_refused: int = 0
     # Spool records sealed under another key, left for a process holding it (049 §7.8).
     spool_undecryptable: int = 0
+    # Plaintext spool records sealed in place by the explicit local migration (049 §7.8).
+    spool_migrated: int = 0
 
 
 class WireHandle:
@@ -122,8 +124,13 @@ class WireHandle:
         if self.gate is None:
             return {}
         sender = self._tee.sender
-        return {**self.gate.status(),
-                "spool_key_id": sender.spool.key_id if sender is not None else None}  # fmt: skip
+        status = {**self.gate.status(),
+                  "spool_key_id": sender.spool.key_id if sender is not None else None}  # fmt: skip
+        if sender is not None:  # 049 §7.8: never "encrypted" while plaintext records remain
+            plaintext = sender.spool.plaintext_records()
+            status["spool_plaintext_records"] = plaintext
+            status["spool_encrypted"] = bool(status["spool_encrypted"]) and plaintext == 0
+        return status
 
     @property
     def allocator(self) -> SourceAllocator:
@@ -223,6 +230,11 @@ def install(
             config = dataclasses.replace(config, labels=labels_from_env(os.environ))
         config = _protection_from_env(config)
         gate = _gate(config)
+        if config.spool_migrate_plaintext and gate.profile == "production":
+            # 049 §7.8: never in production; plaintext records there are quarantined.
+            _LOG.warning("fabric.wire: spool plaintext migration is ignored in the production "
+                         "profile; plaintext spool records are quarantined")  # fmt: skip
+            config = dataclasses.replace(config, spool_migrate_plaintext=False)
         explicit = config.tracer_provider is not None
         if config.spool_dir is None and (
             _protected_provider(config.tracer_provider) if explicit else _protected_global()
@@ -290,6 +302,8 @@ def _protection_from_env(config: WireConfig) -> WireConfig:
         spool = key_from_env(env, "FABRIC_WIRE_SPOOL_KEY", exact=SPOOL_KEY_BYTES)
         if spool is not None:
             changes["spool_key"] = spool
+    if not config.spool_migrate_plaintext and migrate_plaintext_from_env(env):
+        changes["spool_migrate_plaintext"] = True
     return dataclasses.replace(config, **changes) if changes else config
 
 

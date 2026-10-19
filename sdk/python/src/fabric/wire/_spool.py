@@ -8,7 +8,12 @@ spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``.
 Encryption at rest (spec 049 §7.8): with a customer key, each record file is the AES-256-GCM
 envelope ``b"FWSPENC1" | key id (12 ASCII) | nonce (12) | AESGCM(frame, aad)`` with
 ``aad = b"FWSPENC1" | key id | record name``, the construction of ``byte_spool.py``. The
-key is never written; the key id (``kid-`` + 8 hex) names which key sealed a record."""
+key is never written; the key id (``kid-`` + 8 hex) names which key sealed a record.
+With a key configured, a record without the envelope is never read (a downgrade: anyone
+able to replace spool files can write a valid unkeyed frame): it is corrupt, quarantined
+and counted as a loss. Plaintext records written before the key was configured are
+sealed in place only by the explicit, local-profile migration (:meth:`Spool.
+migrate_plaintext`, ``FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT``)."""
 
 from __future__ import annotations
 
@@ -69,6 +74,12 @@ class CorruptRecordError(ValueError):  # ``doc``: the header, when it parsed
         self.doc = doc
 
 
+class PlaintextRecordError(CorruptRecordError):
+    """A record without the envelope, read by a spool that has a key (049 §7.8): never
+    delivered; quarantined as corrupt and counted as a loss (``doc``: its header, when the
+    frame parsed, so its sequence is an explained loss)."""
+
+
 def frame(doc: Mapping[str, Any], bodies: Sequence[bytes]) -> list[bytes]:
     """The record's bytes as pieces (bodies are not copied); the last piece is the digest."""
     header = json.dumps(doc, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
@@ -95,13 +106,19 @@ def unframe(data: bytes) -> tuple[dict[str, Any], memoryview]:
 
 
 def unseal(data: bytes, name: str, cipher: Any, key_id: str | None) -> bytes:
-    """The framed bytes of record file ``name``: as is when it is plaintext (written before
-    the envelope was configured), else opened from its envelope with ``cipher`` (an
-    ``AESGCM`` of the key named ``key_id``). An envelope that does not authenticate is
+    """The framed bytes of record file ``name``, opened from its envelope with ``cipher``
+    (an ``AESGCM`` of the key named ``key_id``); as is only when no key is configured. With
+    a key, a record without the envelope is :class:`PlaintextRecordError` (never a
+    downgrade to an unauthenticated frame); an envelope that does not authenticate is
     :class:`CorruptRecordError`; one sealed under another key (or with no key configured)
     is :class:`UndecryptableRecordError`."""
     if not data.startswith(ENVELOPE_MAGIC):
-        return data
+        if cipher is None:
+            return data
+        doc = None
+        with contextlib.suppress(CorruptRecordError):
+            doc = unframe(data)[0]
+        raise PlaintextRecordError(doc)
     head = len(ENVELOPE_MAGIC)
     kid = data[head : head + _KID_LEN]
     if cipher is None or kid != str(key_id).encode("ascii"):
@@ -264,6 +281,7 @@ class Spool:
     def __init__(
         self, directory: str, max_bytes: int, max_receipts: int = DEFAULT_MAX_RECEIPTS,
         durable_boundary: str | None = None, key: bytes | None = None,
+        migrate_plaintext: bool = False,
     ) -> None:  # fmt: skip
         try:
             import fcntl  # noqa: PLC0415
@@ -281,6 +299,9 @@ class Spool:
             from ._keys import envelope_key_id  # noqa: PLC0415
 
             self._cipher, self.key_id = AESGCM(key), envelope_key_id(key)
+        # The explicit migration of plaintext records (local profile only; the caller
+        # decides): pending until the drainer ran it once (migrate_plaintext).
+        self.migrate = bool(migrate_plaintext) and self._cipher is not None
         created = _secure_dir(directory)
         _refuse_foreign(directory)
         self.dir, self.max_bytes, self._fcntl = directory.rstrip("/") or "/", max_bytes, fcntl
@@ -634,6 +655,73 @@ class Spool:
     @property
     def encrypted(self) -> bool:
         return self._cipher is not None
+
+    def plaintext_records(self) -> int:
+        """Records on disk without the envelope, pending or quarantined (both hold content
+        at rest): the spool is encrypted at rest only when this is zero and a key is set."""
+        count = 0
+        for name in os.listdir(self.dir):
+            if name.startswith(".") or not name.endswith((".rec", QUARANTINE_SUFFIX)):
+                continue
+            try:
+                fd = os.open(self._path(name), os.O_RDONLY | _NOFOLLOW)
+            except OSError:
+                continue  # gone (delivered or renamed) meanwhile
+            try:
+                head = os.read(fd, len(ENVELOPE_MAGIC))
+            except OSError:
+                head = b""
+            finally:
+                os.close(fd)
+            count += bool(head) and head != ENVELOPE_MAGIC
+        return count
+
+    def migrate_plaintext(self) -> int:
+        """Seal every intact plaintext record in place under the key (the explicit,
+        local-profile opt-in, ``FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT``; never in production).
+        The drainer runs it before it reads any record; only the lock holder reads, so no
+        reader sees a record mid-migration. Each record is sealed into a temp file
+        (fsync'd), renamed over itself and the directory fsync'd. A record whose frame
+        does not verify is left as is, for quarantine. Returns how many were sealed; an
+        ``OSError`` (or a busy admission lock) propagates, and the caller retries."""
+        if self._cipher is None:
+            return 0
+        sealed = 0
+        for name in self.names():
+            try:
+                with os.fdopen(os.open(self._path(name), os.O_RDONLY | _NOFOLLOW), "rb") as f:
+                    raw = f.read()
+            except FileNotFoundError:
+                continue
+            if raw.startswith(ENVELOPE_MAGIC):
+                continue
+            try:
+                unframe(raw)
+            except CorruptRecordError:
+                continue
+            tmp = ".tmp-" + name
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(self._path(tmp))  # a crashed migration's leftover
+            fd = os.open(self._path(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
+                         0o600)  # fmt: skip
+            try:
+                try:
+                    for piece in self._seal(name, [raw]):
+                        view = memoryview(piece)
+                        while view:
+                            view = view[os.write(fd, view) :]
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                self._rename(tmp, name)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(self._path(tmp))
+                raise
+            self._sync_dir()
+            self._observe(name)
+            sealed += 1
+        return sealed
 
     def exists(self, name: str) -> bool:
         return os.path.lexists(self._path(name))

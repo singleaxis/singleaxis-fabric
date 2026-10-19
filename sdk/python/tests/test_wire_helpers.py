@@ -406,5 +406,7 @@ def open_record(path: Path) -> bytes:
     from fabric.wire._keys import envelope_key_id  # noqa: PLC0415
     from fabric.wire._spool import unseal  # noqa: PLC0415
 
-    key = PRODUCTION_SPOOL_KEY
-    return unseal(path.read_bytes(), path.name, AESGCM(key), envelope_key_id(key))
+    key, raw = PRODUCTION_SPOOL_KEY, path.read_bytes()
+    if not raw.startswith(b"FWSPENC1"):  # written without the key (a test's plaintext spool)
+        return raw
+    return unseal(raw, path.name, AESGCM(key), envelope_key_id(key))
