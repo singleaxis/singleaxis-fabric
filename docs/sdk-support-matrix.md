@@ -18,7 +18,6 @@ build's qualification results.
 | Restartable metadata delivery/ack ledger | Implemented, `metadata_delivery.JournalMetadataSender`, `HTTPMetadataTransport` | Not implemented |
 | Authenticated AES-GCM local governed store | Implemented, `GovernedLocalContentStore` | Not implemented; ordinary stores are not an equivalent |
 | External control observations | Metadata only, `ControlObservation` | Not implemented |
-| Final-boundary external control exchange | Contract only, `control_protocol`; no controller invocation or gate | Not implemented |
 | Independently persisted receipt service | Local reference, `reference_receipts.ReferenceReceiptService` | Not implemented |
 | Registered multi-source/recovered-epoch closure | Local reference, `distributed_closure` | Not implemented |
 | Client portal UI, SSO/fleet rollout service | Not implemented | Not implemented |
@@ -46,9 +45,6 @@ enabled.
 - A configured policy or static capability declaration does not prove live
   hooks, encryption custody, retention deletion, destination readback
   or complete coverage of physical attempts.
-
-See [capture/control compatibility](capture-control-compatibility.md) and
-[enterprise capture specification](specs/enterprise-capture-build.md).
 
 ## Runtime and effect boundaries
 

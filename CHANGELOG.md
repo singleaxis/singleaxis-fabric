@@ -174,6 +174,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   readback are management scope, outside the recorder. `DeploymentPolicy`
   (`fabric.deployment_policy`) still validates and digests the capture
   configuration. The three modules are now forbidden wheel/sdist members.
+- **Breaking: removed `fabric.control_protocol`** (`FinalBoundaryRequest`,
+  `ExternalControlReply`, `BoundaryOutcomeObservation`,
+  `ExternalFinalBoundaryController`, `correlate_external_exchange`). The
+  contract existed for a future external Control Runtime and was never
+  invoked by the recorder; AGENTS.md keeps any Control Runtime outside the
+  default recorder. `fabric.control_evidence.ControlObservation` (metadata
+  about an external control decision) stays. The module is now a forbidden
+  wheel/sdist member, and `docs/capture-control-compatibility.md` is removed.
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.

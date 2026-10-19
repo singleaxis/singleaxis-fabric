@@ -49,6 +49,7 @@ def test_release_policy_is_recorder_only() -> None:
         "fabric/capture_capabilities.py",
         "fabric/capture_identity.py",
         "fabric/capture_readback.py",
+        "fabric/control_protocol.py",
         "fabric/deployment_state.py",
         "fabric/enterprise.py",
         "fabric/enterprise_preflight.py",

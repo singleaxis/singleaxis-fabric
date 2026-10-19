@@ -250,7 +250,5 @@ and route-coverage qualification before relying on complete capture.
 
 ### Enterprise capture interfaces and SDK scope
 
-See the [Python/TypeScript support matrix](../../docs/sdk-support-matrix.md) and
-[capture/control compatibility contracts](../../docs/capture-control-compatibility.md).
-An optional Python submodule exposes metadata-only final-boundary correlation.
-It does not install a portal, controller client or execution gate.
+See the [Python/TypeScript support matrix](../../docs/sdk-support-matrix.md).
+The SDK does not install a portal, controller client or execution gate.

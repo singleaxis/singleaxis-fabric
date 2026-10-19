@@ -68,6 +68,7 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/capture_identity.py",
     "/src/fabric/capture_readback.py",
     "/src/fabric/cli.py",
+    "/src/fabric/control_protocol.py",
     "/src/fabric/deployment.py",
     "/src/fabric/deployment_state.py",
     "/src/fabric/enterprise.py",
