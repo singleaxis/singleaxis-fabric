@@ -193,6 +193,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   links now point at commit `4a5c945`.
 - Removed the remaining doc references to `PolicyCaptureSession` and
   `test_auto_instrument.py` outside the SDK, which the SDK cleanup removes.
+- `examples/kind-quickstart/up.sh` no longer installs the removed
+  `anthropic` extra; it installs `singleaxis-fabric[otlp]` and, for a real
+  model run, the `anthropic` client the demo agent imports.
 
 ### Known limitations
 
