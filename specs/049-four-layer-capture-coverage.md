@@ -1,9 +1,9 @@
 ---
 title: Four-layer capture contract (context, structure, content, decisions and effects)
-status: Final rev 6.2, owner-approved 2026-10-18
+status: Final rev 6.3 (clarifications), owner-approved 2026-10-18
 qualification: NO_COVERAGE_CLAIM
-revision: 6.2
-last_updated: 2026-10-18
+revision: 6.3
+last_updated: 2026-10-19
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
 related: 030, 031, 036, 038, 040, 041, 042, 044, 045, 046
@@ -14,7 +14,7 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 
 # 049 — Four-layer capture contract
 
-**Status: Final rev 6.2, owner-approved 2026-10-18.** Every owner
+**Status: Final rev 6.3 (clarifications only), owner-approved 2026-10-18.** Every owner
 decision in section 9 was approved as recommended and is applied in this
 text, marked *Approved (owner, 2026-10-18)*. A later change to a decision
 changes only the sections that decision lists.
@@ -37,7 +37,9 @@ authentication become concrete stages on the single path (appendix E,
 rows R6-*). Revision 6.1 makes source authentication visible to the
 verifier and applies the final-gate fixes (rows R6F-*). Revision 6.2
 adds per-branch identities, encrypts the Node content queue and bounds
-authentication to trusted readback (rows R6A-*).
+authentication to trusted readback (rows R6A-*). Revision 6.3 only
+clarifies ambiguities met while building P0, each with the most
+conservative reading (rows R63-*); it changes no design.
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -194,7 +196,7 @@ Fabric OSS never does, and this contract never specifies:
 | SDK records are sequenced | **False.** `record_*`, `tool_call()` and `llm_call()` spans carry no `fabric.source.*`; only the wire pipeline and loss/heartbeat records set them. `SourceAllocator` refuses any component other than `wire`; the spool knows only `exchange`, `loss`, `marker`. | `wire/_pipeline.py:134-135`; `_loss.py:50,59`; `_sequence.py:126-127`; `wire/_spool.py:45` |
 | The verifier ignores unknown records | **True, by attributes.** `observe()` classifies a span as an exchange if it has `fabric.wire.exchange_id`, as a heartbeat if it has `fabric.heartbeat.last_sequence`, as a loss if it has `fabric.loss.reason`; anything else is ignored. Heartbeats and loss records do not consume sequences. | `reconstruct/_inputs.py:498-518`; 047 §6 |
 | The explicit line has its own journal and spool | **True.** `CallRecorder` sequences per (tenant, run) in its own journal (`SyntheticSourceSpool`, own epoch) and ships bytes through an AES-256-GCM `DurableByteSpool`; the wire spool is plaintext with owner-only permissions. | `call_recorder.py:100-121`; `source_spool.py:195-204`; `byte_spool.py:1-20`; `wire/_spool.py:153-159,257-261` |
-| A framework adapter ships in the package | **True today** (`adapters/crewai.py`); removed by owner direction (TARGET, section 2.11). | `sdk/python/src/fabric/adapters/` |
+| A framework adapter ships in the package | **No longer.** `adapters/crewai.py` was removed by the owner-approved cleanup (chore/recorder-cleanup), as TARGET directs (section 2.11). | `sdk/python/src/fabric/adapters/` |
 | Explicit withholding survives `adopt()` | **False.** `ExplicitScope` has only `model` and `ended`. | `_capture_scope.py:43-58`; `wire/_transport.py:178-198` |
 | User and session ids are protected | **False.** `decision()` sets `fabric.session_id` and `fabric.user_id` in clear (Python and TypeScript). fabricguard admits `fabric.session_id` in clear; it does not admit `fabric.user_id` (only `user_id_hash`), so the Node drops it, but any non-Node exporter receives it. `fabric.memory.key`, `fabric.interaction.target` and `fabric.file.path` are emitted clear and not admitted. | `decision.py:256,271,663-666,1209,1295,1373`; `sdk/typescript/src/decision.ts:725`; `allowlist.go:23,27` |
 | An oversized model request keeps its text | **False.** Default `max_body_bytes` is 8 MiB. Retention keeps whole chunks only; an in-memory request body is one chunk, so a 9 MiB request retains nothing: digest but no stored object, and no metadata parse. | `wire/_config.py:31,78`; `wire/_stream.py:257-271`; `wire/_pipeline.py:92,364`; 047 §4 rule 4 |
@@ -212,7 +214,7 @@ Fabric OSS never does, and this contract never specifies:
 | Side effects default to committed | **True (unsafe).** `committed: bool = True`; the emitted boolean does not say whether it was defaulted. | `side_effect.py:92`; `decision.py:1404,1519` |
 | A side-effect context manager exists | **False.** Only `delegate()`/`adelegate()` are context managers. | `decision.py:1990-1991,2032` |
 | auditd netlink decoding | Parses each netlink header and rejects short or invalid lengths; the rev-1 claim that it "splits raw frames" was wrong. | `receiver/auditreceiver/netlink_linux.go:317-347` |
-| Capability declarations exist | `fabric.capture-sdk-capabilities/v1` and `fabric.integration-coverage/v1`; neither records active capture points per source epoch. | `capture_capabilities.py`; `coverage_manifest.py` |
+| Capability declarations exist | **Removed.** `fabric.capture-sdk-capabilities/v1` (`capture_capabilities.py`) and `fabric.integration-coverage/v1` (`coverage_manifest.py`) were removed by the owner-approved cleanup (chore/recorder-cleanup); nothing records active capture points per source epoch until the capture manifest (section 2.8). | removed by chore/recorder-cleanup |
 | TypeScript wire capture | Not implemented. | `sdk/typescript/src/` |
 | Wire endpoints | POST only; chat/completions, responses, completions, embeddings, messages; OpenAI, Anthropic, Azure OpenAI by default. | `wire/_match.py:16-21,46`; `wire/_config.py:33-40` |
 
@@ -476,10 +478,13 @@ code:
   journal gave, comes from the 048 scope window (`run_start`/`run_end`)
   instead.
 
-Every record carries `fabric.capture.input` (`wire`/`records`),
+Every sequenced record carries `fabric.capture.input` (`wire`/`records`),
 `fabric.source_id`, `fabric.source.epoch`, `fabric.source.sequence`,
 `fabric.event_id`, `fabric.run.segment_id` (when it belongs to a run), and
-`fabric.attempt.uid` (records) or `fabric.wire.exchange_id` (wire). The projection names sources by their
+`fabric.attempt.uid` (records) or `fabric.wire.exchange_id` (wire).
+`fabric.capture.input` is **absent** on loss, heartbeat (every kind,
+including run markers and `segment_seal`) and manifest records, because
+those belong to the source as a whole, i.e. to both inputs. The projection names sources by their
 emitted label; pre-P1 explicit-journal sources are prefixed
 `legacy-explicit:`. Cross-source order comes only from causal links,
 segment predecessors (section 2.10) and, as a display aid, timestamps with
@@ -852,11 +857,11 @@ Privacy classes:
 
 ### 2.8 Capability manifest and capture points
 
-Two existing documents stay as they are: `fabric.capture-sdk-capabilities/v1`
-(what the repository supports, per language) and
-`fabric.integration-coverage/v1` (integration registration). Neither says
-which capture points were **active** for a source epoch, which an evaluator
-needs to tell "nothing happened" from "nothing was instrumented".
+The earlier declarations `fabric.capture-sdk-capabilities/v1` and
+`fabric.integration-coverage/v1` were removed by the owner-approved cleanup
+(chore/recorder-cleanup). Neither said which capture points were **active**
+for a source epoch, which an evaluator needs to tell "nothing happened"
+from "nothing was instrumented"; the capture manifest does.
 
 **New record: `fabric.capture-manifest/v1`**
 (`contracts/coverage/v1/schema/capture-manifest-v1.schema.json`):
@@ -864,7 +869,8 @@ needs to tell "nothing happened" from "nothing was instrumented".
 - emitted per source and sequenced by the rules of section 2.4
   (`manifest_seq`, `after_source_sequence`, `previous_manifest_sha256`,
   `unsealed_prior_epochs`);
-- travels as one `fabric.capture_manifest` span with closed attributes;
+- is spooled as kind `marker` (marker kind `manifest`) and travels as one
+  `fabric.capture_manifest` span with closed attributes;
   every schema property has an exact telemetry key (`fabric.manifest.*` or
   a reused key, column "Manifest property" in section 4.2), checked by the
   validator, so fabricguard admits them; capture points travel as
@@ -936,10 +942,26 @@ point, or if an in-scope field names none:
    `prefix-` + first 32 hex of `HMAC-SHA256(k_type, value)`, where
    `k_type = HMAC-SHA256(FABRIC_WIRE_ID_KEY, "fabric-id/v2/" + type)`.
    Per-type keys give domain separation. The tenant boundary is the key
-   itself. Prefixes: `sess-`, `usr-`, `act-`, `conv-`, `turn-`, `trg-`,
-   `dsp-`, `agt-`, `tgt-`, `hst-`, `sbx-`, `mcps-`, `rpc-`, `dbn-`, `txn-`,
-   `mst-`, `mkey-`, and `p-` for provider ids.
-3. **Function v1** stays for `r-`, `s-`, `svc-` (pinned by
+   itself. Prefixes and their `type` strings:
+
+   | Prefix | type | Prefix | type | Prefix | type |
+   |---|---|---|---|---|---|
+   | `sess-` | `session` | `trg-` | `trigger` | `sbx-` | `sandbox` |
+   | `usr-` | `user` | `dsp-` | `dispatch` | `mcps-` | `mcp_session` |
+   | `act-` | `actor` | `agt-` | `agent` | `rpc-` | `jsonrpc` |
+   | `conv-` | `conversation` | `tgt-` | `target` | `dbn-` | `db_namespace` |
+   | `turn-` | `turn` | `hst-` | `host` | `txn-` | `db_transaction` |
+   | `mst-` | `memory_store` | `mkey-` | `memory_key` | `p-` | `provider` |
+
+   **Derivation input.** `key` = the bytes of `FABRIC_WIRE_ID_KEY` as UTF-8
+   (as `_sequence.py` reads it); `k_type` = HMAC-SHA256(key, UTF-8 of
+   `"fabric-id/v2/" + type`); pseudonym = prefix + the first 32 lowercase hex
+   characters of HMAC-SHA256(k_type, `value` encoded UTF-8 with
+   `surrogatepass`), where `value` is the caller-supplied string exactly as
+   given (no trimming, case folding or normalisation). P0 test vectors list
+   `(key, type, value, expected)` per prefix.
+3. **Function v1** stays for `r-`, `s-`, `svc-` and the operator-label
+   prefix `lbl-` (section 4.2) (`r-`/`s-`/`svc-` pinned by
    `contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json`), so
    existing records keep correlating. The `records` source label uses v1
    `s-`.
@@ -1134,7 +1156,7 @@ Every guarantee of main's explicit evidence line is kept and moved:
 | Exact byte boundary (bytes exactly as handed to or returned by the caller's delegate; `boundary`, `representation: exact`) | `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`, `ByteEvidenceRecorder` | Unchanged producers on the records input; descriptors keep content-v2 `boundary` and `representation`; D2 still makes the explicit producer own a model call over the wire tee | P1 |
 | Governed redaction before persistence (`retain_original`, `redact`, `tokenize`, `metadata_only`, `omit`; masked-only never persisted in original form; failed transformation withholds) | `ByteEvidenceRecorder` privacy modes, `GovernedLocalContentStore` | Applied by the records producer before spool admission, driven by the capture policy and role table (sections 2.7, 7.5); the spool and writer only ever see protected bytes | P0-A |
 | Encrypted spool at rest (AES-256-GCM, customer key, never saved) | `byte_spool.py` `DurableByteSpool` | Optional envelope encryption of the unified spool, the same construction; manifest `spool_encrypted`; required when the capture policy says so. `DurableByteSpool` stays until parity tests pass | P0-A (contract), P1 (code) |
-| 16 MiB explicit object cap | `byte_evidence.py:255`, `governed_store.py:72`, `coverage_manifest.py:77` | Manifest limit `records_max_object_bytes` (default and maximum 16 MiB) for exact-byte objects of the records producers; wire objects keep `max_body_bytes` (32 MiB) | P1 |
+| 16 MiB explicit object cap | `byte_evidence.py:255`, `governed_store.py:72` (`coverage_manifest.py:77` removed by the owner-approved cleanup, chore/recorder-cleanup) | Manifest limit `records_max_object_bytes` (default and maximum 16 MiB) for exact-byte objects of the records producers; wire objects keep `max_body_bytes` (32 MiB) | P1 |
 | Per-run accounting (every journal event of a run is either delivered or a visible gap) | per-(tenant, run) journal sequence (`source_spool.py`) | Segment membership (`fabric.run.segment_id`) and segment graph (2.10) on the shared allocator; loss records for queue-full positions | P1 |
 | Journal seal and fresh readback (admission-set comparison, exact record-set seal, fresh disk readback, unsealed-epoch accounting) | `SyntheticSourceSpool.seal_epoch`, `readback_sealed_epoch`, `unsealed_epoch_ranges` (`source_spool.py:740-830`) | **Unchanged in qualified-run mode** (section 2.13). Default capture has the simpler portable segment seal (section 2.12) | unchanged |
 | Receipts contract (spooled, accepted, durable stages; receipt-set expectations and verification) | `contracts/delivery/v1`, `receipt_sets.py`, `qualified_run.py` | **Unchanged in qualified-run mode** (section 2.13): `contracts/delivery/v1`, receipt sets, attestations, witness feeds and route closure stay with `qualified_run.py` on the explicit journal | unchanged |
@@ -1184,7 +1206,8 @@ store and the telemetry can recompute it.
    writes one `segment_seal` record once the segment's positions have
    settled — admitted to the spool or recorded as a loss (section 2.10). `fabric.reconstruct` recomputes it from the store and
    the telemetry; a difference is `partial(seal_mismatch)`; a segment
-   without a seal is `unsealed` (`partial`).
+   without a seal is `unsealed`: `partial` with reason `source_lost`
+   (as in `X44`).
 4. **Transport.** `segment_seal` is a marker on the existing marker path
    (spool kind `marker`, exported as a `fabric.capture_heartbeat` span with
    `fabric.heartbeat.kind=segment_seal`, `fabric.heartbeat.last_sequence`,
@@ -1226,6 +1249,15 @@ and G6 (independent witnesses) live here.
 
 ## 3. Field inventory
 
+**Projection field-set keys.** A registry row names one or more fields.
+Split its `name` on commas and trim; spaces become underscores; a part
+without a dot takes the namespace (text before the last dot) of the row's
+first part. Each result is one key of the row's layer field set. Example:
+`D32` `usage.cache_read, cache_creation, reasoning tokens` →
+`usage.cache_read`, `usage.cache_creation`, `usage.reasoning_tokens`. The
+validator checks that every derived key matches the field-key pattern and
+is unique across the registry.
+
 Columns: **Observed by** lists capture-point ids (section 2.8) only.
 **Policy**: default capture policy (2.7). **Privacy**: class (2.7).
 **Req**: `R` = always present as a field wrapper on every applicable step
@@ -1266,7 +1298,7 @@ manifest (section 4).
 | X22 | started_at, ended_at | unix ns | `wire.py.httpx`, `sdk.records`, `explicit.call_recorder` | metadata | META | R (timed steps) | not_captured(caller_omitted); never zero-length | P1 (wire), P2 (reported) | span start/end | Operation interval. |
 | X23 | `timing_basis` | enum measured/reported/not_captured | `fabric.self` | metadata | META | R (timed steps) | always | P1 | P | How the interval was obtained. |
 | X24 | observed_at, recorded_at | unix ns | `wire.py.httpx`, `sdk.records`, `explicit.call_recorder` | metadata | META | O | absent | P1 | P; content-v2 `observed_at` | When the capture point saw it, when Fabric recorded it. |
-| X25 | clock_domain, clock_uncertainty_ns | enum, int | `fabric.self` | metadata | META | R | always | P1 | M | Clock the times use; cross-source ordering never relies on wall clocks alone. |
+| X25 | clock_domain, clock_uncertainty_ns | const `wall_utc`, int ≥ 0 | `fabric.self` | metadata | META | R | always | P1 | M | Clock the times use; cross-source ordering never relies on wall clocks alone. |
 | X26 | `capture_point` | id@version | `fabric.self` | metadata | META | R | always | P1 | T `fabric.capture.point` | Named capture point (section 2.8) that produced the record. |
 | X27 | `provenance` | enum | `fabric.self`, `reconstruct.parse` | metadata | META | R | always | P1 | T `fabric.capture.source`; P | observed / reported / inferred. |
 | X28 | `assertion_origin` | enum | `reconstruct.parse`, `sdk.records` | metadata | META | O | unknown | P1 | P | Who asserted the fact (section 2.2). |
@@ -1285,7 +1317,7 @@ manifest (section 4).
 | X41 | `segment.predecessors` | list (max 64) of `<seg-id>/<opaque source id>/<epoch>/<last_sequence>/sha256:<64 hex>`, or `none` | `run.scope` | metadata | ID | R (first run_start of each segment of a run) | not_captured(caller_omitted) | P1 | T `fabric.run.predecessors` on the segment's `run_start` | The sealed segments this segment continues, taken verbatim from the resume tokens passed in, from the locally sealed segment on local continuation, or from the parent's sealed segment after a fork; `none` only for the run's root segment. Entries are exact and immutable (section 2.10). |
 | X42 | run.resumable, run.terminal, run.open_deadline_s | bool, bool, int | `run.scope` | metadata | META | R (run root) | always (defaults: resumable false, terminal at outermost block exit) | P1 | T `fabric.run.resumable` on the root `run_start` and on token-issuing `segment_seal` markers; T `fabric.run.open_deadline_s` (root only) on `run_start`; T `fabric.run.terminal` on `segment_seal` | Whether the run may continue in another segment, whether a segment seal terminates the run, and the open-run deadline. Resumability is monotonic: the root `run_start` flag OR any `segment_seal` with `fabric.run.resumable=true` (a token issue sets it on the issuing seal; the issuing block's exit then seals non-terminal unless opened with `final=True`). The deadline is honoured only on the root `run_start` (else the root manifest's `open_run_deadline_s`). A non-resumable run terminates when its outermost block exits. |
 | X43 | `segment_id` | `seg-` + 32 hex (128-bit CSPRNG) | `run.scope` | metadata | ID | R (every record and marker of a run) | always (from P1) | P1 | T `fabric.run.segment_id` | Immutable segment a record belongs to, assigned at allocation under the allocator lock. Within one process every thread and task of a run shares its open segment; a new segment starts only at a run's first entry into a process, after a token issue, after a fork (parent and child), and at re-entry after a seal. |
-| X44 | `segment.seal` | last_sequence, manifest digest, seal digest, terminal | `fabric.self`, `run.scope` | metadata | META/DIGEST | R (every segment) | not_captured(source_lost) when never sealed (segment `unsealed`, run `partial`) | P1 | T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.seal_digest`, `fabric.run.terminal` on the `segment_seal` marker | One `segment_seal` record per segment, written by the worker once every position up to `last_sequence` of the segment has settled (admitted to the spool, or recorded as a loss): last sequence, manifest digest at seal, terminal flag and the seal digest over the canonical digests of the segment's delivered records sorted by sequence (section 2.12). A crash or a dropped marker leaves the segment `unsealed`. |
+| X44 | `segment.seal` | last_sequence, manifest digest, seal digest, terminal | `fabric.self`, `run.scope` | metadata | META/DIGEST | R (every segment) | not_captured(source_lost) when never sealed (segment `unsealed`, run `partial(source_lost)`) | P1 | T `fabric.segment.last_sequence`, `fabric.segment.manifest_digest`, `fabric.segment.seal_digest`, `fabric.run.terminal` on the `segment_seal` marker | One `segment_seal` record per segment, written by the worker once every position up to `last_sequence` of the segment has settled (admitted to the spool, or recorded as a loss): last sequence, manifest digest at seal, terminal flag and the seal digest over the canonical digests of the segment's delivered records sorted by sequence (section 2.12). A crash or a dropped marker leaves the segment `unsealed`. |
 | X45 | unsealed_prior_epochs, unsealed_prior_epoch_count | list of epochs (max 64); int | `fabric.self` | metadata | DIGEST | R (every epoch) | not_captured(unsealed_epoch) when never sealed | P1 | M `unsealed_prior_epochs`, `unsealed_prior_epoch_count` | Prior epochs registered on the same spool whose writer no longer holds its registration flock and that never wrote their `final` heartbeat and segment seals, declared by the next epoch's manifest 0; each is a gap for its runs. The count is exact even when the list is truncated at 64. Unregistered fork-child epochs are covered by the declared-branch rules instead. |
 | X46 | segment.declared_branches, segment.branch_ids, run.branch_ids | list of `seg-` ids (max 64); list of `br-` ids (max 64); list of `br-` ids (max 64) | `run.scope`, `sdk.records` | metadata | ID/META | O | absent | P1 | T `fabric.run.declared_branches` and `fabric.run.branch_ids` on `run_start`; T `fabric.segment.branch_ids` on `segment_seal`; T `fabric.dispatch.branch_id` on dispatch records (P2) | Branch identities a run must account for: fork children (declared by segment id) and per-branch tokens minted by `resume_token(branches=n)` or a dispatch, each with its own `br-` id bound to the issuing sealed segment. A consumer's `run_start` names the branch ids of the tokens it started from. Local continuation never names a branch id; a second consumer of one branch id is a conflict. Undeclared token consumers that are wholly lost are a residual limit (section 2.10). |
 | X47 | source.authenticated, source_auth | bool; enum bound/unbound | `fabric.self` | metadata | META | R (production profile) | unknown (record not stamped: `unverified(source_unauthenticated)` in production) | P0-A | T `fabric.source.authenticated` (Node-stamped); C descriptor `source_authenticated` (persisted by `fabriccontent`); M `source_auth` | Whether the record arrived on a Node ingress bound to its tenant and source. Only the Node sets it (fabricguard for telemetry, `fabriccontent` in the persisted content descriptor); an agent-supplied value is stripped or rejected. It is receiver-owned: excluded from the seal digest. It counts only when reconstruct reads from the trusted Node export or the configured store (trusted readback); imported span files never establish authentication. The manifest declares the intended `source_auth`. |
@@ -1364,7 +1396,7 @@ manifest (section 4).
 | S17 | `workflow.id` | label | `sdk.records` | metadata | LABEL | O | absent | built | T `fabric.workflow_id` | Workflow instance. |
 | S18 | workflow.node, workflow.iteration | label, int | `sdk.records` | metadata | LABEL/META | R (workflow_node) | not_captured(caller_omitted) | P2 | T `fabric.workflow.node`, `fabric.workflow.iteration` | Node and loop iteration. Branches and joins use `depends_on` links. |
 | S19 | `workflow.definition` | json | `sdk.records` | off | CONTENT | O | not_captured(hook_disabled) | P2 | C `workflow.definition` | Graph or plan definition. |
-| S20 | dispatch.kind, dispatch.id, dispatch.state | enum, dsp-pseudonym, enum | `sdk.records` | metadata | META/ID | O | not_captured(caller_omitted) | P2 | T `fabric.dispatch.kind`, `.id`, `.state` | Queue, task, job, invocation, provider batch or webhook delivery; state produced, received, acknowledged, requeued, dead_lettered, unknown. Acknowledged is not processed. |
+| S20 | dispatch.kind, dispatch.id, dispatch.state | enum queue/task/job/invocation/provider_batch/webhook, dsp-pseudonym, enum produced/received/acknowledged/requeued/dead_lettered/unknown | `sdk.records` | metadata | META/ID | O | not_captured(caller_omitted) | P2 | T `fabric.dispatch.kind`, `.id`, `.state` | Queue, task, job, invocation, provider batch or webhook delivery; state produced, received, acknowledged, requeued, dead_lettered, unknown. Acknowledged is not processed. |
 | S21 | `batch.item_index` | int | `sdk.records` | metadata | META | O | not_applicable | P2 | T `fabric.batch.item_index` | Item position inside a batch. |
 | S22 | `delegation.target` | agt-pseudonym | `sdk.records` | metadata | ID | R (delegation) | not_captured(caller_omitted) | built (clear), P0-A (`agt-` keyed) | T `fabric.delegation.to_agent` | Agent, run or service delegated to. Via `delegate()`. |
 | S23 | delegation.protocol, delegation.depth | enum in_process/http/a2a/mcp/queue/framework/other, int | `sdk.records` | metadata | META | O | unknown | built | T `fabric.delegation.protocol`, `.depth` | How and how deep. |
@@ -1407,7 +1439,7 @@ manifest (section 4).
 | N19 | `provider_tool.kind` | enum web_search/file_search/code_interpreter/computer/image_generation/mcp/other | `reconstruct.parse` | metadata | META | R (provider_tool_call) | not_captured(not_instrumented) | P1 | P | Hosted tool items in Responses and Anthropic server tools. |
 | N20 | `provider_tool.status` | enum requested/in_progress/reported_completed/reported_failed/unknown | `reconstruct.parse` | metadata | META | R (provider_tool_call) | unknown | P1 | P | Provider assertion; execution inside the provider is not observed. |
 | N21 | provider_tool.inputs, outputs, citations, files | locators | `reconstruct.parse` | content | CONTENT | O | absent | P1 | P ref | Queries, results, citations, generated file references. |
-| N22 | mcp.method, mcp.direction | label (closed list + other), enum client_to_server/server_to_client | `mcp.wrapper`, `mcp.client` | metadata | META | R (mcp_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | T `fabric.mcp.method`, `fabric.mcp.direction` | JSON-RPC method and direction. |
+| N22 | mcp.method, mcp.direction | closed list of MCP method names plus `other` (section 4.2), enum client_to_server/server_to_client | `mcp.wrapper`, `mcp.client` | metadata | META | R (mcp_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | T `fabric.mcp.method`, `fabric.mcp.direction` | JSON-RPC method and direction. |
 | N23 | mcp.session_id, mcp.jsonrpc_id | keyed pseudonyms | `mcp.client` | metadata | ID | O | not_captured(not_instrumented) | P4 | P | Session and request ids, for progress and cancel pairing. |
 | N24 | mcp.request, mcp.response, mcp.notification | bytes | `mcp.wrapper`, `mcp.client` | content | CONTENT | R (mcp_call) | not_captured(not_instrumented) | P2 (R), P4 (H) | C `mcp.request`, `mcp.response`, `mcp.notification` | Exact JSON-RPC bytes where observed. Resources, prompts, sampling and elicitation included in P4. |
 | N25 | `mcp.error.kind` | enum protocol/tool | `mcp.wrapper`, `mcp.client` | metadata | META | R (on error) | unknown | P2 | T `fabric.mcp.error_kind` | Protocol error versus tool error result. |
@@ -1576,15 +1608,39 @@ telemetry exporters, diagnostics or the telemetry destination.
 
 ### 4.2 Telemetry keys
 
-Every `T` key in section 3 is an exact key. A new key is admitted by
-fabricguard in its phase, with a closed validator for its privacy class, in
-the same change as its golden and its emitter. No wildcard is ever
+Every `T` key in section 3 is an exact key. **Every new key is admitted by
+fabricguard in P0**, with a closed validator for its privacy class and a
+golden; it is **emitted from its phase** (column Phase). A changed
+validator that rejects values accepted today (for example clear
+`fabric.session_id`) switches in its listed phase. No wildcard is ever
 admitted. The registry `contracts/coverage/v1/registry/telemetry-keys-v1.json`
 lists every new key and every **changed validator** of an existing key;
 changed rows are listed first. Decisions recorded here: `fabric.memory.key`
 and `fabric.interaction.target` are pseudonymised (not hashed, not
 dropped); `fabric.user_id` is newly admitted in `usr-` form;
 `fabric.control.enforced_by_fabric` admits only `false`.
+
+**LABEL exposure.** Public software identifiers (`db.system.name`,
+`fabric.framework.name`, `fabric.framework.version`,
+`fabric.mcp.server_version`, `fabric.capture.point`) are emitted as is
+within their regex. Operator labels (`fabric.control.policy_id`,
+`fabric.run.agent_policy_id`, `fabric.workflow.node`) follow the 048 J1
+rule used for `service.name`: `lbl-` + 32 hex of the v1 label pseudonym
+(keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`,
+then as is within the clear regex.
+
+**Closed lists.** `fabric.dispatch.kind`: `queue`, `task`, `job`,
+`invocation`, `provider_batch`, `webhook`. `fabric.mcp.method` (MCP method
+names): `initialize`, `ping`, `tools/list`, `tools/call`,
+`resources/list`, `resources/templates/list`, `resources/read`,
+`resources/subscribe`, `resources/unsubscribe`, `prompts/list`,
+`prompts/get`, `completion/complete`, `logging/setLevel`,
+`sampling/createMessage`, `elicitation/create`, `roots/list`,
+`notifications/initialized`, `notifications/cancelled`,
+`notifications/progress`, `notifications/message`,
+`notifications/resources/updated`, `notifications/resources/list_changed`,
+`notifications/tools/list_changed`, `notifications/prompts/list_changed`,
+`notifications/roots/list_changed`, and `other` for any method not listed.
 
 <!-- generated:keys:begin -->
 | Key | Change | Field | Validator | Phase | Manifest property | Note |
@@ -1598,24 +1654,24 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.user_id` | changed | X14 | ID: `usr-` + 32 hex (newly admitted; clear values rejected) | P0-A |  | Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted). |
 | `fabric.wire.request_sha256` | changed | N01 | DIGEST: bare 64 hex (built form); digest of the stored, protected request object; absent when nothing is stored | P0-A |  | Today the digest of the original body (`_pipeline.py:136,293,302`). Never computed over the original under redact, tokenize, masked_only or metadata_only. |
 | `fabric.wire.response_sha256` | changed | N01 | DIGEST: bare 64 hex (built form); digest of the stored, protected response object; absent when nothing is stored | P0-A |  | Today the digest of the original body (`_pipeline.py:141,293,302`). |
-| `db.system.name` | new | N38 | LABEL: pattern, exposure rule | P4 |  |  |
+| `db.system.name` | new | N38 | LABEL: `^[a-z][a-z0-9_.]{0,63}$` (OTel `db.system.name` values); emitted as is (public software identifier) | P4 |  |  |
 | `fabric.actor.id` | new | S04 | ID: `act-` + 32 hex | P1 |  |  |
 | `fabric.actor.type` | new | S03 | META: closed enum (field type) | P1 |  |  |
 | `fabric.attempt.uid` | new | X19 | ID: uuid4 | P1 (records) |  |  |
-| `fabric.batch.item_index` | new | S21 | META: integer range | P2 |  |  |
+| `fabric.batch.item_index` | new | S21 | META: integer ≥ 0 | P2 |  |  |
 | `fabric.build.digest` | new | C12 | DIGEST: `sha256:` + 64 hex | P2 |  |  |
 | `fabric.cancel.state` | new | S32 | META: closed enum (field type) | P2 |  |  |
 | `fabric.capture.input` | new | X06 | META: closed enum (capture_input vocabulary) | P1 |  |  |
 | `fabric.capture.manifest_digest` | new | X34 | DIGEST: `sha256:` + 64 hex | P1 |  |  |
 | `fabric.capture.manifest_id` | new | X34 | ID: uuid4 | P1 | `manifest_id` |  |
-| `fabric.capture.manifest_seq` | new | X39 | META: integer range | P1 |  |  |
-| `fabric.capture.point` | new | X26 | LABEL: pattern, exposure rule | P1 |  |  |
+| `fabric.capture.manifest_seq` | new | X39 | META: integer ≥ 0 | P1 |  |  |
+| `fabric.capture.point` | new | X26 | LABEL: `^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$` (Fabric-defined id@version); emitted as is | P1 |  |  |
 | `fabric.checkpoint.action` | new | S27 | META: closed enum (field type) | P2 |  |  |
 | `fabric.config.digest` | new | C13 | DIGEST: `sha256:` + 64 hex | P2 |  |  |
 | `fabric.context.change_kind` | new | D14 | META: closed enum (field type) | P3 |  |  |
 | `fabric.context.token_basis` | new | D15 | META: closed enum (field type) | P3 |  |  |
-| `fabric.context.tokens_after` | new | D15 | META: integer range | P3 |  |  |
-| `fabric.context.tokens_before` | new | D15 | META: integer range | P3 |  |  |
+| `fabric.context.tokens_after` | new | D15 | META: integer ≥ 0 | P3 |  |  |
+| `fabric.context.tokens_before` | new | D15 | META: integer ≥ 0 | P3 |  |  |
 | `fabric.context.trigger` | new | D14 | META: closed enum (field type) | P3 |  |  |
 | `fabric.control.action_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
 | `fabric.control.authentication` | new | D11 | META: const `unverified_caller_report` | P3 |  |  |
@@ -1626,19 +1682,19 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.control.kind` | new | D02 | META: closed enum (field type) | P3 |  |  |
 | `fabric.control.phase` | new | D03 | META: closed enum (field type) | P3 |  |  |
 | `fabric.control.policy_digest` | new | D08 | DIGEST: `sha256:` + 64 hex | P3 |  |  |
-| `fabric.control.policy_id` | new | D08 | LABEL: pattern, exposure rule | P3 |  |  |
-| `fabric.control.policy_version` | new | D08 | META: integer range | P3 |  |  |
+| `fabric.control.policy_id` | new | D08 | LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is | P3 |  |  |
+| `fabric.control.policy_version` | new | D08 | META: integer ≥ 1 | P3 |  |  |
 | `fabric.control.proof_ref` | new | D09 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
 | `fabric.control.resolves` | new | D05 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
 | `fabric.conversation_id` | new | X15 | ID: `conv-` + 32 hex | P2 |  |  |
 | `fabric.db.namespace_id` | new | N38 | ID: `dbn-` + 32 hex | P4 |  |  |
-| `fabric.db.rows_affected` | new | N41 | META: integer range | P4 |  |  |
-| `fabric.db.rows_fetched` | new | N41 | META: integer range | P4 |  |  |
+| `fabric.db.rows_affected` | new | N41 | META: integer ≥ -1 (-1 = unknown) | P4 |  |  |
+| `fabric.db.rows_fetched` | new | N41 | META: integer ≥ -1 (-1 = unknown) | P4 |  |  |
 | `fabric.db.transaction_id` | new | N42 | ID: `txn-` + 32 hex | P4 |  |  |
 | `fabric.delegation.state` | new | S24 | META: closed enum (field type) | P2 |  |  |
 | `fabric.dispatch.branch_id` | new | X46 | ID: `br-` + 32 hex | P2 |  |  |
 | `fabric.dispatch.id` | new | S20 | ID: `dsp-` + 32 hex | P2 |  |  |
-| `fabric.dispatch.kind` | new | S20 | META: closed enum (field type) | P2 |  |  |
+| `fabric.dispatch.kind` | new | S20 | META: closed enum `queue`, `task`, `job`, `invocation`, `provider_batch`, `webhook` | P2 |  |  |
 | `fabric.dispatch.state` | new | S20 | META: closed enum (field type) | P2 |  |  |
 | `fabric.error.code` | new | S11 | META: `^[A-Za-z0-9_.-]{1,64}$` | P1 (provider) |  |  |
 | `fabric.error.domain` | new | S09 | META: closed enum (field type) | P1 |  |  |
@@ -1646,8 +1702,8 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.execution.host_id` | new | C41 | ID: `hst-` + 32 hex | P2 |  |  |
 | `fabric.execution.image_digest` | new | C41 | DIGEST: `sha256:` + 64 hex | P2 |  |  |
 | `fabric.execution.sandbox_id` | new | C41 | ID: `sbx-` + 32 hex | P2 |  |  |
-| `fabric.framework.name` | new | C15 | LABEL: pattern, exposure rule | P2 |  |  |
-| `fabric.framework.version` | new | C15 | LABEL: pattern, exposure rule | P2 |  |  |
+| `fabric.framework.name` | new | C15 | LABEL: `^@?[a-z0-9][a-z0-9._/-]{0,127}$` (normalised package name); emitted as is (public software identifier) | P2 |  |  |
+| `fabric.framework.version` | new | C15 | LABEL: `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`; emitted as is (public software identifier) | P2 |  |  |
 | `fabric.input.kind` | new | C08 | META: closed enum (field type) | P1 (I), P2 (R) |  |  |
 | `fabric.input.state` | new | C09 | META: closed enum (field type) | P2 |  |  |
 | `fabric.manifest.after_source_sequence` | new | X39 | META: integer ≥ -1 | P1 | `after_source_sequence` | Attribute of the `fabric.capture_manifest` span. |
@@ -1656,10 +1712,10 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.manifest.capture_policy.encrypted_store_required` | new | X31 | META: boolean | P0-A | `capture_policy/encrypted_store_required` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.capture_policy.policy_digest` | new | X31 | DIGEST: `sha256:` + 64 hex | P0-A | `capture_policy/policy_digest` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.capture_policy.policy_id` | new | X31 | LABEL: opaque id pattern | P0-A | `capture_policy/policy_id` | Attribute of the `fabric.capture_manifest` span. |
-| `fabric.manifest.capture_policy.policy_version` | new | X31 | META: integer range | P0-A | `capture_policy/policy_version` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_policy.policy_version` | new | X31 | META: integer ≥ 1 | P0-A | `capture_policy/policy_version` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.chunk_boundaries_retained` | new | S31 | META: boolean | P1 | `chunk_boundaries_retained` | Attribute of the `fabric.capture_manifest` span. |
-| `fabric.manifest.clock.domain` | new | X25 | META: closed enum `wall_utc`, `monotonic_process` | P1 | `clock/domain` | Attribute of the `fabric.capture_manifest` span. |
-| `fabric.manifest.clock.uncertainty_ns` | new | X25 | META: integer range | P1 | `clock/uncertainty_ns` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.clock.domain` | new | X25 | META: const `wall_utc` | P1 | `clock/domain` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.clock.uncertainty_ns` | new | X25 | META: integer ≥ 0 | P1 | `clock/uncertainty_ns` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.content_capture` | new | X33 | META: closed enum `enabled`, `disabled`, `metadata_only` | P0-A | `content_capture` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.content_capture_reason` | new | X33 | META: closed enum (schema) | P0-A | `content_capture_reason` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.coverage_profile` | new | X33 | META: `^fabric\.profile\.[a-z0-9-]+/v[0-9]+$` | P1 | `coverage_profile` | Attribute of the `fabric.capture_manifest` span. |
@@ -1670,14 +1726,14 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.manifest.inputs` | new | X06 | META: array of closed enum (capture_input vocabulary) | P1 | `inputs` |  |
 | `fabric.manifest.key_id` | new | X33 | META: `^kid-[0-9a-f]{8}$` | P0-A | `key_id` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.limits.max_body_bytes` | new | X34 | META: integer range 1-67108864 | P1 | `limits/max_body_bytes` | Attribute of the `fabric.capture_manifest` span. |
-| `fabric.manifest.limits.max_inflight_bytes` | new | X34 | META: integer range | P1 | `limits/max_inflight_bytes` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.limits.max_inflight_bytes` | new | X34 | META: integer ≥ 1 | P1 | `limits/max_inflight_bytes` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.limits.max_retain_bytes` | new | X34 | META: integer range 1-67108864 | P1 | `limits/max_retain_bytes` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.limits.open_run_deadline_s` | new | X42 | META: integer range 60-31536000 | P1 | `limits/open_run_deadline_s` |  |
-| `fabric.manifest.limits.part_min_bytes` | new | X34 | META: integer range | P1 | `limits/part_min_bytes` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.limits.part_min_bytes` | new | X34 | META: integer ≥ 1 | P1 | `limits/part_min_bytes` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.limits.queue_max_items` | new | X34 | META: integer range 1-65536 | P1 | `limits/queue_max_items` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.limits.records_max_object_bytes` | new | X34 | META: integer range 1-16777216 | P1 | `limits/records_max_object_bytes` |  |
-| `fabric.manifest.manifest_seq` | new | X39 | META: integer range | P1 | `manifest_seq` | Attribute of the `fabric.capture_manifest` span. |
-| `fabric.manifest.max_clock_uncertainty_ns` | new | X25 | META: integer range | P1 | `clock/max_uncertainty_ns` |  |
+| `fabric.manifest.manifest_seq` | new | X39 | META: integer ≥ 0 | P1 | `manifest_seq` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.max_clock_uncertainty_ns` | new | X25 | META: integer ≥ 0 | P1 | `clock/max_uncertainty_ns` |  |
 | `fabric.manifest.previous_manifest_digest` | new | X39 | DIGEST: `sha256:` + 64 hex | P1 | `previous_manifest_sha256` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.profile` | new | X33 | META: closed enum `local`, `production` | P0-A | `profile` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.pseudonym_mode` | new | X33 | META: closed enum `keyed`, `unkeyed` | P0-A | `pseudonym_mode` | Attribute of the `fabric.capture_manifest` span. |
@@ -1693,23 +1749,23 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.manifest.unsealed_prior_epochs` | new | X45 | META: array (max 64) of decimal epoch strings | P1 | `unsealed_prior_epochs` |  |
 | `fabric.mcp.direction` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |  |
 | `fabric.mcp.error_kind` | new | N25 | META: closed enum (field type) | P2 |  |  |
-| `fabric.mcp.method` | new | N22 | META: closed enum (field type) | P2 (R), P4 (H) |  |  |
+| `fabric.mcp.method` | new | N22 | META: closed enum of MCP method names (section 4.2 list) plus `other` | P2 (R), P4 (H) |  |  |
 | `fabric.mcp.protocol_version` | new | C27 | META: `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | P2 |  |  |
-| `fabric.mcp.server_version` | new | C26 | LABEL: pattern, exposure rule | P2 |  |  |
+| `fabric.mcp.server_version` | new | C26 | LABEL: `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`; emitted as is (public software identifier) | P2 |  |  |
 | `fabric.memory.op` | new | N30 | META: closed enum (field type) | P2 |  |  |
 | `fabric.memory.store_id` | new | N30 | ID: `mst-` + 32 hex | P2 |  |  |
 | `fabric.network.host_id` | new | N43 | ID: `hst-` + 32 hex | P4 |  |  |
 | `fabric.outcome.channel_kind` | new | D27 | META: closed enum (field type) | P2 |  |  |
 | `fabric.outcome.delivery_state` | new | D28 | META: closed enum (field type) | P2 |  |  |
 | `fabric.outcome.target_id` | new | D27 | ID: `tgt-` + 32 hex | P2 |  |  |
-| `fabric.process.exit_code` | new | N35 | META: integer range | P4 |  |  |
-| `fabric.process.pid` | new | N35 | META: integer range | P4 |  |  |
-| `fabric.process.signal` | new | N35 | META: integer range | P4 |  |  |
+| `fabric.process.exit_code` | new | N35 | META: integer, signed 32-bit | P4 |  |  |
+| `fabric.process.pid` | new | N35 | META: integer ≥ 1 | P4 |  |  |
+| `fabric.process.signal` | new | N35 | META: integer ≥ 1 | P4 |  |  |
 | `fabric.remote.host_key_verified` | new | N36 | META: boolean | P4 |  |  |
 | `fabric.remote.target_id` | new | N36 | ID: `hst-` + 32 hex | P4 |  |  |
 | `fabric.run.agent_policy_digest` | new | C33 | DIGEST: `sha256:` + 64 hex | P2 |  |  |
-| `fabric.run.agent_policy_id` | new | C33 | LABEL: pattern, exposure rule | P2 |  |  |
-| `fabric.run.agent_policy_version` | new | C33 | META: integer range | P2 |  |  |
+| `fabric.run.agent_policy_id` | new | C33 | LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is | P2 |  |  |
+| `fabric.run.agent_policy_version` | new | C33 | META: integer ≥ 1 | P2 |  |  |
 | `fabric.run.approval_policy` | new | C31 | META: closed enum (field type) | P2 |  |  |
 | `fabric.run.branch_ids` | new | X46 | ID: array (max 64) of `br-` + 32 hex | P1 |  |  |
 | `fabric.run.declared_branches` | new | X46 | ID: array (max 64) of `seg-` + 32 hex | P1 |  |  |
@@ -1718,7 +1774,7 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.run.open_deadline_s` | new | X42 | META: integer range 60-31536000 | P1 |  |  |
 | `fabric.run.outcome` | new | D30 | META: closed enum (field type) | P2 |  |  |
 | `fabric.run.parent_id` | new | X10 | ID: `r-` + 32 hex | P1 |  |  |
-| `fabric.run.permissions.count` | new | C32 | META: integer range | P2 |  |  |
+| `fabric.run.permissions.count` | new | C32 | META: integer ≥ 0 | P2 |  |  |
 | `fabric.run.predecessors` | new | X41 | ID: array (max 64) of `none` or `<seg-id>/<opaque source id>/<epoch>/<last_sequence>/sha256:<64 hex>`; source id is the opaque id as emitted (pseudonymous or clear label) | P1 |  |  |
 | `fabric.run.resumable` | new | X42 | META: boolean | P1 |  | Also on token-issuing `segment_seal` markers; resumability is monotonic. |
 | `fabric.run.resumed_from` | new | X11 | ID: `r-` + 32 hex | P1 |  |  |
@@ -1747,12 +1803,12 @@ dropped); `fabric.user_id` is newly admitted in `usr-` form;
 | `fabric.step.status` | new | S08 | META: closed enum (field type) | P1 |  |  |
 | `fabric.tool.execution_side` | new | N18 | META: closed enum (field type) | P1 |  |  |
 | `fabric.turn_id` | new | X16 | ID: `turn-` + 32 hex | P2 |  |  |
-| `fabric.wire.first_chunk_offset_ns` | new | S30 | META: integer range | P1 |  |  |
+| `fabric.wire.first_chunk_offset_ns` | new | S30 | META: integer ≥ 0 | P1 |  |  |
 | `fabric.wire.store_reason` | new | X40 | META: closed enum (store_reason vocabulary) | P0-A |  |  |
-| `fabric.workflow.iteration` | new | S18 | META: integer range | P2 |  |  |
-| `fabric.workflow.node` | new | S18 | LABEL: pattern, exposure rule | P2 |  |  |
-| `fabric.event_id` | reused | X02 | existing validator (uuid4) | P1 | `event_id` | Attribute of the `fabric.capture_manifest` span. |
-| `fabric.schema_version` | reused | X01 | existing validator (const `fabric.capture-manifest/v1` on this span) | built | `schema_version` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.workflow.iteration` | new | S18 | META: integer ≥ 0 | P2 |  |  |
+| `fabric.workflow.node` | new | S18 | LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is | P2 |  |  |
+| `fabric.event_id` | reused | X02 | ID: uuid4 (lowercase, dashed) — new value validator added in P0; the key is allowlisted today without one | P1 | `event_id` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.schema_version` | reused | X01 | existing key; P0 adds the const `fabric.capture-manifest/v1` on the manifest span | built | `schema_version` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.sdk.version` | reused | X36 | existing validator | built | `sdk/version` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.source.epoch` | reused | X06 | existing validator | built | `source_epoch` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.source_id` | reused | X06 | existing validator | built | `source_id` | Attribute of the `fabric.capture_manifest` span. |
@@ -1973,10 +2029,14 @@ without revising this spec.
    the same capture goldens byte for byte, and its manifest declares every
    other field `unsupported`.
 8. **Schema versioning.** Additive changes (optional field, enum value,
-   role) are minor; readers ignore unknown optional properties only where
-   the schema says so, and closed schemas get a new minor schema file.
-   Removing or changing a meaning is a major version with a new
-   `schema_version` string; both versions are readable for one release.
+   role) are minor: the schema file is edited **in place**, the family
+   manifest's `version` bumps its minor number (content/v2 `2.0.0` →
+   `2.1.0`, capture/v1 `1.0.0` → `1.1.0`) and every pin is updated in the
+   same change; the document's `schema_version` string does not change.
+   Readers ignore unknown optional properties only where the schema says
+   so. Removing or changing a meaning is a major version with a new
+   `schema_version` string and directory; both versions are readable for
+   one release.
 9. **Raw evidence is immutable.** Projections reference source digests and
    locators (JSON pointer, byte range, protocol item); reprocessing makes a
    new revision.
@@ -2074,8 +2134,8 @@ step whose evidence is complete is `captured_for_declared_fields`.
 | RR1a | Production profile and any record of the run without `fabric.source.authenticated=true` (G6) | `unverified`, reason `source_unauthenticated` |
 | RR2 | Run-level fields of the profile (`run_fields`) evaluated as one pseudo-step give `unverified` | `unverified` |
 | RR3 | No step and no run-level field of the profile in this layer | `none_observed` (with the manifest states of the supplying capture points) |
-| RR3a | Segment-graph rules G1–G7 (2.10) report `segment_missing`, `segment_conflict` or `post_terminal_activity`, or a seal check fails (`seal_mismatch`, `unsealed`, `unsealed_epoch`, section 2.12) | `partial` with that reason |
-| RR3b | Deadline undecidable within the clock-uncertainty window, or a non-UTC clock (2.10) | `unverified`, reason `clock_uncertain` |
+| RR3a | Segment-graph rules G1–G7 (2.10) report `segment_missing`, `segment_conflict` or `post_terminal_activity`, or a seal check fails (`seal_mismatch`; `source_lost` for an unsealed segment, as in `X44`; `unsealed_epoch`, section 2.12) | `partial` with that reason |
+| RR3b | Deadline undecidable: the declared clock uncertainty U exceeds the bound, or `evaluated_at` lies within U of the deadline (2.10) | `unverified`, reason `clock_uncertain` |
 | RR3c | Resumable run without a terminal segment, after its deadline (G10) | `partial`, reason `run_unterminated` |
 | RR4 | All step verdicts and the run-level verdict are `unsupported` | `unsupported` |
 | RR5 | Integrity verdict `partial`, any verdict `partial`, or `unsupported` mixed with other verdicts | `partial` |
@@ -2238,7 +2298,9 @@ On the worker thread (never the hot path):
    Anthropic `source.data` for image and document; Responses
    `input_image`/`input_file`; generated images `b64_json`; audio output
    `data`) becomes its own `model.exchange.part` object holding the exact
-   source byte range (the base64 text), with `media_type` of the decoded
+   source byte range (the base64 text) — `byte_range` is always half-open
+   `[start, end)`, 0-based byte offsets into the original side body — with
+   `media_type` of the decoded
    content and `content_encoding: base64`. The remainder is the
    **skeleton**: the original bytes with those ranges removed. How each
    object is then protected, digested and linked is section 7.5.
@@ -2255,8 +2317,10 @@ and (c) the side is JSON. A part above `max_body_bytes` is withheld with
 its length (and digest where 7.5 allows). A side above 64 MiB is truncated
 by whole chunks and its text may be lost. The P0-A gate tests a 63 MiB
 skeleton plus descriptor against the Node's 64 MiB request cap. The
-explicit line's `byte_object_max_bytes` (16 MiB, `coverage_manifest.py:77`)
-is a separate limit and unchanged.
+explicit line's 16 MiB object cap (`byte_evidence.py:255`,
+`governed_store.py:72`; the `coverage_manifest.py:77` citation was removed
+by the owner-approved cleanup, chore/recorder-cleanup) is a separate limit
+and unchanged.
 
 ### 7.5 Protection and extraction compose
 
@@ -2266,7 +2330,7 @@ are actually stored, never to a reassembled original.
 
 | Role mode | Side ≤ `max_body_bytes` | Split side (skeleton + parts) |
 |---|---|---|
-| `retain_original` | stored as is; `source_sha256` of the original | every object stored as is; skeleton `representation: split`, `transformations: [extract_parts]`, `source_sha256` of the **original body**; parts carry `part_of` links with `byte_range`; the verifier reassembles and checks `source_sha256` |
+| `retain_original` | stored as is; `source_sha256` of the original | every object stored as is; skeleton `representation: split`, `transformations: [extract_parts]`, `source_sha256` of the **original body**; parts carry `part_of` links with `byte_range` (half-open `[start, end)`, 0-based byte offsets into the original body); the verifier reassembles and checks `source_sha256` |
 | `redact`, `tokenize` | transformed; no `source_sha256` (content-v2 forbids it); `stored_sha256` of the transformed bytes | each object transformed independently with the role's transformation; binary parts a text transformation cannot handle are withheld (`not_captured(privacy_policy)`, descriptor only); **no original-body digest** and no `byte_range`; no reassembly claim; the side is `redacted(privacy_policy)` |
 | `masked_only` | like `redact`: only the masked copy is stored | as `redact` |
 | `original_plus_masked` | the original as `retain_original`, plus a separately referenced masked review copy (`derived_from` link) | the original side split as `retain_original`; the review copy is one masked object per side |
@@ -2422,8 +2486,8 @@ fields that need no new role.
   vocabularies) with valid/invalid fixtures and
   `scripts/contracts/validate_coverage_contracts.py`; content-v2 role and
   descriptor widening (contract); capture/v1 manifest record schema and
-  marker keys; pseudonym v2 vectors; fabricguard validators for every new
-  `T` key (admission only); retire the legacy activity v1 goldens outside
+  marker keys; pseudonym v2 vectors; fabricguard admission and validators
+  for every new `T` key (emission follows each key's phase, section 4.2); retire the legacy activity v1 goldens outside
   the OSS scope (`policy_*`, `guardrail_*`, `tool_authorization_*`,
   `escalation`, `eval_record`, `queue_judge`) to history; the two-input
   contract: `capture_input` vocabulary, shared-allocator semantics
@@ -3011,3 +3075,17 @@ Each is applied in this spec as its recommended default.
 | R6A-7 | Resumability promotion not observable | Token-issuing `segment_seal` carries `resumable=true`; verifier treats resumability as monotonic | 2.10, `X42` |
 | R6A-8 | Content-log authentication transport | Receiver-owned `source_authenticated` persisted by `fabriccontent` in the descriptor; closed parser still rejects it from agents; returned by content readback | 4.3, 7.9 |
 | R6A-9 | Rev-5 dispositions listed as resolved by Astra (mutable segments, `end_run`, fork, epochs, deadline, old verifier, step `open`, F4, F5) | No change | — |
+| R63-1 | Seven LABEL keys had no exact validator | Exact regex per key; public software ids emitted as is; operator labels (`policy_id`s, `workflow.node`) follow 048 J1 with prefix `lbl-` unless `FABRIC_WIRE_LABELS=clear`; `fabric.capture.point` pinned too | 4.2, keys registry |
+| R63-2 | `fabric.dispatch.kind` and `fabric.mcp.method` lists missing | Dispatch kinds from `S20`'s definition; MCP method names plus `other` | 4.2, `S20`, `N22` |
+| R63-3 | Pseudonym v2 type strings and input format unnamed | Table of 18 prefix→type strings; exact HMAC input format for vectors | 2.9 |
+| R63-4 | Clock domain inconsistent | Manifest and key: `wall_utc` only; `monotonic_process` removed from the key and the projection; RR3b reworded to clock uncertainty | 6.2, `X25`, schemas |
+| R63-5 | `byte_range` encoding | Half-open `[start, end)`, 0-based byte offsets into the original body | 7.4, 7.5, projection schema |
+| R63-6 | `fabric.capture.input` on source-level records | Absent on loss, heartbeat (all kinds) and manifest records | 2.4 |
+| R63-7 | Manifest spool kind | `marker` (marker kind `manifest`) | 2.8 |
+| R63-8 | Key admission timing | Admission in P0 for every key; emission from the key's phase; tightening validators switch in their phase | 4.2, 8.2 P0 |
+| R63-9 | `unsealed` not a reason | Unsealed segment uses reason `source_lost`, as in `X44` | 2.12, 6.2 |
+| R63-10 | Field-set keys of multi-name rows | Split rule with namespace inheritance; validator checks pattern and uniqueness | 3 |
+| R63-11 | `fabric.event_id` "existing validator" | A new uuid4 value validator is added in P0; `fabric.schema_version` const likewise added in P0 | keys registry |
+| R63-12 | Integer key ranges | Counts and offsets ≥0, versions ≥1, `db.rows_*` ≥−1, `process.exit_code` int32, `process.signal` ≥1, `process.pid` ≥1 | keys registry |
+| R63-13 | Schema versioning rule vs practice | Minor = edit in place + manifest minor bump + repin (content/v2, capture/v1 precedent) | 5 rule 8 |
+| R63-14 | Stale code citations | `capture_capabilities.py`, `coverage_manifest.py` and `adapters/crewai.py` marked as removed by the owner-approved cleanup (chore/recorder-cleanup); `control_protocol.py` and `enterprise.py` are not cited in the rev 6.2 text | 2.1, 2.8, 2.11, 7.4 |

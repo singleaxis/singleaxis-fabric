@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 7,
+  "registry_revision": 8,
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -78,7 +78,7 @@
       "key": "db.system.name",
       "change": "new",
       "field": "N38",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[a-z][a-z0-9_.]{0,63}$` (OTel `db.system.name` values); emitted as is (public software identifier)",
       "phase": "P4"
     },
     {
@@ -106,7 +106,7 @@
       "key": "fabric.batch.item_index",
       "change": "new",
       "field": "S21",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P2"
     },
     {
@@ -149,14 +149,14 @@
       "key": "fabric.capture.manifest_seq",
       "change": "new",
       "field": "X39",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1"
     },
     {
       "key": "fabric.capture.point",
       "change": "new",
       "field": "X26",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$` (Fabric-defined id@version); emitted as is",
       "phase": "P1"
     },
     {
@@ -191,14 +191,14 @@
       "key": "fabric.context.tokens_after",
       "change": "new",
       "field": "D15",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P3"
     },
     {
       "key": "fabric.context.tokens_before",
       "change": "new",
       "field": "D15",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P3"
     },
     {
@@ -276,14 +276,14 @@
       "key": "fabric.control.policy_id",
       "change": "new",
       "field": "D08",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P3"
     },
     {
       "key": "fabric.control.policy_version",
       "change": "new",
       "field": "D08",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P3"
     },
     {
@@ -318,14 +318,14 @@
       "key": "fabric.db.rows_affected",
       "change": "new",
       "field": "N41",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ -1 (-1 = unknown)",
       "phase": "P4"
     },
     {
       "key": "fabric.db.rows_fetched",
       "change": "new",
       "field": "N41",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ -1 (-1 = unknown)",
       "phase": "P4"
     },
     {
@@ -360,7 +360,7 @@
       "key": "fabric.dispatch.kind",
       "change": "new",
       "field": "S20",
-      "validator": "META: closed enum (field type)",
+      "validator": "META: closed enum `queue`, `task`, `job`, `invocation`, `provider_batch`, `webhook`",
       "phase": "P2"
     },
     {
@@ -416,14 +416,14 @@
       "key": "fabric.framework.name",
       "change": "new",
       "field": "C15",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^@?[a-z0-9][a-z0-9._/-]{0,127}$` (normalised package name); emitted as is (public software identifier)",
       "phase": "P2"
     },
     {
       "key": "fabric.framework.version",
       "change": "new",
       "field": "C15",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`; emitted as is (public software identifier)",
       "phase": "P2"
     },
     {
@@ -498,7 +498,7 @@
       "key": "fabric.manifest.capture_policy.policy_version",
       "change": "new",
       "field": "X31",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P0-A",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_policy/policy_version"
@@ -516,7 +516,7 @@
       "key": "fabric.manifest.clock.domain",
       "change": "new",
       "field": "X25",
-      "validator": "META: closed enum `wall_utc`, `monotonic_process`",
+      "validator": "META: const `wall_utc`",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "clock/domain"
@@ -525,7 +525,7 @@
       "key": "fabric.manifest.clock.uncertainty_ns",
       "change": "new",
       "field": "X25",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "clock/uncertainty_ns"
@@ -623,7 +623,7 @@
       "key": "fabric.manifest.limits.max_inflight_bytes",
       "change": "new",
       "field": "X34",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "limits/max_inflight_bytes"
@@ -649,7 +649,7 @@
       "key": "fabric.manifest.limits.part_min_bytes",
       "change": "new",
       "field": "X34",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "limits/part_min_bytes"
@@ -675,7 +675,7 @@
       "key": "fabric.manifest.manifest_seq",
       "change": "new",
       "field": "X39",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "manifest_seq"
@@ -684,7 +684,7 @@
       "key": "fabric.manifest.max_clock_uncertainty_ns",
       "change": "new",
       "field": "X25",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1",
       "manifest_property": "clock/max_uncertainty_ns"
     },
@@ -819,7 +819,7 @@
       "key": "fabric.mcp.method",
       "change": "new",
       "field": "N22",
-      "validator": "META: closed enum (field type)",
+      "validator": "META: closed enum of MCP method names (section 4.2 list) plus `other`",
       "phase": "P2 (R), P4 (H)"
     },
     {
@@ -833,7 +833,7 @@
       "key": "fabric.mcp.server_version",
       "change": "new",
       "field": "C26",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`; emitted as is (public software identifier)",
       "phase": "P2"
     },
     {
@@ -882,21 +882,21 @@
       "key": "fabric.process.exit_code",
       "change": "new",
       "field": "N35",
-      "validator": "META: integer range",
+      "validator": "META: integer, signed 32-bit",
       "phase": "P4"
     },
     {
       "key": "fabric.process.pid",
       "change": "new",
       "field": "N35",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P4"
     },
     {
       "key": "fabric.process.signal",
       "change": "new",
       "field": "N35",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P4"
     },
     {
@@ -924,14 +924,14 @@
       "key": "fabric.run.agent_policy_id",
       "change": "new",
       "field": "C33",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P2"
     },
     {
       "key": "fabric.run.agent_policy_version",
       "change": "new",
       "field": "C33",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 1",
       "phase": "P2"
     },
     {
@@ -994,7 +994,7 @@
       "key": "fabric.run.permissions.count",
       "change": "new",
       "field": "C32",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P2"
     },
     {
@@ -1200,7 +1200,7 @@
       "key": "fabric.wire.first_chunk_offset_ns",
       "change": "new",
       "field": "S30",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P1"
     },
     {
@@ -1214,21 +1214,21 @@
       "key": "fabric.workflow.iteration",
       "change": "new",
       "field": "S18",
-      "validator": "META: integer range",
+      "validator": "META: integer ≥ 0",
       "phase": "P2"
     },
     {
       "key": "fabric.workflow.node",
       "change": "new",
       "field": "S18",
-      "validator": "LABEL: pattern, exposure rule",
+      "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P2"
     },
     {
       "key": "fabric.event_id",
       "change": "reused",
       "field": "X02",
-      "validator": "existing validator (uuid4)",
+      "validator": "ID: uuid4 (lowercase, dashed) — new value validator added in P0; the key is allowlisted today without one",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "event_id"
@@ -1237,7 +1237,7 @@
       "key": "fabric.schema_version",
       "change": "reused",
       "field": "X01",
-      "validator": "existing validator (const `fabric.capture-manifest/v1` on this span)",
+      "validator": "existing key; P0 adds the const `fabric.capture-manifest/v1` on the manifest span",
       "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "schema_version"
@@ -1271,5 +1271,42 @@
     }
   ],
   "manifest_span": "fabric.capture_manifest",
-  "digest_form": "sha256:<64 lowercase hex> on every new key; keys named `*_digest`. Built keys ending in `_sha256`/`_hash` keep bare hex (Node hash-key rule)."
+  "digest_form": "sha256:<64 lowercase hex> on every new key; keys named `*_digest`. Built keys ending in `_sha256`/`_hash` keep bare hex (Node hash-key rule).",
+  "label_exposure": "Public software identifiers are emitted as is; operator labels follow the 048 J1 rule with prefix `lbl-` (section 4.2).",
+  "mcp_methods": [
+    "initialize",
+    "ping",
+    "tools/list",
+    "tools/call",
+    "resources/list",
+    "resources/templates/list",
+    "resources/read",
+    "resources/subscribe",
+    "resources/unsubscribe",
+    "prompts/list",
+    "prompts/get",
+    "completion/complete",
+    "logging/setLevel",
+    "sampling/createMessage",
+    "elicitation/create",
+    "roots/list",
+    "notifications/initialized",
+    "notifications/cancelled",
+    "notifications/progress",
+    "notifications/message",
+    "notifications/resources/updated",
+    "notifications/resources/list_changed",
+    "notifications/tools/list_changed",
+    "notifications/prompts/list_changed",
+    "notifications/roots/list_changed",
+    "other"
+  ],
+  "dispatch_kinds": [
+    "queue",
+    "task",
+    "job",
+    "invocation",
+    "provider_batch",
+    "webhook"
+  ]
 }

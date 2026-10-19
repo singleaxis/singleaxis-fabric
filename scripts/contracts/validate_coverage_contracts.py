@@ -74,6 +74,21 @@ PROJECTION_ENUMS = {
 }
 
 
+FIELD_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$")
+
+
+def field_set_keys(name: str) -> list[str]:
+    """Projection field-set keys of one registry row (spec 049 section 3, rule R63-10).
+
+    Split on commas; trim; spaces become underscores; a part without a dot
+    takes the namespace (text before the last dot) of the row's first part.
+    """
+    parts = [part.strip().replace(" ", "_") for part in name.split(",")]
+    first = parts[0]
+    namespace = first.rsplit(".", 1)[0] + "." if "." in first else ""
+    return [part if "." in part or not namespace else namespace + part for part in parts]
+
+
 @dataclass(frozen=True)
 class CoverageContractError(ValueError):
     """Stable, automation-safe validation failure."""
@@ -245,6 +260,12 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
     if len(set(ids)) != len(ids):
         _fail("coverage.fields.duplicate", "field-registry", "duplicate field id")
     policies = {r["value"] for r in vocab["policy"]}
+    projection_keys: set[str] = set()
+    for f in fields:
+        for key in field_set_keys(f.get("name", "")):
+            if not FIELD_KEY_RE.fullmatch(key) or key in projection_keys:
+                _fail("coverage.fields.key", f.get("id", "?"), f"projection key {key!r} invalid or duplicate")
+            projection_keys.add(key)
     for f in fields:
         fid = f.get("id", "?")
         if set(f) != FIELD_KEYS:
