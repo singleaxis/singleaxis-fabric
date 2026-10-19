@@ -178,28 +178,40 @@
           {"required": ["policy_id"]},
           {"required": ["policy_version"]},
           {"required": ["protection_status"]},
-          {"required": ["privacy_mode"], "properties": {"privacy_mode": {"enum": ["metadata_only", "retain_original", "redact", "tokenize"]}}},
+          {"required": ["privacy_mode"], "properties": {"privacy_mode": {"enum": ["metadata_only", "retain_original", "redact", "tokenize", "masked_only", "original_plus_masked"]}}},
           {"properties": {"representation": {"const": "tokenized"}}}
         ]
       },
       "then": {
         "required": ["policy_digest", "policy_id", "policy_version", "privacy_mode", "protection_status"],
-        "properties": {"privacy_mode": {"enum": ["omit", "metadata_only", "retain_original", "redact", "tokenize"]}}
+        "properties": {"privacy_mode": {"enum": ["omit", "metadata_only", "retain_original", "redact", "tokenize", "masked_only", "original_plus_masked"]}}
       }
     },
     {
       "if": {
         "required": ["policy_digest"],
-        "properties": {"privacy_mode": {"enum": ["omit", "metadata_only", "redact", "tokenize"]}}
+        "properties": {"privacy_mode": {"enum": ["omit", "metadata_only", "redact", "tokenize", "masked_only"]}}
       },
       "then": {"not": {"required": ["source_sha256"]}}
     },
     {
       "if": {
         "required": ["policy_digest", "privacy_mode"],
-        "properties": {"privacy_mode": {"enum": ["omit", "redact", "tokenize"]}}
+        "properties": {"privacy_mode": {"enum": ["omit", "redact", "tokenize", "masked_only"]}}
       },
       "then": {"not": {"required": ["source_byte_length"]}}
+    },
+    {
+      "description": "Spec 049 §7.5/§7.7: the masked review copy of original_plus_masked keeps no digest or length of the original and names the original it masks.",
+      "if": {
+        "required": ["privacy_mode", "protection_status"],
+        "properties": {"privacy_mode": {"const": "original_plus_masked"}, "protection_status": {"const": "redacted"}}
+      },
+      "then": {
+        "not": {"anyOf": [{"required": ["source_sha256"]}, {"required": ["source_byte_length"]}]},
+        "required": ["links"],
+        "properties": {"links": {"contains": {"properties": {"relation": {"const": "derived_from"}}, "required": ["relation"]}}}
+      }
     }
   ],
   "$defs": {

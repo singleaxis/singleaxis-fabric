@@ -122,6 +122,9 @@ type fileBackend struct {
 	// fsync'd. Bounded by maxDurableDirs: forgetting entries only costs a
 	// repeated (harmless) parent fsync.
 	durable map[string]bool
+	// sealer, when set, wraps every object and descriptor in the Node
+	// directory envelope (spec 049 §7.8; envelope.go).
+	sealer *sealer
 	// rootDurable is set once a walk of the root's ancestor chain (see
 	// rootBarrier) has completed in this process, and cleared whenever the
 	// root has to be created again.
@@ -162,7 +165,7 @@ func newFileBackend(dir string) *fileBackend {
 // root already exists, the root barrier (see rootBarrier): a failure other
 // than reaching the durable boundary fails Start with a retryable error.
 // A missing root is created, and its barrier completed, by the first put.
-func startFileBackend(dir, boundary string) (*fileBackend, error) {
+func startFileBackend(dir, boundary string, s *sealer) (*fileBackend, error) {
 	if boundary != "" {
 		if err := checkPhysicalBoundary(dir, boundary); err != nil {
 			return nil, err
@@ -170,6 +173,7 @@ func startFileBackend(dir, boundary string) (*fileBackend, error) {
 	}
 	b := newFileBackend(dir)
 	b.boundary = boundary
+	b.sealer = s
 	b.sweepStaleTemps()
 	if info, err := os.Lstat(dir); err == nil && info.IsDir() {
 		if err := b.ensureRoot(); err != nil {
@@ -260,7 +264,15 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 	if err := b.privateDirs(parent); err != nil {
 		return err
 	}
-	if done, err := existing(target, data); done || err != nil {
+	stored, rel := data, strings.TrimPrefix(key, b.prefix())
+	if b.sealer != nil {
+		sealed, err := b.sealer.seal(data, rel)
+		if err != nil {
+			return &storeError{op: "file seal"}
+		}
+		stored = sealed
+	}
+	if done, err := b.existing(target, data, rel); done || err != nil {
 		if err == nil { // a replay: heal a second link a crash after link(2) left
 			return healStaleTemps(target)
 		}
@@ -272,7 +284,7 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
-	if err := writeSynced(tmp, data); err != nil {
+	if err := writeSynced(tmp, stored); err != nil {
 		return err
 	}
 	err = linkFile(tmpName, target)
@@ -285,7 +297,7 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 		}
 	}
 	if err != nil { // the target exists: replay or conflict
-		done, err := existing(target, data)
+		done, err := b.existing(target, data, rel)
 		if err == nil && !done {
 			return &storeError{op: "file link"} // vanished: retry
 		}
@@ -653,6 +665,35 @@ func privateDir(path string) (created bool, err error) {
 		}
 	}
 	return created, nil
+}
+
+// existing is the package existing for a plaintext backend. With an
+// envelope the stored file is opened (authenticated for its own path rel)
+// and its plaintext compared: an envelope that fails authentication (a
+// corrupt or tampered object, or another key) is errConflict, never
+// overwritten and never read as content.
+func (b *fileBackend) existing(path string, data []byte, rel string) (bool, error) {
+	if b.sealer == nil {
+		return existing(path, data)
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return true, &storeError{op: "file read"}
+	}
+	defer func() { _ = f.Close() }()
+	limit := int64(len(contentMagic) + nonceBytes + len(data) + b.sealer.aead.Overhead())
+	current, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return true, &storeError{op: "file read"}
+	}
+	plaintext, err := b.sealer.open(current, rel)
+	if err != nil || !bytes.Equal(plaintext, data) {
+		return true, errConflict
+	}
+	return true, nil
 }
 
 // existing reports whether path already exists. An existing object holding

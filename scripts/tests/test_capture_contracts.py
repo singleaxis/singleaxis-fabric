@@ -46,7 +46,7 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 61
+    assert len(validated) == 77
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -295,6 +295,21 @@ CONTENT_ATTRIBUTES = {
     "run_id",
     "operation_id",
     "captured_at",
+    # spec 049 §4.3 rule 6 (P0-A)
+    "status_reason",
+    "observed_at",
+    "workload_id",
+    "attempt_id",
+    "stream_id",
+    "chunk_index",
+    "privacy_mode",
+    "policy_id",
+    "policy_version",
+    "policy_digest",
+    "protection_status",
+    "transformation_id",
+    "transformation_version",
+    "links",
 }
 
 
@@ -306,11 +321,13 @@ def test_spool_and_content_share_one_descriptor_definition() -> None:
     assert (
         "ref" not in content["properties"] and "encoding" not in content["properties"]
     )
+    # Receiver-owned: never part of what an agent sends (spec 049 §4.3 rule 6).
+    assert "source_authenticated" not in content["properties"]
 
 
 def test_content_log_record_attribute_set_is_closed() -> None:
     document = _json("fixtures/valid/content-log-record-request.json")
-    assert set(document["attributes"]) == CONTENT_ATTRIBUTES
+    assert set(document["attributes"]) <= CONTENT_ATTRIBUTES
     for key in ("ref", "content", "path", "bucket"):
         broken = copy.deepcopy(document)
         broken["attributes"][key] = "x"

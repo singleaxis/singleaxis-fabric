@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "exchange_id", "api", "provider_name", "source",
-    "run_id", "started_at", "ended_at", "request", "response_state", "truncated",
+    "run_id", "started_at", "ended_at", "response_state", "truncated",
     "store_status"
   ],
   "properties": {
@@ -65,13 +65,17 @@
       }
     },
     "truncated": {"type": "boolean"},
-    "store_status": {"enum": ["stored", "partial", "failed", "disabled"]}
+    "store_status": {"enum": ["stored", "partial", "failed", "disabled"]},
+    "store_reason": {
+      "description": "fabric.wire.store_reason (spec 049 §2.6): why bytes were or were not stored.",
+      "enum": ["no_store", "missing_capture_policy", "missing_id_key", "missing_spool_key", "privacy_policy", "protection_failed", "explicit_withheld", "store_failed", "body_cap", "inflight_budget", "transport_incomplete"]
+    }
   },
   "dependentRequired": {"span_id": ["trace_id"]},
   "allOf": [
     {
-      "if": {"properties": {"response_state": {"const": "complete"}}},
-      "then": {"required": ["response"]}
+      "if": {"properties": {"response_state": {"const": "complete"}, "store_status": {"const": "stored"}}},
+      "then": {"required": ["request", "response"]}
     },
     {
       "if": {"properties": {"response_state": {"const": "error"}}},
@@ -90,7 +94,7 @@
       ]
     },
     "body": {
-      "description": "One captured body. sha256 covers the captured bytes (the retained prefix when truncated); object_id is present only when those bytes were written to the customer store, and is the store's opaque object id (a lowercase uuid4), never a path, URI or bucket name. Readers resolve it through the store they are configured with.",
+      "description": "One captured body. sha256 is the digest of the stored, protected object (spec 049 §2.4 rule 8): the captured bytes under retain_original (the retained prefix when truncated, the skeleton when split), the transformed bytes otherwise; a side with no stored object (content disabled, withheld, omitted) has no body. object_id is present only when those bytes were written to the customer store, and is the store's opaque object id (a lowercase uuid4), never a path, URI or bucket name. Readers resolve it through the store they are configured with.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sha256"],

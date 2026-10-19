@@ -110,7 +110,7 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 	if err := os.Symlink(filepath.Dir(outside), filepath.Join(dir, "acme", "link")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := startFileBackend(dir, ""); err != nil {
+	if _, err := startFileBackend(dir, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if left := temps(t, dir); len(left) != 0 {
@@ -126,7 +126,7 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 
 func TestFileBackend_StartWithoutDirectoryIsANoop(t *testing.T) {
 	dir := filepath.Join(physicalTempDir(t), "absent")
-	if _, err := startFileBackend(dir, ""); err != nil {
+	if _, err := startFileBackend(dir, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
@@ -420,13 +420,13 @@ func TestFileBackend_StartReestablishesTheRootChainBarrier(t *testing.T) {
 	}
 	fail := true
 	synced := syncLog(t, base, &fail)
-	_, err := startFileBackend(root, "")
+	_, err := startFileBackend(root, "", nil)
 	var se *storeError
 	if err == nil || !errors.As(err, &se) || strings.Contains(err.Error(), base) {
 		t.Fatalf("start with a failing ancestor fsync: want a retryable storeError without the path, got %v", err)
 	}
 	fail, *synced = false, nil
-	b, err := startFileBackend(root, "")
+	b, err := startFileBackend(root, "", nil)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -513,7 +513,7 @@ func TestFileBackend_RootBarrierStopsAtTheFilesystemRoot(t *testing.T) {
 	sameFilesystem = func(dir, parent string) bool { return dir != mount }
 	fail := false
 	synced := syncLog(t, "", &fail)
-	if _, err := startFileBackend(root, ""); err != nil {
+	if _, err := startFileBackend(root, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if countOf(*synced, mount) != 1 || countOf(*synced, base) != 0 {

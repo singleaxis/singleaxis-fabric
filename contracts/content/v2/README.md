@@ -74,5 +74,18 @@ lists every row of it, existing roles first. Version 2.1.0 adds:
   the `fabriccontent` exporter writes it into the persisted descriptor; an
   agent-supplied value is rejected by the exporter's closed parser.
 
-Wiring the exporter and the SDK sender to the role table is spec 049 P0-A;
-nothing in this directory changes what recorder v1 emits.
+Version 2.2.0 (spec 049 P0-A) adds:
+
+- the privacy modes `masked_only` (only a masked copy is stored, outcome
+  `redacted`) and `original_plus_masked` (the original, outcome `retained`,
+  plus a masked review copy, outcome `redacted`, that names the original
+  with a `derived_from` link and keeps no digest or length of it);
+- withholding on a failed transformation in any byte-storing mode:
+  `not_captured`, `protection_status: withheld`, `status_reason:
+  protection_failed`, no original-body digest (§7.7);
+- `fixtures/node-envelope-v1.json`: the Node directory backend's AES-256-GCM
+  customer-key envelope (§7.8), pinned for every reader.
+
+The `fabriccontent` exporter enforces the role table and these rules on the
+content path (capture/v1 `content-log-record-v1`); nothing in this directory
+changes what recorder v1 emits.

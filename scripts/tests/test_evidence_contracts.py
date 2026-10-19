@@ -56,10 +56,57 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_evidence_artifacts_validate() -> None:
     paths = validate_contracts(REPO_ROOT)
-    assert len(paths) == 24
+    assert len(paths) == 31
     assert "content/valid/split-reassembly-retain-original.json" in paths
+    assert "content/fixtures/node-envelope-v1.json" in paths
+    assert "content/valid/persisted-descriptor-review-copy.json" in paths
     assert "content/fixtures/bytes/binary-four-bytes.json" in paths
     assert "evidence/valid/complete-run.json" in paths
+
+
+def _schemas() -> dict[str, Any]:
+    from contracts.validate_evidence_contracts import SCHEMAS as known  # noqa: PLC0415
+
+    return {
+        f"{family}/{path}": _json(f"contracts/{family}/{'v1' if family == 'evidence' else 'v2'}/{path}")
+        for family, path in known.values()
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (lambda d: d, None),
+        (lambda d: d.update(transformations=["extract_parts", "redact"]), None),
+        (lambda d: d.update(transformations=["tokenize"]), "evidence.content.protection"),
+        (lambda d: d.update(protection_status="retained"), "evidence.content.protection"),
+        (lambda d: d.update(privacy_mode="retain_original"), "evidence.content.protection"),
+    ],
+)
+def test_spec_049_masked_only_outcomes(change: Any, error: str | None) -> None:
+    from contracts.validate_evidence_contracts import EvidenceContractError, validate_document  # noqa: PLC0415
+
+    document = _json("contracts/content/v2/valid/persisted-descriptor-masked-only.json")
+    change(document)
+    if error is None:
+        validate_document(document, _schemas())
+    else:
+        with pytest.raises(EvidenceContractError) as raised:
+            validate_document(document, _schemas())
+        assert raised.value.code == error
+
+
+@pytest.mark.parametrize("mode", ["redact", "tokenize", "masked_only", "original_plus_masked", "retain_original"])
+def test_spec_049_protection_failure_withholds_in_every_byte_mode(mode: str) -> None:
+    from contracts.validate_evidence_contracts import EvidenceContractError, validate_document  # noqa: PLC0415
+
+    document = _json("contracts/content/v2/valid/persisted-descriptor-protection-failed.json")
+    document["privacy_mode"] = mode
+    validate_document(document, _schemas())
+    for metadata_mode in ("metadata_only", "omit"):
+        document["privacy_mode"] = metadata_mode
+        with pytest.raises(EvidenceContractError):
+            validate_document(document, _schemas())
 
 
 def test_exact_binary_object_and_event_correlate() -> None:

@@ -36,7 +36,9 @@
           "omit",
           "redact",
           "tokenize",
-          "retain_original"
+          "retain_original",
+          "masked_only",
+          "original_plus_masked"
         ]
       }
     },
