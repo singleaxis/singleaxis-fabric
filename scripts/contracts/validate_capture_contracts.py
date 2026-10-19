@@ -290,7 +290,10 @@ def _protection_ok(d: Mapping[str, Any]) -> bool:
         if reason == "protection_failed":
             return mode in _BYTE_MODES and not has_source_sha
         if reason == "privacy_policy":
-            return mode in {"metadata_only", "omit"} and not has_source_sha
+            # Withheld by the mode itself; under redact or masked_only only a binary
+            # part no part transformation applies to (spec 049 §7.5).
+            binary_part = d["role"] == "model.exchange.part" and mode in {"redact", "masked_only"}
+            return (mode in {"metadata_only", "omit"} or binary_part) and not has_source_sha
         return retains or not has_source_sha
     if status in {"stored", "truncated"}:
         return protection == "retained" and retains

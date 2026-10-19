@@ -270,8 +270,21 @@ def _validate_content_protection(document: Mapping[str, Any]) -> None:
     }
     byte_storing = {"retain_original", "redact", "tokenize", "masked_only", "original_plus_masked"}
     failed = protection == "withheld" and document.get("status_reason") == "protection_failed"
+    # Spec 049 §7.5: under redact or masked_only, a binary part no part transformation
+    # applies to is withheld by the policy itself (descriptor only, no digest or length).
+    binary_part = (
+        protection == "withheld"
+        and document.get("status_reason") == "privacy_policy"
+        and document.get("role") == "model.exchange.part"
+        and mode in {"redact", "masked_only"}
+        and status == "not_captured"
+        and "source_sha256" not in document
+        and "source_byte_length" not in document
+    )
     valid = mode in expected and (
-        protection in expected[mode] | {"lost", "unsupported"} or failed and mode in byte_storing
+        protection in expected[mode] | {"lost", "unsupported"}
+        or failed and mode in byte_storing
+        or binary_part
     )
     if failed:
         # Only a mode that stores bytes has a transformation to fail.

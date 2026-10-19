@@ -245,8 +245,11 @@ func TestPrivacyModesAndStatuses(t *testing.T) {
 		"split skeleton":                 {splitSkeleton(body, original), body},
 		"split part":                     {partAttrs, part},
 		"redacted part":                  {redactedPart(part), part},
-		"stream chunk":                   {setAttr(setAttr(validAttrs(body), "stream_id", "st-1"), "chunk_index", int64(4)), body},
-		"attempt and workload":           {setAttr(setAttr(setAttr(validAttrs(body), "attempt_id", "att-1"), "workload_id", "wl-1"), "observed_at", "2026-10-19T09:00:00Z"), body},
+		// Sol P0-A #7: a binary part no part transformation applies to (§7.5).
+		"privacy-withheld part redact":      {withheldPart("redact"), nil},
+		"privacy-withheld part masked_only": {withheldPart("masked_only"), nil},
+		"stream chunk":                      {setAttr(setAttr(validAttrs(body), "stream_id", "st-1"), "chunk_index", int64(4)), body},
+		"attempt and workload":              {setAttr(setAttr(setAttr(validAttrs(body), "attempt_id", "att-1"), "workload_id", "wl-1"), "observed_at", "2026-10-19T09:00:00Z"), body},
 	}
 	for name, tc := range accepted {
 		t.Run("accept/"+name, func(t *testing.T) {
@@ -265,53 +268,57 @@ func TestPrivacyModesAndStatuses(t *testing.T) {
 		attrs map[string]any
 		body  []byte
 	}{
-		"redacted keeps source digest":     {setAttr(redacted(body, "redact", "redacted", "redact"), "source_sha256", digest(body)), body},
-		"redacted keeps source length":     {setAttr(redacted(body, "redact", "redacted", "redact"), "source_byte_length", int64(99)), body},
-		"redacted without policy":          {stripPolicy(redacted(body, "redact", "redacted", "redact")), body},
-		"redacted wrong transformation":    {setAttr(redacted(body, "redact", "redacted", "redact"), "transformations", []any{"tokenize"}), body},
-		"redacted no transformation":       {setAttr(redacted(body, "redact", "redacted", "redact"), "transformations", []any{}), body},
-		"tokenized as redact mode":         {redacted(body, "redact", "tokenized", "tokenize"), body},
-		"redacted under retain_original":   {redacted(body, "retain_original", "redacted", "redact"), body},
-		"review copy without derived_from": {redacted(body, "original_plus_masked", "redacted", "redact"), body},
-		"masked_only stored as original":   {policy(validAttrs(body), "masked_only", "retained"), body},
-		"redact stored as original":        {policy(validAttrs(body), "redact", "retained"), body},
-		"metadata_only with bytes":         {policy(validAttrs(body), "metadata_only", "retained"), body},
-		"protection_failed with digest":    {setAttr(setAttr(withheld("redact", "protection_failed"), "source_sha256", digest(body)), "source_byte_length", int64(len(body))), nil},
-		"protection_failed metadata_only":  {withheld("metadata_only", "protection_failed"), nil},
-		"withheld with bytes":              {withheld("redact", "protection_failed"), body},
-		"withheld with stored digest":      {setAttr(setAttr(withheld("redact", "protection_failed"), "stored_sha256", digest(nil)), "stored_byte_length", int64(0)), nil},
-		"not_captured without reason":      {setAttr(withheld("redact", "protection_failed"), "status_reason", nil), nil},
-		"not_captured free-text reason":    {setAttr(withheld("redact", "protection_failed"), "status_reason", "the PII detector crashed on Jane"), nil},
-		"reason on stored":                 {setAttr(validAttrs(body), "status_reason", "body_cap"), body},
-		"omit with length":                 {setAttr(withheld("omit", "privacy_policy"), "source_byte_length", int64(5)), nil},
-		"metadata_only with digest":        {setAttr(setAttr(withheld("metadata_only", "privacy_policy"), "source_sha256", digest(body)), "source_byte_length", int64(len(body))), nil},
-		"lost":                             {policy(validAttrs(body), "retain_original", "lost"), body},
-		"unsupported":                      {policy(validAttrs(body), "retain_original", "unsupported"), body},
-		"partial policy block":             {setAttr(policy(validAttrs(body), "retain_original", "retained"), "policy_digest", nil), body},
-		"policy_version zero":              {setAttr(policy(validAttrs(body), "retain_original", "retained"), "policy_version", int64(0)), body},
-		"unknown mode":                     {policy(validAttrs(body), "original", "retained"), body},
-		"transformation without policy":    {setAttr(setAttr(validAttrs(body), "transformation_id", "x"), "transformation_version", "1"), body},
-		"transformation id alone":          {setAttr(redacted(body, "redact", "redacted", "redact"), "transformation_version", nil), body},
-		"status pending":                   {setAttr(validAttrs(body), "status", "pending"), body},
-		"status dropped":                   {setAttr(validAttrs(body), "status", "dropped"), body},
-		"split without extract_parts":      {setAttr(splitSkeleton(body, original), "transformations", []any{}), body},
-		"split without source digest":      {setAttr(splitSkeleton(body, original), "source_sha256", nil), body},
-		"part without part_of":             {setAttr(clone(partAttrs), "links", nil), part},
-		"part_of on a non-part":            {setAttr(validAttrs(body), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID}}), body},
-		"byte_range wrong length":          {setAttr(clone(partAttrs), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID, "byte_range": []any{int64(0), int64(3)}}}), part},
-		"byte_range reversed":              {setAttr(clone(partAttrs), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID, "byte_range": []any{int64(9), int64(1)}}}), part},
-		"byte_range on derived_from":       {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": testObjectID, "byte_range": []any{int64(0), int64(1)}}}), body},
-		"byte_range on redacted part":      {setAttr(redactedPart(part), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID, "byte_range": []any{int64(0), int64(len(part))}}}), part},
-		"link to itself":                   {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": reviewID}}), body},
-		"link unknown relation":            {setAttr(clone(review), "links", []any{map[string]any{"relation": "parent", "object_id": testObjectID}}), body},
-		"link extra key":                   {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": testObjectID, "note": "x"}}), body},
-		"link path object":                 {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": "../etc/passwd"}}), body},
-		"links empty":                      {setAttr(validAttrs(body), "links", []any{}), body},
-		"links not maps":                   {setAttr(validAttrs(body), "links", []any{"derived_from"}), body},
-		"chunk without stream":             {setAttr(validAttrs(body), "chunk_index", int64(1)), body},
-		"stream without chunk":             {setAttr(validAttrs(body), "stream_id", "st-1"), body},
-		"source_authenticated true":        {setAttr(validAttrs(body), "source_authenticated", true), body},
-		"source_authenticated false":       {setAttr(validAttrs(body), "source_authenticated", false), body},
+		"redacted keeps source digest":      {setAttr(redacted(body, "redact", "redacted", "redact"), "source_sha256", digest(body)), body},
+		"redacted keeps source length":      {setAttr(redacted(body, "redact", "redacted", "redact"), "source_byte_length", int64(99)), body},
+		"redacted without policy":           {stripPolicy(redacted(body, "redact", "redacted", "redact")), body},
+		"redacted wrong transformation":     {setAttr(redacted(body, "redact", "redacted", "redact"), "transformations", []any{"tokenize"}), body},
+		"redacted no transformation":        {setAttr(redacted(body, "redact", "redacted", "redact"), "transformations", []any{}), body},
+		"tokenized as redact mode":          {redacted(body, "redact", "tokenized", "tokenize"), body},
+		"redacted under retain_original":    {redacted(body, "retain_original", "redacted", "redact"), body},
+		"review copy without derived_from":  {redacted(body, "original_plus_masked", "redacted", "redact"), body},
+		"masked_only stored as original":    {policy(validAttrs(body), "masked_only", "retained"), body},
+		"redact stored as original":         {policy(validAttrs(body), "redact", "retained"), body},
+		"metadata_only with bytes":          {policy(validAttrs(body), "metadata_only", "retained"), body},
+		"protection_failed with digest":     {setAttr(setAttr(withheld("redact", "protection_failed"), "source_sha256", digest(body)), "source_byte_length", int64(len(body))), nil},
+		"protection_failed metadata_only":   {withheld("metadata_only", "protection_failed"), nil},
+		"withheld with bytes":               {withheld("redact", "protection_failed"), body},
+		"withheld with stored digest":       {setAttr(setAttr(withheld("redact", "protection_failed"), "stored_sha256", digest(nil)), "stored_byte_length", int64(0)), nil},
+		"not_captured without reason":       {setAttr(withheld("redact", "protection_failed"), "status_reason", nil), nil},
+		"not_captured free-text reason":     {setAttr(withheld("redact", "protection_failed"), "status_reason", "the PII detector crashed on Jane"), nil},
+		"reason on stored":                  {setAttr(validAttrs(body), "status_reason", "body_cap"), body},
+		"omit with length":                  {setAttr(withheld("omit", "privacy_policy"), "source_byte_length", int64(5)), nil},
+		"privacy-withheld redact request":   {withheld("redact", "privacy_policy"), nil},
+		"privacy-withheld tokenize part":    {withheldPart("tokenize"), nil},
+		"privacy-withheld part with digest": {setAttr(withheldPart("redact"), "source_sha256", digest(part)), nil},
+		"privacy-withheld part with length": {setAttr(withheldPart("masked_only"), "source_byte_length", int64(len(part))), nil},
+		"metadata_only with digest":         {setAttr(setAttr(withheld("metadata_only", "privacy_policy"), "source_sha256", digest(body)), "source_byte_length", int64(len(body))), nil},
+		"lost":                              {policy(validAttrs(body), "retain_original", "lost"), body},
+		"unsupported":                       {policy(validAttrs(body), "retain_original", "unsupported"), body},
+		"partial policy block":              {setAttr(policy(validAttrs(body), "retain_original", "retained"), "policy_digest", nil), body},
+		"policy_version zero":               {setAttr(policy(validAttrs(body), "retain_original", "retained"), "policy_version", int64(0)), body},
+		"unknown mode":                      {policy(validAttrs(body), "original", "retained"), body},
+		"transformation without policy":     {setAttr(setAttr(validAttrs(body), "transformation_id", "x"), "transformation_version", "1"), body},
+		"transformation id alone":           {setAttr(redacted(body, "redact", "redacted", "redact"), "transformation_version", nil), body},
+		"status pending":                    {setAttr(validAttrs(body), "status", "pending"), body},
+		"status dropped":                    {setAttr(validAttrs(body), "status", "dropped"), body},
+		"split without extract_parts":       {setAttr(splitSkeleton(body, original), "transformations", []any{}), body},
+		"split without source digest":       {setAttr(splitSkeleton(body, original), "source_sha256", nil), body},
+		"part without part_of":              {setAttr(clone(partAttrs), "links", nil), part},
+		"part_of on a non-part":             {setAttr(validAttrs(body), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID}}), body},
+		"byte_range wrong length":           {setAttr(clone(partAttrs), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID, "byte_range": []any{int64(0), int64(3)}}}), part},
+		"byte_range reversed":               {setAttr(clone(partAttrs), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID, "byte_range": []any{int64(9), int64(1)}}}), part},
+		"byte_range on derived_from":        {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": testObjectID, "byte_range": []any{int64(0), int64(1)}}}), body},
+		"byte_range on redacted part":       {setAttr(redactedPart(part), "links", []any{map[string]any{"relation": "part_of", "object_id": skeletonID, "byte_range": []any{int64(0), int64(len(part))}}}), part},
+		"link to itself":                    {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": reviewID}}), body},
+		"link unknown relation":             {setAttr(clone(review), "links", []any{map[string]any{"relation": "parent", "object_id": testObjectID}}), body},
+		"link extra key":                    {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": testObjectID, "note": "x"}}), body},
+		"link path object":                  {setAttr(clone(review), "links", []any{map[string]any{"relation": "derived_from", "object_id": "../etc/passwd"}}), body},
+		"links empty":                       {setAttr(validAttrs(body), "links", []any{}), body},
+		"links not maps":                    {setAttr(validAttrs(body), "links", []any{"derived_from"}), body},
+		"chunk without stream":              {setAttr(validAttrs(body), "chunk_index", int64(1)), body},
+		"stream without chunk":              {setAttr(validAttrs(body), "stream_id", "st-1"), body},
+		"source_authenticated true":         {setAttr(validAttrs(body), "source_authenticated", true), body},
+		"source_authenticated false":        {setAttr(validAttrs(body), "source_authenticated", false), body},
 	}
 	for name, tc := range rejected {
 		t.Run("reject/"+name, func(t *testing.T) {
@@ -324,6 +331,15 @@ func TestPrivacyModesAndStatuses(t *testing.T) {
 
 func redactedPart(part []byte) map[string]any {
 	attrs := redacted(part, "redact", "redacted", "redact")
+	attrs["object_id"], attrs["role"], attrs["media_type"], attrs["content_encoding"] = partID, "model.exchange.part", "image/png", "base64"
+	attrs["links"] = []any{map[string]any{"relation": "part_of", "object_id": skeletonID}}
+	return attrs
+}
+
+// withheldPart is a binary part withheld by its role's privacy mode: no part
+// transformation applies to it (spec 049 §7.5), descriptor only.
+func withheldPart(mode string) map[string]any {
+	attrs := withheld(mode, "privacy_policy")
 	attrs["object_id"], attrs["role"], attrs["media_type"], attrs["content_encoding"] = partID, "model.exchange.part", "image/png", "base64"
 	attrs["links"] = []any{map[string]any{"relation": "part_of", "object_id": skeletonID}}
 	return attrs

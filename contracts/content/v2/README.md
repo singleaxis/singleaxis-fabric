@@ -83,6 +83,12 @@ Version 2.2.0 (spec 049 P0-A) adds:
 - withholding on a failed transformation in any byte-storing mode:
   `not_captured`, `protection_status: withheld`, `status_reason:
   protection_failed`, no original-body digest (§7.7);
+- withholding by the policy itself of a binary `model.exchange.part` that no
+  part transformation applies to under `redact` or `masked_only` (§7.5):
+  `not_captured`, `protection_status: withheld`, `status_reason:
+  privacy_policy`, with its `part_of` link and no digest or length
+  (`valid/persisted-descriptor-part-privacy-withheld.json`); on any other role
+  those modes never withhold by `privacy_policy`;
 - `fixtures/node-envelope-v1.json`: the Node directory backend's AES-256-GCM
   customer-key envelope (§7.8), pinned for every reader;
 - derived part ids: the wire producer names the `index`-th part of a split

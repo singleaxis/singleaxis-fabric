@@ -23,6 +23,8 @@
     {"path": "invalid/review-copy-without-original-link.json", "sha256": "930d3b80775a542280b042b84b95cc16f3179b187acb7fa0b40bfbf78e3676da", "expectation": "invalid", "expected_error": "evidence.schema"},
     {"path": "valid/persisted-descriptor-masked-only.json", "sha256": "ab293bdda7b910bf3335b260616fa30b24fcac276760f99696d338333109492f", "expectation": "valid", "expected_error": null},
     {"path": "valid/persisted-descriptor-protection-failed.json", "sha256": "26b1813966924be4b63049e3fe82791b0050ea5ebd981f97941c01b24eacdcc2", "expectation": "valid", "expected_error": null},
-    {"path": "valid/persisted-descriptor-review-copy.json", "sha256": "820ae3e2833526b34cda2ece39a107cc729f66e26bd49074741a0d2b9a1d7a36", "expectation": "valid", "expected_error": null}
+    {"path": "valid/persisted-descriptor-review-copy.json", "sha256": "820ae3e2833526b34cda2ece39a107cc729f66e26bd49074741a0d2b9a1d7a36", "expectation": "valid", "expected_error": null},
+    {"path": "invalid/privacy-withheld-redact-request.json", "sha256": "713ad61c6be6049463b5da1f8ea0c31c4939bdb78f7d26e224e88d21e02d8381", "expectation": "invalid", "expected_error": "evidence.content.protection"},
+    {"path": "valid/persisted-descriptor-part-privacy-withheld.json", "sha256": "6c5c53903fa0098688911f8f1742bd2b622a2af1815f5dbba2aece5fd676b1d8", "expectation": "valid", "expected_error": null}
   ]
 }

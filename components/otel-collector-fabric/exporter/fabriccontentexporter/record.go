@@ -417,7 +417,10 @@ func protectionConsistent(rec *contentRecord) bool {
 		case "protection_failed":
 			return byteStoringModes[mode] && !hasSourceSHA
 		case "privacy_policy":
-			return (mode == "metadata_only" || mode == "omit") && !hasSourceSHA
+			// Withheld by the mode itself; under redact or masked_only only a
+			// binary part no part transformation applies to (spec 049 §7.5).
+			binaryPart := rec.strs["role"] == "model.exchange.part" && (mode == "redact" || mode == "masked_only")
+			return (mode == "metadata_only" || mode == "omit" || binaryPart) && !hasSourceSHA
 		}
 		// Any other withholding (part_cap, body_cap, ...) keeps the mode's
 		// digest rule: only an original-retaining mode may name a digest.

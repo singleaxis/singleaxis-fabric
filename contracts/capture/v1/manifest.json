@@ -80,6 +80,8 @@
     {"path": "fixtures/valid/spool-record-exchange-content-disabled.json", "sha256": "497c065903907b343e5a12898b8ed06d19047cc5eff8ae372707f05410ebb7f8", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/spool-record-exchange-split.json", "sha256": "ef2eb607751d77984436770a778b1d5900e0e8831239674d6fb0a1ccae89ffb6", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/llm-exchange-content-disabled.json", "sha256": "7a67402a81b269d68d8237d6632070b4258daa1fb8e417964464cabaf3650460", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/run-reconstruction-production-imported.json", "sha256": "bd7356cdf718fd38b4e723b99e0ea0df1302f3c52400cd6040278ae747b66b30", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/valid/run-reconstruction-production-imported.json", "sha256": "bd7356cdf718fd38b4e723b99e0ea0df1302f3c52400cd6040278ae747b66b30", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/invalid/content-log-record-privacy-withheld-request.json", "sha256": "70f6d0241781ef7f8d4293445f66da2db6e6dd58400ab0dc2ba8714f3eb9cc10", "expectation": "invalid", "expected_error": "capture.content.protection"},
+    {"path": "fixtures/valid/content-log-record-part-privacy-withheld.json", "sha256": "e393249d56f48358dc1b4f1ece010d97e98d211e07698e337d8421baed9514d1", "expectation": "valid", "expected_error": null}
   ]
 }

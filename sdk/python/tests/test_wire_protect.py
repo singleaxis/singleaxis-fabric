@@ -499,3 +499,40 @@ def test_the_node_contract_admits_these_descriptors() -> None:
         for obj in result.objects:
             errors = list(descriptor.iter_errors(obj.descriptor))
             assert not errors, errors[0].message
+
+
+@pytest.mark.parametrize("mode", ["redact", "masked_only"])
+def test_a_privacy_withheld_binary_part_passes_the_node_rules(mode: str) -> None:
+    """Sol P0-A #7: a binary part no part transformation applies to is withheld as
+    ``not_captured(privacy_policy)`` under ``redact``/``masked_only`` (§7.5). The Node's
+    descriptor rules (mirrored by the capture validator) and the content-v2 evidence
+    validator accept it, so the withholding record survives delivery; on any other role
+    that combination is still refused."""
+    import importlib.util  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from .test_wire_helpers import load_validator  # noqa: PLC0415
+
+    path = REPO / "scripts/contracts/validate_evidence_contracts.py"
+    spec = importlib.util.spec_from_file_location("_evidence_validator", path)
+    assert spec is not None and spec.loader is not None
+    evidence = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("_evidence_validator", evidence)
+    spec.loader.exec_module(evidence)
+    capture = load_validator()
+    policy = _policy(model_exchange_request=mode, model_exchange_part=mode)
+    result = _side(_protector(policy, max_body=1100, transformations={REQUEST: REDACT}),
+                   _big_request([PNG]))  # fmt: skip
+    (part,) = [o for o in result.objects if o.descriptor["role"] == "model.exchange.part"]
+    d = dict(part.descriptor)
+    assert (d["status"], d["status_reason"], d["privacy_mode"]) == (
+        "not_captured", "privacy_policy", mode)  # fmt: skip
+    capture._check_descriptor(d, "part")  # the Node's closed rules, mirrored
+    evidence._validate_content_protection(d)
+    other = {**d, "role": REQUEST, "media_type": "application/json",
+             "content_encoding": "identity"}  # fmt: skip
+    other.pop("links")
+    with pytest.raises(capture.CaptureContractError):
+        capture._check_descriptor(other, "request")
+    with pytest.raises(evidence.EvidenceContractError):
+        evidence._validate_content_protection(other)

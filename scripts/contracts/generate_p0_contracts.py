@@ -2374,6 +2374,7 @@ INVALID = {
     CAPTURE: {
         "fixtures/invalid/content-log-record-agent-authenticated.json": "capture.schema",
         "fixtures/invalid/content-log-record-over-role-cap.json": "capture.content.role",
+        "fixtures/invalid/content-log-record-privacy-withheld-request.json": "capture.content.protection",
         "fixtures/invalid/content-log-record-redacted-keeps-original-digest.json": "capture.schema",
         "fixtures/invalid/content-log-record-review-copy-unlinked.json": "capture.content.protection",
         "fixtures/invalid/content-log-record-role-boundary.json": "capture.content.role",
@@ -2402,6 +2403,7 @@ INVALID = {
     CONTENT: {
         "invalid/byte-range-outside-part-of.json": "evidence.schema",
         "invalid/masked-only-keeps-source-digest.json": "evidence.schema",
+        "invalid/privacy-withheld-redact-request.json": "evidence.content.protection",
         "invalid/protection-failed-keeps-source-digest.json": "evidence.content.protection",
         "invalid/review-copy-without-original-link.json": "evidence.schema",
         "invalid/split-part-range-shifted.json": "evidence.split.reassembly",
