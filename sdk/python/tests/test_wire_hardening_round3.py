@@ -35,7 +35,7 @@ from fabric.wire._sender import Sender
 from fabric.wire._spool import Spool, marker_doc
 from fabric.wire._transport import WireTee
 
-from .test_wire_helpers import CAPTURE, OPENAI_CHAT, ChunkStream, chat_response
+from .test_wire_helpers import CAPTURE, OPENAI_CHAT, ChunkStream, chat_response, open_record
 from .test_wire_spool import SPOOL_MIN, FakeNode, install_node, model_client, records
 
 DESCRIPTOR = {
@@ -371,14 +371,15 @@ def test_clear_run_id_never_leaves_the_process(
     monkeypatch.setenv("FABRIC_WIRE_ID_KEY", KEY.decode())  # install() reads it
     node.mode = "down"
     spool = tmp_path / "spool"
-    handle = install_node(node, spool)
+    handle = install_node(node, spool, id_key=None)  # the environment's key
     assert handle.config.id_key == KEY
     with wire.run(CLEAR), model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert handle._tee.flush(5.0)
     expected = run_pseudonym(CLEAR, KEY)
-    assert all(CLEAR.encode() not in path.read_bytes() for path in records(spool))
-    assert any(expected.encode() in path.read_bytes() for path in records(spool))
+    opened = [open_record(path) for path in records(spool)]  # 049 §7.8: sealed at rest
+    assert all(CLEAR.encode() not in data for data in opened)
+    assert any(expected.encode() in data for data in opened)
     node.mode = "ok"
     assert handle.flush(20.0)
     (span,) = node.named("fabric.model_call")

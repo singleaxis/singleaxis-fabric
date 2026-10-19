@@ -10,6 +10,7 @@ here logs or returns content — only digests, ids, counts and short metadata.
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import importlib
 import json
@@ -389,10 +390,17 @@ def _opaque(value: str) -> str:
 
     Response, previous-response and tool-call ids come from provider bytes
     and may hold anything, so the report only ever carries their pseudonym
-    (``p-`` + 16 hex of sha256): equal ids stay equal, so correlation and
-    stitching survive, but the value itself never reaches the report.
+    (``p-`` + 16 hex of sha256, or the keyed ``p-`` + 32 hex when the verifier has the
+    id key, spec 049 §2.9 rule 4): equal ids stay equal, so correlation and stitching
+    survive, but the value itself never reaches the report.
     """
-    return pseudonym(value)
+    return pseudonym(value, _ID_KEY.get())
+
+
+# The verifier's id key while one extract_stitch_keys call runs (never logged or reported).
+_ID_KEY: contextvars.ContextVar[bytes | None] = contextvars.ContextVar(
+    "fabric_id_key", default=None
+)
 
 
 def _ids(values: Sequence[Any]) -> tuple[str, ...]:
@@ -944,8 +952,31 @@ def extract_stitch_keys(
     response_media_type: str | None,
     response_encoding: str | None,
     response_truncated: bool,
+    id_key: bytes | None = None,
 ) -> StitchKeys:
-    """Derive stitching keys from captured bodies. Never raises."""
+    """Derive stitching keys from captured bodies. Never raises. ``id_key``: provider ids
+    become keyed ``p-`` pseudonyms (049 §2.9 rule 4)."""
+    token = _ID_KEY.set(id_key)
+    try:
+        return _extract_stitch_keys(
+            api, request_bytes, request_media_type, request_encoding, request_truncated,
+            response_bytes, response_media_type, response_encoding, response_truncated,
+        )  # fmt: skip
+    finally:
+        _ID_KEY.reset(token)
+
+
+def _extract_stitch_keys(
+    api: WireApi,
+    request_bytes: bytes,
+    request_media_type: str,
+    request_encoding: str | None,
+    request_truncated: bool,
+    response_bytes: bytes | None,
+    response_media_type: str | None,
+    response_encoding: str | None,
+    response_truncated: bool,
+) -> StitchKeys:
     request = _Request()
     if request_truncated:
         request.status = "truncated"

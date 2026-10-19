@@ -44,3 +44,12 @@ def _clear_exporter(span_exporter: InMemorySpanExporter) -> Iterator[None]:
 def finished_spans(span_exporter: InMemorySpanExporter) -> list[ReadableSpan]:
     """Spans finished in the current test so far."""
     return list(span_exporter.get_finished_spans())
+
+
+@pytest.fixture(autouse=True)
+def _clear_identity_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spec 049 §2.9: ``decision()`` ids are pseudonymous by default. The pre-049 suites
+    run with ``FABRIC_IDENTITY_MODE=clear``, which must reproduce the pre-049 output
+    exactly; pseudonymous behaviour is pinned by ``test_identity_pseudonyms.py``, which
+    sets the mode explicitly on its clients."""
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "clear")

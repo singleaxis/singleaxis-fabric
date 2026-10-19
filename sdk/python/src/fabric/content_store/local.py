@@ -11,7 +11,7 @@ import re
 import stat
 import uuid
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -25,6 +25,33 @@ from fabric.content_store.base import (
 )
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+# The Fabric Node's directory-backend envelope (spec 049 §7.8; contracts/content/v2/
+# fixtures/node-envelope-v1.json): magic | 12-byte nonce | AES-256-GCM(plaintext), with the
+# object's location below the content root bound as AAD.
+NODE_ENVELOPE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
+_NODE_ENVELOPE_AAD = "fabric.node-content-envelope/v1"
+
+
+def open_node_envelope(data: bytes, relative: str, key: bytes | None) -> bytes:
+    """A Node-written body or descriptor, as stored: opened with ``key`` (the magic is then
+    required and the envelope must authenticate), else returned as is unless it is an
+    envelope (which a reader without the key refuses: fail closed). Fixed-text errors."""
+    sealed = data.startswith(NODE_ENVELOPE_MAGIC)
+    if key is None:
+        if sealed:
+            raise CorruptedObjectError("enveloped Node content needs the Node content key")
+        return data
+    if not sealed:
+        raise CorruptedObjectError("Node content is not enveloped under the configured key")
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+
+    head = len(NODE_ENVELOPE_MAGIC)
+    aad = json.dumps([_NODE_ENVELOPE_AAD, relative], separators=(",", ":")).encode()
+    try:
+        opened: bytes = AESGCM(key).decrypt(data[head : head + 12], data[head + 12 :], aad)
+    except Exception:  # InvalidTag, short input: never the bytes
+        raise CorruptedObjectError("Node content envelope does not authenticate") from None
+    return opened
 
 
 @contextlib.contextmanager
@@ -117,8 +144,14 @@ class LocalFilesystemContentStore:
 
     root: str
     tenant_id: str | None = None
+    # Reader side of the Node directory envelope (spec 049 §7.8): a secret, never in repr.
+    envelope_key: bytes | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        if self.envelope_key is not None and (
+            not isinstance(self.envelope_key, bytes) or len(self.envelope_key) != 32  # noqa: PLR2004
+        ):  # fmt: skip
+            raise ValueError("envelope_key must be a 32-byte AES-256-GCM key")
         # Resolve only the explicitly configured root, once. Descendants are
         # traversed through no-follow directory descriptors on every operation.
         self.root = str(Path(self.root).resolve())
@@ -290,14 +323,22 @@ class LocalFilesystemContentStore:
         path = self._resolve_uri(uri)
         if not _exists(path):
             raise FileNotFoundError(uri)
-        return _read_bytes(path)
+        return self._opened(path)
+
+    def _opened(self, path: Path) -> bytes:
+        """The file's bytes, through the Node envelope rule (:func:`open_node_envelope`)."""
+        data = _read_bytes(path)
+        if self.envelope_key is None and not data.startswith(NODE_ENVELOPE_MAGIC):
+            return data
+        relative = path.resolve().relative_to(self._root_path()).as_posix()
+        return open_node_envelope(data, relative, self.envelope_key)
 
     def read_descriptor(self, uri: str) -> Mapping[str, Any]:
         path = self._resolve_uri(uri)
         meta = path.parent / "meta" / f"{path.name}.json"
         if not _exists(meta):
             raise FileNotFoundError(f"no descriptor sidecar for {uri!r}")
-        value = json.loads(_read_bytes(meta).decode("utf-8"))
+        value = json.loads(self._opened(meta).decode("utf-8"))
         if not isinstance(value, dict):
             raise ValueError(f"descriptor sidecar at {uri!r} is not an object")
         return value

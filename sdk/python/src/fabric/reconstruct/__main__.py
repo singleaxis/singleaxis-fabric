@@ -89,6 +89,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tenant", metavar="ID", help="tenant id of the content store")
     parser.add_argument(
+        "--content-key-file",
+        metavar="PATH",
+        help="the Node directory backend's content key (32 raw bytes or their base64), to "
+        "open its sealed objects under --store-root (spec 049 §7.8); never logged",
+    )
+    parser.add_argument(
         "--s3-endpoint-url",
         metavar="URL",
         help="S3-compatible endpoint (e.g. MinIO) for --store-uri; credentials come from "
@@ -195,7 +201,11 @@ def _store(args: argparse.Namespace) -> Any | None:
 
             if not Path(args.store_root).is_dir():
                 raise ReconstructInputError("--store-root is not a directory")
-            return LocalFilesystemContentStore(root=args.store_root, tenant_id=args.tenant)
+            return LocalFilesystemContentStore(
+                root=args.store_root, tenant_id=args.tenant, envelope_key=_content_key(args)
+            )
+        if args.content_key_file is not None:
+            raise ReconstructInputError("--content-key-file applies to --store-root")
         from fabric.content_store.s3 import S3ContentStore  # noqa: PLC0415
 
         uri = str(args.store_uri)
@@ -250,6 +260,18 @@ def _model_allowlist(args: argparse.Namespace, environ: Mapping[str, str]) -> tu
         raise ReconstructInputError(
             "model allowlist entries must be model names or name prefixes ending in '*'"
         ) from None
+
+
+def _content_key(args: argparse.Namespace) -> bytes | None:
+    """The Node content key named by ``--content-key-file``; fixed-text errors."""
+    if args.content_key_file is None:
+        return None
+    from fabric.wire._keys import key_from_env  # noqa: PLC0415
+
+    try:
+        return key_from_env({"CONTENT_KEY_FILE": args.content_key_file}, "CONTENT_KEY", exact=32)
+    except ValueError:
+        raise ReconstructInputError("--content-key-file must hold a 32-byte key") from None
 
 
 def _id_key(args: argparse.Namespace, environ: Mapping[str, str]) -> bytes | None:

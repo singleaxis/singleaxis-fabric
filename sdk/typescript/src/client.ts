@@ -30,6 +30,13 @@ import {
   type FlushResult,
 } from "./content-writer.js";
 import { checkIdentifier, warnIfPiiShaped } from "./id-validators.js";
+import {
+  IdentityPolicy,
+  checkIdentityMode,
+  idKeyFromEnv,
+  identityModeFromEnv,
+  type IdentityMode,
+} from "./identity.js";
 import { TRACER_NAME, getTracer } from "./tracing.js";
 
 // Re-exported so `import { TRACER_NAME } from "@singleaxis/fabric"` keeps
@@ -95,6 +102,18 @@ export interface FabricConfig {
    * content objects are written.
    */
   contentCapture?: ContentCaptureConfig;
+  /**
+   * How caller-supplied ids leave the process (spec 049 §2.9):
+   * `pseudonymous` emits keyed `sess-`/`usr-`/`agt-`/`mkey-`/`tgt-` ids
+   * (omitted when no id key is set); `clear` reproduces the pre-049 output.
+   * Defaults to `FABRIC_IDENTITY_MODE` (unset: `pseudonymous`).
+   */
+  identityMode?: IdentityMode;
+  /**
+   * The pseudonym key (a secret, at least 16 bytes; a string is UTF-8
+   * encoded). Defaults to `FABRIC_WIRE_ID_KEY`. Never logged.
+   */
+  idKey?: string | Uint8Array;
 }
 
 /**
@@ -130,6 +149,14 @@ export class Fabric {
     // fast at config build rather than letting a deployment-level extra
     // silently clobber SDK-owned identity.
     const extra = checkAttributeKeys({ ...(config.extra ?? {}) });
+    // 049 §2.9: resolve how ids are emitted. Invalid mode or short key
+    // fails at construction with fixed text (never the value).
+    const env = typeof process !== "undefined" ? process.env : {};
+    const identityPolicy = IdentityPolicy.resolve(
+      config.identityMode !== undefined ? checkIdentityMode(config.identityMode) : undefined,
+      config.idKey,
+      env,
+    );
     this.identity = {
       tenantId,
       agentId,
@@ -144,6 +171,7 @@ export class Fabric {
       executionRetryReason: config.executionRetryReason,
       executionRetryPreviousAttemptId: config.executionRetryPreviousAttemptId,
       extra,
+      identityPolicy,
     };
     if (
       config.executionAttempt !== undefined &&
@@ -171,7 +199,6 @@ export class Fabric {
     // environment influence is restrictive — `FABRIC_CONTENT_MODE`
     // set to `metadata` force-disables a configured capture; it can
     // never enable one.
-    const env = typeof process !== "undefined" ? process.env : {};
     let contentCapture = config.contentCapture;
     if ((env[ENV_CONTENT_MODE] ?? "").toLowerCase() === "metadata") {
       contentCapture = undefined;
@@ -197,7 +224,8 @@ export class Fabric {
    * Build a Fabric client from environment variables.
    *
    * Reads `FABRIC_TENANT_ID`, `FABRIC_AGENT_ID` (required) and
-   * `FABRIC_PROFILE` (optional; defaults to `"shadow"`). Missing required
+   * `FABRIC_PROFILE` (optional; defaults to `"shadow"`), plus
+   * `FABRIC_IDENTITY_MODE` and `FABRIC_WIRE_ID_KEY` (049 §2.9). Missing required
    * values throw — fail loud at startup, not mid-request (mirrors
    * Python's `Fabric.from_env`). Values are whitespace-stripped and
    * placeholder-checked by the constructor exactly like the explicit
@@ -214,7 +242,13 @@ export class Fabric {
       throw new Error(`${missing} is not set`);
     }
     const profile = env[ENV_PROFILE];
-    return new Fabric({ tenantId, agentId, profile });
+    return new Fabric({
+      tenantId,
+      agentId,
+      profile,
+      identityMode: identityModeFromEnv(env),
+      idKey: idKeyFromEnv(env),
+    });
   }
 
   /** Record one agent turn. See {@link Decision}. */

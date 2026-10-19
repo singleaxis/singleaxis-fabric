@@ -74,6 +74,8 @@ _BOUNDARIES = frozenset(
 _MEDIA_TYPE_RE = re.compile(r"^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 _MEDIA_TYPE_MAX_LENGTH = 128
+# Deployment modes whose stored object is a derivative (to the review store).
+_DERIVED = frozenset({"redact", "masked_only", "tokenize"})
 _OPAQUE_ID_MAX_LENGTH = 128
 
 
@@ -227,7 +229,7 @@ class ByteEvidenceConfig:
             if protector.policy.digest != deployment.digest:
                 raise ValueError("content protector must match deployment policy")
             object.__setattr__(self, "content_protector", protector)
-            if any(deployment.privacy.get(role) in {"redact", "tokenize"} for role in self.roles):
+            if any(deployment.privacy.get(role) in _DERIVED for role in self.roles):
                 if (
                     not isinstance(self.review_store, ByteEvidenceStore)
                     or self.review_store.tenant_id != self.store.tenant_id
@@ -653,7 +655,7 @@ class ByteEvidenceRecorder:
         if self._config.deployment_policy is not None:
             mode = self._config.deployment_policy.privacy.get(role, "omit")
             store = (
-                self._config.review_store if mode in {"redact", "tokenize"} else self._config.store
+                self._config.review_store if mode in _DERIVED else self._config.store
             )
             if store is None:
                 raise ValueError("missing deployment content store")

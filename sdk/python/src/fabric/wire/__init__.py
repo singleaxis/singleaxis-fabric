@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -23,12 +24,16 @@ from .._sequence import (
     encode_opaque_id,
     get_allocator,
     id_key_from_env,
+    key_id,
     labels_from_env,
     run_scope,
     source_label,
 )
 from ._config import DEFAULT_ENDPOINTS, WireConfig
+from ._keys import SPOOL_KEY_BYTES, TOKEN_KEY_MIN_BYTES, key_from_env
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
+from ._policy import ContentGate, decide, policy_from_env
+from ._protect import Transformation
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
@@ -39,7 +44,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_ENDPOINTS", "AsyncWireTransport", "CaptureJob", "CapturedBody", "EndpointMatcher",
-    "ExchangeSink", "WireConfig", "WireHandle", "WireStats", "WireTransport", "current_handle",
+    "ExchangeSink", "Transformation", "WireConfig", "WireHandle", "WireStats", "WireTransport",
+    "current_handle",
     "flush", "install", "install_from_env", "run", "uninstall",
 ]  # fmt: skip
 
@@ -90,6 +96,8 @@ class WireStats:
     # Exchange spans refused because the provider had a Fabric-protected route and no
     # private provider was available (each is a ``span_dropped`` loss).
     spans_refused: int = 0
+    # Spool records sealed under another key, left for a process holding it (049 §7.8).
+    spool_undecryptable: int = 0
 
 
 class WireHandle:
@@ -97,13 +105,25 @@ class WireHandle:
 
     def __init__(
         self, config: WireConfig, tee: WireTee, *, patched: bool,
-        fallback: PrivateFallback | None = None,
+        fallback: PrivateFallback | None = None, gate: ContentGate | None = None,
     ) -> None:  # fmt: skip
         from .._loss import PrivateFallback  # noqa: PLC0415
 
         self.config, self._tee, self._patched = config, tee, patched
+        self.gate = gate
         self._fallback = fallback or PrivateFallback(None)
         self._result: bool | None = None  # set once closed
+
+    def status(self) -> dict[str, Any]:
+        """The install's content state (049 §7.3): profile, ``content_capture`` and its
+        reason, policy reference, pseudonym mode and key id, spool encryption. Values
+        only, never a key, path or content; ``{}`` for a handle built without a gate.
+        ``spool_key_id`` names the key sealing the spool (049 §7.8), never the key."""
+        if self.gate is None:
+            return {}
+        sender = self._tee.sender
+        return {**self.gate.status(),
+                "spool_key_id": sender.spool.key_id if sender is not None else None}  # fmt: skip
 
     @property
     def allocator(self) -> SourceAllocator:
@@ -201,6 +221,8 @@ def install(
             config = dataclasses.replace(config, id_key=key)
         if config.labels is None:
             config = dataclasses.replace(config, labels=labels_from_env(os.environ))
+        config = _protection_from_env(config)
+        gate = _gate(config)
         explicit = config.tracer_provider is not None
         if config.spool_dir is None and (
             _protected_provider(config.tracer_provider) if explicit else _protected_global()
@@ -232,14 +254,15 @@ def install(
             None if sender is not None else functools.partial(_fallback_provider, config, loss)
         )
         loss.set_fallback(fallback)
-        allocator = get_allocator("wire", source_id=_source_id(config))
+        allocator = get_allocator("wire", source_id=_source_id(config, gate))
         tee = _transport.WireTee(
-            config, allocator=allocator, loss=loss, sender=sender, fallback=fallback
+            config, allocator=allocator, loss=loss, sender=sender, fallback=fallback, gate=gate
         )
         loss.attach(sender.wake if sender is not None else None)
         if sender is not None:  # starts draining: replays what earlier processes left
             sender.wake()
-        _HANDLE = WireHandle(config, tee, patched=config.patch_httpx, fallback=fallback)
+        _HANDLE = WireHandle(config, tee, patched=config.patch_httpx, fallback=fallback, gate=gate)
+        _log_gate(gate)
         if config.patch_httpx:
             _transport.patch_httpx()
         _transport._ACTIVE = tee
@@ -250,6 +273,43 @@ def install(
                 "wire already stores content off telemetry"
             )
         return _HANDLE
+
+
+def _protection_from_env(config: WireConfig) -> WireConfig:
+    """Fill the capture policy and keys an explicit config left unset from ``FABRIC_*``
+    (049 §7.3, §7.7, §7.8); a malformed value raises (fixed text, never the value)."""
+    env = os.environ
+    changes: dict[str, Any] = {}
+    if config.capture_policy is None and (policy := policy_from_env(env)) is not None:
+        changes["capture_policy"] = policy
+    if config.tokenization_key is None:
+        token = key_from_env(env, "FABRIC_TOKENIZATION_KEY", minimum=TOKEN_KEY_MIN_BYTES)
+        if token is not None:
+            changes["tokenization_key"] = token
+    if config.spool_key is None:
+        spool = key_from_env(env, "FABRIC_WIRE_SPOOL_KEY", exact=SPOOL_KEY_BYTES)
+        if spool is not None:
+            changes["spool_key"] = spool
+    return dataclasses.replace(config, **changes) if changes else config
+
+
+def _gate(config: WireConfig) -> ContentGate:
+    return decide(
+        node=config.content_endpoint is not None, store=config.store is not None,
+        policy=config.capture_policy, id_key=config.id_key, spool=config.spool_dir is not None,
+        spool_key=config.spool_key is not None,
+        key_id=key_id(config.id_key) if config.id_key is not None else None,
+    )  # fmt: skip
+
+
+def _log_gate(gate: ContentGate) -> None:
+    """049 §7.3: never blocked, but not silent: every install logs a disabled content state,
+    by reason only (class-only text, no values)."""
+    if gate.content_capture == "disabled":
+        _LOG.warning(
+            "fabric.wire: content capture disabled (%s, %s profile); metadata capture continues",
+            gate.reason, gate.profile,
+        )  # fmt: skip
 
 
 def _truthy(value: str | None) -> bool:
@@ -299,9 +359,13 @@ def _protected_global() -> bool:
         return False
 
 
-def _source_id(config: WireConfig) -> str:
+def _source_id(config: WireConfig, gate: ContentGate | None = None) -> str:
     """The emitted source id (J1): the configured, ``FABRIC_SOURCE_ID`` or default label as
-    its ``s-`` pseudonym, unchanged only under ``labels="clear"``."""
+    its ``s-`` pseudonym, unchanged only under ``labels="clear"``. In the production profile
+    without ``FABRIC_WIRE_ID_KEY`` no value derived from a host- or caller-supplied id leaves
+    the process (049 §2.9 rule 5): the source id is random per process."""
+    if gate is not None and gate.profile == "production" and config.id_key is None:
+        return "s-" + uuid.uuid4().hex
     chosen = config.source_id or os.environ.get("FABRIC_SOURCE_ID") or default_source_id("wire")
     return source_label(encode_opaque_id(chosen), config.id_key, clear=config.labels == "clear")
 
@@ -359,7 +423,8 @@ def flush(timeout_s: float = 5.0) -> bool:
 def run(run_id: str) -> Iterator[None]:
     """Scope an explicit run. Each entry is a new scope (``fabric.run.scope_id``) whose
     ``run_start``/``run_end`` markers bound the calls started inside it (spec 048 §6).
-    ``run_id`` is emitted only as its ``r-`` pseudonym (keyed by ``FABRIC_WIRE_ID_KEY``)."""
+    ``run_id`` is emitted only as its ``r-`` pseudonym (keyed by ``FABRIC_WIRE_ID_KEY``); in
+    the production profile without that key, only the generated source fallback."""
     handle = _HANDLE
 
     def mark(scope: RunScope, kind: Literal["run_start", "run_end"]) -> None:
@@ -367,7 +432,16 @@ def run(run_id: str) -> Iterator[None]:
             with contextlib.suppress(Exception):  # capture fails open
                 handle._tee.loss.heartbeat(handle.allocator, kind=kind, scope=scope)
 
-    with run_scope(run_id, handle.config.id_key if handle is not None else None) as scope:
+    key = handle.config.id_key if handle is not None else None
+    emitted = None
+    if (
+        handle is not None
+        and handle.gate is not None
+        and (handle.gate.profile == "production" and key is None)
+    ):  # 049 §2.9 rule 5: the generated source fallback, nothing derived from run_id
+        allocator = handle.allocator
+        emitted = encode_opaque_id(f"source:{allocator.source_id}:{allocator.epoch}")
+    with run_scope(run_id, key, emitted=emitted) as scope:
         mark(scope, "run_start")
         try:
             yield

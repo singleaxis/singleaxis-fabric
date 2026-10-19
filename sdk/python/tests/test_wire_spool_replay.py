@@ -23,9 +23,10 @@ from fabric._sequence import run_pseudonym
 from fabric.wire.__main__ import autoload_path
 from fabric.wire._spool import unframe
 
+from .test_wire_helpers import PRODUCTION_ID_KEY, open_record, production_env
 from .test_wire_spool import FakeNode, records, wait_for
 
-REPLAY = run_pseudonym("run-replay")  # spans carry the run id's pseudonym only
+REPLAY = run_pseudonym("run-replay", PRODUCTION_ID_KEY)  # spans carry the run id's pseudonym only
 
 SRC = Path(fabric.__file__).resolve().parents[1]
 AGENT = textwrap.dedent(
@@ -78,7 +79,9 @@ def agent_env(node: FakeNode, spool: Path, **extra: str) -> dict[str, str]:
         "FABRIC_WIRE_SPOOL_DIR": str(spool), "FABRIC_WIRE_MAX_BODY_BYTES": "65536",
         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": node.url + "/v1/traces",
         "OTEL_EXPORTER_OTLP_TIMEOUT": "2", "OTEL_SERVICE_NAME": "replay-agent",
-        "AGENT_CALLS": "6", "AGENT_RUN": "run-replay", **extra,
+        "AGENT_CALLS": "6", "AGENT_RUN": "run-replay",
+        **production_env(spool.parent),  # node mode is the production profile (049 §7.3)
+        **extra,
     }  # fmt: skip
 
 
@@ -122,7 +125,7 @@ def test_sigkill_mid_send_then_restart_replays_exactly_the_undelivered(
         if first.poll() is None:
             first.kill()
     delivered_before = set(exchange_ids(node))
-    left = [unframe(path.read_bytes())[0] for path in records(spool)]
+    left = [unframe(open_record(path))[0] for path in records(spool)]
     undelivered = {
         d["span"]["attributes"]["fabric.wire.exchange_id"] for d in left
         if d["record_kind"] == "exchange"
@@ -170,7 +173,8 @@ def test_two_agents_share_one_spool(node: FakeNode, tmp_path: Path) -> None:
     runs: dict[str, int] = {}
     for span in node.named("fabric.model_call"):
         runs[span["fabric.run.id"]] = runs.get(span["fabric.run.id"], 0) + 1
-    assert runs == {run_pseudonym("run-0"): 5, run_pseudonym("run-1"): 5}  # none delivered 0x
+    assert runs == {run_pseudonym("run-0", PRODUCTION_ID_KEY): 5,
+                    run_pseudonym("run-1", PRODUCTION_ID_KEY): 5}  # fmt: skip  # none delivered 0x
     finals = [b for b in node.named("fabric.capture_heartbeat")
               if b["fabric.heartbeat.kind"] == "final"]  # fmt: skip
     assert len({b["fabric.source.epoch"] for b in finals}) == 2

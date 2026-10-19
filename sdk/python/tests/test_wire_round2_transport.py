@@ -226,7 +226,7 @@ def test_tiny_chunks_coalesce_and_bytes_stay_exact(rig: Rig) -> None:
 
 def test_chunk_references_are_bounded_by_the_body_limit(tmp_path: Path) -> None:
     limit = 64 * 1024
-    rig = make_rig(tmp_path, store=None, max_body_bytes=limit)
+    rig = make_rig(tmp_path, store=None, max_body_bytes=limit, max_retain_bytes=limit)
     try:
         side = _stream._Side({})
         exchange = _open_exchange(rig)

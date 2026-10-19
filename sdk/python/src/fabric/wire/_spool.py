@@ -3,7 +3,12 @@
 """Agent durable spool (spec 048 §2): one fsync'd ``<source_epoch:020d>-<pid:010d>-
 <order:012d>.rec`` per capture event (name order = drain order), any process writing,
 the ``.lock`` holder draining. Bytes: ``b"FWSPOOL1" | u32 len | header (canonical JSON,
-spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``."""
+spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``.
+
+Encryption at rest (spec 049 §7.8): with a customer key, each record file is the AES-256-GCM
+envelope ``b"FWSPENC1" | key id (12 ASCII) | nonce (12) | AESGCM(frame, aad)`` with
+``aad = b"FWSPENC1" | key id | record name``, the construction of ``byte_spool.py``. The
+key is never written; the key id (``kid-`` + 8 hex) names which key sealed a record."""
 
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ from typing import Any
 from .._loss import _Beat, _Range
 
 MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
+ENVELOPE_MAGIC, _KID_LEN, _NONCE_LEN, _TAG_LEN = b"FWSPENC1", 12, 12, 16
 RESERVE_BYTES = 1024 * 1024  # loss and marker records may exceed the bound by this much
 # Cross-process admission (spec 048 §2 "Shared bound"): every process sharing the spool
 # admits under this flock'd file (never the drainer's ``.lock``), against the bytes on disk.
@@ -45,6 +51,16 @@ _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
 _KEYS = {"exchange": {"service_name", "span", "bodies"}, "loss": {"loss"}, "marker": {"marker"}}
 _COMMON = {"schema_version", "record_kind", "source", "order", "written_at_unix_nano"}
 _REASONS = ("queue_full", "internal_error", "shutdown", "span_dropped")
+# Objects per exchange record: 2 sides x (primary + 64 parts) + 2 review copies (049 §7.4).
+MAX_BODIES = 130
+
+
+class UndecryptableRecordError(ValueError):
+    """An enveloped record sealed under another key (or none configured): never delivered
+    or quarantined by this process; a process holding that key can still deliver it."""
+
+    def __init__(self) -> None:
+        super().__init__("spool record sealed under another key")
 
 
 class CorruptRecordError(ValueError):  # ``doc``: the header, when it parsed
@@ -78,6 +94,31 @@ def unframe(data: bytes) -> tuple[dict[str, Any], memoryview]:
     return doc, view[12 + size : end]
 
 
+def unseal(data: bytes, name: str, cipher: Any, key_id: str | None) -> bytes:
+    """The framed bytes of record file ``name``: as is when it is plaintext (written before
+    the envelope was configured), else opened from its envelope with ``cipher`` (an
+    ``AESGCM`` of the key named ``key_id``). An envelope that does not authenticate is
+    :class:`CorruptRecordError`; one sealed under another key (or with no key configured)
+    is :class:`UndecryptableRecordError`."""
+    if not data.startswith(ENVELOPE_MAGIC):
+        return data
+    head = len(ENVELOPE_MAGIC)
+    kid = data[head : head + _KID_LEN]
+    if cipher is None or kid != str(key_id).encode("ascii"):
+        raise UndecryptableRecordError
+    if len(data) < head + _KID_LEN + _NONCE_LEN + _TAG_LEN:
+        raise CorruptRecordError
+    nonce = data[head + _KID_LEN : head + _KID_LEN + _NONCE_LEN]
+    try:
+        plain: bytes = cipher.decrypt(
+            nonce, data[head + _KID_LEN + _NONCE_LEN :],
+            ENVELOPE_MAGIC + kid + name.encode("ascii"),
+        )  # fmt: skip
+    except Exception:  # cryptography's InvalidTag: tampered, truncated or renamed
+        raise CorruptRecordError from None
+    return plain
+
+
 def _int(value: object, low: int = 0) -> bool:
     return type(value) is int and value >= low
 
@@ -99,10 +140,11 @@ def valid_header(doc: Mapping[str, Any], blob_length: int) -> bool:
                 marker["last_sequence"], -1) and ("run_id" in marker) is run is (
                 "scope_id" in marker)  # fmt: skip
         span, attrs, offset = doc["span"], doc["span"]["attributes"], 0
-        ok = ok and isinstance(doc["service_name"], str) and len(doc["bodies"]) < 3  # noqa: PLR2004
+        ok = ok and isinstance(doc["service_name"], str) and len(doc["bodies"]) <= MAX_BODIES
         for body in doc["bodies"]:
             ok = ok and body["offset"] == offset and _int(body["length"])
-            ok = ok and body["descriptor"]["stored_byte_length"] == body["length"]
+            # a descriptor-only object (049 §4.3 rule 5: not_captured) carries no bytes
+            ok = ok and body["descriptor"].get("stored_byte_length", 0) == body["length"]
             offset += body["length"]
         return bool(ok and offset == blob_length
             and _HEX[32].fullmatch(span["trace_id"]) and _HEX[16].fullmatch(span["span_id"])
@@ -221,12 +263,24 @@ class Spool:
 
     def __init__(
         self, directory: str, max_bytes: int, max_receipts: int = DEFAULT_MAX_RECEIPTS,
-        durable_boundary: str | None = None,
+        durable_boundary: str | None = None, key: bytes | None = None,
     ) -> None:  # fmt: skip
         try:
             import fcntl  # noqa: PLC0415
         except ImportError:
             raise ValueError("the wire spool needs POSIX fcntl") from None
+        self._cipher: Any = None
+        self.key_id: str | None = None
+        if key is not None:  # 049 §7.8: the customer-key envelope
+            try:
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+            except ImportError:
+                raise ValueError("the spool envelope needs the cryptography package") from None
+            if not isinstance(key, bytes) or len(key) != 32:  # noqa: PLR2004
+                raise ValueError("the spool envelope needs a 32-byte AES-256-GCM key")
+            from ._keys import envelope_key_id  # noqa: PLC0415
+
+            self._cipher, self.key_id = AESGCM(key), envelope_key_id(key)
         created = _secure_dir(directory)
         _refuse_foreign(directory)
         self.dir, self.max_bytes, self._fcntl = directory.rstrip("/") or "/", max_bytes, fcntl
@@ -506,8 +560,10 @@ class Spool:
         doc = {**doc, "schema_version": SCHEMA, "order": order,
                "written_at_unix_nano": time.time_ns()}  # fmt: skip
         pieces = frame(doc, bodies)
-        size = sum(map(len, pieces))
         name = f"{doc['source']['source_epoch']:020d}-{os.getpid():010d}-{order:012d}.rec"
+        if self._cipher is not None:  # sealed before anything reaches the disk
+            pieces = self._seal(name, pieces)
+        size = sum(map(len, pieces))
         limit = self.max_bytes + (RESERVE_BYTES if reserve else 0)
         with self._lock:  # admitted: counted at its full size until the outcome is known
             if self.bytes + size > limit:
@@ -563,9 +619,21 @@ class Spool:
         with self._lock:
             return sorted(n for n in names if n not in self._writing)
 
+    def _seal(self, name: str, pieces: Sequence[bytes]) -> list[bytes]:
+        kid = str(self.key_id).encode("ascii")
+        nonce = os.urandom(_NONCE_LEN)
+        aad = ENVELOPE_MAGIC + kid + name.encode("ascii")
+        return [ENVELOPE_MAGIC, kid, nonce, self._cipher.encrypt(nonce, b"".join(pieces), aad)]
+
     def read(self, name: str) -> bytes:
+        """A record's framed bytes, opened from its envelope when it has one (see
+        :func:`unseal`)."""
         with os.fdopen(os.open(self._path(name), os.O_RDONLY | _NOFOLLOW), "rb") as handle:
-            return handle.read()
+            return unseal(handle.read(), name, self._cipher, self.key_id)
+
+    @property
+    def encrypted(self) -> bool:
+        return self._cipher is not None
 
     def exists(self, name: str) -> bool:
         return os.path.lexists(self._path(name))

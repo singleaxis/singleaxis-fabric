@@ -32,10 +32,9 @@ from fabric.wire._pipeline import CapturePipeline, exchange_attributes, response
 from .test_wire_helpers import (
     CONTENT_SCHEMA,
     attrs,
-    capture_schemas,
     chat_response,
     exchange_document,
-    load_validator,
+    validate_exchange_document,
 )
 
 
@@ -103,10 +102,10 @@ def parts(tmp_path: Path) -> Any:
 def _validate_exchange(span: Any, store: LocalFilesystemContentStore) -> None:
     """Schema-check the span's document; its refs are bare uuid4 object ids the store resolves."""
     document = exchange_document(span)
-    for body in (document["request"], document.get("response", {})):
+    for body in (document.get("request", {}), document.get("response", {})):
         if object_id := body.get("object_id"):
             assert Path(store.evidence_ref_for(object_id).removeprefix("file://")).is_file()
-    load_validator().validate_document(document, capture_schemas())
+    validate_exchange_document(document)
 
 
 def _descriptors(store: LocalFilesystemContentStore) -> list[dict[str, Any]]:

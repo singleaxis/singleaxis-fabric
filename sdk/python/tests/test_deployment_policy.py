@@ -378,3 +378,20 @@ def test_transform_failure_in_recorder_never_stores_input(
     finally:
         _assert_result_378 = recorder.close()
         assert _assert_result_378
+
+
+def test_masked_only_stores_only_the_masked_copy_and_original_plus_masked_withholds() -> None:
+    """049 §7.5/§7.7: masked_only is a customer-masked copy with no original digest;
+    original_plus_masked needs two objects, which the explicit line's protector does not
+    make, so it withholds (fails closed) rather than storing the original alone."""
+    masked = ContentProtector(
+        policy_for("masked_only"), redactors={"terminal.stdout": lambda _: b"[masked]"}
+    ).protect("terminal.stdout", SECRET)
+    assert (masked.status, masked.mode, masked.protected_bytes) == (
+        "redacted", "masked_only", b"[masked]")  # fmt: skip
+    assert masked.original_digest is None and "source_byte_length" not in masked.metadata
+    with pytest.raises(ValueError, match="redactor"):
+        ContentProtector(policy_for("masked_only"))
+    both = ContentProtector(policy_for("original_plus_masked")).protect("terminal.stdout", SECRET)
+    assert both.status == "unsupported" and both.protected_bytes is None
+    assert both.original_digest is None

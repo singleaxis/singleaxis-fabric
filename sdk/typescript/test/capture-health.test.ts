@@ -21,8 +21,13 @@ function client(options: ConstructorParameters<typeof BasicTracerProvider>[0] = 
     tracerProvider: provider,
   });
 }
-beforeEach(() => testing.resetCaptureHealthWarnings());
+beforeEach(() => {
+  testing.resetCaptureHealthWarnings();
+  // Pre-049 identity output: clear mode reproduces it byte for byte.
+  vi.stubEnv("FABRIC_IDENTITY_MODE", "clear");
+});
 afterEach(async () => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
 });
