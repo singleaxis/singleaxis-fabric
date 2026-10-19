@@ -161,10 +161,12 @@ override at verification time.
 
 - `fabricguard` `profile: production` requires `evidence_source_binding`
   (`tenant_id`, `source_id` as the records carry them). On a bound ingress
-  every trace span must name the bound source in `fabric.source_id`, and any
-  `fabric.tenant_id` must be the bound tenant. Otherwise the batch is
-  refused with `INVALID_ARGUMENT` before any mutation. Admitted spans get
-  `fabric.source.authenticated=true`. `identity_mode: pseudonymous` (the
+  a span, resource or scope naming another `fabric.source_id` or
+  `fabric.tenant_id` refuses the whole batch with `INVALID_ARGUMENT` before
+  any mutation. A span naming no source is dropped on its own and counted
+  (`unbound_span`); the rest of the batch is admitted, and admitted spans
+  get `fabric.source.authenticated=true`. One production Node binds exactly
+  one agent source. `identity_mode: pseudonymous` (the
   default) admits `fabric.session_id` only as `sess-<32 hex>`; `clear`
   keeps its earlier admission. `fabric.delegation.to_agent` is admitted
   only as `agt-<32 hex>`.

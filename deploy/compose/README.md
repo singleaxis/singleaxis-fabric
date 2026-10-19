@@ -200,7 +200,11 @@ names another tenant or source with `INVALID_ARGUMENT` and stamps
 `FABRIC_SOURCE_ID` is the source id as the agents send it. Under their
 default pseudonymous labels that is `s-` plus the first 32 hex of
 HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, agent `FABRIC_SOURCE_ID`), the `s-`
-value on their capture spans. Run one Node per agent source.
+value on their capture spans. A span that names no source, such as an
+application span exported to the same ingress, is dropped on its own; the
+capture records next to it are admitted. **Limit:** a production Node binds
+exactly one agent source, so agents with different `FABRIC_SOURCE_ID`
+values need one Node each.
 
 With the content path, the persistent content queue and the file store are
 sealed with the Node key `FABRIC_CONTENT_KEY_FILE`: 32 bytes or their

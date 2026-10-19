@@ -100,10 +100,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     its P0-A settings, and they state this supersession.
   - **Source authentication (§7.9).** `fabricguard`'s
     `evidence_source_binding` now covers every trace span: exchanges, loss
-    records, heartbeats, markers and manifests. Each span must name the
-    bound source in `fabric.source_id`, and any `fabric.tenant_id` must be
-    the bound tenant. Otherwise the whole batch is refused with
-    `INVALID_ARGUMENT`. Admitted spans are stamped
+    records, heartbeats, markers and manifests. A span, resource or scope
+    that names another source (`fabric.source_id`) or tenant
+    (`fabric.tenant_id`) is a forgery signal: the whole batch is refused
+    with `INVALID_ARGUMENT`. A span that names no source at all, such as an
+    application span batched with capture records in global-tracer mode, is
+    dropped on its own, never stamped and counted; the rest of the batch
+    goes through. Admitted spans are stamped
     `fabric.source.authenticated=true`; an agent's value is stripped.
     `fabriccontent` takes the same `source_binding`, drops other sources
     (`source_unbound`) and writes the receiver-owned
@@ -139,8 +142,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - **Contracts.** capture/v1 1.2.0, content/v2 2.2.0, deployment-policy/v1
     1.1.0 (`masked_only`, `original_plus_masked`), and the new reason
     `missing_spool_key`.
-  - **Limit: one source per production Node.** A production Node binds one
-    agent source.
+  - **Limit: one source per production Node.** A production Node binds
+    exactly one agent source (one tenant, one `fabric.source_id`, one
+    ingress token). Agents with different source ids need one Node each; a
+    shared Node, such as one DaemonSet Node serving many pods that each run
+    as their own source, cannot be a production Node in P0-A. Pods that
+    should share a Node must run with the same `FABRIC_SOURCE_ID`.
 - **Migration: `fabric-gate` tightenings.** Existing collector configurations
   that the gate accepted before may now be refused at container start; the
   shipped Compose, Helm and example configurations already comply:

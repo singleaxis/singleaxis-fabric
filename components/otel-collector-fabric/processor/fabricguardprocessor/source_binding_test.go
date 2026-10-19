@@ -137,10 +137,9 @@ func TestSourceBindingRejectsForeignSpansBeforeMutating(t *testing.T) {
 		"forged source": func(td ptrace.Traces) {
 			lastSpan(td).Attributes().PutStr("fabric.source_id", "s-00000000000000000000000000000000")
 		},
-		"clear source":   func(td ptrace.Traces) { lastSpan(td).Attributes().PutStr("fabric.source_id", "billing-agent") },
-		"typed source":   func(td ptrace.Traces) { lastSpan(td).Attributes().PutInt("fabric.source_id", 1) },
-		"missing source": func(td ptrace.Traces) { lastSpan(td).Attributes().Remove("fabric.source_id") },
-		"cross tenant":   func(td ptrace.Traces) { lastSpan(td).Attributes().PutStr("fabric.tenant_id", "tenant-b") },
+		"clear source": func(td ptrace.Traces) { lastSpan(td).Attributes().PutStr("fabric.source_id", "billing-agent") },
+		"typed source": func(td ptrace.Traces) { lastSpan(td).Attributes().PutInt("fabric.source_id", 1) },
+		"cross tenant": func(td ptrace.Traces) { lastSpan(td).Attributes().PutStr("fabric.tenant_id", "tenant-b") },
 		"resource tenant": func(td ptrace.Traces) {
 			td.ResourceSpans().At(0).Resource().Attributes().PutStr("fabric.tenant_id", "tenant-b")
 		},
@@ -150,9 +149,9 @@ func TestSourceBindingRejectsForeignSpansBeforeMutating(t *testing.T) {
 		"scope tenant": func(td ptrace.Traces) {
 			td.ResourceSpans().At(0).ScopeSpans().At(0).Scope().Attributes().PutStr("fabric.tenant_id", "tenant-b")
 		},
-		"app span": func(td ptrace.Traces) {
+		"app span forging a tenant": func(td ptrace.Traces) {
 			lastSpan(td).Attributes().Clear()
-			lastSpan(td).Attributes().PutStr("gen_ai.request.model", "m")
+			lastSpan(td).Attributes().PutStr("fabric.tenant_id", "tenant-b")
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -228,3 +227,55 @@ func TestEvidenceSourceBindingConfigRequiresBothSafeIDs(t *testing.T) {
 		}
 	}
 }
+
+// A span that names no source (an application span batched with capture
+// records in global-tracer mode) is dropped on its own and counted; the
+// capture records of the same batch are admitted and stamped. Refusing the
+// batch would lose them on every batch.
+func TestSourceBindingDropsUnboundSpansIndividually(t *testing.T) {
+	g := traceBoundGuard(t)
+	heartbeat := wireHeartbeatAttrs()
+	heartbeat["fabric.run.scope_id"] = testScopeID
+	td := makeTraces(
+		spanFixture{name: "native", attrs: wireExchangeAttrs()},
+		spanFixture{name: "app.handler", attrs: map[string]any{"gen_ai.request.model": "m", "fabric.tenant_id": "tenant-a"}},
+		spanFixture{name: "native", attrs: heartbeat},
+		spanFixture{name: "app.db", attrs: map[string]any{fabricAuthenticatedForged(): true}},
+	)
+	out, err := g.processTraces(context.Background(), td)
+	if err != nil {
+		t.Fatalf("mixed batch refused: %v", err)
+	}
+	spans := out.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	if spans.Len() != 2 {
+		t.Fatalf("kept %d spans, want the 2 capture records", spans.Len())
+	}
+	for i := 0; i < spans.Len(); i++ {
+		attrs := spans.At(i).Attributes()
+		if source, _ := attrs.Get("fabric.source_id"); source.Str() != testSourceLabel {
+			t.Fatalf("an unbound span survived: %v", attrs.AsRaw())
+		}
+		if stamp, ok := attrs.Get(sourceAuthenticatedKey); !ok || !stamp.Bool() {
+			t.Fatalf("capture record not stamped: %v", attrs.AsRaw())
+		}
+	}
+	if got := g.stats.snapshot().UnboundSpanDropped; got != 2 {
+		t.Fatalf("unbound drops counted %d, want 2", got)
+	}
+
+	// A mismatched source anywhere in the same kind of batch is a forgery
+	// signal: the whole batch is refused.
+	forged := makeTraces(
+		spanFixture{name: "native", attrs: wireExchangeAttrs()},
+		spanFixture{name: "app.handler", attrs: map[string]any{"gen_ai.request.model": "m"}},
+		spanFixture{name: "native", attrs: map[string]any{"fabric.source_id": "s-00000000000000000000000000000000", "fabric.heartbeat.last_sequence": -1}},
+	)
+	_, err = traceBoundGuard(t).processTraces(context.Background(), forged)
+	if err == nil || status.Code(err) != codes.InvalidArgument || !consumererror.IsPermanent(err) {
+		t.Fatalf("mismatched source not refused: %v", err)
+	}
+}
+
+// fabricAuthenticatedForged is the receiver-owned key an agent may try to
+// send on an unbound span.
+func fabricAuthenticatedForged() string { return sourceAuthenticatedKey }

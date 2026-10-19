@@ -40,6 +40,7 @@ type guardStats struct {
 	statusMessageRemoved atomic.Uint64
 	nativeTextNormalized atomic.Uint64
 	aggregateCapped      atomic.Uint64
+	unboundSpanDropped   atomic.Uint64
 }
 
 type guardStatsSnapshot struct {
@@ -54,6 +55,7 @@ type guardStatsSnapshot struct {
 	StatusMessageRemoved uint64
 	NativeTextNormalized uint64
 	AggregateCapped      uint64
+	UnboundSpanDropped   uint64
 }
 
 func (s *guardStats) snapshot() guardStatsSnapshot {
@@ -69,6 +71,7 @@ func (s *guardStats) snapshot() guardStatsSnapshot {
 		StatusMessageRemoved: s.statusMessageRemoved.Load(),
 		NativeTextNormalized: s.nativeTextNormalized.Load(),
 		AggregateCapped:      s.aggregateCapped.Load(),
+		UnboundSpanDropped:   s.unboundSpanDropped.Load(),
 	}
 }
 
@@ -473,6 +476,9 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 	if bound && !g.boundTraceBatch(td) {
 		return td, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: source binding rejected"))
 	}
+	if bound {
+		g.dropUnboundSpans(td)
+	}
 	allowed := unionSets(TraceAllowedFields, toSet(g.cfg.ExtraAllowedTraceFields...))
 	resourceSpans := td.ResourceSpans()
 	for ri := 0; ri < resourceSpans.Len(); ri++ {
@@ -519,11 +525,10 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 }
 
 // boundTraceBatch checks the whole request before mutating or forwarding any
-// span (spec 049 §7.9): every span must name the bound source in
-// fabric.source_id, and a tenant it names (fabric.tenant_id on the span, its
-// resource or scope) must be the bound tenant. Resource and scope source ids
-// must match too. A span without a source id is unbound and refuses the
-// batch: a bound ingress carries only that source's records.
+// span (spec 049 §7.9): a source or tenant that a span, its resource or scope
+// names (fabric.source_id, fabric.tenant_id) must be the bound one. A
+// mismatch is a forgery signal and refuses the whole batch. A span that names
+// no source at all is not a forgery: dropUnboundSpans removes it on its own.
 func (g *guard) boundTraceBatch(td ptrace.Traces) bool {
 	bound := g.cfg.EvidenceSourceBinding
 	matches := func(attrs pcommon.Map, requireSource bool) bool {
@@ -547,13 +552,39 @@ func (g *guard) boundTraceBatch(td ptrace.Traces) bool {
 			}
 			spans := scopeSpans.At(si).Spans()
 			for i := 0; i < spans.Len(); i++ {
-				if !matches(spans.At(i).Attributes(), true) {
+				if !matches(spans.At(i).Attributes(), false) {
 					return false
 				}
 			}
 		}
 	}
 	return true
+}
+
+// dropUnboundSpans removes, one by one, the spans of an admitted bound batch
+// that name no fabric.source_id: in global-tracer mode the application's own
+// spans share a batch with the capture records, and refusing the batch for
+// them (non-retryably) would lose every capture record in it. Dropped spans
+// are never stamped and are counted (unboundSpanDropped).
+func (g *guard) dropUnboundSpans(td ptrace.Traces) {
+	resourceSpans := td.ResourceSpans()
+	dropped := 0
+	for ri := 0; ri < resourceSpans.Len(); ri++ {
+		scopeSpans := resourceSpans.At(ri).ScopeSpans()
+		for si := 0; si < scopeSpans.Len(); si++ {
+			scopeSpans.At(si).Spans().RemoveIf(func(span ptrace.Span) bool {
+				if _, ok := span.Attributes().Get("fabric.source_id"); ok {
+					return false
+				}
+				dropped++
+				return true
+			})
+		}
+	}
+	if dropped > 0 {
+		g.stats.unboundSpanDropped.Add(uint64(dropped))
+		g.logger.Debug("dropping trace spans", zap.String("reason", "unbound_span"), zap.Int("count", dropped))
+	}
 }
 
 // clearEntityRefs removes resource entity_refs — an OTLP proto field of

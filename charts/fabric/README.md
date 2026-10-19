@@ -65,7 +65,12 @@ Fails closed at render time unless the recorder has:
   `workloadAuthentication.sourceId`. `sourceId` is the agents' source id as
   it travels: `s-<32 hex>` under their pseudonymous labels. A batch that
   names another tenant or source is refused, and admitted spans carry
-  `fabric.source.authenticated=true`.
+  `fabric.source.authenticated=true`. A span that names no source is
+  dropped on its own.
+  **Deployment limit:** one production Node serves exactly one agent
+  source. A Node shared by many pods, such as a DaemonSet, works only if
+  every pod runs with the same `FABRIC_SOURCE_ID`. Otherwise run one Node
+  per source.
 - with content, the Node key Secret `content.encryption.keySecret` (default
   `fabric-node-content-key`; 32 random bytes or their base64), which seals
   the persistent content queue with AES-256-GCM. `fabric-gate` refuses a
