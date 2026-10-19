@@ -57,6 +57,7 @@ def test_release_policy_is_recorder_only() -> None:
         "fabric/judge.py",
         "fabric/policy.py",
         "fabric/presidio.py",
+        "fabric/reference_receipts.py",
         "fabric/tool_auth.py",
     }.issubset(forbidden)
     assert set(policy["contracts"]["public_families"]) == {

@@ -149,6 +149,7 @@ exclude = [
   "/src/fabric/presidio.py",
   "/src/fabric/stream.py",
   "/src/fabric/tool_auth.py",
+  "/src/fabric/reference_receipts.py",
   "/src/fabric/control_protocol.py",
   "/src/fabric/deployment_state.py",
   "/src/fabric/capture_identity.py",
@@ -182,6 +183,7 @@ exclude = [
   "/src/fabric/presidio.py",
   "/src/fabric/stream.py",
   "/src/fabric/tool_auth.py",
+  "/src/fabric/reference_receipts.py",
   "/src/fabric/control_protocol.py",
   "/src/fabric/deployment_state.py",
   "/src/fabric/capture_identity.py",
@@ -235,9 +237,6 @@ ignore = ["PLR0913"]
 # satisfy Darwin's 104-byte sun_path limit, and invalid paths to
 # trigger negative-path assertions).
 "tests/**" = ["S101", "PLR2004", "S108"]
-# S603 for the fixed `python -m fabric.reference_receipts` subprocess. Kept here
-# (not as an inline noqa) so ruff 0.13 (CI pin) and newer ruff both accept it.
-"tests/test_reference_receipts.py" = ["S603"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -18,7 +18,6 @@ build's qualification results.
 | Restartable metadata delivery/ack ledger | Implemented, `metadata_delivery.JournalMetadataSender`, `HTTPMetadataTransport` | Not implemented |
 | Authenticated AES-GCM local governed store | Implemented, `GovernedLocalContentStore` | Not implemented; ordinary stores are not an equivalent |
 | External control observations | Metadata only, `ControlObservation` | Not implemented |
-| Independently persisted receipt service | Local reference, `reference_receipts.ReferenceReceiptService` | Not implemented |
 | Registered multi-source/recovered-epoch closure | Local reference, `distributed_closure` | Not implemented |
 | Client portal UI, SSO/fleet rollout service | Not implemented | Not implemented |
 | Action enforcement | Not implemented | Not implemented |
@@ -68,7 +67,7 @@ readback can be added only for effects that need stronger evidence.
 | Browser / remote sandbox / remote VM | Ordinary supplied telemetry or explicit custom adapter/context propagation | No universal guest/remote instrumentation or session reconstruction; instrumentation/provider evidence must exist inside the relevant boundary |
 | SSH / remote CLI / encrypted traffic | Explicit approved application observations and host connection metadata where configured | Host network metadata does not reconstruct SSH/TLS payloads or remote committed effects |
 | External writes/payments/cloud effects | Caller-supplied effect references and selected destination readback adapters | A successful tool return is not independent proof the external effect committed; authoritative provider readback required |
-| Destination content and metadata | Reference ingress/destination inventories, exact receipts and readback | Local receipt service is not a real OTel Collector, cloud storage SLA, IAM/KMS or replication attestation |
+| Destination content and metadata | Exact receipt sets and attestations checked offline (`receipt_sets`, `evidence_attestation`); destination readback | Receipts are checked, not issued: the SDK ships no receipt service, and a receipt is not a cloud storage SLA, IAM/KMS or replication attestation |
 
 No row establishes “captures everything.” Missing routes, absent sensors,
 unknown child sources and unverified effect readbacks must remain explicit.

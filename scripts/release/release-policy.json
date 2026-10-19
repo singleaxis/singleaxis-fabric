@@ -80,6 +80,7 @@
       "fabric/nemo.py",
       "fabric/policy.py",
       "fabric/presidio.py",
+      "fabric/reference_receipts.py",
       "fabric/stream.py",
       "fabric/tool_auth.py"
     ],
@@ -168,6 +169,7 @@
       "src/fabric/nemo.py",
       "src/fabric/policy.py",
       "src/fabric/presidio.py",
+      "src/fabric/reference_receipts.py",
       "src/fabric/stream.py",
       "src/fabric/tool_auth.py"
     ],

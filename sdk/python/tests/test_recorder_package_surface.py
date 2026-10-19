@@ -85,6 +85,7 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/policy_adapters",
     "/src/fabric/presidio.py",
     "/src/fabric/queue_transports",
+    "/src/fabric/reference_receipts.py",
     "/src/fabric/stream.py",
     "/src/fabric/tool_auth.py",
 }

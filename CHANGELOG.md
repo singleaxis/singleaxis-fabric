@@ -182,6 +182,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   default recorder. `fabric.control_evidence.ControlObservation` (metadata
   about an external control decision) stays. The module is now a forbidden
   wheel/sdist member, and `docs/capture-control-compatibility.md` is removed.
+- **Breaking: removed `fabric.reference_receipts`** (`ReferenceReceiptService`,
+  `ReferenceReceiptClient`, `ReferenceByteStore` and `python -m
+  fabric.reference_receipts`). It was an HTTP + SQLite receipt service
+  shipped inside the SDK wheel; a server is outside the recorder package.
+  Qualified-run mode does not depend on it: `receipt_sets`,
+  `evidence_attestation` and `qualified_run` still verify the delivery v1
+  receipt sets and attestations offline. The module is now a forbidden
+  wheel/sdist member.
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.
