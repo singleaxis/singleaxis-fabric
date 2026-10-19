@@ -15,6 +15,11 @@ share (spec 048 §6-§7). The stitch-digest fixture pins the ``fabric.stitch/v1`
 that ``fabric.reconstruct`` derives offline from stored bytes; the golden
 fixtures pin the exact descriptor bytes and keys a content writer (the
 Fabric Node's ``fabriccontent`` exporter or the SDK local store) produces.
+Spec 049 P0 adds the run-marker rules (``none`` stands alone among
+predecessors, a seal never ends after its source's last position, branch
+tokens make the run resumable), checks that heartbeat spans and spool markers
+define every run-marker key identically, binds a records-input spool entry to
+its source, and closes the generated ``fabric.capture_manifest`` span form.
 This validator does not claim any runtime currently emits these documents.
 """
 
@@ -32,18 +37,37 @@ from typing import Any, Mapping, Sequence
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.0.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.1.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
     "fabric.run-reconstruction/v1": "schema/run-reconstruction-v1.schema.json",
     "fabric.wire-spool-record/v1": "schema/spool-record-v1.schema.json",
     "fabric.content-log-record/v1": "schema/content-log-record-v1.schema.json",
+    "fabric.capture-manifest-record/v1": "schema/capture-manifest-record-v1.schema.json",
 }
+# Spec 049 run-marker keys: identical JSON definitions on fabric.loss-record/v1
+# heartbeats and on spool marker records.
+_MARKER_KEYS = (
+    "segment_id",
+    "predecessors",
+    "resumable",
+    "open_deadline_s",
+    "declared_branches",
+    "branch_ids",
+    "terminal",
+    "seal",
+    "manifest_id",
+    "manifest_digest",
+    "manifest_seq",
+    "scope_status",
+)
+_INT64_MAX = 9223372036854775807
 _EXPECTATIONS = frozenset(
     {"schema", "valid", "invalid", "digests", "golden", "vectors"}
 )
 _RUN_MARKERS = frozenset({"run_start", "run_end"})
+_SCOPED_MARKERS = frozenset({"run_start", "run_end", "segment_seal"})
 _COMPLETE = "complete_for_declared_scope"
 _COMPLETE_OBSERVED = "complete_for_observed_scopes"
 _COMPLETE_VERDICTS = frozenset({_COMPLETE, _COMPLETE_OBSERVED})
@@ -139,14 +163,51 @@ def _validate_exchange(document: Mapping[str, Any]) -> None:
 
 def _validate_loss(document: Mapping[str, Any]) -> None:
     if document["kind"] != "loss":
-        if "scope_id" in document and document["heartbeat_kind"] not in _RUN_MARKERS:
+        if "scope_id" in document and document["heartbeat_kind"] not in _SCOPED_MARKERS:
             raise CaptureContractError(
                 "capture.heartbeat.scope",
                 "$.scope_id",
-                "only run_start / run_end markers carry a scope_id",
+                "only run_start / run_end / segment_seal markers carry a scope_id",
             )
+        _check_marker(document, document["last_sequence"], "$")
         return
     _check_range(document)
+
+
+def _check_marker(marker: Mapping[str, Any], last_sequence: int, path: str) -> None:
+    """Spec 049 run-marker rules a schema cannot express (sections 2.10, 2.12)."""
+
+    predecessors = marker.get("predecessors", [])
+    if "none" in predecessors and predecessors != ["none"]:
+        raise CaptureContractError(
+            "capture.marker.predecessors",
+            f"{path}.predecessors",
+            "'none' marks the run's root and stands alone",
+        )
+    if len(set(predecessors)) != len(predecessors) or any(
+        entry != "none" and int(entry.split("/")[2]) > _INT64_MAX
+        for entry in predecessors
+    ):
+        raise CaptureContractError(
+            "capture.marker.predecessors",
+            f"{path}.predecessors",
+            "entries are distinct and epochs fit 63 bits",
+        )
+    seal = marker.get("seal")
+    if seal is None:
+        return
+    if seal["last_sequence"] > last_sequence:
+        raise CaptureContractError(
+            "capture.marker.seal",
+            f"{path}.seal.last_sequence",
+            "a segment cannot end after the source's last allocated position",
+        )
+    if seal.get("branch_ids") and marker.get("resumable") is not True:
+        raise CaptureContractError(
+            "capture.marker.seal",
+            f"{path}.seal.branch_ids",
+            "issuing branch tokens makes the run resumable (resumable=true on the seal)",
+        )
 
 
 def _check_range(document: Mapping[str, Any]) -> None:
@@ -212,6 +273,24 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
     kind = document["record_kind"]
     if kind == "loss":
         _check_range(document["loss"])
+        return
+    if kind == "marker":
+        _check_marker(
+            document["marker"], document["marker"]["last_sequence"], "$.marker"
+        )
+        return
+    if kind == "record":
+        span, source = document["span"], document["source"]
+        attrs = span["attributes"]
+        if (attrs["fabric.source_id"], attrs["fabric.source.epoch"]) != (
+            source["source_id"],
+            source["source_epoch"],
+        ):
+            raise _spool_inconsistent(
+                "$.span.attributes", "span source differs from the record source"
+            )
+        if span["end_time_unix_nano"] < span["start_time_unix_nano"]:
+            raise _spool_inconsistent("$.span", "span ends before it starts")
         return
     if kind != "exchange":
         return
@@ -560,8 +639,10 @@ def validate_document(
         _validate_spool(document)
     elif version == "fabric.content-log-record/v1":
         _validate_content(document)
-    else:
+    elif version == "fabric.run-reconstruction/v1":
         _validate_reconstruction(document)
+    # fabric.capture-manifest-record/v1 is closed by its generated schema; its
+    # semantics are the coverage manifest's (validate_coverage_contracts.py).
 
 
 def validate_digest_fixture(document: Mapping[str, Any], path: Path) -> None:
@@ -850,6 +931,25 @@ def _pinned_records(root: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _check_marker_definitions(schemas: Mapping[str, Mapping[str, Any]]) -> None:
+    """Heartbeat spans and spool markers define every run-marker key identically."""
+
+    heartbeat = schemas[SCHEMAS["fabric.loss-record/v1"]]["oneOf"][1]["properties"]
+    spool = schemas[SCHEMAS["fabric.wire-spool-record/v1"]]["oneOf"]
+    marker = next(
+        branch["properties"]["marker"]["properties"]
+        for branch in spool
+        if branch["properties"]["record_kind"] == {"const": "marker"}
+    )
+    for key in _MARKER_KEYS:
+        if key not in heartbeat or heartbeat.get(key) != marker.get(key):
+            raise CaptureContractError(
+                "capture.marker.definition",
+                key,
+                "run-marker key differs between loss-record and spool-record",
+            )
+
+
 def validate_capture_contracts(repo_root: Path) -> list[str]:
     """Validate every pinned capture-v1 artifact and negative fixture."""
 
@@ -866,6 +966,7 @@ def validate_capture_contracts(repo_root: Path) -> list[str]:
         raise CaptureContractError(
             "capture.manifest.schemas", str(root), f"missing {missing}"
         )
+    _check_marker_definitions(schemas)
     validated: list[str] = []
     for record in records:
         path = root / record["path"]

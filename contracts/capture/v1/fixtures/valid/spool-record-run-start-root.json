@@ -1,0 +1,25 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "marker",
+  "source": {
+    "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+    "source_epoch": 4611686018427387905
+  },
+  "order": 0,
+  "written_at_unix_nano": 1791331203050000000,
+  "marker": {
+    "kind": "run_start",
+    "last_sequence": -1,
+    "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+    "scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+    "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+    "predecessors": [
+      "none"
+    ],
+    "resumable": true,
+    "open_deadline_s": 259200,
+    "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+    "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+    "manifest_seq": 0
+  }
+}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/loss-record-v1.schema.json",
   "title": "Fabric capture loss record / heartbeat v1 (draft, spec 047 rev 5, spec 048)",
-  "description": "JSON form of a fabric.capture_loss or fabric.capture_heartbeat span. A loss names a range of a source's exchange sequences that will never produce an exchange span; a heartbeat declares the last exchange sequence the source has allocated, which is how tail loss becomes detectable. heartbeat_kind says why it was written: periodic, run_start / run_end (a fabric.wire.run() block, with run_id) or final (a clean close; nothing is allocated in the epoch after it). A retried export re-sends the same logical record; readers deduplicate heartbeats by (source, kind, run_id, scope_id, last_sequence). Run markers carry the scope_id of the fabric.wire.run() block entry they bound (spec 048 §6); readers pair markers by scope_id. Records do not consume sequences and carry no content. Loss records only explain gaps: a sequence that is neither an exchange nor inside a loss range is still a detected gap.",
+  "description": "JSON form of a fabric.capture_loss or fabric.capture_heartbeat span. A loss names a range of a source's positions that will never produce a record; a heartbeat declares the last position the source has allocated, which is how tail loss becomes detectable. Before spec 049 P1 a position is one exchange (sequence_unit: exchange); from P1 one allocator per (source, epoch) serves both inputs and a position is one exchange or one records-input record (sequence_unit: record). heartbeat_kind says why it was written: periodic, run_start / run_end (a fabric.wire.run() block, with run_id), segment_seal (the seal of one run segment, spec 049 §2.12) or final (a clean close; nothing is allocated in the epoch after it). A retried export re-sends the same logical record; readers deduplicate heartbeats by (source, kind, run_id, scope_id, last_sequence). Run markers carry the scope_id of the fabric.wire.run() block entry they bound (spec 048 §6); readers pair markers by scope_id. The run-marker keys of spec 049 (segment, predecessors, termination, branches, seal, manifest in force) appear only on the kinds that define them. Records do not consume sequences and carry no content. Loss records only explain gaps: a position that is neither a record nor inside a loss range is still a detected gap.",
   "type": "object",
   "required": ["schema_version", "kind", "source", "emitted_at"],
   "properties": {
@@ -42,7 +42,7 @@
         "kind": {"const": "heartbeat"},
         "source": true,
         "emitted_at": true,
-        "heartbeat_kind": {"enum": ["periodic", "run_start", "run_end", "final"]},
+        "heartbeat_kind": {"enum": ["periodic", "run_start", "run_end", "segment_seal", "final"]},
         "last_sequence": {"type": "integer", "minimum": -1},
         "run_id": {
           "description": "The run a run_start / run_end marker bounds. Capture writes it on markers only; readers treat a marker without run_id as an unclassified heartbeat and ignore run_id on periodic and final heartbeats.",
@@ -52,8 +52,21 @@
           "description": "fabric.run.scope_id of the fabric.wire.run() block entry this run_start / run_end marker bounds (spec 048 §6). Only on run markers; a marker without a valid scope_id is an unclassified heartbeat.",
           "type": "string",
           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        }
-      }
+        },
+        "segment_id": {"description": "fabric.run.segment_id (X43): the immutable segment the marker belongs to.", "type": "string", "pattern": "^seg-[0-9a-f]{32}$"},
+        "predecessors": {"description": "fabric.run.predecessors (X41), run_start only: 'none' for the run's root, else one <segment_id>/<source_id>/<epoch>/<last_sequence>/sha256:<manifest digest at seal> entry per sealed segment this segment continues.", "type": "array", "minItems": 1, "maxItems": 64, "items": {"type": "string", "pattern": "^(none|seg-[0-9a-f]{32}/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}/[1-9][0-9]{0,18}/(-1|0|[1-9][0-9]{0,18})/sha256:[0-9a-f]{64})$"}},
+        "resumable": {"description": "fabric.run.resumable (X42): on the root run_start, and on a token-issuing segment_seal.", "type": "boolean"},
+        "open_deadline_s": {"description": "fabric.run.open_deadline_s (X42), honoured on the root run_start only.", "type": "integer", "minimum": 60, "maximum": 31536000},
+        "declared_branches": {"description": "fabric.run.declared_branches (X46), run_start only: fork children declared by segment id.", "type": "array", "maxItems": 64, "items": {"type": "string", "pattern": "^seg-[0-9a-f]{32}$"}},
+        "branch_ids": {"description": "fabric.run.branch_ids (X46), run_start only: the branch ids of the tokens this segment started from.", "type": "array", "maxItems": 64, "items": {"type": "string", "pattern": "^br-[0-9a-f]{32}$"}},
+        "terminal": {"description": "fabric.run.terminal (X42), segment_seal only: whether this seal terminates the run.", "type": "boolean"},
+        "seal": {"description": "fabric.segment.* (X44, X46), segment_seal only: the segment's last sequence, the manifest digest at seal, the portable seal digest (spec 049 §2.12) and the branch ids minted by resume_token(branches=n).", "type": "object", "additionalProperties": false, "required": ["last_sequence", "manifest_digest", "seal_digest"], "properties": {"last_sequence": {"type": "integer", "minimum": -1}, "manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "seal_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "branch_ids": {"type": "array", "maxItems": 64, "items": {"type": "string", "pattern": "^br-[0-9a-f]{32}$"}}}},
+        "manifest_id": {"description": "fabric.capture.manifest_id (X34), run_start / run_end only: the manifest in force.", "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+        "manifest_digest": {"description": "fabric.capture.manifest_digest (X34), run_start / run_end only.", "type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "manifest_seq": {"description": "fabric.capture.manifest_seq (X39), any heartbeat: the latest manifest of the source epoch, so a lost trailing manifest is detectable.", "type": "integer", "minimum": 0},
+        "scope_status": {"description": "fabric.run.scope_status (S34), run_end only: how the fabric.wire.run() block exited.", "enum": ["ok", "error", "cancelled"]}
+      },
+      "allOf": [{"if": {"properties": {"heartbeat_kind": {"const": "run_start"}}}, "then": {"properties": {"terminal": false, "seal": false, "scope_status": false}}}, {"if": {"properties": {"heartbeat_kind": {"const": "run_end"}}}, "then": {"properties": {"predecessors": false, "resumable": false, "open_deadline_s": false, "declared_branches": false, "branch_ids": false, "terminal": false, "seal": false}}}, {"if": {"properties": {"heartbeat_kind": {"const": "segment_seal"}}}, "then": {"required": ["run_id", "segment_id", "terminal", "seal"], "properties": {"predecessors": false, "open_deadline_s": false, "declared_branches": false, "branch_ids": false, "manifest_id": false, "manifest_digest": false, "scope_status": false}}}, {"if": {"properties": {"heartbeat_kind": {"enum": ["periodic", "final"]}}}, "then": {"properties": {"segment_id": false, "predecessors": false, "resumable": false, "open_deadline_s": false, "declared_branches": false, "branch_ids": false, "terminal": false, "seal": false, "manifest_id": false, "manifest_digest": false, "scope_status": false}}}]
     }
   ],
   "$defs": {
