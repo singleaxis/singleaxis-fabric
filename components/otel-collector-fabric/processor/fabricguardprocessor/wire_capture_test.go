@@ -456,9 +456,14 @@ func TestWireCapture_ExactlyTheCaptureKeysAreAllowlistedAndNotSensitive(t *testi
 			t.Errorf("%q is denied by sensitiveAttributeKey", key)
 		}
 	}
-	// Every allowlisted key in the capture namespaces is one of the sixteen.
+	// Every allowlisted key in the capture namespaces is one of the sixteen,
+	// or a spec 049 key admitted with its registry check (coverage_keys.go,
+	// verified key by key against the registry in coverage_keys_test.go).
 	listed := map[string]struct{}{}
 	for _, key := range captureKeys {
+		listed[key] = struct{}{}
+	}
+	for key := range coverageKeyValidators {
 		listed[key] = struct{}{}
 	}
 	for key := range TraceAllowedFields {

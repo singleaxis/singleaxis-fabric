@@ -102,6 +102,19 @@ exported unchanged (checked by pattern), and you guarantee they contain no
 personal data. In global-tracer mode the capture spans share the host's
 resource, whose clear `service.name` is dropped by default.
 
+Spec 049 (four-layer capture contract) admits each of its new telemetry keys
+with the closed check declared in
+`contracts/coverage/v1/registry/telemetry-keys-v1.json` (a Go test verifies
+`coverage_keys.go` against that file key by key); free text never passes. A
+key is admitted on capture spans only on the record classes and heartbeat
+kinds the spec places it on: `segment_seal` is a heartbeat kind, and the
+segment, predecessor, termination and branch keys stay on their marker kinds.
+Under `capture_labels: pseudonymous` a predecessor entry must name its source
+in `s-<32 hex>` form. Keys whose validator the spec has not fixed yet
+(`check_pending`) are not admitted. `fabric.source.authenticated` is
+receiver-owned: it is stripped from every agent-supplied record and cannot be
+added through `extra_allowed_*` (stamping at a bound ingress is P0-A).
+
 Content (spec 048) has its own path: an `otlp/content*` receiver (OTLP/HTTP
 only, port 4319) feeds a `logs/content*` pipeline that runs only
 `memory_limiter` and exports only to `fabriccontent`. `fabricguard` is not on

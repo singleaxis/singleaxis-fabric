@@ -90,11 +90,17 @@ func (c *Config) Validate() error {
 			if sensitiveAttributeKey(field) {
 				return fmt.Errorf("fabricguard: extra_allowed_fields[%q] contains prohibited sensitive field %q", class, field)
 			}
+			if _, owned := receiverOwnedKeys[field]; owned {
+				return fmt.Errorf("fabricguard: extra_allowed_fields[%q] contains receiver-owned field %q", class, field)
+			}
 		}
 	}
 	for _, field := range c.ExtraAllowedTraceFields {
 		if sensitiveAttributeKey(field) {
 			return fmt.Errorf("fabricguard: extra_allowed_trace_fields contains prohibited sensitive field %q", field)
+		}
+		if _, owned := receiverOwnedKeys[field]; owned {
+			return fmt.Errorf("fabricguard: extra_allowed_trace_fields contains receiver-owned field %q", field)
 		}
 	}
 	if err := validateModelAllowlist(c.CaptureModelAllowlist); err != nil {

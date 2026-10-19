@@ -680,7 +680,7 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		"fabric.retry", "fabric.cancellation", "fabric.deployment_change", "fabric.human_action",
 		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory", "fabric.skill",
 		"fabric.hook", "fabric.coverage", "fabric.crewai.step", "fabric.crewai.task",
-		"fabric.capture_loss", "fabric.capture_heartbeat":
+		"fabric.capture_loss", "fabric.capture_heartbeat", "fabric.capture_manifest":
 		return name
 	default:
 		return "fabric.activity"
@@ -696,6 +696,12 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
 		if sensitiveAttributeKey(key) {
 			g.stats.sensitiveRemoved.Add(1)
+			return true
+		}
+		// Receiver-owned keys are never accepted from a sender, whatever the
+		// allowlist or its extensions say.
+		if _, owned := receiverOwnedKeys[key]; owned {
+			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
 		if _, ok := allowed[key]; !ok {
@@ -822,9 +828,10 @@ var (
 	captureStoreStatuses  = toSet("stored", "partial", "failed", "disabled")
 	captureLossReasons    = toSet("queue_full", "internal_error", "shutdown", "span_dropped")
 	// captureHeartbeatKinds is the closed heartbeat vocabulary: periodic
-	// liveness, explicit run boundaries from fabric.wire.run(), and the final
-	// heartbeat a clean close()/exit flush emits.
-	captureHeartbeatKinds = toSet("periodic", "run_start", "run_end", "final")
+	// liveness, explicit run boundaries from fabric.wire.run(), the seal of
+	// one run segment (spec 049 §2.12 rule 4) and the final heartbeat a clean
+	// close()/exit flush emits.
+	captureHeartbeatKinds = toSet("periodic", "run_start", "run_end", "segment_seal", "final")
 	captureOperations     = toSet("chat", "text_completion", "embeddings")
 	// captureFinishReasons is the closed vocabulary the SDK normalizes
 	// provider finish reasons into; anything else arrives as "other".
@@ -903,8 +910,9 @@ var captureNewKeys = toSet(
 	"fabric.run.scope_id",
 )
 
-// runMarkerKinds are the heartbeat kinds that carry fabric.run.scope_id.
-var runMarkerKinds = toSet("run_start", "run_end")
+// runMarkerKinds are the heartbeat kinds that carry fabric.run.scope_id
+// (spec 048 §6; spec 049 §2.12 rule 4 adds segment_seal).
+var runMarkerKinds = toSet("run_start", "run_end", "segment_seal")
 
 // captureMarkers are the keys that make activityCategory (and the offline
 // verifier) treat a span as a capture record. They are the only capture
@@ -956,9 +964,16 @@ func validCaptureModel(value pcommon.Value) bool {
 // applies the generic checks (sensitive names, hash shape, size and count
 // bounds). Capture spans carry no events or links, so any are removed.
 func (g *guard) applyCaptureProfile(span ptrace.Span) {
+	class := captureClass(span.Attributes())
 	span.Attributes().RemoveIf(func(key string, value pcommon.Value) bool {
 		if valid, listed := captureProfile[key]; listed && valid(value) {
 			return false
+		}
+		// Spec 049 keys are admitted only on the record classes that carry them.
+		if classes, listed := coverageCaptureKeys[key]; listed && classes&class != 0 {
+			if valid, _ := g.validCoverageValue(key, value); valid {
+				return false
+			}
 		}
 		g.stats.notAllowedRemoved.Add(1)
 		return true
@@ -966,7 +981,7 @@ func (g *guard) applyCaptureProfile(span ptrace.Span) {
 	g.applyCaptureLabels(span.Attributes())
 	g.exposeCaptureModel(span.Attributes())
 	g.filterAttributes(span.Attributes(), TraceAllowedFields, "capture-span")
-	g.scopeIDOnlyWhereDefined(span.Attributes())
+	g.markerKeysOnlyWhereDefined(span.Attributes())
 	if removed := span.Events().Len() + span.Links().Len(); removed > 0 {
 		span.Events().RemoveIf(func(ptrace.SpanEvent) bool { return true })
 		span.Links().RemoveIf(func(ptrace.SpanLink) bool { return true })
@@ -974,27 +989,36 @@ func (g *guard) applyCaptureProfile(span ptrace.Span) {
 	}
 }
 
-// scopeIDOnlyWhereDefined keeps fabric.run.scope_id only where spec 048 §6
-// defines it: on an exchange (fabric.model_call) and on a run_start/run_end
-// heartbeat. It is dropped from periodic/final heartbeats, loss records and
-// heartbeats whose kind did not survive validation.
-func (g *guard) scopeIDOnlyWhereDefined(attrs pcommon.Map) {
-	if _, ok := attrs.Get("fabric.run.scope_id"); !ok {
-		return
+// markerKeysOnlyWhereDefined keeps a run-marker key only on the heartbeat
+// kinds that define it (markerKeyKinds): fabric.run.scope_id on an exchange
+// and on run_start/run_end/segment_seal (spec 048 §6, spec 049 §2.12 rule 4);
+// the spec 049 segment, predecessor, termination and branch keys on their
+// marker kinds. A marker key is dropped from loss records, from heartbeats of
+// another kind and from heartbeats whose kind did not survive validation.
+func (g *guard) markerKeysOnlyWhereDefined(attrs pcommon.Map) {
+	category := activityCategory("", attrs)
+	kind := ""
+	if value, ok := attrs.Get("fabric.heartbeat.kind"); ok && value.Type() == pcommon.ValueTypeStr {
+		kind = value.Str()
 	}
-	keep := false
-	switch activityCategory("", attrs) {
-	case "fabric.model_call":
-		keep = true
-	case "fabric.capture_heartbeat":
-		if kind, ok := attrs.Get("fabric.heartbeat.kind"); ok {
-			_, keep = runMarkerKinds[kind.Str()]
+	attrs.RemoveIf(func(key string, _ pcommon.Value) bool {
+		kinds, listed := markerKeyKinds[key]
+		if !listed {
+			return false
 		}
-	}
-	if !keep {
-		attrs.Remove("fabric.run.scope_id")
-		g.stats.notAllowedRemoved.Add(1)
-	}
+		keep := false
+		switch category {
+		case "fabric.model_call":
+			// Exchanges carry their scope and segment, never marker-only keys.
+			keep = key == "fabric.run.scope_id" || key == "fabric.run.segment_id"
+		case "fabric.capture_heartbeat":
+			_, keep = kinds[kind]
+		}
+		if !keep {
+			g.stats.notAllowedRemoved.Add(1)
+		}
+		return !keep
+	})
 }
 
 // applyCaptureResource keeps only a well-formed service.name on a resource
@@ -1025,6 +1049,9 @@ func (g *guard) removeAll(attrs pcommon.Map) {
 // the same validators the capture profile uses (and the capture_labels rule
 // for fabric.run.id).
 func (g *guard) validCaptureValue(key string, value pcommon.Value) bool {
+	if valid, ok := g.validCoverageValue(key, value); ok {
+		return valid
+	}
 	if _, ok := captureNewKeys[key]; !ok {
 		return true
 	}
