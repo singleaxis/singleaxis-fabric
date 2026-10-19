@@ -67,6 +67,8 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/capture_capabilities.py",
     "/src/fabric/cli.py",
     "/src/fabric/deployment.py",
+    "/src/fabric/enterprise.py",
+    "/src/fabric/enterprise_preflight.py",
     "/src/fabric/escalation.py",
     "/src/fabric/eval.py",
     "/src/fabric/guardrail_adapters",

@@ -47,6 +47,8 @@ def test_release_policy_is_recorder_only() -> None:
     assert {
         "fabric/adapters/crewai.py",
         "fabric/capture_capabilities.py",
+        "fabric/enterprise.py",
+        "fabric/enterprise_preflight.py",
         "fabric/guardrails.py",
         "fabric/judge.py",
         "fabric/policy.py",

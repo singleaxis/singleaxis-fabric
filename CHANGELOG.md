@@ -155,6 +155,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   connector capability manifests in `contracts/connect/v1/manifests`, which
   stay the machine-readable declaration. The module is now a forbidden
   wheel/sdist member.
+- **Breaking: removed `fabric.enterprise` (`PolicyCaptureSession`) and
+  `fabric.enterprise_preflight`** (including `python -m
+  fabric.enterprise_preflight`). The session was a thin wrapper; compose
+  `ByteEvidenceRecorder` (with `ByteEvidenceConfig(deployment_policy=...,
+  content_protector=ContentProtector(...))`) and `CallRecorder` directly.
+  Governed redaction before persistence is unchanged. The preflight's
+  offline checks and fixture canary are gone without a replacement; the
+  session's early refusal of a store bound to a different deployment policy
+  is gone too (`GovernedLocalContentStore` still rejects a write whose
+  descriptor carries another policy binding). Both modules are now forbidden
+  wheel/sdist members.
 - Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
   it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
   same check.
