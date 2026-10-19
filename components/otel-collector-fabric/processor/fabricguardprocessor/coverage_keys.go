@@ -28,8 +28,10 @@ import (
 
 // coverageKeyValidators: every key the registry admits now, with its check.
 var coverageKeyValidators = map[string]func(pcommon.Value) bool{
+	"fabric.delegation.to_agent":                              matches(pseudonymPattern("agt")),
 	"fabric.interaction.target":                               matches(pseudonymPattern("tgt")),
 	"fabric.memory.key":                                       matches(pseudonymPattern("mkey")),
+	"fabric.session_id":                                       matches(pseudonymPattern("sess")),
 	"fabric.user_id":                                          matches(pseudonymPattern("usr")),
 	"db.system.name":                                          matches(dbSystemPattern),
 	"fabric.actor.id":                                         matches(pseudonymPattern("act")),
@@ -194,6 +196,12 @@ var operatorLabelKeys = toSet(
 	"fabric.workflow.node",
 )
 
+// clearIdentityKeys keep their pre-049 admission under identity_mode: clear
+// (spec 049 §2.9 rule 7); a pseudonymous Node admits only the check.
+var clearIdentityKeys = toSet(
+	"fabric.session_id",
+)
+
 // manifestSpanKeys are the closed attributes of the fabric.capture_manifest span.
 var manifestSpanKeys = toSet(
 	"fabric.capture.manifest_id",
@@ -282,8 +290,12 @@ func pseudonymPattern(prefix string) *regexp.Regexp {
 
 // receiverOwnedKeys are set only by the Node (registry owner: receiver). An
 // agent-supplied value is stripped from every record, whatever the
-// configuration says (spec 049 §7.9; stamping at a bound ingress is P0-A).
-var receiverOwnedKeys = toSet("fabric.source.authenticated")
+// configuration says; a bound ingress then stamps its own (spec 049 §7.9).
+var receiverOwnedKeys = toSet(sourceAuthenticatedKey)
+
+// sourceAuthenticatedKey is stamped true on every span admitted at an
+// ingress bound to its tenant and source (spec 049 §7.9, X47).
+const sourceAuthenticatedKey = "fabric.source.authenticated"
 
 // Capture record classes (isCaptureSpan) a coverage key may appear on.
 const (
@@ -463,6 +475,11 @@ func (g *guard) validCoverageValue(key string, value pcommon.Value) (valid, ok b
 	validate, ok := coverageKeyValidators[key]
 	if !ok {
 		return false, false
+	}
+	if _, keeps := clearIdentityKeys[key]; keeps && g.cfg.IdentityMode == identityModeClear {
+		// identity_mode clear keeps the pre-049 admission (spec 049 §2.9
+		// rule 7): the generic metadata checks of filterAttributes still apply.
+		return true, true
 	}
 	if !validate(value) {
 		return false, true

@@ -1,7 +1,7 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
   "registry_revision": 9,
-  "check_rule": "check is the machine-readable form of validator: the closed admission fabricguard applies to the key (C0-4; scripts/tests and the fabricguard key-by-key test read it; scripts/contracts/generate_p0_contracts.py derives it). Every key is admitted in P0 (spec 049 §4.2): admission names the exceptions, 'existing' (enforced by fabricguard code that predates spec 049), 'never' (no value is admitted) or 'P0-A' (a tightening validator that switches in its listed phase; today's admission stays until then). Keys with owner receiver are stripped from every agent-supplied record. A check with span applies only on that span.",
+  "check_rule": "check is the machine-readable form of validator: the closed admission fabricguard applies to the key (C0-4; scripts/tests and the fabricguard key-by-key test read it; scripts/contracts/generate_p0_contracts.py derives it). Every key is admitted in P0 (spec 049 §4.2): admission names the exceptions, 'existing' (enforced by fabricguard code that predates spec 049), 'never' (no value is admitted) or 'P0-A' (a tightening validator that switches in its listed phase; today's admission stays until then). identity_mode names the admission under a Node configured identity_mode: clear ('existing': the clear value keeps its pre-049 admission); under the default pseudonymous Node only the check admits. Keys with owner receiver are stripped from every agent-supplied record. A check with span applies only on that span.",
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
@@ -15,8 +15,7 @@
         "pattern": "^agt-[0-9a-f]{32}$",
         "examples": [
           "agt-9f86d081884c7d659a2feaa0c55ad015"
-        ],
-        "admission": "P0-A"
+        ]
       }
     },
     {
@@ -94,7 +93,9 @@
         "examples": [
           "sess-9f86d081884c7d659a2feaa0c55ad015"
         ],
-        "admission": "P0-A"
+        "identity_mode": {
+          "clear": "existing"
+        }
       }
     },
     {

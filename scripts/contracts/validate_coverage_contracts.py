@@ -399,14 +399,21 @@ CHECK_TYPES = {"enum", "const", "bool", "int", "string", "datetime", "array", "n
 ADMISSIONS = {"existing", "never", "P0-A"}
 
 
-def check_value(check: Mapping[str, Any], value: Any, *, labels: str = "clear") -> bool:
+def check_value(
+    check: Mapping[str, Any], value: Any, *, labels: str = "clear", identity: str = "pseudonymous"
+) -> bool:
     """Whether a telemetry value passes a registry ``check`` (fabricguard's admission).
 
     ``labels`` is the Node's ``capture_labels`` mode: under ``pseudonymous`` a
     source id embedded in a value (``capture_labels.group``) must have its
     ``s-`` form, as spec 048 J1 requires of ``fabric.source_id`` itself.
+    ``identity`` is the Node's ``identity_mode``: under ``clear`` a check with
+    ``identity_mode.clear: existing`` keeps its pre-049 admission (spec 049
+    §2.9 rule 7), which this function models as any string.
     """
     kind = check["type"]
+    if identity == "clear" and check.get("identity_mode", {}).get("clear") == "existing":
+        return isinstance(value, str)
     if kind == "never":
         return False
     if kind == "enum":
@@ -464,7 +471,7 @@ def _check_shape(check: Any, where: str) -> None:
         "const": {"type", "value", "span"},
         "bool": {"type"},
         "int": {"type", "min", "max"},
-        "string": {"type", "pattern", "examples", "int64_groups", "capture_labels", "source"},
+        "string": {"type", "pattern", "examples", "int64_groups", "capture_labels", "source", "identity_mode"},
         "datetime": {"type", "examples"},
         "array": {"type", "items", "max_items", "min_items", "unique", "examples"},
         "never": {"type"},
@@ -475,6 +482,8 @@ def _check_shape(check: Any, where: str) -> None:
         _fail("coverage.keys.check", where, "a never check is exactly the never admission")
     if not set(check) <= allowed:
         _fail("coverage.keys.check", where, f"unknown check properties {sorted(set(check) - allowed)}")
+    if "identity_mode" in check and check["identity_mode"] != {"clear": "existing"}:
+        _fail("coverage.keys.check", where, "identity_mode is exactly {clear: existing}")
     if kind == "enum" and (not check.get("values") or len(set(check["values"])) != len(check["values"])
                            or not isinstance(check.get("source"), str)):
         _fail("coverage.keys.check", where, "enum needs unique values and a source")

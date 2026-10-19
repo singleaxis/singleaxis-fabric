@@ -116,7 +116,9 @@ CHECK_RULE = (
     "scripts/contracts/generate_p0_contracts.py derives it). Every key is admitted in P0 (spec 049 "
     "§4.2): admission names the exceptions, 'existing' (enforced by fabricguard code that predates "
     "spec 049), 'never' (no value is admitted) or 'P0-A' (a tightening validator that switches in "
-    "its listed phase; today's admission stays until then). Keys with owner receiver are stripped "
+    "its listed phase; today's admission stays until then). identity_mode names the admission under a "
+    "Node configured identity_mode: clear ('existing': the clear value keeps its pre-049 admission); "
+    "under the default pseudonymous Node only the check admits. Keys with owner receiver are stripped "
     "from every agent-supplied record. A check with span applies only on that span."
 )
 
@@ -212,7 +214,7 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     )
     checks: dict[str, dict[str, Any]] = {
         # changed rows (spec 049 §4.2): admission says when each one applies
-        "fabric.delegation.to_agent": dict(pseudonym("agt"), admission="P0-A"),
+        "fabric.delegation.to_agent": pseudonym("agt"),
         "fabric.file.path": {"type": "never", "admission": "never"},
         "fabric.heartbeat.kind": dict(
             enum(
@@ -223,7 +225,9 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         ),
         "fabric.interaction.target": pseudonym("tgt"),
         "fabric.memory.key": pseudonym("mkey"),
-        "fabric.session_id": dict(pseudonym("sess"), admission="P0-A"),
+        "fabric.session_id": dict(
+            pseudonym("sess"), identity_mode={"clear": "existing"}
+        ),
         "fabric.user_id": pseudonym("usr"),
         "fabric.wire.request_sha256": dict(
             string(BARE_HEX, "b" * 64), admission="existing"
@@ -2502,6 +2506,18 @@ def render_go_table(reg: dict[str, Any]) -> str:
         "var operatorLabelKeys = toSet(\n",
     ]
     out += [f"\t{json.dumps(k)},\n" for k in labels]
+    out += [
+        ")\n",
+        "\n",
+        "// clearIdentityKeys keep their pre-049 admission under identity_mode: clear\n",
+        "// (spec 049 §2.9 rule 7); a pseudonymous Node admits only the check.\n",
+        "var clearIdentityKeys = toSet(\n",
+    ]
+    out += [
+        f"\t{json.dumps(r['key'])},\n"
+        for r in sorted(reg["keys"]["keys"], key=lambda r: r["key"])
+        if go_admitted(r) and "identity_mode" in r["check"]
+    ]
     out += [
         ")\n",
         "\n",

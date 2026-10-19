@@ -387,9 +387,8 @@ def test_c0_4_every_key_is_closed_and_admitted_in_p0() -> None:
         if row["change"] != "reused" or row["key"] in {"fabric.event_id", "fabric.schema_version"}:
             assert "check" in row, row["key"]
     admissions = {row["key"]: row["check"].get("admission") for row in rows if "check" in row}
+    # P0-A switched the tightening validators (spec 049 §4.2): no P0-A row remains.
     assert {k: v for k, v in admissions.items() if v} == {
-        "fabric.delegation.to_agent": "P0-A",
-        "fabric.session_id": "P0-A",
         "fabric.file.path": "never",
         "fabric.heartbeat.kind": "existing",
         "fabric.wire.request_sha256": "existing",
@@ -401,6 +400,17 @@ def test_c0_4_every_key_is_closed_and_admitted_in_p0() -> None:
     assert clock["check"] == {"type": "const", "value": "wall_utc"}
     receiver = [row["key"] for row in rows if row.get("owner") == "receiver"]
     assert receiver == ["fabric.source.authenticated"]
+
+
+def test_c0a_4_clear_ids_are_rejected_under_a_pseudonymous_node() -> None:
+    reg = load_registries(REPO_ROOT)
+    checks = {row["key"]: row["check"] for row in reg["keys"]["keys"] if "check" in row}
+    session, agent = checks["fabric.session_id"], checks["fabric.delegation.to_agent"]
+    assert session["identity_mode"] == {"clear": "existing"} and "identity_mode" not in agent
+    assert check_value(session, "sess-" + "a" * 32) and check_value(agent, "agt-" + "a" * 32)
+    assert not check_value(session, "checkout-42") and not check_value(agent, "billing-agent")
+    assert check_value(session, "checkout-42", identity="clear")
+    assert not check_value(agent, "billing-agent", identity="clear")
 
 
 def test_c0_4_operator_labels_follow_capture_labels() -> None:

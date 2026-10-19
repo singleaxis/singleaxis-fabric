@@ -413,7 +413,8 @@ func TestEveryRegistryKeyIsClosedAndItsAdmissionHolds(t *testing.T) {
 			t.Errorf("%q: unknown admission %q", row.Key, row.Check.Admission)
 		}
 	}
-	for _, kind := range []string{"receiver", "span", "never", "existing", "P0-A"} {
+	// No P0-A row remains: the tightening validators switched in P0-A.
+	for _, kind := range []string{"receiver", "span", "never", "existing"} {
 		if !seen[kind] {
 			t.Errorf("no registry row exercises admission %q", kind)
 		}

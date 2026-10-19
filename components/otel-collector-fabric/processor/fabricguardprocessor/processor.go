@@ -469,8 +469,9 @@ func validSHA256Prefixed(value pcommon.Value) bool {
 }
 
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
-	if g.cfg.EvidenceSourceBinding != nil && td.SpanCount() != 0 {
-		return td, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: evidence source binding rejects traces"))
+	bound := g.cfg.EvidenceSourceBinding != nil
+	if bound && !g.boundTraceBatch(td) {
+		return td, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: source binding rejected"))
 	}
 	allowed := unionSets(TraceAllowedFields, toSet(g.cfg.ExtraAllowedTraceFields...))
 	resourceSpans := td.ResourceSpans()
@@ -503,9 +504,56 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 			spans.RemoveIf(func(span ptrace.Span) bool {
 				return g.applyToSpan(span, allowed)
 			})
+			if bound {
+				// After every filter: the stamp is the Node's own statement
+				// that this span arrived on the ingress bound to its tenant
+				// and source (spec 049 §7.9); an agent-supplied value was
+				// stripped above as receiver-owned.
+				for i := 0; i < spans.Len(); i++ {
+					spans.At(i).Attributes().PutBool(sourceAuthenticatedKey, true)
+				}
+			}
 		}
 	}
 	return td, nil
+}
+
+// boundTraceBatch checks the whole request before mutating or forwarding any
+// span (spec 049 §7.9): every span must name the bound source in
+// fabric.source_id, and a tenant it names (fabric.tenant_id on the span, its
+// resource or scope) must be the bound tenant. Resource and scope source ids
+// must match too. A span without a source id is unbound and refuses the
+// batch: a bound ingress carries only that source's records.
+func (g *guard) boundTraceBatch(td ptrace.Traces) bool {
+	bound := g.cfg.EvidenceSourceBinding
+	matches := func(attrs pcommon.Map, requireSource bool) bool {
+		source, ok := attrs.Get("fabric.source_id")
+		if ok && (source.Type() != pcommon.ValueTypeStr || source.Str() != bound.SourceID) || !ok && requireSource {
+			return false
+		}
+		tenant, ok := attrs.Get("fabric.tenant_id")
+		return !ok || tenant.Type() == pcommon.ValueTypeStr && tenant.Str() == bound.TenantID
+	}
+	resourceSpans := td.ResourceSpans()
+	for ri := 0; ri < resourceSpans.Len(); ri++ {
+		resourceSpan := resourceSpans.At(ri)
+		if !matches(resourceSpan.Resource().Attributes(), false) {
+			return false
+		}
+		scopeSpans := resourceSpan.ScopeSpans()
+		for si := 0; si < scopeSpans.Len(); si++ {
+			if !matches(scopeSpans.At(si).Scope().Attributes(), false) {
+				return false
+			}
+			spans := scopeSpans.At(si).Spans()
+			for i := 0; i < spans.Len(); i++ {
+				if !matches(spans.At(i).Attributes(), true) {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // clearEntityRefs removes resource entity_refs — an OTLP proto field of
