@@ -89,6 +89,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Release note and migration: spec 049 P0-A on the Fabric Node.** This
+  supersedes spec 048 §1. Node mode is the `production` profile.
+  - **Agents.** An agent in node mode records content only with a capture
+    policy (`FABRIC_CAPTURE_POLICY`) and `FABRIC_WIRE_ID_KEY`. Without them,
+    content capture stops on upgrade, metadata continues, and every exchange
+    span reports `fabric.wire.store_reason`.
+  - **Node preflight and render fail; the application never does.** Compose
+    preflight, Compose itself and the Helm render fail until the Node has
+    its P0-A settings, and they state this supersession.
+  - **Source authentication (§7.9).** `fabricguard`'s
+    `evidence_source_binding` now covers every trace span: exchanges, loss
+    records, heartbeats, markers and manifests. Each span must name the
+    bound source in `fabric.source_id`, and any `fabric.tenant_id` must be
+    the bound tenant. Otherwise the whole batch is refused with
+    `INVALID_ARGUMENT`. Admitted spans are stamped
+    `fabric.source.authenticated=true`; an agent's value is stripped.
+    `fabriccontent` takes the same `source_binding`, drops other sources
+    (`source_unbound`) and writes the receiver-owned
+    `source_authenticated: true` into every persisted descriptor.
+  - **Production profile (§7.3).** A new `profile: local|production` on
+    both components. Production requires the binding, and `fabric-gate`
+    enforces it on the effective configuration: one single-token bearer
+    authenticator shared by the OTLP and `otlp/content` receivers, and no
+    other receiver.
+  - **Encryption at rest (§7.8).** The new `fabricenvelope` storage
+    extension seals everything the persistent `fabric_content` queue holds
+    (AES-256-GCM, Node-side customer key from a file; delivery semantics
+    unchanged). `fabriccontent` `file.encryption_key_file` seals every
+    object and descriptor of the directory backend. Both are required in
+    production; S3 keeps mandatory SSE. The Node envelope is pinned by
+    `contracts/content/v2/fixtures/node-envelope-v1.json`.
+  - **Role table (§4.3).** `fabriccontent` is driven by
+    `contracts/coverage/v1` content-roles-v1: every role, with its
+    boundary, provenance, media type and cap (`max_body_bytes`, default
+    32 MiB, at most 63 MiB). It now accepts `redacted`/`tokenized`,
+    descriptor-only `not_captured`, the privacy fields, split
+    skeletons/parts, `masked_only`, `original_plus_masked` review copies and
+    `protection_failed` withholding.
+  - **Identity validators (§4.2, C0A-4).** `fabric.session_id` is admitted
+    only as `sess-<32 hex>` unless the Node runs `identity_mode: clear`;
+    `fabric.delegation.to_agent` only as `agt-<32 hex>`.
+  - **Compose.** `.env` needs `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID`
+    (the agents' source id as it travels, `s-<32 hex>`). With content it
+    also needs `FABRIC_CONTENT_KEY_FILE` (a Compose secret).
+  - **Helm.** `shadow-production` pins `fabric.profile: production` and
+    needs `receiver.workloadAuthentication.sourceId`. With content it also
+    needs `content.encryption.keySecret`.
+  - **Contracts.** capture/v1 1.2.0, content/v2 2.2.0, deployment-policy/v1
+    1.1.0 (`masked_only`, `original_plus_masked`), and the new reason
+    `missing_spool_key`.
+  - **Limit: one source per production Node.** A production Node binds one
+    agent source.
 - **Migration: `fabric-gate` tightenings.** Existing collector configurations
   that the gate accepted before may now be refused at container start; the
   shipped Compose, Helm and example configurations already comply:
@@ -110,7 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     serve TLS, client certificates when they require mTLS.
   Main's gate tests were updated for the first two rules only (they now add
   the middleware and a guard to fixtures that lacked them).
-- The Compose production overlay is telemetry only again and starts with an
+- The Compose production overlay is telemetry only (superseded in part by
+  spec 049 P0-A above: it now needs the source binding) and once started with an
   existing `.env`; the content path is the opt-in
   `docker-compose.content.yml` (`FABRIC_CONTENT_BACKEND=s3`, or `file` with
   `FABRIC_CONTENT_REQUIRE_SSE=false`, mirroring Helm's

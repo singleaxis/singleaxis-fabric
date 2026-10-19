@@ -157,6 +157,38 @@ override the container entrypoint or launch `otelcol-fabric` directly leave
 the enforced path; `verify-prod.sh` surfaces a container-level entrypoint
 override at verification time.
 
+## Spec 049 P0-A: production profile
+
+- `fabricguard` `profile: production` requires `evidence_source_binding`
+  (`tenant_id`, `source_id` as the records carry them). On a bound ingress
+  every trace span must name the bound source in `fabric.source_id`, and any
+  `fabric.tenant_id` must be the bound tenant. Otherwise the batch is
+  refused with `INVALID_ARGUMENT` before any mutation. Admitted spans get
+  `fabric.source.authenticated=true`. `identity_mode: pseudonymous` (the
+  default) admits `fabric.session_id` only as `sess-<32 hex>`; `clear`
+  keeps its earlier admission. `fabric.delegation.to_agent` is admitted
+  only as `agt-<32 hex>`.
+- `fabriccontent` follows the role table
+  `contracts/coverage/v1/registry/content-roles-v1.json`
+  (`roles_generated.go`, rendered by
+  `scripts/contracts/generate_p0_contracts.py`), up to `max_body_bytes`
+  (default 32 MiB, at most 63 MiB). With `source_binding` it drops other
+  tenants or sources (`source_unbound`) and writes `source_authenticated:
+  true` into the persisted descriptor. With `file.encryption_key_file`
+  every object and descriptor is stored in the AES-256-GCM envelope
+  (`contracts/content/v2/fixtures/node-envelope-v1.json`). Its
+  `profile: production` requires the binding, a persistent queue on a
+  `fabricenvelope` storage extension and, for the file backend, the key.
+- `fabricenvelope` (extension) wraps a `file_storage` extension. It seals
+  every value the persistent queue persists with the key in `key_file`
+  (32 raw bytes or their base64). A value that fails authentication is an
+  error and is never read as plaintext.
+- `fabric-gate` treats a configuration whose `fabricguard`/`fabriccontent`
+  declare `profile: production` as a production Node. It enforces the
+  binding, one single-token bearer authenticator on every receiver, the
+  same binding on every content exporter, the sealed queue and the
+  directory key.
+
 ## Build and qualify
 
 ```bash
