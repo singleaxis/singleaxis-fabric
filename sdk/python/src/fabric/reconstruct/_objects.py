@@ -177,6 +177,8 @@ def _privacy_ok(descriptor: Mapping[str, Any], keys: set[str]) -> bool:
     """049 §4.3/§7.5: the policy block is all or nothing; its mode and protection status
     agree with the representation; an object a span names is never a review copy (a
     ``derived_from`` copy never satisfies a requirement for the original)."""
+    if descriptor.get("source_authenticated", True) is not True:
+        return False  # receiver-owned (049 §7.9): only ever written as true by a bound Node
     links = descriptor.get("links", [])
     if not isinstance(links, list) or any(
         not isinstance(link, Mapping) or link.get("relation") == "derived_from" for link in links
@@ -226,6 +228,9 @@ class ObjectResult:
     media_type: str | None = None
     content_encoding: str = "identity"
     truncated: bool = False
+    # 049 §7.9: the Node stamped the persisted descriptor (a bound ingress); read back,
+    # never reported here (counted as authentication only from trusted readback).
+    source_authenticated: bool = False
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -361,6 +366,7 @@ class StoreReader:
                 content_encoding=encoding if isinstance(encoding, str) else "unknown",
                 truncated="truncated"
                 in (descriptor.get("representation"), descriptor.get("status")),
+                source_authenticated=descriptor.get("source_authenticated") is True,
             )
         return ObjectResult("digest_mismatch", object_id, expected_sha256, len(data), reason=reason)
 
