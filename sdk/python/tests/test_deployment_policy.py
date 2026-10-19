@@ -395,3 +395,100 @@ def test_masked_only_stores_only_the_masked_copy_and_original_plus_masked_withho
     both = ContentProtector(policy_for("original_plus_masked")).protect("terminal.stdout", SECRET)
     assert both.status == "unsupported" and both.protected_bytes is None
     assert both.original_digest is None
+
+
+# --- spec 049 §7.3/§7.7: the production gate on the explicit (records) input ------------
+
+
+def _production(mode: str = "retain_original") -> DeploymentPolicy:
+    from .test_wire_helpers import production_policy  # noqa: PLC0415
+
+    return DeploymentPolicy(production_policy("tenant-a", {"terminal.stdout": mode}))
+
+
+def _capture(recorder: ByteEvidenceRecorder) -> dict[str, Any]:
+    return recorder.capture(
+        SECRET, role="terminal.stdout", boundary="terminal", source_id="sdk",
+        source_epoch=0, source_sequence=1,
+    )  # fmt: skip
+
+
+class _ProductionStore(LocalFilesystemContentStore):
+    """A store whose own policy is marked production (as a governed store's is)."""
+
+    policy = _production()
+
+
+@pytest.mark.parametrize(
+    ("policy", "store_marked", "id_key", "reason"),
+    [
+        ("production", False, None, "missing_id_key"),
+        (None, True, None, "missing_capture_policy"),
+        (None, True, b"i" * 16, "missing_capture_policy"),
+        ("production", False, b"i" * 16, None),
+        ("local", False, None, None),
+    ],
+)  # fmt: skip
+def test_the_explicit_input_has_the_production_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    policy: str | None, store_marked: bool, id_key: bytes | None, reason: str | None,
+) -> None:  # fmt: skip
+    """Sol P0-A #4: production content capture on the explicit input needs a capture
+    policy and the id key, as on the wire (049 §7.3, §7.7 "both inputs"); otherwise
+    content is disabled with the reason recorded, and nothing is stored or digested."""
+    monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
+    deployment = {"production": _production(), "local": None}.get(policy or "")
+    if policy == "local":
+        data = policy_data()
+        data["tenant_id"], data["privacy"] = "tenant-a", {"terminal.stdout": "retain_original"}
+        deployment = DeploymentPolicy.from_dict(data)
+    kind = _ProductionStore if store_marked else LocalFilesystemContentStore
+    store = kind(str(tmp_path / "store"), tenant_id="tenant-a")
+    recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
+        store=store, roles=frozenset({"terminal.stdout"}), deployment_policy=deployment,
+        id_key=id_key,
+    ))  # fmt: skip
+    try:
+        initial = _capture(recorder)
+        assert recorder.flush()
+        settled = recorder.get(initial["object_id"])
+        assert settled is not None
+        status = recorder.status()
+        expected_profile = "production" if policy == "production" or store_marked else "local"
+        assert status["profile"] == expected_profile
+        if reason is None:
+            assert status["content_capture"] == "enabled"
+            assert settled["status"] == "stored" and store.read(settled["ref"]) == SECRET
+            return
+        assert (status["content_capture"], status["content_capture_reason"]) == (
+            "disabled", reason)  # fmt: skip
+        for descriptor in (initial, settled):
+            assert (descriptor["status"], descriptor["status_reason"]) == ("not_captured", reason)
+            assert "ref" not in descriptor and "source_sha256" not in descriptor
+            assert "source_byte_length" not in descriptor
+        digest = hashlib.sha256(SECRET).hexdigest().encode()
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                assert SECRET not in path.read_bytes() and digest not in path.read_bytes()
+        assert any(reason in r.getMessage() for r in caplog.records)  # never silent
+    finally:
+        assert recorder.close()
+
+
+def test_the_explicit_gate_reads_the_id_key_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", "fabric-test-id-key-not-a-secret")
+    store = LocalFilesystemContentStore(str(tmp_path / "store"), tenant_id="tenant-a")
+    config = ByteEvidenceConfig(
+        store=store, roles=frozenset({"terminal.stdout"}), deployment_policy=_production()
+    )
+    recorder = ByteEvidenceRecorder(config)
+    try:
+        assert recorder.status()["content_capture"] == "enabled"
+        assert recorder.get(_capture(recorder)["object_id"]) is not None
+    finally:
+        assert recorder.close()
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", "short")
+    with pytest.raises(ValueError, match="FABRIC_WIRE_ID_KEY"):  # malformed: still raises
+        ByteEvidenceRecorder(config)

@@ -15,17 +15,20 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
+import os
 import queue
 import re
 import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any
 
+from ._sequence import check_id_key, id_key_from_env
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
 from .deployment_policy import ContentProtector, DeploymentPolicy
@@ -84,6 +87,33 @@ _OPAQUE_ID_MAX_LENGTH = 128
 # binds each role's mode and transformation identity and version.
 ROLE_POLICIES_ID = "fabric.role-policies"
 _MASKED_MODES = frozenset({"masked_only", "original_plus_masked"})
+_LOG = logging.getLogger("fabric.byte_evidence")
+
+
+def _production_marked(policy: object) -> bool:
+    return isinstance(policy, DeploymentPolicy) and policy.deployment["profile"] == "production"
+
+
+def content_gate(
+    deployment_policy: DeploymentPolicy | None, id_key: bytes | None,
+    *stores: ByteEvidenceStore | None,
+) -> tuple[str, str | None]:  # fmt: skip
+    """Spec 049 §7.3 on the explicit (records) input, as on the wire (§7.7 "both
+    inputs"): ``(profile, reason)``. The ``production`` profile (the deployment policy, or
+    a store's own policy, is marked production) needs the capture policy and the id key
+    (``FABRIC_WIRE_ID_KEY``); a missing one disables content capture with that reason
+    (metadata continues). The optional durable spool is always sealed (AES-256-GCM, a
+    customer key), so it never lacks the spool envelope. ``local`` needs nothing."""
+    marked = _production_marked(deployment_policy) or any(
+        _production_marked(getattr(store, "policy", None)) for store in stores
+    )
+    if not marked:
+        return "local", None
+    if deployment_policy is None:
+        return "production", "missing_capture_policy"
+    if id_key is None:
+        return "production", "missing_id_key"
+    return "production", None
 
 
 def _validate_capture_args(
@@ -226,6 +256,9 @@ class ByteEvidenceConfig:
     deployment_policy: DeploymentPolicy | None = None
     content_protector: ContentProtector | None = None
     durable_spool: DurableByteSpool | None = None
+    # The id key (049 §7.3; FABRIC_WIRE_ID_KEY when unset): the production profile needs
+    # it before any content is captured. A secret: never in repr or logs.
+    id_key: bytes | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:  # noqa: PLR0912
         if not isinstance(self.store, ByteEvidenceStore) or not self.store.tenant_id:
@@ -238,6 +271,7 @@ class ByteEvidenceConfig:
             raise ValueError("durable byte spool must match the byte store tenant")
         if not self.roles or not isinstance(self.roles, frozenset) or self.roles - _ROLES:
             raise ValueError("roles must be a non-empty frozenset of content-v2 roles")
+        check_id_key(self.id_key)
         if self.content_protector is not None and self.deployment_policy is None:
             object.__setattr__(self, "deployment_policy", self.content_protector.policy)
         if self.deployment_policy is not None:
@@ -309,6 +343,14 @@ class ByteEvidenceRecorder:
         self._unretained_drops = 0
         self._spool = config.durable_spool
         self._policy_block = _role_policies_block(config.role_policies or {})
+        # 049 §7.3: never blocked, but not silent; a malformed id key still raises here.
+        id_key = config.id_key if config.id_key is not None else id_key_from_env(os.environ)
+        self._profile, self._gate_reason = content_gate(
+            config.deployment_policy, id_key, config.store, config.review_store
+        )
+        self._gate_logged = False
+        if self._gate_reason is not None:
+            self._log_gate()
         if self._spool is not None:
             recovered_ids = self._spool.object_ids()
             if len(recovered_ids) > config.max_records:
@@ -320,6 +362,25 @@ class ByteEvidenceRecorder:
             self._spool.bind(config.store, config.review_store)
         self._worker = threading.Thread(target=self._run, name="fabric-byte-evidence", daemon=True)
         self._worker.start()
+
+    def _log_gate(self) -> None:
+        """The disabled state, by reason only (class-only text, never a value)."""
+        _LOG.warning(
+            "fabric.byte_evidence: content capture disabled (%s, %s profile); "
+            "metadata capture continues",
+            self._gate_reason,
+            self._profile,
+        )
+
+    def status(self) -> dict[str, Any]:
+        """The content state of this recorder (049 §7.3): profile, ``content_capture`` and
+        its reason, and whether a sealed durable spool is used. Values only."""
+        return {
+            "profile": self._profile,
+            "content_capture": "enabled" if self._gate_reason is None else "disabled",
+            "content_capture_reason": self._gate_reason,
+            "spool_encrypted": self._spool is not None,
+        }
 
     @property
     def tenant_id(self) -> str:
@@ -367,9 +428,13 @@ class ByteEvidenceRecorder:
 
         object_id = str(uuid.uuid4())
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
-        enabled = role in self._config.roles and policy.mode != "omit"
+        gated = self._gate_reason is not None  # 049 §7.3: content disabled, metadata only
+        enabled = role in self._config.roles and policy.mode != "omit" and not gated
+        if gated and not self._gate_logged:  # again at the first capture
+            self._gate_logged = True
+            self._log_gate()
         protected = None
-        if self._config.content_protector is not None:
+        if self._config.content_protector is not None and not gated:
             # Protection runs before the handoff. Only permitted bytes enter the queue.
             protected = self._config.content_protector.protect(role if enabled else "", data)
             enabled = enabled and protected.protected_bytes is not None
@@ -461,7 +526,13 @@ class ByteEvidenceRecorder:
                 )
                 self._unretained_drops += 1
                 return copy.deepcopy(descriptor)
-            if not enabled and protected is not None:
+            if gated:
+                descriptor.update(
+                    status="not_captured",
+                    representation="unavailable",
+                    status_reason=self._gate_reason,
+                )
+            elif not enabled and protected is not None:
                 descriptor.update(
                     status={"lost": "failed", "unsupported": "unsupported"}.get(
                         protected.status, "not_captured"
