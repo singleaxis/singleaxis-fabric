@@ -7,9 +7,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // productionFixture is a spec 049 P0-A production Node: every batch bound to
@@ -275,4 +278,65 @@ func mergedFiles(t *testing.T, args []string) map[string]any {
 		deepMerge(merged, loadYAML(t, strings.TrimPrefix(arg, "--config=")))
 	}
 	return merged
+}
+
+// The Helm shadow-production render (umbrella profile and the chart's render
+// fixtures), with and without content, passes the whole gate as a production
+// Node. Mounted secret paths are pointed at fixture files.
+func TestShippedHelmProductionProfilePassesTheGate(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm not installed")
+	}
+	f := newProductionFixture(t)
+	t.Setenv("FABRIC_EXPORT_AUTH", "Bearer fixture")
+	const umbrella = "../../../charts/fabric"
+	base := []string{"template", "ci", umbrella,
+		"--values", umbrella + "/profiles/shadow-production.yaml",
+		"--values", umbrella + "/tests/fixtures/production-assertions.yaml",
+		"--set", "tenant.id=customer-production",
+		"--set", "otel-collector.exporter.endpoint=https://otlp.example.invalid",
+		"--set-string", `otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true`,
+		"--set", "otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32",
+		"--set", "otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP",
+		"--set", "otel-collector.networkPolicy.exporterEgress.ports[0].port=443",
+	}
+	content := []string{
+		"--set", "otel-collector.content.enabled=true",
+		"--set", "otel-collector.content.allowedTenants[0]=customer-production",
+		"--set", "otel-collector.content.backend=s3",
+		"--set", "otel-collector.content.s3.bucket=customer-evidence",
+		"--set", "otel-collector.content.s3.region=eu-west-1",
+		"--set", "otel-collector.content.s3.sse=aws:kms",
+		"--set", "otel-collector.networkPolicy.contentEgress.to[0].ipBlock.cidr=198.51.100.0/24",
+		"--set", "otel-collector.networkPolicy.contentEgress.ports[0].protocol=TCP",
+		"--set", "otel-collector.networkPolicy.contentEgress.ports[0].port=443",
+	}
+	for name, args := range map[string][]string{"telemetry": base, "content": append(append([]string{}, base...), content...)} {
+		t.Run(name, func(t *testing.T) {
+			out, err := exec.Command("helm", args...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("helm template failed: %v\n%s", err, out)
+			}
+			raw, err := yaml.Marshal(renderedCollectorConfig(t, out))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := strings.NewReplacer(
+				"/etc/fabric/workload-auth/token", f.token,
+				"/etc/fabric/content-key/key", f.key,
+				"/etc/fabric/receiver-tls/tls.crt", f.token,
+				"/etc/fabric/receiver-tls/tls.key", f.token,
+			).Replace(string(raw))
+			watched, err := validateArgs([]string{"--config=" + writeConfig(t, text)})
+			if err != nil {
+				t.Fatalf("shipped Helm production config refused: %v", err)
+			}
+			if len(watched) != 1 || !watched[0].dedicated {
+				t.Fatalf("workload token not supervised as the bound credential: %+v", watched)
+			}
+			if production, err := declaredProduction(renderedCollectorConfig(t, out)); err != nil || !production {
+				t.Fatalf("render does not declare the production profile: %v", err)
+			}
+		})
+	}
 }

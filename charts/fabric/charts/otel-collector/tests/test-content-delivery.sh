@@ -343,15 +343,39 @@ expect_count "production content receiver requires client certificates" "${produ
 # Workload authentication covers the content port too: 4317, 4318 and 4319
 # all present the same workload bearer authenticator.
 expect_count "workload auth puts the bearer authenticator on 4319" "${production_render}" "authenticator: bearertokenauth/workload" 3
-expect_fail "production content tenants must be exactly [tenant.id]" "content.allowedTenants to be exactly [tenant.id]" \
+expect_fail "production content tenants must be exactly [tenant.id]" "content.allowedTenants to be exactly [" \
   "${umbrella_dir}" "${production_content[@]}" --set 'otel-collector.content.allowedTenants[0]=other-tenant'
-expect_fail "production content refuses a second tenant" "content.allowedTenants to be exactly [tenant.id]" \
+expect_fail "production content refuses a second tenant" "content.allowMultipleTenants must be false" \
   "${umbrella_dir}" "${production_content[@]}" --set otel-collector.content.allowMultipleTenants=true \
   --set 'otel-collector.content.allowedTenants[1]=other-tenant'
 expect_contains "production content queue is durable" "${production_render}" "storage: file_storage/fabric_content"
 expect_contains "production content queue is private" "${production_render}" 'directory_permissions: "0700"'
 expect_contains "production content queue is tightened at start" "${production_render}" 'queue_directory: "'
 expect_contains "production content store egress" "${production_render}" "cidr: 198.51.100.0/24"
+
+# Spec 049 P0-A: a production-profile Node binds every batch and seals the
+# content queue with the Node key.
+expect_count "production profile on fabricguard and fabriccontent" "${production_render}" 'profile: "production"' 2
+expect_contains "production binds fabricguard to the workload source" "${production_render}" 'source_id: "s-c5aedfd8a3ee415e277e335bf1517ff4"'
+expect_count "fabricguard and fabriccontent share the binding" "${production_render}" 'source_id: "s-c5aedfd8a3ee415e277e335bf1517ff4"' 2
+expect_contains "fabricguard is bound" "${production_render}" "evidence_source_binding:"
+expect_contains "fabriccontent is bound" "${production_render}" "source_binding:"
+expect_contains "identity mode is pseudonymous" "${production_render}" 'identity_mode: "pseudonymous"'
+expect_contains "the content queue is sealed" "${production_render}" "storage: fabricenvelope/fabric_content"
+expect_contains "the envelope wraps the private queue" "${production_render}" "fabricenvelope/fabric_content:"
+expect_contains "the envelope reads the key file" "${production_render}" "key_file: /etc/fabric/content-key/key"
+expect_contains "the envelope is active" "${production_render}" "- fabricenvelope/fabric_content"
+expect_contains "the key Secret is projected" "${production_render}" 'name: "fabric-node-content-key"'
+expect_contains "the key mount" "${production_render}" "mountPath: /etc/fabric/content-key"
+expect_not_contains "the key never enters the ConfigMap as a value" "${production_render}" "FABRIC_CONTENT_KEY"
+expect_fail "production content requires the Node key" "requires content.encryption.keySecret.name" \
+  "${umbrella_dir}" "${production_content[@]}" --set otel-collector.content.encryption.keySecret.name=
+expect_fail "production requires the bound source id" "requires receiver.workloadAuthentication.sourceId" \
+  "${umbrella_dir}" "${production_args[@]}" --set otel-collector.receiver.workloadAuthentication.sourceId=
+expect_fail "production pins the production profile" "profile shadow-production requires" \
+  "${umbrella_dir}" "${production_args[@]}" --set otel-collector.fabric.profile=local
+expect_fail "the production profile needs an authenticated source" "rejects unauthenticated sources" \
+  "${chart_dir}" --set fabric.profile=production
 expect_fail "production content requires sse" "requires content.s3.sse" \
   "${umbrella_dir}" "${production_content[@]}" --set otel-collector.content.s3.sse= \
   --set otel-collector.content.s3.kmsKeyId=

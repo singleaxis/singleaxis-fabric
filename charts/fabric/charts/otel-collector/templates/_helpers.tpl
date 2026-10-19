@@ -506,6 +506,39 @@ an install cannot start a Node whose content exporter would refuse its own
 configuration, accept every tenant, or silently write unencrypted objects in
 a profile that requires encryption.
 */}}
+{{- define "otel-collector.validateProfile" -}}
+{{- /* Spec 049 §7.3, §7.8, §7.9: the production profile rejects unauthenticated
+   sources and keeps content encrypted at rest. fabric-gate enforces the same
+   rules on the rendered config; failing here keeps the render honest. */ -}}
+{{- if eq .Values.fabric.profile "production" -}}
+{{- $r := .Values.receiver -}}
+{{- if $r.workloadAuthentication.enabled -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" ($r.workloadAuthentication.sourceId | toString)) -}}
+{{- fail "fabric.profile=production requires receiver.workloadAuthentication.sourceId: the agents' source id as it travels (s-<32 hex> under pseudonymous labels); every batch is bound to it (spec 049 §7.9)" -}}
+{{- end -}}
+{{- else if not $r.evidenceSourceBinding.enabled -}}
+{{- fail "fabric.profile=production rejects unauthenticated sources: set receiver.workloadAuthentication.enabled=true (with sourceId) or a dedicated evidenceSourceBinding (spec 049 §7.9)" -}}
+{{- end -}}
+{{- if .Values.content.enabled -}}
+{{- if not .Values.receiver.workloadAuthentication.enabled -}}
+{{- fail "fabric.profile=production with content.enabled=true requires receiver.workloadAuthentication (the bound content ingress)" -}}
+{{- end -}}
+{{- if not .Values.content.encryption.keySecret.name -}}
+{{- fail "fabric.profile=production with content.enabled=true requires content.encryption.keySecret.name: the content queue (and a file store) are sealed with the Node key (spec 049 §7.8)" -}}
+{{- end -}}
+{{- if not .Values.exporter.sendingQueue.persistence.enabled -}}
+{{- fail "fabric.profile=production with content.enabled=true requires exporter.sendingQueue.persistence.enabled=true for the encrypted content queue" -}}
+{{- end -}}
+{{- if .Values.content.allowMultipleTenants -}}
+{{- fail "fabric.profile=production binds content to one tenant: content.allowMultipleTenants must be false" -}}
+{{- end -}}
+{{- if ne (toString (first .Values.content.allowedTenants)) (toString .Values.receiver.workloadAuthentication.tenantId) -}}
+{{- fail "fabric.profile=production requires content.allowedTenants to be exactly [receiver.workloadAuthentication.tenantId]" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "otel-collector.validateContent" -}}
 {{- $c := .Values.content -}}
 {{- if $c.enabled -}}
