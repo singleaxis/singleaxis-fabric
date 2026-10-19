@@ -666,7 +666,6 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		{"fabric.skill.name", "fabric.skill"},
 		{"fabric.hook.phase", "fabric.hook"},
 		{"fabric.coverage.kind", "fabric.coverage"},
-		{"fabric.crewai.event_type", "fabric.crewai"},
 		{"fabric.execution.status", "fabric.execution"},
 		{"fabric.execution_id", "fabric.execution"},
 		{"fabric.decision_id", "fabric.decision"},
@@ -682,7 +681,7 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		"fabric.interaction", "fabric.file_access", "fabric.delegation", "fabric.error",
 		"fabric.retry", "fabric.cancellation", "fabric.deployment_change", "fabric.human_action",
 		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory", "fabric.skill",
-		"fabric.hook", "fabric.coverage", "fabric.crewai.step", "fabric.crewai.task",
+		"fabric.hook", "fabric.coverage",
 		"fabric.capture_loss", "fabric.capture_heartbeat", "fabric.capture_manifest":
 		return name
 	default:

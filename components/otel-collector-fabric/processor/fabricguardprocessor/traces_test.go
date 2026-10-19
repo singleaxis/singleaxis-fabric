@@ -303,7 +303,6 @@ func TestActivityCategoryVocabularyCoversEmittedNames(t *testing.T) {
 		"fabric.interaction", "fabric.file_access", "fabric.delegation",
 		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory",
 		"fabric.skill", "fabric.hook", "fabric.coverage",
-		"fabric.crewai.step", "fabric.crewai.task",
 		"fabric.error", "fabric.retry", "fabric.cancellation",
 		"fabric.deployment_change", "fabric.human_action",
 	}
@@ -311,6 +310,27 @@ func TestActivityCategoryVocabularyCoversEmittedNames(t *testing.T) {
 	for _, name := range emitted {
 		if got := activityCategory(name, empty); got != name {
 			t.Errorf("emitted event name %q normalized to %q — fidelity lost", name, got)
+		}
+	}
+}
+
+func TestRemovedCrewAIVocabularyFailsClosed(t *testing.T) {
+	// The CrewAI adapter was removed from the SDK: its keys are no longer
+	// allowlisted and its event names fall back to the generic category.
+	for _, key := range []string{
+		"fabric.crewai.event_type", "fabric.crewai.tool", "fabric.crewai.agent",
+		"fabric.crewai.content_sha256", "fabric.crewai.content_chars",
+		"fabric.crewai.task_description_sha256", "fabric.crewai.task_description_chars",
+		"fabric.crewai.output_chars",
+	} {
+		if _, ok := TraceAllowedFields[key]; ok {
+			t.Errorf("removed CrewAI key %q is still allowlisted", key)
+		}
+	}
+	empty := pcommon.NewMap()
+	for _, name := range []string{"fabric.crewai.step", "fabric.crewai.task"} {
+		if got := activityCategory(name, empty); got != "fabric.activity" {
+			t.Errorf("removed CrewAI event %q normalized to %q, want fabric.activity", name, got)
 		}
 	}
 }

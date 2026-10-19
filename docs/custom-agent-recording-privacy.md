@@ -71,10 +71,7 @@ before persistence. The recorder does not await transformations or storage
 while the monitored action runs.
 
 The legacy Fabric governed-content configuration now rejects raw tracing
-capture for model/tool/retrieval/memory operations. It also rejects raw-content
-auto-instrumentation flags from `FABRIC_CAPTURE_LLM_CONTENT`,
-`TRACELOOP_TRACE_CONTENT`, and
-`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. These checks occur before
+capture for model/tool/retrieval/memory operations. This check occurs before
 Fabric invokes the conflicting capture path. The independent `CallRecorder`
 does not configure or sanitize another library's exporters, an already-enabled
 instrumentor, arbitrary attributes supplied by the application, or process
@@ -85,7 +82,7 @@ Focused verification:
 ```sh
 sdk/python/.venv/bin/python -m pytest sdk/python/tests/test_call_privacy.py \
   sdk/python/tests/test_byte_evidence.py sdk/python/tests/test_calls.py \
-  sdk/python/tests/test_governed_content.py sdk/python/tests/test_auto_instrument.py \
+  sdk/python/tests/test_governed_content.py \
   -q --no-cov -p no:cacheprovider
 ```
 

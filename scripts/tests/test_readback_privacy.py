@@ -18,7 +18,7 @@ def load(name):
     return module
 
 
-@pytest.mark.parametrize("verifier", ["synthetic", "sol", "custom"])
+@pytest.mark.parametrize("verifier", ["synthetic", "custom"])
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -119,11 +119,6 @@ def test_exact_metadata_readback(tmp_path, verifier, mutation):
 
         def invoke():
             return module.verify(report, sink)
-    elif verifier == "sol":
-        module = load("verify_sol_sink_readback")
-
-        def invoke():
-            return module.verify(tmp_path, sink)
     else:
         module = load("run_custom_agent_node_pilot")
 

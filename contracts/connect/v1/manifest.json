@@ -8,7 +8,7 @@
   "artifacts": [
     {
       "path": "manifests/python-sdk.json",
-      "sha256": "00e6f2b2e90db5dca74dc4eb70f2062a726a8e43448ebc7a9dc60a3bdb23b621",
+      "sha256": "4af9e699063883105fb04453f6444ed64f6dad716de4df8fa447f762bd7896ef",
       "expectation": "valid"
     },
     {

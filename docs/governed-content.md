@@ -271,8 +271,7 @@ Not supported / not claimed:
 onto spans — stripped by the Fabric Node's allowlist and never a
 governed evidence path. Governed storage is configured explicitly with `content_capture` (Python) or
 `contentCapture` (TypeScript). The Python governed client rejects conflicting
-raw-span capture flags and raw-content auto-instrumentation environment options;
-do not enable both paths. TypeScript's legacy raw opt-ins require separate
+raw-span capture flags; do not enable both paths. TypeScript's legacy raw opt-ins require separate
 privacy review and are not Python parity. Fabric Node continues stripping raw
 content; customer-owned exporters and other instrumentation need their own
 protection. Existing metadata-only users see no behavior change.
